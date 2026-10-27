@@ -10,6 +10,7 @@ import { extractIngestToken, resolveTenantFromIngestToken } from "@/lib/inventor
 import { isInventoryAgentEnabled } from "@/lib/inventory-agent/feature";
 import { parseGlpiInventory } from "@/lib/inventory-agent/parse-glpi-inventory";
 import { ingestInventoryReport } from "@/lib/inventory-agent/db";
+import { registraUtenteGlpi } from "@/lib/assegnatari/glpi";
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -52,6 +53,8 @@ export async function POST(request: Request) {
   try {
     const parsed = parseGlpiInventory(body);
     const result = withTenant(tenantCode, () => ingestInventoryReport(parsed));
+    // Chi usa il PC (assegnatari da AD, piano 2026-10-23): l'ultimo utente dell'agente, una presenza al giorno.
+    if (result.hostId != null) withTenant(tenantCode, () => registraUtenteGlpi(result.hostId!, parsed.profile.hardware.last_logged_user));
     return NextResponse.json({
       status: "ok",
       report_id: result.reportId,

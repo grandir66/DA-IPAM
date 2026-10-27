@@ -3,7 +3,7 @@
  * Ordine: env esplicita → venv appliance → venv home → system python3.
  */
 import { existsSync } from "fs";
-import path from "path";
+import { unisci } from "../percorsi";
 
 export function findBridgePython(): string {
   if (process.env.WINRM_PYTHON?.trim()) return process.env.WINRM_PYTHON.trim();
@@ -14,15 +14,15 @@ export function findBridgePython(): string {
   const cwd = process.cwd();
 
   const candidates = [
-    path.join(home, ".da-invent-venv", "bin", "python3"),
-    path.join(appDir, ".venv-winrm", "bin", "python3"),
-    path.join(home, ".da-inventory-venv", "bin", "python3"),
-    path.join(home, ".da-ipam-venv", "bin", "python3"),
-    path.join(cwd, ".venv-winrm", "bin", "python3"),
-    path.join(cwd, ".venv", "bin", "python3"),
-    "/opt/da-ipam/.venv-winrm/bin/python3",
-    "/opt/dadude-agent/venv/bin/python3",
-    "/usr/bin/python3",
+    unisci(home, ".da-invent-venv", "bin", "python3"),
+    unisci(appDir, ".venv-winrm", "bin", "python3"),
+    unisci(home, ".da-inventory-venv", "bin", "python3"),
+    unisci(home, ".da-ipam-venv", "bin", "python3"),
+    unisci(cwd, ".venv-winrm", "bin", "python3"),
+    unisci(cwd, ".venv", "bin", "python3"),
+    unisci("/opt/da-ipam", ".venv-winrm", "bin", "python3"),
+    unisci("/opt/dadude-agent", "venv", "bin", "python3"),
+    unisci("/usr/bin", "python3"),
   ];
 
   for (const c of candidates) {

@@ -23,8 +23,13 @@ export async function POST(req: Request) {
     }
 
     try {
-      const result = await addSingleNetworkDeviceToLibreNMS(parsed.data.device_id);
-      return NextResponse.json(result);
+      const esito = await addSingleNetworkDeviceToLibreNMS(parsed.data.device_id);
+      if (!esito.ok) {
+        // Rifiuto di LibreNMS (senza force_add): il motivo arriva a chi ha cliccato, ed è scritto in librenms_rifiuto.
+        const testo = esito.codice === "rete" ? esito.messaggio : `LibreNMS ha rifiutato l'aggiunta: ${esito.messaggio}`;
+        return NextResponse.json({ error: testo, codice: esito.codice }, { status: 422 });
+      }
+      return NextResponse.json({ librenms_device_id: esito.librenms_device_id, added: esito.aggiunto });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: msg }, { status: 422 });

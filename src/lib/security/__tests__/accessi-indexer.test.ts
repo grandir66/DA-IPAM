@@ -9,7 +9,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accessiDaSerie } from "../accessi-indexer";
+import { accessiDaSerie, inizioFinestra, primiBersagliati } from "../accessi-indexer";
+import type { TargetedAccount } from "@/lib/integrations/wazuh-alerts-stats";
 
 const ORA = new Date("2026-10-20T10:25:00.000Z"); // 12:25 italiane (ora legale)
 const b = (iso: string, n: number, altro = 0) => ({ bucket: iso, auth_failure: n, ransomware: altro });
@@ -60,4 +61,37 @@ test("serie vuota: tutto a zero, nessun errore", () => {
   const r = accessiDaSerie([], ORA);
   assert.equal(r.totale24h, 0);
   assert.equal(r.giorni.every((g) => g.falliti === 0), true);
+});
+
+const acc = (account: string, count: number, extra: Partial<TargetedAccount> = {}): TargetedAccount => ({
+  account, count, sourceIp: null, workstation: null, detectedBy: null, lastSeenAt: null, system: "windows", kind: "utente", ...extra,
+});
+
+test("bersagliati (25/10): solo Windows e Linux come il grafico, i primi tre per volume", () => {
+  const r = primiBersagliati([
+    acc("m365@x.it", 900, { system: "microsoft365" }),
+    acc("admin", 40, { system: "altro" }),
+    acc("mario", 5),
+    acc("root", 30, { system: "linux", sourceIp: "203.0.113.9" }),
+    acc("PC01$", 12, { kind: "computer" }),
+    acc("anna", 20, { workstation: "PC-ANNA", sourceIp: "10.0.0.5" }),
+  ]);
+  assert.deepEqual(r.map((b) => b.account), ["root", "anna", "PC01$"]);
+  assert.equal(r[0].origine, "203.0.113.9");
+  assert.equal(r[1].origine, "PC-ANNA · 10.0.0.5");
+  assert.equal(r[2].computer, true);
+  assert.equal(r[2].origine, null);
+});
+
+test("bersagliati: il loopback non è un'origine", () => {
+  const [b1, b2] = primiBersagliati([acc("a", 2, { sourceIp: "127.0.0.1", workstation: "SRV" }), acc("b", 1, { sourceIp: "::1" })]);
+  assert.equal(b1.origine, "SRV");
+  assert.equal(b2.origine, null);
+});
+
+test("finestra della serie: dalla mezzanotte italiana di 13 giorni fa", () => {
+  // 20/10 12:25 italiane, ora legale: la mezzanotte del 7/10 è il 6/10 alle 22:00 UTC.
+  assert.equal(new Date(inizioFinestra(ORA)).toISOString(), "2026-10-06T22:00:00.000Z");
+  // Dopo il cambio d'ora (ora solare): mezzanotte del 13/11 = 12/11 alle 23:00 UTC.
+  assert.equal(new Date(inizioFinestra(new Date("2026-11-26T09:00:00.000Z"))).toISOString(), "2026-11-12T23:00:00.000Z");
 });

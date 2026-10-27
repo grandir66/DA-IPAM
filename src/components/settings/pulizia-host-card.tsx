@@ -6,9 +6,9 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RigheRimando, useVociOpzioni } from "@/components/opzioni/riga-rimando";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
@@ -28,9 +28,10 @@ interface Anteprima {
   giorniArchivio: number;
 }
 interface Archivio { righe: RigaArchivio[]; totale: number }
-interface Notturna { enabled: boolean; lastRun: string | null }
 
-const GIORNI_ARCHIVIO_DEFAULT = 90;
+/** Le soglie del cliente si cambiano da Opzioni (23/10): senza anteprima la scheda le legge da lì, non da un numero fisso. */
+const SOGLIE = ["parametro.pulizia_giorni_assenza", "parametro.pulizia_giorni_archivio"] as const;
+const giorniDa = (v: string | undefined, diSerie: number): number => (v && /^\d+$/.test(v) ? Number(v) : diSerie);
 
 function ElencoNomi({ titolo, host }: { titolo: string; host: HostNominato[] }) {
   if (host.length === 0) return null;
@@ -74,11 +75,9 @@ function EsitoApplica({ esito }: { esito: Exclude<RispostaApplica, { tipo: "ille
 
 /** Impostazioni → Sistema → «Pulizia degli host assenti» (solo amministratori; piano 2026-10-20, Task 6). */
 export function PuliziaHostCard() {
-  const [notturna, setNotturna] = useState<Notturna | null>(null);
-  const [erroreNotturna, setErroreNotturna] = useState<string | null>(null);
-  const [salvandoNotturna, setSalvandoNotturna] = useState(false);
 
   const [anteprima, setAnteprima] = useState<Anteprima | null>(null);
+  const { voci: soglie } = useVociOpzioni(SOGLIE);
   const [erroreAnteprima, setErroreAnteprima] = useState<string | null>(null);
   const [caricaAnteprima, setCaricaAnteprima] = useState(false);
 
@@ -94,10 +93,6 @@ export function PuliziaHostCard() {
   const [recuperaInCorso, setRecuperaInCorso] = useState(false);
   const [motivoRifiuto, setMotivoRifiuto] = useState<string | null>(null);
 
-  const caricaNotturna = useCallback(async () => {
-    const r = await fetchJson<Notturna>("/api/hosts/pulizia/notturna");
-    if (r.ok) { setNotturna(r.data); setErroreNotturna(null); } else setErroreNotturna(r.message);
-  }, []);
   const caricaArchivio = useCallback(async () => {
     const r = await fetchJson<Archivio>("/api/hosts/archivio");
     if (r.ok) { setArchivio(r.data); setErroreArchivio(null); } else setErroreArchivio(r.message);
@@ -113,39 +108,10 @@ export function PuliziaHostCard() {
 
   useEffect(() => {
     // Caricamenti iniziali: i setState stanno dopo l'await, non nel corpo dell'effetto.
-    void caricaNotturna();
     void caricaArchivio();
     // Arrivo dalla dashboard (#pulizia-host): la scheda compare dopo la scelta della scheda, l'àncora da sola non basta.
     if (window.location.hash === "#pulizia-host") document.getElementById("pulizia-host")?.scrollIntoView({ block: "start" });
-  }, [caricaNotturna, caricaArchivio]);
-
-  // Accendere chiede conferma col numero di adesso (m8): da lì in poi si archivia ogni notte senza anteprima.
-  const [confermaNotturna, setConfermaNotturna] = useState<number | null>(null);
-  async function chiediAccensione() {
-    setSalvandoNotturna(true);
-    const r = await fetchJson<Anteprima>("/api/hosts/pulizia");
-    setSalvandoNotturna(false);
-    if (!r.ok) { toast.error(`Non riesco a contare i candidati, la pulizia notturna resta spenta: ${r.message}`); return; }
-    setConfermaNotturna(r.data.candidati.length);
-  }
-
-  async function cambiaNotturna(acceso: boolean) {
-    setSalvandoNotturna(true);
-    try {
-      const res = await fetch("/api/hosts/pulizia/notturna", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: acceso }),
-      });
-      const body = (await res.json().catch(() => null)) as (Notturna & { error?: string; warning?: string }) | null;
-      if (!res.ok || !body) { toast.error(body?.error ?? "Non sono riuscito a salvare la pulizia notturna"); return; }
-      setNotturna({ enabled: body.enabled, lastRun: body.lastRun });
-      setConfermaNotturna(null);
-      if (body.warning) toast.warning(body.warning);
-    } catch {
-      toast.error("Server non raggiungibile: la pulizia notturna non è cambiata");
-    } finally {
-      setSalvandoNotturna(false);
-    }
-  }
+  }, [caricaArchivio]);
 
   const candidati = anteprima?.candidati ?? [];
 
@@ -195,7 +161,8 @@ export function PuliziaHostCard() {
     }
   }
 
-  const giorniArchivio = anteprima?.giorniArchivio ?? GIORNI_ARCHIVIO_DEFAULT;
+  const giorni = anteprima?.giorni ?? giorniDa(soglie[SOGLIE[0]]?.stato.valore, 60);
+  const giorniArchivio = anteprima?.giorniArchivio ?? giorniDa(soglie[SOGLIE[1]]?.stato.valore, 90);
   const n = candidati.length;
   const scadute = anteprima?.scadute ?? [];
   const k = scadute.length;
@@ -208,27 +175,14 @@ export function PuliziaHostCard() {
           <CardTitle className="text-base">Pulizia degli host assenti</CardTitle>
         </div>
         <CardDescription>
-          Host offline da oltre {anteprima?.giorni ?? 60} giorni e vecchi IP di un MAC che ha cambiato indirizzo. Gli archiviati
+          Host offline da oltre {giorni} giorni e vecchi IP di un MAC che ha cambiato indirizzo. Gli archiviati
           spariscono da liste, conteggi e mappa; si recuperano per {giorniArchivio} giorni, poi si cancellano.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {erroreNotturna !== null ? (
-          <LoadError what="lo stato della pulizia notturna" message={erroreNotturna} onRetry={() => void caricaNotturna()} />
-        ) : (
-          <div className="flex items-center gap-3">
-            <Switch
-              checked={notturna?.enabled ?? false}
-              disabled={notturna === null || salvandoNotturna}
-              onCheckedChange={(v) => void (v ? chiediAccensione() : cambiaNotturna(false))}
-              aria-label="Pulizia ogni notte alle 04:00"
-            />
-            <span className="text-sm">
-              Pulizia ogni notte alle 04:00 — <strong>{notturna === null ? "…" : notturna.enabled ? "accesa" : "spenta"}</strong>
-              {notturna?.enabled && notturna.lastRun && <span className="text-muted-foreground"> · ultimo giro {dataOra(notturna.lastRun)}</span>}
-            </span>
-          </div>
-        )}
+        {/* Accendere e spegnere si fa da Opzioni (22/10), con la conferma all'accensione: qui lo stato e il rimando. */}
+        <RigheRimando ids={["job.pulizia_host"]} />
+        <RigheRimando ids={SOGLIE} mostraEsito={false} />
 
         <div>
           <Button type="button" variant="outline" onClick={() => void mostraAnteprima()} disabled={caricaAnteprima}>
@@ -370,26 +324,6 @@ export function PuliziaHostCard() {
             <Button type="button" variant="outline" onClick={() => setConfermaAperta(false)} disabled={inCorso}>Annulla</Button>
             <Button type="button" onClick={() => void archivia()} disabled={inCorso || numero !== String(n)}>
               {inCorso ? "Archiviazione…" : "Archivia"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={confermaNotturna !== null} onOpenChange={(o) => { if (!o && !salvandoNotturna) setConfermaNotturna(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Accendi la pulizia notturna</DialogTitle>
-            <DialogDescription>
-              {confermaNotturna === 0
-                ? "Oggi non c'è nessun host da archiviare. Ogni notte alle 04:00 si archivieranno senza anteprima quelli che lo diventano."
-                : `Ogni notte alle 04:00 si archivieranno senza anteprima gli host come questi ${confermaNotturna ?? ""}.`}
-              {" "}Le righe d&apos;archivio oltre i {giorniArchivio} giorni si cancellano per sempre.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfermaNotturna(null)} disabled={salvandoNotturna}>Annulla</Button>
-            <Button type="button" onClick={() => void cambiaNotturna(true)} disabled={salvandoNotturna}>
-              {salvandoNotturna ? "Accensione…" : "Accendi"}
             </Button>
           </DialogFooter>
         </DialogContent>

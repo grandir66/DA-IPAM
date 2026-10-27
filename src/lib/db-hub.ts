@@ -6,6 +6,7 @@ import { HUB_SCHEMA_SQL, HUB_INDEXES_SQL } from "./db-hub-schema";
 import { backfillAllIntegrationUiUrls } from "./integrations/public-url-server";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { normalizeMacHex } from "./attribution/kb";
+import { unisci, risolvi } from "./percorsi";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hub DB singleton (tenants, users, settings, profiles)
@@ -13,8 +14,8 @@ import { normalizeMacHex } from "./attribution/kb";
 
 const DATA_DIR = resolveDataDir();
 const HUB_DB_PATH = process.env.DA_IPAM_HUB_DB_PATH?.trim()
-  ? path.resolve(process.env.DA_IPAM_HUB_DB_PATH.trim())
-  : path.join(DATA_DIR, "hub.db");
+  ? risolvi(process.env.DA_IPAM_HUB_DB_PATH.trim())
+  : unisci(DATA_DIR, "hub.db");
 
 let _hubDb: Database.Database | null = null;
 
@@ -236,10 +237,9 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       } },
     { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
       fields: {
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       } },
     { id: "truenas", name: "TrueNAS", cat: "storage", oids: [] as string[], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
     { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,
@@ -320,6 +320,22 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       t();
     }
   }
+}
+
+/**
+ * Profilo SNMP `qnap` (builtin): gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale e libera, non
+ * modello/firmware/seriale (collaudo QNAP 22/10/2026: firmware = «15979.0 MB»). Riscrive solo le righe builtin
+ * che hanno ancora quegli OID; le modifiche dell'utente non si toccano. Idempotente.
+ */
+export function correggiOidProfiloQnap(db: Database.Database): void {
+  const riga = db.prepare("SELECT fields FROM snmp_vendor_profiles WHERE profile_id = 'qnap' AND builtin = 1").get() as { fields: string } | undefined;
+  if (!riga || !/24681\.1\.2\.[123]\.0/.test(riga.fields)) return;
+  const fields = JSON.stringify({
+    model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+    serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+    temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
+  });
+  db.prepare("UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'qnap' AND builtin = 1").run(fields);
 }
 
 function seedBuiltinSysObjLookup(db: Database.Database): void {
@@ -432,6 +448,10 @@ function initializeHubDb(db: Database.Database): void {
       ["totp_ultimo_passo", "INTEGER"],
       ["totp_proposto", "TEXT"],
       ["totp_proposto_scade", "TEXT"],
+      // Sessione e istanza (23/10, lib/accesso/sessione.ts): ora dell'ultimo «Esci» in ms e
+      // ultima istanza scelta, da cui si riparte all'accesso.
+      ["sessioni_valide_da", "INTEGER"],
+      ["ultima_istanza", "TEXT"],
     ];
     for (const [nome, tipo] of nuove) {
       if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
@@ -474,6 +494,7 @@ function initializeHubDb(db: Database.Database): void {
     `);
   } catch { /* ignore */ }
   seedHubDefaults(db);
+  correggiOidProfiloQnap(db);
   try {
     backfillAllIntegrationUiUrls();
   } catch (e) {
@@ -554,6 +575,10 @@ export interface HubUser {
   last_login: string | null;
   /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin. */
   totp_richiesta?: number;
+  /** Ora dell'ultimo «Esci» (ms): i token di accessi precedenti non valgono (lib/accesso/sessione.ts). */
+  sessioni_valide_da?: number | null;
+  /** Ultima istanza scelta, da cui si riparte all'accesso. */
+  ultima_istanza?: string | null;
   /** Segreto confermato, cifrato con encrypt(); null = non ancora attivata. */
   totp_segreto?: string | null;
   totp_attivato_at?: string | null;
@@ -940,6 +965,11 @@ export function setSetting(key: string, value: string): void {
   getHubDb().prepare(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')"
   ).run(key, value);
+}
+
+/** Toglie una chiave: chi la legge torna al suo valore di serie (Opzioni, «Torna a …»). */
+export function deleteSetting(key: string): void {
+  getHubDb().prepare("DELETE FROM settings WHERE key = ?").run(key);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

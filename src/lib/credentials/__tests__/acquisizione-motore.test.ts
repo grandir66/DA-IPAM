@@ -242,7 +242,8 @@ describe("acquisizione degli apparati sul motore", () => {
       const l = tenant as unknown as Lettori;
       assert.deepEqual(campi(apparato(l, "apColonna")), { community: "comm-colonna", snmpver: "v2c", port: 161, snmp_disable: false });
       assert.deepEqual(campi(apparato(l, "stampanteBinding")), { community: "comm-stampante", snmpver: "v2c", port: 161, snmp_disable: false });
-      assert.deepEqual(campi(apparato(l, "stampanteNuda")), { snmp_disable: true });
+      // Dal 22/10 (piano LibreNMS, task 1) il ping-only dice anche perché; a LibreNMS il motivo non parte.
+      assert.deepEqual(campi(apparato(l, "stampanteNuda")), { snmp_disable: true, motivo: "nessuna credenziale SNMP dell'apparato" });
     });
   });
 

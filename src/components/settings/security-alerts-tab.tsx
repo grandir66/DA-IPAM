@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +33,6 @@ export function SecurityAlertsTab() {
   const [selfIps, setSelfIps] = useState("");
   const [selfAccounts, setSelfAccounts] = useState("");
   const [deviceRuleIds, setDeviceRuleIds] = useState("");
-  const [retentionDays, setRetentionDays] = useState(30);
 
   useEffect(() => {
     void (async () => {
@@ -43,7 +43,6 @@ export function SecurityAlertsTab() {
         setSelfIps(d.selfIps.join(", "));
         setSelfAccounts(d.selfAccounts.join(", "));
         setDeviceRuleIds(d.deviceRuleIds.join(", "));
-        setRetentionDays(d.retentionDays);
       } catch (e) {
         toast.error(`Errore nel caricamento: ${(e as Error).message}`);
       } finally {
@@ -62,7 +61,6 @@ export function SecurityAlertsTab() {
           selfIps: toList(selfIps),
           selfAccounts: toList(selfAccounts),
           deviceRuleIds: toList(deviceRuleIds),
-          retentionDays: Number(retentionDays),
         }),
       });
       const body = (await res.json()) as { error?: unknown };
@@ -167,14 +165,9 @@ export function SecurityAlertsTab() {
           <CardTitle className="text-base">Conservazione</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-w-xs">
-            <Label htmlFor="retentionDays">Conserva gli eventi (giorni)</Label>
-            <Input
-              id="retentionDays"
-              type="number"
-              value={retentionDays}
-              onChange={(e) => setRetentionDays(Number(e.target.value))}
-            />
+          <div className="max-w-2xl">
+            {/* La conservazione si cambia da Opzioni (23/10). */}
+            <RigheRimando ids={["parametro.notify_retention_days"]} mostraEsito={false} />
             <p className="mt-1 text-xs text-muted-foreground">
               Vale solo per gli eventi presi in carico. Quelli ancora aperti non
               vengono mai cancellati, per quanto vecchi siano.

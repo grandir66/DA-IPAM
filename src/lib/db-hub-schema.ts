@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS users (
   totp_attivato_at TEXT,
   totp_ultimo_passo INTEGER,
   totp_proposto TEXT,
-  totp_proposto_scade TEXT
+  totp_proposto_scade TEXT,
+  -- Sessione e istanza (23/10, lib/accesso/sessione.ts).
+  sessioni_valide_da INTEGER,
+  ultima_istanza TEXT
 );
 
 CREATE TABLE IF NOT EXISTS user_tenant_access (

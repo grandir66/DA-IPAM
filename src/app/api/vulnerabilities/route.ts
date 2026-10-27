@@ -3,6 +3,8 @@
  *
  * Vista globale aggregata di TUTTE le vulnerabilità del tenant (edge + Wazuh),
  * deduplicate per CVE-ID (fallback `nvt:${nvt_oid}`), ordinate per criticità.
+ * Ogni riga porta gli exploit noti (KEV, Exploit-DB, EPSS; 22/10); `exploit=kev,edb` filtra,
+ * `exploit_errore` dice se l'archivio dei feed non si legge.
  */
 
 import { NextResponse } from "next/server";
@@ -12,11 +14,14 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getAggregatedVulnerabilities,
   type AggregatedVulnOpts,
+  type FiltroExploit,
   type OsFamily,
 } from "@/lib/db-tenant";
+import { exploitPerRotte } from "@/lib/vuln/exploit-feed/archivio";
 
 const SeverityEnum = z.enum(["Critical", "High", "Medium", "Low"]);
 const OsFamilyEnum = z.enum(["Windows", "Linux", "Apple", "Unknown"]);
+const ExploitEnum = z.enum(["kev", "edb"]);
 
 const QuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -26,8 +31,9 @@ const QuerySchema = z.object({
   os: z.string().optional(),
   search: z.string().max(200).optional(),
   hasCve: z.enum(["true", "false"]).optional(),
+  exploit: z.string().optional(),
   sortBy: z
-    .enum(["severity", "cvss", "host_count", "latest_scanned_at", "cve_id"])
+    .enum(["severity", "cvss", "host_count", "latest_scanned_at", "cve_id", "exploit"])
     .default("severity"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -63,6 +69,10 @@ export async function GET(request: Request) {
         .map((s) => s.trim())
         .filter((s) => OsFamilyEnum.safeParse(s).success) as OsFamily[])
     : undefined;
+  const exploit = q.exploit
+    ? (q.exploit.split(",").map((s) => s.trim()).filter((s) => ExploitEnum.safeParse(s).success) as FiltroExploit[])
+    : undefined;
+  const { exploitDi, errore: exploit_errore } = exploitPerRotte();
 
   const opts: AggregatedVulnOpts = {
     page: q.page,
@@ -73,6 +83,8 @@ export async function GET(request: Request) {
     search: q.search,
     hasCve:
       q.hasCve === "true" ? true : q.hasCve === "false" ? false : undefined,
+    exploit,
+    exploitDi,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
   };
@@ -88,6 +100,7 @@ export async function GET(request: Request) {
         pageSize: opts.pageSize,
         totalPages: Math.max(1, Math.ceil(total / opts.pageSize)),
         severity_rollup,
+        exploit_errore,
       });
     } catch (e) {
       console.error("[api/vulnerabilities] errore:", e);

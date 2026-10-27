@@ -86,6 +86,9 @@ const CONTRACT: Contract[] = [
   // mappa nuova li cambia solo un admin; «Cosa cambierebbe con la mappa nuova» è un calcolo per chi decide quando
   // accenderla. Il 403 a chi non è admin si prova qui sul sorgente: `mock.module` non gira sotto Node 22 con tsx e
   // `requireAdmin` legge la sessione. Il corpo (400, 409, strict) lo prova src/lib/topology/letture/__tests__/corpo.test.ts.
+  // Pagina Opzioni (22/10): l'elenco lo vede chi è autenticato, il cambio solo un admin.
+  { route: "opzioni", method: "GET", guard: "requireAuth" },
+  { route: "opzioni/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "topology/settings/letture", method: "PUT", guard: "requireAdmin" },
   { route: "topology/settings/mappa", method: "PUT", guard: "requireAdmin" },
   { route: "topology/traccia", method: "GET", guard: "requireAdmin" },

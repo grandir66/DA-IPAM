@@ -31,6 +31,7 @@ import { Campo } from "./blocchi";
 import { IpCollegati, SullaMappa } from "./dettagli/rete";
 import { SezioneSnmp } from "./dettagli/sistema";
 import { Riquadro } from "./riquadro";
+import { RiquadroAcquisizioneModulare } from "./acquisizione-modulare";
 import type { ContestoScheda } from "./contesto";
 
 /** Aggiunge l'host a LibreNMS (POST /api/integrations/librenms/host). Stessa chiamata del pulsante di «Dettagli» > Generale. */
@@ -354,6 +355,9 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
               </div>
             </div>
           </Riquadro>
+          <div className="mt-4">
+            <RiquadroAcquisizioneModulare deviceId={device.id} nomeApparato={device.name} isAdmin={ctx.isAdmin} />
+          </div>
         </div>
         <div className="space-y-4">
           {isAsset && asset ? (

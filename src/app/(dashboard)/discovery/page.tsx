@@ -106,6 +106,7 @@ import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "./filtro-cluster";
 import { BadgeAltriIp } from "./cluster-ip";
+import { AggiuntaLibrenmsBlocco } from "@/components/discovery/aggiunta-librenms-blocco";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -552,6 +553,25 @@ export default function DiscoveryPage() {
   const perBrowser = useUrlPerBrowser();
   const librenmsUrl = perBrowser(librenmsUrlSalvato);
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
+  // Aggiunta in blocco (tavola 2026-10-23, oggetti 8-9): solo con LibreNMS attivo; gli oggetti fissati all'apertura.
+  const [librenmsAttivo, setLibrenmsAttivo] = useState(false);
+  const [lnmsBlocco, setLnmsBlocco] = useState<Array<{ id: number; nome: string; ip: string }> | null>(null);
+
+  function segnaInLibrenms(h: Pick<EnrichedHost, "network_id" | "ip" | "status">, librenmsDeviceId: number) {
+    setLibrenmsMap((prev) => {
+      const next = new Map(prev);
+      next.set(`${h.network_id}:${h.ip}`, {
+        id: 0,
+        network_id: h.network_id,
+        host_ip: h.ip,
+        librenms_device_id: librenmsDeviceId,
+        librenms_hostname: h.ip,
+        last_status: h.status ?? null,
+        last_synced_at: new Date().toISOString(),
+      });
+      return next;
+    });
+  }
 
   async function addHostToLibreNMS(h: EnrichedHost) {
     setLibrenmsAdding((prev) => new Set(prev).add(h.id));
@@ -564,20 +584,7 @@ export default function DiscoveryPage() {
       const data = await res.json();
       if (res.ok) {
         toast.success(`${h.ip} aggiunto a LibreNMS (#${data.librenms_device_id})`);
-        // Aggiorna la librenms map localmente
-        setLibrenmsMap((prev) => {
-          const next = new Map(prev);
-          next.set(`${h.network_id}:${h.ip}`, {
-            id: 0,
-            network_id: h.network_id,
-            host_ip: h.ip,
-            librenms_device_id: data.librenms_device_id,
-            librenms_hostname: h.ip,
-            last_status: h.status ?? null,
-            last_synced_at: new Date().toISOString(),
-          });
-          return next;
-        });
+        segnaInLibrenms(h, data.librenms_device_id);
       } else {
         toast.error(data.error ?? "Errore aggiunta a LibreNMS");
       }
@@ -855,6 +862,7 @@ export default function DiscoveryPage() {
     }).catch(() => {});
     fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; directUrl?: string; url: string }>) => {
       const lnms = data?.librenms;
+      setLibrenmsAttivo(!!lnms?.enabled);
       if (lnms?.enabled) {
         const base = (lnms.directUrl || "").replace(/\/+$/, "");
         if (base) setLibrenmsUrl(base);
@@ -2141,6 +2149,18 @@ export default function DiscoveryPage() {
                 {bulkAssetRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Boxes className="h-3.5 w-3.5" />}
                 Crea asset NIS2
               </Button>
+              {admin && librenmsAttivo && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setLnmsBlocco(hosts.filter((h) => selectedIds.has(h.id)).map((h) => ({ id: h.id, nome: displayName(h) || h.ip, ip: h.ip })))}
+                  title="Aggiunge gli host selezionati a LibreNMS, uno alla volta, senza aggiunta forzata"
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                  Aggiungi a LibreNMS ({selectedIds.size})
+                </Button>
+              )}
               <Button size="sm" variant="ghost" className="gap-1" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-3.5 w-3.5" />
                 Deseleziona
@@ -2848,6 +2868,18 @@ export default function DiscoveryPage() {
       </Dialog>
 
       {/* ════════════════ FINESTRA RENDI APPARATO ════════════════ */}
+      {lnmsBlocco && (
+        <AggiuntaLibrenmsBlocco
+          oggetti={lnmsBlocco}
+          open
+          onOpenChange={(v) => { if (!v) setLnmsBlocco(null); }}
+          onAggiunto={(id, librenmsDeviceId) => {
+            const h = hosts.find((x) => x.id === id);
+            if (h) segnaInLibrenms(h, librenmsDeviceId);
+          }}
+        />
+      )}
+
       {addDevicesOpen && selectedIds.size > 0 && (
         <RendiApparatoDialog
           hosts={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50)}

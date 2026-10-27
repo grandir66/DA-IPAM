@@ -182,7 +182,7 @@ export function MeshCentralCard({
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
                 <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
-                  Disinstalla…
+                  Disinstalla e cancella i dati…
                 </Button>
               </>
             ) : (

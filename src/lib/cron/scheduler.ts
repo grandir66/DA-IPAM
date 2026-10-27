@@ -8,7 +8,6 @@ import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
 import { FUSO_UTENTI } from "@/lib/db-date";
 import { leggiConfig, oraDaTesto } from "@/lib/apparati-scelti/regole";
 import {
-  createFailureState,
   findTenantOutages,
   markContextCorruption,
   recordOutcome,
@@ -21,12 +20,11 @@ const state = statoScheduler();
 const activeTasks = state.activeTasks;
 const runningJobs = state.runningJobs;
 /**
- * Serie di fallimenti per chiave job. Vive SOLO in questo processo (quello che
- * regge node-cron): non va esposto alle route Next, che sotto build girano in un
- * bundle separato e ne vedrebbero una copia sempre vuota. La superficie di
- * allarme verso l'esterno resta `/api/health?strict=1`, che legge da DB.
+ * Serie di fallimenti per chiave job: nello stato per processo (stato-scheduler.ts), così la pagina Schedulazioni la
+ * legge anche da una rotta, che gira in un altro bundle. Si azzera al riavvio. La superficie di allarme verso l'esterno
+ * resta `/api/health?strict=1`, che legge da DB.
  */
-const failureState = createFailureState();
+const failureState = state.fallimenti;
 
 /**
  * Guardia del contesto tenant, da eseguire DENTRO withTenant e PRIMA del job.

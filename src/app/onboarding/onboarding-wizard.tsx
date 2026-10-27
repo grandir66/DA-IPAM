@@ -17,9 +17,16 @@
  *    le voci da provare in ordine.
  * Il punto raggiunto e gli oggetti creati si salvano a ogni passo
  * (`/api/onboarding/progresso`): riaprendo da Impostazioni si riparte da lì.
+ *
+ * Dal 24/10 (Riccardo): i passi sono schede in testa, si salta avanti e
+ * indietro anche senza «Avanti»/«Indietro»; lasciando un passo i suoi dati si
+ * salvano, e «Crea rete» salva comunque router, DNS e AD prima di creare la
+ * rete (una scheda saltata non li perde). La rete su cui è installata
+ * l'appliance (CIDR, gateway, DNS, dominio) arriva con il punto raggiunto e
+ * riempie i campi vuoti; il gateway si offre per il router con un pulsante.
  * La logica non visiva sta in `src/lib/onboarding/` con le prove.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +36,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +47,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { LoadError } from "@/components/shared/load-error";
@@ -50,6 +59,7 @@ import { statoNuovo, type StatoModulo, type VoceArchivio } from "@/lib/credentia
 import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
 import type { ProgressoWizard } from "@/lib/onboarding/progresso";
 import type { ReteDelWizard, RiepilogoWizard, RouterDelWizard } from "@/lib/onboarding/progresso-store";
+import { baseDnDaDominio, campiReteProposti, type ReteAppliance } from "@/lib/onboarding/rete-appliance";
 import {
   etichettaPorta,
   etichettaVoce,
@@ -165,6 +175,8 @@ export function OnboardingWizard() {
   const [reteCreata, setReteCreata] = useState<ReteDelWizard | null>(null);
   /** null = non ancora toccata: tutte le voci, spuntate, nell'ordine predefinito. */
   const [sceltaRete, setSceltaRete] = useState<SceltaRete[] | null>(null);
+  /** La rete su cui è installata l'appliance: proposta, non scritta finché non si crea la rete. */
+  const [reteAppliance, setReteAppliance] = useState<ReteAppliance | null>(null);
 
   const caricaVoci = useCallback(async (mostraCaricamento: boolean) => {
     if (mostraCaricamento) setStatoVoci({ fase: "caricamento" });
@@ -211,6 +223,22 @@ export function OnboardingWizard() {
       setDefaultDns(r.dns_predefinito);
       setDnsSalvato(r.dns_predefinito);
     }
+    // La rete dell'appliance riempie solo ciò che è ancora vuoto: una rete già
+    // creata o un DNS già salvato restano come sono.
+    const proposta = r.rete_appliance ?? null;
+    setReteAppliance(proposta);
+    if (proposta) {
+      const campi = campiReteProposti(proposta);
+      if (!r.rete) {
+        setNetCidr(campi.cidr);
+        setNetGateway(campi.gateway);
+      }
+      if (!r.dns_predefinito && campi.dns) setDefaultDns(campi.dns);
+      if (!r.ad && proposta.dominio) {
+        const dominio = proposta.dominio;
+        setAdForm((f) => ({ ...f, domain: f.domain || dominio, base_dn: f.base_dn || baseDnDaDominio(dominio) }));
+      }
+    }
     if (r.progresso) setStep(r.progresso.passo);
     setAvvio({ fase: "pronto" });
   }, []);
@@ -219,6 +247,12 @@ export function OnboardingWizard() {
     void caricaVoci(false);
     void caricaAvvio(false);
   }, [caricaVoci, caricaAvvio]);
+
+  // A 390 px le schede scorrono: quella del passo aperto resta in vista.
+  const schede = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    schede.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [step, avvio.fase]);
 
   /** Il punto da salvare, con gli oggetti creati finora (sovrascrivibili da chi li ha appena creati). */
   const punto = (passo: number, oggetti: Partial<ProgressoWizard> = {}): ProgressoWizard => ({
@@ -432,23 +466,44 @@ export function OnboardingWizard() {
 
   // ---------- navigazione ----------
 
-  const goNext = async () => {
+  /** Salva ciò che il passo crea o modifica; restituisce gli id per il punto raggiunto. */
+  const salvaPasso = async (p: number): Promise<Pick<ProgressoWizard, "router_device_id" | "ad_integration_id">> => {
+    let idRouter = routerDeviceId;
+    let idAd = adCreata?.id ?? null;
+    if (p === PASSO.router) idRouter = await salvaRouter();
+    if (p === PASSO.dns) await salvaDns();
+    if (p === PASSO.ad) idAd = await salvaAd();
+    return { router_device_id: idRouter, ad_integration_id: idAd };
+  };
+
+  /**
+   * Cambio di passo, da «Avanti»/«Indietro» o da una scheda. Lasciando un passo
+   * se ne salvano i dati: andando avanti un errore ferma (come prima), andando
+   * indietro si va comunque e lo si dice, perché i dati restano nel modulo.
+   * Si attende il salvataggio del punto: un altro clic subito dopo non deve superarlo.
+   */
+  const vaiA = async (destinazione: number) => {
+    if (destinazione === step || destinazione < 0 || destinazione >= PASSI_WIZARD.length) return;
     setBusy(true);
     try {
-      let idRouter = routerDeviceId;
-      let idAd = adCreata?.id ?? null;
-      if (step === PASSO.router) idRouter = await salvaRouter();
-      if (step === PASSO.dns) await salvaDns();
-      if (step === PASSO.ad) idAd = await salvaAd();
-      const prossimo = Math.min(step + 1, PASSI_WIZARD.length - 1);
-      await salvaPunto(punto(prossimo, { router_device_id: idRouter, ad_integration_id: idAd }));
-      setStep(prossimo);
+      let oggetti: Partial<ProgressoWizard> = {};
+      try {
+        oggetti = await salvaPasso(step);
+      } catch (e) {
+        if (destinazione > step) throw e;
+        const messaggio = e instanceof Error ? e.message : "Errore";
+        toast.warning(`${messaggio}. I dati restano nel modulo e si salvano quando torni su «${PASSI_WIZARD[step].breve}» e vai avanti.`);
+      }
+      await salvaPunto(punto(destinazione, oggetti));
+      setStep(destinazione);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore");
     } finally {
       setBusy(false);
     }
   };
+
+  const goNext = () => vaiA(Math.min(step + 1, PASSI_WIZARD.length - 1));
 
   /**
    * Svuotare un DNS già salvato lo cancella: prima il campo vuoto si saltava e
@@ -461,17 +516,7 @@ export function OnboardingWizard() {
     setDnsSalvato(dns);
   };
 
-  /** Si attende il salvataggio del punto: un «Avanti» subito dopo non deve superarlo. */
-  const goBack = async () => {
-    const prima = Math.max(0, step - 1);
-    setBusy(true);
-    try {
-      await salvaPunto(punto(prima));
-      setStep(prima);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const goBack = () => vaiA(Math.max(0, step - 1));
 
   /** «Esci» e «Salta creazione rete»: il wizard risulta completato, ma il punto resta per la riapertura. */
   const esci = async () => {
@@ -498,6 +543,13 @@ export function OnboardingWizard() {
   const onSubmitLast = async () => {
     setBusy(true);
     try {
+      // Con le schede si arriva qui anche senza essere passati da router, DNS e
+      // AD con «Avanti»: si salvano ora (senza modifiche non fanno niente).
+      // L'id del router si usa da qui, non dallo stato, che si aggiorna dopo.
+      const idRouter = await salvaRouter();
+      await salvaDns();
+      const idAd = await salvaAd();
+      await salvaPunto(punto(PASSO.subnet, { router_device_id: idRouter, ad_integration_id: idAd }));
       let rete = reteCreata;
       let appenaCreata = false;
       if (!rete) {
@@ -514,7 +566,7 @@ export function OnboardingWizard() {
               gateway: netGateway,
               dns: netDns,
               dnsPredefinito: defaultDns,
-              routerId: routerDeviceId,
+              routerId: idRouter,
               credentialIds: idsDaProvare(listaRete),
             }),
           ),
@@ -526,22 +578,22 @@ export function OnboardingWizard() {
           cidr: esito.data.cidr,
           gateway: esito.data.gateway ?? null,
           dns_server: esito.data.dns_server ?? null,
-          router_id: routerDeviceId,
+          router_id: idRouter,
         };
         setReteCreata(rete);
         appenaCreata = true;
         toast.success("Rete creata.");
-        await salvaPunto(punto(PASSO.subnet, { network_id: rete.id }));
-      } else if (routerDeviceId != null && rete.router_id == null) {
+        await salvaPunto(punto(PASSO.subnet, { network_id: rete.id, router_device_id: idRouter, ad_integration_id: idAd }));
+      } else if (idRouter != null && rete.router_id == null) {
         // Rete creata a un giro precedente, router registrato dopo: il
         // collegamento si faceva solo alla creazione della rete (revisione).
         const collega = await fetchJson<unknown>(`/api/networks/${rete.id}`, {
           method: "PUT",
           headers: JSON_HEADERS,
-          body: JSON.stringify({ router_id: routerDeviceId }),
+          body: JSON.stringify({ router_id: idRouter }),
         });
         if (!collega.ok) throw new Error(`Router non collegato alla rete: ${collega.message}`);
-        rete = { ...rete, router_id: routerDeviceId };
+        rete = { ...rete, router_id: idRouter };
         setReteCreata(rete);
         toast.success("Router collegato alla rete.");
       }
@@ -563,6 +615,28 @@ export function OnboardingWizard() {
 
   const ultimo = step === PASSI_WIZARD.length - 1;
   const passo = PASSI_WIZARD[step];
+
+  /** Il segno di spunta sulle schede: ciò che è già salvato, non ciò che si è visitato. */
+  const passoCompleto: Record<number, boolean> = {
+    [PASSO.credenziali]: statoVoci.fase === "pronto" && voci.length > 0,
+    [PASSO.router]: routerDeviceId != null,
+    [PASSO.dns]: dnsSalvato !== "",
+    [PASSO.ad]: adCreata != null,
+    [PASSO.subnet]: reteCreata != null,
+  };
+
+  const campiAppliance = reteAppliance ? campiReteProposti(reteAppliance) : null;
+  /** La subnet scritta è diversa da quella dell'appliance: si offre di rimetterla. */
+  const reteDiversaDallAppliance =
+    campiAppliance != null &&
+    (netCidr.trim() !== campiAppliance.cidr || netGateway.trim() !== campiAppliance.gateway || (netDns || defaultDns).trim() !== campiAppliance.dns);
+
+  const usaReteAppliance = () => {
+    if (!campiAppliance) return;
+    setNetCidr(campiAppliance.cidr);
+    setNetGateway(campiAppliance.gateway);
+    setNetDns(campiAppliance.dns);
+  };
 
   /** Rete già creata: cosa farà «Completa», compreso il router da collegare (revisione del 15/10). */
   const notaReteCreata = (rete: ReteDelWizard): string => {
@@ -607,13 +681,36 @@ export function OnboardingWizard() {
           Passo {step + 1} di {PASSI_WIZARD.length}: {passo.titolo}
         </CardDescription>
         <p className="text-[13px] text-muted-foreground">{passo.descrizione}</p>
-        <div className="flex gap-1 justify-center pt-1">
-          {PASSI_WIZARD.map((p, i) => (
-            <div
-              key={p.titolo}
-              className={`h-1.5 rounded-full transition-all ${i === step ? "w-8 bg-primary" : i < step ? "w-2 bg-primary/60" : "w-2 bg-muted"}`}
-            />
-          ))}
+        {/* Schede dei passi (24/10): si salta a qualunque passo, avanti e indietro. */}
+        <div ref={schede} role="tablist" aria-label="Passi della configurazione" className="-mx-1 flex gap-1 overflow-x-auto border-b px-1 pt-1">
+          {PASSI_WIZARD.map((p, i) => {
+            const attiva = i === step;
+            const completo = passoCompleto[i];
+            return (
+              <button
+                key={p.titolo}
+                type="button"
+                role="tab"
+                aria-selected={attiva}
+                aria-label={`Passo ${i + 1}: ${p.titolo}${completo ? " (fatto)" : ""}`}
+                onClick={() => void vaiA(i)}
+                disabled={busy || avvio.fase !== "pronto"}
+                className={`-mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  attiva ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] tabular-nums ${
+                    completo ? "bg-primary text-primary-foreground" : attiva ? "border border-primary text-primary" : "border border-muted-foreground/40"
+                  }`}
+                >
+                  {completo ? <Check className="h-3 w-3" /> : i + 1}
+                </span>
+                {p.breve}
+              </button>
+            );
+          })}
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
@@ -675,6 +772,21 @@ export function OnboardingWizard() {
                     />
                   </div>
                 </div>
+                {!router.host.trim() && reteAppliance?.gateway ? (
+                  <Nota>
+                    Il gateway della rete dell&apos;appliance è <span className="font-mono">{reteAppliance.gateway}</span>: di solito è il
+                    router.{" "}
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="xs"
+                      className="h-auto p-0 text-[13px]"
+                      onClick={() => aggiornaRouter({ host: reteAppliance.gateway ?? "" })}
+                    >
+                      Usalo come router
+                    </Button>
+                  </Nota>
+                ) : null}
                 {router.host.trim() ? (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -764,6 +876,12 @@ export function OnboardingWizard() {
                   <Label htmlFor="dns">Server DNS (solo IP)</Label>
                   <Input id="dns" value={defaultDns} onChange={(e) => setDefaultDns(e.target.value)} placeholder="es. 192.168.1.1 o DNS interno" />
                 </div>
+                {reteAppliance && reteAppliance.dns.length > 0 ? (
+                  <p className="text-[13px] text-muted-foreground">
+                    DNS usati dall&apos;appliance: <span className="font-mono">{reteAppliance.dns.join(", ")}</span>
+                    {!dnsSalvato && defaultDns.trim() === reteAppliance.dns[0] ? " (proposto qui sopra)." : "."}
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -827,6 +945,23 @@ export function OnboardingWizard() {
                       Crea la prima subnet da analizzare con il router, il DNS e le credenziali già impostati. Potrai avviare le
                       scansioni dalla scheda della rete.
                     </p>
+                    {reteAppliance ? (
+                      <Nota>
+                        Proposta la rete su cui è installata l&apos;appliance: <span className="font-mono">{reteAppliance.cidr}</span>{" "}
+                        (interfaccia {reteAppliance.interfaccia}, IP <span className="font-mono">{reteAppliance.ip}</span>
+                        {reteAppliance.gateway ? <>, gateway <span className="font-mono">{reteAppliance.gateway}</span></> : null}). Controlla
+                        i campi prima di creare la rete.
+                        {reteDiversaDallAppliance ? (
+                          <>
+                            {" "}
+                            <Button type="button" variant="link" size="xs" className="h-auto p-0 text-[13px]" onClick={usaReteAppliance}>
+                              <RotateCcw className="h-3 w-3" />
+                              Rimetti i dati dell&apos;appliance
+                            </Button>
+                          </>
+                        ) : null}
+                      </Nota>
+                    ) : null}
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="nname">Nome</Label>

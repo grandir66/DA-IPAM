@@ -12,7 +12,6 @@ import {
   getActiveNmapProfile,
   updateHostIfExists,
   upsertArpEntries,
-  upsertSwitchPorts,
   resolveMacToDevice,
   resolveMacToNetworkDevice,
   upsertMacIpMapping,
@@ -23,6 +22,8 @@ import {
   updateJobLastRun,
 } from "@/lib/db";
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
+// Decisione (a) di fine giro 2: le colonne delle porte che un collector fornisce non le riscrive il giro.
+import { scriviPorteDelGiro } from "@/lib/acquisizione-modulare/giri";
 import {
   attendiRilascio,
   CHIAVE_SOGLIA_ALLARME,
@@ -64,6 +65,7 @@ import {
   getScanHistory,
   getCurrentTenantCode,
   getTenantSetting,
+  setTenantSetting,
   upsertMacPortEntries,
   cleanupOldMacPortEntries,
   MAC_PORT_RETENTION_DAYS,
@@ -72,8 +74,10 @@ import {
   scriviSchedaMikrotikTopologia,
   scriviSchedaMikrotikLettura,
   livelloSchedaMkCorrente,
+  leggiVlanSwitchDb,
   scriviVlanSwitch,
   schemaSwitchVlanCorrente,
+  getSwitchPortsByDevice,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
@@ -83,16 +87,18 @@ import { SshError } from "@/lib/devices/ssh-transport";
 import { conLucchettoApparato, entroTempoApparato, TEMPO_APPARATO_MS } from "@/lib/devices/lucchetto-apparato";
 import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikScheda, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
 import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
+import { leggiVlanSwitchMikrotik } from "@/lib/devices/mikrotik-vlan-switch";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
 import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
-import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { chiaveEsito, letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { leggiHost } from "@/lib/proxmox/lldp-host";
 // Statico: pulizia-archivio importa db-tenant (ADR 0002).
 import { runPuliziaHost } from "@/lib/hosts/pulizia-archivio";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
+import { giroLibrenms } from "@/lib/integrations/librenms-fonte";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
 import { syncController } from "@/lib/controllers/service";
@@ -103,6 +109,7 @@ import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 // Statico (ADR 0002): il giro importa db-tenant. Ciclo con questo file voluto: giro.ts usa le letture di qui solo a giro avviato.
 import { motivoGiroApparati, runApparatiScelti, type OpzioniGiro } from "@/lib/apparati-scelti/giro";
 import { chiaveJob, statoScheduler } from "./stato-scheduler";
+import { motivoPausaVault } from "@/lib/vault/appliance";
 
 /** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
 export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
@@ -287,6 +294,11 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
+  // da-vault (piano 2026-10-23): vault bloccato o OpenBao oltre la cache = scansioni in pausa, col motivo. Interruttori
+  // spenti (di serie): sempre null, nessun cambiamento.
+  const pausa = motivoPausaVault();
+  if (pausa) return { esito: "saltato", motivo: pausa };
+
   switch (job.job_type) {
     case "ping_sweep":
       return runPingSweep(job.network_id, opzioni);
@@ -319,6 +331,17 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
         await syncNetworkToLibreNMS(job.network_id);
       } else {
         await syncAllNetworksToLibreNMS();
+        // LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 4): dopo il push, la lettura dei dati di LibreNMS,
+        // solo nel giro globale e solo con l'interruttore `librenms` acceso (spento: nessuna chiamata). Un errore della
+        // lettura non fa fallire il push: si scrive nell'esito.
+        try {
+          await giroLibrenms();
+        } catch (e) {
+          console.error("[Scheduler] librenms_sync: lettura dei dati di LibreNMS non riuscita:", e instanceof Error ? e.name : "errore");
+          try {
+            setTenantSetting(chiaveEsito("librenms"), JSON.stringify({ il: oraUtc(new Date()), errore: e instanceof Error ? e.name : "errore" }));
+          } catch { /* l'esito non si scrive: resta il log */ }
+        }
       }
       break;
     case "vuln_sync": {
@@ -862,6 +885,43 @@ export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<Ru
     if (l.esito !== "letto") {
       throw Object.assign(new Error(`VLAN dello switch: esito ${l.esito}`), { code: l.codice ?? (l.esito === "non_so" ? "NON_SO" : "NESSUNA_LETTURA") });
     }
+    // Una lettura senza tabelle VLAN (Comware: tooBig su Q-BRIDGE, solo PVID e mappa del bridge) non sostituisce la
+    // fotografia del collector, che le VLAN le ha lette via SSH (70151, 22/10). Una lettura con le tabelle sì.
+    if (l.tabella === "nessuna") {
+      const c = leggiVlanSwitchDb(device.id);
+      if (c.lettura?.tabella === "collector") {
+        return { valore: c.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+      }
+    }
+    if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    return { valore: l.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+  }, options?.adesso, opzioni);
+}
+
+/** Uno switch MikroTik letto via SSH: le sue VLAN vengono dal bridge via SSH, non da Q-BRIDGE (punto 5 del giro del 22/10). */
+export function vlanSwitchMikrotikDaLeggere(device: NetworkDevice): boolean {
+  return device.device_type === "switch" && device.vendor === "mikrotik" && device.protocol === "ssh";
+}
+
+/**
+ * Le VLAN di uno switch MikroTik letto via SSH nella matrice degli switch (strada scelta da Riccardo il 23/10): RouterOS non
+ * le dà via SNMP (0 VLAN sui sei CORE di 70151). Stesso interruttore, lucchetto, cadenza e tabelle di `letturaVlanSwitch`;
+ * due comandi in sola lettura su una connessione SSH; le porte per nome diventano gli ifIndex di `switch_ports` (letti
+ * in SNMP accanto all'SSH). Solo «letto» scrive.
+ */
+export async function letturaVlanSwitchMikrotik(device: NetworkDevice, options?: Pick<RunArpPollOptions, "apriEsecutore" | "adesso">,
+  opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<number>> {
+  return conCadenza("switch_vlan", device.id, async () => {
+    if (!schemaSwitchVlanCorrente()) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    const porte = getSwitchPortsByDevice(device.id).map((p) => ({ port_index: p.port_index, port_name: p.port_name }));
+    const l = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiVlanSwitchMikrotik(esegui, porte));
+    if (l.esito !== "letto") {
+      throw Object.assign(new Error(`VLAN dello switch MikroTik: esito ${l.esito}`), { code: l.codice ?? "NESSUNA_LETTURA" });
+    }
     if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
       throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
     }
@@ -1112,7 +1172,7 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
           };
         });
 
-        upsertSwitchPorts(device.id, switchPorts);
+        scriviPorteDelGiro(device, switchPorts);
         // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
         // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
       }
@@ -1181,6 +1241,10 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
       // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
       if (device.vendor === "mikrotik" && device.protocol === "ssh") {
         esitiLetture.push(await letturaMikrotik(device, null, true, options));
+      }
+      // Le VLAN di uno switch MikroTik in SSH dal bridge (punto 5, 23/10): stesso interruttore e stesso `vlan: "no"` di sotto.
+      if (conVlan && letturaAccesa("switch_vlan") && vlanSwitchMikrotikDaLeggere(device)) {
+        esitiLetture.push(await letturaVlanSwitchMikrotik(device, options));
       }
       // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
       // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
@@ -1296,7 +1360,7 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
         };
       });
 
-      upsertSwitchPorts(device.id, switchPorts);
+      scriviPorteDelGiro(device, switchPorts);
     }
   }
   } catch (error) {

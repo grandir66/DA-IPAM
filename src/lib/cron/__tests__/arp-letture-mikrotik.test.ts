@@ -268,8 +268,9 @@ test("I33 fuori dal giro: chi scrive i vicini di un router con la fonte di oggi 
   for (const f of file(radice)) {
     fs.readFileSync(f, "utf8").split("\n").forEach((riga, i) => {
       if (!/\bupsertNeighbors\(/.test(riga) || /^\s*(\*|\/\/)/.test(riga) || /\bfunction upsertNeighbors\b/.test(riga)) return;
-      // Fonte dichiarata (unifi, ssh, snmp, host): la decide la lettura che la scrive. Fonte di oggi: col freno.
-      if (/,\s*"(unifi|ssh|snmp|host)"\s*\)/.test(riga) || /senzaCampiCavi/.test(riga)) return;
+      // Fonte dichiarata (unifi, ssh, snmp, host; collector dell'acquisizione modulare, 22/10): la decide la lettura che la
+      // scrive. Fonte di oggi: col freno.
+      if (/,\s*"(unifi|ssh|snmp|host|collector)"\s*\)/.test(riga) || /senzaCampiCavi/.test(riga)) return;
       scoperte.push(`${path.relative(radice, f)}:${i + 1}`);
     });
   }

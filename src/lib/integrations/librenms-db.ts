@@ -2,7 +2,7 @@
  * CRUD per librenms_host_map nel DB tenant.
  * Usa getTenantDb + getCurrentTenantCode perché db() è privato a db-tenant.ts.
  */
-import { getTenantDb, getCurrentTenantCode } from "../db-tenant";
+import { getTenantDb, getCurrentTenantCode, livelloSchemaLibrenms, schemaEsclusioneLibrenms } from "../db-tenant";
 import type { LibreNMSHostMap } from "@/types";
 
 function db() {
@@ -73,4 +73,63 @@ export function getLibreNMSMapByDeviceIp(ip: string): LibreNMSHostMap | null {
   return db().prepare(
     "SELECT * FROM librenms_host_map WHERE network_id = 0 AND host_ip = ?"
   ).get(ip) as LibreNMSHostMap | null;
+}
+
+/** Codici di un'aggiunta rifiutata da LibreNMS (piano 2026-10-22 LibreNMS, task 1). */
+export type CodiceRifiuto = "snmp_non_risponde" | "gia_presente" | "rifiutato" | "rete" | "senza_snmp";
+
+/**
+ * Il rifiuto di un'aggiunta: una riga in `librenms_rifiuto` per IP (l'ultima vince) e, se l'IP ha già una riga di mappa,
+ * `last_status = 'rifiutato: …'` lì. Nessuna riga di mappa nuova. Senza lo schema della fonte (migrazione fallita) si
+ * scrive solo la mappa. Restituisce se la riga del rifiuto è stata scritta.
+ */
+export function scriviRifiutoLibrenms(
+  ip: string,
+  r: { hostId?: number | null; networkDeviceId?: number | null; codice: CodiceRifiuto; motivo: string },
+): boolean {
+  const d = db();
+  const stato = `rifiutato: ${r.motivo}`.slice(0, 500);
+  d.prepare("UPDATE librenms_host_map SET last_status = ? WHERE host_ip = ?").run(stato, ip);
+  if (livelloSchemaLibrenms() < 1) return false;
+  d.prepare(
+    `INSERT INTO librenms_rifiuto (ip, host_id, network_device_id, codice, motivo, il) VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(ip) DO UPDATE SET host_id = excluded.host_id, network_device_id = excluded.network_device_id,
+       codice = excluded.codice, motivo = excluded.motivo, il = excluded.il`
+  ).run(ip, r.hostId ?? null, r.networkDeviceId ?? null, r.codice, r.motivo.slice(0, 500));
+  return true;
+}
+
+/** Un'aggiunta riuscita toglie il rifiuto di prima di quell'IP. */
+export function togliRifiutoLibrenms(ip: string): void {
+  if (livelloSchemaLibrenms() < 1) return;
+  db().prepare("DELETE FROM librenms_rifiuto WHERE ip = ?").run(ip);
+}
+
+/**
+ * «Non aggiungere a LibreNMS» (22/10): l'oggetto esce dai candidati del giro automatico. Chiave l'IP, come i rifiuti.
+ * Falso se la tabella manca (migrazione `librenms_esclusione_v21` non riuscita): chi chiama lo dice.
+ */
+export function escludiDaLibrenms(ip: string, r: { hostId?: number | null; networkDeviceId?: number | null }): boolean {
+  const d = db();
+  if (!schemaEsclusioneLibrenms(d)) return false;
+  d.prepare(
+    `INSERT INTO librenms_esclusione (ip, host_id, network_device_id, il) VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(ip) DO UPDATE SET host_id = excluded.host_id, network_device_id = excluded.network_device_id, il = excluded.il`
+  ).run(ip, r.hostId ?? null, r.networkDeviceId ?? null);
+  return true;
+}
+
+/** Toglie l'esclusione: l'oggetto torna candidato al giro dopo. Falso se la tabella manca. */
+export function includiInLibrenms(ip: string): boolean {
+  const d = db();
+  if (!schemaEsclusioneLibrenms(d)) return false;
+  d.prepare("DELETE FROM librenms_esclusione WHERE ip = ?").run(ip);
+  return true;
+}
+
+/** Quando l'IP è stato escluso (`YYYY-MM-DD HH:MM:SS` UTC), null se non lo è o se la tabella manca. */
+export function esclusoDaLibrenmsIl(ip: string): string | null {
+  const d = db();
+  if (!schemaEsclusioneLibrenms(d)) return null;
+  return (d.prepare("SELECT il FROM librenms_esclusione WHERE ip = ?").get(ip) as { il: string } | undefined)?.il ?? null;
 }

@@ -1,14 +1,14 @@
 import fs from "node:fs";
-import path from "node:path";
 import { execSync } from "node:child_process";
 import { resolveEnvSecretsPath } from "@/lib/env-secrets";
+import { unisci } from "./percorsi";
 
 const ALLOWED = new Set(["main", "master", "dev"]);
 
 /** Branch git effettivo se repo presente. */
 export function getGitBranch(cwd = process.cwd()): string | null {
   try {
-    if (!fs.existsSync(path.join(cwd, ".git"))) return null;
+    if (!fs.existsSync(unisci(cwd, ".git"))) return null;
     const out = execSync("git rev-parse --abbrev-ref HEAD", {
       cwd,
       encoding: "utf-8",
@@ -51,7 +51,7 @@ export function getConfiguredUpdateBranch(cwd = process.cwd()): string {
   const fromFile = readBranchFromEnvFile(secrets);
   if (fromFile && ALLOWED.has(fromFile)) return fromFile;
 
-  const cwdEnv = path.join(cwd, ".env.local");
+  const cwdEnv = unisci(cwd, ".env.local");
   const fromCwd = readBranchFromEnvFile(cwdEnv);
   if (fromCwd && ALLOWED.has(fromCwd)) return fromCwd;
 
@@ -59,5 +59,5 @@ export function getConfiguredUpdateBranch(cwd = process.cwd()): string {
 }
 
 export function isGitUpdateSupported(cwd = process.cwd()): boolean {
-  return fs.existsSync(path.join(cwd, ".git"));
+  return fs.existsSync(unisci(cwd, ".git"));
 }

@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { getNetworkRouterId, getNetworkDeviceById } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertNeighbors, updateNetworkDevice } from "@/lib/db";
+import { upsertArpEntries, upsertMacPortEntries, resolveMacToDevice, resolveMacToNetworkDevice, upsertNeighbors, updateNetworkDevice } from "@/lib/db";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { updateHostIfExists, getNetworks } from "@/lib/db";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { scriviPorteDelGiro } from "@/lib/acquisizione-modulare/giri";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
                 stp_state: p.stp_state ?? null,
               };
             });
-            upsertSwitchPorts(deviceId, switchPorts);
+            scriviPorteDelGiro(device, switchPorts);
           }
 
           // STP info via SNMP (se disponibile): credenziale e porta dal motore (tappa 2 credenziali, T8), v3 compresa.
@@ -253,7 +254,7 @@ export async function POST(request: Request) {
                 stp_state: p.stp_state ?? null,
               };
             });
-            upsertSwitchPorts(deviceId, switchPorts);
+            scriviPorteDelGiro(device, switchPorts);
           }
 
           // STP info per switch

@@ -9,7 +9,7 @@
  * Le righe pubbliche delle chiavi PEM si calcolano con `node:crypto` (JWK),
  * non con ssh2: così la prova non usa lo stesso lettore del codice che prova.
  */
-import { Server, utils, type AuthenticationType, type Connection } from "ssh2";
+import { Server, utils, type AuthenticationType, type Connection, type ServerConfig } from "ssh2";
 import type { AddressInfo } from "node:net";
 import { createPrivateKey, createPublicKey, type JsonWebKey } from "node:crypto";
 
@@ -32,6 +32,10 @@ export interface OpzioniServer {
   /** Metodi che il server dichiara. Default: `publickey` più `password` se c'è. */
   offerti?: AuthenticationType[];
   risposta?: (comando: string) => string;
+  /** Algoritmi del server (ssh2 `algorithms`): per simulare un firmware vecchio. Default: quelli di ssh2. */
+  algoritmi?: ServerConfig["algorithms"];
+  /** Chiave host RSA invece di ed25519 (firmware che offrono solo `ssh-rsa`). */
+  chiaveHostRsa?: boolean;
 }
 
 type OpzioniEd25519 = { passphrase: string; cipher: string; rounds: number };
@@ -52,7 +56,7 @@ export function ed25519Prova(cifra?: OpzioniEd25519): { private: string; public:
 }
 
 export async function serverSshProva(o: OpzioniServer): Promise<ServerSshProva> {
-  const chiaveHost = ed25519Prova();
+  const chiaveHost = o.chiaveHostRsa ? utils.generateKeyPairSync("rsa", { bits: 2048 }) : ed25519Prova();
   const ammesse = (o.chiavi ?? []).map((riga) => {
     const k = utils.parseKey(riga);
     if (k instanceof Error) throw k;
@@ -62,7 +66,7 @@ export async function serverSshProva(o: OpzioniServer): Promise<ServerSshProva> 
   const stato: ServerSshProva = { porta: 0, metodi: [], chiaviViste: [], comandi: [], connessioni: 0, chiudi: async () => {} };
   const client: Connection[] = [];
 
-  const srv = new Server({ hostKeys: [chiaveHost.private] }, (c) => {
+  const srv = new Server({ hostKeys: [chiaveHost.private], ...(o.algoritmi ? { algorithms: o.algoritmi } : {}) }, (c) => {
     stato.connessioni += 1;
     client.push(c);
     c.on("authentication", (ctx) => {

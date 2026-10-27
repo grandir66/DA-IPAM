@@ -6,16 +6,16 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { pingHost, pingSweep } from "@/lib/scanner/ping";
 import { nmapDiscoverHosts, nmapPortScan } from "@/lib/scanner/nmap";
 import { reverseDns, forwardDns, resolveDnsBatch } from "@/lib/scanner/dns";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import type { Executor } from "./index";
+import { unisci } from "../percorsi";
 
 function readHubVersion(): string | undefined {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+    const pkg = JSON.parse(fs.readFileSync(unisci(process.cwd(), "package.json"), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
     return undefined;

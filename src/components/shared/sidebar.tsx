@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { signOut, useSession } from "next-auth/react";
-import { TenantSwitcher } from "./tenant-switcher";
+import { useSession } from "next-auth/react";
+import { IstanzaCorrente } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
   Activity,
+  Cable,
   LayoutDashboard,
   ArrowUpFromLine,
   Network,
@@ -15,7 +16,6 @@ import {
   Key,
   Settings,
   ServerCog,
-  LogOut,
   Menu,
   X,
   ChevronDown,
@@ -24,6 +24,7 @@ import {
   ListOrdered,
   Package,
   User,
+  Link2,
   FileKey,
   FolderTree,
   Building2,
@@ -49,9 +50,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
+  SlidersHorizontal, CalendarClock,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
 import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
@@ -65,6 +66,8 @@ type SubItem = {
   divider?: string;
   /** Console di un prodotto esterno: nuova scheda (gruppo Applicativi, 19/10). */
   esterno?: boolean;
+  /** Numero rosso accanto alla voce (es. allarmi gravi della rete osservata). */
+  badge?: number;
 };
 
 const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
@@ -75,6 +78,7 @@ const inventorySubItems: readonly SubItem[] = [
   { href: "/inventory", label: "Asset", icon: Package },
   { href: "/software", label: "Software", icon: Package },
   { href: "/inventory/assignees", label: "Assegnatari", icon: User },
+  { href: "/inventory/abbinamenti", label: "Abbinamenti", icon: Link2 },
   { href: "/inventory/locations", label: "Ubicazioni", icon: FolderTree },
   { href: "/inventory/licenses", label: "Licenze", icon: FileKey },
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
@@ -97,10 +101,12 @@ const networkSubItems: readonly SubItem[] = [
 ];
 
 // Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. La Health
-// di Active Directory è la scheda della pagina AD, aperta già lì.
+// di Active Directory è la scheda della pagina AD, aperta già lì. «Reti dal trunk» qui
+// dal 25/10 (Riccardo): con i rilievi della sonda passiva è una pagina di sicurezza.
 const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
+  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
   { href: "/active-directory?tab=health", label: "Health Active Directory", icon: HeartPulse },
 ];
 
@@ -217,7 +223,15 @@ function SubList({
               )}
             >
               <item.icon className="h-3.5 w-3.5 shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge != null && item.badge > 0 && (
+                <span
+                  title={`${item.badge} allarmi gravi da prendere in carico`}
+                  className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#8E1B20] px-1 text-[13px] font-bold leading-none text-white"
+                >
+                  {item.badge > 99 ? "99+" : item.badge}
+                </span>
+              )}
             </Link>
           )}
         </div>
@@ -356,15 +370,15 @@ export function Sidebar() {
   const tenantCode = (session?.user as { tenantCode?: string } | undefined)?.tenantCode;
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as Array<{ code: string; name: string }>;
   const currentTenantName = tenantCode === "__ALL__"
-    ? "Tutti i clienti"
+    ? "Tutte le istanze"
     : tenants.find((t) => t.code === tenantCode)?.name ?? tenantCode ?? "";
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(() =>
-    networkSubItems.some((d) => pathname.startsWith(d.href))
+    !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts"].some((h) => pathname.startsWith(h)) ||
+    ["/vulnerabilities", "/security-alerts", "/arp-table/trunk"].some((h) => pathname.startsWith(h)) ||
       (pathname === "/active-directory" && searchParams.get("tab") === "health")
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
@@ -374,6 +388,11 @@ export function Sidebar() {
     networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
+  const [allarmiRete, setAllarmiRete] = useState(0);
+  const sicurezzaItems = useMemo<SubItem[]>(
+    () => sicurezzaSubItems.map((v) => (v.href === "/arp-table/trunk" ? { ...v, badge: allarmiRete } : v)),
+    [allarmiRete],
+  );
   // Moduli abilitati: fonte unica = registry (/api/modules). Ogni voce di menu
   // dei moduli compare SOLO se il modulo è enabled per il tenant.
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
@@ -415,6 +434,12 @@ export function Sidebar() {
           if (data?.unacked != null) setUnackedAnomalies(data.unacked);
         })
         .catch(() => { /* non critico */ });
+      fetch("/api/trunk/rilievi?conteggio=1")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { allarmiAlti?: number } | null) => {
+          if (data?.allarmiAlti != null) setAllarmiRete(data.allarmiAlti);
+        })
+        .catch(() => { /* non critico */ });
     };
     fetchUnacked();
     intervalRef.current = setInterval(fetchUnacked, 60_000);
@@ -431,55 +456,69 @@ export function Sidebar() {
     if (href.includes("?")) return attivaConQuery(href);
     // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
     if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
+    // Sulle Reti dal trunk non si accende anche «Tabella ARP».
+    if (href === "/arp-table" && pathname.startsWith("/arp-table/trunk")) return false;
     return pathname.startsWith(href);
   };
   const closeMobile = () => setMobileOpen(false);
 
   const nav = (
     <>
-      {/* Header: Logo */}
-      <div className="shrink-0 p-4 border-b border-sidebar-border text-center">
-        <div className={cn("w-full flex justify-center", collapsed && "md:hidden")}>
+      {/* Testata (Riccardo, 23/10): logo piccolo, nome e «Comprimi» in una riga, sotto l'utente
+          (nel suo menu anche «Esci»). Prima logo grande in alto e tema, comprimi, utente, esci in un blocco in fondo. */}
+      <div className="shrink-0 border-b border-sidebar-border">
+        <div className={cn("flex items-center gap-2 h-12 pl-14 pr-2 md:pl-4", collapsed && "md:flex-col md:h-auto md:py-3 md:px-0")}>
           <img
             src="/logo-white.png"
-            alt="Logo"
-            className="w-full max-w-[220px] h-14 object-contain object-center"
+            alt="Domarc"
+            className={cn("h-6 w-auto object-contain", collapsed && "md:hidden")}
           />
+          {/* A menu compresso solo il simbolo (Riccardo, 23/10): il logo intero a 44 px non si leggeva. */}
+          <img
+            src="/simbolo-domarc.png"
+            alt="Domarc"
+            className={cn("h-6 w-6 object-contain", collapsed ? "hidden md:block" : "hidden")}
+          />
+          <span className={cn("w-px h-5 bg-sidebar-border", collapsed && "md:hidden")} />
+          <span title="IP Address Management" className={cn("flex-1 truncate font-semibold text-sidebar-foreground", collapsed && "md:hidden")}>
+            DA-IPAM
+          </span>
+          {/* Con il bordo perché si veda che è un comando, non un ornamento (Riccardo, 23/10). */}
+          <button
+            type="button"
+            onClick={toggle}
+            title={collapsed ? "Espandi menu" : "Comprimi menu"}
+            aria-label={collapsed ? "Espandi menu" : "Comprimi menu"}
+            className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-md border border-sidebar-border text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
-        {/* Logo compatto (solo desktop collassato) */}
-        <img
-          src="/logo-white.png"
-          alt="Logo"
-          className={cn("h-9 mx-auto object-contain", collapsed ? "hidden md:block" : "hidden")}
-        />
-        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-IPAM</h1>
-        <p className={cn("text-xs text-sidebar-foreground/60 mt-0.5", collapsed && "md:hidden")}>IP Address Management</p>
+        <div className={cn("px-2 pb-2", collapsed && "md:px-0")}>
+          <UserMenu compresso={collapsed} />
+          {/* Su quale istanza si lavora; la scelta è in Impostazioni → Istanza (Riccardo, 23/10). */}
+          <IstanzaCorrente compresso={collapsed} onNavigate={closeMobile} />
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
 
-        {/* ═══ GESTIONE CLIENTI (solo superadmin) ═══ */}
+        {/* ═══ GESTIONE ISTANZE (solo superadmin) ═══ */}
+        {/* «URL dell'hub» è in Impostazioni → Sistema dal 23/10 (Riccardo: quasi inutile qui). */}
         {isSuperadmin && (
-          <>
-            <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
-            {/* L'elenco degli agenti remoti è tolto (20/10/2026): all'indirizzo resta l'URL pubblico dell'hub. */}
-            <NavItem href="/agents" icon={ServerCog} label="URL dell'hub" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
-          </>
+          <NavItem href="/tenants" icon={Building2} label="Istanze" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
-        {/* ═══ TENANT SWITCHER + SEPARATORE (nascosti se collassato) ═══ */}
-        <div className={cn("pt-2 pb-1", collapsed && "md:hidden")}>
-          <TenantSwitcher />
-          {currentTenantName && (
-            <div className="mt-2 px-3">
-              <div className="border-t border-sidebar-border pt-2">
-                <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
-                  Dati cliente
-                </p>
-              </div>
+        {/* ═══ SEPARATORE DATI ISTANZA (nascosto se collassato); la scelta è in Impostazioni ═══ */}
+        {currentTenantName && (
+          <div className={cn("pt-3 pb-1 px-3", collapsed && "md:hidden")}>
+            <div className="border-t border-sidebar-border pt-2">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                Dati istanza
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ═══ VOCI DIPENDENTI DAL TENANT ═══ */}
 
@@ -497,7 +536,7 @@ export function Sidebar() {
         */}
 
         {/* Sicurezza (Riccardo, 19/10 sera): Vulnerabilità, Alert sicurezza, Health AD */}
-        <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaSubItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
         <NavGroup icon={Package} label="Inventario" items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
@@ -515,7 +554,7 @@ export function Sidebar() {
 
         {/* Active Directory: spostato come voce di Network */}
 
-        {/* Config Cliente — disabilitato, da rifare con UX guidata */}
+        {/* Config istanza — disabilitato, da rifare con UX guidata */}
         <div
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed",
@@ -524,7 +563,7 @@ export function Sidebar() {
           title="In arrivo"
         >
           <ClipboardList className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Config Cliente</span>
+          <span className={cn(collapsed && "md:hidden")}>Config istanza</span>
         </div>
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
@@ -540,7 +579,13 @@ export function Sidebar() {
         </div>
 
         {/* Impostazioni (globale) */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce") && !pathname.startsWith("/settings/opzioni") && !pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
+
+        {/* Opzioni (22/10): ogni funzione che si accende o si spegne, in un posto solo; chi non è admin la vede ferma */}
+        <NavItem href="/settings/opzioni" icon={SlidersHorizontal} label="Opzioni" active={pathname.startsWith("/settings/opzioni")} collapsed={collapsed} onNavigate={closeMobile} />
+
+        {/* Schedulazioni (23/10): tutto ciò che parte da solo, in un elenco; chi non è admin lo vede fermo */}
+        <NavItem href="/settings/schedulazioni" icon={CalendarClock} label="Schedulazioni" active={pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Cosa esce verso Domarc (DA-Link, tappa C1): solo gli amministratori dell'istanza */}
         {isAdmin && (
@@ -549,35 +594,6 @@ export function Sidebar() {
 
       </nav>
 
-      {/* Footer: toggle collapse (desktop) + Logout */}
-      <div className="shrink-0 p-3 border-t border-sidebar-border space-y-1">
-        {/* Tema e utente stanno qui dal 20/10 (Riccardo): la barra in alto non c'è più. */}
-        <ThemeToggle compresso={collapsed} />
-        <button
-          type="button"
-          onClick={toggle}
-          title={collapsed ? "Espandi menu" : "Comprimi menu"}
-          className={cn(
-            "hidden md:flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
-            collapsed && "md:justify-center md:px-0"
-          )}
-        >
-          {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
-          <span className={cn(collapsed && "md:hidden")}>Comprimi menu</span>
-        </button>
-        <UserMenu compresso={collapsed} />
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          title={collapsed ? "Esci" : undefined}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
-            collapsed && "md:justify-center md:px-0"
-          )}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Esci</span>
-        </button>
-      </div>
     </>
   );
 

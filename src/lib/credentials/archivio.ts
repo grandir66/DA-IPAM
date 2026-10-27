@@ -25,7 +25,9 @@ import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { Credential } from "@/types";
 import type { CredentialSchema } from "@/lib/validators";
-import { aggiornamentiCredenziale, colonneNuovaCredenziale } from "./aggiornamenti";
+import { cancellaDaOpenBao } from "@/lib/vault/cancella";
+import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { aggiornamentiCredenziale, colonneNuovaCredenziale, togliRiferimentoSeCambianoSegreti } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
 import {
   METODI_PER_TIPO,
@@ -56,6 +58,8 @@ export interface ColonneCredenziale {
   priv_protocol?: string | null;
   security_level?: string | null;
   port?: number | null;
+  /** da-vault: il percorso in OpenBao (lo scrive la migrazione; la pagina lo toglie quando cambia un segreto). */
+  credential_ref?: string | null;
 }
 
 type Colonna = keyof ColonneCredenziale;
@@ -74,6 +78,7 @@ const COLONNE: readonly Colonna[] = [
   "priv_protocol",
   "security_level",
   "port",
+  "credential_ref",
 ];
 
 function tipoDaScrivere(t: string): TipoCredenziale {
@@ -115,8 +120,25 @@ export function aggiornaCredenzialeDb(dbh: Database.Database, id: number, input:
   return leggi(dbh, id);
 }
 
+/** Il `credential_ref` di una voce (null se non ha riferimento o lo schema del vault non c'è ancora). */
+function riferimentoDi(dbh: Database.Database, id: number): string | null {
+  const haColonna = (dbh.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>).some((c) => c.name === "credential_ref");
+  if (!haColonna) return null;
+  const r = dbh.prepare("SELECT credential_ref FROM credentials WHERE id = ?").get(id) as { credential_ref: string | null } | undefined;
+  return r?.credential_ref?.trim() || null;
+}
+
+/** Il cliente di un database tenant, dal nome del file (`…/tenants/C70007.db`), per l'avviso nel log. */
+function nomeCliente(dbh: Database.Database): string {
+  return dbh.name.replace(/^.*[\\/]/, "").replace(/\.db$/, "");
+}
+
 export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolean {
-  return dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  // da-vault (passo 6): con OpenBao acceso il segreto della voce va tolto anche da lì (i metadata, tutte le versioni).
+  const riferimento = vaultOpenBaoAcceso() ? riferimentoDi(dbh, id) : null;
+  const eliminata = dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  if (eliminata && riferimento) cancellaDaOpenBao(riferimento, `${nomeCliente(dbh)}#${id}`);
+  return eliminata;
 }
 
 // ── regole delle API ──
@@ -293,6 +315,7 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
     const c = controlla(tipo, metodo, risultante, haCampiV3(dati));
     if (!c.ok) return { ok: false, stato: 400, errore: c.errore };
     for (const col of c.daSvuotare) aggiornamenti[col] = null;
+    togliRiferimentoSeCambianoSegreti(aggiornamenti);
 
     const voce = aggiornaCredenzialeDb(dbh, id, aggiornamenti as Partial<ColonneCredenziale>);
     if (!voce) return { ok: false, stato: 404, errore: "Credenziale non trovata" };

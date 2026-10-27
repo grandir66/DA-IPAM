@@ -9,6 +9,7 @@
  */
 import type { z } from "zod";
 import { encrypt } from "@/lib/crypto";
+import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import type { CredentialSchema } from "@/lib/validators";
 import type { ColonneCredenziale } from "./archivio";
 
@@ -44,7 +45,20 @@ export function aggiornamentiCredenziale(data: Partial<DatiCredenziale>, corpo: 
   if (data.priv_protocol !== undefined) updates.priv_protocol = data.priv_protocol || null;
   if (data.security_level !== undefined) updates.security_level = data.security_level || null;
   if (corpo && typeof corpo === "object" && "port" in corpo) updates.port = data.port ?? null;
+  togliRiferimentoSeCambianoSegreti(updates);
   return updates;
+}
+
+const COLONNE_SEGRETE = ["encrypted_username", "encrypted_password", "encrypted_private_key", "encrypted_key_passphrase", "encrypted_auth_key", "encrypted_priv_key"];
+
+/**
+ * da-vault, passo 6: con `DA_VAULT_OPENBAO=1` un segreto cambiato (o svuotato) dalla pagina toglie `credential_ref`:
+ * la voce torna a leggersi dalla colonna, che ha il valore nuovo, e la migrazione la riporta in OpenBao. Così il
+ * valore in OpenBao non resta indietro senza che nessuno lo veda. Interruttore spento: niente.
+ */
+export function togliRiferimentoSeCambianoSegreti(updates: Record<string, unknown>): void {
+  if (!vaultOpenBaoAcceso()) return;
+  if (COLONNE_SEGRETE.some((c) => c in updates)) updates.credential_ref = null;
 }
 
 /** Colonne di una voce nuova (POST): i segreti cifrati, i vuoti come NULL. */

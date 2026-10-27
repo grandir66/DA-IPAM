@@ -6,6 +6,9 @@ import { withTenantFromSession, getServerTenantCode } from "@/lib/api-tenant";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 import { rifiutoJobRiservato } from "@/lib/cron/job-riservati";
 import { arricchisciJobs, rifiutoPutGenerico } from "@/lib/apparati-scelti/rotte-server";
+import { getScheduledJobById } from "@/lib/db-tenant";
+import { actorOf } from "@/lib/controllers/route-helpers";
+import { eJobDiSerie, scriviLapide } from "@/lib/opzioni/job-di-serie";
 
 export async function GET() {
   return withTenantFromSession(async () => {
@@ -78,6 +81,9 @@ export async function DELETE(request: Request) {
       if (!id) return NextResponse.json({ error: "ID richiesto" }, { status: 400 });
       const riservato = rifiutoJobRiservato(Number(id));
       if (riservato) return NextResponse.json(riservato.body, { status: riservato.status });
+      // Un job di serie cancellato da qui non deve rinascere al prossimo avvio: la lapide (pagina Opzioni, 22/10).
+      const job = getScheduledJobById(Number(id));
+      if (job && eJobDiSerie(job.job_type)) scriviLapide(job.job_type, actorOf(adminCheck) ?? "amministratore");
       deleteScheduledJob(Number(id));
       try { reloadTenantScheduler(await getServerTenantCode()); } catch (e) { console.error("[jobs] scheduler reload failed:", e); }
       return NextResponse.json({ success: true });

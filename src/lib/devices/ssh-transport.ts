@@ -54,6 +54,22 @@ const DEFAULT_HOSTKEY_ALGORITHMS = [
   "ssh-dss",
 ];
 
+/**
+ * Cifrature: quelle di serie di ssh2 (GCM, CTR, ChaCha20) e in fondo AES-CBC, che si usano solo se l'apparato non offre
+ * altro. HP5700-Storage (Comware 7.1.045 R2422P02, 70151 22/10) offre solo CBC: senza, «no matching cipher» con la
+ * credenziale giusta. 3DES e DES restano fuori.
+ */
+const DEFAULT_CIPHER_ALGORITHMS = [
+  "aes128-gcm@openssh.com",
+  "aes256-gcm@openssh.com",
+  "aes128-ctr",
+  "aes192-ctr",
+  "aes256-ctr",
+  "chacha20-poly1305@openssh.com",
+  "aes128-cbc",
+  "aes256-cbc",
+];
+
 export interface SshOptions {
   host: string;
   port?: number;
@@ -106,6 +122,8 @@ export type SshErrorKind =
   | "key_invalid"
   | "connect_refused"
   | "connect_timeout"
+  /** Il dispositivo chiude prima di presentarsi (indirizzi ammessi al servizio SSH, firewall): 70151, 22/10. */
+  | "closed_by_remote"
   | "unreachable"
   | "host_key_changed"
   | "protocol_error"
@@ -118,7 +136,7 @@ export interface SshErrorInfo {
   message: string;
   /** Suggerimento di fix, opzionale. */
   hint?: string;
-  /** Messaggio raw dalla libreria (utile per log/debug, NON in UI). */
+  /** Messaggio grezzo della libreria: nei log e, a carattere piccolo, nei «dettagli» del test della credenziale. */
   raw: string;
   host?: string;
   port?: number;
@@ -200,6 +218,7 @@ function buildConnectConfig(opts: SshOptions, state: SshAuthState, chiave: Parse
   // i nostri sono nomi IETF standard — `as` per non duplicare l'enum.
   type KexList = NonNullable<ConnectConfig["algorithms"]>["kex"];
   type HostKeyList = NonNullable<ConnectConfig["algorithms"]>["serverHostKey"];
+  type CipherList = NonNullable<ConnectConfig["algorithms"]>["cipher"];
   return {
     host: opts.host,
     port: opts.port ?? 22,
@@ -208,6 +227,7 @@ function buildConnectConfig(opts: SshOptions, state: SshAuthState, chiave: Parse
     algorithms: {
       kex: (opts.kexAlgorithms ?? DEFAULT_KEX_ALGORITHMS) as unknown as KexList,
       serverHostKey: DEFAULT_HOSTKEY_ALGORITHMS as unknown as HostKeyList,
+      cipher: DEFAULT_CIPHER_ALGORITHMS as unknown as CipherList,
     },
     tryKeyboard: !!opts.password,
     authHandler: ((methodsLeft, _partial, cb): void => {
@@ -464,6 +484,28 @@ export function mapSshError(err: unknown, ctx: MapSshErrorContext = {}): SshErro
       kind: "connect_refused",
       message: `${target}: connessione SSH rifiutata (porta ${ctx.port ?? 22} non in ascolto o filtrata).`,
       hint: "Verifica che il servizio SSH sia attivo sul dispositivo e che la porta non sia bloccata da firewall.",
+    };
+  }
+  // Prima dell'handshake generico (22/10, 70151): un dispositivo che chiude la connessione senza presentarsi non chiede
+  // algoritmi legacy, ammette SSH solo da altri indirizzi; e chi non risponde affatto ha la porta filtrata o SSH spento.
+  if (
+    low.includes("connection lost before handshake") ||
+    low.includes("kex_exchange_identification") ||
+    low.includes("closed by remote")
+  ) {
+    return {
+      ...base,
+      kind: "closed_by_remote",
+      message: `${target}: il dispositivo chiude la connessione prima di presentarsi.`,
+      hint: "Controlla gli indirizzi ammessi al servizio SSH del dispositivo (MikroTik: IP › Services › ssh › Available From) e il firewall in ingresso.",
+    };
+  }
+  if (low.includes("timed out while waiting for handshake")) {
+    return {
+      ...base,
+      kind: "connect_timeout",
+      message: `${target}: nessuna risposta SSH entro il tempo.`,
+      hint: `Porta ${ctx.port ?? 22} filtrata dal firewall, oppure il servizio SSH è spento.`,
     };
   }
   if (low.includes("etimedout") || low.includes("timed out") || low.includes("timeout")) {

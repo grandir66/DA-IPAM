@@ -14,6 +14,11 @@ const RISERVATI: Readonly<Record<string, string>> = {
   pulizia_host: "Si gestisce da Impostazioni → Sistema → Pulizia degli host assenti",
 };
 
+/** Un tipo di job che non si lancia a mano (Schedulazioni non gli mette «Esegui ora»). */
+export function eJobRiservato(tipo: string): boolean {
+  return tipo in RISERVATI;
+}
+
 /** 409 col posto da cui il job si gestisce, se `jobId` è un job riservato; null altrimenti (anche se non esiste). */
 export function rifiutoJobRiservato(jobId: number): { status: 409; body: { error: string } } | null {
   const job = getScheduledJobById(jobId);

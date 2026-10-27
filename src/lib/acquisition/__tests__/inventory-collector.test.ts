@@ -1,0 +1,18 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {collectInventoryDevice} from '../inventory-collector';
+import {parseDf,terse,parseRead,snmpTable} from '../inventory-parsers';
+import {acquisitionInputSchema,type AcquisitionTransports,type ReadResult} from '../schema';
+import {assertCommands} from '../transports';
+const good=<T>(data:T):ReadResult<T>=>({data,status:'ok',warnings:[]});
+const io:AcquisitionTransports={get:async()=>good([]),walk:async()=>good([]),shell:async cmds=>Object.fromEntries(cmds.map(c=>[c,good(c==='hostname'?'host.test':c==='pveversion'?'pve-manager/9.2':c.includes('/cluster/resources')?'[{"type":"qemu","vmid":100,"name":"guest","token":"must-not-export"}]':'')]))};
+test('df capacity uses exact bytes beyond Number safe range and preserves zero',()=>{assert.deepEqual(parseDf('/dev/x 9007199254740993 1 0 1% /data')[0],{filesystem:'/dev/x',size_bytes:'9223372036854776832',used_bytes:'1024',available_bytes:'0',mountpoint:'/data'});});
+test('RouterOS terse reuses parser preserving names with spaces, excludes security fields',()=>{const r=terse(' 0 name=Port 47 type=ether password=secret')[0];assert.equal(r.name,'Port 47');assert.equal(r.password,undefined);});
+test('Proxmox resources whitelist excludes config and secrets',async()=>{const s=await collectInventoryDevice({collector:'proxmox-ve',host:'pve.test',local_ssh:true},io);assert.equal(s.status,'partial');assert.equal(s.inventory?.data.scope,'proxmox-cluster-visible');assert.ok(!JSON.stringify(s).includes('must-not-export'));assert.equal(s.inventory?.data.tables.find(t=>t.name.includes('/cluster/resources'))?.records[0].vmid,100);});
+test('errors are never an authoritative empty inventory',async()=>{const broken:AcquisitionTransports={...io,shell:async()=>{throw Error('private-secret');}};const s=await collectInventoryDevice({collector:'qnap-nas',host:'nas.test',ssh:{username:'test',password:'private-secret'}},broken);assert.equal(s.status,'error');assert.equal(s.identity.status,'error');assert.ok(!JSON.stringify(s).includes('private-secret'));});
+test('local SSH opt-in is restricted to Proxmox and rejects mixed credentials',()=>{assert.equal(acquisitionInputSchema.safeParse({collector:'qnap-nas',host:'nas.test',local_ssh:true}).success,false);assert.equal(acquisitionInputSchema.safeParse({collector:'proxmox-ve',host:'pve.test',local_ssh:true,snmp:{community:'test'}}).success,false);});
+test('inventory command allowlist excludes changes and config exports',()=>{assert.throws(()=>assertCommands(['/export'],'mikrotik-routeros'));assert.throws(()=>assertCommands(['reboot'],'qnap-nas'));});
+test('NAS table preserves vendor units instead of guessing and no OID crosses table root',()=>{assert.deepEqual(snmpTable([{oid:'1.2.4.1',value:'0'},{oid:'1.3.4.1',value:'secret'}],'1.2',{'4':'capacity_vendor_units'}),[{index:'1',capacity_vendor_units:'0'}]);});
+test('Ubiquiti status exports only metadata',()=>{const r=parseRead('mca-status','{"model":"UAP","password":"secret"}');assert.deepEqual(r,[{model:'UAP'}]);});
+
+test('RouterOS legacy comma-separated capabilities normalize to snapshot array (2026-10-22)',async()=>{const mock:AcquisitionTransports={...io,shell:async commands=>Object.fromEntries(commands.map(c=>[c,good(c.includes('/ip neighbor')?' 0 interface=ether1 identity=peer mac-address=00:11:22:33:44:55 system-caps-enabled=bridge,router':'')]))};const s=await collectInventoryDevice({collector:'mikrotik-routeros',host:'router.test',ssh:{username:'test',password:'test-only'}},mock);assert.deepEqual(s.neighbors.data[0].capabilities,['bridge','router']);});

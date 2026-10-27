@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
-import { User as UserIcon, KeyRound, Loader2, MoreHorizontal } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import { User as UserIcon, KeyRound, Loader2, LogOut, MoreHorizontal, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTema } from "./theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +28,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 /**
- * Utente in fondo al menu a sinistra (Riccardo, 20/10: via la barra in alto): iniziale, nome
- * e ruolo; il clic apre «Cambia password». «Esci» resta una voce a sé, a un clic.
+ * Utente in cima al menu a sinistra (Riccardo, 23/10: in basso restava un blocco enorme):
+ * iniziale, nome e ruolo; il clic apre «Cambia password», il tema ed «Esci» (Riccardo, 23/10).
  */
 export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const { data: session } = useSession();
@@ -36,6 +37,14 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const role = (session?.user as { role?: string } | undefined)?.role;
   const initial = username.charAt(0).toUpperCase() || "?";
 
+  const tema = useTema();
+
+  // Il ritorno lo decide il browser: Auth.js costruisce l'indirizzo dal nome su cui ascolta il
+  // server, e sull'hub rispondeva https://0.0.0.0/login (pagina vuota, segnalato il 23/10).
+  async function esci() {
+    await signOut({ redirect: false });
+    window.location.href = "/login";
+  }
   const [pwOpen, setPwOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -99,7 +108,7 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
           </span>
           <MoreHorizontal className={cn("h-4 w-4 shrink-0 text-sidebar-foreground/60", compresso && "md:hidden")} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="end" className="w-56">
+        <DropdownMenuContent side="right" align="start" className="w-56">
           {/* Base UI vuole l'etichetta dentro un gruppo: senza, il clic faceva cadere la pagina. */}
           <DropdownMenuGroup>
             <DropdownMenuLabel>
@@ -112,9 +121,20 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
             </DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setPwOpen(true)}>
+          {/* Base UI risponde a onClick: con onSelect (Radix) il clic chiudeva il menu e la
+              finestra non si apriva mai (segnalato il 23/10: «il cambio password non funziona»). */}
+          <DropdownMenuItem onClick={() => setPwOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" />
             Cambia password
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={tema.toggle} disabled={!tema.mounted}>
+            {tema.dark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+            {tema.etichetta}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => void esci()}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Esci
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

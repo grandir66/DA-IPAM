@@ -1,8 +1,8 @@
 "use client";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -98,26 +98,6 @@ export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "errore";
       toast.error(`Errore nell'attivazione: ${msg}`);
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function toggleEnabled(next: boolean) {
-    if (!job) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/jobs", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: job.id, enabled: next }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      toast.success(next ? "Schedulazione attiva" : "Schedulazione sospesa");
-      await load();
-    } catch (e) {
-      toast.error("Errore");
       console.error(e);
     } finally {
       setSaving(false);
@@ -221,15 +201,10 @@ export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
             </div>
           ) : (
             <div className="space-y-3">
+              {/* Accendere e sospendere la scansione veloce (tutte le reti) si fa da Opzioni (22/10). */}
+              <RigheRimando ids={["job.fast_scan"]} mostraEsito={false} />
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={job.enabled === 1}
-                    onCheckedChange={toggleEnabled}
-                    disabled={saving}
-                  />
-                  <span className="text-sm">Esegui ogni</span>
-                </div>
+                <span className="text-sm">{isActive ? "Esegui ogni" : "Sospesa; intervallo"}</span>
                 <Select
                   value={String(intervalMinutes)}
                   onValueChange={(v) => setIntervalMinutes(Number(v))}

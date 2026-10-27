@@ -8,7 +8,7 @@
 import { caselleHypervisor, filtraVm, numeroVm, poolStorage } from "@/lib/scheda/hypervisor";
 import { parseUtcDate } from "../../blocchi";
 import { Riquadro } from "../../riquadro";
-import { RigaFonti, type Fonte } from "../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import { PanoramicaGenerica } from "../../panoramica-generica";
 import type { ContestoScheda } from "../../contesto";
@@ -62,7 +62,7 @@ export function PanoramicaHypervisor({ ctx }: { ctx: ContestoScheda }) {
         </div>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

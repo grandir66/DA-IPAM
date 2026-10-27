@@ -296,6 +296,14 @@ export class WazuhIndexerClient {
   }
 
   /**
+   * Un'aggregazione libera su `wazuh-alerts-*` (size 0 a carico di chi scrive il corpo): la risposta così com'è.
+   * La usa il giro degli accessi ai PC (`assegnatari/raccolta.ts`), che legge i bucket da sé.
+   */
+  async aggregaAlert(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.json<Record<string, unknown>>("POST", "/wazuh-alerts-*/_search", body);
+  }
+
+  /**
    * Distribuzione temporale e composizione degli alert selezionati.
    * Aggregazione pura (size 0): non scarica documenti.
    */

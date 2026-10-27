@@ -32,6 +32,7 @@ import type { InventoryAsset, InventoryAssetInput, AssetAssignee, Location, Lice
 import { InventoryViewToggle } from "@/components/inventory/inventory-view-toggle";
 import { InventoryNis2Scheda } from "@/components/inventory/inventory-nis2-scheda";
 import { AssetServicesPanel } from "@/components/inventory/asset-services-panel";
+import { PropostaAssegnatario } from "@/components/assegnatari/proposta-assegnatario";
 import { useInventoryViewMode } from "@/lib/inventory/inventory-view-mode";
 
 const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"];
@@ -200,6 +201,15 @@ export default function InventoryAssetPage() {
   const refetchAssignees = useCallback(async () => {
     const r = await fetch("/api/asset-assignees", { cache: "no-store" });
     if (r.ok) setAssignees(await r.json());
+  }, []);
+  // «Accetta» della proposta ha già scritto l'assegnatario: la scheda si allinea senza perdere le altre modifiche.
+  const assegnatoDallaProposta = useCallback((assegnatarioId: number) => {
+    setForm((f) => ({ ...f, asset_assignee_id: assegnatarioId }));
+    setAsset((a) => (a ? { ...a, asset_assignee_id: assegnatarioId } : a));
+    refetchAssignees().catch(() => {});
+  }, [refetchAssignees]);
+  const scegliAltro = useCallback(() => {
+    document.getElementById("assegnatario-scelta")?.focus();
   }, []);
   const refetchLocations = useCallback(async () => {
     const r = await fetch("/api/locations", { cache: "no-store" });
@@ -395,7 +405,17 @@ export default function InventoryAssetPage() {
 
           {isNis2View && (
             <TabsContent value="nis2">
-              <InventoryNis2Scheda form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations} />
+              <InventoryNis2Scheda
+                form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations}
+                dopoResponsabilita={
+                  <Card>
+                    <CardHeader><CardTitle>Assegnatario proposto dagli accessi</CardTitle></CardHeader>
+                    <CardContent>
+                      <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} />
+                    </CardContent>
+                  </Card>
+                }
+              />
               {(asset as { technical_data?: string | null }).technical_data && (
                 <div className="mt-4">
                   <TechnicalDataCard data={(asset as { technical_data?: string | null }).technical_data!} />
@@ -460,7 +480,7 @@ export default function InventoryAssetPage() {
                 <div className="space-y-4">
                   <div><Label>Assegnato a</Label>
                     <Select value={form.asset_assignee_id != null ? String(form.asset_assignee_id) : "none"} onValueChange={(v) => setForm((f) => ({ ...f, asset_assignee_id: v === "none" ? null : Number(v) }))}>
-                      <SelectTrigger><SelectValue placeholder="Seleziona assegnatario" /></SelectTrigger>
+                      <SelectTrigger id="assegnatario-scelta"><SelectValue placeholder="Seleziona assegnatario" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">— Nessuno</SelectItem>
                         {assignees.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.email ? ` (${a.email})` : ""}</SelectItem>)}
@@ -470,6 +490,7 @@ export default function InventoryAssetPage() {
                   {assignees.length === 0 && (
                     <p className="text-sm text-muted-foreground">Nessun assegnatario. Aggiungine da <Link href="/inventory/assignees" className="underline">Inventario → Assegnatari</Link>.</p>
                   )}
+                  <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} onScegliAltro={scegliAltro} />
                 </div>
               </CardContent>
             </Card>

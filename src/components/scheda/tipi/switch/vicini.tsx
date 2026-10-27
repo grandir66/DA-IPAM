@@ -12,34 +12,48 @@ import type { ContestoScheda } from "../../contesto";
 import { NomeVicino, useViciniIpam } from "../../nome-vicino";
 import { parseDbDate } from "@/lib/db-date";
 import { porteDi, viciniDi } from "./dati-porte";
+import { EtichettaFonte } from "../../librenms-pezzi";
+import { datiAttivi, unisciVicini } from "@/lib/scheda/librenms-vista";
 
 const th = "px-3 py-2 text-left text-[13px] font-semibold text-muted-foreground whitespace-nowrap";
 const MAX_MAC = 200;
 
 export function ViciniSwitch({ ctx }: { ctx: ContestoScheda }) {
   const { device, hostId, isAdmin } = ctx;
-  const vicini = viciniDi(ctx);
+  const l = datiAttivi(ctx.librenmsDati);
+  const vicini = unisciVicini(viciniDi(ctx), l);
+  const nDisaccordi = new Set(vicini.filter((v) => v.disaccordo).map((v) => v.portaLocale)).size;
   const mappaVicini = useViciniIpam(device?.id);
   const trunk = porteDi(ctx).filter((p) => p.is_trunk && (p.trunk_neighbor_name || p.trunk_neighbor_port || p.trunk_primary_name));
   const mac = device?.mac_port_entries ?? [];
   const stp = device?.stp_info ?? null;
   return (
     <div className="space-y-4">
-      <Riquadro titolo={`Vicini LLDP / CDP (${vicini.length})`} vuoto={vicini.length === 0}>
+      <Riquadro
+        titolo={`Vicini LLDP / CDP (${vicini.length})`}
+        vuoto={vicini.length === 0}
+        azione={nDisaccordi > 0 ? <span className="text-[13px] font-semibold"><span aria-hidden>▲ </span>{nDisaccordi} {nDisaccordi === 1 ? "disaccordo" : "disaccordi"}</span> : undefined}
+      >
         <div className="-m-4 overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead className="border-b-2 bg-muted/40">
-              <tr><th className={th}>Porta locale</th><th className={th}>Dispositivo remoto</th><th className={th}>Porta remota</th><th className={th}>Protocollo</th><th className={th}>IP remoto</th><th className={th}>Piattaforma</th></tr>
+              <tr><th className={th}>Porta locale</th><th className={th}>Dispositivo remoto</th><th className={th}>Porta remota</th><th className={th}>Protocollo</th><th className={th}>IP remoto</th><th className={th}>Piattaforma</th>{l && <th className={th}>Fonte</th>}</tr>
             </thead>
             <tbody>
               {vicini.map((v) => (
-                <tr key={v.chiave} className="border-b">
+                <tr key={v.chiave} className={v.disaccordo ? "border-b bg-[repeating-linear-gradient(135deg,transparent_0_8px,rgba(230,159,0,0.14)_8px_10px)]" : "border-b"}>
                   <td className="px-3 py-1.5 font-mono font-semibold">{v.portaLocale}</td>
                   <td className="px-3 py-1.5 font-medium"><NomeVicino nome={v.nome} ip={v.ip} mac={v.mac} mappa={mappaVicini} /></td>
                   <td className="px-3 py-1.5 font-mono">{v.portaRemota ?? "—"}</td>
                   <td className="px-3 py-1.5"><Badge variant="outline" className="text-[13px] uppercase">{v.protocollo || "?"}</Badge></td>
                   <td className="px-3 py-1.5 font-mono">{v.ip ?? "—"}</td>
                   <td className="px-3 py-1.5 text-muted-foreground">{v.piattaforma ?? "—"}</td>
+                  {l && (
+                    <td className="px-3 py-1.5">
+                      <EtichettaFonte fonte={v.fonte} ora={v.fonte === "ipam" ? null : v.ora} />
+                      {v.disaccordo && v.fonte === "librenms" && <span className="ml-2 inline-block whitespace-nowrap rounded-full bg-[repeating-linear-gradient(135deg,#E69F00_0_6px,#F3C25A_6px_10px)] px-2 text-[13px] font-semibold text-[#0D2537]"><span aria-hidden>▲ </span>le fonti non concordano</span>}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

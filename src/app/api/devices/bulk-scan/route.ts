@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getMultihomedStatusByDeviceId, haSnmpApparato } from "@/lib/db";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { dipendenzeDb, dubbioDaSaltare, type DubbioSaltato } from "@/lib/acquisizione-modulare/fonte";
 
 const BulkScanSchema = z.object({
   device_ids: z.array(z.coerce.number().int().positive()).min(1, "Specificare almeno un dispositivo"),
@@ -37,6 +38,10 @@ export async function POST(request: Request) {
     const scanned: { id: number; name: string; message: string }[] = [];
     const failed: { id: number; name: string; error: string }[] = [];
     const skipped: { id: number; name: string; reason: string }[] = [];
+    // Acquisizione modulare (decisione e di fine giro 2): gli apparati nel caso dubbio si saltano e si elencano a fine
+    // giro, invece di un 409 della rotta d'acquisizione. Interruttore spento: nessuno.
+    const dubbi: DubbioSaltato[] = [];
+    const deps = dipendenzeDb();
 
     for (const id of device_ids) {
       const device = getNetworkDeviceById(id);
@@ -55,6 +60,13 @@ export async function POST(request: Request) {
           name: device.name,
           reason: `Secondary multihomed (primary: ${mh.primary_ip}, ${mh.peers_count} IF)`,
         });
+        continue;
+      }
+
+      const dubbio = dubbioDaSaltare(device, deps);
+      if (dubbio) {
+        dubbi.push(dubbio);
+        skipped.push({ id, name: device.name, reason: dubbio.reason });
         continue;
       }
 
@@ -107,12 +119,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const notaDubbi = dubbi.length > 0
+      ? ` ${dubbi.length} saltat${dubbi.length !== 1 ? "i" : "o"} per l'acquisizione modulare: scegli la fonte nella scheda (${dubbi.map((d) => d.name).join(", ")}).`
+      : "";
     const message =
-      scanned.length > 0
+      (scanned.length > 0
         ? `${scanned.length} dispositivo${scanned.length !== 1 ? "i" : ""} scansionat${scanned.length !== 1 ? "i" : "o"}${failed.length > 0 ? `, ${failed.length} saltati (credenziali non funzionanti o errore)` : ""}`
         : failed.length > 0
           ? `Nessun dispositivo scansionato. ${failed.length} fallit${failed.length !== 1 ? "i" : "o"}.`
-          : "Nessun dispositivo da scansionare.";
+          : "Nessun dispositivo da scansionare.") + notaDubbi;
 
     return NextResponse.json({
       success: scanned.length > 0,
@@ -122,6 +137,7 @@ export async function POST(request: Request) {
       results: scanned,
       errors: failed,
       skipped_devices: skipped,
+      dubbi,
       message,
     });
   } catch (error) {

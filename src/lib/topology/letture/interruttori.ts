@@ -7,12 +7,14 @@
 import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiViciniCavi } from "@/lib/db-tenant";
 
 /** `mikrotik_scheda` (scheda MikroTik, Task 10, ADR 0027): VLAN, DNS e utenti dei router, per la scheda e non per la mappa.
- *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa. */
-export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"] as const;
+ *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa.
+ *  `librenms` (piano 2026-10-22 LibreNMS, task 4; spec `specs/2026-10-22-librenms-fonte-dati-design.md`): i dati degli
+ *  apparati letti dall'API di LibreNMS locale nelle tabelle `librenms_*`, per la scheda e non per la mappa (spec §4.3). */
+export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"] as const;
 export type Lettura = (typeof LETTURE)[number];
 
 /** Le letture che questa versione sa fare. `host` è arrivata col Task 7 del piano di T2, scritta sull'uscita vera T2-b. */
-export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
+export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"]);
 
 export function eLettura(x: unknown): x is Lettura {
   return typeof x === "string" && (LETTURE as readonly string[]).includes(x);
@@ -57,11 +59,18 @@ export function leggiStatoChiave(chiave: string): StatoInterruttore {
  * Le letture sono ACCESE DI SERIE (ADR 0031, 22/10): chiave assente o rovinata = accesa, con `da` null. Si spengono solo
  * con `acceso: false` scritto da un admin. Prima valeva il contrario (D4): sull'appliance di 70151 le VLAN del router non
  * arrivavano finché qualcuno non andava ad accendere la lettura. La mappa nuova (`leggiStatoChiave`) resta spenta di serie.
+ *
+ * Eccezione: `librenms` resta SPENTA di serie (unione del 22/10, piano LibreNMS fonte dati). Non legge soltanto: aggiunge
+ * a LibreNMS i vicini il cui SNMP risponde, cioè scrive in un servizio del cliente, e nessun automatismo che scrive nasce
+ * acceso. Si accende per installazione, da un admin.
  */
+const SPENTE_DI_SERIE: ReadonlySet<Lettura> = new Set<Lettura>(["librenms"]);
+
 export function leggiInterruttore(l: Lettura): StatoInterruttore {
   const o = oggetto(leggiJson(chiaveLettura(l)));
-  if (!o) return { acceso: true, da: null, il: null };
-  return { acceso: o.acceso !== false, da: typeof o.da === "string" ? o.da : null, il: typeof o.il === "string" ? o.il : null };
+  if (!o) return { acceso: !SPENTE_DI_SERIE.has(l), da: null, il: null };
+  // Per una lettura spenta di serie vale solo `acceso: true` scritto: un valore rovinato non accende chi scrive.
+  return { acceso: SPENTE_DI_SERIE.has(l) ? o.acceso === true : o.acceso !== false, da: typeof o.da === "string" ? o.da : null, il: typeof o.il === "string" ? o.il : null };
 }
 
 export function letturaAccesa(l: Lettura): boolean {

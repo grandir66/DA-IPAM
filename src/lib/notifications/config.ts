@@ -31,7 +31,8 @@ export interface NotificationConfig {
   retentionDays: number;
 }
 
-const K = {
+/** Le chiavi nelle impostazioni dell'hub; esportate per la prova di completezza di Opzioni. */
+export const CHIAVI_NOTIFICHE = {
   enabled: "notify_enabled",
   smtpEnabled: "notify_smtp_enabled",
   smtpHost: "notify_smtp_host",
@@ -49,6 +50,7 @@ const K = {
   digestIntervalMinutes: "notify_digest_interval_minutes",
   retentionDays: "notify_retention_days",
 } as const;
+const K = CHIAVI_NOTIFICHE;
 
 function intSetting(key: string, fallback: number): number {
   const raw = getSetting(key);

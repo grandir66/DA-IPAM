@@ -17,6 +17,8 @@ import {
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
+import { schemaAssegnatariAdPresente } from "@/lib/db-tenant";
+import { allineaAssegnatariDaAd, dbCliente, scriviCampiAdUtente } from "@/lib/assegnatari/db";
 import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
 import { accessoWinrmDelDc, credenzialeLdapDi } from "@/lib/ad/credenziale-ldap";
 import type { runWinrmCommand } from "@/lib/devices/winrm-run";
@@ -116,6 +118,16 @@ export async function connectLdap(integration: AdIntegration, nuovoClient: Nuovo
 /**
  * Sincronizza tutti i dati da Active Directory.
  */
+/** Il DB del cliente se c'è il contesto e lo schema degli assegnatari; altrimenti null e la sync va avanti come prima. */
+function dbAssegnatariOppureNull(): ReturnType<typeof dbCliente> | null {
+  try {
+    const d = dbCliente();
+    return schemaAssegnatariAdPresente(d) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function syncActiveDirectory(integrationId: number): Promise<AdSyncResult> {
   const started = Date.now();
   const result: AdSyncResult = {
@@ -238,12 +250,21 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
         "memberOf",
         "telephoneNumber",
         "whenCreated",
+        // Assegnatari da AD (piano 2026-10-23, passo 2): nome e cognome separati e i recapiti per l'importazione.
+        "givenName",
+        "sn",
+        "mobile",
+        "company",
+        "manager",
+        "employeeID",
+        "physicalDeliveryOfficeName",
       ],
       paged: { pageSize: 500 },
       timeLimit: 120,
     };
 
     const { searchEntries: users } = await client.search(baseDn, userOpts);
+    const dbAssegnatari = dbAssegnatariOppureNull();
 
     for (const entry of users) {
       try {
@@ -280,6 +301,17 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
           password_last_set_at: passwordLastSetAt,
           raw_data: JSON.stringify(entry),
         });
+        if (dbAssegnatari) {
+          scriviCampiAdUtente(dbAssegnatari, integrationId, objectGuid, {
+            given_name: ldapStr(entry.givenName),
+            surname: ldapStr(entry.sn),
+            mobile: ldapStr(entry.mobile),
+            company: ldapStr(entry.company),
+            manager_dn: ldapStr(entry.manager),
+            employee_id: ldapStr(entry.employeeID),
+            office: ldapStr(entry.physicalDeliveryOfficeName),
+          });
+        }
         result.users++;
       } catch (err) {
         result.errors.push(`User sync error: ${err instanceof Error ? err.message : String(err)}`);
@@ -287,6 +319,14 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
     }
   } catch (err) {
     result.errors.push(`User search error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Gli assegnatari importati da AD riprendono dati e stato (disattivato → da riassegnare). Un errore qui non ferma la sync.
+  try {
+    const d = dbAssegnatariOppureNull();
+    if (d) allineaAssegnatariDaAd(d, integrationId);
+  } catch (err) {
+    result.errors.push(`Assegnatari da AD: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // ═══════════════════════════════════════════════════════════════

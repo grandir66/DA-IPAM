@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs";
 import { execSync } from "child_process";
-import path from "path";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
+import { unisci } from "@/lib/percorsi";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -113,11 +113,11 @@ export async function POST(request: Request) {
       const san = [...sanSet].join(",");
 
       const days = Math.max(1, Math.min(body.days || 365, 3650));
-      const certDir = path.join(process.cwd(), "data", "certs");
+      const certDir = unisci(process.cwd(), "data", "certs");
       mkdirSync(certDir, { recursive: true });
 
-      const certPath = path.join(certDir, "cert.pem");
-      const keyPath = path.join(certDir, "key.pem");
+      const certPath = unisci(certDir, "cert.pem");
+      const keyPath = unisci(certDir, "key.pem");
 
       try {
         execSync(
@@ -153,11 +153,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const certDir = path.join(process.cwd(), "data", "certs");
+      const certDir = unisci(process.cwd(), "data", "certs");
       mkdirSync(certDir, { recursive: true });
 
-      const certPath = path.join(certDir, "cert.pem");
-      const keyPath = path.join(certDir, "key.pem");
+      const certPath = unisci(certDir, "cert.pem");
+      const keyPath = unisci(certDir, "key.pem");
 
       try {
         // Decodifica base64 se necessario
@@ -225,7 +225,7 @@ function opensslErrorDetail(err: unknown): string {
 
 /** Aggiorna le variabili TLS_CERT e TLS_KEY nel file .env.local */
 function updateEnvTls(certPath: string, keyPath: string): void {
-  const envPath = path.join(process.cwd(), ".env.local");
+  const envPath = unisci(process.cwd(), ".env.local");
   let envContent = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
   envContent = envContent
     .replace(/^TLS_CERT=.*$/m, "")

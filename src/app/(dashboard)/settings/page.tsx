@@ -1,6 +1,9 @@
 "use client";
+
+import Link from "next/link";
 import { parseDbDate } from "@/lib/db-date";
-import { scheduledJobLabel } from "@/lib/scheduled-job-types";
+import { ETICHETTE_JOB, scheduledJobLabel } from "@/lib/scheduled-job-types";
+import { idOpzioneDelJob } from "@/lib/opzioni/ancore";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
@@ -36,7 +39,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ETICHETTA_OPZIONE } from "@/lib/modules/offerta";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,6 +52,7 @@ import {
   Pencil,
   RotateCcw,
   Users,
+  Building2,
   Shield,
   ArrowUpCircle,
   Bell,
@@ -74,28 +77,13 @@ import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
 import { FUSO_UTENTI } from "@/lib/db-date";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
+import { InterruttoreAcquisizioneModulare } from "@/components/settings/interruttore-acquisizione-modulare";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
+import { HubUrlCard } from "@/components/settings/hub-url-card";
+import { SceltaIstanza } from "@/components/shared/tenant-switcher";
 
-const JOB_TYPE_LABELS: Record<string, string> = {
-  ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
-  fast_scan: "Scoperta veloce subnet",
-  snmp_scan: "SNMP Scan",
-  nmap_scan: "Nmap Scan",
-  arp_poll: "ARP Poll",
-  dns_resolve: "DNS Resolve",
-  known_host_check: "Monitoraggio host registrati (ICMP)",
-  cleanup: "Pulizia tabelle MAC",
-  anomaly_check: "Rilevamento anomalie",
-  librenms_sync: "Sincronizzazione LibreNMS",
-  vuln_sync: "Sincronizzazione vulnerability scanner",
-  wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
-  ad_sync: "Sincronizzazione Active Directory",
-  unifi_sync: "Sincronizzazione controller UniFi",
-  hypervisor_sync: "Lettura hypervisor (VM e schede)",
-  pulizia_host: "Pulizia host assenti (notte)",
-  apparati_scelti: "Lettura apparati",
-};
+const JOB_TYPE_LABELS: Record<string, string> = ETICHETTE_JOB;
 
 /** Le righe `apparati_scelti` arrivano da GET /api/jobs con questi campi in più (J3); le altre no. */
 interface DatiApparatiScelti {
@@ -143,6 +131,7 @@ const INTERVAL_OPTIONS = [
 ];
 
 type TabKey =
+  | "istanza"
   | "utenti"
   | "scansione"
   | "identificazione"
@@ -155,6 +144,9 @@ type TabKey =
   | "sistema";
 
 const TAB_ALIASES: Record<string, TabKey> = {
+  istanza: "istanza",
+  tenant: "istanza",
+  cliente: "istanza",
   utenti: "utenti",
   users: "utenti",
   scansione: "scansione",
@@ -279,6 +271,7 @@ function SettingsPageInner() {
   // Sessione caricata e ruolo di sola lettura: la gestione utenti non lo riguarda
   // (/api/users gli risponde 403 per scelta). Finché la sessione carica non si decide.
   const isViewer = sessionStatus === "authenticated" && !isAdmin;
+  const istanzeUtente = ((session?.user as { tenants?: unknown[] } | undefined)?.tenants ?? []).length;
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
@@ -668,17 +661,6 @@ function SettingsPageInner() {
     }
   }
 
-  async function toggleJobEnabled(id: number, enabled: boolean) {
-    await fetch("/api/jobs", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, enabled }),
-    });
-    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
-    // «Prossima» e «sospeso» li calcola il server (apparati_scelti): si rilegge l'elenco.
-    void ricaricaJobs();
-  }
-
   /** Il giro di un apparati_scelti lanciato a mano: si guarda `giro_il` finché cambia, poi elenco e dettaglio si ricaricano. */
   function seguiGiro(id: number, giroPrima: string | null) {
     const timer = attesaGiri.current;
@@ -756,6 +738,8 @@ function SettingsPageInner() {
   // ============ RENDER ============
 
   const allTabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+    // Istanza (Riccardo, 23/10): la scelta del tenant, tolta dalla barra; solo con più istanze.
+    ...(istanzeUtente > 1 ? [{ key: "istanza" as const, label: "Istanza", icon: Building2 }] : []),
     { key: "utenti", label: "Utenti", icon: Users },
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
@@ -815,6 +799,21 @@ function SettingsPageInner() {
           );
         })}
       </div>
+
+      {/* === Tab: Istanza === */}
+      {activeTab === "istanza" && istanzeUtente > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Istanza su cui lavori</CardTitle>
+            <CardDescription>
+              Le pagine con i dati (reti, inventario, anomalie…) mostrano l&apos;istanza scelta qui.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SceltaIstanza />
+          </CardContent>
+        </Card>
+      )}
 
       {/* === Tab: Utenti === */}
       {activeTab === "utenti" && isViewer && (
@@ -1163,11 +1162,14 @@ function SettingsPageInner() {
                     <Fragment key={job.id}>
                     <TableRow id={`job-${job.id}`}>
                       <TableCell>
-                        <Switch
-                          checked={!!job.enabled}
-                          disabled={soloLettura || (scelti && !isAdmin)}
-                          onCheckedChange={(checked) => toggleJobEnabled(job.id, checked)}
-                        />
+                        {/* Accendere e spegnere si fa da Opzioni (22/10): qui lo stato e il rimando alla riga. */}
+                        <Link
+                          href={`/settings/opzioni#${idOpzioneDelJob(job)}`}
+                          title="Cambia da Opzioni"
+                          className={`inline-flex rounded-full border-2 px-2 py-px text-[13px] font-bold ${job.enabled ? "border-[#0D2537] bg-[#0D2537] text-white dark:border-[#E6EEF4] dark:bg-[#E6EEF4] dark:text-[#0D2537]" : "border-[#5B6B77] text-[#0D2537] dark:text-[#E6EEF4]"}`}
+                        >
+                          {job.enabled ? "ACCESO" : "SPENTO"}
+                        </Link>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1360,6 +1362,8 @@ function SettingsPageInner() {
           liste delle reti dove valevano. */}
       {activeTab === "sistema" && (
         <div className="space-y-6">
+          {/* URL pubblico dell'hub: tolto dal menu a sinistra il 23/10 (Riccardo), prima stava in /agents. */}
+          {isSuperAdmin && <HubUrlCard />}
           {isAdmin && (
             <Card>
               <CardHeader>
@@ -1387,6 +1391,8 @@ function SettingsPageInner() {
           )}
 
           {isAdmin && <PuliziaHostCard />}
+
+          {isAdmin && <InterruttoreAcquisizioneModulare isAdmin={isAdmin} />}
 
           <Card>
             <CardHeader>

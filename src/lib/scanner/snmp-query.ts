@@ -6,6 +6,7 @@
  * Fase 2 (se la fase 1 risponde): walk paralleli sugli stessi OID tipici di snmpwalk da CLI
  * (system, ifTable, ARP, MikroTik, UniFi, HOST-RESOURCES).
  */
+import { eUnaMisura } from "./qnap-oid";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { NetworkDevice } from "@/types";
@@ -727,6 +728,12 @@ async function testFingerprintOids(
   return matches;
 }
 
+/** Per model/serial/firmware un valore che è una misura («15979.0 MB», «12 %») non è un'identità: resta assente. */
+export function valoreCampoProfilo(chiave: string, valore: string): string | null {
+  if ((chiave === "model" || chiave === "serial" || chiave === "firmware") && eUnaMisura(valore)) return null;
+  return valore;
+}
+
 /**
  * Query OID specifici da un profilo vendor SNMP.
  * Prova ogni OID nel profilo fields e restituisce i valori trovati.
@@ -756,9 +763,10 @@ export async function querySnmpProfileFields(
         const varbinds = await snmpGet(ip, community, port, [oid], 2500, versione);
         if (varbinds.length > 0) {
           const { value } = parseVarbind(varbinds[0]);
-          if (value) {
-            result[key] = value;
-            onLog?.(`[VendorProfile ${profile.id}] ${key}: ${value.slice(0, 60)}`);
+          const accettato = value ? valoreCampoProfilo(key, value) : null;
+          if (accettato) {
+            result[key] = accettato;
+            onLog?.(`[VendorProfile ${profile.id}] ${key}: ${accettato.slice(0, 60)}`);
             break;
           }
         }

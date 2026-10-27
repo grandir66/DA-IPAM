@@ -454,10 +454,9 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     identifyBySysDescr: /\bqnap\b|\bqts\b|turbo\s*nas/i,
     confidence: 0.98,
     fields: {
-      model: "1.3.6.1.4.1.24681.1.2.1.0",
-      firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-      serial: "1.3.6.1.4.1.24681.1.2.3.0",
-      temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+      model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
     },
   },
 

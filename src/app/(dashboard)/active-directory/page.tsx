@@ -1823,9 +1823,9 @@ function PaginaActiveDirectory() {
                                     </td>
                                     {privilegeMatrix.groups.map((g) => {
                                       const kind = u.cells[g.key] ?? null;
-                                      const path = u.paths?.[g.key];
+                                      const catena = u.paths?.[g.key];
                                       const tip = kind
-                                        ? `${g.displayName}: ${kind}${path?.length ? ` via ${path.join(" → ")}` : ""}`
+                                        ? `${g.displayName}: ${kind}${catena?.length ? ` via ${catena.join(" → ")}` : ""}`
                                         : undefined;
                                       return (
                                         <td

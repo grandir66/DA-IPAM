@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Monitor } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
 
@@ -13,10 +12,9 @@ import { LoadError } from "@/components/shared/load-error";
  * 19/10 (F10). L'interruttore stava solo in `.env.local`: sull'hub la voce RDP non
  * c'era e dall'interfaccia non si capiva perché.
  */
-export function InterruttoreSenzaAgente({ isAdmin }: { isAdmin: boolean }) {
+export function InterruttoreSenzaAgente() {
   const [stato, setStato] = useState<{ attivo: boolean; daAmbiente: boolean } | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [salvo, setSalvo] = useState(false);
 
   const carica = useCallback(async () => {
     const r = await fetchJson<{ attivo: boolean; daAmbiente: boolean }>("/api/integrations/meshcentral/senza-agente", { cache: "no-store" });
@@ -31,22 +29,6 @@ export function InterruttoreSenzaAgente({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     void carica();
   }, [carica]);
-
-  const cambia = async (attivo: boolean) => {
-    setSalvo(true);
-    const r = await fetchJson<{ attivo: boolean; daAmbiente: boolean }>("/api/integrations/meshcentral/senza-agente", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attivo }),
-    });
-    setSalvo(false);
-    if (!r.ok) {
-      toast.error(r.message);
-      return;
-    }
-    setStato(r.data);
-    toast.success(attivo ? "Desktop remoto senza agente acceso" : "Desktop remoto senza agente spento");
-  };
 
   if (errore) return <LoadError what="l'interruttore del desktop remoto senza agente" message={errore} onRetry={() => void carica()} />;
   if (!stato) return null;
@@ -66,13 +48,8 @@ export function InterruttoreSenzaAgente({ isAdmin }: { isAdmin: boolean }) {
               Acceso da <code>MESHCENTRAL_SENZA_AGENTE=1</code> in <code>.env.local</code>: da qui non si spegne.
             </p>
           )}
+          <RigheRimando ids={["automatismo.senza_agente"]} mostraEsito={false} />
         </div>
-        <Switch
-          checked={stato.attivo}
-          disabled={!isAdmin || stato.daAmbiente || salvo}
-          onCheckedChange={(v: boolean) => void cambia(v)}
-          aria-label="Desktop remoto senza agente"
-        />
       </CardContent>
     </Card>
   );

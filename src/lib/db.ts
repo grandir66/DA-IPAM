@@ -16,6 +16,7 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
+import { correggiOidProfiloQnap } from "./db-hub";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import Database from "better-sqlite3";
 import path from "path";
@@ -44,6 +45,7 @@ import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type Co
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
+import { unisci, risolvi } from "./percorsi";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -76,8 +78,8 @@ import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, deleteScheduled
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
 const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
-  ? path.resolve(process.env.DA_IPAM_DB_PATH.trim())
-  : path.join(DATA_DIR, "ipam.db");
+  ? risolvi(process.env.DA_IPAM_DB_PATH.trim())
+  : unisci(DATA_DIR, "ipam.db");
 
 let _db: Database.Database | null = null;
 
@@ -162,9 +164,9 @@ export function getDb(): Database.Database {
   // Senza contesto, con hub.db presente (multi-tenant attivo): l'esito resta
   // quello di sempre (DEFAULT, o ipam.db se DEFAULT manca), ma ogni accesso si
   // conta nel registro dei ripieghi (NUC-1 fase A) per sapere chi correggere.
-  const hubPath = path.join(DATA_DIR, "hub.db");
+  const hubPath = unisci(DATA_DIR, "hub.db");
   const hubPresente = fs.existsSync(hubPath);
-  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
+  const defaultTenantPath = unisci(DATA_DIR, "tenants", "DEFAULT.db");
   if (hubPresente && tenantMod && fs.existsSync(defaultTenantPath)) {
     try {
       const def = tenantMod.getTenantDb("DEFAULT");
@@ -188,7 +190,7 @@ export function getDb(): Database.Database {
 
   // Prima installazione: copia dal template vuoto nel repo (mai committare ipam.db con dati reali).
   if (!process.env.DA_IPAM_DB_PATH?.trim() && !fs.existsSync(DB_PATH)) {
-    const template = path.join(DATA_DIR, "ipam.empty.db");
+    const template = unisci(DATA_DIR, "ipam.empty.db");
     if (fs.existsSync(template)) {
       fs.copyFileSync(template, DB_PATH);
     }
@@ -1544,10 +1546,9 @@ export function getDb(): Database.Database {
         temperature: "1.3.6.1.4.1.6574.1.4.2.0",
       });
       const qnapFields = JSON.stringify({
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       });
       _db
         .prepare(
@@ -1561,6 +1562,12 @@ export function getDb(): Database.Database {
         .run(qnapFields);
       _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_snmp_nas_profiles_v1', '1')").run();
     }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    correggiOidProfiloQnap(_db);
   } catch {
     /* ignore */
   }
@@ -2078,10 +2085,9 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       } },
     { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
       fields: {
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       } },
     { id: "truenas", name: "TrueNAS", cat: "storage", oids: [], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
     { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,

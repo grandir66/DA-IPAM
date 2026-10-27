@@ -9,8 +9,9 @@
 
 import fs from "fs";
 import path from "path";
+import { unisci } from "../percorsi";
 
-const LIBRARY_DIR = path.join(process.cwd(), "config", "snmp-oid-library");
+const LIBRARY_DIR = unisci(process.cwd(), "config", "snmp-oid-library");
 const COMMON_FILE = "common.json";
 const DIR_CATEGORIES = "categories";
 const DIR_DEVICES = "devices";
@@ -53,7 +54,7 @@ function listJsonFiles(dir: string): string[] {
   return fs
     .readdirSync(dir, { withFileTypes: true })
     .filter((d) => d.isFile() && d.name.endsWith(".json") && !d.name.endsWith(".example.json"))
-    .map((d) => path.join(dir, d.name));
+    .map((d) => unisci(dir, d.name));
 }
 
 /** Revisione libreria (per invalidare cache profili SNMP quando cambia un file). */
@@ -64,7 +65,7 @@ export function getSnmpOidLibraryRevision(): string {
     const walk = (d: string) => {
       if (!fs.existsSync(d)) return;
       for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, ent.name);
+        const p = unisci(d, ent.name);
         if (ent.isDirectory()) walk(p);
         else if (ent.name.endsWith(".json")) files.push(p);
       }
@@ -85,14 +86,14 @@ export function getSnmpOidLibraryRevision(): string {
 }
 
 export function loadSnmpOidLibraryCommon(): SnmpOidLibraryCommonFile | null {
-  const p = path.join(LIBRARY_DIR, COMMON_FILE);
+  const p = unisci(LIBRARY_DIR, COMMON_FILE);
   if (!fs.existsSync(p)) return null;
   return safeReadJson<SnmpOidLibraryCommonFile>(p);
 }
 
 /** Campi da file categoria → merge per profile.category */
 export function loadCategoryOidFields(category: string): Record<string, string | string[]> {
-  const p = path.join(LIBRARY_DIR, DIR_CATEGORIES, `${category}.json`);
+  const p = unisci(LIBRARY_DIR, DIR_CATEGORIES, `${category}.json`);
   if (!fs.existsSync(p)) return {};
   const data = safeReadJson<SnmpOidLibraryCategoryFile>(p);
   if (!data?.fields || typeof data.fields !== "object") return {};
@@ -101,7 +102,7 @@ export function loadCategoryOidFields(category: string): Record<string, string |
 
 /** Campi device_specific da file dedicato al profile_id */
 export function loadDeviceOidFields(profileId: string): Record<string, string | string[]> {
-  const p = path.join(LIBRARY_DIR, DIR_DEVICES, `${profileId}.json`);
+  const p = unisci(LIBRARY_DIR, DIR_DEVICES, `${profileId}.json`);
   if (!fs.existsSync(p)) return {};
   const data = safeReadJson<SnmpOidLibraryDeviceFile>(p);
   if (!data?.device_specific || typeof data.device_specific !== "object") return {};
@@ -116,15 +117,15 @@ export type OidLibraryFileEntry =
 /** Elenco file per API / UI (si aggiorna aggiungendo file nella cartella). */
 export function listSnmpOidLibraryFiles(): OidLibraryFileEntry[] {
   const out: OidLibraryFileEntry[] = [];
-  const commonPath = path.join(LIBRARY_DIR, COMMON_FILE);
+  const commonPath = unisci(LIBRARY_DIR, COMMON_FILE);
   if (fs.existsSync(commonPath)) {
     out.push({ kind: "common", name: COMMON_FILE, path: "config/snmp-oid-library/common.json" });
   }
-  for (const f of listJsonFiles(path.join(LIBRARY_DIR, DIR_CATEGORIES))) {
+  for (const f of listJsonFiles(unisci(LIBRARY_DIR, DIR_CATEGORIES))) {
     const base = path.basename(f, ".json");
     out.push({ kind: "category", name: path.basename(f), path: `config/snmp-oid-library/categories/${path.basename(f)}`, category: base });
   }
-  for (const f of listJsonFiles(path.join(LIBRARY_DIR, DIR_DEVICES))) {
+  for (const f of listJsonFiles(unisci(LIBRARY_DIR, DIR_DEVICES))) {
     const base = path.basename(f, ".json");
     const data = safeReadJson<SnmpOidLibraryDeviceFile>(f);
     const n = data?.device_specific ? Object.keys(data.device_specific).length : 0;

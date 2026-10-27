@@ -11,15 +11,15 @@
  * v0.2.656.
  */
 import { readFileSync } from "node:fs";
-import path from "node:path";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { unisci } from "@/lib/percorsi";
 
 export async function GET() {
   const authCheck = await requireAuth();
   if (isAuthError(authCheck)) return authCheck;
 
   try {
-    const scriptPath = path.join(process.cwd(), "scripts", "Configure-WinRM-DA-IPAM.ps1");
+    const scriptPath = unisci(process.cwd(), "scripts", "Configure-WinRM-DA-IPAM.ps1");
     const content = readFileSync(scriptPath, "utf-8");
     return new Response(content, {
       status: 200,

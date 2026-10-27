@@ -42,6 +42,33 @@ export function assicuraColonneMdmConfig(db: Database.Database): string[] {
 }
 
 /**
+ * Sensore trunk (25/10): i protocolli in cui il sensore ha visto l'indirizzo (ARP, DHCP, mDNS, LLDP…),
+ * separati da virgola. Sui DB esistenti la aggiunge `assicuraColonnaProtocolliTrunk`, idempotente e solo additiva,
+ * chiamata da `trunk/sensore-trunk.ts` alla prima lettura o scrittura.
+ */
+export function assicuraColonnaProtocolliTrunk(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(trunk_osservazioni)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("protocolli")) return false;
+  db.exec("ALTER TABLE trunk_osservazioni ADD COLUMN protocolli TEXT");
+  return true;
+}
+
+/**
+ * Rilievi di sicurezza dal trunk (25/10): i server DHCP visti per VLAN, copiati da `/vlan` del sensore
+ * (JSON: `[{mac, ip, ultima_vista}]`). Stesso schema di `assicuraColonnaProtocolliTrunk`: idempotente, solo additiva.
+ */
+export function assicuraColonnaServerDhcpTrunk(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(trunk_vlan)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("server_dhcp")) return false;
+  db.exec("ALTER TABLE trunk_vlan ADD COLUMN server_dhcp TEXT NOT NULL DEFAULT '[]'");
+  return true;
+}
+
+/**
  * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
  * due lettori dello stesso apparato non si sovrascrivono, ADR 0009 punto 4). Le stesse CREATE stanno qui e nella
  * migrazione (`migrateTopologyCavi`, db-tenant.ts); gli indici solo nella migrazione. Nessun CHECK: i valori li valida
@@ -256,6 +283,82 @@ export const DDL_SWITCH_VLAN_NATIVA: ReadonlyArray<readonly [string, string]> = 
 export const SEGNO_SWITCH_VLAN_NATIVA = "switch_vlan_nativa_v21";
 export const VERSIONE_SWITCH_VLAN_NATIVA = 1;
 
+/**
+ * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):
+ * la fotografia dell'ultima lettura buona di ogni parte dell'API di LibreNMS locale (apparati, porte, vicini, VLAN, MAC per
+ * porta, ARP, sensori, inventario), come ADR 0027/0029, più `librenms_lettura` (come è andata ogni parte) e
+ * `librenms_rifiuto` (gli apparati che LibreNMS ha rifiutato all'aggiunta, col motivo: senza `force_add` un rifiuto non
+ * lascia una riga in `librenms_host_map`). Chiavi di LibreNMS, nessuna FOREIGN KEY (spec §4.4: la maggior parte degli
+ * oggetti di LibreNMS sono host senza apparato), nessun CHECK. Date `YYYY-MM-DD HH:MM:SS` UTC per `letto_il`, `tentato_il`
+ * e `il`; le date di LibreNMS (`last_polled`, `aggiornato_il`, `visto_il`) restano come le dà la sua API. CREATE solo nella
+ * migrazione (`migrateLibrenmsFonte`), senza `IF NOT EXISTS` (ADR 0029 §4). La mappa non le legge (spec §4.3).
+ */
+export const DDL_LIBRENMS_FONTE_V1: ReadonlyArray<readonly [string, string]> = [
+  ["librenms_apparato", `CREATE TABLE librenms_apparato (
+  librenms_device_id INTEGER PRIMARY KEY, ip TEXT, hostname TEXT, sysname TEXT, os TEXT, hardware TEXT, version TEXT,
+  serial TEXT, status INTEGER, last_polled TEXT, last_discovered TEXT, letto_il TEXT NOT NULL
+)`],
+  ["librenms_porta", `CREATE TABLE librenms_porta (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER NOT NULL, if_index INTEGER, if_name TEXT, if_alias TEXT, if_type TEXT,
+  oper_status TEXT, admin_status TEXT, speed INTEGER, mac TEXT, vlan INTEGER, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, port_id)
+)`],
+  ["librenms_vicino", `CREATE TABLE librenms_vicino (
+  librenms_device_id INTEGER NOT NULL, link_id INTEGER NOT NULL, local_port_id INTEGER, protocol TEXT, remote_hostname TEXT,
+  remote_port TEXT, remote_platform TEXT, remote_device_id INTEGER, remote_port_id INTEGER, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, link_id)
+)`],
+  ["librenms_vlan", `CREATE TABLE librenms_vlan (
+  librenms_device_id INTEGER NOT NULL, vlan_id INTEGER NOT NULL, nome TEXT, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, vlan_id)
+)`],
+  ["librenms_mac_porta", `CREATE TABLE librenms_mac_porta (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER NOT NULL, mac TEXT NOT NULL, vlan_id INTEGER, visto_il TEXT,
+  letto_il TEXT NOT NULL, PRIMARY KEY (librenms_device_id, port_id, mac)
+)`],
+  ["librenms_arp", `CREATE TABLE librenms_arp (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER, mac TEXT NOT NULL, ip TEXT NOT NULL, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, mac, ip)
+)`],
+  ["librenms_sensore", `CREATE TABLE librenms_sensore (
+  sensor_id INTEGER PRIMARY KEY, librenms_device_id INTEGER NOT NULL, classe TEXT NOT NULL, descrizione TEXT, valore REAL,
+  limite_basso REAL, limite_alto REAL, aggiornato_il TEXT, letto_il TEXT NOT NULL
+)`],
+  ["librenms_inventario", `CREATE TABLE librenms_inventario (
+  librenms_device_id INTEGER NOT NULL, ent_index INTEGER NOT NULL, classe TEXT, nome TEXT, descrizione TEXT, modello TEXT,
+  seriale TEXT, firmware TEXT, contenuto_in INTEGER, letto_il TEXT NOT NULL, PRIMARY KEY (librenms_device_id, ent_index)
+)`],
+  ["librenms_lettura", `CREATE TABLE librenms_lettura (
+  parte TEXT PRIMARY KEY, esito TEXT NOT NULL, righe INTEGER, letto_il TEXT, tentato_il TEXT NOT NULL, codice TEXT
+)`],
+  ["librenms_rifiuto", `CREATE TABLE librenms_rifiuto (
+  ip TEXT PRIMARY KEY, host_id INTEGER, network_device_id INTEGER, codice TEXT NOT NULL, motivo TEXT NOT NULL, il TEXT NOT NULL
+)`],
+];
+export const INDICI_LIBRENMS_FONTE_V1: ReadonlyArray<readonly [string, string]> = [
+  ["idx_librenms_apparato_ip", "CREATE INDEX idx_librenms_apparato_ip ON librenms_apparato(ip)"],
+  ["idx_librenms_sensore_device", "CREATE INDEX idx_librenms_sensore_device ON librenms_sensore(librenms_device_id)"],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_LIBRENMS_FONTE = "librenms_fonte_v21";
+export const VERSIONE_LIBRENMS_FONTE = 1;
+
+/**
+ * Oggetti esclusi dall'aggiunta automatica in LibreNMS (Riccardo 22/10: candidati tutti gli oggetti con SNMP verificato,
+ * con un'esclusione per oggetto «Non aggiungere a LibreNMS»). Chiave l'IP come `librenms_rifiuto`: è quello che va in
+ * LibreNMS, per un host e per il suo apparato. Vale solo per il giro automatico: un'aggiunta chiesta a mano passa. Nasce
+ * SOLO nella migrazione (`migrateLibrenmsEsclusione`), senza `IF NOT EXISTS`; se manca il giro non aggiunge da solo
+ * nessun oggetto SNMP (non può sapere chi è escluso) e lo dice nell'esito.
+ */
+export const DDL_LIBRENMS_ESCLUSIONE: ReadonlyArray<readonly [string, string]> = [
+  ["librenms_esclusione", `CREATE TABLE librenms_esclusione (
+  ip TEXT PRIMARY KEY, host_id INTEGER, network_device_id INTEGER, il TEXT NOT NULL
+)`],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_LIBRENMS_ESCLUSIONE = "librenms_esclusione_v21";
+export const VERSIONE_LIBRENMS_ESCLUSIONE = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
@@ -371,6 +474,86 @@ export const SEGNO_VULCAN = "vulcan_coda_v21";
 export const VERSIONE_VULCAN = 1;
 
 /**
+ * Assegnatari NIS2 da AD e utente prevalente dei PC (piano 2026-10-23-assegnatari-da-ad, passo 1).
+ *
+ * - `asset_assignees`: il legame con l'utente AD (integrazione + objectGUID, unico), nome e cognome separati, reparto,
+ *   ruolo, cellulare, origine (`manuale` | `ad`), stato in AD e il giorno in cui è risultato disattivato la prima volta;
+ * - `ad_users`: gli attributi in più letti dalla sync (givenName, sn, mobile, company, manager, employeeID, ufficio);
+ * - `inventory_assets.proposta_assegnatario_off`: «PC condiviso, non proporre» (tavola ⑬);
+ * - `host_accessi_utente`: chi si è collegato a un host, un conteggio per account, fonte e giorno. La scrive il giro
+ *   orario `assegnatari/job.ts` (Wazuh, WinRM) e l'ingresso dell'agente GLPI; la pulizia a 90 giorni sta nel giro.
+ *
+ * Tutto additivo e solo nella migrazione (`migrateAssegnatariAd`), come le tabelle della coda qui sopra.
+ */
+export const COLONNE_ASSEGNATARI_AD: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["asset_assignees", "ad_integration_id", "INTEGER REFERENCES ad_integrations(id) ON DELETE SET NULL"],
+  ["asset_assignees", "ad_object_guid", "TEXT"],
+  ["asset_assignees", "nome", "TEXT"],
+  ["asset_assignees", "cognome", "TEXT"],
+  ["asset_assignees", "reparto", "TEXT"],
+  ["asset_assignees", "ruolo", "TEXT"],
+  ["asset_assignees", "cellulare", "TEXT"],
+  ["asset_assignees", "origine", "TEXT NOT NULL DEFAULT 'manuale'"],
+  ["asset_assignees", "ad_abilitato", "INTEGER"],
+  ["asset_assignees", "ad_disattivato_il", "TEXT"],
+  ["ad_users", "given_name", "TEXT"],
+  ["ad_users", "surname", "TEXT"],
+  ["ad_users", "mobile", "TEXT"],
+  ["ad_users", "company", "TEXT"],
+  ["ad_users", "manager_dn", "TEXT"],
+  ["ad_users", "employee_id", "TEXT"],
+  ["ad_users", "office", "TEXT"],
+  ["inventory_assets", "proposta_assegnatario_off", "INTEGER NOT NULL DEFAULT 0"],
+];
+export const DDL_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
+  ["host_accessi_utente", `CREATE TABLE host_accessi_utente (
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  account TEXT NOT NULL,
+  fonte TEXT NOT NULL CHECK (fonte IN ('wazuh_tastiera', 'wazuh_rete', 'winrm', 'glpi')),
+  giorno TEXT NOT NULL,
+  conteggio INTEGER NOT NULL DEFAULT 0,
+  ultimo TEXT,
+  PRIMARY KEY (host_id, account, fonte, giorno)
+)`],
+];
+export const INDICI_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
+  ["idx_asset_assignees_ad_guid", "CREATE UNIQUE INDEX idx_asset_assignees_ad_guid ON asset_assignees(ad_integration_id, ad_object_guid) WHERE ad_object_guid IS NOT NULL"],
+  ["idx_host_accessi_utente_account", "CREATE INDEX idx_host_accessi_utente_account ON host_accessi_utente(account, giorno)"],
+  ["idx_host_accessi_utente_giorno", "CREATE INDEX idx_host_accessi_utente_giorno ON host_accessi_utente(giorno)"],
+];
+export const SEGNO_ASSEGNATARI_AD = "assegnatari_ad_v21";
+export const VERSIONE_ASSEGNATARI_AD = 1;
+
+/**
+ * da-vault (piano 2026-10-23):
+ * - `credentials.credential_ref` (passo 6): il percorso del segreto in OpenBao (`clienti/<codcli>/…`), accanto alle
+ *   colonne cifrate. Si legge solo con `DA_VAULT_OPENBAO=1`; NULL = la voce si legge dalle colonne (doppia lettura);
+ * - `vault_visualizzazioni` (passo 10): chi ha visto una password o esportato l'archivio, e quando. Niente chiave
+ *   esterna sulla credenziale: il registro resta anche se la voce si elimina (col nome di allora).
+ *
+ * Tutto additivo e solo nella migrazione (`migrateVault`), come gli assegnatari qui sopra.
+ */
+export const COLONNE_VAULT: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["credentials", "credential_ref", "TEXT"],
+];
+export const DDL_VAULT: ReadonlyArray<readonly [string, string]> = [
+  ["vault_visualizzazioni", `CREATE TABLE vault_visualizzazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  utente_id TEXT,
+  utente TEXT NOT NULL,
+  azione TEXT NOT NULL,
+  credential_id INTEGER,
+  credenziale TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+];
+export const INDICI_VAULT: ReadonlyArray<readonly [string, string]> = [
+  ["idx_vault_visualizzazioni_data", "CREATE INDEX idx_vault_visualizzazioni_data ON vault_visualizzazioni(created_at)"],
+];
+export const SEGNO_VAULT = "vault_v21";
+export const VERSIONE_VAULT = 1;
+
+/**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
  *
@@ -417,6 +600,74 @@ export const DDL_ZABBIX_LETTURA: ReadonlyArray<readonly [string, string]> = [
 /** Crea le tabelle del pannello Zabbix se mancano. Ripetibile, solo additiva. */
 export function assicuraTabelleZabbixLettura(db: Database.Database): void {
   for (const [, ddl] of DDL_ZABBIX_LETTURA) db.exec(ddl);
+}
+
+/**
+ * Acquisizione modulare (collector JSON 1.0, piano 2026-10-21 §5 C1-C2; schema in
+ * `docs/proposte/2026-10-22-collector-snapshot-schema.md`, adattato alla decisione 4 della tavola C1). Dati del
+ * cliente → DB del tenant. Nessuna colonna su `network_devices` (si ricostruisce da `sqlite_master`).
+ *
+ * - `acquisition_snapshots`: gli snapshot letti, immutabili (solo INSERT e la cancellazione della retention D5),
+ *   JSON gzip già ripulito dei segreti. `credenziali` = i NOMI delle voci usate per protocollo, mai segreti.
+ * - `acquisition_source_choices`: solo la scelta fatta nel caso dubbio (due collector possibili, o nessuna
+ *   credenziale compatibile). La fonte si ricava da sola dal prodotto e dalle credenziali assegnate; questa riga
+ *   c'è solo dove una persona ha deciso. `scelta` = id del catalogo oppure `classica` (acquisizione di sempre).
+ * - `acquisition_changes`: cosa ha cambiato nell'apparato ciascuno snapshot (campo, prima, dopo, esito); va via
+ *   con lo snapshot.
+ *
+ * Niente CHECK sui valori (collector, stato, esito): un valore nuovo non deve chiedere una ricostruzione. Le stesse
+ * CREATE stanno dentro `TENANT_SCHEMA_SQL`, che gira a ogni apertura; `assicuraTabelleAcquisizioneModulare` le rifà
+ * per chi apre un DB senza `getTenantDb` (prove).
+ */
+export const DDL_ACQUISIZIONE_MODULARE: ReadonlyArray<readonly [string, string]> = [
+  ["acquisition_snapshots", `CREATE TABLE IF NOT EXISTS acquisition_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  collector TEXT NOT NULL,
+  collector_version TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  section_status TEXT NOT NULL,
+  warning_count INTEGER NOT NULL DEFAULT 0,
+  credenziali TEXT NOT NULL DEFAULT '{}',
+  requested_by INTEGER,
+  requested_by_name TEXT,
+  trigger TEXT NOT NULL DEFAULT 'manual',
+  payload BLOB NOT NULL,
+  payload_bytes INTEGER NOT NULL,
+  payload_gzip_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_acq_snap_device_time", "CREATE INDEX IF NOT EXISTS idx_acq_snap_device_time ON acquisition_snapshots(device_id, finished_at DESC, id DESC)"],
+  ["acquisition_source_choices", `CREATE TABLE IF NOT EXISTS acquisition_source_choices (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  scelta TEXT NOT NULL,
+  chosen_by INTEGER,
+  chosen_by_name TEXT,
+  chosen_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["acquisition_changes", `CREATE TABLE IF NOT EXISTS acquisition_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id INTEGER NOT NULL REFERENCES acquisition_snapshots(id) ON DELETE CASCADE,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  destinazione TEXT NOT NULL,
+  chiave TEXT NOT NULL,
+  campo TEXT NOT NULL,
+  prima TEXT,
+  dopo TEXT,
+  esito TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_acq_changes_snapshot", "CREATE INDEX IF NOT EXISTS idx_acq_changes_snapshot ON acquisition_changes(snapshot_id, id)"],
+];
+
+/** Crea le tabelle dell'acquisizione modulare se mancano. Ripetibile, solo additiva. */
+export function assicuraTabelleAcquisizioneModulare(db: Database.Database): void {
+  for (const [, ddl] of DDL_ACQUISIZIONE_MODULARE) db.exec(ddl);
 }
 
 export const TENANT_SCHEMA_SQL = `
@@ -758,6 +1009,75 @@ CREATE TABLE IF NOT EXISTS mac_ip_mapping (
   last_seen TEXT DEFAULT (datetime('now')),
   previous_ip TEXT
 );
+
+-- Sensore trunk (2026-10-24): copia di quanto il sensore vede sulla porta trunk
+-- (VLAN, MAC, IP, nome). Si riempie solo con tenant_settings.trunk_lettura = '1'.
+CREATE TABLE IF NOT EXISTS trunk_osservazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vid INTEGER NOT NULL,
+  mac_normalized TEXT NOT NULL,
+  mac_display TEXT NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  nome TEXT,
+  fonte_nome TEXT,
+  protocolli TEXT,
+  passivo INTEGER NOT NULL DEFAULT 0,
+  attivo INTEGER NOT NULL DEFAULT 0,
+  prima_vista TEXT NOT NULL,
+  ultima_vista TEXT NOT NULL,
+  UNIQUE(vid, mac_normalized, ip)
+);
+
+CREATE TABLE IF NOT EXISTS trunk_vlan (
+  vid INTEGER PRIMARY KEY,
+  vista INTEGER NOT NULL DEFAULT 0,
+  dichiarata INTEGER NOT NULL DEFAULT 0,
+  mac INTEGER NOT NULL DEFAULT 0,
+  reti TEXT NOT NULL DEFAULT '[]',
+  server_dhcp TEXT NOT NULL DEFAULT '[]',
+  ultima_vista TEXT,
+  aggiornato TEXT NOT NULL
+);
+
+-- Apparati di rete che si annunciano sul trunk con CDP o LLDP (25/10), copiati da /vicini del sensore.
+CREATE TABLE IF NOT EXISTS trunk_vicini (
+  protocollo TEXT NOT NULL,
+  sistema TEXT NOT NULL,
+  porta TEXT NOT NULL,
+  vid INTEGER NOT NULL DEFAULT 0,
+  indirizzo TEXT,
+  vlan_nativa INTEGER,
+  ultima_vista TEXT NOT NULL,
+  PRIMARY KEY (protocollo, sistema, porta)
+);
+
+-- Rilievi di sicurezza della rete osservata (25/10): allarmi, esposizioni e novità calcolati da DA-IPAM
+-- sui fatti del sensore. Una riga per chiave (tipo + oggetto): si aggiorna a ogni lettura, si chiude
+-- (chiuso_il) quando la condizione sparisce, «preso in carico» resta. La colonna fonte lascia la porta aperta
+-- a una sonda con porta specchio. Nessun CHECK: i valori li valida TypeScript (trunk/rilievi.ts).
+CREATE TABLE IF NOT EXISTS rete_rilievi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chiave TEXT NOT NULL UNIQUE,
+  fonte TEXT NOT NULL DEFAULT 'sensore-trunk',
+  tipo TEXT NOT NULL,
+  categoria TEXT NOT NULL,
+  gravita TEXT NOT NULL,
+  vid INTEGER,
+  mac TEXT,
+  ip TEXT,
+  descrizione TEXT NOT NULL,
+  dettaglio TEXT,
+  prima_vista TEXT,
+  ultima_vista TEXT,
+  rilevato_il TEXT NOT NULL,
+  aggiornato_il TEXT NOT NULL,
+  chiuso_il TEXT,
+  preso_in_carico INTEGER NOT NULL DEFAULT 0,
+  preso_da TEXT,
+  preso_il TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rete_rilievi_aperti ON rete_rilievi(chiuso_il, categoria, gravita);
+CREATE INDEX IF NOT EXISTS idx_rete_rilievi_mac ON rete_rilievi(mac);
 
 CREATE TABLE IF NOT EXISTS mac_ip_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1846,6 +2166,9 @@ CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_
 
 -- Pannello Zabbix in sola lettura (passo 7.4): vedi DDL_ZABBIX_LETTURA.
 ${DDL_ZABBIX_LETTURA.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Acquisizione modulare (collector JSON 1.0): vedi DDL_ACQUISIZIONE_MODULARE.
+${DDL_ACQUISIZIONE_MODULARE.map(([, ddl]) => `${ddl};`).join("\n\n")}
 `;
 
 export const TENANT_INDEXES_SQL = `

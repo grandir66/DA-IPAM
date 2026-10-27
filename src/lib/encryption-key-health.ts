@@ -1,16 +1,19 @@
 import { createHash } from "crypto";
 import { existsSync, readdirSync } from "fs";
-import { join } from "path";
 import Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
 import { resolveDataDir } from "./data-dir";
+import { cartellaVault } from "./vault/appliance";
+import { archivioPresente } from "./vault/archivio";
+import { chiaveDatiAttiva, vaultLocaleAcceso } from "./vault/stato";
+import { unisci } from "./percorsi";
 
 function resolveTenantsDir(): string {
-  return join(resolveDataDir(), "tenants");
+  return unisci(resolveDataDir(), "tenants");
 }
 
 function resolveHubDbPath(): string {
-  return join(resolveDataDir(), "hub.db");
+  return unisci(resolveDataDir(), "hub.db");
 }
 
 export type EncryptionKeyHealth = {
@@ -57,7 +60,7 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   if (existsSync(tenantsDir)) {
     for (const file of readdirSync(tenantsDir)) {
       if (!file.endsWith(".db")) continue;
-      const dbPath = join(tenantsDir, file);
+      const dbPath = unisci(tenantsDir, file);
       let db: Database.Database | null = null;
       try {
         db = new Database(dbPath, { readonly: true, fileMustExist: true });
@@ -121,6 +124,12 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   // restava verde mentre credenziali di rete/integrazioni erano già irrecuperabili.
   const ok = credentialCount === 0 || decryptOkCount === credentialCount;
   const failCount = credentialCount - decryptOkCount;
+  // da-vault: col vault locale acceso e bloccato le credenziali della chiave degli slot non si leggono per quello,
+  // non per una ENCRYPTION_KEY sbagliata.
+  const vaultBloccato = vaultLocaleAcceso() && !chiaveDatiAttiva();
+  // Rilievo 8 della revisione: interruttore spento ma l'archivio del vault c'è e i valori non si aprono con
+  // ENCRYPTION_KEY = quasi certamente sono stati ricifrati dal vault e qualcuno ha spento DA_VAULT_LOCALE. Lo si dice.
+  const archivioCon = !vaultLocaleAcceso() && archivioPresente(cartellaVault());
   return {
     configured: true,
     fingerprint,
@@ -129,12 +138,25 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
     ok,
     detail: ok
       ? null
-      : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
-        "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
+      : vaultBloccato
+        ? `${failCount}/${credentialCount} credenziali non leggibili: vault bloccato (Impostazioni › Vault).`
+        : archivioCon
+          ? `${failCount}/${credentialCount} credenziali non leggibili: valori ricifrati dal vault e DA_VAULT_LOCALE spento (c'è un archivio del vault). ` +
+            "Riaccendi DA_VAULT_LOCALE=1 nel file dell'appliance e riavvia, oppure riporta i valori alla chiave d'installazione " +
+            "(scripts/da-vault.ts ricifra --inversa --applica, a servizio fermo, con DA_VAULT_LOCALE=1; ADR 0034). Se non sono mai stati ricifrati, la causa è ENCRYPTION_KEY."
+          : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
+          "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
   };
 }
 
 export function logEncryptionKeyHealthAtBoot(): void {
+  // da-vault: col vault locale acceso il controllo all'avvio girerebbe prima dello sblocco (TPM o passphrase) e
+  // scambierebbe i valori della chiave degli slot per una chiave sbagliata. Lo stato vero lo dicono /api/health e
+  // Impostazioni › Vault, dopo lo sblocco.
+  if (vaultLocaleAcceso()) {
+    console.info("[encryption-key] vault locale acceso: le credenziali si controllano dopo lo sblocco (/api/health, Impostazioni › Vault)");
+    return;
+  }
   const probe = probeEncryptionKeyHealth();
   if (!probe.configured) {
     console.error("CRITICAL [encryption-key] ENCRYPTION_KEY assente — credenziali e token non cifrati correttamente.");

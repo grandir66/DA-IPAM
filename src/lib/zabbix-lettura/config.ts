@@ -187,6 +187,15 @@ export function salvaConfigLettura(db: Database.Database, i: IngressoConfig, chi
   return { ok: true, config: leggiConfigLettura(db)! };
 }
 
+/** Accende o spegne la lettura senza toccare il resto (pagina Opzioni). false = mai configurata. */
+export function impostaAccesoLettura(db: Database.Database, acceso: boolean, chi: string): boolean {
+  return (
+    pronto(db)
+      .prepare("UPDATE zabbix_lettura_config SET enabled = ?, aggiornato_il = datetime('now'), aggiornato_da = ? WHERE id = 1")
+      .run(acceso ? 1 : 0, chi).changes > 0
+  );
+}
+
 /** Toglie la configurazione (gli abbinamenti verificati restano: sono di DA-IPAM). */
 export function togliConfigLettura(db: Database.Database): boolean {
   return pronto(db).prepare("DELETE FROM zabbix_lettura_config WHERE id = 1").run().changes > 0;

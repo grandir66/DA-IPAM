@@ -1446,6 +1446,16 @@ export async function getDeviceInfoViaSNMPProfile(
 }
 
 /**
+ * Sovrappone la lettura SSH a quella già raccolta (SNMP/WinRM). Un firmware SSH nullo o assente non cancella
+ * quello già letto: l'SSH dei NAS può non averlo (comando mancante) mentre l'SNMP lo aveva.
+ */
+export function unisciInfoSsh(base: DeviceInfo, ssh: Partial<DeviceInfo>): DeviceInfo {
+  const unito = { ...base, ...ssh };
+  if (ssh.firmware == null && base.firmware != null) unito.firmware = base.firmware;
+  return unito;
+}
+
+/**
  * Combina SNMP e SSH per ottenere info complete.
  * Prova SNMP se disponibile (community o protocollo SNMP), poi SSH per model/firmware.
  * Se il profilo SNMP vendor è completo (model + firmware + serial), può saltare SSH.
@@ -1583,7 +1593,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   if (hasSsh) {
     const sshInfo = await getDeviceInfoFromSsh(device);
     const snmpNas = result.nas_inventory;
-    result = { ...result, ...sshInfo };
+    result = unisciInfoSsh(result, sshInfo);
     if (snmpNas && sshInfo.nas_inventory && nasKind) {
       const { mergeNasInventorySnapshots } = await import("./nas-acquisition");
       result.nas_inventory = mergeNasInventorySnapshots(snmpNas, sshInfo.nas_inventory);

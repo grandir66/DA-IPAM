@@ -24,8 +24,9 @@
  * (rotte degli utenti): copre il resto con le regole generali.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import { FORZA_GUARDIA, rilevaGestori, type GestoreRilevato, type Guardia, type MetodoHttp } from "./rilevatore-guardie";
+import { unisci } from "../percorsi";
 
 export type LivelloAtteso = "auth" | "admin-o-onboarding" | "admin" | "superadmin";
 
@@ -77,8 +78,14 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // da-vault (revisione del 23/10, rilievo 14): «chi ha visto cosa» riporta i nomi delle credenziali viste e le persone che
+  // le hanno guardate: solo admin (tecnici Domarc e admin del cliente, D2). Lo stato del vault resta a tutti gli
+  // autenticati, ma senza nomi di credenziali (provato in `src/lib/vault/__tests__/stato-senza-nomi.test.ts`).
+  { rotta: "/api/vault/registro", metodi: ["GET"], livello: "admin", motivo: "il registro riporta nomi di credenziali e di persone" },
   // Scheda MikroTik (Task 10): gli utenti del router (nomi, gruppi, indirizzi ammessi) sono un dato riservato, solo admin.
   { rotta: "/api/devices/[id]/mikrotik-utenti", metodi: ["GET"], livello: "admin", motivo: "utenti del router: nomi, gruppi e indirizzi ammessi, dato riservato" },
+  // Acquisizione modulare (tavola C1, decisione 2): lo snapshot completo come JSON è l'inventario dell'apparato, solo admin.
+  { rotta: "/api/devices/[id]/acquisizione/snapshot/[sid]/scarica", metodi: ["GET"], livello: "admin", motivo: "snapshot completo del collector: l'inventario dell'apparato da scaricare, solo admin (tavola C1)" },
   // Tappa 4 credenziali (15/10): il punto raggiunto, letto all'apertura e salvato a ogni passo.
   { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Revisione della tappa 4: il router già creato si modifica con colonne, porta e binding insieme.
@@ -384,18 +391,18 @@ export function censisci(
 
 /** Rotta URL da un file `route.ts` sotto `src/app`. */
 export function rottaDaFile(radice: string, file: string): string {
-  return "/" + relative(join(radice, "src", "app"), file).replace(/\\/g, "/").replace(/\/route\.ts$/, "");
+  return "/" + relative(unisci(radice, "src", "app"), file).replace(/\\/g, "/").replace(/\/route\.ts$/, "");
 }
 
 /** Tutti i gestori dell'albero `src/app/api` di un progetto, con la loro guardia. */
 export function gestoriDellAlbero(radice: string): { file: number; gestori: GestoreCensito[] } {
   const cammina = (dir: string): string[] =>
     readdirSync(dir).flatMap((n) => {
-      const p = join(dir, n);
+      const p = unisci(dir, n);
       if (statSync(p).isDirectory()) return cammina(p);
       return n === "route.ts" ? [p] : [];
     });
-  const files = cammina(join(radice, "src", "app", "api"));
+  const files = cammina(unisci(radice, "src", "app", "api"));
   const gestori: GestoreCensito[] = [];
   for (const f of files) {
     const rotta = rottaDaFile(radice, f);

@@ -1,5 +1,6 @@
 "use client";
 
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Radar, Zap, Terminal, Save, ChevronDown, ChevronRight } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 
@@ -142,21 +142,9 @@ export function ScanConfigTab() {
 
   // --- Quick scan state ---
   const [config, setConfig] = useState<ScanConfig | null>(null);
-  const [quickConcurrency, setQuickConcurrency] = useState<number>(6);
-  const [quickTimeoutS, setQuickTimeoutS] = useState<number>(10);
-  const [quickExecLimitMs, setQuickExecLimitMs] = useState<number>(22000);
-  const [savingQuick, setSavingQuick] = useState(false);
-  const [quickDirty, setQuickDirty] = useState(false);
-  const [quickPorts, setQuickPorts] = useState<string>("");
-  const [quickPortsDirty, setQuickPortsDirty] = useState(false);
-  const [savingQuickPorts, setSavingQuickPorts] = useState(false);
 
   // --- Naabu / port discovery ---
-  const [portDiscovery, setPortDiscovery] = useState<PortDiscoveryMode>("nmap");
-  const [naabuBinPath, setNaabuBinPath] = useState("");
   const [naabuAvailable, setNaabuAvailable] = useState<boolean | null>(null);
-  const [naabuDirty, setNaabuDirty] = useState(false);
-  const [savingNaabu, setSavingNaabu] = useState(false);
 
   // --- Env vars collapsible ---
   const [envOpen, setEnvOpen] = useState(false);
@@ -170,11 +158,7 @@ export function ScanConfigTab() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [profileRes, scanRes, settingsRes] = await Promise.all([
-        fetch("/api/nmap-profiles"),
-        fetch("/api/scan-config"),
-        fetch("/api/settings"),
-      ]);
+      const [profileRes, scanRes] = await Promise.all([fetch("/api/nmap-profiles"), fetch("/api/scan-config")]);
 
       // Nmap profile
       if (profileRes.ok) {
@@ -197,44 +181,9 @@ export function ScanConfigTab() {
         const sc = (await scanRes.json()) as ScanConfig;
         setConfig(sc);
 
-        // Load saved DB overrides if present, else use env-based defaults
-        let savedSettings: Record<string, string> = {};
-        if (settingsRes.ok) {
-          try {
-            savedSettings = await settingsRes.json();
-          } catch { /* ignore */ }
-        }
-
-        setQuickConcurrency(
-          savedSettings.quick_scan_concurrency
-            ? parseInt(savedSettings.quick_scan_concurrency, 10)
-            : sc.quickScan.concurrency
-        );
-        setQuickTimeoutS(
-          savedSettings.quick_scan_host_timeout_s
-            ? parseInt(savedSettings.quick_scan_host_timeout_s, 10)
-            : sc.quickScan.hostTimeoutSeconds
-        );
-        setQuickExecLimitMs(
-          savedSettings.quick_scan_exec_limit_ms
-            ? parseInt(savedSettings.quick_scan_exec_limit_ms, 10)
-            : sc.quickScan.execLimitMs
-        );
-        setQuickPorts(
-          savedSettings.quick_scan_tcp_ports || sc.quickScan.tcpPorts
-        );
-
-        const modeFromApi = sc.portDiscovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
-        const modeFromSettings =
-          savedSettings.port_discovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
-        setPortDiscovery(sc.portDiscovery ? modeFromApi : modeFromSettings);
-        setNaabuBinPath(
-          (sc.naabuBinPath ?? savedSettings.naabu_bin_path ?? "").trim()
-        );
         setNaabuAvailable(
           typeof sc.naabuAvailable === "boolean" ? sc.naabuAvailable : null
         );
-        setNaabuDirty(false);
       }
     } catch {
       toast.error("Errore nel caricamento configurazione scansione");
@@ -294,95 +243,6 @@ export function ScanConfigTab() {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Quick scan settings save
-  // ---------------------------------------------------------------------------
-
-  async function handleSaveQuick() {
-    setSavingQuick(true);
-    try {
-      const entries: [string, string][] = [
-        ["quick_scan_concurrency", String(quickConcurrency)],
-        ["quick_scan_host_timeout_s", String(quickTimeoutS)],
-        ["quick_scan_exec_limit_ms", String(quickExecLimitMs)],
-      ];
-
-      for (const [key, value] of entries) {
-        const res = await fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key, value }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || `Errore salvando ${key}`);
-        }
-      }
-
-      toast.success("Parametri quick scan salvati");
-      setQuickDirty(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore di rete");
-    } finally {
-      setSavingQuick(false);
-    }
-  }
-
-  async function saveQuickPorts() {
-    setSavingQuickPorts(true);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "quick_scan_tcp_ports", value: quickPorts.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || "Errore");
-      }
-      toast.success("Porte quick scan salvate");
-      setQuickPortsDirty(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore di rete");
-    } finally {
-      setSavingQuickPorts(false);
-    }
-  }
-
-  async function handleSaveNaabu() {
-    setSavingNaabu(true);
-    try {
-      const entries: [string, string][] = [
-        ["port_discovery", portDiscovery],
-        ["naabu_bin_path", naabuBinPath.trim()],
-      ];
-      for (const [key, value] of entries) {
-        const res = await fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key, value }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error((data as { error?: string }).error || `Errore salvando ${key}`);
-        }
-      }
-      toast.success("Port discovery salvato");
-      setNaabuDirty(false);
-      // Refresh availability with the new path
-      const scanRes = await fetch("/api/scan-config");
-      if (scanRes.ok) {
-        const sc = (await scanRes.json()) as ScanConfig;
-        setNaabuAvailable(
-          typeof sc.naabuAvailable === "boolean" ? sc.naabuAvailable : null
-        );
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore di rete");
-    } finally {
-      setSavingNaabu(false);
-    }
-  }
 
   // ---------------------------------------------------------------------------
   // Render
@@ -496,88 +356,12 @@ export function ScanConfigTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium">
-                  Porte TCP quick scan ({quickPorts.split(",").filter(Boolean).length})
-                </h4>
-                {quickPortsDirty && (
-                  <Button size="sm" onClick={saveQuickPorts} disabled={savingQuickPorts}>
-                    {savingQuickPorts ? "Salvataggio…" : "Salva porte"}
-                  </Button>
-                )}
-              </div>
-              <Textarea
-                value={quickPorts}
-                onChange={(e) => { setQuickPorts(e.target.value); setQuickPortsDirty(true); }}
-                className="font-mono text-xs min-h-[60px]"
-                placeholder="22,53,80,161,443,445,..."
-              />
-              <p className="text-xs text-muted-foreground mt-1">Numeri di porta separati da virgola. Queste porte vengono testate su ogni host che risponde al ping ICMP.</p>
-              {quickPorts && <div className="mt-2"><PortList ports={quickPorts} protocol="TCP" /></div>}
-            </div>
-
-            {/* Editable metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <div className="rounded-md border p-3 space-y-2">
-                <Label htmlFor="qs-concurrency" className="text-xs text-muted-foreground">Host paralleli</Label>
-                <Input
-                  id="qs-concurrency"
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={quickConcurrency}
-                  onChange={(e) => {
-                    setQuickConcurrency(parseInt(e.target.value, 10) || 1);
-                    setQuickDirty(true);
-                  }}
-                  className="text-center text-lg font-bold h-10"
-                />
-              </div>
-              <div className="rounded-md border p-3 space-y-2">
-                <Label htmlFor="qs-timeout" className="text-xs text-muted-foreground">Timeout per host (s)</Label>
-                <Input
-                  id="qs-timeout"
-                  type="number"
-                  min={5}
-                  max={20}
-                  value={quickTimeoutS}
-                  onChange={(e) => {
-                    setQuickTimeoutS(parseInt(e.target.value, 10) || 5);
-                    setQuickDirty(true);
-                  }}
-                  className="text-center text-lg font-bold h-10"
-                />
-              </div>
-              <div className="rounded-md border p-3 space-y-2">
-                <Label htmlFor="qs-exec" className="text-xs text-muted-foreground">Limite exec Nmap (ms)</Label>
-                <Input
-                  id="qs-exec"
-                  type="number"
-                  min={10000}
-                  max={90000}
-                  step={1000}
-                  value={quickExecLimitMs}
-                  onChange={(e) => {
-                    setQuickExecLimitMs(parseInt(e.target.value, 10) || 10000);
-                    setQuickDirty(true);
-                  }}
-                  className="text-center text-lg font-bold h-10"
-                />
-              </div>
-            </div>
-
-            {quickDirty && (
-              <div className="flex items-center gap-2">
-                <Button onClick={handleSaveQuick} disabled={savingQuick} size="sm">
-                  <Save className="h-4 w-4 mr-2" />
-                  {savingQuick ? "Salvataggio..." : "Salva parametri Quick Scan"}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Le modifiche richiedono il riavvio del server per avere effetto (variabili ambiente).
-                </span>
-              </div>
-            )}
+            {/* Porte e numeri si cambiano da Opzioni (23/10): qui il riepilogo. I tre numeri valgono dal file dell'appliance. */}
+            <RigheRimando
+              ids={["parametro.quick_scan_tcp_ports", "parametro.quick_scan_concurrency", "parametro.quick_scan_host_timeout_s", "parametro.quick_scan_exec_limit_ms"]}
+              mostraEsito={false}
+            />
+            {config.quickScan.tcpPorts && <PortList ports={config.quickScan.tcpPorts} protocol="TCP" />}
 
             <div className="mt-3">
               <h4 className="text-sm font-medium mb-1">Comando Nmap generato</h4>
@@ -611,20 +395,13 @@ export function ScanConfigTab() {
               <p className="text-xs text-muted-foreground">
                 Off = solo Nmap (default). On = Naabu TCP poi Nmap -sV sulle porte trovate + porte sempre utili.
               </p>
+              <RigheRimando ids={["automatismo.naabu"]} mostraEsito={false} />
             </div>
-            <Switch
-              id="port-discovery-naabu"
-              checked={portDiscovery === "naabu+nmap"}
-              onCheckedChange={(on) => {
-                setPortDiscovery(on ? "naabu+nmap" : "nmap");
-                setNaabuDirty(true);
-              }}
-            />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <Label htmlFor="naabu-bin-path">Path binario Naabu</Label>
+              <span className="text-sm font-medium">Naabu sul server</span>
               {naabuAvailable === true && (
                 <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 dark:bg-green-950/30 dark:text-green-300">
                   naabu: disponibile
@@ -641,27 +418,9 @@ export function ScanConfigTab() {
                 </Badge>
               )}
             </div>
-            <Input
-              id="naabu-bin-path"
-              value={naabuBinPath}
-              onChange={(e) => {
-                setNaabuBinPath(e.target.value);
-                setNaabuDirty(true);
-              }}
-              placeholder="vuoto = naabu in PATH"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Lascia vuoto per usare <code className="text-[11px]">naabu</code> dal PATH del server. Binary opzionale ProjectDiscovery.
-            </p>
+            <RigheRimando ids={["parametro.naabu_bin_path"]} mostraEsito={false} />
           </div>
 
-          {naabuDirty && (
-            <Button onClick={handleSaveNaabu} disabled={savingNaabu} size="sm">
-              <Save className="h-4 w-4 mr-2" />
-              {savingNaabu ? "Salvataggio..." : "Salva port discovery"}
-            </Button>
-          )}
         </CardContent>
       </Card>
 

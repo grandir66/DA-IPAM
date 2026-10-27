@@ -41,8 +41,8 @@
  * Nessun dato del cliente: solo caso, codice del tenant, firma del chiamante.
  */
 import fs from "node:fs";
-import path from "node:path";
 import { resolveDataDir } from "../data-dir";
+import { unisci } from "../percorsi";
 
 export type CasoRipiego =
   | "default"
@@ -105,7 +105,7 @@ function stato(): Stato {
 
 /** Cartella del registro (letta a ogni chiamata: segue `DA_INVENT_DATA_DIR`). */
 export function DIR_REGISTRO_RIPIEGHI(): string {
-  return path.join(resolveDataDir(), "logs", "ripieghi");
+  return unisci(resolveDataDir(), "logs", "ripieghi");
 }
 
 // Frame del facade e del registro, riconoscibili solo quando si gira dai
@@ -166,7 +166,7 @@ function scrivi(riga: Record<string, unknown>, adesso: Date): void {
   const dir = DIR_REGISTRO_RIPIEGHI();
   fs.mkdirSync(dir, { recursive: true });
   const giorno = adesso.toISOString().slice(0, 10);
-  fs.appendFileSync(path.join(dir, `ripieghi-${giorno}.jsonl`), `${JSON.stringify(riga)}\n`);
+  fs.appendFileSync(unisci(dir, `ripieghi-${giorno}.jsonl`), `${JSON.stringify(riga)}\n`);
   const s = stato();
   if (s.ultimaPulizia !== giorno) {
     s.ultimaPulizia = giorno;
@@ -178,7 +178,7 @@ function pulisci(dir: string, adesso: Date): void {
   const soglia = new Date(adesso.getTime() - GIORNI_CONSERVATI * 86_400_000).toISOString().slice(0, 10);
   for (const f of fs.readdirSync(dir)) {
     const m = /^ripieghi-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(f);
-    if (m && m[1] < soglia) fs.rmSync(path.join(dir, f), { force: true });
+    if (m && m[1] < soglia) fs.rmSync(unisci(dir, f), { force: true });
   }
 }
 

@@ -240,9 +240,9 @@ export default function TenantsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gestione Clienti</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Istanze</h1>
           <p className="text-muted-foreground mt-1">
-            Gestisci i clienti (tenant) del sistema.
+            Le istanze dell&apos;hub, una per cliente: ognuna ha i suoi dati.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

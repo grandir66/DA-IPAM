@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
-import {
-  setFeatureDisabled,
-  invalidateFeatureCache,
-} from "@/lib/patch/feature";
-import { uninstallInventoryAgentFeature } from "@/lib/inventory-agent/feature";
+import { getCurrentTenantCode } from "@/lib/db-tenant";
 import { isUninstallableFeature } from "@/lib/modules/uninstall-copy";
-import { dropFeatureData } from "@/lib/modules/uninstall-data";
+import { disinstallaModulo } from "@/lib/modules/installa";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -57,16 +52,7 @@ export async function POST(
       // dropData=true cancella le tabelle del modulo dal DB tenant. La
       // conferma in UI dice quali (UNINSTALL_COPY in lib/modules/uninstall-copy,
       // MOD-19): le prove confrontano i due.
-      const dataDropped = dropData
-        ? dropFeatureData(getTenantDb(tenantCode), key)
-        : false;
-
-      if (key === "inventory_agent") {
-        uninstallInventoryAgentFeature(tenantCode);
-      } else {
-        setFeatureDisabled(tenantCode, key);
-      }
-      invalidateFeatureCache(tenantCode, key);
+      const { dataDropped } = disinstallaModulo(key, tenantCode, dropData);
 
       const payload: UninstallResponse = {
         status: "uninstalled",

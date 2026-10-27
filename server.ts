@@ -42,7 +42,7 @@ app.prepare().then(() => {
       attachSshTerminalWs(httpsServer); // terminale SSH web (/ws/ssh)
       httpsServer.listen(port, hostname, () => {
         console.log(`> DA-INVENT ready on https://localhost:${port}`);
-        initCron();
+        avviaInizializzazioni();
       });
 
       // Optional HTTP redirect
@@ -73,11 +73,31 @@ app.prepare().then(() => {
     attachSshTerminalWs(httpServer); // terminale SSH web (/ws/ssh)
     httpServer.listen(port, hostname, () => {
       console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
-      initCron();
+      avviaInizializzazioni();
     });
   }
 
-  function initCron() {
+  function avviaInizializzazioni() {
+    initCron().catch((error) => {
+      console.error("CRITICAL: inizializzazione dei timer fallita:", error);
+    });
+  }
+
+  async function initCron() {
+    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao, solo con un interruttore acceso (spenti di
+    // serie: l'avvio resta quello di oggi). SI ASPETTA prima di ogni altra inizializzazione (revisione del 23/10): le
+    // altre (migrazione dei segreti delle installazioni, scheduler, notificatori) possono chiamare `encrypt()`, che col
+    // vault locale acceso e non ancora sbloccato lancia. `avviaVault()` sblocca dal TPM in modo sincrono; se non
+    // riesce, il vault resta bloccato col motivo (banner, scansioni in pausa) e il resto parte comunque.
+    if (process.env.DA_VAULT_LOCALE === "1" || process.env.DA_VAULT_OPENBAO === "1") {
+      try {
+        const { avviaVault } = await import("./src/lib/vault/avvio");
+        avviaVault();
+      } catch (error) {
+        console.error("CRITICAL: avvio del vault fallito — credenziali non leggibili, scansioni in pausa:", error);
+      }
+    }
+
     // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
     // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
     // Vedi src/lib/cron/scheduler-defaults.ts e incident cliente A 2026-05-25.
@@ -144,6 +164,34 @@ app.prepare().then(() => {
       console.log("> Chocolatey automatico: giro notturno alle 02:00");
     }).catch((error) => {
       console.error("WARNING: giro notturno di Chocolatey non avviato:", error);
+    });
+
+    // Dati sugli exploit per la pagina Vulnerabilità (22/10/2026): CISA KEV, Exploit-DB ed
+    // EPSS alle 06:00, e 90 s dopo l'avvio se mancano o hanno più di 26 ore. Acceso di
+    // default, levetta in Opzioni (automatismo.feed_exploit).
+    import("./src/lib/vuln/exploit-feed/job").then(({ avviaFeedExploit }) => {
+      avviaFeedExploit();
+      console.log("> Dati sugli exploit: scaricamento alle 06:00");
+    }).catch((error) => {
+      console.error("WARNING: scaricamento dei dati sugli exploit non avviato:", error);
+    });
+
+    // Chi si collega ai PC (23/10/2026, piano assegnatari da AD): Wazuh e WinRM ogni ora al
+    // minuto 17. Spento di serie, si accende per cliente in Opzioni (automatismo.accessi_pc).
+    import("./src/lib/assegnatari/job").then(({ avviaGiroAccessi }) => {
+      avviaGiroAccessi();
+      console.log("> Accessi ai PC: giro orario (solo i clienti che l'hanno acceso)");
+    }).catch((error) => {
+      console.error("WARNING: giro degli accessi ai PC non avviato:", error);
+    });
+
+    // Sensore trunk (25/10/2026): lettura ogni 2 minuti, solo per i clienti con
+    // «Sensore trunk» acceso in Opzioni. Prima stava in coda al giro ARP (fino a 30 min).
+    import("./src/lib/trunk/job").then(({ avviaLetturaTrunk }) => {
+      avviaLetturaTrunk();
+      console.log("> Sensore trunk: lettura ogni 2 minuti (solo i clienti che l'hanno acceso)");
+    }).catch((error) => {
+      console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste

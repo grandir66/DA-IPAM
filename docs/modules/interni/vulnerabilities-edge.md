@@ -33,7 +33,12 @@ solo configurazione (tabella tenant `vuln_scanners`). La UI edge completa
   `/api/networks/[id]/edge-scan`; spinta degli host noti verso l'edge
   (`pushHostsToEdge` / edge-subnet-bridge) per il targeting.
 - **Vista findings**: aggregazione per CVE/NVT con severità e CVSS nella pagina
-  `/vulnerabilities` e per singolo host.
+  `/vulnerabilities` e per singolo host; dal 22/10 anche **per host** (`?vista=host`,
+  `/api/vulnerabilities/per-host` e `/per-host/dettaglio?host=h:<id>|ip:<ip>`).
+- **Exploit noti** (22/10): CISA KEV, Exploit-DB ed EPSS scaricati alle 06:00 da
+  `lib/vuln/exploit-feed/` in `exploit-intel.db` (cartella dati, non `hub.db`); badge
+  «Sfruttata» / «Exploit pubblico» / «R», filtro, ordinamento, stato dei feed e
+  «Aggiorna ora» (`/api/vulnerabilities/exploit-feed`); levetta `automatismo.feed_exploit`.
 
 ## Come si usa
 

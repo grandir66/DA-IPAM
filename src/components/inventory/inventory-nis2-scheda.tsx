@@ -55,10 +55,12 @@ interface InventoryNis2SchedaProps {
   locations: Location[];
   refetchAssignees?: () => void | Promise<void>;
   refetchLocations?: () => void | Promise<void>;
+  /** Il riquadro dell'assegnatario proposto dagli accessi (piano 2026-10-23), subito sotto «Responsabilità». */
+  dopoResponsabilita?: React.ReactNode;
 }
 
 /** Scheda unica NIS2: tutti i campi rilevanti per compliance. */
-export function InventoryNis2Scheda({ form, setForm, assignees, locations, refetchAssignees, refetchLocations }: InventoryNis2SchedaProps) {
+export function InventoryNis2Scheda({ form, setForm, assignees, locations, refetchAssignees, refetchLocations, dopoResponsabilita }: InventoryNis2SchedaProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -145,6 +147,8 @@ export function InventoryNis2Scheda({ form, setForm, assignees, locations, refet
           </div>
         </CardContent>
       </Card>
+
+      {dopoResponsabilita}
 
       <Card>
         <CardHeader><CardTitle>Ciclo di vita</CardTitle></CardHeader>

@@ -22,6 +22,6 @@ export function testoStatoMappa(s: StatoInterruttore): string {
 
 export function testoDialogoMappa(accendi: boolean): string {
   return accendi
-    ? "Con la mappa nuova ogni cavo è una linea sua, con la sua parola (bloccato, instradato, giù, fascio, tunnel, ponte radio); un segmento non gestito è un oggetto; l'albero segue lo spanning tree. Vale solo per questo cliente. Prima di accendere, ogni differenza di «Cosa cambierebbe con la mappa nuova» dovrebbe essere spiegata. Si spegne da qui: torna la mappa di prima, nessun dato si perde."
+    ? "Con la mappa nuova ogni cavo è una linea sua, con la sua parola (bloccato, instradato, giù, fascio, tunnel, ponte radio); un segmento non gestito è un oggetto; l'albero segue lo spanning tree. Vale solo per questo cliente. Prima di accendere, ogni differenza di «Cosa cambierebbe con la mappa nuova» dovrebbe essere spiegata. Si spegne da Opzioni: torna la mappa di prima, nessun dato si perde."
     : "Torna la mappa di prima (una linea per coppia). Le correzioni fatte con la mappa nuova restano salvate.";
 }

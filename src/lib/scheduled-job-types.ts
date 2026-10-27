@@ -48,6 +48,27 @@ export const SCHEDULED_JOB_TYPES = [
 
 export type ScheduledJobType = (typeof SCHEDULED_JOB_TYPES)[number];
 
+/** Il nome di ogni tipo di job nella pagina dei job e in Opzioni. */
+export const ETICHETTE_JOB: Record<string, string> = {
+  ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
+  fast_scan: "Scoperta veloce subnet",
+  snmp_scan: "SNMP Scan",
+  nmap_scan: "Nmap Scan",
+  arp_poll: "ARP Poll",
+  dns_resolve: "DNS Resolve",
+  known_host_check: "Monitoraggio host registrati (ICMP)",
+  cleanup: "Pulizia tabelle MAC",
+  anomaly_check: "Rilevamento anomalie",
+  librenms_sync: "Sincronizzazione LibreNMS",
+  vuln_sync: "Sincronizzazione vulnerability scanner",
+  wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
+  ad_sync: "Sincronizzazione Active Directory",
+  unifi_sync: "Sincronizzazione controller UniFi",
+  hypervisor_sync: "Lettura hypervisor (VM e schede)",
+  pulizia_host: "Pulizia host assenti (notte)",
+  apparati_scelti: "Lettura apparati",
+};
+
 /** Il job hypervisor_sync gira una volta al giorno (lo scheduler lo mette alle 03:00). */
 export const HYPERVISOR_SYNC_MINUTES = 1440;
 

@@ -153,8 +153,9 @@ function cambiIp(host: HostPerPulizia[]): Map<number, string> {
   return esito;
 }
 
-export function selezionaCandidati(host: HostPerPulizia[], adesso: Date): EsitoSelezione {
-  const soglia = adesso.getTime() - GIORNI_ASSENZA_ARCHIVIO * GIORNO_MS;
+/** `giorni`: la soglia di assenza del cliente (Opzioni, `soglie-pulizia.ts`); di serie GIORNI_ASSENZA_ARCHIVIO. */
+export function selezionaCandidati(host: HostPerPulizia[], adesso: Date, giorni: number = GIORNI_ASSENZA_ARCHIVIO): EsitoSelezione {
+  const soglia = adesso.getTime() - giorni * GIORNO_MS;
   const cambi = cambiIp(host);
   const bloccati = macSuPiuOnline(host);
   const candidati: Candidato[] = [];

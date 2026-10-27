@@ -28,6 +28,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (isAuthError(authCheck)) return authCheck;
   const ruolo = authCheck.user.role;
   return withTenantFromSession(async () => {
+  // Il ruolo si giudica prima di cercare l'apparato: a un non admin la risposta non dice se l'id esiste.
+  const url = new URL(request.url);
+  const action = url.searchParams.get("action") || "all";
+  const esito = esitoAzioneMikrotik(action, ruolo);
+  if (!esito.ok) return NextResponse.json({ error: esito.error }, { status: esito.status });
+
   const { id } = await params;
   const deviceId = parseInt(id, 10);
   if (isNaN(deviceId)) {
@@ -46,12 +52,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (device.protocol !== "ssh") {
     return NextResponse.json({ error: "MikroTik richiede protocollo SSH per queste funzionalità" }, { status: 400 });
   }
-
-  const url = new URL(request.url);
-  const action = url.searchParams.get("action") || "all";
-
-  const esito = esitoAzioneMikrotik(action, ruolo);
-  if (!esito.ok) return NextResponse.json({ error: esito.error }, { status: esito.status });
 
   try {
     const client = await createRouterClient(device);

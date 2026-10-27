@@ -25,8 +25,14 @@ import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } f
 import { candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
 import type { Candidato } from "@/lib/hosts/pulizia";
 import { giroSullaRete } from "@/lib/scanner/network-scan-lock";
+import { CHIAVI_SOGLIE_PULIZIA, sogliaPulizia } from "@/lib/hosts/soglie-pulizia";
 
 export const GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE = 90;
+
+/** I giorni d'archivio prima della cancellazione, per il cliente del contesto (Opzioni; di serie i 90 qui sopra). */
+export function giorniArchivioPrimaDiCancellare(): number {
+  return sogliaPulizia(CHIAVI_SOGLIE_PULIZIA.archivio, GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE);
+}
 
 export type MotivoPulizia = "assente" | "cambio_ip";
 
@@ -272,7 +278,7 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
 }
 
 /**
- * Le righe archiviate da più di 90 giorni che si cancellano. Una riga recuperata no finché il suo host recuperato
+ * Le righe archiviate da più della soglia d'archivio del cliente (di serie 90 giorni) che si cancellano. Una riga recuperata no finché il suo host recuperato
  * esiste: è il segno «recuperato a mano» che lo tiene fuori dalla pulizia (`pulizia-candidati.ts`, I1 della
  * revisione finale, 20/10); se quell'host non c'è più, si cancella coi 90 giorni come le altre.
  */
@@ -281,7 +287,7 @@ function righeScadute(d: Database.Database): Array<{ id: number; ip: string; nom
       WHERE a.archiviato_il < datetime('now', ?)
         AND (a.recuperato_il IS NULL OR NOT EXISTS (SELECT 1 FROM hosts h WHERE h.id = a.nuovo_host_id))
       ORDER BY a.id`)
-    .all(`-${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} days`) as Array<{ id: number; ip: string; nome: string; mac_hex: string | null }>;
+    .all(`-${giorniArchivioPrimaDiCancellare()} days`) as Array<{ id: number; ip: string; nome: string; mac_hex: string | null }>;
 }
 
 /** Che cosa cancellerebbe adesso `cancellaArchivioScaduto`, senza scrivere: per la finestra di conferma di «Applica». */
@@ -298,13 +304,14 @@ export function cancellaArchivioScaduto(): Array<{ id: number; ip: string; nome:
   const tenant = getCurrentTenantCode();
   return runInTenantTransaction(() => {
     const scadute = righeScadute(d);
+    const giorniArchivio = giorniArchivioPrimaDiCancellare();
     const togli = d.prepare("DELETE FROM hosts_archivio WHERE id = ?");
     const registro: RigaRegistroPulizia[] = [];
     for (const r of scadute) {
       togli.run(r.id);
       registro.push({
         azione: "cancella", tenant, archivioId: r.id, hostId: null, ip: r.ip, mac: r.mac_hex, nome: r.nome,
-        motivo: `in archivio da più di ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni`, da: "sistema",
+        motivo: `in archivio da più di ${giorniArchivio} giorni`, da: "sistema",
       });
     }
     scriviRighePulizia(registro);
@@ -425,7 +432,7 @@ export class ErroreApplica extends Error {
     const elenco = (h: HostNominato[]) => (h.length ? h.map((x) => `${x.nome} (${x.ip})`).join(", ") : "nessuno");
     const dove = fallito
       ? `errore del database su ${fallito.nome} (${fallito.ip})`
-      : `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita`;
+      : "host archiviati, ma la cancellazione dell'archivio scaduto non è riuscita";
     super(`Archiviazione interrotta: ${dove}; il dettaglio è nel journal del server. `
       + `Archiviati: ${elenco(archiviati)}. Non archiviati, ancora fra gli host: ${elenco(nonArchiviati)}.`, { cause: causa });
     this.name = "ErroreApplica";

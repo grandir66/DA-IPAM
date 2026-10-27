@@ -11,7 +11,7 @@ import { accesoDa } from "@/lib/scheda/panoramica";
 import { caselleRouter, eRottaDefault, interfaccePanoramica } from "@/lib/scheda/router";
 import { parseUtcDate } from "../../blocchi";
 import { Riquadro } from "../../riquadro";
-import { RigaFonti, type Fonte } from "../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import type { ContestoScheda } from "../../contesto";
 import { IndirizziCella, StatoInterfaccia, StatoRotta, velocitaTesto } from "./celle";
@@ -115,7 +115,7 @@ export function PanoramicaRouter({ ctx }: { ctx: ContestoScheda }) {
         </div>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

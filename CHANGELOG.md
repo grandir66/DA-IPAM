@@ -4,6 +4,277 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 senza leggere `data/` in build (sicurezza)
+
+### Sicurezza
+
+- **Di nuovo Next.js 16.4.2**, per le due RCE non autenticate e il DoS della 16.1.6 (GHSA-673q-mjm6-r5xr, CVE-2026-96889, CVE-2026-94482), stavolta con la build che non tocca i dati.
+
+### Corretto
+
+- **La build non traccia più `data/`.** Il meccanismo, misurato su un'app minima: Turbopack 16.4 fa di ogni `path.join(…)`/`path.resolve(…)` scritto in un modulo un riferimento a file, e con un pezzo fisso e uno variabile (`path.join(TENANTS_DIR, `${codice}.db`)`, ma anche `path.join(os.tmpdir(), `${x}.db`)`) un glob su tutto il progetto; lo stesso fa una chiamata `fs` su un valore misto, come `ambiente || "/var/backups/…"`, un elenco con percorsi assoluti accanto a valori ignoti o il ripiego `|| ""`. I file trovati li legge: per questo la memoria cresceva coi dati e `turbopackIgnore` su `process.cwd()` non bastava (il glob nasce anche da un prefisso ignoto). Correzione: `src/lib/percorsi.ts` con `unisci`/`risolvi`, che passano i pezzi a `path` dagli argomenti di un altro modulo, dove l'analisi non li vede; usate al posto di `path.join`/`path.resolve` in tutto `src/` (51 file, stesso comportamento), più tre valori misti resi opachi (radice delle copie in `backup/engine.ts`, certificato dell'appliance in MeshCentral, `krb5.conf` in Kerberos) e `find-bridge-python.ts`. Misure sul Mac con file finti in `data/tenants` e `data/backups`: prima 441 rotte su 454 tracciavano `data/`, dopo nessuna; picco della build 3,4 GB con 18 GB di dati finti, come senza dati. Su un'app minima: 0,9 GB senza riferimenti, 3,8 GB con 4 GB finti tracciati, e `outputFileTracingExcludes` non cambia niente (toglie i file dall'elenco dopo averli letti).
+
+### Aggiunto
+
+- **Due freni perché non torni.** ESLint vieta `path.join`/`path.resolve` (e `import { join, resolve } from "path"`) in `src/` fuori da `percorsi.ts` e dalle prove. `scripts/controlla-tracciamento.mjs` gira come `postbuild` di `npm run build` (quindi anche in `scripts/update.sh`): se un `.nft.json` elenca file sotto `data/` o `DA_INVENT_DATA_DIR` la build fallisce con le rotte colpevoli, e fallisce anche se non trova niente da guardare. Le forme miste con `fs` non le vede ESLint: le ferma questo controllo, purché nella `data/` di chi costruisce ci sia qualcosa.
+
+## [Non rilasciato] — 2026-10-27 · Next.js torna a 16.1.6 (la build della 16.4.2 non sta in memoria sull'hub)
+
+### Annullato
+
+- **Next.js 16.4.2 → 16.1.6.** Sull'hub (VM 533) la build della 16.4.2 è stata uccisa per memoria esaurita, con 12 GB e poi con 20 GB: Turbopack 16.4 legge i database di `data/` (54 GB fra `tenants/` e `backups/`) attraverso `resolveDataDir()`. Prova sull'hub: la stessa build senza `data/` passa in 1'46" con 3,3 GB di picco; con `data/` montata in sola lettura viene uccisa al limite di 8 GB. `/* turbopackIgnore: true */` sui `path.join(process.cwd(), "data")` toglie `data/backups` ma non `data/tenants` (441 rotte nei `.nft.json`): correzione da studiare fuori produzione. Le falle della 16.1.6 (GHSA-673q-mjm6-r5xr, CVE-2026-96889, CVE-2026-94482) restano aperte finché la 16.4 non si costruisce sull'hub e sulle appliance.
+
+## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 (sicurezza)
+
+### Sicurezza
+
+- **Next.js 16.1.6 → 16.4.2.** La 16.1.6 era esposta a due esecuzioni di codice da remoto senza autenticazione (avviso di Next.js del 14/10/2026: GHSA-673q-mjm6-r5xr nelle funzioni «use cache», CVE-2026-96889 nell'ottimizzazione delle immagini SVG) e a un DoS dei Server Actions (CVE-2026-94482); corrette dalla 16.4.1, la 16.4.2 è quella già in DA-Vul-can. Solo `next`: `eslint-config-next` resta 16.1.6, perché la 16.4.2 porta `eslint-plugin-react-hooks` 7.1.1 con 14 errori nuovi da sistemare a parte. Lint (0 errori, 72 avvisi come prima), `tsc`, build e 6.150 prove verdi.
+
+## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
+
+### Cambiato
+
+- **Le schede di «Reti dal trunk» ora si vedono.** Le schede `Tabs` di shadcn erano alte 32 px con testo grigio: Riccardo non le trovava («due pulsantini microscopici»). Nuovo mattone `SchedePagina` in `console.tsx`: una colonna per scheda a tutta larghezza, titolo a 16 px, una riga con cosa contiene (allarmi, esposizioni, novità; VLAN e indirizzi), segno ✕ degli allarmi gravi; la scheda scelta ha il fondo navy e la barra ciano. Regola in `docs/STILE-UI.md`: per dividere una pagina si usa `SchedePagina`, non `Tabs`; oltre 4 parti, voci di menu separate.
+
+## [Non rilasciato] — 2026-10-25 · Reti dal trunk in due schede
+
+### Cambiato
+
+- **Reti dal trunk divisa in due schede**, «Sicurezza della rete» (prima, con le tessere Allarmi/Esposizioni e i rilievi) e «VLAN e reti» (tessere VLAN/IP, VLAN, reti, dettaglio, indirizzi). Barra della sonda e stato della lettura restano sopra, comuni. Su richiesta di Riccardo: in una pagina sola era troppo lunga. La scheda sta nell'indirizzo (`#sicurezza`, `#reti`); quella della sicurezza mostra il numero degli allarmi gravi.
+
+## [Non rilasciato] — 2026-10-25 · Reti dal trunk: rilievi di sicurezza dalla sonda passiva, voce nel gruppo Sicurezza
+
+### Aggiunto
+
+- **Pannello «Sicurezza della rete» in Reti dal trunk.** A ogni lettura del sensore (ogni 2 minuti) DA-IPAM confronta quello che la sonda vede sul trunk con inventario, reti e sorgenti DHCP, e tiene i rilievi in `rete_rilievi` (`src/lib/trunk/rilievi.ts`, regole pure e provate). Allarmi: server DHCP non previsto (grave se in una VLAN ce n'è più d'uno), IP conteso da due schede (grave se è il gateway; MAC virtuali VRRP/HSRP esclusi), indirizzo fuori dalla sua rete. Esposizioni: apparati che usano LLMNR/NetBIOS, stesso MAC in più VLAN, switch che si annunciano con CDP/LLDP. Novità: apparati non in inventario (MAC casuali a parte), VLAN che passano sul trunk senza una rete in DA-IPAM. Un rilievo si chiude da solo quando la condizione sparisce; «Prendi in carico» resta. Nessun pacchetto in più in rete: sono gli stessi broadcast, multicast e ARP che il sensore legge già.
+- Server DHCP per VLAN (`trunk_vlan.server_dhcp`, da `/vlan`) e vicini CDP/LLDP (`trunk_vicini`, da `/vicini`; dall'edge con DA-Vul-can v0.8.164) copiati nel DB del tenant. Nell'elenco degli indirizzi un segno per i rilievi aperti su quel MAC.
+- La colonna `fonte` dei rilievi lascia la porta aperta a una futura sonda con porta specchio.
+
+### Cambiato
+
+- **«Reti dal trunk» passa dal gruppo Network al gruppo Sicurezza** (Riccardo, 25/10), con il numero rosso degli allarmi gravi da prendere in carico. L'indirizzo della pagina resta `/arp-table/trunk`. Le tessere in alto mostrano prima allarmi ed esposizioni.
+
+## [Non rilasciato] — 2026-10-24 · Configurazione iniziale: rete dell'appliance proposta e passi a schede
+
+### Aggiunto
+
+- **La prima subnet parte dalla rete dell'appliance.** Il wizard legge interfacce, rotta predefinita e `resolv.conf` della macchina (`src/lib/onboarding/rete-appliance.ts`, puro e provato) e riempie CIDR, gateway e DNS della prima subnet, il DNS predefinito e, se c'è un dominio di ricerca, dominio e Base DN di Active Directory. Sceglie l'interfaccia di `APPLIANCE_LAN_IP`, poi quella della rotta predefinita; Docker, NetBird (`wt0`), WireGuard e link-local esclusi. Solo proposte: si scrive con «Crea rete», e una rete o un DNS già salvati non si toccano. Nel passo Router un pulsante offre il gateway come router (non precompilato: senza credenziale fermerebbe «Avanti»).
+- **Passi a schede.** In testa al wizard le cinque schede (Credenziali, Router, DNS, Active Directory, Subnet) con la spunta su ciò che è già salvato; si salta a qualunque passo. Lasciando un passo i suoi dati si salvano: andando avanti un errore ferma, andando indietro si va comunque con un avviso. «Crea rete» salva comunque router, DNS e AD prima di creare la rete.
+
+## [Non rilasciato] — 2026-10-23 · da-vault: archivio a slot, «Mostra password», KeePass, OpenBao per l'hub (tutto spento di serie)
+
+### Aggiunto
+
+- **Archivio locale a slot (appliance dei clienti, `DA_VAULT_LOCALE=1`, spento di serie).** Oggi le credenziali sono cifrate con `ENCRYPTION_KEY`, che sta in `.env.local` accanto ai dati: chi ha il disco ha tutto. Con l'interruttore acceso la chiave dei dati è casuale ed esiste solo dentro gli slot age: passphrase del cliente, chiave Domarc (recupero, D3/D5), TPM della macchina (si sblocca da sola all'avvio). Ogni `encrypt()` dell'app passa da lì, senza toccare i chiamanti (ADR 0034). Senza TPM l'archivio resta **bloccato**: banner in testa alle pagine, scansioni in pausa col motivo, sblocco con la passphrase in **Impostazioni › Vault**.
+- **Ricifra** (`scripts/da-vault.ts ricifra`): dalla chiave di `ENCRYPTION_KEY` a quella degli slot, a vuoto di serie, `--applica` esplicito; tutto o niente per database, verificata col lettore unico delle credenziali, poi `VACUUM`. Ripetibile; dopo un crash ogni valore resta leggibile.
+- **«Mostra password»** nella pagina Credenziali (D2): solo admin, con la **verifica in due passaggi dell'utente collegato** (ADR 0023), non con la passphrase del cliente; vale 5 minuti. Ogni visualizzazione va nel registro con utente e ora, e il cliente lo legge in Impostazioni › Vault («Chi ha visto cosa»).
+- **«Esporta in KeePass»**: un file KDBX 4 (Argon2id) con tutte le credenziali, che si apre con la passphrase del cliente più un key file tenuto nell'archivio. È l'indipendenza del cliente da Domarc, senza un secondo archivio vivo.
+- **`scripts/da-vault-recover.ts`** (reset-password, export-keyfile, rotate) con la chiave privata Domarc **solo dallo stdin**, un ticket obbligatorio e una riga per uso in `recuperi.jsonl`.
+- **OpenBao per l'hub (`DA_VAULT_OPENBAO=1`, spento di serie).** Libreria `src/lib/vault` (interfaccia `SecretStore`, backend `openbao` con solo `fetch`, AppRole, token di 20 minuti, cache a tempo, `X-Domarc-Utente` per le letture per conto di una persona). Colonna `credentials.credential_ref`: con l'interruttore acceso le credenziali dei device si leggono da OpenBao; OpenBao giù oltre la cache = scansioni in pausa e letture rifiutate, mai un ripiego sulla colonna. `scripts/da-vault-migra-openbao.ts` (a vuoto di serie, `--applica`, `--verifica`) con doppia lettura per una versione.
+- Col vault acceso il backup notturno copia anche l'archivio (slot già cifrati): un ripristino dei database ricifrati ha gli slot che li aprono.
+
+### Corretto dopo la revisione (23/10)
+
+- `/api/health` col vault bloccato risponde **200 «degraded»** (503 solo con `?strict=1`): `update.sh` e `auto-update.sh` aspettano un 200 dopo il riavvio e prima tornavano a una build che non legge i valori ricifrati.
+- Ricifra: con `--applica` checkpoint e `VACUUM` si fanno **sempre** (un crash fra COMMIT e VACUUM lasciava i valori vecchi nelle pagine libere); una cartella dati senza `hub.db` è un errore e la cartella usata si stampa; `ricifra --inversa` (dalla chiave degli slot a `ENCRYPTION_KEY`); dopo `--applica` il CLI elenca i backup rimasti con la chiave vecchia e propone `--purga-backup` (a vuoto di serie).
+- `age-encryption` si carica solo dentro le funzioni che lo usano: l'avvio dell'app non lo raggiunge più a interruttori spenti (su Node 20.x vecchi non partiva).
+- OpenBao: un `credential_ref` malformato salta quella voce con un avviso (cliente e voce) invece di fermare la cache; `X-Domarc-Utente` percent-encoded con l'id; credenziale eliminata = cancellati i metadata del percorso (se OpenBao non risponde, avviso e `--verifica` elenca gli orfani).
+- Passphrase: limite di tentativi **per utente**, condiviso fra sblocco e KeePass, e tetto alle derivazioni scrypt in corso (429); spazi ai bordi rifiutati sia da `crea` sia dal recupero.
+- `crea --senza-domarc` vuole `--richiesta-cliente` e la scrive nell'archivio e in `recuperi.jsonl`; i registri dei recuperi scrivono l'intento prima e l'esito dopo. «Chi ha visto cosa» solo agli admin. All'avvio il vault parte prima delle altre inizializzazioni.
+- OpenBao: un riferimento nuovo non ancora in cache (dopo `--applica` ad app accesa) fa partire **un** giro (uno alla volta, al più ogni 30 s) e la lettura dopo lo trova, senza aspettare i 5 minuti; il file del secret_id mancante o illeggibile dà `ErroreVault(configurazione)` con messaggio controllato, senza il percorso grezzo.
+
+### Perché così
+
+- Interruttori nel file dell'appliance e non in Opzioni: ogni push su `dev` arriva a tutte le installazioni, e il vault si accende un'appliance alla volta, dopo aver creato l'archivio, con un riavvio (piano, «Rischi»).
+- I segreti della 2FA restano sulla chiave d'installazione: col vault bloccato un admin deve poter entrare a sbloccarlo (ADR 0034).
+- Stesso formato dei valori cifrati: la chiave la dice GCM, così i controlli «è già cifrato?» sparsi nell'app non cifrano due volte.
+
+### Interruttori spenti
+
+- Nessun cambiamento di comportamento: provato contro una copia del `crypto.ts` di prima, con i job che girano, senza banner, senza «Mostra», col backup di sempre. Cambia solo lo schema (additivo): `credentials.credential_ref` e la tabella `vault_visualizzazioni`.
+
+## [0.9.896] — 2026-10-23 · Abbinamenti: asset con lo stesso nome
+
+### Cambiato
+
+- **Se in inventario c'è già un asset col nome del PC, la riga chiede «Collega a n. X» o «Crea nuovo»** e non si conferma senza scelta. Alla prima conferma vera NB-AGUZZOLI è finito con due asset: il n. 31, stesso nome ma legato all'IP passato a un iPhone, e il n. 36 nuovo. «Collega» sposta l'asset sull'host del PC, toglie il legame vecchio con l'apparato e scrive ogni campo cambiato nel diario. Il controllo è sul nome del PC, non sulla persona: più asset per persona restano normali.
+
+## [0.9.895] — 2026-10-23 · Abbinamenti: chi usa i PC → asset e assegnatari
+
+### Aggiunto
+
+- **Inventario › Abbinamenti.** Prima la proposta si vedeva solo aprendo un asset alla volta, e i PC non ancora in inventario non comparivano da nessuna parte. Ora una pagina elenca tutti gli host con accessi, divisi in proposti, da rivedere (assegnati a un altro), già abbinati, pochi dati ed esclusi (server, apparati, condivisi, col perché). La conferma, a spunte, crea l'assegnatario da AD e l'asset se mancano e assegna, in una transazione che ricalcola ogni voce; i «da rivedere» non sono mai spuntati di serie. La categoria dell'asset nuovo viene dalla classificazione dell'host (workstation → Desktop, notebook → Laptop); quando non basta si sceglie nella riga. La pagina Assegnatari rimanda qui («N PC hanno un utente prevalente da abbinare»).
+
+## [0.9.892 – 0.9.894] — 2026-10-23 · Assegnatari NIS2 da Active Directory e utente prevalente dei PC
+
+### Aggiunto
+
+- **«Importa da Active Directory» nella pagina Assegnatari.** Prima ogni assegnatario si scriveva a mano. Ora l'anteprima propone le persone di AD (abilitate, con nome e cognome, accesso recente, niente account di servizio o amministrativi), dice per ognuna se è nuova, da aggiornare, da controllare (manca il cognome o la mail, omonimo) o invariata, e mostra i PC dove si collega; si importa a spunte. L'assegnatario resta legato all'utente per objectGUID: a ogni lettura di AD riprende nome, mail, reparto e ruolo, e se l'utente viene disattivato la pagina avvisa che i suoi asset vanno riassegnati. **L'importazione non tocca gli asset.**
+- **Chi si collega ai PC.** Un giro orario (spento di serie, si accende per istanza in Opzioni › «Chi si collega ai PC», ed è in Schedulazioni) conta gli accessi 4624 da Wazuh: alla tastiera dall'agente sul PC, di rete dai server per nome della postazione; in più l'utente collegato letto da WinRM e quello dell'agente GLPI. Gli accessi si tengono 90 giorni.
+- **Assegnatario proposto sulla scheda dell'asset.** Si propone chi fa più della metà degli accessi di persone al PC negli ultimi 30 giorni, con almeno 5 accessi (soglie in Opzioni › Parametri). Accanto la tabella di chi si è collegato, con il perché di chi non conta. Si scrive solo col clic («Accetta», «PC condiviso, non proporre»), con la riga nel diario dell'asset; un'assegnazione fatta a mano non si sostituisce mai: se si collega soprattutto un altro, lo dice in grigio.
+
+### Perché così
+
+- Solo proposte con conferma e soglia «più della metà»: decisione di Riccardo del 23/10. La misura sul Wazuh dell'hub (707 mila accessi in 30 giorni) ha mostrato postazioni con centinaia di migliaia di accessi di un solo account e proposte appoggiate su pochi accessi: da qui il minimo di 5 e il conteggio delle sole persone di AD.
+- Il giro non è un tipo nuovo di job: il CHECK su `scheduled_jobs.job_type` avrebbe voluto ricostruire la tabella. È un timer di `server.ts`, come i dati sugli exploit.
+- L'host dell'asset si prende anche dall'apparato collegato (0.9.893): sull'hub 32 asset su 34 avevano solo quello.
+
+## [Non rilasciato] — 2026-10-23 · «Esci» che chiude davvero, istanza controllata e ricordata, «cliente» diventa «istanza»
+
+### Corretto
+
+- **«Esci» non chiudeva la sessione** (ADR 0033). Le richieste della dashboard partite un attimo prima dell'uscita tornavano dopo e rimettevano il cookie, perché il JWT si rinnova a ogni risposta: tornando su `/` si era ancora dentro. Ora l'uscita segna l'ora sull'utente (`users.sessioni_valide_da`) e un token nato da un accesso precedente non vale più, da qualunque richiesta arrivi. «Esci» chiude la sessione su tutti i browser dell'utente.
+- **Il cambio d'istanza accettava qualsiasi codice dal browser.** Un utente con la sola istanza A poteva chiedere B o la vista «tutte». Ora passa solo verso istanze dell'utente (lette dal DB) e «tutte» solo per il superadmin; un rifiuto lascia l'istanza di prima e lo dice a schermo.
+
+### Cambiato
+
+- **L'hub riparte dall'ultima istanza usata** (`users.ultima_istanza`), se l'accesso c'è ancora; chi non ne ha mai scelta una entra come prima (superadmin nella vista «tutte»).
+- **La scelta dell'istanza è in Impostazioni → Istanza** (Riccardo, 23/10), visibile solo con più istanze. Nella barra resta una riga da leggere sotto l'utente («Domarc Srl · 70791»), che porta lì. «Cliente» diventa «istanza» nella scelta, in «Dati istanza», «Config istanza» e nella pagina «Istanze» (prima «Clienti»).
+
+## [Non rilasciato] — 2026-10-23 · Scansione veloce, soglie della pulizia e MDM da Opzioni; «Esegui ora» in Schedulazioni
+
+### Cambiato
+
+- **I tre numeri della scansione veloce si cambiano da Opzioni** (proposta approvata da Riccardo il 23/10): host in
+  parallelo, attesa per host e tempo massimo di Nmap. Ordine: Opzioni › riga del file `.env.local` › di serie, sempre
+  nei limiti di prima (1-24 host, 5-20 s, 10-90 s). Chiavi nuove `scansione_veloce.*`: le `quick_scan_*` salvate dalla
+  vecchia scheda e mai lette restano ignorate, perché un valore dimenticato non cambi il ritmo delle scansioni al rilascio.
+- **Soglie della pulizia degli host e limite di errori di MDM per cliente, da Opzioni**: assenza prima dell'archivio
+  (di serie 60 giorni) e archivio prima della cancellazione (di serie 90), da 30 a 365 giorni (il minimo è voluto: la
+  pulizia cancella righe); errori di fila prima che MDM si spenga da sola (di serie 5, da 1 a 20). Le leggono la
+  pulizia notturna, l'anteprima di Impostazioni › Sistema e la sincronizzazione di MDM.
+
+### Aggiunto
+
+- **«Esegui ora» sulle righe dei job in Schedulazioni**, con la stessa rotta della pagina dei job. Non c'è sulla pulizia
+  degli host, che gira solo di notte, né sui timer dell'appliance.
+
+## [Non rilasciato] — 2026-10-23 · Opzioni con parametri e soglie, voce «Schedulazioni» nel menu
+
+### Aggiunto
+
+- **Opzioni: gruppo «Parametri e soglie»** (tavola del 22/10, oggetti 14-20, approvata da Riccardo il 23/10). Riccardo:
+  «raccogliere tutti i parametri che sono opzioni e inserirli tutti nel menu». Porte TCP e percorso di Naabu della
+  scansione veloce, livello, categorie e riepilogo delle notifiche, conservazione degli eventi di sicurezza si cambiano
+  da Opzioni, con i limiti delle rotte di prima, «chi l'ha cambiato» e «Torna a …». Col lucchetto, in sola lettura, i
+  valori che da lì non si cambiano: i tre numeri della scansione veloce (valgono quelli del file dell'appliance), le
+  soglie della pulizia degli host (60 e 90 giorni) e il limite di errori di MDM. La prova di completezza legge le chiavi
+  dai sorgenti di scanner, notifiche e moduli: un parametro nuovo che non entra in Opzioni né in `fuori-catalogo.ts` la
+  fa fallire. Le schede Scansione, Notifiche e Alert sicurezza mostrano il riepilogo con «cambia da Opzioni ›».
+- **Voce «Schedulazioni» nel menu** (`/settings/schedulazioni`, oggetti 21-30): tutto ciò che parte da solo era in sei
+  posti (job del cliente, job per rete, controller, scansioni Edge per rete, timer dell'appliance, MDM). Ora un elenco
+  unico ordinato per prossimo giro, con su cosa, quando, ultimo esito (anche i fallimenti in serie dello scheduler) e
+  «Dove ›» verso la pagina che la configura; si accende e si spegne da qui (i job di serie passano da Opzioni, con la
+  lapide); Edge e timer dicono dove si cambiano. Una prova fa fallire un tipo di job o un timer di `server.ts` nuovi
+  che non compaiono.
+
+### Corretto
+
+- **Scansione veloce: tre numeri che la scheda salvava ma nessuno leggeva.** «Host paralleli», «Timeout per host» e
+  «Limite exec Nmap» finivano nel database, mentre lo scanner usa solo `DA_INVENT_NMAP_DISCOVERY_*` del file (di serie
+  12, 10 s, 22 s): la scheda mostrava valori che non contavano. Ora Opzioni dice il valore vero e dove si cambia.
+## [Non rilasciato] — 2026-10-23 · Barra laterale compatta, «Cambia password» che si apre, URL dell'hub in Impostazioni
+
+### Corretto
+
+- **«Esci» portava a una pagina vuota** (Riccardo, 23/10). Auth.js costruisce l'indirizzo di ritorno dal nome su cui ascolta il server: sull'hub `/api/auth/signout` rispondeva `https://0.0.0.0/login`. Ora l'uscita non chiede il ritorno al server e il browser va su `/login` da solo. «Esci» è passato nel menu dell'utente.
+- **«Cambia password» nel menu dell'utente non apriva niente** (segnalato a Riccardo il 23/10). La voce usava `onSelect`, che è di Radix: i menu di DA-IPAM sono Base UI, che risponde a `onClick`. Il clic chiudeva il menu e la finestra non compariva. Rotta e database erano giusti.
+
+### Cambiato
+
+- **Barra laterale: tutto in alto, niente blocco in fondo** (tavola approvata da Riccardo il 23/10, variante «tutto in alto»). Testata in una riga (logo alto 24 px invece di 56, «DA-IPAM», pulsante «Comprimi menu» col bordo perché si veda) e sotto l'utente con «Esci» a un clic. Il tema scuro/chiaro è una voce del menu dell'utente. Il piede con tema, comprimi, utente ed esci (≈200 px) non c'è più: la lista arriva fino in fondo. A menu compresso, in cima c'è solo il simbolo Domarc (la freccia cian, `public/simbolo-domarc.png` da DA-Template): il logo intero ridotto a 44 px non si leggeva.
+- **«URL dell'hub» è in Impostazioni → Sistema** (Riccardo: «quasi inutile nel menu»). `/agents` resta e rimanda lì; il Launchpad punta direttamente alla nuova posizione.
+
+## [Non rilasciato] — 2026-10-23 · LibreNMS nell'interfaccia (esclusione, candidati, aggiunta in blocco) e VLAN degli switch MikroTik via SSH
+
+### Aggiunto
+
+- **LibreNMS nell'interfaccia** (tavola `docs/proposte/2026-10-23-librenms-esclusione-e-blocco.html`, approvata da Riccardo il 23/10). Nella scheda di un oggetto che non è in LibreNMS, la riga «Dati da» dice lo stato dell'aggiunta automatica: in coda (SNMP verificato), rifiutato col motivo, escluso. Accanto c'è «Non aggiungere a LibreNMS» / «Togli l'esclusione» (solo admin); «Aggiungi a LibreNMS» resta, perché l'esclusione ferma solo il giro automatico. Nella pagina del modulo ci sono le liste «Con SNMP verificato» (con «Escludi») ed «Esclusi» (con «Togli»), e il riepilogo dell'ultimo giro conta i candidati aggiunti.
+- **Discovery: «Aggiungi a LibreNMS (N)» sugli host selezionati.** Usa la stessa rotta di una sola aggiunta, un oggetto alla volta, mai forzata. La finestra mostra l'esito riga per riga (aggiunto, già presente e aggiornato, rifiutato col motivo, senza SNMP) e ha «Ferma dopo questo». Prima si aggiungeva solo dal menu di ogni riga.
+- **VLAN degli switch MikroTik letti in SSH nella matrice** (punto 5 del giro, strada scelta da Riccardo il 23/10). RouterOS non dà le VLAN del bridge via SNMP: i sei CORE di 70151 ne mostravano 0. Uno switch MikroTik in SSH ora legge `/interface bridge vlan` e `/interface bridge port` (due comandi in sola lettura) e li scrive nelle tabelle VLAN della scheda degli switch: porte per nome tradotte negli ifIndex della tabella delle porte (letta in SNMP accanto all'SSH), PVID dalle porte del bridge, fonte «mikrotik». Vale con lo stesso interruttore, la stessa cadenza oraria e lo stesso lucchetto della lettura VLAN degli switch, nel giro, in «Interroga» e nel job degli apparati scelti (che ora offre la «VLAN» anche a questi switch). Prima la lettura delle VLAN di bridge c'era solo per i router, e gli switch MikroTik in SSH erano esclusi dalla lettura VLAN.
+
+## [Non rilasciato] — 2026-10-23 · Switch e router con SSH e SNMP, LibreNMS su tutti gli oggetti SNMP, matrice VLAN leggibile
+
+### Aggiunto
+
+- **LibreNMS: aggiunta automatica estesa a tutti gli oggetti con SNMP verificato** (Riccardo, 22/10). Prima i candidati erano solo i vicini LLDP che LibreNMS vede ma non interroga: sulla sede 70151 nessuno, mentre 76 oggetti avevano una SNMP validata. Ora il giro (5 per giro, rifiutati riprovati dopo 24 ore, mai `force_add`, senza SNMP mai) prende anche gli apparati con un binding SNMP riuscito o con la SNMP validata sul loro host, e gli host senza apparato con la SNMP validata. «SNMP verificato» comprende la credenziale validata sull'host perché sulla stessa sede solo 4 apparati su 16 avevano il binding «riuscito»: gli altri erano «non provati» ma letti in SNMP ogni ora. Gli oggetti SNMP si aggiungono solo se la fotografia degli apparati di LibreNMS è stata letta in quel giro (senza, non si sa chi c'è già e si aggiungerebbero doppi).
+- **Esclusione per oggetto «Non aggiungere a LibreNMS»**: tabella `librenms_esclusione` (migrazione `librenms_esclusione_v21`, additiva) e rotta `POST/DELETE /api/hosts/[id]/librenms/esclusione` (admin). Vale solo per il giro automatico. L'elenco degli esclusi e dei candidati SNMP è nella risposta dei candidati; lo stato (SNMP verificato, escluso, ultimo rifiuto) nei dati LibreNMS della scheda. L'interfaccia arriva dopo l'ok sulla tavola.
+
+### Cambiato
+
+- **Proposta di un apparato: switch e router con SSH principale e SNMP accanto** (Riccardo, 22/10: «somma le due acquisizioni; SSH principale se c'è ed è meglio»). Con l'SNMP dedotto come protocollo la finestra non proponeva mai l'SSH, anche con una credenziale SSH validata. Ora, per switch e router di piattaforme che si leggono di preferenza in SSH (MikroTik, HP, Cisco, Omada, Stormshield), una SSH validata diventa la credenziale principale e la SNMP validata va in «SNMP aggiuntivo». Ubiquiti resta SNMP. Gli apparati già creati non cambiano.
+- **LibreNMS: un host senza community nei dati SNMP usa la credenziale SNMP validata sull'host** (anche v3) invece di finire in «senza SNMP».
+
+### Corretto
+
+- **Matrice VLAN: intestazione e colonne Porta/Stato/PVID fisse, altezza limitata.** Con 24 VLAN e 50 porte la tabella era alta ~2500 px e la barra orizzontale stava in fondo, fuori vista: le colonne a destra sembravano tagliate. Ora la tabella scorre in un riquadro alto al più il 70% dello schermo, con la barra in vista. Resa verificata a 1280 e 1920 con dati finti.
+
+## [Non rilasciato] — 2026-10-22 · Comware: VLAN e porte taggate dal collector via SSH
+
+### Aggiunto
+
+- **Le VLAN lette dal collector vanno nella matrice della scheda.** Sui Comware IRF (sede 70151) l'SNMP risponde *tooBig* anche a una sola riga delle liste di porte Q-BRIDGE: una riga è più grande del pacchetto massimo dello switch, quindi nessun modo di chiederla via SNMP la fa arrivare. Il collector `hp-comware` le legge via SSH (`display vlan all`); l'acquisizione ora le scrive nelle tabelle VLAN della scheda (VLAN coi nomi, porte taggate e non taggate per ifIndex, PVID, fonte «collector»), solo da una sezione `ok` e solo se cambiano. Il riquadro dell'acquisizione registra la riga «VLAN».
+
+### Corretto
+
+- **SSH verso firmware vecchi.** HP5700-Storage (Comware 7.1.045 R2422P02, 70151) offre solo cifrature CBC: il client dell'app proponeva solo GCM/CTR/ChaCha e l'SSH falliva con la credenziale giusta. AES-CBC ora sta in fondo all'elenco delle cifrature (si usa solo se l'apparato non offre altro); 3DES e DES restano fuori.
+- **Comware: l'acquisizione dall'app con i tempi del collaudo.** L'app chiedeva al collector 4 s per comando e 90 s in tutto (valori di serie); su uno stack IRF `display interface brief` supera i 4 s, il giro si fermava lì e `display vlan all` non partiva (70151, 22/10). Il descrittore del collector porta ora i suoi limiti: Comware 15 s per comando, 240 s in tutto (sotto i 5 minuti del lucchetto del job sugli apparati scelti).
+- **La lettura SNMP oraria non cancella più le VLAN del collector.** Sui Comware la lettura riusciva solo per PVID e mappa del bridge e scriveva una fotografia con zero VLAN: ora una lettura senza tabelle VLAN lascia la fotografia del collector; una lettura con le tabelle vere la sostituisce come prima.
+
+## [Non rilasciato] — 2026-10-22 · Vulnerabilità per host ed exploit noti
+
+### Aggiunto
+
+- **Vista «Per host» nella pagina Vulnerabilità** (Riccardo, 22/10). Oltre all'elenco per CVE si poteva vedere quali vulnerabilità ha un PC solo aprendo la sua scheda, una alla volta. Ora un selettore «Per vulnerabilità | Per host» (anche `?vista=host`) mostra una riga per host, o per IP senza match nell'inventario, con i conteggi per severità. Una CVE trovata su più porte dello stesso host conta una volta. La riga si apre su tutte le vulnerabilità dell'host, le sfruttate in cima (200 alla volta: un PC Windows con Wazuh ne ha 4.420 sul cliente A). La ricerca, in entrambe le viste, trova anche per IP e nome dell'host.
+- **Exploit noti per ogni vulnerabilità.** CVSS e severità non dicono se qualcuno sta già usando la falla. Tre feed pubblici, scaricati ogni mattina alle 06:00 (e all'avvio se mancano o hanno più di 26 ore): **CISA KEV** («Sfruttata», badge scuro pieno col triangolo; «R» se è usata dai ransomware), **Exploit-DB** («Exploit pubblico», badge chiaro bordato col quadrato) ed **EPSS** (probabilità di sfruttamento a 30 giorni). Badge distinti per luminanza e forma. Ci sono il filtro «Sfruttate / Con exploit pubblico», l'ordinamento per exploit, le colonne anche nella scheda dell'host, lo stato dei feed sotto i filtri e «Aggiorna ora» per gli admin. Sul cliente A (22/10): 94 vulnerabilità sfruttate su 13.588, su 25 host su 231.
+- **Levetta «Dati sugli exploit» in Opzioni**, accesa di default per decisione di Riccardo: è una sola lettura da fonti pubbliche, non tocca apparati né dati dei clienti.
+
+### Note
+
+- I feed stanno in `exploit-intel.db` nella cartella dati, non in `hub.db`. Sono ~17 MB pubblici e riscaricabili, e non devono finire nei backup dell'hub: cancellare il file non perde niente.
+- Una fonte che non risponde, o che manda un file vuoto o dimezzato, non cancella i dati del giorno prima. L'errore compare sotto i filtri e in Opzioni.
+
+## [Non rilasciato] — 2026-10-22 · Comware: VLAN via SNMP e profilo giusto dal sysDescr
+
+### Corretto
+
+- **VLAN e porte taggate dei Comware via SNMP.** Gli switch Comware IRF (sede 70151) rispondono *tooBig* al GETBULK di 20 righe sulle tabelle Q-BRIDGE, perché le liste di porte sono lunghe: delle 7 walk della lettura VLAN ne riuscivano 2 (PVID e mappa del bridge), quindi 0 VLAN e nessuna porta taggata. Il lettore comune (`walkConSessioneSua`) dopo un *tooBig* rifà la walk da capo a 5 righe per richiesta, poi a 1; se fallisce anche così resta il rifiuto `SNMP_STATO_1`, mai una tabella vuota.
+- **Profilo HP corretto dal sysDescr.** Cinque Comware creati in blocco col profilo di serie ProCurve non ricevevano mai comandi né collector Comware, anche se il sysDescr letto diceva «HPE Comware Platform Software». La lettura delle informazioni ora corregge profilo e sottotipo in Comware (o in ProCurve, se il sysDescr dice ProCurve/Aruba su un apparato registrato Comware; AOS-CX non si tocca) e lo scrive nel registro della lettura.
+
+## [Non rilasciato] — 2026-10-21 · Un elenco solo dei MAC virtuali
+
+### Corretto
+- La mappa riconosceva come virtuali solo VRRP e HSRP v1, mentre gli apparati fisici conoscevano anche HSRPv2 e HSRP IPv6: due elenchi diversi in `topology/identity.ts` e `devices/physical-device-db.ts`. Un MAC HSRPv2 o GLBP visto su due router poteva fondere due apparati nella mappa, e la forma a punti Cisco (`0000.0c9f.f001`) non veniva letta. Ora c'è un elenco solo, `devices/mac-virtuali.ts` (VRRP v4/v6, HSRP v1/v2/IPv6, GLBP), usato da entrambi. Misura sui DB dell'hub (21/10): 0 MAC cambiano esito su oltre 13 milioni letti.
+
+## [Non rilasciato] — 2026-10-22 · QNAP via SNMP con gli OID giusti, Proxmox alla parità sui dati
+
+### Corretto
+
+- **QNAP: il firmware non è più la memoria.** Gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale e libera, non modello/firmware/seriale (un QNAP mostrava firmware «15979.0 MB»). Collector e profilo SNMP storico `qnap` (seed, righe `builtin` già nell'hub) usano gli OID del walk; il firmware via SNMP resta assente. Un valore con unità (MB, %, C, rpm) non è mai modello, firmware o seriale.
+
+### Aggiunto
+
+- **Collector `proxmox-ve`**: dati hardware dei nodi (CPU, kernel, disco root, seriale, produttore, modello, stato abbonamento — mai la chiave) e IP delle VM dall'agent QEMU, con tre forme di `pvesh get` per nodo/VM nell'allowlist. Proiezione verso `last_proxmox_scan_result` e inventario solo per gli snapshot del collector. Resta fuori dal pulsante.
+
+## [Non rilasciato] — 2026-10-22 · Pagina Opzioni e job di serie
+
+Piano `docs/superpowers/plans/2026-10-22-pagina-opzioni.md`, ADR 0032.
+
+### Aggiunto
+
+- **Pagina `/settings/opzioni`**: ogni funzione che si accende o si spegne in un posto solo, con stato, valore di serie, chi
+  l'ha cambiata, esito e ritmo. Perché: il 22/10 c'erano 34 interruttori in 13 pagine con valori di serie opposti, e su
+  70151 i dati mancavano senza che nessuna pagina lo dicesse.
+- **Quattro job di serie** (giro ARP 30 min, hypervisor ogni notte, DNS ogni giorno, scansione veloce ogni 12 ore per
+  rete) creati all'avvio se mancano; uno spento o cancellato da un admin lascia la lapide e non rinasce. Perché: su 70151
+  nessun job leggeva gli apparati, si creavano a mano.
+
+### Cambiato
+
+- Le levette delle altre pagine sono diventate rimandi a Opzioni; restano nelle schede i dati da inserire. Installa e
+  disinstalla dei moduli in `lib/modules/installa.ts`, usato dalla rotta e da Opzioni. MeshCentral si installa ancora solo
+  dalla sua scheda (l'assistente crea il server).
+
 ## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
 
 ### Cambiato
@@ -40,6 +311,15 @@ Piano `docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md` (A-IPA
   il processo di collaudo): 503 con `ipam.ingest` spento → riga in coda da ritentare; acceso → AD 201 (report 1),
   battito 200, inventario 201 (351 oggetti); stesso run reinviato → 200 doppione, una riga sola sull'hub; gettone
   sbagliato → 401 e «sospeso», tolto da solo col gettone giusto; fonte revocata → 403 e «sospeso».
+
+## [Non rilasciato] — 2026-10-22 · Collector: uno per famiglia, agganciati al pulsante
+
+### Cambiato
+
+- **Un collector per famiglia.** QNAP NAS, MikroTik e Synology (rinominato `synology-dsm`) usano il motore d'inventario collaudato su apparati veri; dal collector scritto senza apparati si sono tenuti firmware QNAP vero, condivisioni e pacchetti dei NAS, velocità/PoE/FDB/STP di MikroTik. Perché: due versioni dello stesso collector erano un doppione, e quella collaudata è l'unica che ha letto un apparato.
+- **Porte da switch solo a switch e router.** NAS, server, hypervisor, controller e access point non ricevono più `switch_ports` dalla proiezione.
+- **Il pulsante «Aggiorna» e la scansione dei router da Reti** usano il collector per QNAP NAS, Synology, MikroTik, Ubiquiti e Proxmox quando l'interruttore dell'acquisizione modulare è acceso (spento di default: nessun cambiamento).
+- Corretto: vicini e bond MikroTik letti da un'uscita illeggibile non sono più dati per «letti, lista vuota».
 
 ## [Non rilasciato] — 2026-10-22 · Un apparato, una riga; matrice VLAN degli switch
 
@@ -180,6 +460,65 @@ da Riccardo il 21/10.
 - La tab «Dettagli» per switch, router, firewall, storage, hypervisor e server: i loro blocchi stanno nelle tab del
   tipo. Resta solo per il tipo `generico` (stampanti, access point, UPS, postazioni), che non ha tab sue.
 - Il testo «Aggiungi a dispositivi da Discovery» (per promuovere un host c'è la finestra «Rendi apparato»).
+
+## [Non rilasciato] — ONTAP/MetroCluster e consegna del modello (solo locale)
+
+## [Non rilasciato] — collector modulari e consegna del modello (solo locale)
+
+- Prima copertura parziale Synology DSM, QNAP NAS, MikroTik RouterOS, Ubiquiti diretto e Proxmox VE nella CLI comune: letture statiche, tabelle con fonti/stati e capacità df esatte; errori conservati senza scritture DB.
+
+- Collector locale UniFi via API key nella CLI comune: conserva offline e topologia per apparato, senza DB; copertura parziale esplicita (radio/client rinviati).
+
+- Collector `netapp-ontap`, REST GET con CA/pin, paginazione vincolata e stato per
+  collezione: cluster/nodi/DR, SVM/LIF, aggregati, volumi/LUN e mapping, dischi/shelf
+  e rete. Cluster logico distinto dai controller, nessuna operazione di gestione.
+- Capacità JSON grandi preservate dal token originale; zero/false e località dei
+  dischi mantenuti. Prove su conteggi, TLS, next link, 401/403/404 e dati parziali.
+- SOAP: risposte grandi con entità standard gestite senza espansione DTD; NFS4.1
+  conserva tutti i server. Consegna per lo sviluppo con logica di osservazioni,
+  identità scoped, relazioni e prove; vCenter resta una prova locale, non profilo UI.
+
+## [Non rilasciato] — collector VMware ESXi via vSphere (solo locale)
+
+- Profilo `vmware-esxi` API diretta con stesso JSON/CLI/adapter: hardware, rete
+  fisica/virtuale, VMkernel, datastore/LUN/multipath, VM/vNIC/dischi/snapshot e sensori.
+  Riferimenti e byte esatti preservati; IP dei Tools distinti da una scansione.
+- HTTPS con CA oppure impronta esplicita prima delle credenziali; sessione limitata,
+  proprietà selezionate, paginazione e logout. Endpoint vCenter rifiutati.
+- Corretta la collisione XML tra type del ManagedObjectReference e xsi:type,
+  con regressioni per singleton, route/pNIC, byte grandi, TLS e risposte parziali.
+  Nessuna persistenza, modifica dell’host, attivazione UI o pubblicazione.
+
+## [Non rilasciato] — inventario modulare e Comware IRF (solo locale)
+
+- ProCurve 5406R zl2: inventario ENTITY e moduli nativi, mantenendo le porte senza
+  modulo osservato anziché confonderle con porte installate o cancellarle.
+- Collector `hp-comware`: profilo SSH exec separato e limitato; VLAN, porte, LLDP,
+  MAC, LAG/STP e inventario IRF nello stesso JSON/CLI. CPU e memoria per membro,
+  temperature, ventole e alimentatori distinti dalla potenza PoE.
+- Campi opzionali compatibili con i JSON QNAP precedenti; errori e letture parziali
+  espliciti. Nessuna persistenza, scheduler, nuova rotta o pubblicazione automatica.
+
+## [Non rilasciato] — collector ProCurve / ArubaOS-Switch (solo locale)
+
+- Profilo `hp-procurve` nel registry e nella stessa CLI del QNAP: collaudo Aruba
+  2540 JL357A con operator, letture SSH/SNMP senza promozione di privilegi o DB.
+- Porte fisiche e LAG distinti, membership VLAN/PVID espliciti, LLDP dettagliato,
+  FDB, STP CIST, PoE assorbito dai dispositivi, CPU/memoria e salute delle ventole.
+  Risorse/ambiente e part-number/ROM sono estensioni opzionali compatibili con JSON 1.0.
+- Corretto il footer del pager HP incollato alle righe: Enter/Return non causano più
+  perdita silenziosa di porte o MAC. Allowlist per famiglia, prompt operator e
+  conteggi verificati; test e snapshot QNAP precedenti restano validi. Nessun rilascio.
+
+## [Non rilasciato] — collector modulari QNAP (solo locale)
+
+- Collector `qnap-switch` richiamabile da CLI e adapter senza DB, per acquisire lo
+  stesso JSON versionato dal banco e dall'app senza duplicare i parser. Trasporti
+  SNMP centralizzati e console SSH QSS con timeout, paginazione e allowlist read-only.
+- Sezioni e errori espliciti per identità, porte, VLAN, FDB, LLDP, STP, LAG, sensori
+  e IP/ARP; risultati parziali non diventano liste vuote autorevoli. Credenziali solo
+  da file privato fuori git, output reale fuori repo; nessuno scheduler o rilascio.
+- Motivazione, limiti e prove: ADR 0024 e `docs/modules/acquisition.md`.
 
 ## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
 

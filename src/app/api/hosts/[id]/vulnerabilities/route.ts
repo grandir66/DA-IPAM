@@ -9,12 +9,14 @@
  * teniamo il rilevamento più recente come `scanned_at`, max severity, max
  * cvss_score, e accumulo le fonti come array `sources`. Coerenza UI: il
  * conteggio rollup è sui finding *deduplicati* → header e tabella sempre allineati.
+ * Ogni CVE porta gli exploit noti (KEV, Exploit-DB, EPSS; 22/10) in `exploit`.
  */
 
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
+import { exploitPerRotte, type ExploitInfo } from "@/lib/vuln/exploit-feed/archivio";
 
 interface SeverityRollup {
   Critical: number;
@@ -39,6 +41,7 @@ interface UnifiedFinding {
   description: string | null;
   scanned_at: string;
   sources: string[];     // ["Edge", "Wazuh"] — fonti che hanno rilevato la stessa CVE
+  exploit: ExploitInfo | null;
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -139,6 +142,7 @@ export async function GET(
           description: g.description,
           scanned_at: g.scanned_at,
           sources: [g.source],
+          exploit: null,
         });
       }
     }
@@ -171,8 +175,16 @@ export async function GET(
           description: null,
           scanned_at: w.scanned_at ?? new Date().toISOString(),
           sources: ["Wazuh"],
+          exploit: null,
         });
       }
+    }
+
+    // ─── Step 3b: exploit noti (archivio dei feed; illeggibile = `exploit_errore`) ──
+    const { exploitDi, errore: exploit_errore } = exploitPerRotte();
+    if (exploitDi) {
+      const info = exploitDi([...merged.values()].map((f) => f.cve_id).filter((c): c is string => !!c));
+      for (const f of merged.values()) f.exploit = (f.cve_id && info.get(f.cve_id)) || null;
     }
 
     // ─── Step 4: rollup (sui finding deduplicati per CVE, non sui raw) ───────
@@ -212,6 +224,7 @@ export async function GET(
         severity: string;
         cvss_score: number | null;
         scanned_at: string;
+        exploit: ExploitInfo | null;
       }>;
     }
 
@@ -238,6 +251,7 @@ export async function GET(
           severity: f.severity,
           cvss_score: f.cvss_score,
           scanned_at: f.scanned_at,
+          exploit: f.exploit,
         });
       } else {
         groupsMap.set(groupKey, {
@@ -261,6 +275,7 @@ export async function GET(
               severity: f.severity,
               cvss_score: f.cvss_score,
               scanned_at: f.scanned_at,
+              exploit: f.exploit,
             },
           ],
         });
@@ -305,6 +320,7 @@ export async function GET(
           }
         : null,
       severity_rollup: rollup,
+      exploit_errore,
       groups,
       // Limite alto: la UI gestisce paginazione/scroll quando serve.
       findings: findingsSorted.slice(0, 2000),

@@ -8,14 +8,13 @@
  */
 import { z } from "zod";
 import { parseControllerId } from "@/lib/controllers/route-helpers";
-import { GIORNI_ASSENZA_ARCHIVIO } from "@/lib/hosts/pulizia";
-import { candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
+import { candidatiPulizia, giorniAssenzaArchivio } from "@/lib/hosts/pulizia-candidati";
 import {
   applicaPulizia,
   archivioScaduto,
   ErroreApplica,
   ErroreConferma,
-  GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE,
+  giorniArchivioPrimaDiCancellare,
   ipPrecedentiDi,
   listaArchivio,
   recuperaHost,
@@ -65,7 +64,7 @@ export function rispostaAnteprima(): RispostaRotta {
     status: 200,
     body: {
       candidati, esclusi, scadute: archivioScaduto(),
-      giorni: GIORNI_ASSENZA_ARCHIVIO, giorniArchivio: GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE,
+      giorni: giorniAssenzaArchivio(), giorniArchivio: giorniArchivioPrimaDiCancellare(),
     },
   };
 }

@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -59,6 +59,7 @@ import {
   type SceltaTokenApi,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
+import { CAMPI_HOST, CAMPI_IDENTITA, CAMPI_PORTA, type CampoHost, type CampoPorta, type ModifichePorte, type PortaAttuale } from "./acquisition/proiezioni";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
@@ -114,6 +115,7 @@ import type {
   SoftwareScanLog,
   ExcludedIpWithNetwork,
 } from "@/types";
+import { unisci, risolvi } from "./percorsi";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT CONTEXT (AsyncLocalStorage)
@@ -147,7 +149,7 @@ export function getCurrentTenantCode(): string | null {
 // TENANT DB CONNECTION CACHE (LRU)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
+const TENANTS_DIR = unisci(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
 
 /**
@@ -1035,6 +1037,227 @@ export function migrateSwitchVlanNativa(db: Database.Database): string[] {
   return added;
 }
 
+/** Livello dello schema di LibreNMS come fonte (0 = assente, 1 = le tabelle della v1 con i loro indici), annotato all'apertura. */
+const LIVELLO_LIBRENMS = new WeakMap<Database.Database, number>();
+
+function misuraLivelloLibrenms(d: Database.Database): number {
+  if (tabelleSchedaMkMancanti(d, DDL_LIBRENMS_FONTE_V1).length > 0) return 0;
+  const c = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return INDICI_LIBRENMS_FONTE_V1.every(([n]) => !!c.get(n)) ? 1 : 0;
+}
+
+/** Livello dello schema di LibreNMS di un DB (annotato; si rimisura solo con la migrazione). */
+export function livelloSchemaLibrenmsDb(d: Database.Database): number {
+  const v = LIVELLO_LIBRENMS.get(d);
+  if (v !== undefined) return v;
+  const n = misuraLivelloLibrenms(d);
+  LIVELLO_LIBRENMS.set(d, n);
+  return n;
+}
+
+/** Livello dello schema di LibreNMS del tenant corrente: sotto 1 la lettura e i rifiuti non si scrivono. */
+export function livelloSchemaLibrenms(): number {
+  return livelloSchemaLibrenmsDb(db());
+}
+
+/**
+ * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2): le tabelle di DDL_LIBRENMS_FONTE_V1 e i loro indici,
+ * solo se mancano (sqlite_master: un oggetto con lo stesso nome fa fallire, non passa muto). Additiva, idempotente, in
+ * UNA transazione; restituisce i nomi di ciò che aggiunge, poi scrive il segno `done:<data>:v1` una volta sola.
+ */
+export function migrateLibrenmsFonte(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_LIBRENMS_FONTE_V1)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+    for (const [n, ddl] of INDICI_LIBRENMS_FONTE_V1) {
+      if (c.get(n)) continue;
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_LIBRENMS_FONTE}`;
+    const attuale = leggiSegno(db, SEGNO_LIBRENMS_FONTE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_LIBRENMS_FONTE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  LIVELLO_LIBRENMS.set(db, misuraLivelloLibrenms(db));
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneLibrenmsFonteFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    const livello = misuraLivelloLibrenms(db);
+    LIVELLO_LIBRENMS.set(db, livello);
+    if (livello >= VERSIONE_LIBRENMS_FONTE) {
+      const attuale = leggiSegno(db, SEGNO_LIBRENMS_FONTE);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_LIBRENMS_FONTE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_LIBRENMS_FONTE}`);
+    } else {
+      scriviSegno(db, SEGNO_LIBRENMS_FONTE, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_LIBRENMS_FONTE}, segno non scritto:`, e2);
+  }
+}
+
+/** «La tabella delle esclusioni da LibreNMS c'è», annotato all'apertura come le altre. */
+const SCHEMA_LIBRENMS_ESCLUSIONE = new WeakMap<Database.Database, boolean>();
+
+/** Esclusioni da LibreNMS presenti (annotato; si rimisura solo con la migrazione). Senza, il giro non aggiunge oggetti SNMP. */
+export function schemaEsclusioneLibrenms(d: Database.Database = db()): boolean {
+  const v = SCHEMA_LIBRENMS_ESCLUSIONE.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_LIBRENMS_ESCLUSIONE).length === 0;
+  SCHEMA_LIBRENMS_ESCLUSIONE.set(d, n);
+  return n;
+}
+
+/**
+ * Tabella delle esclusioni da LibreNMS (giro del 22/10, punto 2): solo se manca, in UNA transazione, poi il segno
+ * `done:<data>:v1` una volta sola. Restituisce i nomi di ciò che aggiunge.
+ */
+export function migrateLibrenmsEsclusione(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_LIBRENMS_ESCLUSIONE)) {
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_LIBRENMS_ESCLUSIONE}`;
+      const attuale = leggiSegno(db, SEGNO_LIBRENMS_ESCLUSIONE);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_LIBRENMS_ESCLUSIONE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_LIBRENMS_ESCLUSIONE.set(db, tabelleSchedaMkMancanti(db, DDL_LIBRENMS_ESCLUSIONE).length === 0);
+  }
+  return added;
+}
+
+/** «Colonne, tabella e indici degli assegnatari da AD ci sono», annotato all'apertura come gli altri. */
+const SCHEMA_ASSEGNATARI_AD = new WeakMap<Database.Database, boolean>();
+
+function oggettiAssegnatariAdMancanti(d: Database.Database): string[] {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [
+    ...colonneSchedaMkMancanti(d, COLONNE_ASSEGNATARI_AD).map(([tab, c]) => `${tab}.${c}`),
+    ...DDL_ASSEGNATARI_AD.filter(([n]) => !t.get(n)).map(([n]) => n),
+    ...INDICI_ASSEGNATARI_AD.filter(([n]) => !i.get(n)).map(([n]) => n),
+  ];
+}
+
+/** Schema degli assegnatari da AD presente (annotato; si rimisura solo con la migrazione). Rotte e giro lo chiedono prima di leggere. */
+export function schemaAssegnatariAdPresente(d: Database.Database): boolean {
+  const v = SCHEMA_ASSEGNATARI_AD.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiAssegnatariAdMancanti(d).length === 0;
+  SCHEMA_ASSEGNATARI_AD.set(d, n);
+  return n;
+}
+
+/**
+ * Assegnatari da AD (piano 2026-10-23, passo 1): le colonne di COLONNE_ASSEGNATARI_AD, la tabella degli accessi e i suoi
+ * indici, solo se mancano. Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» o il nome di ciò che
+ * aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateAssegnatariAd(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_ASSEGNATARI_AD)) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+        added.push(`${t}.${c}`);
+      }
+      const tab = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+      for (const [n, ddl] of DDL_ASSEGNATARI_AD) {
+        if (tab.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const idx = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+      for (const [n, ddl] of INDICI_ASSEGNATARI_AD) {
+        if (idx.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_ASSEGNATARI_AD}`;
+      const attuale = leggiSegno(db, SEGNO_ASSEGNATARI_AD);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_ASSEGNATARI_AD, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_ASSEGNATARI_AD.set(db, oggettiAssegnatariAdMancanti(db).length === 0);
+  }
+  return added;
+}
+
+/** «Colonna e registro del vault ci sono», annotato all'apertura come gli altri. */
+const SCHEMA_VAULT = new WeakMap<Database.Database, boolean>();
+
+function oggettiVaultMancanti(d: Database.Database): string[] {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [
+    ...colonneSchedaMkMancanti(d, COLONNE_VAULT).map(([tab, c]) => `${tab}.${c}`),
+    ...DDL_VAULT.filter(([n]) => !t.get(n)).map(([n]) => n),
+    ...INDICI_VAULT.filter(([n]) => !i.get(n)).map(([n]) => n),
+  ];
+}
+
+/** Schema del vault presente (annotato; si rimisura solo con la migrazione). Il registro e il riferimento lo chiedono prima. */
+export function schemaVaultPresente(d: Database.Database): boolean {
+  const v = SCHEMA_VAULT.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiVaultMancanti(d).length === 0;
+  SCHEMA_VAULT.set(d, n);
+  return n;
+}
+
+/**
+ * da-vault (piano 2026-10-23): `credentials.credential_ref` e il registro `vault_visualizzazioni` col suo indice, solo
+ * se mancano. Additiva, idempotente, in UNA transazione; restituisce ciò che aggiunge e scrive il segno una volta sola.
+ * Gli interruttori del vault non la guardano: lo schema c'è anche spenti, e spenti nessuno lo legge.
+ */
+export function migrateVault(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_VAULT)) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+        added.push(`${t}.${c}`);
+      }
+      const tab = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+      for (const [n, ddl] of DDL_VAULT) {
+        if (tab.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const idx = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+      for (const [n, ddl] of INDICI_VAULT) {
+        if (idx.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_VAULT}`;
+      const attuale = leggiSegno(db, SEGNO_VAULT);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_VAULT, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_VAULT.set(db, oggettiVaultMancanti(db).length === 0);
+  }
+  return added;
+}
+
 /** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
 const SCHEMA_VULCAN = new WeakMap<Database.Database, boolean>();
 
@@ -1123,12 +1346,12 @@ export function getTenantDb(tenantCode: string): Database.Database {
     fs.mkdirSync(TENANTS_DIR, { recursive: true });
   }
 
-  const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  const dbPath = unisci(TENANTS_DIR, `${tenantCode}.db`);
   // TEN-02 hardening: containment. Il file DB del tenant DEVE trovarsi
   // direttamente dentro TENANTS_DIR. Un tenantCode con path traversal
   // (es. "../hub") aprirebbe altrimenti hub.db come se fosse un DB tenant,
   // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
-  if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
+  if (path.dirname(risolvi(dbPath)) !== risolvi(TENANTS_DIR)) {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
   }
   // NUC-1 fase A: ogni apertura (fuori dalla cache) del database di un codice
@@ -2740,6 +2963,39 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   }
 
+  // LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2): dieci tabelle nuove e due indici, solo se mancano. Se
+  // fallisce il tenant si apre lo stesso: livelloSchemaLibrenms() dice 0, la lettura non scrive e la scheda non ha dati.
+  try {
+    const added = migrateLibrenmsFonte(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: librenms fonte, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione librenms fonte fallita (ROLLBACK), i dati di LibreNMS non si scrivono:`, e);
+    chiudiMigrazioneLibrenmsFonteFallita(newDb, tenantCode, e);
+  }
+
+  // Esclusioni da LibreNMS (giro del 22/10): una tabella nuova, solo se manca. Se fallisce il tenant si apre lo stesso:
+  // schemaEsclusioneLibrenms() dice false e il giro non aggiunge da solo gli oggetti SNMP.
+  try {
+    const added = migrateLibrenmsEsclusione(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: librenms esclusioni, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione librenms esclusioni fallita (ROLLBACK), il giro non aggiunge oggetti SNMP:`, e);
+    try {
+      if (schemaEsclusioneLibrenms(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_LIBRENMS_ESCLUSIONE}`);
+      } else {
+        scriviSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_LIBRENMS_ESCLUSIONE}, segno non scritto:`, e2);
+    }
+  }
+
   // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se
   // fallisce il tenant si apre lo stesso: schemaVulcanPresente() dice false e il flusso non accoda (lo dice, non scrive a vuoto).
   try {
@@ -2759,6 +3015,49 @@ export function getTenantDb(tenantCode: string): Database.Database {
       }
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VULCAN}, segno non scritto:`, e2);
+    }
+  }
+
+  // Assegnatari da AD (piano 2026-10-23): colonne nuove, la tabella degli accessi e tre indici, solo se mancano. Se fallisce
+  // il tenant si apre lo stesso: schemaAssegnatariAdPresente() dice false, il giro non raccoglie e le pagine lo dicono.
+  try {
+    const added = migrateAssegnatariAd(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: assegnatari da AD, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione assegnatari da AD fallita (ROLLBACK), proposte e importazione spente:`, e);
+    try {
+      if (schemaAssegnatariAdPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_ASSEGNATARI_AD);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_ASSEGNATARI_AD, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_ASSEGNATARI_AD}`);
+      } else {
+        scriviSegno(newDb, SEGNO_ASSEGNATARI_AD, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_ASSEGNATARI_AD}, segno non scritto:`, e2);
+    }
+  }
+
+  // da-vault (piano 2026-10-23): riferimento a OpenBao e registro delle visualizzazioni, solo se mancano. Se fallisce il
+  // tenant si apre lo stesso: schemaVaultPresente() dice false e le funzioni del vault lo dicono (a interruttori spenti
+  // nessuno le usa).
+  try {
+    const added = migrateVault(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: vault, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione del vault fallita (ROLLBACK), registro e riferimenti OpenBao non disponibili:`, e);
+    try {
+      if (schemaVaultPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_VAULT);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_VAULT, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_VAULT}`);
+      } else {
+        scriviSegno(newDb, SEGNO_VAULT, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VAULT}, segno non scritto:`, e2);
     }
   }
 
@@ -2790,7 +3089,7 @@ export function createTenantDatabase(tenantCode: string): void {
 
 export function deleteTenantDatabase(tenantCode: string): void {
   closeTenantDb(tenantCode);
-  const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  const dbPath = unisci(TENANTS_DIR, `${tenantCode}.db`);
   try { fs.unlinkSync(dbPath); } catch { /* file may not exist */ }
   try { fs.unlinkSync(`${dbPath}-wal`); } catch { /* ignore */ }
   try { fs.unlinkSync(`${dbPath}-shm`); } catch { /* ignore */ }
@@ -5848,10 +6147,11 @@ export interface DbNeighborEntry {
 /**
  * Chi ha scritto una riga dei vicini. `device` e `unifi` sono quelle che leggono il modello di oggi e l'attribuzione
  * (NEIGHBORS_MODEL_SOURCES_SQL); `ssh` (switch MikroTik nel giro), `snmp` (switch non del controller) e `host` (`lldpcli`
- * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. La colonna non ha
- * vincoli (db-tenant-schema.ts): non serve schema.
+ * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. `collector` (acquisizione
+ * modulare, piano 2026-10-21 C2, decisione D4) è il vicino letto da un collector JSON 1.0: anche lui solo per il modello
+ * per cavo. La colonna non ha vincoli (db-tenant-schema.ts): non serve schema.
  */
-export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host";
+export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host" | "collector";
 
 /**
  * Le colonne nuove dei vicini (spec §13.5.7): l'elenco letto di `discovered-by`, gli indici delle due porte quando il
@@ -6373,7 +6673,8 @@ export function contaBridgeMikrotik(deviceId: number): { bridge: number; letto_i
 }
 
 /** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */
-export type FonteFatti = "device" | "controller" | "snmp" | "host";
+/** `collector`: fatti di porta letti da un collector JSON 1.0 (acquisizione modulare, decisione D4), solo istanza 0/CIST. */
+export type FonteFatti = "device" | "controller" | "snmp" | "host" | "collector";
 
 /**
  * Un fatto di porta come lo scrive un lettore. `port_key`: «i:<indice>» se l'indice è noto, altrimenti «n:<nome
@@ -6946,6 +7247,50 @@ export function updateScheduledJobInterval(id: number, intervalMinutes: number):
   ).run(intervalMinutes, intervalMinutes, id);
 }
 
+/**
+ * Un job nato dal seme dei job di serie (`opzioni/job-di-serie.ts`): acceso, con il primo giro fra `offsetMinuti`
+ * (spalmato come known_host_check, così le reti non partono tutte insieme).
+ */
+export function insertSeededJob(jobType: ScheduledJob["job_type"], networkId: number | null, intervalMinutes: number, offsetMinuti: number): number {
+  const res = db()
+    .prepare(
+      `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config, next_run)
+       VALUES (?, ?, ?, 1, '{}', datetime('now', '+' || ? || ' minutes'))`,
+    )
+    .run(networkId, jobType, intervalMinutes, offsetMinuti);
+  return Number(res.lastInsertRowid);
+}
+
+/**
+ * Accende o spegne lo Scanner-Edge del cliente (pagina Opzioni). Riaccendere azzera gli errori, come la PATCH della sua
+ * scheda: altrimenti resterebbe «spento da solo». false = nessuno scanner configurato.
+ */
+export function setVulnScannerEnabled(on: boolean): boolean {
+  const r = db()
+    .prepare(
+      on
+        ? `UPDATE vuln_scanners SET enabled = 1, consecutive_errors = 0, last_error = NULL, auto_disabled_at = NULL, updated_at = datetime('now')
+            WHERE id = (SELECT id FROM vuln_scanners ORDER BY id LIMIT 1)`
+        : `UPDATE vuln_scanners SET enabled = 0, updated_at = datetime('now') WHERE id = (SELECT id FROM vuln_scanners ORDER BY id LIMIT 1)`,
+    )
+    .run();
+  return r.changes > 0;
+}
+
+/** Lo Scanner-Edge del cliente in breve, o null se non c'è. */
+export function getVulnScannerStato(): { enabled: boolean; autoDisabledAt: string | null; lastSyncAt: string | null; lastError: string | null } | null {
+  const r = db()
+    .prepare("SELECT enabled, auto_disabled_at, last_sync_at, last_error FROM vuln_scanners ORDER BY id LIMIT 1")
+    .get() as { enabled: number; auto_disabled_at: string | null; last_sync_at: string | null; last_error: string | null } | undefined;
+  if (!r) return null;
+  return { enabled: r.enabled === 1, autoDisabledAt: r.auto_disabled_at, lastSyncAt: r.last_sync_at, lastError: r.last_error };
+}
+
+/** Le reti del cliente, solo id, nome e CIDR: senza le statistiche di `getNetworks`. */
+export function listNetworksLite(): Array<{ id: number; name: string; cidr: string }> {
+  return db().prepare("SELECT id, name, cidr FROM networks ORDER BY id").all() as Array<{ id: number; name: string; cidr: string }>;
+}
+
 /** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */
 export function deleteScheduledJob(id: number): boolean {
   const d = db();
@@ -7398,7 +7743,7 @@ function mapVendorToMarca(vendor: string): string | null {
   return map[v] ?? null;
 }
 
-function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
+export function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
   const c = canonicalizza((classification ?? "").toLowerCase()).classificazione;
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";
@@ -8763,6 +9108,10 @@ export function setTenantSetting(key: string, value: string): void {
     .run(key, value);
 }
 
+export function deleteTenantSetting(key: string): void {
+  db().prepare("DELETE FROM tenant_settings WHERE key = ?").run(key);
+}
+
 export function getAllTenantSettings(): Record<string, string> {
   const rows = db()
     .prepare("SELECT key, value FROM tenant_settings")
@@ -9132,6 +9481,7 @@ export function getLatestOkSoftwareScanForDevice(
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
+import { rangoExploit, type ExploitInfo } from "./vuln/exploit-feed/archivio";
 
 export type AggregatedVulnSourceLabel = string;
 
@@ -9160,7 +9510,15 @@ export interface AggregatedVuln {
   orphan_count: number;
   hosts_preview: AggregatedVulnHostRef[];
   latest_scanned_at: string;
+  /** Exploit noti (KEV, Exploit-DB, EPSS); null = nessuna fonte la cita, o chiave `nvt:`. */
+  exploit: ExploitInfo | null;
 }
+
+/** «kev» = sfruttata attivamente (CISA KEV), «edb» = exploit pubblico (Exploit-DB). */
+export type FiltroExploit = "kev" | "edb";
+
+/** Le informazioni sugli exploit per un elenco di CVE: la rotta passa l'archivio vero, le prove uno finto. */
+export type ExploitDi = (cves: string[]) => Map<string, ExploitInfo>;
 
 export type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 
@@ -9207,7 +9565,9 @@ export interface AggregatedVulnOpts {
   osFamilies?: OsFamily[];
   search?: string;
   hasCve?: boolean;
-  sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id";
+  exploit?: FiltroExploit[];
+  exploitDi?: ExploitDi;
+  sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id" | "exploit";
   sortDir?: "asc" | "desc";
 }
 
@@ -9279,23 +9639,27 @@ interface HostMeta {
   hostname: string | null;
   network_id: number | null;
   network_name: string | null;
+  os_family: string | null;
 }
 
 function loadHostsMeta(hostIds: number[]): Map<number, HostMeta> {
   const map = new Map<number, HostMeta>();
-  if (hostIds.length === 0) return map;
-  const placeholders = hostIds.map(() => "?").join(",");
-  const rows = db()
-    .prepare(
-      `SELECT h.id AS host_id, h.ip,
-              COALESCE(h.custom_name, h.hostname) AS hostname,
-              h.network_id, n.name AS network_name
-         FROM hosts h
-         LEFT JOIN networks n ON n.id = h.network_id
-        WHERE h.id IN (${placeholders})`
-    )
-    .all(...hostIds) as HostMeta[];
-  for (const r of rows) map.set(r.host_id, r);
+  // A blocchi: la vista per host e la ricerca per nome chiedono tutti gli host con vulnerabilità.
+  for (let i = 0; i < hostIds.length; i += 500) {
+    const parte = hostIds.slice(i, i + 500);
+    const placeholders = parte.map(() => "?").join(",");
+    const rows = db()
+      .prepare(
+        `SELECT h.id AS host_id, h.ip,
+                COALESCE(h.custom_name, h.hostname) AS hostname,
+                h.network_id, n.name AS network_name, h.os_family
+           FROM hosts h
+           LEFT JOIN networks n ON n.id = h.network_id
+          WHERE h.id IN (${placeholders})`
+      )
+      .all(...parte) as HostMeta[];
+    for (const r of rows) map.set(r.host_id, r);
+  }
   return map;
 }
 
@@ -9318,15 +9682,20 @@ interface RawVulnRow {
   package_label: string | null;
   host_id: number | null;
   ip: string;
+  port: string | null;
   scanned_at: string;
   source: string;
 }
 
-export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+/**
+ * Le righe grezze di tutte le vulnerabilità del tenant (Edge + Wazuh), una per rilevamento:
+ * la fonte comune della vista per CVE e di quella per host (22/10).
+ */
+function leggiRigheVuln(osFamilies?: OsFamily[]): RawVulnRow[] {
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
   // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
-  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
-  const osList = osActive ? opts.osFamilies! : [];
+  const osActive = !!(osFamilies && osFamilies.length > 0 && osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? osFamilies! : [];
   const osPlaceholders = osList.map(() => "?").join(",");
   const edgeOsJoin = osActive ? `JOIN hosts h ON h.id = f.host_id AND h.os_family IN (${osPlaceholders})` : "";
   const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
@@ -9341,6 +9710,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.nvt_name AS package_label,
       f.host_id,
       f.ip,
+      f.port,
       f.scanned_at,
       'Edge' AS source
     FROM vuln_findings f
@@ -9358,6 +9728,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
            ELSE v.package_name || COALESCE(' ' || v.package_version, '') END AS package_label,
       a.host_id,
       COALESCE(a.ip, '') AS ip,
+      NULL AS port,
       COALESCE(v.detection_time, v.synced_at) AS scanned_at,
       'Wazuh' AS source
     FROM wazuh_vuln v
@@ -9368,7 +9739,36 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
   `;
 
   const params = osActive ? [...osList, ...osList] : [];
-  const rows = db().prepare(baseSql).all(...params) as RawVulnRow[];
+  return db().prepare(baseSql).all(...params) as RawVulnRow[];
+}
+
+/** Vero se l'exploit passa il filtro: basta una delle condizioni scelte. */
+function passaFiltroExploit(e: ExploitInfo | null, filtro: FiltroExploit[] | undefined): boolean {
+  if (!filtro?.length) return true;
+  if (!e) return false;
+  return filtro.some((f) => (f === "kev" ? e.kev : e.edb > 0));
+}
+
+/** Le chiavi `h:<id>`/`ip:<ip>` degli host il cui IP o nome contiene `q` (già in minuscolo). */
+function hostCheCorrispondono(rows: RawVulnRow[], q: string): Set<string> {
+  const ids = [...new Set(rows.map((r) => r.host_id).filter((x): x is number => x != null))];
+  const meta = loadHostsMeta(ids);
+  const out = new Set<string>();
+  for (const r of rows) {
+    const m = r.host_id != null ? meta.get(r.host_id) : undefined;
+    const ip = (m?.ip || r.ip || "").toLowerCase();
+    if (ip.includes(q) || (m?.hostname ?? "").toLowerCase().includes(q)) out.add(chiaveHostVuln(r));
+  }
+  return out;
+}
+
+/** La chiave dell'host nella vista per host: l'id se l'host è agganciato, altrimenti l'IP. */
+function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
+  return r.host_id != null ? `h:${r.host_id}` : `ip:${r.ip}`;
+}
+
+export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+  const rows = leggiRigheVuln(opts.osFamilies);
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -9396,6 +9796,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
         orphan_count: 0,
         hosts_preview: [],
         latest_scanned_at: r.scanned_at,
+        exploit: null,
         _hostKeys: new Set(),
         _hostIds: new Set(),
         _orphanCount: 0,
@@ -9438,6 +9839,10 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
     a.host_count = a._hostIds.size + a._orphanCount;
     a.orphan_count = a._orphanCount;
   }
+  if (opts.exploitDi) {
+    const info = opts.exploitDi([...map.values()].map((a) => a.cve_id).filter((c): c is string => !!c));
+    for (const a of map.values()) a.exploit = (a.cve_id && info.get(a.cve_id)) || null;
+  }
 
   let arr = [...map.values()];
   const severity_rollup = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -9455,13 +9860,18 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
   }
   if (opts.hasCve === true) arr = arr.filter((v) => v.cve_id !== null);
   else if (opts.hasCve === false) arr = arr.filter((v) => v.cve_id === null);
+  if (opts.exploit?.length) arr = arr.filter((v) => passaFiltroExploit(v.exploit, opts.exploit));
   if (opts.search) {
     const q = opts.search.toLowerCase();
+    // Anche per IP e nome dell'host (22/10): una vulnerabilità passa se uno dei suoi host corrisponde.
+    const hostOk = hostCheCorrispondono(rows, q);
+    const chiaviPerHost = new Set(rows.filter((r) => hostOk.has(chiaveHostVuln(r))).map((r) => r.key));
     arr = arr.filter(
       (v) =>
         v.cve_id?.toLowerCase().includes(q) ||
         v.package_label?.toLowerCase().includes(q) ||
-        v.nvt_oid?.toLowerCase().includes(q)
+        v.nvt_oid?.toLowerCase().includes(q) ||
+        chiaviPerHost.has(v.key)
     );
   }
 
@@ -9488,6 +9898,14 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
         cmp = sortDir === "asc"
           ? (a.cve_id ?? "zzz").localeCompare(b.cve_id ?? "zzz")
           : (b.cve_id ?? "zzz").localeCompare(a.cve_id ?? "zzz");
+        if (cmp !== 0) return cmp;
+        break;
+      case "exploit":
+        cmp = sortDir === "asc"
+          ? rangoExploit(a.exploit) - rangoExploit(b.exploit)
+          : rangoExploit(b.exploit) - rangoExploit(a.exploit);
+        if (cmp !== 0) return cmp;
+        cmp = compareSeverityRank(a.severity, b.severity);
         if (cmp !== 0) return cmp;
         break;
       case "severity":
@@ -9599,6 +10017,238 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
     });
   }
   return out;
+}
+
+// ── Vista per host (Riccardo, 22/10) ─────────────────────────────────────────
+// Le stesse righe della vista per CVE, raggruppate per host: una CVE trovata su più porte
+// dello stesso host conta una volta. Gli IP senza host agganciato restano, con chiave `ip:`.
+
+export interface VulnHostRow {
+  /** `h:<id>` o `ip:<ip>` (senza match nell'inventario). */
+  host_key: string;
+  host_id: number | null;
+  ip: string;
+  hostname: string | null;
+  network_name: string | null;
+  os_family: string | null;
+  top_severity: Severity;
+  counts: { Critical: number; High: number; Medium: number; Low: number };
+  vuln_count: number;
+  /** Vulnerabilità in CISA KEV (sfruttate attivamente). */
+  kev_count: number;
+  /** Vulnerabilità con almeno un exploit pubblico in Exploit-DB. */
+  edb_count: number;
+  epss_max: number | null;
+  sources: string[];
+  latest_scanned_at: string;
+}
+
+export interface VulnHostOpts {
+  page: number;
+  pageSize: number;
+  severity?: Severity[];
+  sources?: string[];
+  osFamilies?: OsFamily[];
+  search?: string;
+  hasCve?: boolean;
+  exploit?: FiltroExploit[];
+  exploitDi?: ExploitDi;
+  sortBy?: "severity" | "exploit" | "vuln_count" | "ip" | "latest_scanned_at";
+  sortDir?: "asc" | "desc";
+}
+
+export interface VulnHostResult {
+  data: VulnHostRow[];
+  total: number;
+  severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
+}
+
+export interface VulnDiHost {
+  key: string;
+  cve_id: string | null;
+  nvt_oid: string | null;
+  severity: Severity;
+  cvss_score: number | null;
+  package_label: string | null;
+  /** Porte distinte dove è stata trovata (vuoto per Wazuh). */
+  ports: string[];
+  sources: string[];
+  scanned_at: string;
+  exploit: ExploitInfo | null;
+}
+
+/** Ordina gli IPv4 per numero (192.168.1.9 prima di 192.168.1.10); il resto per testo. */
+function confrontaIp(a: string, b: string): number {
+  const na = a.split(".").map(Number);
+  const nb = b.split(".").map(Number);
+  if (na.length === 4 && nb.length === 4 && na.every(Number.isFinite) && nb.every(Number.isFinite)) {
+    for (let i = 0; i < 4; i++) if (na[i] !== nb[i]) return na[i]! - nb[i]!;
+    return 0;
+  }
+  return a.localeCompare(b);
+}
+
+/** Una vulnerabilità per chiave, su un insieme di righe dello stesso host. */
+function vulnDistinte(rows: RawVulnRow[], info: Map<string, ExploitInfo>): VulnDiHost[] {
+  const per = new Map<string, VulnDiHost>();
+  for (const r of rows) {
+    const sev = normalizeSeverity(r.severity);
+    let v = per.get(r.key);
+    if (!v) {
+      v = {
+        key: r.key, cve_id: r.cve_id, nvt_oid: r.nvt_oid, severity: sev, cvss_score: r.cvss_score,
+        package_label: r.package_label, ports: [], sources: [], scanned_at: r.scanned_at,
+        exploit: (r.cve_id && info.get(r.cve_id)) || null,
+      };
+      per.set(r.key, v);
+    }
+    v.severity = maxSeverity(v.severity, sev) as Severity;
+    if (r.cvss_score != null && (v.cvss_score == null || r.cvss_score > v.cvss_score)) v.cvss_score = r.cvss_score;
+    if (!v.package_label && r.package_label) v.package_label = r.package_label;
+    if (r.port && !v.ports.includes(r.port)) v.ports.push(r.port);
+    if (!v.sources.includes(r.source)) v.sources.push(r.source);
+    if (r.scanned_at > v.scanned_at) v.scanned_at = r.scanned_at;
+  }
+  return [...per.values()];
+}
+
+function infoExploit(rows: RawVulnRow[], exploitDi: ExploitDi | undefined): Map<string, ExploitInfo> {
+  if (!exploitDi) return new Map();
+  return exploitDi([...new Set(rows.map((r) => r.cve_id).filter((c): c is string => !!c))]);
+}
+
+export function getVulnerabilitiesByHost(opts: VulnHostOpts): VulnHostResult {
+  const rows = leggiRigheVuln(opts.osFamilies);
+  const info = infoExploit(rows, opts.exploitDi);
+
+  // Il riepilogo in testa resta quello delle vulnerabilità distinte, come nella vista per CVE.
+  const severity_rollup = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+  const sevPerChiave = new Map<string, Severity>();
+  for (const r of rows) {
+    if (!r.key) continue;
+    sevPerChiave.set(r.key, maxSeverity(sevPerChiave.get(r.key) ?? "Low", normalizeSeverity(r.severity)) as Severity);
+  }
+  for (const sev of sevPerChiave.values()) severity_rollup[sev] += 1;
+
+  const sevSet = opts.severity?.length ? new Set(opts.severity) : null;
+  const srcSet = opts.sources?.length ? new Set(opts.sources) : null;
+  const q = opts.search?.toLowerCase() ?? "";
+  const hostOk = q ? hostCheCorrispondono(rows, q) : null;
+
+  const filtrate = rows.filter((r) => {
+    if (!r.key) return false;
+    if (sevSet && !sevSet.has(normalizeSeverity(r.severity))) return false;
+    if (srcSet && !srcSet.has(r.source)) return false;
+    if (opts.hasCve === true && !r.cve_id) return false;
+    if (opts.hasCve === false && r.cve_id) return false;
+    if (!passaFiltroExploit((r.cve_id && info.get(r.cve_id)) || null, opts.exploit)) return false;
+    if (q) {
+      const suVuln =
+        r.cve_id?.toLowerCase().includes(q) ||
+        r.package_label?.toLowerCase().includes(q) ||
+        r.nvt_oid?.toLowerCase().includes(q);
+      if (!suVuln && !hostOk!.has(chiaveHostVuln(r))) return false;
+    }
+    return true;
+  });
+
+  const perHost = new Map<string, RawVulnRow[]>();
+  for (const r of filtrate) {
+    const k = chiaveHostVuln(r);
+    const l = perHost.get(k);
+    if (l) l.push(r);
+    else perHost.set(k, [r]);
+  }
+
+  const ids = [...new Set(filtrate.map((r) => r.host_id).filter((x): x is number => x != null))];
+  const meta = loadHostsMeta(ids);
+
+  let arr: VulnHostRow[] = [...perHost.entries()].map(([host_key, rs]) => {
+    const vulns = vulnDistinte(rs, info);
+    const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    let top: Severity = "Low";
+    let kev = 0;
+    let edb = 0;
+    let epss: number | null = null;
+    for (const v of vulns) {
+      counts[v.severity] += 1;
+      top = maxSeverity(top, v.severity) as Severity;
+      if (v.exploit?.kev) kev += 1;
+      if ((v.exploit?.edb ?? 0) > 0) edb += 1;
+      if (v.exploit?.epss != null && (epss == null || v.exploit.epss > epss)) epss = v.exploit.epss;
+    }
+    const sources = [...new Set(rs.map((r) => r.source))];
+    const latest = rs.reduce((acc, r) => (r.scanned_at > acc ? r.scanned_at : acc), rs[0]!.scanned_at);
+    const hostId = rs[0]!.host_id;
+    const m = hostId != null ? meta.get(hostId) : undefined;
+    return {
+      host_key, host_id: hostId, ip: m?.ip || rs[0]!.ip, hostname: m?.hostname ?? null,
+      network_name: m?.network_name ?? null, os_family: m?.os_family ?? null,
+      top_severity: top, counts, vuln_count: vulns.length, kev_count: kev, edb_count: edb, epss_max: epss,
+      sources, latest_scanned_at: latest,
+    };
+  });
+
+  const sortBy = opts.sortBy ?? "severity";
+  const dir = opts.sortDir === "asc" ? -1 : 1;
+  const perGravita = (a: VulnHostRow, b: VulnHostRow) =>
+    compareSeverityRank(a.top_severity, b.top_severity) ||
+    b.counts.Critical - a.counts.Critical ||
+    b.counts.High - a.counts.High ||
+    b.counts.Medium - a.counts.Medium ||
+    b.counts.Low - a.counts.Low;
+  const perExploit = (a: VulnHostRow, b: VulnHostRow) =>
+    b.kev_count - a.kev_count || b.edb_count - a.edb_count || (b.epss_max ?? -1) - (a.epss_max ?? -1);
+  arr.sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case "exploit":
+        cmp = dir * perExploit(a, b) || perGravita(a, b);
+        break;
+      case "vuln_count":
+        cmp = dir * (b.vuln_count - a.vuln_count) || perGravita(a, b);
+        break;
+      case "ip":
+        cmp = -dir * confrontaIp(a.ip, b.ip);
+        break;
+      case "latest_scanned_at":
+        cmp = dir * b.latest_scanned_at.localeCompare(a.latest_scanned_at);
+        break;
+      case "severity":
+      default:
+        cmp = dir * perGravita(a, b) || perExploit(a, b);
+        break;
+    }
+    return cmp || confrontaIp(a.ip, b.ip);
+  });
+
+  const total = arr.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  arr = arr.slice(start, start + opts.pageSize);
+  return { data: arr, total, severity_rollup };
+}
+
+/**
+ * Tutte le vulnerabilità di un host (`h:<id>` o `ip:<ip>`), senza filtri: le sfruttate in
+ * cima, poi quelle con exploit pubblico, poi per gravità e CVSS. Null = chiave non valida.
+ */
+export function getVulnerabilitiesOfHost(hostKey: string, exploitDi?: ExploitDi): VulnDiHost[] | null {
+  let filtro: (r: RawVulnRow) => boolean;
+  if (/^h:\d+$/.test(hostKey)) {
+    const id = Number(hostKey.slice(2));
+    filtro = (r) => r.host_id === id;
+  } else if (hostKey.startsWith("ip:") && hostKey.length > 3) {
+    const ip = hostKey.slice(3);
+    filtro = (r) => r.host_id == null && r.ip === ip;
+  } else return null;
+  const rows = leggiRigheVuln().filter((r) => r.key && filtro(r));
+  return vulnDistinte(rows, infoExploit(rows, exploitDi)).sort(
+    (a, b) =>
+      rangoExploit(b.exploit) - rangoExploit(a.exploit) ||
+      compareSeverityRank(a.severity, b.severity) ||
+      (b.cvss_score ?? -1) - (a.cvss_score ?? -1) ||
+      a.key.localeCompare(b.key),
+  );
 }
 
 interface RawSoftwareRow {
@@ -11286,6 +11936,204 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
     "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACQUISIZIONE MODULARE — snapshot dei collector, scelta del caso dubbio, modifiche (piano 2026-10-21 C1-C2)
+// Tabelle in DDL_ACQUISIZIONE_MODULARE (db-tenant-schema.ts). Compressione e validazione stanno in
+// `acquisizione-modulare/archivio.ts`: qui solo righe.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Impostazione del tenant: «1» = acceso; assente o altro = spento (l'opposto di `patch.choco_automatico`). */
+export const CHIAVE_ACQUISIZIONE_MODULARE = "acquisizione_modulare.attiva";
+
+export function acquisizioneModulareAccesa(): boolean {
+  const r = db().prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_ACQUISIZIONE_MODULARE) as { value: string } | undefined;
+  return r?.value === "1";
+}
+
+export function impostaAcquisizioneModulare(acceso: boolean): void {
+  db().prepare(
+    `INSERT INTO tenant_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+  ).run(CHIAVE_ACQUISIZIONE_MODULARE, acceso ? "1" : "0");
+}
+
+export interface SceltaFonteAcquisizione { scelta: string; chosen_by_name: string | null; chosen_at: string }
+
+/** La scelta fatta a mano nel caso dubbio, o null (la fonte si ricava da sola). */
+export function sceltaFonteAcquisizione(deviceId: number): SceltaFonteAcquisizione | null {
+  return (db().prepare("SELECT scelta, chosen_by_name, chosen_at FROM acquisition_source_choices WHERE device_id = ?").get(deviceId) as SceltaFonteAcquisizione | undefined) ?? null;
+}
+
+export function salvaSceltaFonteAcquisizione(deviceId: number, scelta: string, utente: { id: number | null; nome: string | null } | null): void {
+  db().prepare(
+    `INSERT INTO acquisition_source_choices (device_id, scelta, chosen_by, chosen_by_name, chosen_at) VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(device_id) DO UPDATE SET scelta = excluded.scelta, chosen_by = excluded.chosen_by, chosen_by_name = excluded.chosen_by_name, chosen_at = excluded.chosen_at`,
+  ).run(deviceId, scelta, utente?.id ?? null, utente?.nome ?? null);
+}
+
+export function togliSceltaFonteAcquisizione(deviceId: number): boolean {
+  return db().prepare("DELETE FROM acquisition_source_choices WHERE device_id = ?").run(deviceId).changes > 0;
+}
+
+/** Una riga di `acquisition_snapshots` da scrivere (payload già compresso e validato da chi chiama). */
+export interface SnapshotAcquisizioneIn {
+  device_id: number;
+  collector: string;
+  collector_version: string;
+  schema_version: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  status: string;
+  section_status: string;
+  warning_count: number;
+  credenziali: string;
+  requested_by: number | null;
+  requested_by_name: string | null;
+  trigger: string;
+  payload: Buffer;
+  payload_bytes: number;
+  payload_gzip_bytes: number;
+  sha256: string;
+}
+
+/** Colonne piccole: la lista non porta mai il payload. */
+export type SnapshotAcquisizioneRiga = Omit<SnapshotAcquisizioneIn, "payload"> & { id: number; created_at: string };
+
+const COLONNE_SNAPSHOT_PICCOLE = "id, device_id, collector, collector_version, schema_version, started_at, finished_at, duration_ms, status, section_status, warning_count, credenziali, requested_by, requested_by_name, trigger, payload_bytes, payload_gzip_bytes, sha256, created_at";
+
+/** Snapshot da tenere per apparato (D5): gli ultimi tanti, più il primo e l'ultimo `ok`. */
+export const SNAPSHOT_TENUTI = 20;
+
+/**
+ * Inserisce uno snapshot e applica la retention D5 dello stesso apparato, in una transazione: restano gli ultimi
+ * `SNAPSHOT_TENUTI` per `finished_at`, più il primo e l'ultimo con stato `ok`. Un errore non spinge mai fuori l'ultimo
+ * snapshot riuscito. Le modifiche (`acquisition_changes`) degli snapshot tolti vanno via a cascata.
+ */
+export function inserisciSnapshotAcquisizione(r: SnapshotAcquisizioneIn): number {
+  const d = db();
+  return d.transaction(() => {
+    const id = Number(d.prepare(
+      `INSERT INTO acquisition_snapshots (device_id, collector, collector_version, schema_version, started_at, finished_at, duration_ms, status,
+         section_status, warning_count, credenziali, requested_by, requested_by_name, trigger, payload, payload_bytes, payload_gzip_bytes, sha256)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(r.device_id, r.collector, r.collector_version, r.schema_version, r.started_at, r.finished_at, r.duration_ms, r.status,
+      r.section_status, r.warning_count, r.credenziali, r.requested_by, r.requested_by_name, r.trigger, r.payload, r.payload_bytes,
+      r.payload_gzip_bytes, r.sha256).lastInsertRowid);
+    d.prepare(
+      `DELETE FROM acquisition_snapshots WHERE device_id = ?
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? ORDER BY finished_at DESC, id DESC LIMIT ?)
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? AND status = 'ok' ORDER BY finished_at ASC, id ASC LIMIT 1)
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? AND status = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 1)`,
+    ).run(r.device_id, r.device_id, SNAPSHOT_TENUTI, r.device_id, r.device_id);
+    return id;
+  })();
+}
+
+/** Elenco paginato (regola 9), dal più recente, senza payload. */
+export function elencoSnapshotAcquisizione(deviceId: number, limit: number, offset: number): { righe: SnapshotAcquisizioneRiga[]; totale: number } {
+  const d = db();
+  const righe = d.prepare(
+    `SELECT ${COLONNE_SNAPSHOT_PICCOLE} FROM acquisition_snapshots WHERE device_id = ? ORDER BY finished_at DESC, id DESC LIMIT ? OFFSET ?`,
+  ).all(deviceId, limit, offset) as SnapshotAcquisizioneRiga[];
+  const totale = (d.prepare("SELECT COUNT(*) AS n FROM acquisition_snapshots WHERE device_id = ?").get(deviceId) as { n: number }).n;
+  return { righe, totale };
+}
+
+/** Uno snapshot dell'apparato col payload compresso; null se non c'è o è di un altro apparato. */
+export function leggiSnapshotAcquisizione(deviceId: number, snapshotId: number): (SnapshotAcquisizioneRiga & { payload: Buffer }) | null {
+  return (db().prepare(`SELECT ${COLONNE_SNAPSHOT_PICCOLE}, payload FROM acquisition_snapshots WHERE id = ? AND device_id = ?`)
+    .get(snapshotId, deviceId) as (SnapshotAcquisizioneRiga & { payload: Buffer }) | undefined) ?? null;
+}
+
+/**
+ * L'ultimo snapshot non in errore dell'apparato fra quelli dei collector dati, senza payload (decisione a di fine giro 2:
+ * i giri pianificati lasciano al collector le colonne che ha letto). null se non ce n'è.
+ */
+export function ultimoSnapshotNonInErrore(deviceId: number, collectors: readonly string[]): SnapshotAcquisizioneRiga | null {
+  if (collectors.length === 0) return null;
+  return (db().prepare(
+    `SELECT ${COLONNE_SNAPSHOT_PICCOLE} FROM acquisition_snapshots WHERE device_id = ? AND status != 'error'
+       AND collector IN (${collectors.map(() => "?").join(",")}) ORDER BY finished_at DESC, id DESC LIMIT 1`,
+  ).get(deviceId, ...collectors) as SnapshotAcquisizioneRiga | undefined) ?? null;
+}
+
+/** Una modifica fatta (o rifiutata) da uno snapshot sull'apparato. `esito`: scritto, aggiunta, tolta, manuale. */
+export interface ModificaAcquisizione {
+  destinazione: string;
+  chiave: string;
+  campo: string;
+  prima: string | null;
+  dopo: string | null;
+  esito: string;
+}
+
+export function modificheSnapshotAcquisizione(snapshotId: number, limit: number): { righe: ModificaAcquisizione[]; totale: number } {
+  const d = db();
+  const righe = d.prepare("SELECT destinazione, chiave, campo, prima, dopo, esito FROM acquisition_changes WHERE snapshot_id = ? ORDER BY id LIMIT ?")
+    .all(snapshotId, limit) as ModificaAcquisizione[];
+  const totale = (d.prepare("SELECT COUNT(*) AS n FROM acquisition_changes WHERE snapshot_id = ?").get(snapshotId) as { n: number }).n;
+  return { righe, totale };
+}
+
+/** Le porte dell'apparato con i soli campi che la proiezione dei collector conosce (`acquisition/proiezioni`). */
+export function portePerProiezione(deviceId: number): PortaAttuale[] {
+  return db().prepare(`SELECT port_index, port_name, ${CAMPI_PORTA.join(", ")} FROM switch_ports WHERE device_id = ? ORDER BY port_index`)
+    .all(deviceId) as PortaAttuale[];
+}
+
+/**
+ * Scrive le porte PER CAMPO (scoperta 5 del piano, C2.2): un campo assente dalle modifiche resta com'è, `null` si scrive
+ * (letto e vuoto); una porta si toglie solo se la proiezione lo dice (sezione `interfaces` con stato `ok`). Colonne da un
+ * elenco chiuso (`CAMPI_PORTA`), mai dal dato. `upsertSwitchPorts`, che UniFi e SNMP usano, non cambia. Chi chiama apre la
+ * transazione (l'applicazione di uno snapshot è una sola).
+ */
+export function scriviPortePerCampo(deviceId: number, m: ModifichePorte): void {
+  const d = db();
+  const ammessa = (c: string): c is CampoPorta => (CAMPI_PORTA as readonly string[]).includes(c);
+  for (const u of m.aggiorna) {
+    const cols = Object.keys(u.campi).filter(ammessa);
+    if (cols.length === 0) continue;
+    d.prepare(`UPDATE switch_ports SET ${cols.map((c) => `${c} = ?`).join(", ")}, timestamp = datetime('now') WHERE device_id = ? AND port_index = ?`)
+      .run(...cols.map((c) => u.campi[c] ?? null), deviceId, u.port_index);
+  }
+  for (const a of m.aggiungi) {
+    const cols = Object.keys(a.campi).filter(ammessa);
+    d.prepare(`INSERT INTO switch_ports (device_id, port_index, port_name${cols.map((c) => `, ${c}`).join("")}) VALUES (?, ?, ?${cols.map(() => ", ?").join("")})`)
+      .run(deviceId, a.port_index, a.port_name, ...cols.map((c) => a.campi[c] ?? null));
+  }
+  const del = d.prepare("DELETE FROM switch_ports WHERE device_id = ? AND port_index = ?");
+  for (const t of m.togli) del.run(deviceId, t.port_index);
+}
+
+/** L'host abbinato all'apparato come lo trova `syncDeviceToHost` (stesso IP), coi campi che l'apparato gli passa. */
+export function hostPerProiezione(deviceId: number): ({ id: number } & Record<CampoHost, string | null>) | null {
+  return (db().prepare(
+    `SELECT h.id, h.model, h.firmware, h.serial_number FROM network_devices nd JOIN hosts h ON h.ip = nd.host WHERE nd.id = ? ORDER BY h.id LIMIT 1`,
+  ).get(deviceId) as ({ id: number } & Record<CampoHost, string | null>) | undefined) ?? null;
+}
+
+/** Campi dell'apparato o dell'host dalla proiezione dell'identità. Elenchi chiusi. */
+export function scriviCampiIdentita(tabella: "network_devices" | "hosts", id: number, campi: ReadonlyArray<{ campo: string; dopo: string }>): void {
+  const ammessi: readonly string[] = tabella === "network_devices" ? CAMPI_IDENTITA : CAMPI_HOST;
+  const ok = campi.filter((c) => ammessi.includes(c.campo));
+  if (ok.length === 0) return;
+  const extra = tabella === "network_devices" ? ", last_info_update = datetime('now')" : "";
+  db().prepare(`UPDATE ${tabella} SET ${ok.map((c) => `${c.campo} = ?`).join(", ")}, updated_at = datetime('now')${extra} WHERE id = ?`)
+    .run(...ok.map((c) => c.dopo), id);
+}
+
+export function inserisciModificheAcquisizione(snapshotId: number, deviceId: number, righe: readonly ModificaAcquisizione[]): void {
+  const ins = db().prepare("INSERT INTO acquisition_changes (snapshot_id, device_id, destinazione, chiave, campo, prima, dopo, esito) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  for (const r of righe) ins.run(snapshotId, deviceId, r.destinazione, r.chiave, r.campo, r.prima, r.dopo, r.esito);
+}
+
+/** Le chiavi dei vicini dell'apparato già scritti, di qualunque fonte: per dire quali vicini sono nuovi. */
+export function chiaviViciniApparato(deviceId: number): Set<string> {
+  const righe = db().prepare("SELECT local_port, remote_device_name, remote_port FROM device_neighbors WHERE device_id = ?").all(deviceId) as Array<{ local_port: string; remote_device_name: string; remote_port: string }>;
+  return new Set(righe.map((r) => `${r.local_port}\u0000${r.remote_device_name}\u0000${r.remote_port}`));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

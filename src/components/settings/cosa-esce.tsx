@@ -12,8 +12,9 @@
  * pieno, ambra tenue con bordo tratteggiato, rosso pieno solo per un errore, bianco con
  * bordo grigio per «non so» o spento. Testo ≥13 px.
  */
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Save } from "lucide-react";
+import { Send } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -229,11 +230,8 @@ function SchedaVulcan({ v, invio, onInvia }: { v: QuadroCosaEsce["vulcan"]; invi
 export function CosaEsce() {
   const [quadro, setQuadro] = useState<QuadroCosaEsce | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [scelta, setScelta] = useState<Livello | null>(null);
-  const [salvo, setSalvo] = useState(false);
   const [invio, setInvio] = useState(false);
   const [invioVulcan, setInvioVulcan] = useState(false);
-  const sceltaToccata = useRef(false);
   const rilettura = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const carica = useCallback(async () => {
@@ -244,7 +242,6 @@ export function CosaEsce() {
     }
     setErrore(null);
     setQuadro(r.data);
-    if (!sceltaToccata.current) setScelta(r.data.livello?.livello ?? null);
   }, []);
 
   useEffect(() => {
@@ -261,24 +258,6 @@ export function CosaEsce() {
       rilettura.current = null;
     };
   }, [inAttesa, carica]);
-
-  async function salva() {
-    if (!scelta) return;
-    setSalvo(true);
-    const r = await fetchJson<{ livello: unknown }>("/api/dalink/livello", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ livello: scelta }),
-    });
-    setSalvo(false);
-    if (!r.ok) {
-      toast.error(r.message);
-      return;
-    }
-    sceltaToccata.current = false;
-    toast.success(`Livello salvato: ${NOMI_LIVELLO[scelta]}`);
-    await carica();
-  }
 
   async function inviaAdesso() {
     setInvio(true);
@@ -319,7 +298,6 @@ export function CosaEsce() {
   const seg = quadro.segnale;
   const ant = quadro.anteprima;
   const attuale = quadro.livello?.livello ?? null;
-  const modificato = scelta !== null && scelta !== attuale;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -391,62 +369,21 @@ export function CosaEsce() {
           )}
 
           <Riga etichetta="Cosa può uscire">
-            <fieldset className="space-y-3">
-              <legend className="sr-only">Livello del segnale verso DA-Link</legend>
-              {attuale === null && (
-                <p>
-                  <Stato tono="neutro">Nessuna scelta dichiarata</Stato>{" "}
-                  <span className="ml-2">finché non si sceglie esce solo lo stato.</span>
-                </p>
-              )}
-              <label className="flex gap-3 items-start cursor-pointer">
-                <input
-                  type="radio"
-                  name="livello"
-                  className="mt-1 h-4 w-4"
-                  checked={scelta === "solo_stato"}
-                  onChange={() => {
-                    sceltaToccata.current = true;
-                    setScelta("solo_stato");
-                  }}
-                />
-                <span>
-                  <span className="font-semibold">Solo stato</span>
-                  <span className="block text-muted-foreground">
-                    Versione, moduli accesi, salute dei moduli, ultimo errore, porte aperte su NetBird e il livello scelto.
-                  </span>
+            <div className="space-y-3">
+              <RigheRimando ids={["uscite.dalink_livello"]} mostraEsito={false} />
+              <p>
+                <span className="font-semibold">Solo stato</span>
+                <span className="block text-muted-foreground">
+                  Versione, moduli accesi, salute dei moduli, ultimo errore, porte aperte su NetBird e il livello scelto.
                 </span>
-              </label>
-              <label className="flex gap-3 items-start cursor-pointer">
-                <input
-                  type="radio"
-                  name="livello"
-                  className="mt-1 h-4 w-4"
-                  checked={scelta === "stato_inventario"}
-                  onChange={() => {
-                    sceltaToccata.current = true;
-                    setScelta("stato_inventario");
-                  }}
-                />
-                <span>
-                  <span className="font-semibold">Stato + numeri dell&apos;inventario</span>
-                  <span className="block text-muted-foreground">
-                    In più: quanti dispositivi e quante reti, l&apos;ultima scansione e il suo esito. Mai l&apos;inventario riga per riga.
-                  </span>
+              </p>
+              <p>
+                <span className="font-semibold">Stato + numeri dell&apos;inventario</span>
+                <span className="block text-muted-foreground">
+                  In più: quanti dispositivi e quante reti, l&apos;ultima scansione e il suo esito. Mai l&apos;inventario riga per riga.
                 </span>
-              </label>
-              <div className="flex items-center gap-3">
-                <Button onClick={() => void salva()} disabled={!modificato || salvo}>
-                  <Save className="h-4 w-4 mr-1.5" />
-                  {salvo ? "Salvataggio…" : "Salva"}
-                </Button>
-                {quadro.livello && (
-                  <span className="text-muted-foreground">
-                    Scelto da {quadro.livello.scelto_da} il {quando(quadro.livello.scelto_il)}
-                  </span>
-                )}
-              </div>
-            </fieldset>
+              </p>
+            </div>
           </Riga>
 
           {quadro.conferma.stato !== "nessuna_richiesta" && (

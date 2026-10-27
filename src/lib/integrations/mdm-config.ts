@@ -15,12 +15,26 @@ export interface MdmConfig {
   last_attempt_at: string | null;
   /** Ultima sincronizzazione riuscita. */
   last_success_at: string | null;
-  /** Spenta da sola dopo `MDM_MAX_ERRORI_CONSECUTIVI` errori di fila (non dall'admin). */
+  /** Spenta da sola dopo `max_errori` errori di fila (non dall'admin). */
   auto_disabled: boolean;
+  /** Gli errori di fila dopo cui si spegne: da Opzioni (`mdm.max_errori`), di serie MDM_MAX_ERRORI_CONSECUTIVI. */
+  max_errori: number;
 }
 
 /** Errori di fila dopo cui l'MDM si spegne da solo (pattern vuln_scanners). */
 export const MDM_MAX_ERRORI_CONSECUTIVI = 5;
+
+/** Chiave e limiti del numero di errori di fila, che si cambia da Opzioni (23/10). */
+export const CHIAVE_MDM_MAX_ERRORI = "mdm.max_errori";
+export const LIMITI_MDM_MAX_ERRORI = { min: 1, max: 20 } as const;
+
+/** Gli errori di fila dopo cui MDM si spegne da sola, per il cliente del contesto; illeggibile = di serie. */
+export function mdmMaxErrori(): number {
+  const r = db().prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_MDM_MAX_ERRORI) as { value: string } | undefined;
+  const n = r ? parseInt(r.value, 10) : NaN;
+  if (Number.isNaN(n)) return MDM_MAX_ERRORI_CONSECUTIVI;
+  return Math.min(LIMITI_MDM_MAX_ERRORI.max, Math.max(LIMITI_MDM_MAX_ERRORI.min, n));
+}
 
 /** Intervallo del job `mdm_sync` creato all'accensione (minuti). */
 export const MDM_SYNC_INTERVALLO_MINUTI = 60;
@@ -73,7 +87,8 @@ export function getMdmConfig(): MdmConfig {
     consecutive_errors: consecutive,
     last_attempt_at: testoONull(r?.last_attempt_at),
     last_success_at: testoONull(r?.last_success_at),
-    auto_disabled: !enabled && consecutive >= MDM_MAX_ERRORI_CONSECUTIVI,
+    auto_disabled: !enabled && consecutive >= mdmMaxErrori(),
+    max_errori: mdmMaxErrori(),
   };
 }
 
@@ -167,7 +182,7 @@ export function saveMdmConfig(input: {
 }
 
 /**
- * Aggiorna esito sync. Dopo `MDM_MAX_ERRORI_CONSECUTIVI` errori di fila l'MDM si
+ * Aggiorna esito sync. Dopo `mdmMaxErrori()` errori di fila l'MDM si
  * spegne da solo (pattern vuln_scanners); la pagina lo spiega. Il job resta in
  * tabella e gira a vuoto («disabled») finché l'admin non salva: toglierlo qui,
  * dentro il job stesso, lascerebbe allo scheduler un cron senza riga.
@@ -190,6 +205,6 @@ export function recordSync(ok: boolean, error?: string): void {
       .run(error ?? "error");
     conn
       .prepare(`UPDATE mdm_config SET enabled=0 WHERE id=1 AND consecutive_errors>=?`)
-      .run(MDM_MAX_ERRORI_CONSECUTIVI);
+      .run(mdmMaxErrori());
   }
 }

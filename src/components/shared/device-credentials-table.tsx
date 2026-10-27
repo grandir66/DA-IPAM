@@ -109,6 +109,7 @@ export function DeviceCredentialsTable({
     kind?: string;
     methodsOffered?: string[];
     methodsTried?: string[];
+    raw?: string;
   } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   // Add form state
@@ -221,6 +222,7 @@ export function DeviceCredentialsTable({
           kind: result.kind,
           methodsOffered: result.methodsOffered,
           methodsTried: result.methodsTried,
+          raw: result.raw,
         });
       }
       fetchBindings();
@@ -391,6 +393,7 @@ export function DeviceCredentialsTable({
                               kind: undefined,
                               methodsOffered: undefined,
                               methodsTried: undefined,
+                              raw: undefined,
                             })
                           }
                         >
@@ -625,6 +628,12 @@ export function DeviceCredentialsTable({
                   </div>
                 </div>
               ) : null}
+              {diagnostic.raw && (
+                <details>
+                  <summary className="cursor-pointer text-[13px] text-muted-foreground">Dettagli: testo della libreria SSH</summary>
+                  <p className="mt-1 whitespace-pre-wrap break-words font-mono text-[13px] text-muted-foreground">{diagnostic.raw}</p>
+                </details>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setDiagnostic(null)}>Chiudi</Button>
                 <Button onClick={() => handleTest(diagnostic.bindingId)} disabled={testing !== null}>Ritesta</Button>

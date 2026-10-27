@@ -9,8 +9,8 @@
  * traccia). Solo la pulizia dei file vecchi non fa fallire niente: lo dice nel journal e riprova domani.
  */
 import fs from "node:fs";
-import path from "node:path";
 import { resolveDataDir } from "../data-dir";
+import { unisci } from "../percorsi";
 
 export const GIORNI_REGISTRO_PULIZIA = 400;
 
@@ -28,7 +28,7 @@ export interface RigaRegistroPulizia {
 
 /** Cartella del registro (letta a ogni chiamata: segue `DA_INVENT_DATA_DIR`). */
 export function dirRegistroPulizia(): string {
-  return path.join(resolveDataDir(), "audit");
+  return unisci(resolveDataDir(), "audit");
 }
 
 // Su globalThis, come i ripieghi: sotto tsx possono coesistere due istanze del modulo.
@@ -55,7 +55,7 @@ export function scriviRighePulizia(righe: readonly RigaRegistroPulizia[], adesso
   fs.mkdirSync(dir, { recursive: true });
   const giorno = adesso.toISOString().slice(0, 10);
   const il = adesso.toISOString();
-  fs.appendFileSync(path.join(dir, `pulizia-host-${giorno}.jsonl`), righe.map((r) => `${JSON.stringify({ il, ...r })}\n`).join(""));
+  fs.appendFileSync(unisci(dir, `pulizia-host-${giorno}.jsonl`), righe.map((r) => `${JSON.stringify({ il, ...r })}\n`).join(""));
   const s = ultimaPulizia();
   if (s.giorno !== giorno) {
     s.giorno = giorno;
@@ -71,6 +71,6 @@ function pulisci(dir: string, adesso: Date): void {
   const soglia = new Date(adesso.getTime() - GIORNI_REGISTRO_PULIZIA * 86_400_000).toISOString().slice(0, 10);
   for (const f of fs.readdirSync(dir)) {
     const m = /^pulizia-host-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(f);
-    if (m && m[1] < soglia) fs.rmSync(path.join(dir, f), { force: true });
+    if (m && m[1] < soglia) fs.rmSync(unisci(dir, f), { force: true });
   }
 }

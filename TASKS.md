@@ -12,7 +12,7 @@ ARP; (3) prima dell'aggiunta un ARP ping col tag giusto (il giro c'è già: `/ap
 - [x] «Aggiungi»: rete, giro ARP sul VID, attesa della sonda (`/stato` giro_in_corso, max 90 s), lettura, host (IP, MAC, nome, produttore) — `src/lib/trunk/aggiungi-rete.ts`
 - [x] dopo ogni lettura del trunk: host nuovi e MAC mancanti delle reti con `vlan_id` (mai sovrascrivere un MAC presente) — `src/lib/trunk/host-dal-trunk.ts`
 - [x] prove `src/lib/trunk/__tests__/host-dal-trunk.test.ts` (la lettura vista rossa prima dell'aggancio); eslint verde; tsc e npm test rossi solo in `src/lib/vault/` per `age-encryption`/`kdbxweb` assenti dai node_modules locali (non toccati)
-- [ ] collaudo su 72729-ipam (dopo l'aggiornamento della VM a una versione che lo contiene)
+- [x] promosso su main (0.9.919, poi 0.9.920 con la rete senza VLAN: VID 0), «tutto su main» di Riccardo 27/10. Collaudo su 72729-ipam (VM 999 del mini PC): VLAN 4 43/43 host col MAC, VLAN 6 12/12, nativa 192.168.40.0/24 da 0 a 42/43 MAC («1 nuovi, 41 MAC compilati» nel log delle 17:58 UTC)
 
 ## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
 

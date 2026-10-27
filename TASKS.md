@@ -789,7 +789,8 @@ Riccardo: confermato AOS-CX, accesso admin fornito; livello Leggero, solo lettur
 - [x] Worktree isolato da origin/dev e identificazione reale JL675A / PL.10.12.0006.
 - [x] Collector, parser e contratto: 87 prove verdi (parser, contratto comune, aggancio), 27/10.
 - [x] Collaudo reale: 10 s, snapshot valido; cancello finale verde (27/10: lint 0 errori/72 avvisi storici, npm test 6.158 passate/0 fallite/2 saltate/1 todo, build e tsc exit 0).
-- [ ] Documentazione, release e consegna.
+- [x] Manuale, CHANGELOG, CONTEXT, scheda e release locale 0.9.915 (`e7979fbd`); consegna snapshot privato.
+- [ ] Conferma live prima di integrare/pushare su dev: oggi il push aggiorna le appliance. Mappa generale da rigenerare dopo integrazione nel checkout canonico.
 - [ ] Custodia password OpenBao (server irraggiungibile).
 
 - [x] Riccardo (27/10): verificare download firmware aggiornato e percorso di upgrade Aruba 6100; **operazione una tantum**, nessuna funzione di prodotto o automazione. Installazione da confermare, solo ricerca in questa sessione.

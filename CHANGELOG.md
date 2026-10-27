@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Rilievi attuali per host, non per rete
+
+### Corretto
+
+- **`vuln_findings_attuali` e la pagina Vulnerabilità ragionano per host**: per ogni IP valgono i rilievi della sua ultima scansione buona, cioè l'ultima in cui l'IP compare con almeno una riga (anche solo informativa). Un host spento all'ultima scansione tiene i rilievi della precedente; un rilievo sparisce solo quando una scansione successiva dello stesso IP non lo trova più. Indice `idx_vuln_findings_ip_run`. Perché: la 0.9.922-0.9.923 prendeva l'ultima scansione della rete e un host spento in quel momento perdeva i suoi rilievi (Riccardo, 27/10 sera).
+
 ## [Non rilasciato] — 2026-10-27 · Rilievi attuali anche in elenco host, scheda, patch e cruscotto
 
 ### Cambiato

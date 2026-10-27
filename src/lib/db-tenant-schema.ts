@@ -1837,15 +1837,19 @@ CREATE TABLE IF NOT EXISTS tenant_settings (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- I rilievi ATTUALI: solo quelli dell'ultima scansione buona di ogni rete (Riccardo, 27/10/2026: «le
--- CVE superate dagli aggiornamenti servono solo a livello storico»). vuln_findings resta l'archivio;
--- elenco host, scheda, patch e cruscotto leggono da qui. Una scansione fallita non conta.
-CREATE VIEW IF NOT EXISTS vuln_findings_attuali AS
+-- I rilievi ATTUALI, per host (Riccardo, 27/10/2026 sera): per ogni IP quelli della sua ultima scansione
+-- buona, cioè l'ultima in cui l'IP compare con almeno una riga (anche solo informativa, «Log»). Un host
+-- spento all'ultima scansione tiene i rilievi della precedente; un rilievo sparisce solo quando una
+-- scansione successiva dello stesso IP non lo trova più. vuln_findings resta l'archivio; elenco host,
+-- scheda, patch e cruscotto leggono da qui. Ricreata a ogni apertura: la 0.9.923 la definiva per rete.
+DROP VIEW IF EXISTS vuln_findings_attuali;
+CREATE VIEW vuln_findings_attuali AS
   SELECT f.* FROM vuln_findings f
-   WHERE f.scan_run_id IN (
-     SELECT MAX(r.id) FROM vuln_scan_runs r
-      WHERE COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted')
-      GROUP BY r.scanner_id, r.network_id);
+   WHERE f.scan_run_id = (
+     SELECT MAX(f2.scan_run_id) FROM vuln_findings f2
+       JOIN vuln_scan_runs r ON r.id = f2.scan_run_id
+      WHERE f2.ip = f.ip
+        AND COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted'));
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- Software Inventory — scan applicativo on-demand per host (Windows/Linux).
@@ -2346,6 +2350,7 @@ CREATE INDEX IF NOT EXISTS idx_wazuh_netproto_agent ON wazuh_netproto(agent_id);
 -- Vulnerability findings (scanner-edge integration)
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON vuln_findings(host_id, scanned_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_ip ON vuln_findings(ip, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_ip_run ON vuln_findings(ip, scan_run_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON vuln_findings(severity);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_cve ON vuln_findings(cve_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_scan_runs_scanner ON vuln_scan_runs(scanner_id, finished_at DESC);

@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Acquisizione Aruba AOS-CX
+
+### Aggiunto
+
+- Collector `aruba-cx` separato da ProCurve, per arricchire gli apparati AOS-CX con identità, porte, VLAN, FDB, LLDP, MSTP, PoE, temperature e rete tramite letture SSH. Collaudato su 6100 JL675A / PL.10.12.0006; dati non letti restano espliciti, LACP attivo da completare. Stesso contratto/CLI e riconoscimento del collector senza attivare automatismi.
+
 ## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 (sicurezza)
 
 ### Sicurezza

@@ -14,3 +14,5 @@ LibreNMS, Graylog, Wazuh, MeshCentral, NIS2…). Next.js App Router, SQLite.
 nota: nessun framework di migrazioni — gli schemi si evolvono con `ALTER TABLE` idempotenti inline. Il push su `main` chiede sempre conferma esplicita.
 
 Trappola corrente: le righe MAC dei router vengono solo dalla bridge host (non dall'ARP) e i router si leggono con un job senza rete (`arp_poll`, oggi sull'hub il job `apparati_scelti` #25), perché l'avvio dello scheduler spegne la scansione veloce sulle reti da /22 in su (ADR 0010).
+
+Acquisizione modulare: include un collector dedicato Aruba AOS-CX collaudato su 6100, con limiti e stato delle sezioni dichiarati nel manuale.

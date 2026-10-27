@@ -618,3 +618,19 @@ Cinque profili registrati nella stessa CLI e contratto: `synology-dsm`, `qnap-na
 Limiti per lettura e per tabella, deadline totale per trasporto, comandi in allowlist. SSH con credenziali usa una connessione per batch; errore di trasporto interrompe il resto del batch. OpenSSH locale esegue i comandi statici in invocazioni separate e interrompe al primo errore. `lsblk`/`ip -j` non disponibili sui vecchi NAS sono errori/unsupported espliciti, senza installare strumenti o usare sudo. Le viste df possono essere incomplete (QNAP ha restituito righe e exit non zero): le righe restano con stato error.
 
 Collaudi: Synology 4 dischi/4 RAID/8 interfacce; QNAP via SNMP 4 dischi/2 volumi/19 interfacce, altro QNAP via SSH 9 interfacce; MikroTik router 12 e switch 7 interfacce, vicini e rotte; Proxmox 4 nodi visibili/88 risorse/34 link del nodo. Un secondo Synology era irraggiungibile al preflight e non è collaudato. Accessi, indirizzi e campioni identificativi solo nel vault, nessun DB o scheduler collegato.
+
+
+## Collector aruba-cx
+
+Profilo separato da `hp-procurve`, collaudato il 27/10/2026 su **Aruba JL675A 6100 48G CL4 4SFP+**, **PL.10.12.0006**. Usa solo SSH e comandi `show` statici del catalogo; un’unica sessione console, terminale largo, paging gestito. Nessuna configurazione o running-config letta. CLI e JSON 1.0 invariati: `collector: "aruba-cx"`, credenziale `ssh` privata. Il riconoscimento AOS-CX esplicito su un apparato HP sceglie questo profilo con acquisizione modulare attiva; nessun interruttore viene acceso implicitamente.
+
+Collaudo reale: 52 porte, 16 VLAN, 196 MAC (tabella dinamica, quantità riferita al solo collaudo), un vicino LLDP, MSTP su 52 porte, 48 porte PoE, 10 temperature, IP e ARP. Lo snapshot globale è `partial`: CPU osservata, memoria totale/libera in byte non disponibile da `show system`. Modello, firmware, seriale, hostname, MAC base e uptime provengono dalla CLI.
+
+- Porte: velocità negoziata in Mb/s convertita in bit/s; link down senza velocità resta `null`. `if_index`, duplex, MTU, MAC e contatori delle singole porte non osservati restano null/vuoti, con avviso. Nessuna equivalenza inventata tra `1/1/n` e ifIndex.
+- VLAN: membership da `show vlan` anche con intervalli e righe continuate; VLAN nativa da `show interface brief`. Untagged corrisponde alla VLAN nativa riportata; opzioni native-tagged non verificate. Membri senza porta/nativa nota omessi dalle liste tagged/untagged, con avviso.
+- PoE: `PD Pwr Draw`, non potenza riservata o budget; zero è un valore valido. Sensori temperatura numerici; ottiche, ventole e alimentatori non acquisiti.
+- LLDP: porta remota dall’ID, indirizzi di gestione solo se sono IP, capacità e TTL. Descrizione sistema limitata alla prima riga. FDB e ARP restano sorgenti distinte.
+- Aggregazioni: `No LAG configured` è una lista vuota osservata. Tabella LACP popolata **non implementata**, `partial` con codice esplicito, nessuna membership inventata. Altri modelli, VSF e altre versioni non collaudati.
+- Identità non AOS-CX rifiutata; trasporto guasto non ritentato; formati sconosciuti mai dichiarati liste vuote corrette. Fixture anonime e contratto comune verificano questi casi.
+
+Campioni e snapshot reali sono custoditi fuori dal repository, nel dossier privato di acquisizione. Nessun import nel DB o aggiornamento firmware eseguito da questa attività.

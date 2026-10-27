@@ -3,7 +3,7 @@
  * ricava da sola). Puro: nessun DB, nessuna rete. Restituisce i collector possibili: zero = nessun collector (si usa
  * l'acquisizione di sempre), uno = fonte certa, due o più = caso dubbio (lo sceglie una persona).
  * Regole nell'ordine: profilo prodotto e sottotipo scelti a mano, poi il testo letto (sysDescr, modello). Un prodotto
- * che il catalogo non legge (AOS-CX, vCenter, iLO, EdgeRouter, console UniFi) non riceve mai un collector «vicino».
+ * che il catalogo non legge (vCenter, iLO, EdgeRouter, console UniFi) non riceve mai un collector «vicino».
  */
 import type { CollectorId } from "./catalogo";
 
@@ -24,12 +24,12 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
 
   if (vendor === "hp") {
     if (profilo === "hp_server_ilo" || profilo === "hp_stampante") return [];
-    if (/AOS-CX|ArubaOS-CX/i.test(testo)) return [];
+    if (/AOS-CX|ArubaOS-CX|\bAruba\s+CX\b/i.test(testo)) return ["aruba-cx"];
     if (profilo === "hp_switch_procurve" || a.vendor_subtype === "procurve") return ["hp-procurve"];
     if (profilo === "hp_switch_comware" || a.vendor_subtype === "comware") return ["hp-comware"];
     if (/comware/i.test(testo)) return ["hp-comware"];
     if (/procurve|ArubaOS|\bJL?\d{3,4}[A-Z]\b|\baruba\b/i.test(testo)) return ["hp-procurve"];
-    // «ArubaOS» scelto senza un sysDescr che lo dica: ArubaOS-Switch (ProCurve) o AOS-CX (nessun collector)? Si lascia
+    // «ArubaOS» scelto senza un sysDescr che lo dica: ArubaOS-Switch (ProCurve) o AOS-CX? Si lascia
     // all'acquisizione di sempre, che legge il sysDescr: dal giro dopo la regola sopra decide.
     if (profilo === "hp_switch_arubaos") return [];
     return a.device_type === "switch" ? ["hp-procurve", "hp-comware"] : [];

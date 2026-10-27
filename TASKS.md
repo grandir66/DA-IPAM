@@ -787,7 +787,11 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
 
 Riccardo: confermato AOS-CX, accesso admin fornito; livello Leggero, solo letture. Piano: `docs/superpowers/plans/2026-10-27-aruba-cx.md`.
 - [x] Worktree isolato da origin/dev e identificazione reale JL675A / PL.10.12.0006.
-- [ ] Collector, parser e contratto.
-- [ ] Collaudo reale e cancello finale.
+- [x] Collector, parser e contratto: 87 prove verdi (parser, contratto comune, aggancio), 27/10.
+- [x] Collaudo reale: 10 s, snapshot valido; cancello finale verde (27/10: lint 0 errori/72 avvisi storici, npm test 6.158 passate/0 fallite/2 saltate/1 todo, build e tsc exit 0).
 - [ ] Documentazione, release e consegna.
 - [ ] Custodia password OpenBao (server irraggiungibile).
+
+- [x] Riccardo (27/10): verificare download firmware aggiornato e percorso di upgrade Aruba 6100; **operazione una tantum**, nessuna funzione di prodotto o automazione. Installazione da confermare, solo ricerca in questa sessione.
+
+  Fonti consultate il 27/10: `https://networkingsupport.hpe.com/downloads`; bollettino HPE `hpesbnw05134en_us` del 01/09/2026 (10.16.1060+ / 10.13.1190+); note upgrade 6100/10.13 (minimo 10.10.0002). Download binario e salto diretto 10.12→10.16 non verificati. Nessuna installazione.

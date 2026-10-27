@@ -30,7 +30,7 @@ describe("riconoscimento del collector dal prodotto", () => {
     ["Comware dal profilo", { vendor: "hp", product_profile: "hp_switch_comware" }, ["hp-comware"]],
     ["Comware dal sysDescr", { vendor: "hp", device_type: "switch", sysdescr: "HPE Comware Software Version 7.1.045" }, ["hp-comware"]],
     ["Aruba 2540 dal sysDescr", { vendor: "hp", device_type: "switch", sysdescr: "Aruba JL357A 2540-48G-PoE+-4SFP+ Switch, revision YC.16.11.0020" }, ["hp-procurve"]],
-    ["AOS-CX: nessun collector", { vendor: "hp", device_type: "switch", sysdescr: "Aruba JL675A 6100 ArubaOS-CX" }, []],
+    ["AOS-CX: collector dedicato", { vendor: "hp", device_type: "switch", sysdescr: "Aruba JL675A 6100 ArubaOS-CX" }, ["aruba-cx"]],
     ["ArubaOS senza sysDescr: acquisizione di sempre", { vendor: "hp", product_profile: "hp_switch_arubaos" }, []],
     ["HP switch senza indizi: caso dubbio", { vendor: "hp", device_type: "switch" }, ["hp-procurve", "hp-comware"]],
     ["iLO: nessun collector", { vendor: "hp", product_profile: "hp_server_ilo", device_type: "server" }, []],

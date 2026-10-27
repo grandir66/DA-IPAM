@@ -13,6 +13,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## Ripartenza — Aruba AOS-CX (27/10/2026)
+
+Collector dedicato `aruba-cx` su ramo `codex/aruba-cx`, in worktree isolato da `origin/dev`; piano `docs/superpowers/plans/2026-10-27-aruba-cx.md`, manuale `docs/modules/acquisition.md`. Colloquio reale SSH riuscito su 6100 JL675A / PL.10.12.0006, JSON valido parziale per memoria in byte non disponibile; nessun DB, deploy o firmware modificato. LACP popolato non implementato; contatori/duplex/ifIndex non letti, nessuna equivalenza inventata. Riccardo: verifica firmware **una tantum**, nessuna funzione o automazione da prevedere. OpenBao irraggiungibile: password non salvata, usata solo via stdin. Non confondere questo ramo con il `dev` locale indietro e con documentazione altrui modificata.
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance pullano `main`, **ma oggi (Riccardo, 22/10) tutte le installazioni sono su `dev`**: ogni push su `dev` arriva a tutte; la promozione a `main` si farà più avanti. Ogni modifica: `npm run version:release` + `git push origin dev`.

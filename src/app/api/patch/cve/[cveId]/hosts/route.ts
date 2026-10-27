@@ -72,7 +72,7 @@ export async function GET(
              AND LOWER(h.os_family) = 'windows'
           UNION
           SELECT DISTINCT vf.host_id AS host_id
-            FROM vuln_findings vf
+            FROM vuln_findings_attuali vf
             INNER JOIN hosts h ON h.id = vf.host_id
            WHERE vf.cve_id = ? AND vf.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'

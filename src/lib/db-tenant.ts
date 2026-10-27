@@ -9037,15 +9037,15 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
   // Aggregazione SU TUTTE le scan_run + Wazuh: per ogni host conta findings
   // per severità da entrambe le fonti (scanner-edge `vuln_findings` e Wazuh
   // `wazuh_vuln` joinato via wazuh_agent.host_id). Per discovery interessa
-  // "ha mai avuto CVE Critical/High" non "ne ha ora", quindi nessun filtro
-  // temporale. Le due fonti possono sovrapporsi sullo stesso CVE: i conteggi
+  // Dal 27/10/2026 «ne ha ora» (vista vuln_findings_attuali, ultima scansione di ogni rete): le CVE
+  // superate restano solo nello storico (Riccardo). Le due fonti possono sovrapporsi sullo stesso CVE: i conteggi
   // si sommano (UNION ALL) — accettiamo possibile inflazione perché l'obiettivo
   // della discovery è triage rapido, non analisi puntuale.
   const rows = db()
     .prepare(
       `SELECT host_id, severity, SUM(n) AS n FROM (
          SELECT host_id, severity, COUNT(*) AS n
-           FROM vuln_findings
+           FROM vuln_findings_attuali
           WHERE host_id IS NOT NULL
             AND severity IN ('Critical','High','Medium','Low')
           GROUP BY host_id, severity
@@ -9963,7 +9963,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
       `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
               f.nvt_name AS package_label,
               'Edge' AS source
-         FROM vuln_findings f
+         FROM vuln_findings_attuali f
         WHERE (
           (? IS NOT NULL AND f.cve_id = ?) OR
           (? IS NOT NULL AND f.nvt_oid = ? AND f.cve_id IS NULL)

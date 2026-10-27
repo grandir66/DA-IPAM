@@ -117,7 +117,7 @@ export async function GET(request: Request) {
             vf.severity   AS severity,
             vf.nvt_name   AS title,
             vf.host_id    AS host_id
-          FROM vuln_findings vf
+          FROM vuln_findings_attuali vf
           INNER JOIN hosts h ON h.id = vf.host_id
           WHERE vf.cve_id IS NOT NULL
             AND vf.host_id IS NOT NULL

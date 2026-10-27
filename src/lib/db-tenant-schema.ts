@@ -1837,6 +1837,16 @@ CREATE TABLE IF NOT EXISTS tenant_settings (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- I rilievi ATTUALI: solo quelli dell'ultima scansione buona di ogni rete (Riccardo, 27/10/2026: «le
+-- CVE superate dagli aggiornamenti servono solo a livello storico»). vuln_findings resta l'archivio;
+-- elenco host, scheda, patch e cruscotto leggono da qui. Una scansione fallita non conta.
+CREATE VIEW IF NOT EXISTS vuln_findings_attuali AS
+  SELECT f.* FROM vuln_findings f
+   WHERE f.scan_run_id IN (
+     SELECT MAX(r.id) FROM vuln_scan_runs r
+      WHERE COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted')
+      GROUP BY r.scanner_id, r.network_id);
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Software Inventory — scan applicativo on-demand per host (Windows/Linux).
 -- Snapshot immutabili: ogni scan = righe nuove. Diff ricostruito a query time.

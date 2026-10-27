@@ -44,3 +44,9 @@ test("col pulsante anche le precedenti", () =>
     const tutte = getAggregatedVulnerabilities({ ...base, precedenti: true }).data.map((v) => v.package_label).sort();
     assert.deepEqual(tutte, ["Rilievo di maggio", "Rilievo di ottobre"]);
   }));
+
+test("la vista dei rilievi attuali (elenco host, scheda, patch, cruscotto) tiene solo l'ultima scansione", () =>
+  withTenant(T, () => {
+    const righe = getTenantDb(T).prepare("SELECT nvt_name FROM vuln_findings_attuali").all() as Array<{ nvt_name: string }>;
+    assert.deepEqual(righe.map((r) => r.nvt_name), ["Rilievo di ottobre"]);
+  }));

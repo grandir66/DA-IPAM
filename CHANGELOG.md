@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Rilievi attuali anche in elenco host, scheda, patch e cruscotto
+
+### Cambiato
+
+- **Vista `vuln_findings_attuali`** (solo l'ultima scansione buona di ogni rete): la leggono i conteggi dell'elenco host e della discovery, la scheda dell'host, il dettaglio di una CVE, le pagine Patch (CVE, host, dispositivo), il motore delle patch e il cruscotto. `vuln_findings` resta l'archivio storico. Perché: Riccardo, 27/10 sera, «le CVE superate dagli aggiornamenti non dovrebbero essere visualizzabili, servono solo a livello storico».
+
 ## [Non rilasciato] — 2026-10-27 · Vulnerabilità: di base solo l'ultima scansione
 
 ### Cambiato

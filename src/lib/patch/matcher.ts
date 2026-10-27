@@ -251,7 +251,7 @@ export function rematchCveForAllHosts(
   try {
     const vulnHosts = db
       .prepare(
-        `SELECT DISTINCT host_id FROM vuln_findings
+        `SELECT DISTINCT host_id FROM vuln_findings_attuali
          WHERE cve_id = ? AND host_id IS NOT NULL`
       )
       .all(cveId) as Array<{ host_id: number }>;

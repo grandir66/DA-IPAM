@@ -86,7 +86,7 @@ export async function GET(
                 f.severity, f.port, f.service, f.nvt_oid, f.nvt_name,
                 f.description, MAX(f.scanned_at) AS scanned_at,
                 'Edge' AS source
-           FROM vuln_findings f
+           FROM vuln_findings_attuali f
           WHERE f.host_id = ?
             AND f.severity IN ('Critical','High','Medium','Low')
           GROUP BY COALESCE(f.cve_id, ''), COALESCE(f.nvt_oid, ''), COALESCE(f.port, '')`,

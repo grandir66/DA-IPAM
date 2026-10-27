@@ -33,7 +33,7 @@ export interface KpiSicurezza {
 }
 
 function esiste(db: Database.Database, tabella: string): boolean {
-  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabella);
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?").get(tabella);
 }
 
 const ORA_MS = 3_600_000;
@@ -63,10 +63,12 @@ export function quoteNellIntervallo(g: Gruppo, inizio: number, fine: number): nu
 export function kpiSicurezza(db: Database.Database, ora: Date = new Date()): KpiSicurezza {
   let cve: KpiSicurezza["cve"] = null;
   if (esiste(db, "vuln_findings")) {
-    // Come la pagina Vulnerabilità: la CVE, oppure l'NVT quando la CVE manca.
+    // Come la pagina Vulnerabilità: la CVE, oppure l'NVT quando la CVE manca; solo i rilievi attuali
+    // (ultima scansione di ogni rete, 27/10/2026) dove la vista c'è.
+    const fonte = esiste(db, "vuln_findings_attuali") ? "vuln_findings_attuali" : "vuln_findings";
     const per = (s: string) =>
       db.prepare(
-        "SELECT COUNT(DISTINCT COALESCE(cve_id, 'nvt:' || nvt_oid)) AS cve, COUNT(DISTINCT host_id) AS host FROM vuln_findings WHERE severity = ?",
+        `SELECT COUNT(DISTINCT COALESCE(cve_id, 'nvt:' || nvt_oid)) AS cve, COUNT(DISTINCT host_id) AS host FROM ${fonte} WHERE severity = ?`,
       ).get(s) as { cve: number; host: number };
     const ultima = (db.prepare("SELECT MAX(scanned_at) AS u FROM vuln_findings").get() as { u: string | null }).u;
     cve = { critiche: per("Critical"), alte: per("High"), ultimaScansione: ultima };

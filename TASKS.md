@@ -1,5 +1,18 @@
 # TASKS — DA-IPAM
 
+## 2026-10-27 — Reti dal sensore trunk: host e MAC insieme alla rete (da approvare)
+
+Riccardo (27/10, mini PC dimostrativo 72729-ipam): «Aggiungi» di una rete vista dal trunk crea solo la
+rete (`/api/trunk/rete`), senza gli host trovati; nelle reti con tag (niente ARP del router né L2
+dall'appliance) gli host restano senza MAC, nella nativa li hanno. Vuole: (1) all'aggiunta, l'elenco
+degli host dalle osservazioni del trunk; (2) MAC compilati dal trunk per le reti con VLAN senza tabella
+ARP; (3) prima dell'aggiunta un ARP ping col tag giusto (il giro c'è già: `/api/trunk/giro`, sonda
+`arp-scan -Q <vid> --arpspa 0.0.0.0`).
+- [ ] piano e livello approvati da Riccardo
+- [ ] «Aggiungi»: giro ARP sul VID, attesa della lettura, poi rete + host (IP, MAC, nome, produttore) da `trunk_osservazioni`
+- [ ] dopo ogni lettura del trunk: host nuovi e MAC mancanti delle reti con `vlan_id` dalle osservazioni dello stesso VID (mai sovrascrivere un MAC già visto da ARP)
+- [ ] prove, cancello, dev; collaudo su 72729-ipam
+
 ## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
 
 Riccardo (27/10): via OpenBao, gli slot, la 2FA per «Mostra», la ricifra e il recupero a tre comandi. Le

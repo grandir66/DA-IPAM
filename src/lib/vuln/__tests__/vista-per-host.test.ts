@@ -53,7 +53,7 @@ before(() =>
     );
     const f = d.prepare(
       `INSERT INTO vuln_findings (host_id, scan_run_id, ip, port, cve_id, cvss_score, severity, nvt_oid, nvt_name, scanned_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-10-22 06:00:00')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-6 days'))`, // relativa: regola dei 90 giorni (28/10)
     );
     // Log4j sullo stesso host su due porte: una vulnerabilità sola
     f.run(hFile, run, "192.0.2.5", "8443/tcp", "CVE-2021-44228", 10, "Critical", "1.3.6.1.4.1.25623.1.0.1", "Apache Log4j");

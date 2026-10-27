@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Trunk: anche la rete senza VLAN prende i MAC
+
+### Corretto
+
+- **Una rete senza VLAN prende host e MAC dalle osservazioni senza tag (VID 0, la nativa del trunk)**. Perché: sulla VM 999 (0.9.919) le reti con VLAN si sono riempite (VLAN 4: 43 host su 43 col MAC; VLAN 6: 12 su 12), ma la nativa 192.168.40.0/24 aveva 42 host e nessun MAC pur con 43 osservazioni senza tag.
+
 ## [Non rilasciato] — 2026-10-27 · Reti dal sensore trunk con host e MAC
 
 ### Corretto

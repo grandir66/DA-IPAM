@@ -47,16 +47,17 @@ test("rete con VLAN: host nuovi dal trunk, MAC mancanti compilati, MAC esistenti
     osserva(7, "02:00:00:00:00:13", "10.5.0.13");            // altra VLAN: no
     osserva(5, "02:00:00:00:00:14", "10.9.0.14");            // fuori rete: no
     osserva(5, "02:00:00:00:00:15", "10.5.0.15", null, "2026-08-01T10:00:00");   // vecchia: no
-    osserva(0, "02:00:00:00:00:16", "10.6.0.16");            // nativa senza VLAN: non è sua
+    osserva(0, "02:00:00:00:00:16", "10.6.0.16");            // senza tag: va alla rete senza VLAN
+    osserva(5, "02:00:00:00:00:17", "10.6.0.17");            // con tag: non è della rete senza VLAN
 
     const e = portaHostDalTrunk({ adesso: ADESSO });
-    assert.deepEqual(e, { creati: 1, mac: 1 });
+    assert.deepEqual(e, { creati: 2, mac: 1 });
     assert.deepEqual(host(r5), [
       { ip: "10.5.0.10", mac: "02:00:00:00:00:10", hostname: "stampante" },
       { ip: "10.5.0.11", mac: "AA:AA:AA:00:00:11", hostname: null },
       { ip: "10.5.0.12", mac: "02:00:00:00:00:12", hostname: "nas" },
     ]);
-    assert.deepEqual(host(nativa), []);
+    assert.deepEqual(host(nativa), [{ ip: "10.6.0.16", mac: "02:00:00:00:00:16", hostname: null }]);
     assert.deepEqual(portaHostDalTrunk({ adesso: ADESSO }), { creati: 0, mac: 0 }, "un secondo giro non cambia niente");
   });
 });

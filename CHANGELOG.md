@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Vault semplice, passo 1: il formato KDBX
+
+### Aggiunto
+
+- **`src/lib/vault/kdbx.ts`**: il formato comune dei vault Domarc (archivio KDBX 4, AES-256, Argon2id 64 MiB / 3 / 2, aperto dal solo key file, con la copia del key file cifrata age verso la chiave Domarc). Voci a gruppi annidati per percorso (`clienti/<codcli>/<sistema>/<servizio>`), storico di 10 versioni, controllo di versione per le scritture, un solo scrittore, salvataggio atomico con la copia di prima. Lo stesso contratto è in DA-Link (`dalink/vault_kdbx.py`): le prove aprono un archivio scritto da ciascuno dei due. Non ancora usato dall'app: arriva con i passi 6 e 8 del piano.
+
 ## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
 
 ### Cambiato

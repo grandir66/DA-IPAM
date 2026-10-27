@@ -1,0 +1,121 @@
+{
+  "_nota": "Valori finti. Stesso file in DA-Link (tests/dati/vault_kdbx) e DA-IPAM (src/lib/vault/__tests__/dati/vault_kdbx).",
+  "metadati": {
+    "domarc.formato": "1",
+    "domarc.archivio": "prova",
+    "domarc.chiave_domarc": "domarc-2026"
+  },
+  "scritture": [
+    [
+      "clienti/70000/firewall/ssh",
+      {
+        "username": "admin",
+        "password": "PW-FINTA-1",
+        "url": "https://192.0.2.1",
+        "notes": "nota àèì\nseconda riga",
+        "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+        "porta": "22",
+        "protocollo": "ssh"
+      }
+    ],
+    [
+      "clienti/70000/switch/snmp-v3",
+      {
+        "username": "monitor",
+        "auth_key": "AUTH-FINTA",
+        "priv_key": "PRIV-FINTA",
+        "protocollo": "snmpv3",
+        "da-ref": "credenziale-12"
+      }
+    ],
+    [
+      "clienti/70000/firewall/ssh",
+      {
+        "username": "admin",
+        "password": "PW-FINTA-2",
+        "url": "https://192.0.2.1",
+        "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+        "porta": "22",
+        "protocollo": "ssh"
+      }
+    ],
+    [
+      "app/da-ipam/encryption_key",
+      {
+        "password": "CHIAVE-FINTA-0123456789abcdef"
+      }
+    ],
+    [
+      "clienti/70000/firewall/ssh",
+      {
+        "username": "admin",
+        "password": "PW-FINTA-3 con spazi  ",
+        "url": "https://192.0.2.1",
+        "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+        "porta": "22",
+        "protocollo": "ssh",
+        "key_passphrase": "FRASE-FINTA"
+      }
+    ],
+    [
+      "infrastruttura/vuota",
+      {}
+    ]
+  ],
+  "voci": {
+    "clienti/70000/firewall/ssh": {
+      "valori": {
+        "username": "admin",
+        "password": "PW-FINTA-3 con spazi  ",
+        "url": "https://192.0.2.1",
+        "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+        "porta": "22",
+        "protocollo": "ssh",
+        "key_passphrase": "FRASE-FINTA"
+      },
+      "versione": 3,
+      "storico": [
+        {
+          "username": "admin",
+          "password": "PW-FINTA-2",
+          "url": "https://192.0.2.1",
+          "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+          "porta": "22",
+          "protocollo": "ssh"
+        },
+        {
+          "username": "admin",
+          "password": "PW-FINTA-1",
+          "url": "https://192.0.2.1",
+          "notes": "nota àèì\nseconda riga",
+          "private_key": "-----BEGIN FINTA-----\nabc\n-----END FINTA-----",
+          "porta": "22",
+          "protocollo": "ssh"
+        }
+      ]
+    },
+    "clienti/70000/switch/snmp-v3": {
+      "valori": {
+        "username": "monitor",
+        "auth_key": "AUTH-FINTA",
+        "priv_key": "PRIV-FINTA",
+        "protocollo": "snmpv3",
+        "da-ref": "credenziale-12"
+      },
+      "versione": 1,
+      "storico": []
+    },
+    "app/da-ipam/encryption_key": {
+      "valori": {
+        "password": "CHIAVE-FINTA-0123456789abcdef"
+      },
+      "versione": 1,
+      "storico": []
+    },
+    "infrastruttura/vuota": {
+      "valori": {},
+      "versione": 1,
+      "storico": []
+    }
+  }
+}

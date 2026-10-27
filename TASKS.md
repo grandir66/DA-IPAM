@@ -1,6 +1,6 @@
 # TASKS — DA-IPAM
 
-## 2026-10-27 — Vault semplice: KDBX al posto di OpenBao e degli slot (impostazione approvata, piano da approvare)
+## 2026-10-27 — Vault semplice: KDBX al posto di OpenBao e degli slot (piano approvato il 27/10)
 
 Riccardo (27/10): si toglie tutto il sistema da-vault costruito dal 23/10 (OpenBao, OIDC, ruoli, policy,
 slot cliente/Domarc/TPM, 2FA per «Mostra», ricifra, recupero a tre comandi). Al suo posto un archivio KDBX 4
@@ -11,8 +11,12 @@ appliance dei clienti con archivio locale `data/vault/credenziali.kdbx` ad apert
 registrato, «Scarica il key file» per KeePassXC. Specifica e piano nel repo DA-Link
 (`docs/superpowers/specs/2026-10-27-vault-semplice-kdbx-design.md`, `plans/2026-10-27-vault-semplice-kdbx.md`).
 ADR 0034 superato.
-- [ ] Riccardo: approvare il piano (in DA-Link)
-- [ ] chiudere senza fonderla DA-IPAM#22 (svuotamento verso OpenBao): si rifà sul backend `dalink`
+- [x] Riccardo: approvare il piano (in DA-Link), 27/10
+- [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla il 27/10: si rifà sul backend `dalink`
+- [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato «vault Domarc v1»: apri/leggi/elenca/scrivi con storico,
+  salvataggio atomico con `.prec`, lucchetto col pid, `.keyx.age`), prove in `__tests__/kdbx.test.ts` con gli
+  archivi incrociati di `__tests__/dati/vault_kdbx/` (uno scritto da `dalink/vault_kdbx.py`, uno da qui). Ramo
+  `claude/vault-kdbx-formato`, in PR; il modulo non è ancora usato da nessuna parte
 - [ ] passi 1 (pezzo TS del formato), 6 (hub) e 8 (appliance dei clienti) del piano
 
 ## 2026-10-23 — da-vault (piano approvato, livello completo)

@@ -152,25 +152,27 @@ test("http:// rifiutato prima di aprire qualunque connessione", async () => {
   );
 });
 
-test("connessione che non completa il TLS: «tempo» entro il limite di apertura", async () => {
+// Quale limite è scattato lo dice il messaggio («aperto la connessione», non «risposto entro»), non
+// l'orologio: il 27/10 `Date.now() - t0 < 1_500` è fallito a 19,9 s con il Mac a carico 24. Il limite
+// totale è lungo apposta, così un limite di apertura rotto non si nasconde dietro quello totale; il
+// `timeout` della prova è solo il freno contro un blocco, largo per non dipendere dalla macchina.
+test("connessione che non completa il TLS: «tempo» entro il limite di apertura", { timeout: 30_000 }, async () => {
   const tcp = createTcpServer(() => {
     /* accetta e tace */
   });
   serverAperti.push(tcp);
   await new Promise<void>((ok) => tcp.listen(0, "127.0.0.1", ok));
   const { port } = tcp.address() as AddressInfo;
-  const t0 = Date.now();
   await assert.rejects(
     trasportoTls({
       base: new URL(`https://127.0.0.1:${port}/wizard`),
       chiave: CHIAVE,
       impronta: normalizzaImprontaLettura(`sha256//${Buffer.alloc(32).toString("base64")}`),
       tempoConnessioneMs: 300,
-      tempoTotaleMs: 2_000,
+      tempoTotaleMs: 120_000,
     })(PERCORSO),
     (e: unknown) => e instanceof ErroreLettura && e.tipo === "tempo" && /aperto la connessione/.test(e.message),
   );
-  assert.ok(Date.now() - t0 < 1_500);
 });
 
 test("server che apre ma non risponde: «tempo» al limite totale", async () => {

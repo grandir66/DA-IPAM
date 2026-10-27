@@ -10,6 +10,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - **`src/lib/vault/kdbx.ts`**: il formato comune dei vault Domarc (archivio KDBX 4, AES-256, Argon2id 64 MiB / 3 / 2, aperto dal solo key file: con il `.kdbx` e il file chiave KeePassXC apre tutto). Voci a gruppi annidati per percorso (`clienti/<codcli>/<sistema>/<servizio>`), storico di 10 versioni, controllo di versione per le scritture, un solo scrittore, salvataggio atomico con la copia di prima. Lo stesso contratto è in DA-Link (`dalink/vault_kdbx.py`): le prove aprono un archivio scritto da ciascuno dei due. Non ancora usato dall'app: arriva con i passi 6 e 8 del piano.
 
+## [Non rilasciato] — 2026-10-27 · Prova del trasporto Zabbix indipendente dal carico della macchina
+
+### Corretto
+
+- **«Connessione che non completa il TLS»** (`zabbix-lettura/__tests__/trasporto.test.ts`) non misura più l'orologio: `Date.now() - t0 < 1_500` è fallito a 19,9 s nel cancello prima della promozione, col Mac a carico 24. Quale limite scatta lo dice già il messaggio (apertura, non totale); il limite totale ora è di 120 s, così un limite di apertura rotto non si nasconde, e un `timeout` di 30 s sulla prova ferma un blocco. Vista fallire rompendo il limite di apertura nel codice.
+
 ## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 senza leggere `data/` in build (sicurezza)
 
 ### Sicurezza

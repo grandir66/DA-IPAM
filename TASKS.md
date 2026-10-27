@@ -1,23 +1,17 @@
 # TASKS — DA-IPAM
 
-## 2026-10-27 — Vault semplice: KDBX al posto di OpenBao e degli slot (piano approvato il 27/10)
+## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
 
-Riccardo (27/10): si toglie tutto il sistema da-vault costruito dal 23/10 (OpenBao, OIDC, ruoli, policy,
-slot cliente/Domarc/TPM, 2FA per «Mostra», ricifra, recupero a tre comandi). Al suo posto un archivio KDBX 4
-con key file (copia cifrata age verso la chiave Domarc), stesso formato in DA-Link e nei DA-IPAM dei clienti.
-Qui: hub e DA-Vul-can leggono dall'archivio di DA-Link con un gettone (backend `dalink` di `SecretStore`);
-appliance dei clienti con archivio locale `data/vault/credenziali.kdbx` ad apertura **automatica**
-(`systemd-creds`, niente password all'avvio), `ENCRYPTION_KEY` dentro l'archivio, «Mostra» solo admin e
-registrato, «Scarica il key file» per KeePassXC. Specifica e piano nel repo DA-Link
-(`docs/superpowers/specs/2026-10-27-vault-semplice-kdbx-design.md`, `plans/2026-10-27-vault-semplice-kdbx.md`).
-ADR 0034 superato.
-- [x] Riccardo: approvare il piano (in DA-Link), 27/10
-- [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla il 27/10: si rifà sul backend `dalink`
-- [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato «vault Domarc v1»: apri/leggi/elenca/scrivi con storico,
-  salvataggio atomico con `.prec`, lucchetto col pid, `.keyx.age`), prove in `__tests__/kdbx.test.ts` con gli
-  archivi incrociati di `__tests__/dati/vault_kdbx/` (uno scritto da `dalink/vault_kdbx.py`, uno da qui). Ramo
-  `claude/vault-kdbx-formato`, in PR; il modulo non è ancora usato da nessuna parte
-- [ ] passi 1 (pezzo TS del formato), 6 (hub) e 8 (appliance dei clienti) del piano
+Riccardo (27/10): via OpenBao, gli slot, la 2FA per «Mostra», la ricifra e il recupero a tre comandi. Le
+password stanno in un file `.kdbx` con il suo file chiave: per le appliance dei clienti locale
+(`data/vault/credenziali.kdbx`, si apre da solo all'avvio con `systemd-creds`), per hub e DA-Vul-can su
+DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e piano nel repo DA-Link
+(`docs/superpowers/specs|plans/2026-10-27-vault-semplice-kdbx*`). ADR 0034 superato.
+- [x] piano approvato (27/10), semplificato lo stesso giorno: niente chiave Domarc, niente `age`
+- [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla: si rifà sul backend `dalink`
+- [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato comune con DA-Link), prove in
+  `__tests__/kdbx.test.ts` con gli archivi incrociati di `__tests__/dati/vault_kdbx/`. Non ancora usato
+- [ ] passo 6 (hub e DA-Vul-can leggono da DA-Link) e passo 8 (appliance dei clienti) del piano
 
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 

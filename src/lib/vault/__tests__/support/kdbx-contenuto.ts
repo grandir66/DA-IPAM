@@ -7,7 +7,7 @@
  */
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ArchivioKdbx, CHIAVE_DOMARC, creaArchivioKdbx } from "../../kdbx";
+import { ArchivioKdbx, creaArchivioKdbx } from "../../kdbx";
 
 export interface Contenuto {
   metadati: Record<string, string>;
@@ -22,7 +22,7 @@ export function scriviContenuto(a: ArchivioKdbx, contenuto: Contenuto): void {
 async function genera(uscita: string): Promise<void> {
   const contenuto = JSON.parse(readFileSync(join(__dirname, "..", "dati", "vault_kdbx", "contenuto.json"), "utf8")) as Contenuto;
   const tmp = join(mkdtempSync(join(uscita, "tmp-")), "v");
-  const keyfile = await creaArchivioKdbx(tmp, "prova", { destinatarioAge: CHIAVE_DOMARC });
+  const keyfile = await creaArchivioKdbx(tmp, "prova");
   const a = await ArchivioKdbx.apri(tmp, "prova", keyfile, { scrittura: true });
   scriviContenuto(a, contenuto);
   await a.salva();

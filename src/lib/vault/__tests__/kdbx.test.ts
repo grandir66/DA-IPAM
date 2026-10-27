@@ -14,7 +14,6 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as kdbxweb from "kdbxweb";
-import { Decrypter, generateX25519Identity, identityToRecipient } from "age-encryption";
 import { ArchivioKdbx, creaArchivioKdbx, ErroreKdbx, nuovoKeyfile } from "../kdbx";
 import { scriviContenuto, type Contenuto } from "./support/kdbx-contenuto";
 
@@ -50,28 +49,24 @@ async function grezzo(cartella: string, keyfile: Uint8Array): Promise<kdbxweb.Kd
 
 let cartella: string;
 let keyfile: Uint8Array;
-let identita: string;
 
 beforeEach(async () => {
-  identita = await generateX25519Identity();
   cartella = join(mkdtempSync(join(tmpdir(), "vault-kdbx-")), "vault");
-  keyfile = await creaArchivioKdbx(cartella, "prova", { destinatarioAge: await identityToRecipient(identita) });
+  keyfile = await creaArchivioKdbx(cartella, "prova");
 });
 
 describe("creazione", () => {
-  it("crea i tre file con i permessi; il .keyx.age ridà il key file", async () => {
+  it("crea i due file con i permessi", async () => {
     assert.equal(modo(cartella), 0o700);
-    for (const f of ["prova.kdbx", "prova.keyx", "prova.keyx.age"]) assert.equal(modo(join(cartella, f)), 0o600, f);
+    assert.deepEqual(readdirSync(cartella).sort(), ["prova.kdbx", "prova.keyx"]);
+    for (const f of ["prova.kdbx", "prova.keyx"]) assert.equal(modo(join(cartella, f)), 0o600, f);
     assert.deepEqual(new Uint8Array(readFileSync(join(cartella, "prova.keyx"))), keyfile);
     assert.match(Buffer.from(keyfile).toString(), /<Version>2\.0<\/Version>/);
-    const d = new Decrypter();
-    d.addIdentity(identita);
-    assert.deepEqual(await d.decrypt(new Uint8Array(readFileSync(join(cartella, "prova.keyx.age")))), keyfile);
   });
 
   it("senza key file su disco", async () => {
     const c = join(mkdtempSync(join(tmpdir(), "vault-kdbx-")), "v");
-    const k = await creaArchivioKdbx(c, "prova", { destinatarioAge: await identityToRecipient(identita), scriviKeyfile: false });
+    const k = await creaArchivioKdbx(c, "prova", { scriviKeyfile: false });
     assert.equal(existsSync(join(c, "prova.keyx")), false);
     const a = await ArchivioKdbx.apri(c, "prova", k);
     assert.deepEqual(a.elenca(), []);
@@ -79,14 +74,8 @@ describe("creazione", () => {
 
   it("non sovrascrive", async () => {
     const prima = readFileSync(join(cartella, "prova.kdbx"));
-    assert.equal(await codice(async () => creaArchivioKdbx(cartella, "prova", { destinatarioAge: await identityToRecipient(identita) })), "esiste");
+    assert.equal(await codice(() => creaArchivioKdbx(cartella, "prova")), "esiste");
     assert.deepEqual(readFileSync(join(cartella, "prova.kdbx")), prima);
-  });
-
-  it("destinatario age non valido: niente file", async () => {
-    const c = join(mkdtempSync(join(tmpdir(), "vault-kdbx-")), "v");
-    assert.equal(await codice(() => creaArchivioKdbx(c, "prova", { destinatarioAge: "age1nonvalido" })), "age");
-    assert.equal(existsSync(join(c, "prova.kdbx")), false);
   });
 
   it("KDBX 4, AES-256, Argon2id 64 MiB / 3 / 2 e metadati Domarc", async () => {
@@ -99,7 +88,7 @@ describe("creazione", () => {
     assert.equal(Number((kdf?.get("I") as kdbxweb.Int64).value), 3);
     assert.equal(kdf?.get("P"), 2);
     const a = await ArchivioKdbx.apri(cartella, "prova", keyfile);
-    assert.deepEqual(a.metadati(), { "domarc.formato": "1", "domarc.archivio": "prova", "domarc.chiave_domarc": "domarc-2026" });
+    assert.deepEqual(a.metadati(), { "domarc.formato": "1", "domarc.archivio": "prova" });
   });
 });
 

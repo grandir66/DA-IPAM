@@ -2,8 +2,7 @@
   "_nota": "Valori finti. Stesso file in DA-Link (tests/dati/vault_kdbx) e DA-IPAM (src/lib/vault/__tests__/dati/vault_kdbx).",
   "metadati": {
     "domarc.formato": "1",
-    "domarc.archivio": "prova",
-    "domarc.chiave_domarc": "domarc-2026"
+    "domarc.archivio": "prova"
   },
   "scritture": [
     [

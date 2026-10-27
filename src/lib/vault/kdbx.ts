@@ -2,8 +2,8 @@
  * Vault semplice, passo 1: il formato «vault Domarc v1» (spec in DA-Link,
  * `docs/superpowers/specs/2026-10-27-vault-semplice-kdbx-design.md` §2). Un archivio KDBX 4 aperto dal solo key file.
  *
- * Un archivio è una cartella (0700) con `<nome>.kdbx`, `<nome>.keyx` (key file XML 2.0; può mancare su disco se lo dà
- * systemd) e `<nome>.keyx.age` (il key file cifrato verso la chiave pubblica Domarc). Lo stesso contratto lo
+ * Un archivio è una cartella (0700) con `<nome>.kdbx` e `<nome>.keyx` (key file XML 2.0; può mancare su disco se lo
+ * dà systemd). Con i due file KeePassXC apre tutto. Lo stesso contratto lo
  * implementa `dalink/vault_kdbx.py` in DA-Link: le prove incrociate di `__tests__/kdbx.test.ts` aprono un archivio
  * scritto da ciascuno dei due.
  *
@@ -24,9 +24,6 @@ import * as kdbxweb from "kdbxweb";
 import { argon2d, argon2id } from "hash-wasm";
 
 export const FORMATO = "1";
-/** Chiave pubblica Domarc, generazione domarc-2026 (la privata sta in Keeper). */
-export const CHIAVE_DOMARC = "age1knygmqz776gp4wl2z0xw4thkezdwt06pv20aza7xsmm2l2fuj5tsyypsvq";
-export const GENERAZIONE_DOMARC = "domarc-2026";
 export const STORICO_MASSIMO = 10;
 const PROFONDITA_MASSIMA = 8;
 const LUNGHEZZA_MASSIMA = 200;
@@ -41,7 +38,6 @@ const DATO_VERSIONE = "domarc.versione";
 const SEGMENTO = /^[a-z0-9._-]+$/;
 const CAMPO = /^[a-z0-9._-]{1,64}$/;
 const NOME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const DESTINATARIO = /^age1[02-9ac-hj-np-z]{58}$/;
 // Caratteri che XML 1.0 non può contenere (il database è XML)
 const NON_XML = /[^\t\n\r -퟿-�\u{10000}-\u{10ffff}]/u;
 
@@ -55,8 +51,7 @@ export type CodiceErroreKdbx =
   | "chiave"
   | "formato"
   | "occupato"
-  | "sola_lettura"
-  | "age";
+  | "sola_lettura";
 
 export class ErroreKdbx extends Error {
   constructor(
@@ -99,23 +94,6 @@ const ab = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOf
 /** Key file KeePass 2.x in formato XML 2.0 (quello di KeePassXC): 32 byte casuali e il controllo. */
 export async function nuovoKeyfile(): Promise<Uint8Array> {
   return kdbxweb.Credentials.createRandomKeyFile(2);
-}
-
-/**
- * `age-encryption` si carica solo quando serve: è un modulo ESM puro che vuole Node >= 20.19 (vedi `archivio.ts`).
- */
-export async function cifraAge(dati: Uint8Array, destinatario: string): Promise<Uint8Array> {
-  if (!DESTINATARIO.test(destinatario)) {
-    throw new ErroreKdbx("age", "Il destinatario age non è una chiave pubblica X25519 (age1…)");
-  }
-  const { Encrypter } = await import("age-encryption");
-  const e = new Encrypter();
-  try {
-    e.addRecipient(destinatario);
-  } catch {
-    throw new ErroreKdbx("age", "Il destinatario age non è valido");
-  }
-  return e.encrypt(dati);
 }
 
 // ── Disco ────────────────────────────────────────────────────────────────────
@@ -442,19 +420,11 @@ export class ArchivioKdbx {
 
 // ── Creazione ────────────────────────────────────────────────────────────────
 
-/**
- * Crea l'archivio vuoto e ne dà il key file. `<nome>.keyx.age` (verso `destinatarioAge`, di norma `CHIAVE_DOMARC`)
- * si scrive sempre; `<nome>.keyx` solo con `scriviKeyfile` (di serie sì). Non sovrascrive.
- */
-export async function creaArchivioKdbx(
-  cartella: string,
-  nome: string,
-  op: { destinatarioAge: string; scriviKeyfile?: boolean },
-): Promise<Uint8Array> {
+/** Crea l'archivio vuoto e ne dà il key file; `<nome>.keyx` va su disco solo con `scriviKeyfile` (di serie sì). Non sovrascrive. */
+export async function creaArchivioKdbx(cartella: string, nome: string, op: { scriviKeyfile?: boolean } = {}): Promise<Uint8Array> {
   const kdbx = nomeFile(cartella, nome);
   if (fs.existsSync(kdbx)) throw new ErroreKdbx("esiste", `L'archivio «${nome}» c'è già: non si sovrascrive`);
   const keyfile = await nuovoKeyfile();
-  const cifrato = await cifraAge(keyfile, op.destinatarioAge);
   fs.mkdirSync(cartella, { recursive: true, mode: 0o700 });
   fs.chmodSync(cartella, 0o700);
   prendiLucchetto(`${kdbx}.lock`);
@@ -470,14 +440,8 @@ export async function creaArchivioKdbx(
     kdf.set("I", kdbxweb.VarDictionary.ValueType.UInt64, kdbxweb.Int64.from(ARGON2.iterazioni));
     kdf.set("P", kdbxweb.VarDictionary.ValueType.UInt32, ARGON2.parallelismo);
     db.meta.historyMaxItems = STORICO_MASSIMO;
-    for (const [k, v] of [
-      ["domarc.formato", FORMATO],
-      ["domarc.archivio", nome],
-      ["domarc.chiave_domarc", GENERAZIONE_DOMARC],
-    ] as const) {
-      db.meta.customData.set(k, { value: v });
-    }
-    scriviAtomico(join(cartella, `${nome}.keyx.age`), cifrato);
+    db.meta.customData.set("domarc.formato", { value: FORMATO });
+    db.meta.customData.set("domarc.archivio", { value: nome });
     if (op.scriviKeyfile !== false) scriviAtomico(join(cartella, `${nome}.keyx`), keyfile);
     scriviAtomico(kdbx, new Uint8Array(await db.save()));
   } finally {

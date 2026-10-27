@@ -1,7 +1,7 @@
 # Next.js 16.4: la build non sta in memoria sull'hub (27/10/2026)
 
-Stato: **corretto in locale sul ramo `fix/next164-build-data`** (27/10, sezione «Esito» in fondo); manca la prova
-sull'hub (passo 4 del metodo), poi `dev`. Dev e hub sono ancora a Next 16.1.6 (v0.9.915).
+Stato: **corretto sul ramo `fix/next164-build-data` e provato sull'hub** (27/10, sezione «Esito» in fondo);
+prossimo passo il merge su `dev`. Dev e hub sono ancora a Next 16.1.6 (v0.9.915).
 
 ## Perché serve la 16.4
 
@@ -176,4 +176,10 @@ index eadb212a..50b54660 100644
   `.nft.json` torna a elencare `data/`.
 - **Misure**: 441 rotte su 454 → 0; picco 3,4 GB con 18 GB di dati finti (sparsi), come senza dati.
   Cancello: lint 0 errori, `tsc`, build, 6150 prove verdi.
-- **Prossimo**: prova sull'hub (passo 4) con `systemd-run --scope -p MemoryMax=8G`, poi `dev`.
+- **Prova sull'hub (27/10, 10:56 UTC, con l'ok di Riccardo)**: clone locale di `/opt/da-invent` col ramo
+  (v0.9.916), `data/` vera (54 GB) montata in sola lettura, `systemd-run --scope -p MemoryMax=8G
+  -p MemorySwapMax=0 npm run build`. Riuscita in 1'41" (compilazione 53"), `memory.peak` del gruppo 4,6 GB
+  (contando la cache dei file), nessun `oom_kill`; il postbuild: 454 file di tracciamento, nessuno in
+  `data/`. Prima, alle stesse condizioni, uccisa oltre 8 GB. Copia tolta; `/opt/da-invent` e il servizio
+  non toccati (HEAD `028f07dc`, `.next-attiva` = `.next-b`, `/api/health` 200).
+- **Prossimo**: merge su `dev` (l'hub si ricostruisce da solo entro 15 minuti), poi la promozione su `main`.

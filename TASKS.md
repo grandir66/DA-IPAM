@@ -5,7 +5,7 @@
 Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccanismo, esito). Ramo `fix/next164-build-data`.
 - [x] meccanismo trovato su un'app minima: `path.join`/`path.resolve` nel modulo e `fs` su valori misti diventano glob sul progetto
 - [x] correzione (`src/lib/percorsi.ts`, ESLint, `scripts/controlla-tracciamento.mjs` in postbuild): 441 rotte → 0, picco 3,4 GB con 18 GB finti; cancello e 6150 prove verdi
-- [ ] prova sull'hub in una copia con `data/` in sola lettura e `systemd-run --scope -p MemoryMax=8G` (solo con l'ok di Riccardo)
+- [x] prova sull'hub (27/10, ok di Riccardo): copia con `data/` vera in sola lettura, `MemoryMax=8G`: riuscita in 1'41", picco 4,6 GB, nessun OOM, postbuild 0 rotte su `data/`
 - [ ] poi merge su `dev` (l'hub si ricostruisce da solo), poi promozione su `main` per le appliance
 
 ## 2026-10-23 — da-vault (piano approvato, livello completo)

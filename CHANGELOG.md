@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Sistema operativo degli host all'edge
+
+### Corretto
+
+- **Con /networks/ensure gli host vanno all'edge col sistema operativo** (`os_info`): l'edge non ne sapeva niente mentre DA-IPAM ne conosce diversi (Riccardo, 27/10 sera). L'edge lo legge dalla 0.8.189; le versioni prima ignorano il campo.
+
 ## [Non rilasciato] — 2026-10-27 · Trunk: anche la rete senza VLAN prende i MAC
 
 ### Corretto

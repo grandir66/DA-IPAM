@@ -313,7 +313,8 @@ function buildEdgeEnsureBody(
   return body;
 }
 
-function hostsForEdgeSync(networkId: number) {
+/** Host per l'edge. Esportata per le prove. */
+export function hostsForEdgeSync(networkId: number) {
   return getHostsByNetwork(networkId)
     .filter((h) => h.status !== "offline")
     .map((h) => {
@@ -328,6 +329,8 @@ function hostsForEdgeSync(networkId: number) {
         classification: h.classification || null,
         tcp_ports: tcpPortsFromHost(h.open_ports),
         ad_joined: adJoined,
+        // Sistema operativo (27/10/2026): l'edge non ne sapeva niente; lo legge dalla 0.8.189.
+        os_info: h.os_info || null,
       };
     });
 }

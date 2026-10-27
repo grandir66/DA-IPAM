@@ -19,7 +19,8 @@
  * Mai un valore nei messaggi d'errore; il modulo non scrive log.
  */
 import fs from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { unisci } from "@/lib/percorsi";
 import * as kdbxweb from "kdbxweb";
 import { argon2d, argon2id } from "hash-wasm";
 
@@ -191,7 +192,7 @@ function controllaValori(valori: ValoriVoce): ValoriVoce {
 
 function nomeFile(cartella: string, nome: string): string {
   if (!NOME.test(nome)) throw new ErroreKdbx("formato", "Nome dell'archivio non valido: [a-z0-9_-]");
-  return join(cartella, `${nome}.kdbx`);
+  return unisci(cartella, `${nome}.kdbx`);
 }
 
 // ── Voci ─────────────────────────────────────────────────────────────────────
@@ -256,7 +257,7 @@ export class ArchivioKdbx {
     if (scrittura) {
       prendiLucchetto(`${kdbx}.lock`);
       for (const f of fs.readdirSync(cartella)) {
-        if (f.startsWith(`${nome}.kdbx.tmp`) || f.startsWith(`${nome}.kdbx.prec.tmp`)) fs.rmSync(join(cartella, f), { force: true });
+        if (f.startsWith(`${nome}.kdbx.tmp`) || f.startsWith(`${nome}.kdbx.prec.tmp`)) fs.rmSync(unisci(cartella, f), { force: true });
       }
     }
     try {
@@ -442,7 +443,7 @@ export async function creaArchivioKdbx(cartella: string, nome: string, op: { scr
     db.meta.historyMaxItems = STORICO_MASSIMO;
     db.meta.customData.set("domarc.formato", { value: FORMATO });
     db.meta.customData.set("domarc.archivio", { value: nome });
-    if (op.scriviKeyfile !== false) scriviAtomico(join(cartella, `${nome}.keyx`), keyfile);
+    if (op.scriviKeyfile !== false) scriviAtomico(unisci(cartella, `${nome}.keyx`), keyfile);
     scriviAtomico(kdbx, new Uint8Array(await db.save()));
   } finally {
     fs.rmSync(`${kdbx}.lock`, { force: true });

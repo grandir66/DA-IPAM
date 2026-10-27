@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveDataDir } from "@/lib/data-dir";
 import { interpretaStatoAggiornamento, STATO_VUOTO, type StatoAggiornamento } from "@/lib/aggiornamento-stato";
+import { unisci } from "./percorsi";
 
 /** Lo stesso percorso di scripts/stato-aggiornamento.mjs. */
 export function percorsoStatoAggiornamento(
@@ -25,12 +26,12 @@ export function percorsoStatoAggiornamento(
 ): string {
   const daAmbiente = env.DA_INVENT_STATO_AGGIORNAMENTO?.trim();
   if (daAmbiente) return daAmbiente;
-  return path.join(resolveDataDir(), "aggiornamento.json");
+  return unisci(resolveDataDir(), "aggiornamento.json");
 }
 
 /** Il file che scripts/auto-update.sh consuma come «forza l'aggiornamento». */
 export function percorsoRichiestaAggiornamento(): string {
-  return path.join(resolveDataDir(), "aggiornamento-richiesto");
+  return unisci(resolveDataDir(), "aggiornamento-richiesto");
 }
 
 export function leggiStatoAggiornamento(file: string = percorsoStatoAggiornamento()): StatoAggiornamento {
@@ -116,10 +117,10 @@ export async function avviaAggiornamento(
  */
 export function cartellaBuildAttiva(root: string): string {
   try {
-    const attiva = fs.readFileSync(path.join(root, ".next-attiva"), "utf8").trim();
-    if (/^\.next-[ab]$/.test(attiva)) return path.join(root, attiva);
+    const attiva = fs.readFileSync(unisci(root, ".next-attiva"), "utf8").trim();
+    if (/^\.next-[ab]$/.test(attiva)) return unisci(root, attiva);
   } catch {
     /* nessun file: la build sta in .next */
   }
-  return path.join(root, ".next");
+  return unisci(root, ".next");
 }

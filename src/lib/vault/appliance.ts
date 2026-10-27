@@ -9,15 +9,15 @@
  *
  * La cartella dell'archivio è `<dati>/vault` (`DA_VAULT_DIR` la sposta, per le prove e per i volumi dedicati).
  */
-import { join } from "node:path";
 import { resolveDataDir } from "@/lib/data-dir";
 import { apriConPassphrase, apriConTpm, archivioPresente, leggiArchivio, type NomeSlot } from "./archivio";
 import { conGuardiaPassphrase, type EsitoGuardia } from "./guardia-passphrase";
 import { chiudiVault, impostaChiaveDati, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
 import { ErroreVault } from "./tipi";
+import { unisci } from "../percorsi";
 
 export function cartellaVault(): string {
-  return process.env.DA_VAULT_DIR?.trim() || join(resolveDataDir(), "vault");
+  return process.env.DA_VAULT_DIR?.trim() || unisci(resolveDataDir(), "vault");
 }
 
 /** All'avvio: con l'interruttore acceso prova lo slot TPM; se non va, bloccato col motivo (e lo scrive nel log). */

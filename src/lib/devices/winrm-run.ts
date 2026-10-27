@@ -9,11 +9,11 @@
  */
 
 import { execFile } from "child_process";
-import path from "path";
 
 import { checkWinrmReachability } from "./tcp-precheck";
 import { classifyWinrmError, formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
 import { findBridgePython } from "./find-bridge-python";
+import { risolvi } from "../percorsi";
 
 const TIMEOUT_MS = 120_000;
 const TCP_PRECHECK_TIMEOUT_MS = 3000;
@@ -37,7 +37,7 @@ export class WinrmError extends Error {
     this.original = info.original;
   }
 }
-const BRIDGE_SCRIPT = path.resolve(
+const BRIDGE_SCRIPT = risolvi(
   process.cwd(),
   "src/lib/devices/winrm-bridge.py"
 );

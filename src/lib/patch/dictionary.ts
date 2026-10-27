@@ -9,7 +9,7 @@
  * (server-side, Node runtime) sia da tooling CLI eventuale.
  */
 import { readFileSync } from "node:fs";
-import path from "node:path";
+import { unisci } from "../percorsi";
 
 export interface DictionaryEntry {
   /** Nome software lowercase normalizzato (chiave primaria del lookup). */
@@ -40,7 +40,7 @@ let cachedDict: DictionaryEntry[] | null = null;
 export function loadDictionary(): DictionaryEntry[] {
   if (cachedDict) return cachedDict;
   try {
-    const filePath = path.join(process.cwd(), "data", "package-dictionary.json");
+    const filePath = unisci(process.cwd(), "data", "package-dictionary.json");
     const raw = readFileSync(filePath, "utf-8");
     let parsed: DictionaryFile;
     try {

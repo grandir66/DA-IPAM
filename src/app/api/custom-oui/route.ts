@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import path from "path";
 import fs from "fs";
 import { invalidateCustomOuiCache } from "@/lib/scanner/mac-vendor";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { unisci } from "@/lib/percorsi";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const CUSTOM_OUI_PATH = path.join(DATA_DIR, "custom_oui.txt");
+const DATA_DIR = unisci(process.cwd(), "data");
+const CUSTOM_OUI_PATH = unisci(DATA_DIR, "custom_oui.txt");
 
 export async function GET() {
   try {

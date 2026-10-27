@@ -19,7 +19,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import https from "node:https";
-import path from "node:path";
+import { unisci } from "../percorsi";
 
 export const MODULI_DIR = "/etc/da-appliance/modules";
 
@@ -76,7 +76,7 @@ export const dipendenzeStatiReali: DipendenzeStati = {
 export async function statoEdge(dip: DipendenzeStati): Promise<StatoComponente | null> {
   let fase: string | null = null;
   try {
-    fase = dip.leggi(path.join(MODULI_DIR, "edge.state")).trim();
+    fase = dip.leggi(unisci(MODULI_DIR, "edge.state")).trim();
   } catch {
     fase = null;
   }
@@ -104,7 +104,7 @@ export async function statoEdge(dip: DipendenzeStati): Promise<StatoComponente |
 export async function statoMeshcentral(dip: DipendenzeStati): Promise<StatoComponente | null> {
   let fase: string | null = null;
   try {
-    fase = dip.leggi(path.join(MODULI_DIR, "meshcentral.state")).trim();
+    fase = dip.leggi(unisci(MODULI_DIR, "meshcentral.state")).trim();
   } catch {
     fase = null;
   }
@@ -134,7 +134,7 @@ export async function statiComponentiBase(
 ): Promise<StatiComponenti | null> {
   let modulare = false;
   try {
-    modulare = dip.esiste(path.join(MODULI_DIR, "modular-v1"));
+    modulare = dip.esiste(unisci(MODULI_DIR, "modular-v1"));
   } catch {
     modulare = false;
   }

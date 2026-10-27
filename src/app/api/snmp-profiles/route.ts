@@ -20,7 +20,7 @@ import { mergeProfileFieldsWithOidLibrary } from "@/lib/scanner/snmp-oid-library
 import { exportSnmpProfilesFromDbToFiles } from "@/lib/scanner/snmp-oid-export";
 import { z } from "zod/v4";
 import fs from "fs";
-import path from "path";
+import { unisci } from "@/lib/percorsi";
 
 const ProfileSchema = z.object({
   profile_id: z.string().min(1).max(64).regex(/^[a-z0-9_-]+$/),
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "export-to-files") {
     try {
-      const dataDir = path.join(process.cwd(), "data");
+      const dataDir = unisci(process.cwd(), "data");
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }

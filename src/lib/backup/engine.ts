@@ -30,6 +30,7 @@ import crypto from "crypto";
 import { pipeline } from "stream/promises";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
+import { unisci } from "../percorsi";
 
 const execFile = promisify(execFileCb);
 
@@ -57,7 +58,9 @@ const DEFAULT_RETENTION_DAYS = 30;
 const DATA_DIR = resolveDataDir();
 
 export function getBackupRoot(): string {
-  return process.env.DA_INVENT_BACKUP_ROOT || DEFAULT_BACKUP_ROOT;
+  // Dentro unisci: «ambiente || percorso assoluto» passato a fs diventa per Turbopack
+  // un glob su tutto il progetto, `data/` compresa (src/lib/percorsi.ts).
+  return unisci(process.env.DA_INVENT_BACKUP_ROOT || DEFAULT_BACKUP_ROOT);
 }
 
 /**
@@ -71,7 +74,7 @@ export function ultimoBackup(): { giorno: string; finitoIl: string | null; error
   const giorno = giorni.at(-1);
   if (!giorno) return null;
   try {
-    const m = JSON.parse(fs.readFileSync(path.join(root, giorno, "manifest.json"), "utf-8")) as Partial<BackupManifest>;
+    const m = JSON.parse(fs.readFileSync(unisci(root, giorno, "manifest.json"), "utf-8")) as Partial<BackupManifest>;
     return {
       giorno,
       finitoIl: typeof m.finished_at === "string" ? m.finished_at : null,
@@ -91,7 +94,7 @@ function getRetentionDays(): number {
 
 function getHubVersion(): string | null {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
+    const pkg = JSON.parse(fs.readFileSync(unisci(process.cwd(), "package.json"), "utf-8"));
     return typeof pkg.version === "string" ? pkg.version : null;
   } catch {
     return null;
@@ -141,8 +144,8 @@ async function backupOne(label: string, source: string, dest: string): Promise<B
     return entry;
   }
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `da-invent-backup-${label}-`));
-  const tmpSnapshot = path.join(tmpDir, `${label}.db`);
+  const tmpDir = fs.mkdtempSync(unisci(os.tmpdir(), `da-invent-backup-${label}-`));
+  const tmpSnapshot = unisci(tmpDir, `${label}.db`);
 
   try {
     await sqliteBackup(source, tmpSnapshot);
@@ -178,7 +181,7 @@ function applyRetention(root: string, retentionDays: number): { kept: number; de
   let kept = 0;
   let deleted = 0;
   for (const name of fs.readdirSync(root)) {
-    const full = path.join(root, name);
+    const full = unisci(root, name);
     const st = fs.statSync(full);
     if (!st.isDirectory()) continue;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(name)) {
@@ -210,7 +213,7 @@ export async function runHubBackup(tenantCodes: string[] = []): Promise<BackupMa
   const started = new Date();
   const today = started.toISOString().slice(0, 10);
   const root = getBackupRoot();
-  const outDir = path.join(root, today);
+  const outDir = unisci(root, today);
   fs.mkdirSync(outDir, { recursive: true, mode: 0o750 });
 
   const manifest: BackupManifest = {
@@ -224,14 +227,14 @@ export async function runHubBackup(tenantCodes: string[] = []): Promise<BackupMa
   };
 
   // Hub DB
-  const hubSrc = path.join(DATA_DIR, "hub.db");
-  manifest.files.push(await backupOne("hub", hubSrc, path.join(outDir, "hub.db.gz")));
+  const hubSrc = unisci(DATA_DIR, "hub.db");
+  manifest.files.push(await backupOne("hub", hubSrc, unisci(outDir, "hub.db.gz")));
 
   // Tenant DBs
-  const tenantOutDir = path.join(outDir, "tenants");
+  const tenantOutDir = unisci(outDir, "tenants");
   for (const code of tenantCodes) {
-    const src = path.join(DATA_DIR, "tenants", `${code}.db`);
-    const dest = path.join(tenantOutDir, `${code}.db.gz`);
+    const src = unisci(DATA_DIR, "tenants", `${code}.db`);
+    const dest = unisci(tenantOutDir, `${code}.db.gz`);
     manifest.files.push(await backupOne(`tenant-${code}`, src, dest));
   }
 
@@ -245,7 +248,7 @@ export async function runHubBackup(tenantCodes: string[] = []): Promise<BackupMa
   manifest.duration_ms = finished.getTime() - started.getTime();
   manifest.errors = manifest.files.filter((f) => !f.ok).map((f) => `${f.source}: ${f.error}`);
 
-  fs.writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2), {
+  fs.writeFileSync(unisci(outDir, "manifest.json"), JSON.stringify(manifest, null, 2), {
     mode: 0o640,
   });
 

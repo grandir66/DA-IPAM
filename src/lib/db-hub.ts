@@ -6,6 +6,7 @@ import { HUB_SCHEMA_SQL, HUB_INDEXES_SQL } from "./db-hub-schema";
 import { backfillAllIntegrationUiUrls } from "./integrations/public-url-server";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { normalizeMacHex } from "./attribution/kb";
+import { unisci, risolvi } from "./percorsi";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hub DB singleton (tenants, users, settings, profiles)
@@ -13,8 +14,8 @@ import { normalizeMacHex } from "./attribution/kb";
 
 const DATA_DIR = resolveDataDir();
 const HUB_DB_PATH = process.env.DA_IPAM_HUB_DB_PATH?.trim()
-  ? path.resolve(process.env.DA_IPAM_HUB_DB_PATH.trim())
-  : path.join(DATA_DIR, "hub.db");
+  ? risolvi(process.env.DA_IPAM_HUB_DB_PATH.trim())
+  : unisci(DATA_DIR, "hub.db");
 
 let _hubDb: Database.Database | null = null;
 

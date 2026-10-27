@@ -9,8 +9,8 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
 import { resolveDataDir } from "./data-dir";
+import { unisci } from "./percorsi";
 
 // ─────────────────────────────────────────────
 // Types
@@ -228,7 +228,7 @@ export interface ClientConfig {
 // Filesystem I/O
 // ─────────────────────────────────────────────
 
-const DATA_DIR = path.join(resolveDataDir(), "client-configs");
+const DATA_DIR = unisci(resolveDataDir(), "client-configs");
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -241,17 +241,17 @@ function sanitizeCode(code: string): string {
 }
 
 function configDir(codiceCliente: string): string {
-  return path.join(DATA_DIR, sanitizeCode(codiceCliente));
+  return unisci(DATA_DIR, sanitizeCode(codiceCliente));
 }
 
 function jsonPath(codiceCliente: string): string {
   const code = sanitizeCode(codiceCliente);
-  return path.join(configDir(codiceCliente), `${code}.json`);
+  return unisci(configDir(codiceCliente), `${code}.json`);
 }
 
 function mdPath(codiceCliente: string): string {
   const code = sanitizeCode(codiceCliente);
-  return path.join(configDir(codiceCliente), `${code}.md`);
+  return unisci(configDir(codiceCliente), `${code}.md`);
 }
 
 /** Legge la config JSON di un cliente. Ritorna null se non esiste. */
@@ -288,7 +288,7 @@ export function listClientConfigs(): string[] {
   return fs.readdirSync(DATA_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
-    .filter((name) => fs.existsSync(path.join(DATA_DIR, name, `${name}.json`)))
+    .filter((name) => fs.existsSync(unisci(DATA_DIR, name, `${name}.json`)))
     .sort();
 }
 

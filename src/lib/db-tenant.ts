@@ -115,6 +115,7 @@ import type {
   SoftwareScanLog,
   ExcludedIpWithNetwork,
 } from "@/types";
+import { unisci, risolvi } from "./percorsi";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT CONTEXT (AsyncLocalStorage)
@@ -148,7 +149,7 @@ export function getCurrentTenantCode(): string | null {
 // TENANT DB CONNECTION CACHE (LRU)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
+const TENANTS_DIR = unisci(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
 
 /**
@@ -1345,12 +1346,12 @@ export function getTenantDb(tenantCode: string): Database.Database {
     fs.mkdirSync(TENANTS_DIR, { recursive: true });
   }
 
-  const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  const dbPath = unisci(TENANTS_DIR, `${tenantCode}.db`);
   // TEN-02 hardening: containment. Il file DB del tenant DEVE trovarsi
   // direttamente dentro TENANTS_DIR. Un tenantCode con path traversal
   // (es. "../hub") aprirebbe altrimenti hub.db come se fosse un DB tenant,
   // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
-  if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
+  if (path.dirname(risolvi(dbPath)) !== risolvi(TENANTS_DIR)) {
     throw new Error(`Tenant code non valido: ${tenantCode}`);
   }
   // NUC-1 fase A: ogni apertura (fuori dalla cache) del database di un codice
@@ -3088,7 +3089,7 @@ export function createTenantDatabase(tenantCode: string): void {
 
 export function deleteTenantDatabase(tenantCode: string): void {
   closeTenantDb(tenantCode);
-  const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  const dbPath = unisci(TENANTS_DIR, `${tenantCode}.db`);
   try { fs.unlinkSync(dbPath); } catch { /* file may not exist */ }
   try { fs.unlinkSync(`${dbPath}-wal`); } catch { /* ignore */ }
   try { fs.unlinkSync(`${dbPath}-shm`); } catch { /* ignore */ }

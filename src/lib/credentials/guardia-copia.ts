@@ -23,6 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { unisci, risolvi } from "../percorsi";
 
 export interface PercorsiCopia {
   /** `--dati`: la cartella con la copia (hub.db e tenants/). */
@@ -71,19 +72,19 @@ export function cartelleServizio(env: Readonly<Record<string, string | undefined
         "(sull'hub /opt/da-invent/data), così la guardia sa quali dati non toccare.",
     };
   }
-  cartelle.push(path.join(cwd, "data"));
+  cartelle.push(unisci(cwd, "data"));
   return { ok: true, cartelle };
 }
 
 /** Percorso reale anche se il file non esiste ancora (risolve la cartella più vicina che esiste). */
 export function percorsoReale(p: string): string {
-  const assoluto = path.resolve(p);
+  const assoluto = risolvi(p);
   const coda: string[] = [];
   let corrente = assoluto;
   for (;;) {
     try {
       const reale = fs.realpathSync(corrente);
-      return coda.length ? path.join(reale, ...coda.reverse()) : reale;
+      return coda.length ? unisci(reale, ...coda.reverse()) : reale;
     } catch {
       const su = path.dirname(corrente);
       if (su === corrente) return assoluto;
@@ -107,7 +108,7 @@ export function controllaCopia(p: PercorsiCopia): string[] {
   const errori: string[] = [];
   let dati: string;
   try {
-    dati = fs.realpathSync(path.resolve(p.dati));
+    dati = fs.realpathSync(risolvi(p.dati));
   } catch {
     return [`La cartella --dati non esiste: ${p.dati}`];
   }
@@ -144,10 +145,10 @@ export function controllaCopia(p: PercorsiCopia): string[] {
     } catch (e) {
       errori.push(`La cartella dei tenant (${tenant}) non si legge: ${e instanceof Error ? e.message : String(e)}`);
     }
-    for (const f of file) errori.push(...fileCollegato(path.join(tenant, f)));
+    for (const f of file) errori.push(...fileCollegato(unisci(tenant, f)));
   }
   if (dentro(hub, dati)) {
-    for (const f of [p.hubDb, `${p.hubDb}-wal`, `${p.hubDb}-shm`]) errori.push(...fileCollegato(path.resolve(f)));
+    for (const f of [p.hubDb, `${p.hubDb}-wal`, `${p.hubDb}-shm`]) errori.push(...fileCollegato(risolvi(f)));
   }
   return errori;
 }

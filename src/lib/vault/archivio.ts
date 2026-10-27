@@ -17,8 +17,8 @@
  */
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { ErroreVault } from "./tipi";
+import { unisci } from "../percorsi";
 
 export const PASSPHRASE_MINIMA = 14;
 /** Il fattore di lavoro di scrypt di age (2^18): quello dei file age normali. Le prove lo abbassano. */
@@ -70,8 +70,8 @@ interface ContenutoSlot {
 
 /** Scrittura atomica 0600: file temporaneo, fsync, rename, fsync della cartella. */
 export function scriviAtomico(dir: string, nome: string, dati: string | Uint8Array): void {
-  const finale = join(dir, nome);
-  const tmp = join(dir, `.${nome}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+  const finale = unisci(dir, nome);
+  const tmp = unisci(dir, `.${nome}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
   writeFileSync(tmp, dati, { mode: 0o600 });
   const fd = openSync(tmp, "r");
   try {
@@ -97,7 +97,7 @@ function sincronizzaCartella(dir: string): void {
 }
 
 function leggiSuDisco(dir: string): ArchivioSuDisco {
-  const p = join(dir, FILE_ARCHIVIO);
+  const p = unisci(dir, FILE_ARCHIVIO);
   if (!existsSync(p)) throw new ErroreVault("archivio_assente", "Archivio del vault assente: va creato prima di sbloccarlo");
   let a: unknown;
   try {
@@ -181,7 +181,7 @@ function chiaveDaContenuto(a: ArchivioSuDisco, slot: NomeSlot, dati: Uint8Array)
 }
 
 function fileSlot(dir: string, a: ArchivioSuDisco, slot: NomeSlot): string {
-  const p = join(dir, FILE_SLOT[slot]);
+  const p = unisci(dir, FILE_SLOT[slot]);
   if (!a.slot[slot] || !existsSync(p)) {
     throw new ErroreVault("slot_assente", `Lo slot ${slot} non c'è in questo archivio`);
   }
@@ -257,7 +257,7 @@ export interface OpzioniCreazione {
 
 /** Crea l'archivio: chiave nuova, slot cliente e (di serie) Domarc, poi `archivio.json`. Non sovrascrive. */
 export async function creaArchivio(dir: string, op: OpzioniCreazione): Promise<{ id: string; chiave: Buffer }> {
-  if (existsSync(join(dir, FILE_ARCHIVIO))) {
+  if (existsSync(unisci(dir, FILE_ARCHIVIO))) {
     throw new ErroreVault("archivio_esistente", "L'archivio del vault c'è già: non si ricrea sopra");
   }
   controllaPassphrase(op.passphrase);
@@ -295,12 +295,12 @@ export async function creaArchivio(dir: string, op: OpzioniCreazione): Promise<{
 }
 
 export function archivioPresente(dir: string): boolean {
-  return existsSync(join(dir, FILE_ARCHIVIO));
+  return existsSync(unisci(dir, FILE_ARCHIVIO));
 }
 
 export function leggiArchivio(dir: string): InfoArchivio {
   const a = leggiSuDisco(dir);
-  const presente = (s: NomeSlot) => a.slot[s] && existsSync(join(dir, FILE_SLOT[s]));
+  const presente = (s: NomeSlot) => a.slot[s] && existsSync(unisci(dir, FILE_SLOT[s]));
   return {
     formato: a.formato,
     id: a.id,
@@ -349,7 +349,7 @@ export async function apriConDomarc(dir: string, identita: string): Promise<Buff
 export function apriConTpm(dir: string, cartellaCredenziali: string | undefined = process.env.CREDENTIALS_DIRECTORY): Buffer {
   const a = leggiSuDisco(dir);
   if (!cartellaCredenziali) throw new ErroreVault("slot_assente", "Nessuna credenziale di systemd (CREDENTIALS_DIRECTORY): niente slot TPM");
-  const p = join(cartellaCredenziali, "vault-key");
+  const p = unisci(cartellaCredenziali, "vault-key");
   if (!existsSync(p)) throw new ErroreVault("slot_assente", "La credenziale vault-key di systemd non c'è: niente slot TPM");
   return chiaveDaContenuto(a, "tpm", readFileSync(p));
 }
@@ -380,7 +380,7 @@ export const eseguiConStdin: EseguiComando = async (comando, argomenti, stdin) =
 export async function scriviSlotTpm(dir: string, chiave: Buffer, esegui: EseguiComando = eseguiConStdin): Promise<void> {
   const a = leggiSuDisco(dir);
   controllaChiave(a, chiave);
-  const uscita = join(dir, FILE_SLOT.tpm);
+  const uscita = unisci(dir, FILE_SLOT.tpm);
   await esegui("systemd-creds", ["encrypt", "--with-key=tpm2+host", "--name=vault-key", "-", uscita], contenuto(a, "tpm", chiave));
   if (!existsSync(uscita)) throw new ErroreVault("configurazione", "systemd-creds non ha scritto lo slot TPM");
   scriviSuDisco(dir, { ...a, slot: { ...a.slot, tpm: true } });
@@ -406,11 +406,11 @@ export async function scriviSlotDomarc(dir: string, chiave: Buffer, destinatario
 /** Toglie uno slot (voce e file). L'ultimo slot non si toglie: l'archivio non si aprirebbe più. */
 export function togliSlot(dir: string, slot: NomeSlot): void {
   const a = leggiSuDisco(dir);
-  const restano = (Object.keys(FILE_SLOT) as NomeSlot[]).filter((s) => s !== slot && a.slot[s] && existsSync(join(dir, FILE_SLOT[s])));
+  const restano = (Object.keys(FILE_SLOT) as NomeSlot[]).filter((s) => s !== slot && a.slot[s] && existsSync(unisci(dir, FILE_SLOT[s])));
   if (restano.length === 0) {
     throw new ErroreVault("configurazione", `Lo slot ${slot} è l'ultimo: togliendolo l'archivio non si aprirebbe più`);
   }
   scriviSuDisco(dir, { ...a, slot: { ...a.slot, [slot]: false } });
-  rmSync(join(dir, FILE_SLOT[slot]), { force: true });
+  rmSync(unisci(dir, FILE_SLOT[slot]), { force: true });
   sincronizzaCartella(dir);
 }

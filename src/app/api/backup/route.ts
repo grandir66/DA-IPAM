@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import path from "path";
 import fs from "fs";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { resolveDataDir } from "@/lib/data-dir";
+import { unisci } from "@/lib/percorsi";
 
 export async function GET() {
   const adminCheck = await requireAdmin();
@@ -11,7 +11,7 @@ export async function GET() {
   // singolo è `hub.db`; per un backup completo (hub + tutti i tenant) usare
   // l'export per-tenant `/api/tenant/export`. Path via resolveDataDir() per
   // rispettare DA_INVENT_DATA_DIR (volume Docker/systemd).
-  const dbPath = path.join(resolveDataDir(), "hub.db");
+  const dbPath = unisci(resolveDataDir(), "hub.db");
 
   if (!fs.existsSync(dbPath)) {
     return NextResponse.json({ error: "Database non trovato" }, { status: 404 });

@@ -27,6 +27,7 @@ import { loginTokenSelfCheck } from "./login-token";
 import { applyMcSchemaMigrations } from "./schema";
 import { meshProbeStatus } from "./tls-fetch";
 import { installMeshFeature } from "./feature";
+import { unisci } from "@/lib/percorsi";
 
 /**
  * ghcr.io/ylianst/meshcentral:latest @ 2026-07-16 — verificato in produzione.
@@ -53,8 +54,9 @@ const DEVICE_GROUP = "Domarc Endpoints";
  * pagina d'errore muta: dentro un iframe Chrome non mostra «Procedi».
  */
 export const APPLIANCE_CERT = {
-  crt: "/etc/da-appliance/cert/server.crt",
-  key: "/etc/da-appliance/cert/server.key",
+  // unisci, non la stringa: Turbopack ne farebbe un glob su tutto il progetto (src/lib/percorsi.ts).
+  crt: unisci("/etc/da-appliance/cert", "server.crt"),
+  key: unisci("/etc/da-appliance/cert", "server.key"),
 };
 
 /** true se entrambi i file del certificato dell'appliance esistono. */

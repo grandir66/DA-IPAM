@@ -14,11 +14,11 @@
 // tutta la vita del processo. Se l'artefatto manca (checkout incompleto,
 // ambiente di test senza `data/`) `kbAvailable()` torna false e OGNI
 // lookup torna `null` — mai un'eccezione che possa rompere lo scan.
-import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 import { isValidCategory } from "./taxonomy";
 import type { CategorySlug } from "./taxonomy";
+import { unisci } from "../percorsi";
 
 export interface KbOuiMatch {
   vendor_name: string;
@@ -32,7 +32,7 @@ export interface KbSysObjMatch {
   category: CategorySlug | null;
 }
 
-const KB_PATH = path.join(process.cwd(), "data", "attribution-kb.sqlite");
+const KB_PATH = unisci(process.cwd(), "data", "attribution-kb.sqlite");
 
 /** Mappa TYPE GLPI → categoria v2 (spec Task 1, tabella nel piano). Il tipo
  *  NETWORKING non distingue router/switch/access_point: livello 1 soltanto

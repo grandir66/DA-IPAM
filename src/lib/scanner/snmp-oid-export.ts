@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 import type { SnmpVendorProfileRow } from "@/lib/db";
+import { unisci } from "../percorsi";
 
 export interface SnmpOidExportResult {
   /** Percorso assoluto della cartella creata */
@@ -50,10 +51,10 @@ export function exportSnmpProfilesFromDbToFiles(
 ): SnmpOidExportResult {
   const exportedAt = new Date().toISOString();
   const folderName = `snmp-oid-export-${exportedAt.replace(/[:.]/g, "-")}`;
-  const rootDir = path.join(baseDataDir, folderName);
-  const devicesDir = path.join(rootDir, "devices");
-  const completeDir = path.join(rootDir, "profiles_complete");
-  const categoriesDir = path.join(rootDir, "categories");
+  const rootDir = unisci(baseDataDir, folderName);
+  const devicesDir = unisci(rootDir, "devices");
+  const completeDir = unisci(rootDir, "profiles_complete");
+  const categoriesDir = unisci(rootDir, "categories");
 
   fs.mkdirSync(devicesDir, { recursive: true });
   fs.mkdirSync(completeDir, { recursive: true });
@@ -86,7 +87,7 @@ export function exportSnmpProfilesFromDbToFiles(
       note: p.note,
       device_specific: fieldsObj,
     };
-    const devPath = path.join(devicesDir, `${baseName}.json`);
+    const devPath = unisci(devicesDir, `${baseName}.json`);
     writeJson(devPath, deviceFile);
     filesWritten.push(path.relative(process.cwd(), devPath));
 
@@ -111,7 +112,7 @@ export function exportSnmpProfilesFromDbToFiles(
       note: p.note,
       database: { id: p.id, created_at: p.created_at, updated_at: p.updated_at },
     };
-    const compPath = path.join(completeDir, `${baseName}.json`);
+    const compPath = unisci(completeDir, `${baseName}.json`);
     writeJson(compPath, complete);
     filesWritten.push(path.relative(process.cwd(), compPath));
   }
@@ -125,7 +126,7 @@ export function exportSnmpProfilesFromDbToFiles(
         "Indice generato dall’esportazione DB. Per OID condivisi tra tutti i profili di questa categoria, aggiungi qui il campo `fields` (stesso formato della libreria OID).",
       fields: {} as Record<string, string | string[]>,
     };
-    const catPath = path.join(categoriesDir, `${safeCat}.json`);
+    const catPath = unisci(categoriesDir, `${safeCat}.json`);
     writeJson(catPath, catPayload);
     filesWritten.push(path.relative(process.cwd(), catPath));
   }
@@ -144,11 +145,11 @@ export function exportSnmpProfilesFromDbToFiles(
         "Elenco profile_id per classificazione; puoi arricchire `fields` a mano per OID condivisi.",
     },
   };
-  const manifestPath = path.join(rootDir, "manifest.json");
+  const manifestPath = unisci(rootDir, "manifest.json");
   writeJson(manifestPath, manifest);
   filesWritten.unshift(path.relative(process.cwd(), manifestPath));
 
-  const readmePath = path.join(rootDir, "README.txt");
+  const readmePath = unisci(rootDir, "README.txt");
   const readme = `Esportazione profili SNMP da DA-IPAM
 Generata: ${exportedAt}
 Profili: ${profiles.length}

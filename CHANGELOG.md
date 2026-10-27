@@ -10,6 +10,32 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - **`src/lib/vault/kdbx.ts`**: il formato comune dei vault Domarc (archivio KDBX 4, AES-256, Argon2id 64 MiB / 3 / 2, aperto dal solo key file: con il `.kdbx` e il file chiave KeePassXC apre tutto). Voci a gruppi annidati per percorso (`clienti/<codcli>/<sistema>/<servizio>`), storico di 10 versioni, controllo di versione per le scritture, un solo scrittore, salvataggio atomico con la copia di prima. Lo stesso contratto è in DA-Link (`dalink/vault_kdbx.py`): le prove aprono un archivio scritto da ciascuno dei due. Non ancora usato dall'app: arriva con i passi 6 e 8 del piano.
 
+## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 senza leggere `data/` in build (sicurezza)
+
+### Sicurezza
+
+- **Di nuovo Next.js 16.4.2**, per le due RCE non autenticate e il DoS della 16.1.6 (GHSA-673q-mjm6-r5xr, CVE-2026-96889, CVE-2026-94482), stavolta con la build che non tocca i dati.
+
+### Corretto
+
+- **La build non traccia più `data/`.** Il meccanismo, misurato su un'app minima: Turbopack 16.4 fa di ogni `path.join(…)`/`path.resolve(…)` scritto in un modulo un riferimento a file, e con un pezzo fisso e uno variabile (`path.join(TENANTS_DIR, `${codice}.db`)`, ma anche `path.join(os.tmpdir(), `${x}.db`)`) un glob su tutto il progetto; lo stesso fa una chiamata `fs` su un valore misto, come `ambiente || "/var/backups/…"`, un elenco con percorsi assoluti accanto a valori ignoti o il ripiego `|| ""`. I file trovati li legge: per questo la memoria cresceva coi dati e `turbopackIgnore` su `process.cwd()` non bastava (il glob nasce anche da un prefisso ignoto). Correzione: `src/lib/percorsi.ts` con `unisci`/`risolvi`, che passano i pezzi a `path` dagli argomenti di un altro modulo, dove l'analisi non li vede; usate al posto di `path.join`/`path.resolve` in tutto `src/` (51 file, stesso comportamento), più tre valori misti resi opachi (radice delle copie in `backup/engine.ts`, certificato dell'appliance in MeshCentral, `krb5.conf` in Kerberos) e `find-bridge-python.ts`. Misure sul Mac con file finti in `data/tenants` e `data/backups`: prima 441 rotte su 454 tracciavano `data/`, dopo nessuna; picco della build 3,4 GB con 18 GB di dati finti, come senza dati. Su un'app minima: 0,9 GB senza riferimenti, 3,8 GB con 4 GB finti tracciati, e `outputFileTracingExcludes` non cambia niente (toglie i file dall'elenco dopo averli letti).
+
+### Aggiunto
+
+- **Due freni perché non torni.** ESLint vieta `path.join`/`path.resolve` (e `import { join, resolve } from "path"`) in `src/` fuori da `percorsi.ts` e dalle prove. `scripts/controlla-tracciamento.mjs` gira come `postbuild` di `npm run build` (quindi anche in `scripts/update.sh`): se un `.nft.json` elenca file sotto `data/` o `DA_INVENT_DATA_DIR` la build fallisce con le rotte colpevoli, e fallisce anche se non trova niente da guardare. Le forme miste con `fs` non le vede ESLint: le ferma questo controllo, purché nella `data/` di chi costruisce ci sia qualcosa.
+
+## [Non rilasciato] — 2026-10-27 · Next.js torna a 16.1.6 (la build della 16.4.2 non sta in memoria sull'hub)
+
+### Annullato
+
+- **Next.js 16.4.2 → 16.1.6.** Sull'hub (VM 533) la build della 16.4.2 è stata uccisa per memoria esaurita, con 12 GB e poi con 20 GB: Turbopack 16.4 legge i database di `data/` (54 GB fra `tenants/` e `backups/`) attraverso `resolveDataDir()`. Prova sull'hub: la stessa build senza `data/` passa in 1'46" con 3,3 GB di picco; con `data/` montata in sola lettura viene uccisa al limite di 8 GB. `/* turbopackIgnore: true */` sui `path.join(process.cwd(), "data")` toglie `data/backups` ma non `data/tenants` (441 rotte nei `.nft.json`): correzione da studiare fuori produzione. Le falle della 16.1.6 (GHSA-673q-mjm6-r5xr, CVE-2026-96889, CVE-2026-94482) restano aperte finché la 16.4 non si costruisce sull'hub e sulle appliance.
+
+## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 (sicurezza)
+
+### Sicurezza
+
+- **Next.js 16.1.6 → 16.4.2.** La 16.1.6 era esposta a due esecuzioni di codice da remoto senza autenticazione (avviso di Next.js del 14/10/2026: GHSA-673q-mjm6-r5xr nelle funzioni «use cache», CVE-2026-96889 nell'ottimizzazione delle immagini SVG) e a un DoS dei Server Actions (CVE-2026-94482); corrette dalla 16.4.1, la 16.4.2 è quella già in DA-Vul-can. Solo `next`: `eslint-config-next` resta 16.1.6, perché la 16.4.2 porta `eslint-plugin-react-hooks` 7.1.1 con 14 errori nuovi da sistemare a parte. Lint (0 errori, 72 avvisi come prima), `tsc`, build e 6.150 prove verdi.
+
 ## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
 
 ### Cambiato

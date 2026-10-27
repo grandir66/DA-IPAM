@@ -10,15 +10,15 @@
  */
 
 import { execFile } from "child_process";
-import path from "path";
 
 import { probeTcpPort } from "./tcp-precheck";
 import { formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
 import { findBridgePython } from "./find-bridge-python";
+import { risolvi } from "../percorsi";
 
 const TIMEOUT_MS = 90_000;
 const TCP_PRECHECK_TIMEOUT_MS = 3000;
-const BRIDGE_SCRIPT = path.resolve(process.cwd(), "src/lib/devices/wmi-bridge.py");
+const BRIDGE_SCRIPT = risolvi(process.cwd(), "src/lib/devices/wmi-bridge.py");
 
 export class WmiError extends Error {
   code: WinrmErrorCode;

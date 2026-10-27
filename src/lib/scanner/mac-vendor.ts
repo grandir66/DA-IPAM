@@ -1,6 +1,6 @@
-import path from "path";
 import fs from "fs";
 import { kbLookupMac } from "@/lib/attribution/kb";
+import { unisci } from "../percorsi";
 
 // Use oui-data directly — the 'oui' package is a CLI tool, not a library
 let ouiData: Record<string, string> | null = null;
@@ -8,8 +8,8 @@ let customOuiCache: Record<string, string> | null = null;
 let customOuiMtime = 0;
 
 function getCustomOui(): Record<string, string> {
-  const dataDir = path.join(process.cwd(), "data");
-  const customPath = path.join(dataDir, "custom_oui.txt");
+  const dataDir = unisci(process.cwd(), "data");
+  const customPath = unisci(dataDir, "custom_oui.txt");
   try {
     if (!fs.existsSync(customPath)) return {};
     const stat = fs.statSync(customPath);

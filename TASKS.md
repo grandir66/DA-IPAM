@@ -1,5 +1,20 @@
 # TASKS — DA-IPAM
 
+## 2026-10-27 — Vault semplice: KDBX al posto di OpenBao e degli slot (impostazione approvata, piano da approvare)
+
+Riccardo (27/10): si toglie tutto il sistema da-vault costruito dal 23/10 (OpenBao, OIDC, ruoli, policy,
+slot cliente/Domarc/TPM, 2FA per «Mostra», ricifra, recupero a tre comandi). Al suo posto un archivio KDBX 4
+con key file (copia cifrata age verso la chiave Domarc), stesso formato in DA-Link e nei DA-IPAM dei clienti.
+Qui: hub e DA-Vul-can leggono dall'archivio di DA-Link con un gettone (backend `dalink` di `SecretStore`);
+appliance dei clienti con archivio locale `data/vault/credenziali.kdbx` ad apertura **automatica**
+(`systemd-creds`, niente password all'avvio), `ENCRYPTION_KEY` dentro l'archivio, «Mostra» solo admin e
+registrato, «Scarica il key file» per KeePassXC. Specifica e piano nel repo DA-Link
+(`docs/superpowers/specs/2026-10-27-vault-semplice-kdbx-design.md`, `plans/2026-10-27-vault-semplice-kdbx.md`).
+ADR 0034 superato.
+- [ ] Riccardo: approvare il piano (in DA-Link)
+- [ ] chiudere senza fonderla DA-IPAM#22 (svuotamento verso OpenBao): si rifà sul backend `dalink`
+- [ ] passi 1 (pezzo TS del formato), 6 (hub) e 8 (appliance dei clienti) del piano
+
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 
 Riccardo (23/10): sta valutando un vault unico al posto dei file locali di ogni app, a partire dalle credenziali del DA-IPAM di Domarc (hub) e poi firewall e altri device. Piano in valutazione: `~/Downloads/da-vault — Piano di implementazione.md` (OpenBao interno + KDBX/age dai clienti, libreria `@domarc/vault`).

@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Vulnerabilità: di base solo l'ultima scansione
+
+### Cambiato
+
+- **La pagina Vulnerabilità (per CVE e per host) mostra di base solo i rilievi dell'ultima scansione buona di ogni rete**; quelli delle scansioni superate con «Mostra anche le scansioni precedenti». Una scansione fallita non nasconde l'ultima buona. Perché: sulla 533 la pagina mescolava rilievi da maggio a ottobre (Riccardo, 27/10 sera: «di base devono essere visualizzate quelle presenti nell'ultima scansione e le precedenti solo con la pressione di un pulsante»).
+
 ## [Non rilasciato] — 2026-10-27 · Sistema operativo degli host all'edge
 
 ### Corretto

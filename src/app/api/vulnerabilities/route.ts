@@ -36,6 +36,8 @@ const QuerySchema = z.object({
     .enum(["severity", "cvss", "host_count", "latest_scanned_at", "cve_id", "exploit"])
     .default("severity"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
+  // Anche le scansioni superate (pulsante della pagina); di base solo l'ultima di ogni rete (27/10/2026).
+  precedenti: z.enum(["1", "true"]).optional(),
 });
 
 export async function GET(request: Request) {
@@ -87,6 +89,7 @@ export async function GET(request: Request) {
     exploitDi,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
+    precedenti: q.precedenti != null,
   };
 
   return withTenantFromSession(() => {

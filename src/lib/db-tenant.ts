@@ -9569,6 +9569,8 @@ export interface AggregatedVulnOpts {
   exploitDi?: ExploitDi;
   sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id" | "exploit";
   sortDir?: "asc" | "desc";
+  /** Anche i rilievi delle scansioni superate (pulsante); di base solo l'ultima di ogni rete. */
+  precedenti?: boolean;
 }
 
 export interface AggregatedVulnResult {
@@ -9691,7 +9693,7 @@ interface RawVulnRow {
  * Le righe grezze di tutte le vulnerabilità del tenant (Edge + Wazuh), una per rilevamento:
  * la fonte comune della vista per CVE e di quella per host (22/10).
  */
-function leggiRigheVuln(osFamilies?: OsFamily[]): RawVulnRow[] {
+function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow[] {
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
   // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
   const osActive = !!(osFamilies && osFamilies.length > 0 && osFamilies.length < OS_FAMILIES.length);
@@ -9717,6 +9719,12 @@ function leggiRigheVuln(osFamilies?: OsFamily[]): RawVulnRow[] {
     ${edgeOsJoin}
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
+      -- Di base solo l'ultima scansione buona di ogni rete (Riccardo, 27/10/2026): sulla 533 la pagina
+      -- mescolava rilievi da maggio a ottobre. Le precedenti col pulsante.
+      AND (? = 1 OR f.scan_run_id IN (
+        SELECT MAX(r.id) FROM vuln_scan_runs r
+         WHERE COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted')
+         GROUP BY r.scanner_id, r.network_id))
     UNION ALL
     SELECT
       v.cve AS key,
@@ -9738,7 +9746,7 @@ function leggiRigheVuln(osFamilies?: OsFamily[]): RawVulnRow[] {
       AND v.severity IN ('Critical','High','Medium','Low')
   `;
 
-  const params = osActive ? [...osList, ...osList] : [];
+  const params = [...osList, precedenti ? 1 : 0, ...osList];
   return db().prepare(baseSql).all(...params) as RawVulnRow[];
 }
 
@@ -9768,7 +9776,7 @@ function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
 }
 
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
-  const rows = leggiRigheVuln(opts.osFamilies);
+  const rows = leggiRigheVuln(opts.osFamilies, opts.precedenti);
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -10055,6 +10063,8 @@ export interface VulnHostOpts {
   exploitDi?: ExploitDi;
   sortBy?: "severity" | "exploit" | "vuln_count" | "ip" | "latest_scanned_at";
   sortDir?: "asc" | "desc";
+  /** Anche i rilievi delle scansioni superate; di base solo l'ultima di ogni rete. */
+  precedenti?: boolean;
 }
 
 export interface VulnHostResult {
@@ -10118,7 +10128,7 @@ function infoExploit(rows: RawVulnRow[], exploitDi: ExploitDi | undefined): Map<
 }
 
 export function getVulnerabilitiesByHost(opts: VulnHostOpts): VulnHostResult {
-  const rows = leggiRigheVuln(opts.osFamilies);
+  const rows = leggiRigheVuln(opts.osFamilies, opts.precedenti);
   const info = infoExploit(rows, opts.exploitDi);
 
   // Il riepilogo in testa resta quello delle vulnerabilità distinte, come nella vista per CVE.

@@ -1,11 +1,13 @@
 /**
- * Host e MAC delle reti con VLAN dal sensore trunk (27/10/2026, mini PC dimostrativo 72729-ipam).
+ * Host e MAC delle reti dal sensore trunk (27/10/2026, mini PC dimostrativo 72729-ipam).
  *
  * Nelle reti con tag l'appliance non è sullo stesso segmento e spesso non c'è un router che dia
  * la tabella ARP: gli host restavano senza MAC (nella nativa li vede da sola). Le osservazioni
  * del trunk finivano solo in `mac_ip_mapping`. Qui, per ogni rete con `vlan_id`, le osservazioni
  * dello stesso VID con un IP della rete diventano host (se mancano) o completano il MAC (se manca).
- * Un MAC già presente non si tocca: quello del router o dello scan resta la fonte.
+ * Una rete senza VLAN prende le osservazioni senza tag (VID 0, la nativa del trunk): sulla VM 999
+ * la nativa aveva 42 host e nessun MAC, con 43 osservazioni senza tag. Un MAC già presente non si
+ * tocca: quello del router o dello scan resta la fonte.
  */
 import { getCurrentTenantCode, getTenantDb, upsertHost } from "@/lib/db-tenant";
 import { isIpInCidr, normalizeMacForStorage } from "@/lib/utils";
@@ -24,7 +26,7 @@ export function portaHostDalTrunk(opz: { networkId?: number; adesso?: Date } = {
   const d = getTenantDb(getCurrentTenantCode() ?? "DEFAULT");
   const adesso = (opz.adesso ?? new Date()).getTime();
   const reti = d.prepare(
-    `SELECT id, cidr, vlan_id FROM networks WHERE vlan_id IS NOT NULL${opz.networkId != null ? " AND id = ?" : ""}`,
+    `SELECT id, cidr, COALESCE(vlan_id, 0) AS vlan_id FROM networks${opz.networkId != null ? " WHERE id = ?" : ""}`,
   ).all(...(opz.networkId != null ? [opz.networkId] : [])) as Array<{ id: number; cidr: string; vlan_id: number }>;
   const osservazioni = d.prepare(
     "SELECT mac_display AS mac, ip, nome, ultima_vista FROM trunk_osservazioni WHERE vid = ? AND ip != '' ORDER BY ultima_vista DESC",

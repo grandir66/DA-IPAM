@@ -7,7 +7,8 @@ Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccan
 - [x] correzione (`src/lib/percorsi.ts`, ESLint, `scripts/controlla-tracciamento.mjs` in postbuild): 441 rotte → 0, picco 3,4 GB con 18 GB finti; cancello e 6150 prove verdi
 - [x] prova sull'hub (27/10, ok di Riccardo): copia con `data/` vera in sola lettura, `MemoryMax=8G`: riuscita in 1'41", picco 4,6 GB, nessun OOM, postbuild 0 rotte su `data/`
 - [x] merge su `dev` (27/10, ok di Riccardo, v0.9.916): hub ricostruito da solo alle 11:04 UTC, build 59" + tipi 45", postbuild 0 rotte su `data/`, servizio riavviato, `/api/health` 200, Next 16.4.2 in esercizio
-- [ ] promozione su `main` per le appliance (le falle restano aperte da loro finché non si promuove; decide Riccardo)
+- [x] promozione su `main` (27/10, ok di Riccardo): `43e98c15`, albero identico a `dev` v0.9.916. Cancello prima: lint 0 errori, tsc, build (0 rotte su `data/`), 6149 prove verdi e 1 rossa a tempo, ripassata da sola 12/12 (Mac a carico 24). Nota: per il CONTEXT del 22/10 tutte le installazioni seguono già `dev`, quindi la 16.4.2 era già arrivata con il push su `dev`
+- [ ] `src/lib/zabbix-lettura/__tests__/trasporto.test.ts` («connessione che non completa il TLS»): `assert.ok(Date.now() - t0 < 1_500)` fallisce sotto carico (19,9 s il 27/10 con load 24): soglia da legare al limite di apertura, non al tempo della macchina
 
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 

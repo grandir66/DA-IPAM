@@ -435,7 +435,8 @@ function opzioniModuli(): Opzione[] {
       cosa: "VLAN, reti e IP visti in ascolto sulla porta trunk (pagina Reti dal trunk)",
       valePer: "cliente",
       forma: "levetta",
-      diSerie: "spento",
+      // Dal 28/10 si accende da solo sull'appliance da un cliente con la sonda locale (lib/trunk/job.ts).
+      diSerie: "acceso se c'è la sonda sull'appliance",
       configura: { href: "/arp-table/trunk", etichetta: "Apri ›" },
       spegnendo: {
         siFerma: "la copia di VLAN e IP dal sensore a ogni giro ARP; il sensore sull'appliance continua ad ascoltare.",

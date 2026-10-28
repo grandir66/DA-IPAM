@@ -24,6 +24,10 @@
  * rete (una scheda saltata non li perde). La rete su cui è installata
  * l'appliance (CIDR, gateway, DNS, dominio) arriva con il punto raggiunto e
  * riempie i campi vuoti; il gateway si offre per il router con un pulsante.
+ * Dal 28/10 (Riccardo) il passo «Subnet» mostra anche le reti viste dalla
+ * sonda trunk (`reti-trunk-pannello.tsx`): si spuntano, si correggono nome,
+ * rete e gateway, e «Crea rete» le crea insieme alla nativa, con lo stesso
+ * router, DNS e credenziali. Si salta il giro su «Reti dal trunk» dopo il wizard.
  * La logica non visiva sta in `src/lib/onboarding/` con le prove.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -60,6 +64,17 @@ import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
 import type { ProgressoWizard } from "@/lib/onboarding/progresso";
 import type { ReteDelWizard, RiepilogoWizard, RouterDelWizard } from "@/lib/onboarding/progresso-store";
 import { baseDnDaDominio, campiReteProposti, type ReteAppliance } from "@/lib/onboarding/rete-appliance";
+import {
+  erroriScelte,
+  proposteTrunk,
+  vlanDellaNativa,
+  type PropostaTrunk,
+  type ReteEsistente,
+  type ReteTrunkVista,
+  type SceltaTrunk,
+} from "@/lib/onboarding/reti-trunk";
+import type { EsitoRetiTrunk } from "@/lib/onboarding/reti-trunk-server";
+import { RetiDalTrunk, type RigaTrunk, type StatoTrunk } from "./reti-trunk-pannello";
 import {
   etichettaPorta,
   etichettaVoce,
@@ -170,6 +185,8 @@ export function OnboardingWizard() {
   const [netCidr, setNetCidr] = useState("");
   const [netGateway, setNetGateway] = useState("");
   const [netDns, setNetDns] = useState("");
+  /** null = non toccata: vale la VLAN in cui la sonda trunk vede la rete nativa. */
+  const [netVlan, setNetVlan] = useState<string | null>(null);
   // Rete già creata: un nuovo tentativo dopo un completamento fallito, o una
   // riapertura, non la ricrea (sarebbe rifiutata per sovrapposizione).
   const [reteCreata, setReteCreata] = useState<ReteDelWizard | null>(null);
@@ -177,6 +194,14 @@ export function OnboardingWizard() {
   const [sceltaRete, setSceltaRete] = useState<SceltaRete[] | null>(null);
   /** La rete su cui è installata l'appliance: proposta, non scritta finché non si crea la rete. */
   const [reteAppliance, setReteAppliance] = useState<ReteAppliance | null>(null);
+
+  // Reti viste dalla sonda trunk (28/10): proposte sotto la nativa, create con «Crea rete».
+  const [statoTrunk, setStatoTrunk] = useState<StatoTrunk>({ fase: "caricamento" });
+  const [retiTrunk, setRetiTrunk] = useState<{ reti: ReteTrunkVista[]; esistenti: ReteEsistente[] }>({ reti: [], esistenti: [] });
+  /** Solo le righe toccate: le altre valgono come proposte, non scelte. */
+  const [righeTrunk, setRigheTrunk] = useState<Record<string, RigaTrunk>>({});
+  const [erroriTrunk, setErroriTrunk] = useState<Record<string, string>>({});
+  const [rileggendo, setRileggendo] = useState(false);
 
   const caricaVoci = useCallback(async (mostraCaricamento: boolean) => {
     if (mostraCaricamento) setStatoVoci({ fase: "caricamento" });
@@ -243,10 +268,30 @@ export function OnboardingWizard() {
     setAvvio({ fase: "pronto" });
   }, []);
 
+  const caricaTrunk = useCallback(async (rileggi: boolean) => {
+    if (rileggi) setRileggendo(true);
+    try {
+      const esito = await fetchJson<{ attiva: boolean; aggiornato: string | null; nota: string | null; reti: ReteTrunkVista[]; esistenti: ReteEsistente[] }>(
+        `/api/onboarding/reti-trunk${rileggi ? "?rileggi=1" : ""}`,
+        { cache: "no-store" },
+      );
+      if (!esito.ok) {
+        setStatoTrunk({ fase: "errore", messaggio: esito.message });
+        return;
+      }
+      const d = esito.data;
+      setRetiTrunk({ reti: d.reti, esistenti: d.esistenti });
+      setStatoTrunk({ fase: "pronto", attiva: d.attiva, aggiornato: d.aggiornato, nota: d.nota });
+    } finally {
+      if (rileggi) setRileggendo(false);
+    }
+  }, []);
+
   useEffect(() => {
     void caricaVoci(false);
     void caricaAvvio(false);
-  }, [caricaVoci, caricaAvvio]);
+    void caricaTrunk(false);
+  }, [caricaVoci, caricaAvvio, caricaTrunk]);
 
   // A 390 px le schede scorrono: quella del passo aperto resta in vista.
   const schede = useRef<HTMLDivElement>(null);
@@ -540,6 +585,89 @@ export function OnboardingWizard() {
 
   const listaRete = riconciliaSceltaRete(sceltaRete, voci);
 
+  /** La rete nativa del wizard: quella già creata, o quella scritta nei campi. */
+  const reteNativa = reteCreata?.cidr ?? (netCidr.trim() || null);
+  const proposte = proposteTrunk(retiTrunk.reti, retiTrunk.esistenti, reteNativa);
+  const vlanProposta = reteCreata ? null : vlanDellaNativa(retiTrunk.reti, reteNativa);
+  const vlanNativa = netVlan ?? (vlanProposta != null ? String(vlanProposta) : "");
+  /** Il gateway si precompila solo se certo (DHCP o scritto a mano): quello dall'ARP cambia fra una lettura e l'altra. */
+  const rigaIniziale = (p: PropostaTrunk): RigaTrunk => ({
+    aggiungi: false, nome: p.nome, cidr: p.cidr, gateway: p.gatewayCerto ? p.gateway ?? "" : "",
+  });
+  const rigaTrunk = (chiave: string): RigaTrunk | null => {
+    const p = proposte.find((x) => x.chiave === chiave);
+    if (!p) return null;
+    return righeTrunk[chiave] ?? rigaIniziale(p);
+  };
+  const scelteTrunk = proposte
+    .filter((p) => !p.esistente && righeTrunk[p.chiave]?.aggiungi)
+    .map((p) => ({ chiave: p.chiave, vid: p.vid, riga: righeTrunk[p.chiave] }));
+
+  const cambiaRigaTrunk = (chiave: string, campi: Partial<RigaTrunk>) => {
+    const r = rigaTrunk(chiave);
+    if (!r) return;
+    setRigheTrunk((prev) => ({ ...prev, [chiave]: { ...r, ...campi } }));
+    setErroriTrunk((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== chiave)));
+  };
+
+  const sceglieTutteTrunk = (aggiungi: boolean) => {
+    setRigheTrunk((prev) => {
+      const n = { ...prev };
+      for (const p of proposte) {
+        if (p.esistente) continue;
+        const r = prev[p.chiave] ?? rigaIniziale(p);
+        n[p.chiave] = { ...r, aggiungi };
+      }
+      return n;
+    });
+  };
+
+  /**
+   * Crea le reti del trunk spuntate, dopo la nativa. Un errore ferma il wizard
+   * sulla riga che non va; le reti create tornano «già in DA-IPAM» alla
+   * rilettura, così un secondo «Crea» non le rifà.
+   */
+  const creaRetiDelTrunk = async (nativa: string, idRouter: number | null): Promise<void> => {
+    if (scelteTrunk.length === 0) return;
+    const corpo: SceltaTrunk[] = scelteTrunk.map((x) => ({ vid: x.vid, cidr: x.riga.cidr.trim(), gateway: x.riga.gateway.trim(), nome: x.riga.nome.trim() }));
+    const errori = erroriScelte(corpo, nativa);
+    if (errori.some((e) => e != null)) {
+      setErroriTrunk(Object.fromEntries(scelteTrunk.flatMap((x, i) => (errori[i] ? [[x.chiave, errori[i]]] : []))));
+      throw new Error("Correggi le reti del trunk segnate in rosso.");
+    }
+    const esito = await fetchJson<EsitoRetiTrunk>("/api/onboarding/reti-trunk", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        scelte: corpo,
+        rete_nativa: nativa,
+        router_id: idRouter,
+        credential_ids: idsDaProvare(listaRete),
+        dns_server: (netDns || defaultDns).trim(),
+      }),
+    });
+    if (!esito.ok) throw new Error(`Reti del trunk non create: ${esito.message}`);
+    const fallite = esito.data.esiti.filter((e) => e.errore);
+    const fatte = esito.data.esiti.length - fallite.length;
+    // Le create escono dalle scelte: alla rilettura sono «già in DA-IPAM».
+    // Gli esiti tornano nell'ordine delle scelte mandate.
+    const create = new Set(esito.data.esiti.flatMap((e, i) => (!e.errore && scelteTrunk[i] ? [scelteTrunk[i].chiave] : [])));
+    setRigheTrunk((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !create.has(k))));
+    await caricaTrunk(false);
+    if (fatte > 0) {
+      const h = esito.data.host;
+      toast.success(`${fatte} ${fatte === 1 ? "rete del trunk aggiunta" : "reti del trunk aggiunte"}${h.creati ? `, ${h.creati} host già visti` : ""}.`);
+    }
+    if (fallite.length > 0) {
+      setErroriTrunk(
+        Object.fromEntries(
+          esito.data.esiti.flatMap((e, i) => (e.errore && scelteTrunk[i] ? [[scelteTrunk[i].chiave, e.errore]] : [])),
+        ),
+      );
+      throw new Error(`${fallite.length} ${fallite.length === 1 ? "rete del trunk non creata" : "reti del trunk non create"}: vedi le righe segnate.`);
+    }
+  };
+
   const onSubmitLast = async () => {
     setBusy(true);
     try {
@@ -568,6 +696,7 @@ export function OnboardingWizard() {
               dnsPredefinito: defaultDns,
               routerId: idRouter,
               credentialIds: idsDaProvare(listaRete),
+              vlan: vlanNativa,
             }),
           ),
         });
@@ -597,6 +726,7 @@ export function OnboardingWizard() {
         setReteCreata(rete);
         toast.success("Router collegato alla rete.");
       }
+      await creaRetiDelTrunk(rete.cidr, idRouter);
       const fine = await fetchJson<unknown>("/api/onboarding/complete", { method: "POST" });
       if (!fine.ok) {
         throw new Error(
@@ -614,6 +744,14 @@ export function OnboardingWizard() {
   };
 
   const ultimo = step === PASSI_WIZARD.length - 1;
+  const nTrunk = scelteTrunk.length;
+  const etichettaCrea = reteCreata
+    ? nTrunk > 0
+      ? `Aggiungi ${nTrunk} ${nTrunk === 1 ? "rete" : "reti"} del trunk e apri la rete`
+      : "Completa e apri la rete"
+    : nTrunk > 0
+      ? `Crea la rete e ${nTrunk} del trunk, poi apri l'analisi`
+      : "Crea rete e apri analisi";
   const passo = PASSI_WIZARD[step];
 
   /** Il segno di spunta sulle schede: ciò che è già salvato, non ciò che si è visitato. */
@@ -984,6 +1122,20 @@ export function OnboardingWizard() {
                           placeholder={defaultDns || "es. 192.168.1.1"}
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="nvlan">VLAN (opz.)</Label>
+                        <Input
+                          id="nvlan"
+                          inputMode="numeric"
+                          className="font-mono"
+                          value={vlanNativa}
+                          onChange={(e) => setNetVlan(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                          placeholder="senza tag"
+                        />
+                        {vlanProposta != null && netVlan == null ? (
+                          <p className="text-[13px] text-muted-foreground">La sonda trunk vede questa rete sulla VLAN {vlanProposta}.</p>
+                        ) : null}
+                      </div>
                     </div>
                     <p className="text-[13px] text-muted-foreground">
                       {routerDeviceId != null
@@ -999,6 +1151,20 @@ export function OnboardingWizard() {
                     />
                   </>
                 )}
+                <RetiDalTrunk
+                  stato={statoTrunk}
+                  proposte={proposte}
+                  righe={Object.fromEntries(proposte.flatMap((p) => {
+                    const r = rigaTrunk(p.chiave);
+                    return r ? [[p.chiave, r]] : [];
+                  }))}
+                  errori={erroriTrunk}
+                  onCambia={cambiaRigaTrunk}
+                  onTutte={sceglieTutteTrunk}
+                  onRileggi={() => void caricaTrunk(true)}
+                  rileggendo={rileggendo}
+                  disabled={busy}
+                />
               </div>
             )}
 
@@ -1024,7 +1190,7 @@ export function OnboardingWizard() {
                     className="w-full"
                   >
                     {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    {reteCreata ? "Completa e apri la rete" : "Crea rete e apri analisi"}
+                    {etichettaCrea}
                   </Button>
                   <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <Button type="button" variant="outline" onClick={() => void goBack()} disabled={busy}>

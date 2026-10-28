@@ -184,5 +184,13 @@ describe("prima subnet", () => {
     assert.equal("router_id" in c, false);
     assert.equal("credential_ids" in c, false);
     assert.equal(c.dns_server, null);
+    assert.equal("vlan_id" in c, false);
+  });
+
+  it("corpo: la VLAN proposta dalla sonda trunk (28/10) va come vlan_id, una storta no", () => {
+    const base = { name: "LAN", cidr: "192.168.40.0/24", gateway: "", dns: "", dnsPredefinito: "", routerId: null, credentialIds: [] };
+    assert.equal(corpoCreaRete({ ...base, vlan: "40" }).vlan_id, 40);
+    assert.equal("vlan_id" in corpoCreaRete({ ...base, vlan: "" }), false);
+    assert.equal("vlan_id" in corpoCreaRete({ ...base, vlan: "5000" }), false);
   });
 });

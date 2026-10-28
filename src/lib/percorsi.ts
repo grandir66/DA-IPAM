@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 /**
@@ -22,4 +23,12 @@ export function unisci(...parti: string[]): string {
 
 export function risolvi(...parti: string[]): string {
   return path.resolve(...parti);
+}
+
+/**
+ * `fs.existsSync` per lo stesso motivo (28/10): `existsSync(ambiente || "/run/…")` scritto
+ * nel modulo diventava un glob e la build tracciava `data/` (sonda trunk del wizard).
+ */
+export function esiste(percorso: string): boolean {
+  return fs.existsSync(percorso);
 }

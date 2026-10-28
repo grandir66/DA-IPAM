@@ -187,6 +187,8 @@ export interface DatiRete {
   dnsPredefinito: string;
   routerId: number | null;
   credentialIds: number[];
+  /** VLAN della rete (dal 28/10 la propone la sonda trunk); vuota = nessuna. */
+  vlan?: string;
 }
 
 /** Corpo di POST /api/networks: la lista nuova `credential_ids`, nell'ordine scelto. */
@@ -199,6 +201,8 @@ export function corpoCreaRete(d: DatiRete): Record<string, unknown> {
     gateway: d.gateway.trim() || "",
     dns_server: dns || null,
   };
+  const vlan = Number(d.vlan?.trim() || "");
+  if (Number.isInteger(vlan) && vlan >= 1 && vlan <= 4094) corpo.vlan_id = vlan;
   if (d.routerId != null) corpo.router_id = d.routerId;
   if (d.credentialIds.length > 0) corpo.credential_ids = [...d.credentialIds];
   return corpo;

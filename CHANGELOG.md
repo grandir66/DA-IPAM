@@ -9,7 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ### Aggiunto
 
 - **Il passo «Subnet» del wizard propone le reti viste dalla sonda trunk**: sotto la rete nativa, ogni rete del trunk con VLAN, gateway, dispositivi visti e da dove viene la maschera; si spunta, si correggono nome, rete e gateway, e «Crea rete» la crea insieme alla nativa (stesso router, DNS e credenziali), con gli host già visti sul trunk. Le reti già in DA-IPAM restano in elenco, segnate. Pulsante «Rileggi il trunk». API `/api/onboarding/reti-trunk`. Perché: si saltava un passaggio dopo l'installazione (Riccardo, 28/10).
-- **Dopo la prova reale sul Proxmox 40.6 (28/10, VM 79994-ipam-2, 13 VLAN)**: il gateway dedotto dall'ARP non si precompila più (cambiava fra una lettura e l'altra) e si mostra come «gw probabile»; la stessa rete vista su due VLAN si segna «▲ dubbia» su quella con meno dispositivi (un QNAP con due indirizzi); la rete nativa ha il campo «VLAN» proposto dalla sonda (l'appliance stava sulla VLAN 40 e la rete nasceva senza).
+- **Dopo la prova reale sul Proxmox 40.6 (28/10, VM 79994-ipam-2, 13 VLAN)**: il gateway dedotto dall'ARP non si precompila più (cambiava fra una lettura e l'altra) e si mostra come «gw?» (in grigio, col perché al passaggio del mouse); la stessa rete vista su due VLAN si segna «▲ dubbia» su quella con meno dispositivi (un QNAP con due indirizzi); la rete nativa ha il campo «VLAN» proposto dalla sonda (l'appliance stava sulla VLAN 40 e la rete nasceva senza).
 - **Lettura della sonda accesa da sola** su un'installazione da un cliente con la sonda sulla stessa VM (`accendiLetturaSeSondaLocale`), se nessuno l'ha mai scelta in Opzioni: uno «spento» a mano resta spento; con più clienti resta a mano.
 
 ### Corretto

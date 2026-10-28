@@ -138,13 +138,13 @@ export function RetiDalTrunk({
                   </span>
                 ) : p.gateway ? (
                   <span
-                    className="font-mono text-[13px] text-muted-foreground"
+                    className="whitespace-nowrap font-mono text-[13px] text-muted-foreground"
                     title="L'indirizzo più cercato in ARP: può non essere il router, e cambiare fra una lettura e l'altra"
                   >
-                    gw probabile {p.gateway}
+                    gw? {p.gateway}
                   </span>
                 ) : null}
-                <span className="text-[13px] text-muted-foreground">
+                <span className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
                   {p.dispositivi} {p.dispositivi === 1 ? "dispositivo" : "dispositivi"} · {MASCHERA[p.maschera]}
                 </span>
               </div>

@@ -55,7 +55,8 @@ export async function leggiRetiTrunk(rileggi: boolean): Promise<RetiTrunkWizard>
   const r = trunkRiepilogo();
   const reti: ReteTrunkVista[] = attiva
     ? getTrunkMatrice(1).reti.map((x) => ({
-        vid: x.vid, cidr: x.cidr, gateway_ip: x.gateway_ip, maschera: x.maschera, dispositivi: x.ip.length,
+        vid: x.vid, cidr: x.cidr, gateway_ip: x.gateway_ip, gateway_certo: x.fonte === "dhcp" || x.fonte === "config",
+        maschera: x.maschera, dispositivi: x.ip.length,
       }))
     : [];
   const esistenti: ReteEsistente[] = getNetworks().map((n) => ({ id: n.id, name: n.name, cidr: n.cidr }));

@@ -6,10 +6,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { erroriScelte, proposteTrunk, siSovrappongono, type ReteTrunkVista } from "@/lib/onboarding/reti-trunk";
+import { erroriScelte, proposteTrunk, siSovrappongono, vlanDellaNativa, type ReteTrunkVista } from "@/lib/onboarding/reti-trunk";
 
-const rete = (vid: number, cidr: string, dispositivi = 3, gateway_ip: string | null = null): ReteTrunkVista => ({
-  vid, cidr, gateway_ip, maschera: "dedotta", dispositivi,
+const rete = (vid: number, cidr: string, dispositivi = 3, gateway_ip: string | null = null, gateway_certo = true): ReteTrunkVista => ({
+  vid, cidr, gateway_ip, gateway_certo, maschera: "dedotta", dispositivi,
 });
 
 test("sovrapposizione: contenute, uguali, vicine", () => {
@@ -59,4 +59,20 @@ test("righe scelte: nome, rete, maschera, gateway, sovrapposizioni", () => {
   assert.match(e6 ?? "", /rete nativa/);
   const doppie = erroriScelte([ok, { ...ok, nome: "Doppione", cidr: "10.20.0.0/23", gateway: "" }], null);
   assert.match(doppie[0] ?? "", /Doppione/);
+});
+
+test("la stessa rete su due VLAN: dubbia quella con meno dispositivi (prova del 28/10, QNAP sulla VLAN 40)", () => {
+  const p = proposteTrunk([rete(0, "192.168.15.0/24", 35), rete(40, "192.168.15.0/24", 3, "192.168.15.25", false)], [], "192.168.40.0/24");
+  const v40 = p.find((x) => x.vid === 40);
+  assert.deepEqual(v40?.doppione, { vid: 0, dispositivi: 35 });
+  assert.equal(v40?.gatewayCerto, false);
+  assert.equal(p.find((x) => x.vid === 0)?.doppione, null);
+});
+
+test("VLAN della rete nativa: quella in cui la sonda la vede, mai il VID 0", () => {
+  const reti = [rete(40, "192.168.40.0/24", 20), rete(0, "192.168.15.0/24", 35), rete(40, "192.168.15.0/24", 3)];
+  assert.equal(vlanDellaNativa(reti, "192.168.40.0/24"), 40);
+  assert.equal(vlanDellaNativa(reti, "192.168.15.0/24"), null, "più dispositivi senza tag: niente VLAN");
+  assert.equal(vlanDellaNativa(reti, null), null);
+  assert.equal(vlanDellaNativa(reti, "10.0.0.0/24"), null);
 });

@@ -16,6 +16,12 @@ export interface ReteTrunkVista {
   vid: number;
   cidr: string;
   gateway_ip: string | null;
+  /**
+   * Il gateway viene dal DHCP o è scritto a mano. Altrimenti è solo l'IP più
+   * cercato in ARP: sulla prova reale del 28/10 (40.6) cambiava da una lettura
+   * all'altra, e non si precompila.
+   */
+  gateway_certo: boolean;
   maschera: TrunkMaschera;
   /** IP visti parlare in quella rete. */
   dispositivi: number;
@@ -33,9 +39,16 @@ export interface PropostaTrunk {
   vid: number;
   cidr: string;
   gateway: string | null;
+  gatewayCerto: boolean;
   maschera: TrunkMaschera;
   dispositivi: number;
   nome: string;
+  /**
+   * La stessa rete vista su un'altra VLAN con più dispositivi: quasi sempre un
+   * apparato con due indirizzi (prova del 28/10: un QNAP con 192.168.15.x anche
+   * sulla VLAN 40). Si segna come dubbia, non si nasconde.
+   */
+  doppione: { vid: number; dispositivi: number } | null;
   /** La rete c'è già in DA-IPAM (o si sovrappone a una): non si ricrea. */
   esistente: { id: number; name: string } | null;
 }
@@ -84,18 +97,37 @@ export function proposteTrunk(
     chiavi.add(chiave);
     if (nativa && siSovrappongono(r.cidr, nativa)) continue;
     const gia = esistenti.find((e) => siSovrappongono(e.cidr, r.cidr)) ?? null;
+    const altra = reti
+      .filter((o) => o.vid !== r.vid && o.dispositivi > r.dispositivi && siSovrappongono(o.cidr, r.cidr))
+      .sort((a, b) => b.dispositivi - a.dispositivi)[0];
     out.push({
       chiave,
       vid: r.vid,
       cidr: r.cidr,
       gateway: r.gateway_ip,
+      gatewayCerto: r.gateway_certo,
       maschera: r.maschera,
       dispositivi: r.dispositivi,
       nome: nomeProposto(r.vid, r.cidr),
       esistente: gia ? { id: gia.id, name: gia.name } : null,
+      doppione: altra ? { vid: altra.vid, dispositivi: altra.dispositivi } : null,
     });
   }
   return out.sort((a, b) => (a.vid === 0 ? -1 : 0) - (b.vid === 0 ? -1 : 0) || b.dispositivi - a.dispositivi || a.vid - b.vid);
+}
+
+/**
+ * La VLAN della rete nativa, se la sonda la vede con un tag: sulla prova del
+ * 28/10 l'appliance stava sulla VLAN 40 e la rete nasceva senza VLAN. Vince la
+ * VLAN con più dispositivi in quella rete; senza tag (VID 0) non si propone niente.
+ */
+export function vlanDellaNativa(reti: readonly ReteTrunkVista[], reteNativa: string | null): number | null {
+  const nativa = reteNativa?.trim();
+  if (!nativa) return null;
+  const vista = reti
+    .filter((r) => siSovrappongono(r.cidr, nativa))
+    .sort((a, b) => b.dispositivi - a.dispositivi)[0];
+  return vista && vista.vid > 0 ? vista.vid : null;
 }
 
 /** Una riga scelta nel wizard, come la manda il browser. */

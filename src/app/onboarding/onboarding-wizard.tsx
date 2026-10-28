@@ -64,7 +64,15 @@ import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
 import type { ProgressoWizard } from "@/lib/onboarding/progresso";
 import type { ReteDelWizard, RiepilogoWizard, RouterDelWizard } from "@/lib/onboarding/progresso-store";
 import { baseDnDaDominio, campiReteProposti, type ReteAppliance } from "@/lib/onboarding/rete-appliance";
-import { erroriScelte, proposteTrunk, type ReteEsistente, type ReteTrunkVista, type SceltaTrunk } from "@/lib/onboarding/reti-trunk";
+import {
+  erroriScelte,
+  proposteTrunk,
+  vlanDellaNativa,
+  type PropostaTrunk,
+  type ReteEsistente,
+  type ReteTrunkVista,
+  type SceltaTrunk,
+} from "@/lib/onboarding/reti-trunk";
 import type { EsitoRetiTrunk } from "@/lib/onboarding/reti-trunk-server";
 import { RetiDalTrunk, type RigaTrunk, type StatoTrunk } from "./reti-trunk-pannello";
 import {
@@ -177,6 +185,8 @@ export function OnboardingWizard() {
   const [netCidr, setNetCidr] = useState("");
   const [netGateway, setNetGateway] = useState("");
   const [netDns, setNetDns] = useState("");
+  /** null = non toccata: vale la VLAN in cui la sonda trunk vede la rete nativa. */
+  const [netVlan, setNetVlan] = useState<string | null>(null);
   // Rete già creata: un nuovo tentativo dopo un completamento fallito, o una
   // riapertura, non la ricrea (sarebbe rifiutata per sovrapposizione).
   const [reteCreata, setReteCreata] = useState<ReteDelWizard | null>(null);
@@ -578,10 +588,16 @@ export function OnboardingWizard() {
   /** La rete nativa del wizard: quella già creata, o quella scritta nei campi. */
   const reteNativa = reteCreata?.cidr ?? (netCidr.trim() || null);
   const proposte = proposteTrunk(retiTrunk.reti, retiTrunk.esistenti, reteNativa);
+  const vlanProposta = reteCreata ? null : vlanDellaNativa(retiTrunk.reti, reteNativa);
+  const vlanNativa = netVlan ?? (vlanProposta != null ? String(vlanProposta) : "");
+  /** Il gateway si precompila solo se certo (DHCP o scritto a mano): quello dall'ARP cambia fra una lettura e l'altra. */
+  const rigaIniziale = (p: PropostaTrunk): RigaTrunk => ({
+    aggiungi: false, nome: p.nome, cidr: p.cidr, gateway: p.gatewayCerto ? p.gateway ?? "" : "",
+  });
   const rigaTrunk = (chiave: string): RigaTrunk | null => {
     const p = proposte.find((x) => x.chiave === chiave);
     if (!p) return null;
-    return righeTrunk[chiave] ?? { aggiungi: false, nome: p.nome, cidr: p.cidr, gateway: p.gateway ?? "" };
+    return righeTrunk[chiave] ?? rigaIniziale(p);
   };
   const scelteTrunk = proposte
     .filter((p) => !p.esistente && righeTrunk[p.chiave]?.aggiungi)
@@ -599,7 +615,7 @@ export function OnboardingWizard() {
       const n = { ...prev };
       for (const p of proposte) {
         if (p.esistente) continue;
-        const r = prev[p.chiave] ?? { aggiungi: false, nome: p.nome, cidr: p.cidr, gateway: p.gateway ?? "" };
+        const r = prev[p.chiave] ?? rigaIniziale(p);
         n[p.chiave] = { ...r, aggiungi };
       }
       return n;
@@ -680,6 +696,7 @@ export function OnboardingWizard() {
               dnsPredefinito: defaultDns,
               routerId: idRouter,
               credentialIds: idsDaProvare(listaRete),
+              vlan: vlanNativa,
             }),
           ),
         });
@@ -1104,6 +1121,20 @@ export function OnboardingWizard() {
                           onChange={(e) => setNetDns(e.target.value)}
                           placeholder={defaultDns || "es. 192.168.1.1"}
                         />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="nvlan">VLAN (opz.)</Label>
+                        <Input
+                          id="nvlan"
+                          inputMode="numeric"
+                          className="font-mono"
+                          value={vlanNativa}
+                          onChange={(e) => setNetVlan(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                          placeholder="senza tag"
+                        />
+                        {vlanProposta != null && netVlan == null ? (
+                          <p className="text-[13px] text-muted-foreground">La sonda trunk vede questa rete sulla VLAN {vlanProposta}.</p>
+                        ) : null}
                       </div>
                     </div>
                     <p className="text-[13px] text-muted-foreground">

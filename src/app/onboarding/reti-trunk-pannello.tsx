@@ -131,10 +131,17 @@ export function RetiDalTrunk({
                 <label htmlFor={p.esistente ? undefined : id} className="font-mono text-sm font-semibold">
                   {p.cidr}
                 </label>
-                {p.gateway ? (
+                {p.gateway && p.gatewayCerto ? (
                   <span className="inline-flex items-center gap-1 font-mono text-[13px]">
                     <Etichetta tono="ruolo">GW</Etichetta>
                     {p.gateway}
+                  </span>
+                ) : p.gateway ? (
+                  <span
+                    className="font-mono text-[13px] text-muted-foreground"
+                    title="L'indirizzo più cercato in ARP: può non essere il router, e cambiare fra una lettura e l'altra"
+                  >
+                    gw probabile {p.gateway}
                   </span>
                 ) : null}
                 <span className="text-[13px] text-muted-foreground">
@@ -143,6 +150,13 @@ export function RetiDalTrunk({
               </div>
               {p.esistente ? (
                 <p className="mt-1 text-[13px] text-muted-foreground">Già in DA-IPAM come «{p.esistente.name}».</p>
+              ) : null}
+              {p.doppione && !p.esistente ? (
+                <p className="mt-1 text-[13px]">
+                  <Etichetta tono="ruolo" mono={false}>▲ dubbia</Etichetta>{" "}
+                  La stessa rete è sulla {p.doppione.vid === 0 ? "parte senza tag" : `VLAN ${p.doppione.vid}`} con {p.doppione.dispositivi} dispositivi: di
+                  solito è un apparato con due indirizzi, non una rete in più.
+                </p>
               ) : null}
               {r?.aggiungi ? (
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">

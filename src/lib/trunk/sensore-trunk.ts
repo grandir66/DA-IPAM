@@ -6,7 +6,9 @@
  * lo legge prima dal socket Unix locale (appliance: stessa VM) e solo se lì non
  * c'è dall'API dell'edge del tenant (`/api/v1/trunk/*`, stesso token).
  *
- * Nasce spento: si legge solo con `tenant_settings.trunk_lettura = '1'`.
+ * Si legge solo con `tenant_settings.trunk_lettura = '1'`. Dal 28/10 (Riccardo: «appena il
+ * sistema parte l'analisi del trunk deve partire subito») un'installazione da un cliente con
+ * la sonda sulla stessa VM la accende da sola: vedi `accendiLetturaSeSondaLocale`.
  * La lettura è incrementale (cursore `trunk_cursore`): ogni giro chiede solo
  * le osservazioni cambiate dopo l'ultima.
  */
@@ -22,6 +24,7 @@ import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edg
 import { unisciReti, type TrunkMaschera } from "@/lib/trunk/reti";
 import { getTipiRilievoPerMac, valutaRilievi, type TipoRilievo } from "@/lib/trunk/rilievi";
 import { portaHostDalTrunk } from "@/lib/trunk/host-dal-trunk";
+import { esiste } from "@/lib/percorsi";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -232,6 +235,21 @@ function leggiCursore(): Cursore | null {
 
 export function trunkLetturaAttiva(): boolean {
   return getTenantSetting("trunk_lettura") === "1";
+}
+
+/**
+ * Accende la lettura del tenant corrente senza passare da Opzioni (28/10), una volta sola:
+ * solo se nessuno l'ha mai scelta (impostazione assente: uno «spento» a mano resta spento),
+ * se il socket della sonda locale c'è (appliance con la sonda accesa al primo avvio) e se
+ * l'installazione ha un cliente solo. Su un server con più clienti lo stesso trunk finirebbe
+ * in tutti: lì si accende a mano. Restituisce true se l'ha accesa ora.
+ */
+export function accendiLetturaSeSondaLocale(clientiAttivi: number, socketPresente: (p: string) => boolean = esiste): boolean {
+  if (clientiAttivi !== 1) return false;
+  if (getTenantSetting("trunk_lettura") != null) return false;
+  if (!socketPresente(socketPath())) return false;
+  setTenantSetting("trunk_lettura", "1");
+  return true;
 }
 
 const colonnaPronta = new WeakSet<object>();

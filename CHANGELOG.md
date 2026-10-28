@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-28 · Reti viste sul trunk nel wizard
+
+### Aggiunto
+
+- **Il passo «Subnet» del wizard propone le reti viste dalla sonda trunk**: sotto la rete nativa, ogni rete del trunk con VLAN, gateway, dispositivi visti e da dove viene la maschera; si spunta, si correggono nome, rete e gateway, e «Crea rete» la crea insieme alla nativa (stesso router, DNS e credenziali), con gli host già visti sul trunk. Le reti già in DA-IPAM restano in elenco, segnate. Pulsante «Rileggi il trunk». API `/api/onboarding/reti-trunk`. Perché: si saltava un passaggio dopo l'installazione (Riccardo, 28/10).
+- **Lettura della sonda accesa da sola** su un'installazione da un cliente con la sonda sulla stessa VM (`accendiLetturaSeSondaLocale`), se nessuno l'ha mai scelta in Opzioni: uno «spento» a mano resta spento; con più clienti resta a mano.
+
+### Corretto
+
+- `fs.existsSync` passa da `esiste()` di `src/lib/percorsi.ts`: scritto nel modulo con un percorso da ambiente, faceva tracciare `data/` alla build.
+
 ## [Non rilasciato] — 2026-10-28 · Host spariti da più di 90 giorni fuori dalle vulnerabilità
 
 ### Corretto

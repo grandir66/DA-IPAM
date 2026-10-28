@@ -90,6 +90,8 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Revisione della tappa 4: il router già creato si modifica con colonne, porta e binding insieme.
   { rotta: "/api/onboarding/router", metodi: ["PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // Reti viste sul trunk nel passo «Subnet» (28/10): crea le reti scelte come POST /api/networks.
+  { rotta: "/api/onboarding/reti-trunk", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/settings", metodi: ["PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/tls", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   {

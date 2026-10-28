@@ -18,7 +18,7 @@ export const PASSI_WIZARD: readonly PassoWizard[] = [
   { titolo: "Router / gateway", breve: "Router", descrizione: "ARP e, se supportato, DHCP" },
   { titolo: "DNS", breve: "DNS", descrizione: "Risoluzione nomi per le subnet" },
   { titolo: "Active Directory", breve: "Active Directory", descrizione: "Dominio e sincronizzazione (opz.)" },
-  { titolo: "Prima subnet", breve: "Subnet", descrizione: "Rete da analizzare" },
+  { titolo: "Prima subnet", breve: "Subnet", descrizione: "Rete da analizzare e reti viste sul trunk" },
 ];
 
 /** Indici dei passi, per non scrivere numeri nudi nel wizard. */

@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Login senza indirizzo interno
+
+### Corretto
+
+- **Il rimando al login non porta più `callbackUrl=https://0.0.0.0:3001/`** nella barra del browser: era l'indirizzo interno del server dietro nginx, aggiunto da NextAuth (visto il 29/10 sulla 79994-ipam-4 preparata per il video). Ora il rimando a `/login` lo fa `authorized` di `auth.config.ts`, senza parametri: la pagina di login non li usava.
+
 ## [Non rilasciato] — 2026-10-28 · Reti viste sul trunk nel wizard
 
 ### Aggiunto

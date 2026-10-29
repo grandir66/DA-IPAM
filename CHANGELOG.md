@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Active Directory: sincronizzazione anche se accesa dopo, interruttore in vista
+
+### Corretto
+
+- **Accendere un'integrazione AD da «Modifica» crea la sua sincronizzazione automatica** (`ad_sync`, ogni 6 ore), come già alla creazione. Su un'appliance (29/10) l'integrazione era stata salvata spenta e accesa dopo: risultava «abilitata» ma il job non c'era, quindi l'AD non si aggiornava più da solo. La funzione sta in `src/lib/ad/sincronizzazione.ts` e la usano le due rotte.
+
+### Cambiato
+
+- **Interruttore «Abilitata» accanto a «Test»** nella pagina Active Directory, con segno e fondo (✓ Abilitata su verde pieno, – Disabilitata tratteggiato): prima lo stato era un badge e si cambiava solo da «Modifica», così una spunta dimenticata non si vedeva (Riccardo, 29/10).
+
 ## [Non rilasciato] — 2026-10-29 · Login senza indirizzo interno
 
 ### Corretto

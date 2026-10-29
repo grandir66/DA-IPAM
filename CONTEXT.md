@@ -33,6 +33,8 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## 6. Stato e trappole per area (2026-10-22)
 
+- **Dal 29/10 16:07 le credenziali dei device vengono da DA-Link** (`DA_VAULT_DALINK=1`, `DA_VAULT_OPENBAO=0` in
+  `/opt/da-ipam/.env.local`; 17 voci copiate e verificate); OpenBao resta riserva fino al passo 9. Quanto segue è la storia.
 - **da-vault sull'hub (24/10, v0.9.898)**: credenziali dei device in OpenBao (VM di DA-Link,
   `https://vault.domarc.it:8200`), `DA_VAULT_OPENBAO=1` nel `.env.local` dell'hub, AppRole `app-da-ipam`
   (`/etc/da-invent/openbao/`), percorsi `clienti/<codcli>/da-ipam/<nome>-<id>`. Doppia lettura: le

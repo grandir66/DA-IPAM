@@ -37,7 +37,13 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
   il giro, non per voce: una voce sempre malformata resterebbe senza scadenza (dare a ogni voce la sua data)
 - [ ] `migra-openbao-cli.test.ts` probabilmente non prova gli orfani (il finto OpenBao non regge `LIST`, finisce in
   `orfaniErrore`); `riferimentiDelleCredenziali()` avvisa invece di lanciare (la copia lo aggira intercettando `console.warn`)
-- [ ] passo 7 (live, con Riccardo) e passo 8 (appliance dei clienti) del piano
+- [x] passo 7 sull'hub: 29/10 16:06-16:07 (ora italiana): DA-Vul-can 0.8.213 e hub DA-IPAM 0.9.938 con `DA_VAULT_DALINK=1` e `DA_VAULT_OPENBAO=0`
+  (copie `.env.local.bak-20261029-15*-pre-accensione-dalink`); copia 17 voci (hub) + 3 (DA-Vul-can), `--verifica` tutte uguali;
+  giri delle app visti nel registro di DA-Link, nessun errore nei registri delle app. Indietro: `DA_VAULT_OPENBAO=1`,
+  `DA_VAULT_DALINK=0`, riavvio (OpenBao ha ancora tutto, DA-Vul-can anche le colonne)
+- [ ] la skill `.claude/skills/deploy-prod` descrive ancora `da-invent` e un deploy a mano: l'hub gira come `da-ipam`
+  da `/opt/da-ipam` con `da-ipam-update.timer` (pull di `dev`, build, riavvio ogni 15 minuti) — da aggiornare
+- [ ] passo 8 (appliance dei clienti) e passo 9 (spegnere OpenBao, non prima del 5/11) del piano
 
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`
 

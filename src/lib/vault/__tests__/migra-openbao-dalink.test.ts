@@ -5,8 +5,8 @@
  * migrazione deve riportarla in DA-Link come oggi la riporta in OpenBao.
  *
  * Si prova:
- * - la scelta dello store dall'interruttore (`sceltaBackendRemoto`): OpenBao, DA-Link, e spenti o insieme = rifiuto col
- *   motivo, mai un ripiego;
+ * - la scelta dello store dall'interruttore (`sceltaBackendRemoto`): spenti → OpenBao come prima del passo 6, DA-Link
+ *   solo acceso, i due insieme = rifiuto col motivo;
  * - con DA-Link: la voce già in DA-Link col valore vecchio si sostituisce (il `put` manda la versione giusta, niente
  *   409), il riferimento torna, `--verifica` dopo dice 0 diverse; i testi nominano DA-Link, mai valori né gettone.
  *
@@ -34,10 +34,9 @@ describe("storeDellaMigrazione: lo store è quello del backend acceso", () => {
   const dalink = { DALINK_VAULT_URL: "https://192.168.4.44:8443", DALINK_VAULT_GETTONE: "dlv_" + "g".repeat(43), DALINK_VAULT_IMPRONTA: "sha256//" + "A".repeat(43) + "=" };
   const openbao = { DA_VAULT_OPENBAO_URL: "https://openbao.interno:8200", DA_VAULT_OPENBAO_ROLE_ID: "ruolo", DA_VAULT_OPENBAO_SECRET_ID_FILE: "/non/esiste" };
 
-  it("interruttori spenti: rifiuto che dice quali accendere, niente ripiego su OpenBao", () => {
+  it("interruttori spenti: OpenBao come prima del passo 6 (si migra, poi si accende), mai DA-Link", () => {
     const s = storeDellaMigrazione({ ...openbao, ...dalink });
-    assert.equal(s.ok, false);
-    assert.ok(!s.ok && /DA_VAULT_OPENBAO=1/.test(s.motivo) && /DA_VAULT_DALINK=1/.test(s.motivo), !s.ok ? s.motivo : "");
+    assert.ok(s.ok && s.store.backend === "openbao", s.ok ? s.nome : s.motivo);
   });
 
   it("tutti e due accesi: rifiuto (come all'avvio dell'app)", () => {
@@ -123,12 +122,11 @@ describe("scripts/da-vault-migra-openbao.ts con DA-Link acceso", () => {
     for (const v of [PW_VECCHIA, PW_NUOVA, dl.gettone, "dlv_", MARCA_CORPO]) assert.ok(!tutto.includes(v), `l'uscita contiene «${v.slice(0, 6)}…»`);
   }
 
-  it("interruttori spenti: esce ≠0 col motivo, niente chiesto a DA-Link", async () => {
+  it("interruttori spenti: va verso OpenBao come prima (qui non configurato: esce ≠0), niente chiesto a DA-Link", async () => {
     const n = dl.richieste.length;
     const r = await cli([], { DA_VAULT_DALINK: "" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /DA_VAULT_OPENBAO=1/);
-    assert.match(r.stderr, /DA_VAULT_DALINK=1/);
+    assert.match(r.stderr, /OpenBao/);
     assert.equal(dl.richieste.length, n);
   });
 

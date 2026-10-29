@@ -16,8 +16,8 @@
  * - **Il backend è quello acceso** (`storeDellaMigrazione`, condizioni del passo 7 del vault semplice, revisione del
  *   29/10): `DA_VAULT_OPENBAO=1` → OpenBao, `DA_VAULT_DALINK=1` → DA-Link. Con DA-Link acceso una credenziale cambiata
  *   dalla pagina perde il riferimento e torna sulla colonna (`togliRiferimentoSeCambianoSegreti`): questa migrazione la
- *   riporta in DA-Link, sopra la voce vecchia, come con OpenBao. Spenti o tutti e due accesi = rifiuto col motivo,
- *   mai un ripiego. I testi nominano il backend vero.
+ *   riporta in DA-Link, sopra la voce vecchia, come con OpenBao. Spenti: OpenBao, come prima del passo 6 (si migra, poi
+ *   si accende); tutti e due accesi = rifiuto col motivo. I testi nominano il backend vero.
  */
 import type Database from "better-sqlite3";
 import { schemaVaultPresente } from "@/lib/db-tenant";
@@ -85,14 +85,8 @@ export function storeDellaMigrazione(
 ): { ok: true; store: SecretStore; nome: string } | { ok: false; motivo: string } {
   const scelta = sceltaBackendRemoto(env);
   if (scelta.backend === "rifiutato") return { ok: false, motivo: scelta.motivo };
-  if (scelta.backend === "nessuno") {
-    return {
-      ok: false,
-      motivo:
-        "nessun backend del vault acceso: la migrazione scrive in quello dell'app, accendi nell'ambiente del comando lo " +
-        "stesso interruttore dell'app (DA_VAULT_OPENBAO=1 o DA_VAULT_DALINK=1)",
-    };
-  }
+  // Interruttori spenti: OpenBao, come prima del passo 6 — è il percorso previsto «si migra, poi si accende»
+  // (revisione dell'orchestratore, 29/10: il rifiuto rompeva quel flusso). DA-Link solo se acceso.
   if (scelta.backend === "dalink") {
     const c = configurazioneDalink(env);
     if (!c.ok) return { ok: false, motivo: `DA-Link non configurato: ${c.motivo}` };

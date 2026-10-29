@@ -15,7 +15,8 @@
  * - `DA_VAULT_DALINK=1` → DA-Link: DALINK_VAULT_URL, DALINK_VAULT_GETTONE, DALINK_VAULT_IMPRONTA. Prima di ogni elenco
  *   e di ogni scrittura si rilegge l'ambito, così una voce già in DA-Link col valore vecchio (credenziale cambiata
  *   dalla pagina: il riferimento è stato tolto) si sostituisce con la versione giusta;
- * - spenti, o tutti e due accesi: esce col motivo (codice 1), niente scritto.
+ * - spenti: OpenBao, come prima del passo 6 (si migra, poi si accende);
+ * - tutti e due accesi: esce col motivo (codice 1), niente scritto.
  *
  * Uso con DA-Link acceso: dopo un cambio di password dalla pagina, a vuoto → --applica → --verifica (0 diverse).
  * Le colonne cifrate restano per una versione (doppia lettura); svuotarle è il passo dopo. Mai valori a schermo.

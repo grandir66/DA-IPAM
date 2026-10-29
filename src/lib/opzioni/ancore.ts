@@ -11,6 +11,8 @@ export const TIPI_PER_TIPO: ReadonlySet<string> = new Set([
 
 export function idOpzioneDelJob(job: { id: number; job_type: string; config: string | null }): string {
   if (TIPI_PER_TIPO.has(job.job_type)) return `job.${job.job_type}`;
+  // Una sincronizzazione per tutte le integrazioni AD (29/10/2026): la sua riga in Opzioni.
+  if (job.job_type === "ad_sync") return "ad.sincronizzazione";
   if (job.job_type === "unifi_sync") {
     let cid: unknown = null;
     try {

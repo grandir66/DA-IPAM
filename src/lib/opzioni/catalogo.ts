@@ -22,6 +22,8 @@ import {
 import { leggiMappaCavi, scriviMappaCavi } from "@/lib/topology/letture/mappa";
 import { JOB_DI_SERIE, eJobDiSerie, lapide, scriviLapide, seminaJobDiSerie, togliLapide, type TipoJobDiSerie } from "./job-di-serie";
 import { listControllerViews, setClientScheduleFor } from "@/lib/controllers/service";
+import { getAdIntegrations, updateAdIntegration } from "@/lib/db-tenant";
+import { ensureAdSyncJob } from "@/lib/ad/sincronizzazione";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshState } from "@/lib/integrations/meshcentral/feature";
 import { getNetServicesState, uninstallNetServices } from "@/lib/network-services/feature";
@@ -370,13 +372,107 @@ function opzioniController(): Opzione[] {
   return out;
 }
 
+// Active Directory nelle Opzioni (Riccardo, 29/10/2026: «sarebbe comodo averla nella pagina delle
+// opzioni»). Una levetta per integrazione: accende o spegne l'integrazione, e accesa garantisce la
+// sincronizzazione automatica (ad_sync, uno per tutte le integrazioni) col suo ritmo.
+const RITMI_AD = ritmi(60, 360, 720, 1440);
+
+function jobAdSync(): ScheduledJob | undefined {
+  return getScheduledJobs().find((j) => j.job_type === "ad_sync" && j.network_id === null);
+}
+
+function opzioniActiveDirectory(): Opzione[] {
+  const integrazioni = getAdIntegrations();
+  const job = jobAdSync();
+  if (integrazioni.length === 0 && !job) {
+    return [{
+      id: "ad.nessuna",
+      gruppo: "job",
+      nome: "Active Directory",
+      cosa: "serve un'integrazione col dominio",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spenta",
+      configura: { href: "/active-directory", etichetta: "Aggiungi integrazione ›" },
+      leggi: () => diSerieStato(null, esito("neutro", "nessuna integrazione")),
+    }];
+  }
+  const righe = integrazioni.map((i): Opzione => ({
+    id: `ad.${i.id}`,
+    gruppo: "job",
+    nome: `Active Directory · ${i.name}`,
+    cosa: `utenti, computer e gruppi dal dominio ${i.domain}`,
+    valePer: "cliente",
+    forma: "levetta",
+    diSerie: "accesa alla creazione",
+    configura: { href: "/active-directory", etichetta: "Active Directory ›" },
+    tocchiJob: true,
+    spegnendo: {
+      siFerma: `la lettura del dominio di «${i.name}».`,
+      resta: "utenti, computer e gruppi già letti, che invecchiano; l'integrazione resta configurata.",
+    },
+    leggi() {
+      const corrente = getAdIntegrations().find((x) => x.id === i.id);
+      if (!corrente) return diSerieStato(null, esito("errore", "integrazione non più presente"));
+      const acceso = corrente.enabled === 1;
+      if (!acceso) return { acceso, da: null, il: null, esito: esito("neutro", "spenta") };
+      const j = jobAdSync();
+      if (!j || j.enabled !== 1) {
+        return { acceso, da: null, il: null, esito: esito("attenzione", "accesa, ma la sincronizzazione automatica è spenta") };
+      }
+      return {
+        acceso, da: null, il: null,
+        esito: corrente.last_sync_at
+          ? esito(corrente.last_sync_status === "error" ? "errore" : "ok", `letta alle ${oraItaliana(corrente.last_sync_at)}`)
+          : esito("neutro", "non ancora letta"),
+      };
+    },
+    cambia(r) {
+      updateAdIntegration(i.id, { enabled: soloAcceso(r) ? 1 : 0 });
+      if (r.acceso) ensureAdSyncJob(tenant());
+    },
+  }));
+  // Una sola sincronizzazione per tutte le integrazioni accese (job ad_sync, network_id NULL): è anche la riga a
+  // cui rimanda la pagina dei job (ancore.ts).
+  righe.push({
+    id: "ad.sincronizzazione",
+    gruppo: "job",
+    nome: "Sincronizzazione Active Directory",
+    cosa: "rilegge tutte le integrazioni accese",
+    valePer: "cliente",
+    forma: "levetta",
+    diSerie: "accesa con la prima integrazione, ogni 6 ore",
+    scelte: conAttuale(RITMI_AD, job?.interval_minutes ?? null),
+    configura: { href: "/active-directory", etichetta: "Active Directory ›" },
+    tocchiJob: true,
+    spegnendo: { siFerma: "la rilettura automatica del dominio.", resta: "le integrazioni, che si leggono solo a mano con «Sincronizza»." },
+    leggi() {
+      const j = jobAdSync();
+      this.scelte = conAttuale(RITMI_AD, j?.interval_minutes ?? null);
+      if (!j) return diSerieStato(false, esito("neutro", "spenta"));
+      const acceso = j.enabled === 1;
+      return {
+        acceso, da: null, il: null, valore: String(j.interval_minutes),
+        esito: acceso ? esitoGiro([j], false) : esito("neutro", "spenta"),
+      };
+    },
+    cambia(r) {
+      if (r.acceso === true || (r.valore !== undefined && !jobAdSync())) ensureAdSyncJob(tenant());
+      const j = jobAdSync();
+      if (r.acceso === false && j) toggleJob(j.id, false);
+      if (r.valore !== undefined && j) updateScheduledJobInterval(j.id, minuti(r.valore, conAttuale(RITMI_AD, j.interval_minutes)));
+    },
+  });
+  return righe;
+}
+
 function opzioniJob(): Opzione[] {
   const statiche = AGGREGATI.map(opzioneAggregata);
   const reti = new Map(listNetworksLite().map((n) => [n.id, n.name || n.cidr]));
   const dinamiche = getScheduledJobs()
-    .filter((j) => !TIPI_AGGREGATI.has(j.job_type) && j.job_type !== "unifi_sync")
+    .filter((j) => !TIPI_AGGREGATI.has(j.job_type) && j.job_type !== "unifi_sync" && j.job_type !== "ad_sync")
     .map((j) => opzioneJob(j, reti));
-  return [...statiche, ...opzioniController(), ...dinamiche];
+  return [...statiche, ...opzioniController(), ...opzioniActiveDirectory(), ...dinamiche];
 }
 
 // ── Moduli ───────────────────────────────────────────────────────────────────

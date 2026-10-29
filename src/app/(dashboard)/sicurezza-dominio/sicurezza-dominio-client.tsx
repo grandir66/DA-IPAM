@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { RefreshCw, Search } from "lucide-react";
+import { BookOpen, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +21,8 @@ import { LoadError } from "@/components/shared/load-error";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { Pagination } from "@/components/shared/pagination";
 import { BarraStato, Etichetta, IntestazionePagina, Pannello, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { Dialog, DialogContent, DialogHeader, DialogScrollableArea, DialogTitle } from "@/components/ui/dialog";
+import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
@@ -97,6 +99,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
   const [errore, setErrore] = useState<string | null>(null);
   const [caricando, setCaricando] = useState(true);
   const [leggendo, setLeggendo] = useState(false);
+  const [guida, setGuida] = useState(false);
   const [finestra, setFinestra] = useState("24h");
   const [tipo, setTipo] = useState<string>(TUTTI);
   const [cerca, setCerca] = useState("");
@@ -189,6 +192,10 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
               >
                 <RefreshCw className={`mr-1.5 h-4 w-4 ${leggendo ? "animate-spin" : ""}`} />
                 {leggendo ? "Lettura…" : "Leggi i DC adesso"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setGuida(true)} title="Le voci della GPO di audit, in inglese e in italiano">
+                <BookOpen className="mr-1.5 h-4 w-4" />
+                Come configurare i DC
               </Button>
               <Link href="/settings/opzioni#automatismo.eventi_dc" className="text-[13px] text-cian-testo hover:underline">
                 Opzioni ›
@@ -378,6 +385,17 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           </Table>
         )}
       </Pannello>
+
+      <Dialog open={guida} onOpenChange={setGuida}>
+        <DialogContent className="w-full sm:max-w-5xl">
+          <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Come configurare i domain controller</DialogTitle>
+          </DialogHeader>
+          <DialogScrollableArea className="max-h-[75vh] px-4 py-3">
+            <GuidaAuditDc />
+          </DialogScrollableArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

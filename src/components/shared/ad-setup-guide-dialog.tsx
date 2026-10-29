@@ -19,11 +19,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Check, ExternalLink, FileText } from "lucide-react";
+import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialTab?: "prereq" | "ldaps" | "winrm-dhcp" | "svc-account" | "troubleshoot";
+  initialTab?: "prereq" | "ldaps" | "winrm-dhcp" | "svc-account" | "audit" | "troubleshoot";
 }
 
 function CodeBlock({ code }: { code: string }) {
@@ -89,11 +90,12 @@ export function ADSetupGuideDialog({ open, onOpenChange, initialTab = "prereq" }
           </div>
 
           <Tabs defaultValue={initialTab}>
-            <TabsList className="grid grid-cols-5 mb-3">
+            <TabsList className="grid grid-cols-6 mb-3">
               <TabsTrigger value="prereq">Prerequisiti</TabsTrigger>
               <TabsTrigger value="ldaps">LDAPS</TabsTrigger>
               <TabsTrigger value="winrm-dhcp">WinRM/DHCP</TabsTrigger>
               <TabsTrigger value="svc-account">Service account</TabsTrigger>
+              <TabsTrigger value="audit">Audit eventi</TabsTrigger>
               <TabsTrigger value="troubleshoot">Diagnostica</TabsTrigger>
             </TabsList>
 
@@ -295,6 +297,11 @@ netstat -ano | findstr "389 636 5985 9389"
 Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters |
   Select LdapEnforceChannelBinding, LDAPServerIntegrity
 Get-ADUser svc-ipam -Properties MemberOf, PasswordLastSet, LockedOut`} />
+            </TabsContent>
+
+            {/* ────────── Audit per la pagina «Sicurezza del dominio» ────────── */}
+            <TabsContent value="audit" className="space-y-3">
+              <GuidaAuditDc />
             </TabsContent>
           </Tabs>
 

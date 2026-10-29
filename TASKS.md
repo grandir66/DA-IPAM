@@ -25,6 +25,9 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
 - [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla: si rifà sul backend `dalink`
 - [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato comune con DA-Link), prove in
   `__tests__/kdbx.test.ts` con gli archivi incrociati di `__tests__/dati/vault_kdbx/`. Non ancora usato
+- [x] (29/10) prerequisito del passo 6: DA-Link ha sul live l'API del vault per le app (`ambito`, `voce`
+  sulla 8443) e il gettone `da-ipam` è nel `.env.local` dell'hub (`DALINK_VAULT_URL`, `DALINK_VAULT_GETTONE`);
+  chiamata dall'hub: 200, 0 voci. Contratto: DA-Link `docs/superpowers/specs/2026-10-27-vault-gettone-app-design.md`
 - [ ] passo 6 (hub e DA-Vul-can leggono da DA-Link) e passo 8 (appliance dei clienti) del piano
 
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`

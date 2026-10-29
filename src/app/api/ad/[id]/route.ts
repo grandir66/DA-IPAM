@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-auth";
-import { withTenantFromSession } from "@/lib/api-tenant";
+import { withTenantFromSession, getServerTenantCode } from "@/lib/api-tenant";
+import { ensureAdSyncJob } from "@/lib/ad/sincronizzazione";
 import {
   getAdIntegrationById,
   deleteAdIntegration,
@@ -88,6 +89,12 @@ export async function PUT(request: Request, { params }: Params) {
       // stanno in aggiornaIntegrazioneAd, qui il rifiuto è un 400.
       const updated = aggiornaIntegrazioneAd(numId, updates, account.account);
       if (!updated) return NextResponse.json({ error: "Integrazione non trovata" }, { status: 404 });
+
+      // Accesa da «Modifica» o dall'interruttore: la sincronizzazione periodica nasce anche qui,
+      // non solo alla creazione (29/10/2026: integrazione accesa, job mancante su un'appliance).
+      if (parsed.data.enabled === true && updated.enabled) {
+        ensureAdSyncJob(await getServerTenantCode());
+      }
 
       return NextResponse.json(vistaIntegrazioneAd(updated));
     } catch (err) {

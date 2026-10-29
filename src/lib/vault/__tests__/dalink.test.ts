@@ -354,6 +354,65 @@ describe("get per conto di una persona (la «mostra password»)", () => {
   });
 });
 
+describe("get dalla cache solo dopo il primo giro (come DA-Vul-can)", () => {
+  const P = "clienti/70003/da-ipam/ap";
+
+  it("prima del primo giro una voce appena scritta con put non si ridà dalla cache: la get va a DA-Link", async () => {
+    const s = store();
+    await s.put(P, { password: "mia" });
+    finto.scriviDaFuori(P, { password: "da-fuori" });
+    assert.deepEqual(await s.get(P), { password: "da-fuori" });
+    assert.equal(finto.richieste.filter((r) => r.metodo === "GET" && r.url.startsWith("/api/v1/vault/voce")).length, 1);
+  });
+
+  it("prima del primo giro con DA-Link giù: non_pronto, mai la voce della put", async () => {
+    const s = store();
+    await s.put(P, { password: "mia" });
+    finto.giu = true;
+    assert.equal(await codiceDi(s.get(P)), "non_pronto");
+  });
+
+  it("prima del primo giro, giri falliti: non_raggiungibile «mai caricati», mai la voce della put", async () => {
+    const s = store();
+    await s.put(P, { password: "mia" });
+    finto.giu = true;
+    await erroreDi(s.aggiorna());
+    const e = await erroreDi(s.get(P));
+    assert.equal(e.codice, "non_raggiungibile");
+    assert.match(e.message, /mai stati caricati/);
+  });
+
+  it("dopo il primo giro la voce fresca si ridà dalla cache, e DA-Link giù ripiega sulla cache", async () => {
+    const s = store();
+    await s.aggiorna();
+    const prima = finto.richieste.length;
+    assert.deepEqual(await s.get("clienti/70001/da-ipam/router-1"), { username: "admin", password: PASSWORD });
+    assert.equal(finto.richieste.length, prima, "nessuna chiamata: voce fresca");
+    adesso += 6 * MIN;
+    finto.giu = true;
+    assert.deepEqual(await s.get("clienti/70001/da-ipam/router-1"), { username: "admin", password: PASSWORD });
+  });
+});
+
+describe("leggiDalVivo: sempre GET /voce, mai la cache, niente scritto in cache", () => {
+  it("dà il valore di DA-Link anche con la cache fresca, e la cache resta com'era", async () => {
+    const s = store();
+    await s.aggiorna();
+    finto.scriviDaFuori("clienti/70001/da-ipam/router-1", { username: "admin", password: "cambiata-ora" });
+    assert.deepEqual(await s.leggiDalVivo("clienti/70001/da-ipam/router-1"), { username: "admin", password: "cambiata-ora" });
+    assert.deepEqual(s.leggiSync("clienti/70001/da-ipam/router-1"), { username: "admin", password: PASSWORD });
+  });
+
+  it("DA-Link giù o voce assente: errore dichiarato, nessun ripiego sulla cache", async () => {
+    const s = store();
+    await s.aggiorna();
+    assert.equal(await codiceDi(s.leggiDalVivo("clienti/70001/da-ipam/manca")), "non_trovato");
+    assert.equal(await codiceDi(() => s.leggiDalVivo("../x")), "percorso_non_valido");
+    finto.giu = true;
+    assert.equal(await codiceDi(s.leggiDalVivo("clienti/70001/da-ipam/router-1")), "non_raggiungibile");
+  });
+});
+
 describe("scrittura e cancellazione con la versione attesa", () => {
   it("put di una voce nuova manda versione_attesa 0; la cache prende la versione nuova", async () => {
     const s = store();

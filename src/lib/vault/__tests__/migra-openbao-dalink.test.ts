@@ -183,4 +183,41 @@ describe("scripts/da-vault-migra-openbao.ts con DA-Link acceso", () => {
     assert.ok(!(v.stdout + v.stderr).includes("cambiata-in-dalink-1618"));
     nessunSegreto(v);
   });
+
+  it("--applica: la rilettura dopo il put viene da DA-Link, non dalla cache — se DA-Link dà un valore diverso il riferimento non si rimette", async () => {
+    const PW_SWITCH = "pw-switch-dalla-pagina-5772";
+    const PW_DAL_VIVO = "pw-diversa-dal-vivo-1414";
+    let id2 = 0;
+    withTenant(T, () => {
+      id2 = creaCredenzialeDb(getTenantDb(T), { name: "Switch", credential_type: "ssh", encrypted_username: encrypt("admin"), encrypted_password: encrypt(PW_SWITCH) }).id;
+    });
+    closeTenantDb(T);
+    const percorso2 = percorsoCredenziale(T, id2, "Switch");
+    const dopoIlPut = () => dl.richieste.some((q) => q.metodo === "PUT" && q.corpo.includes(percorso2));
+    // Dopo il put il giro dell'ambito dà la voce appena scritta malformata (la cache terrebbe quella del put) e la
+    // lettura puntuale dà il valore vero di DA-Link, diverso da quello scritto.
+    dl.forza = (q) => {
+      if (!dopoIlPut()) return null;
+      if (q.metodo === "GET" && q.url === "/api/v1/vault/ambito") {
+        const voci: Record<string, unknown> = { [percorso]: dl.voci.get(percorso), [percorso2]: "malformata" };
+        return { status: 200, body: JSON.stringify({ voci, letto_il: "2026-10-29 08:00:00" }) };
+      }
+      if (q.metodo === "GET" && q.url.startsWith("/api/v1/vault/voce")) {
+        return { status: 200, body: JSON.stringify({ valori: { username: "admin", password: PW_DAL_VIVO }, versione: 99 }) };
+      }
+      return null;
+    };
+    try {
+      const r = await cli(["--applica"]);
+      assert.notEqual(r.status, 0, r.stdout);
+      assert.match(r.stdout + r.stderr, /non torna uguale da DA-Link/);
+      const rif = getTenantDb(T).prepare("SELECT credential_ref FROM credentials WHERE id = ?").get(id2) as { credential_ref: string | null };
+      closeTenantDb(T);
+      assert.equal(rif.credential_ref, null, "il riferimento non si rimette senza la conferma di DA-Link");
+      for (const v of [PW_SWITCH, PW_DAL_VIVO]) assert.ok(!(r.stdout + r.stderr).includes(v), "l'uscita contiene un valore");
+      nessunSegreto(r);
+    } finally {
+      dl.forza = null;
+    }
+  });
 });

@@ -342,7 +342,9 @@ export class DaLinkStore implements SecretStore {
     // Per conto di una persona: sempre da DA-Link, nessun ripiego sulla cache e nessuna scrittura in cache.
     if (opzioni.perConto !== undefined) return (await this.leggiRemoto(percorso)).valore;
     const inCache = this.cache.get(percorso);
-    if (inCache && this.c.ora() - inCache.lettaAlle <= this.c.aggiornaOgniMs) return inCache.valore;
+    // Come DA-Vul-can: la voce letta buona da meno di un giro si dà dalla cache solo dopo il primo giro riuscito; prima
+    // (una voce appena scritta con `put`, per esempio) o più vecchia di un giro si rilegge da DA-Link.
+    if (inCache && this.caricatoAlle !== null && this.c.ora() - inCache.lettaAlle <= this.c.aggiornaOgniMs) return inCache.valore;
     try {
       const v = await this.leggiRemoto(percorso);
       this.scriviInCache(percorso, v);
@@ -350,9 +352,21 @@ export class DaLinkStore implements SecretStore {
     } catch (e) {
       if (e instanceof ErroreVault && e.codice === "non_trovato") this.scriviInCache(percorso, null);
       if (!(e instanceof ErroreVault) || e.codice !== "non_raggiungibile" || !inCache) throw e;
+      // Il ripiego sulla cache vale solo se almeno un giro è riuscito (altrimenti «mai caricati»), e solo entro le 24 ore.
+      this.controllaCaricata();
       this.controllaVoce(percorso, inCache);
       return inCache.valore;
     }
+  }
+
+  /**
+   * La voce di adesso da DA-Link (`GET /voce`), scavalcando la cache, senza ripiego e senza scriverla in cache: come la
+   * lettura per conto, ma senza un nome di persona. Per chi deve confrontare ciò che ha scritto con ciò che DA-Link ha
+   * davvero (la migrazione dopo il `put`): la cache ha già la voce scritta e non dimostra niente.
+   */
+  async leggiDalVivo(percorso: string): Promise<ValoreSegreto> {
+    controllaPercorso(percorso);
+    return (await this.leggiRemoto(percorso)).valore;
   }
 
   async put(percorso: string, valore: ValoreSegreto): Promise<void> {

@@ -37,37 +37,37 @@ export function nomeBackend(store: SecretStore): string {
 /**
  * DA-Link per la migrazione: un giro dell'ambito (`aggiorna()`) prima di ogni `list` e di ogni `put`, così l'elenco è
  * quello di adesso e il `put` manda la versione che DA-Link ha (una voce già presente col valore vecchio si sostituisce,
- * non dà 409: senza giro la cache è vuota e la versione attesa sarebbe 0). Dopo un `put` la `get` successiva rifà il
- * giro: la rilettura che la migrazione confronta viene da DA-Link, non dalla cache appena scritta.
+ * non dà 409: senza giro la cache è vuota e la versione attesa sarebbe 0). Dopo un `put` (o un `delete`) la `get`
+ * successiva legge la voce DA-Link dal vivo (`leggiDalVivo`, `GET /voce`), non dalla cache: la cache ha già la voce
+ * scritta (anche se il giro dopo il `put` la dà malformata la cache tiene quella del `put`) e il riferimento non si
+ * rimette senza la conferma di DA-Link. Le `get` dopo una `list` (la verifica) vengono dal giro appena fatto.
  */
 class DaLinkPerMigrazione implements SecretStore {
   readonly backend = "dalink" as const;
-  private daRileggere = true;
+  /** La cache è quella di un giro appena fatto (dopo `list`) e non è stata toccata da una scrittura? */
+  private cacheDaGiro = false;
   constructor(private readonly s: DaLinkStore) {}
 
   async get(percorso: string, opzioni?: OpzioniGet): Promise<ValoreSegreto> {
-    if (this.daRileggere) {
-      await this.s.aggiorna();
-      this.daRileggere = false;
-    }
-    return this.s.get(percorso, opzioni);
+    if (this.cacheDaGiro || opzioni?.perConto !== undefined) return this.s.get(percorso, opzioni);
+    return this.s.leggiDalVivo(percorso);
   }
 
   async put(percorso: string, valore: ValoreSegreto): Promise<void> {
     await this.s.aggiorna();
-    this.daRileggere = true;
+    this.cacheDaGiro = false;
     await this.s.put(percorso, valore);
   }
 
   async list(prefisso: string): Promise<string[]> {
     await this.s.aggiorna();
-    this.daRileggere = false;
+    this.cacheDaGiro = true;
     return this.s.list(prefisso);
   }
 
   async delete(percorso: string): Promise<void> {
     await this.s.aggiorna();
-    this.daRileggere = true;
+    this.cacheDaGiro = false;
     await this.s.delete(percorso);
   }
 

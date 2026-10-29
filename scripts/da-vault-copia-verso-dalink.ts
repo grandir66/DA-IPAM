@@ -15,7 +15,7 @@
  *
  * Elenco: la cartella dell'app in OpenBao (con le sottocartelle) e i `credential_ref` del database, senza doppioni:
  * esattamente quello che l'app usa. Per ogni percorso si stampa `copierei | uguale | diversa (serve --sostituisci) |
- * manca in OpenBao | percorso non valido`; MAI valori, gettone o token.
+ * manca in OpenBao | percorso non valido | non copiabile`; MAI valori, gettone o token.
  *
  * Uscita: 0 = tutto torna (a vuoto: nulla di diverso/mancante/non valido; i «copierei» sono il lavoro da fare);
  * 1 = uso o configurazione sbagliati; 2 = qualcosa non torna, o un backend non risponde.
@@ -41,6 +41,7 @@ function etichetta(v: VoceCopia, e: EsitoCopia): string {
     diversa: e.modo === "applica" && e.sostituisci ? "diversa (sostituzione non riuscita)" : "diversa (serve --sostituisci)",
     manca_in_openbao: `manca in OpenBao${dove}`,
     non_valido: `percorso non valido${dove}`,
+    non_copiabile: `non copiabile (nome di campo o carattere che DA-Link non accetta)${dove}`,
   };
   return per[v.classe];
 }
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
   const conta = (c: ClasseVoce) => e.voci.filter((v) => v.classe === c).length;
   console.info(
     `${e.voci.length} voci: ${conta("uguale")} uguali, ${conta("copierei")} da copiare, ${conta("diversa")} diverse, ` +
-      `${conta("manca_in_openbao")} mancano in OpenBao, ${conta("non_valido")} con percorso non valido` +
+      `${conta("manca_in_openbao")} mancano in OpenBao, ${conta("non_valido")} con percorso non valido, ${conta("non_copiabile")} non copiabili` +
       (modo === "applica" ? `; scritte ora: ${e.scritte}` : ""),
   );
   if (e.voci.length === 0) {
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
   if (!e.ok) {
     esci(
       modo === "a_vuoto"
-        ? "Qualcosa non torna (diversa, mancante in OpenBao o percorso non valido): vedi l'elenco"
+        ? "Qualcosa non torna (diversa, mancante in OpenBao, percorso non valido o non copiabile): vedi l'elenco"
         : "Non tutte le voci sono uguali in DA-Link: vedi l'elenco",
       2,
     );

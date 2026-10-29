@@ -164,7 +164,7 @@ export function PaginaVault() {
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">OpenBao:</span>
+            <span className="font-medium">{stato.openbao.nome}:</span>
             {!stato.openbao.acceso ? (
               <Badge variant="outline">spento</Badge>
             ) : stato.openbao.pronto ? (

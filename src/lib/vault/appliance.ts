@@ -12,7 +12,7 @@
 import { resolveDataDir } from "@/lib/data-dir";
 import { apriConPassphrase, apriConTpm, archivioPresente, leggiArchivio, type NomeSlot } from "./archivio";
 import { conGuardiaPassphrase, type EsitoGuardia } from "./guardia-passphrase";
-import { chiudiVault, impostaChiaveDati, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
+import { backendRemotoAttivo, chiudiVault, impostaChiaveDati, motivoRemotoNonAvviato, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
 import { ErroreVault } from "./tipi";
 import { unisci } from "../percorsi";
 
@@ -62,7 +62,7 @@ export function motivoPausaVault(): string | null {
     return `Vault bloccato: ${s.motivoBloccato ?? "la chiave degli slot non è aperta"}`;
   }
   if (vaultOpenBaoAcceso()) {
-    if (!s.openbao) return "OpenBao acceso ma non configurato (DA_VAULT_OPENBAO_URL e AppRole): credenziali non leggibili";
+    if (!s.openbao) return `${motivoRemotoNonAvviato()}: credenziali non leggibili`;
     const st = s.openbao.stato();
     if (!st.pronto) return st.motivo;
   }
@@ -84,7 +84,8 @@ export interface StatoVaultPubblico {
     motivo: string | null;
     archivio: { presente: boolean; slot: Record<NomeSlot, boolean> | null };
   };
-  openbao: { acceso: boolean; pronto: boolean | null; motivo: string | null; aggiornatoAlle: string | null };
+  /** Il vault remoto (OpenBao o DA-Link: la chiave resta `openbao` per l'API di prima); `nome` è quello vero. */
+  openbao: { nome: string; acceso: boolean; pronto: boolean | null; motivo: string | null; aggiornatoAlle: string | null };
   pausa: string | null;
 }
 
@@ -112,9 +113,10 @@ export function statoVault(): StatoVaultPubblico {
       archivio,
     },
     openbao: {
+      nome: backendRemotoAttivo() ?? "Vault remoto",
       acceso: vaultOpenBaoAcceso(),
       pronto: ob ? ob.pronto : null,
-      motivo: ob && !ob.pronto ? ob.motivo : ob && ob.pronto ? (ob.degradato ?? null) : null,
+      motivo: ob && !ob.pronto ? ob.motivo : ob && ob.pronto ? (ob.degradato ?? null) : vaultOpenBaoAcceso() ? motivoRemotoNonAvviato() : null,
       aggiornatoAlle: ob && ob.pronto ? iso(ob.aggiornatoAlle) : null,
     },
     pausa: motivoPausaVault(),

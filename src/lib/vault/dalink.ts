@@ -10,11 +10,15 @@
  * - **Cache in memoria**: `aggiorna()` = `GET /api/v1/vault/ambito` (tutte le voci dell'ambito dell'app coi valori e la
  *   versione), ogni 5 minuti. La cache vale **24 ore** dall'ultimo giro riuscito (decisione di Riccardo del 27/10), poi
  *   le letture sono `ErroreVault("non_raggiungibile")`. Un giro fallito (503, rete, tempo, certificato, risposta
- *   illeggibile) tiene quello che c'è: una cache vuota sostituisce una piena solo con un 200 che dice 0 voci.
+ *   illeggibile) tiene quello che c'è: una cache vuota sostituisce una piena solo con un 200 che dice 0 voci. Una voce
+ *   illeggibile per forma dentro un 200 non tocca quella che la cache aveva per lo stesso percorso; se tutte le voci
+ *   ricevute (almeno una) sono illeggibili il giro è una «risposta malformata» e fallisce. Un giro in volo non
+ *   sovrascrive le voci che `put`/`delete` hanno cambiato dopo la sua partenza.
  * - **`get(p, { perConto })`** (la «mostra password»): sempre `GET /api/v1/vault/voce`, mai la cache. Chi ha guardato
  *   lo scrive il registro dell'app (`registraVisualizzazione`); DA-Link registra l'app.
  * - **`put`/`delete`**: `versione_attesa` sempre valorizzata, dalla cache (0 per una voce che la cache non ha). Un 409
  *   ricarica la voce e rifiuta con un messaggio chiaro, senza un secondo tentativo; un successo aggiorna la cache.
+ *   `delete` di una voce che DA-Link non ha (404) è riuscito: l'effetto voluto c'è già (idempotente).
  * - **Errori HTTP** → `ErroreVault`: 401 configurazione (gettone rifiutato), 404 non_trovato, 409 rifiutato, 400
  *   percorso_non_valido, 413/422 rifiutato, 503 e 5xx non_raggiungibile. Il corpo delle risposte non entra mai nei
  *   messaggi: solo lo stato HTTP e il percorso.
@@ -104,6 +108,11 @@ export class DaLinkStore implements SecretStore {
   private timer: ReturnType<typeof setInterval> | null = null;
   private inCorso: Promise<void> | null = null;
   private ultimaRicaricaPerMancanza = 0;
+  /**
+   * I percorsi che `put`/`delete`/la ricarica dopo un conflitto hanno cambiato mentre un giro è in volo (null = nessun
+   * giro in volo): il giro, partito prima, ha una fotografia più vecchia e per questi tiene la cache com'è ora.
+   */
+  private toccatiDuranteIlGiro: Set<string> | null = null;
 
   constructor(config: ConfigDaLink) {
     this.c = {
@@ -170,10 +179,10 @@ export class DaLinkStore implements SecretStore {
   /** Dopo un 409: rilegge la voce e allinea la cache. Un errore qui non copre il conflitto (va nel log col codice). */
   private async ricaricaVoce(percorso: string): Promise<void> {
     try {
-      this.cache.set(percorso, await this.leggiRemoto(percorso));
+      this.scriviInCache(percorso, await this.leggiRemoto(percorso));
     } catch (e) {
       if (e instanceof ErroreVault && e.codice === "non_trovato") {
-        this.cache.delete(percorso);
+        this.scriviInCache(percorso, null);
         return;
       }
       console.warn(`[vault] DA-Link: voce «${percorso}» non ricaricata dopo un conflitto (${e instanceof ErroreVault ? e.codice : "errore"})`);
@@ -189,9 +198,17 @@ export class DaLinkStore implements SecretStore {
 
   // ── Cache ─────────────────────────────────────────────────────────────────
 
+  /** Un cambio alla cache dovuto a una scrittura o a una rilettura puntuale (`null` = la voce esce). */
+  private scriviInCache(percorso: string, voce: Voce | null): void {
+    if (voce) this.cache.set(percorso, voce);
+    else this.cache.delete(percorso);
+    this.toccatiDuranteIlGiro?.add(percorso);
+  }
+
   /** Un giro: `GET /ambito`. Se fallisce la cache di prima resta (fino alla sua durata). */
   async aggiorna(): Promise<void> {
     if (this.inCorso) return this.inCorso;
+    this.toccatiDuranteIlGiro = new Set();
     this.inCorso = (async () => {
       try {
         const r = await this.richiesta("GET", "/ambito", { max: MAX_AMBITO });
@@ -200,15 +217,34 @@ export class DaLinkStore implements SecretStore {
         if (!oggetto(voci)) throw new ErroreVault("non_raggiungibile", "La risposta di DA-Link al giro dell'ambito non è nella forma attesa: cache di prima tenuta");
         const nuova = new Map<string, Voce>();
         let scartate = 0;
+        let illeggibili = 0;
+        let ricevute = 0;
         for (const [p, grezza] of Object.entries(voci)) {
+          ricevute += 1;
           const v = voceDa(grezza);
-          if (!v || !percorsoValido(p)) {
+          if (!v) {
+            illeggibili += 1;
+            // Illeggibile per forma: la voce che la cache aveva per questo percorso (se il percorso è valido) non si tocca.
+            const prima = percorsoValido(p) ? this.cache.get(p) : undefined;
+            if (prima) nuova.set(p, prima);
+            continue;
+          }
+          if (!percorsoValido(p)) {
             scartate += 1;
             continue;
           }
           nuova.set(p, v);
         }
-        if (scartate > 0) console.warn(`[vault] DA-Link: ${scartate} voci dell'ambito non nella forma attesa, saltate`);
+        if (ricevute > 0 && illeggibili === ricevute) {
+          throw new ErroreVault("non_raggiungibile", "La risposta di DA-Link al giro dell'ambito non è nella forma attesa (nessuna voce leggibile): cache di prima tenuta");
+        }
+        if (illeggibili + scartate > 0) console.warn(`[vault] DA-Link: ${illeggibili + scartate} voci dell'ambito non nella forma attesa, saltate`);
+        // Quello che l'app ha scritto o cancellato dopo la partenza del giro vale più della fotografia del giro.
+        for (const p of this.toccatiDuranteIlGiro ?? []) {
+          const adesso = this.cache.get(p);
+          if (adesso) nuova.set(p, adesso);
+          else nuova.delete(p);
+        }
         this.cache = nuova;
         this.caricatoAlle = this.c.ora();
         this.ultimoErrore = null;
@@ -218,6 +254,7 @@ export class DaLinkStore implements SecretStore {
         throw ev;
       } finally {
         this.inCorso = null;
+        this.toccatiDuranteIlGiro = null;
       }
     })();
     return this.inCorso;
@@ -279,10 +316,10 @@ export class DaLinkStore implements SecretStore {
     if (inCache && this.caricatoAlle !== null && this.c.ora() - this.caricatoAlle <= this.c.aggiornaOgniMs) return inCache.valore;
     try {
       const v = await this.leggiRemoto(percorso);
-      this.cache.set(percorso, v);
+      this.scriviInCache(percorso, v);
       return v.valore;
     } catch (e) {
-      if (e instanceof ErroreVault && e.codice === "non_trovato") this.cache.delete(percorso);
+      if (e instanceof ErroreVault && e.codice === "non_trovato") this.scriviInCache(percorso, null);
       if (!(e instanceof ErroreVault) || e.codice !== "non_raggiungibile" || !inCache) throw e;
       this.controllaCache();
       return inCache.valore;
@@ -301,12 +338,12 @@ export class DaLinkStore implements SecretStore {
     const versione = oggetto(r.corpo) ? r.corpo.versione : undefined;
     if (!versioneValida(versione)) {
       // La scrittura è avvenuta ma la versione non si legge: la voce esce dalla cache, la riporta il giro che parte ora.
-      this.cache.delete(percorso);
+      this.scriviInCache(percorso, null);
       console.warn(`[vault] DA-Link: scrittura di «${percorso}» riuscita ma senza versione leggibile: cache ricaricata`);
       this.aggiorna().catch(() => undefined);
       return;
     }
-    this.cache.set(percorso, { valore: valoreDa(valore), versione });
+    this.scriviInCache(percorso, { valore: valoreDa(valore), versione });
   }
 
   async list(prefisso: string): Promise<string[]> {
@@ -324,9 +361,9 @@ export class DaLinkStore implements SecretStore {
       await this.ricaricaVoce(percorso);
       throw this.conflitto(percorso, "la cancellazione");
     }
-    if (r.status === 404) this.cache.delete(percorso);
-    if (r.status !== 204 && r.status !== 200) throw erroreHttp(r.status, `la cancellazione di «${percorso}»`);
-    this.cache.delete(percorso);
+    // 404 = DA-Link non ha la voce (già cancellata, o mai stata nell'ambito): l'effetto voluto c'è già, cancellare è idempotente.
+    if (r.status !== 204 && r.status !== 200 && r.status !== 404) throw erroreHttp(r.status, `la cancellazione di «${percorso}»`);
+    this.scriviInCache(percorso, null);
   }
 
   stato(): StatoStore {

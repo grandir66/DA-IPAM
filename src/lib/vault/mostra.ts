@@ -20,7 +20,7 @@ import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb, COLONNA_DEL_CAMPO, type CampoSegreto } from "@/lib/credentials/segreti";
 import { verificaTotp } from "@/lib/accesso/totp";
 import { clearRateLimit, isRateLimited, recordFailedAttempt } from "@/lib/rate-limit";
-import { statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso } from "./stato";
+import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso } from "./stato";
 import { ErroreVault } from "./tipi";
 
 export const DURATA_CONFERMA_MS = 5 * 60_000;
@@ -92,14 +92,14 @@ async function campiPerMostrare(dbh: Database.Database, credentialId: number, ut
   const ref = typeof riga.credential_ref === "string" ? riga.credential_ref.trim() : "";
   if (vaultOpenBaoAcceso() && ref) {
     const store = statoVaultProcesso().openbao;
-    if (!store) return rifiuto(503, "OpenBao acceso ma non configurato");
+    if (!store) return rifiuto(503, motivoRemotoNonAvviato());
     try {
       const v = await store.get(ref, { perConto: utente.nome, perContoId: utente.id });
       const campi: Campi = {};
       for (const c of Object.keys(COLONNA_DEL_CAMPO) as CampoSegreto[]) if (v[c]) campi[c] = v[c];
       return { ok: true, nome: String(riga.name ?? `#${credentialId}`), campi };
     } catch (e) {
-      return rifiuto(503, e instanceof ErroreVault ? e.message : "OpenBao non ha risposto");
+      return rifiuto(503, e instanceof ErroreVault ? e.message : `${nomeBackendRemoto()} non ha risposto`);
     }
   }
   const e = campiVoceDb(dbh, credentialId);

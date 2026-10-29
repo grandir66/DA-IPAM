@@ -49,7 +49,7 @@ import { modoEventiDc, motivoPerNonLeggere, scriviModoEventiDc, wazuhLeggeGliAll
 import { giroEventiDcAdesso, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { statoVault } from "@/lib/vault/appliance";
-import { vaultLocaleAcceso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { vaultDalinkAcceso, vaultLocaleAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
 import { ErroreOpzione, type Opzione, type RichiestaCambio, type Scelta, type StatoOpzione, type TipoEsito } from "./tipi";
 
@@ -1057,9 +1057,23 @@ function opzioniDaFile(): Opzione[] {
 }
 
 /**
- * da-vault (piano 2026-10-23): i due interruttori stanno nel file dell'appliance e si cambiano solo sul server, con
- * un riavvio, un'appliance alla volta (spenti di serie). Qui si leggono, col loro stato.
+ * da-vault (piano 2026-10-23): gli interruttori stanno nel file dell'appliance e si cambiano solo sul server, con
+ * un riavvio, un'appliance alla volta (spenti di serie). Qui si leggono, col loro stato. OpenBao e DA-Link (vault
+ * semplice, passo 6) sono due backend alternativi: ognuno ha la sua riga, accesa solo dal suo interruttore; tutti e
+ * due insieme sono una configurazione rifiutata all'avvio e le due righe lo dicono.
  */
+/** La riga di un backend remoto del vault: accesa solo dal suo interruttore; i due insieme = errore su tutte e due. */
+function leggiVaultRemoto(quale: "openbao" | "dalink"): StatoOpzione {
+  const openbao = process.env.DA_VAULT_OPENBAO === "1";
+  const dalink = vaultDalinkAcceso();
+  if (openbao && dalink) {
+    return diSerieStato(true, esito("errore", "DA_VAULT_DALINK e DA_VAULT_OPENBAO insieme: configurazione rifiutata, nessun backend avviato"));
+  }
+  if (quale === "openbao" ? !openbao : !dalink) return diSerieStato(false, esito("neutro", "spento"));
+  const o = statoVault().openbao;
+  return diSerieStato(true, o.pronto ? esito(o.motivo ? "attenzione" : "ok", o.motivo ?? "segreti caricati") : esito("errore", o.motivo ?? "non pronto"));
+}
+
 function opzioniVault(): Opzione[] {
   return [
     {
@@ -1087,11 +1101,23 @@ function opzioniVault(): Opzione[] {
       forma: "file",
       diSerie: "spento",
       configura: { href: "/settings/vault", etichetta: "Vault ›" },
-      dove: "Riga DA_VAULT_OPENBAO=1 nel file .env.local, con DA_VAULT_OPENBAO_URL e l'AppRole, poi riavvio del servizio.",
+      dove: "Riga DA_VAULT_OPENBAO=1 nel file .env.local, con DA_VAULT_OPENBAO_URL e l'AppRole, poi riavvio del servizio. Alternativa a DA-Link: non insieme.",
       leggi() {
-        if (!vaultOpenBaoAcceso()) return diSerieStato(false, esito("neutro", "spento"));
-        const o = statoVault().openbao;
-        return diSerieStato(true, o.pronto ? esito(o.motivo ? "attenzione" : "ok", o.motivo ?? "segreti caricati") : esito("errore", o.motivo ?? "non pronto"));
+        return leggiVaultRemoto("openbao");
+      },
+    },
+    {
+      id: "file.vault_dalink",
+      gruppo: "da_file",
+      nome: "Credenziali da DA-Link",
+      cosa: "le credenziali dei device lette dal vault di DA-Link col riferimento (credential_ref), sull'hub",
+      valePer: "hub",
+      forma: "file",
+      diSerie: "spento",
+      configura: { href: "/settings/vault", etichetta: "Vault ›" },
+      dove: "Riga DA_VAULT_DALINK=1 nel file .env.local, con DALINK_VAULT_URL, DALINK_VAULT_GETTONE e DALINK_VAULT_IMPRONTA, poi riavvio del servizio. Alternativa a OpenBao: non insieme.",
+      leggi() {
+        return leggiVaultRemoto("dalink");
       },
     },
   ];

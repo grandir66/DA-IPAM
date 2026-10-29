@@ -121,9 +121,12 @@ export function riferimentiDelleCredenziali(): Array<{ percorso: string; origine
 
 export function avviaVault(env: Record<string, string | undefined> = process.env): void {
   avviaVaultLocale();
+  const stato = statoVaultProcesso();
+  stato.remotoNonAvviato = null;
   const scelta = sceltaBackendRemoto(env);
   if (scelta.backend === "nessuno") return;
   if (scelta.backend === "rifiutato") {
+    stato.remotoNonAvviato = scelta.motivo;
     console.error(`[vault] ${scelta.motivo}: nessun backend avviato, credenziali con riferimento non leggibili, scansioni in pausa`);
     return;
   }
@@ -133,6 +136,7 @@ export function avviaVault(env: Record<string, string | undefined> = process.env
   }
   const c = configurazioneOpenBao(env);
   if (!c.ok) {
+    stato.remotoNonAvviato = `DA_VAULT_OPENBAO=1 ma ${c.motivo}`;
     console.error(`[vault] DA_VAULT_OPENBAO=1 ma ${c.motivo}: credenziali con riferimento non leggibili, scansioni in pausa`);
     return;
   }
@@ -145,6 +149,7 @@ export function avviaVault(env: Record<string, string | undefined> = process.env
 function avviaDalink(env: Record<string, string | undefined>): void {
   const c = configurazioneDalink(env);
   if (!c.ok) {
+    statoVaultProcesso().remotoNonAvviato = `DA_VAULT_DALINK=1 ma ${c.motivo}`;
     console.error(`[vault] DA_VAULT_DALINK=1 ma ${c.motivo}: credenziali con riferimento non leggibili, scansioni in pausa`);
     return;
   }

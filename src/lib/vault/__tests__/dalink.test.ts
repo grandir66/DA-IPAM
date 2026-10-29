@@ -167,6 +167,40 @@ describe("cache dell'ambito", () => {
     assert.ok(st.pronto && st.degradato && /DA-Link/.test(st.degradato), JSON.stringify(st));
   });
 
+  it("caso 3 — un 200 con voci illeggibili per forma non tocca la cache: la voce di prima resta; tutte illeggibili = giro fallito", async () => {
+    const s = store();
+    await s.aggiorna();
+    const router = "clienti/70001/da-ipam/router-1";
+    const switch2 = "clienti/70001/da-ipam/switch-2";
+    // Una voce illeggibile (versione stringa) fra voci buone: la sua voce di prima resta, le altre si aggiornano.
+    finto.forza = () => ({
+      status: 200,
+      body: JSON.stringify({
+        voci: {
+          [router]: { valori: { password: "rotta" }, versione: "9" },
+          [switch2]: { valori: { snmp_community: "nuova" }, versione: 7 },
+          "../fuori": { valori: { a: "b" }, versione: 1 },
+        },
+      }),
+    });
+    await s.aggiorna();
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: PASSWORD }, "la voce illeggibile non è stata toccata");
+    assert.deepEqual(s.leggiSync(switch2), { snmp_community: "nuova" });
+    assert.equal(await codiceDi(() => s.leggiSync("app/da-ipam/encryption")), "non_trovato", "una voce che manca dalla risposta esce, come oggi");
+    await dopoIlGiro();
+    // Tutte le voci ricevute illeggibili: risposta malformata, cache tenuta, stato degradato.
+    finto.forza = () => ({ status: 200, body: JSON.stringify({ voci: { [router]: { valori: { password: "p" }, versione: "1" } } }) });
+    assert.equal(await codiceDi(s.aggiorna()), "non_raggiungibile");
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: PASSWORD });
+    assert.equal((await s.list("clienti/70001")).length, 2);
+    const st = s.stato();
+    assert.ok(st.pronto && st.degradato, JSON.stringify(st));
+    // Percorsi non validi soltanto (forma buona): scartati come oggi, il giro riesce.
+    finto.forza = () => ({ status: 200, body: JSON.stringify({ voci: { "../fuori": { valori: { a: "b" }, versione: 1 } } }) });
+    await s.aggiorna();
+    assert.deepEqual(await s.list("clienti/70001"), []);
+  });
+
   it("24 ore dall'ultimo giro riuscito (di serie): a 23h59 si legge, oltre no; lo stato lo dice", async () => {
     const s = store();
     await s.aggiorna();
@@ -332,10 +366,72 @@ describe("scrittura e cancellazione con la versione attesa", () => {
     assert.deepEqual(s.leggiSync("clienti/70001/da-ipam/switch-2"), { snmp_community: "altra" });
   });
 
-  it("delete di una voce che non c'è: non_trovato", async () => {
+  it("delete di una voce che non c'è (404): riuscita, e la voce esce dalla cache (cancellare è idempotente)", async () => {
     const s = store();
     await s.aggiorna();
-    assert.equal(await codiceDi(s.delete("clienti/70001/da-ipam/manca")), "non_trovato");
+    // La cache la ha ancora, DA-Link no (cancellata da un altro): il 404 dice che l'effetto voluto c'è già.
+    finto.voci.delete("clienti/70001/da-ipam/switch-2");
+    await s.delete("clienti/70001/da-ipam/switch-2");
+    assert.ok(!(await s.list("clienti/70001")).includes("clienti/70001/da-ipam/switch-2"));
+    await s.delete("clienti/70001/da-ipam/mai-esistita");
+    assert.equal(finto.richieste.filter((r) => r.metodo === "DELETE").length, 2);
+  });
+
+});
+
+describe("un giro in volo non sovrascrive una scrittura fatta nel frattempo", () => {
+  /** Avvia un giro e lo tiene a metà: la fotografia di DA-Link è già presa, la risposta arriva quando si chiama `rilascia`. */
+  async function giroTenutoAMeta(s: DaLinkStore): Promise<{ giro: Promise<void>; rilascia: () => void }> {
+    let rilascia = () => undefined as void;
+    const rilasciata = new Promise<void>((ok) => (rilascia = ok));
+    let arrivata = () => undefined as void;
+    const inizio = new Promise<void>((ok) => (arrivata = ok));
+    finto.trattieniAmbito = { inizio: arrivata, rilascia: rilasciata };
+    const giro = s.aggiorna();
+    await inizio;
+    finto.trattieniAmbito = null;
+    return { giro, rilascia };
+  }
+
+  it("put durante il giro: il valore scritto resta, non torna quello letto prima", async () => {
+    const s = store();
+    await s.aggiorna();
+    const router = "clienti/70001/da-ipam/router-1";
+    const { giro, rilascia } = await giroTenutoAMeta(s);
+    await s.put(router, { username: "admin", password: "scritta-adesso" });
+    await s.put("clienti/70003/da-ipam/ap", { password: "ap-nuovo" });
+    rilascia();
+    await giro;
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: "scritta-adesso" });
+    assert.deepEqual(s.leggiSync("clienti/70003/da-ipam/ap"), { password: "ap-nuovo" });
+    // La versione in cache è quella nuova: la scrittura dopo non va in conflitto.
+    await s.put(router, { username: "admin", password: "ancora" });
+    assert.equal(finto.voci.get(router)?.valori.password, "ancora");
+  });
+
+  it("delete durante il giro: la voce cancellata non rientra in cache", async () => {
+    const s = store();
+    await s.aggiorna();
+    const sw = "clienti/70001/da-ipam/switch-2";
+    const { giro, rilascia } = await giroTenutoAMeta(s);
+    await s.delete(sw);
+    rilascia();
+    await giro;
+    assert.ok(!(await s.list("clienti/70001")).includes(sw));
+    await dopoIlGiro();
+  });
+
+  it("il giro dopo rilegge tutto da DA-Link (la protezione vale solo per il giro in volo)", async () => {
+    const s = store();
+    await s.aggiorna();
+    const router = "clienti/70001/da-ipam/router-1";
+    const { giro, rilascia } = await giroTenutoAMeta(s);
+    await s.put(router, { username: "admin", password: "mia" });
+    rilascia();
+    await giro;
+    finto.scriviDaFuori(router, { username: "admin", password: "di-un-altro" });
+    await s.aggiorna();
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: "di-un-altro" });
   });
 });
 

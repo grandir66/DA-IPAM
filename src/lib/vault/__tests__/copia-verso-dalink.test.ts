@@ -136,6 +136,57 @@ describe("copiaVersoDalink (logica)", () => {
     assert.equal(e.ok, true);
   });
 
+  it("un campo vuoto della sorgente non conta nel confronto (DA-Link lo scarta): uguale, e uguale dopo la scrittura", async () => {
+    ob.kv.clear();
+    dl.voci.clear();
+    ob.kv.set("app/da-ipam/a", { username: "u-vuoto-1", password: PW_A, note: "" });
+    dl.scriviDaFuori("app/da-ipam/a", { username: "u-vuoto-1", password: PW_A });
+    ob.kv.set("clienti/c1/da-ipam/x", { password: PW_X, community: "" });
+    const e = await copiaVersoDalink({ openbao: openbao(), dalink: dalink(), cartelle: ["app/da-ipam"], riferimenti: [riferimenti[0]], modo: "a_vuoto" });
+    assert.deepEqual(classi(e), { "app/da-ipam/a": "uguale", "clienti/c1/da-ipam/x": "copierei" });
+    assert.equal(e.ok, true);
+    const a = await copiaVersoDalink({ openbao: openbao(), dalink: dalink(), cartelle: ["app/da-ipam"], riferimenti: [riferimenti[0]], modo: "applica" });
+    assert.equal(a.voci.find((v) => v.percorso === "clienti/c1/da-ipam/x")?.classe, "uguale", "riletta da DA-Link senza il campo vuoto: uguale");
+    assert.equal(a.ok, true);
+    assert.equal(dl.voci.get("app/da-ipam/a")?.versione, 1, "l'uguale non si riscrive");
+  });
+
+  it("voci che DA-Link non può tenere: «non copiabile» a vuoto, mai scritte con --applica, l'esito non è ok", async () => {
+    ob.kv.clear();
+    dl.voci.clear();
+    ob.kv.set("app/da-ipam/buona", { username: "è-già-così", password: "pässwörd-😀-ok\ttab" });
+    ob.kv.set("app/da-ipam/maiuscola", { Password: "x-maiuscola-1" });
+    ob.kv.set("app/da-ipam/spazio", { "nome con spazio": "x-spazio-2" });
+    ob.kv.set("app/da-ipam/lungo", { ["a".repeat(65)]: "x-lungo-3" });
+    ob.kv.set("app/da-ipam/zero", { password: "x-zero\u0000-4" });
+    ob.kv.set("app/da-ipam/controllo", { password: "x-ctrl\u0001-5" });
+    ob.kv.set("app/da-ipam/surrogato", { password: "x-sur\ud800-6" });
+    ob.kv.set("app/da-ipam/otp", { password: "x-otp-7", otp: "otpauth://totp/x" });
+    ob.kv.set("app/da-ipam/vuoto-ma-storto", { Strano: "" });
+    const attese = {
+      "app/da-ipam/buona": "copierei",
+      "app/da-ipam/maiuscola": "non_copiabile",
+      "app/da-ipam/spazio": "non_copiabile",
+      "app/da-ipam/lungo": "non_copiabile",
+      "app/da-ipam/zero": "non_copiabile",
+      "app/da-ipam/controllo": "non_copiabile",
+      "app/da-ipam/surrogato": "non_copiabile",
+      "app/da-ipam/otp": "non_copiabile",
+      "app/da-ipam/vuoto-ma-storto": "non_copiabile",
+    };
+    const vuoto = await copiaVersoDalink({ openbao: openbao(), dalink: dalink(), cartelle: ["app/da-ipam"], riferimenti: [], modo: "a_vuoto" });
+    assert.deepEqual(classi(vuoto), attese);
+    assert.equal(vuoto.ok, false);
+    assert.deepEqual(scrittureDalink(), []);
+    const e = await copiaVersoDalink({ openbao: openbao(), dalink: dalink(), cartelle: ["app/da-ipam"], riferimenti: [], modo: "applica" });
+    assert.equal(e.errore, null, e.errore ?? "");
+    assert.equal(e.scritte, 1, "solo la buona");
+    assert.deepEqual([...dl.voci.keys()], ["app/da-ipam/buona"]);
+    assert.deepEqual(classi(e), { ...attese, "app/da-ipam/buona": "uguale" });
+    assert.equal(e.ok, false);
+    assert.ok(!JSON.stringify(e).includes("x-zero"), "l'esito non porta valori");
+  });
+
   it("OpenBao spento: errore chiaro di OpenBao, niente 0 voci, niente scritto in DA-Link", async () => {
     ob.giu = true;
     const p = copiaVersoDalink({ openbao: openbao(), dalink: dalink(), cartelle: ["app/da-ipam"], riferimenti, modo: "applica", sostituisci: true });
@@ -343,6 +394,20 @@ describe("scripts/da-vault-copia-verso-dalink.ts", () => {
     assert.equal(c.status, 0, c.stderr);
     assert.equal(dl.voci.get("app/da-ipam/a")?.valori.password, PW_A);
     nessunSegreto(c);
+  });
+
+  it("una voce che DA-Link non può tenere: a vuoto exit 2 con «non copiabile», --applica non la scrive", async () => {
+    ob.kv.set("app/da-ipam/storta", { OTP: "valore-storto-3318", password: "valore-storto-3318" });
+    const a = await cli([]);
+    assert.equal(a.status, 2);
+    assert.match(a.stdout, /app\/da-ipam\/storta: non copiabile/);
+    assert.match(a.stdout, /1 non copiabili/);
+    assert.ok(!(a.stdout + a.stderr).includes("valore-storto-3318"));
+    const b = await cli(["--applica"]);
+    assert.equal(b.status, 2);
+    assert.ok(!dl.voci.has("app/da-ipam/storta"));
+    assert.ok(dl.voci.has("app/da-ipam/a"), "le altre sono state copiate");
+    assert.ok(!(b.stdout + b.stderr).includes("valore-storto-3318"));
   });
 
   it("OpenBao spento: exit 2 con il motivo, DA-Link non riceve scritture", async () => {

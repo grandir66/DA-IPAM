@@ -6,7 +6,12 @@
  * - **Elenco = quello che l'app usa**: le cartelle dell'app in OpenBao (con le sottocartelle) e i `credential_ref` del
  *   database (`riferimentiDelleCredenziali`), senza doppioni. Un riferimento malformato non si copia: si dice.
  * - **Classificazione** di ogni percorso: `copierei` (manca in DA-Link), `uguale`, `diversa` (c'è ma con valori
- *   diversi: serve `sostituisci`), `manca_in_openbao`, `non_valido`.
+ *   diversi: serve `sostituisci`), `manca_in_openbao`, `non_valido`, `non_copiabile` (la voce di OpenBao ha qualcosa che
+ *   DA-Link non può tenere: mai scritta, vedi sotto).
+ * - **Le regole di DA-Link** (`vault_kdbx._controlla_valori`) le conosce anche la copia: nomi di campo `[a-z0-9._-]{1,64}`
+ *   e mai `otp`, valori senza i caratteri che KeePass/XML non può contenere; un campo con valore vuoto DA-Link lo scarta,
+ *   quindi nel confronto non conta. Una voce che non le rispetta è `non_copiabile`: si vede già a vuoto (codice d'uscita
+ *   2) invece di fermare la scrittura a metà con un 422.
  * - **Modi**: `a_vuoto` (di serie: non scrive niente, da nessuna parte), `applica` (scrive i `copierei`; le `diversa`
  *   solo con `sostituisci`), `verifica` (solo confronto). Dopo la scrittura DA-Link si rilegge da capo (nuovo giro
  *   dell'ambito) e la classificazione finale è quella riletta: «scritto» non vuol dire «arrivato».
@@ -18,7 +23,7 @@
  */
 import { ErroreVault, percorsoValido, type SecretStore, type ValoreSegreto } from "./tipi";
 
-export type ClasseVoce = "copierei" | "uguale" | "diversa" | "manca_in_openbao" | "non_valido";
+export type ClasseVoce = "copierei" | "uguale" | "diversa" | "manca_in_openbao" | "non_valido" | "non_copiabile";
 export type ModoCopia = "a_vuoto" | "applica" | "verifica";
 
 export interface VoceCopia {
@@ -65,10 +70,32 @@ function messaggio(e: unknown): string {
   return `errore imprevisto (${e instanceof Error ? e.name : "sconosciuto"})`;
 }
 
+/** Come DA-Link: nome di campo `[a-z0-9._-]{1,64}` (python `fullmatch`; `$` senza il flag `m` non ammette l'a capo finale). */
+const CAMPO_DALINK = /^[a-z0-9._-]{1,64}$/;
+/** I caratteri che XML 1.0 non può contenere (`_NON_XML` di `vault_kdbx.py`): anche le metà di coppie surrogate spaiate. */
+const NON_XML = /[^\t\n\r\u0020-\ud7ff\ue000-\ufffd\u{10000}-\u{10ffff}]/u;
+
+/** Perché DA-Link non può tenere la voce (nome del campo ma mai il valore), o null se può. */
+function nonCopiabile(v: ValoreSegreto): string | null {
+  for (const [campo, valore] of Object.entries(v)) {
+    if (!CAMPO_DALINK.test(campo) || campo === "otp") return "nome di campo non valido per DA-Link";
+    if (typeof valore !== "string") return "valore che non è testo";
+    if (NON_XML.test(valore)) return `il campo «${campo}» ha caratteri che KeePass non può contenere`;
+  }
+  return null;
+}
+
+/** I campi che DA-Link terrebbe: quelli con un valore (un valore vuoto lo scarta). */
+function conValore(v: ValoreSegreto): Array<[string, string]> {
+  return Object.entries(v)
+    .filter(([, x]) => x !== "")
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
 function uguali(a: ValoreSegreto, b: ValoreSegreto): boolean {
-  const ka = Object.keys(a).sort();
-  const kb = Object.keys(b).sort();
-  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a[k] === b[k]);
+  const ka = conValore(a);
+  const kb = conValore(b);
+  return ka.length === kb.length && ka.every(([k, x], i) => k === kb[i][0] && x === kb[i][1]);
 }
 
 async function conErrore<T>(backend: "OpenBao" | "DA-Link", f: () => Promise<T>): Promise<T> {
@@ -124,6 +151,7 @@ export async function copiaVersoDalink(op: {
     if (!percorsoValido(p)) return "non_valido";
     const sorgente = daOpenBao.get(p);
     if (!sorgente) return "manca_in_openbao";
+    if (nonCopiabile(sorgente) !== null) return "non_copiabile";
     const attuale = await leggiOppureNull("DA-Link", op.dalink, p);
     if (!attuale) return "copierei";
     return uguali(sorgente, attuale) ? "uguale" : "diversa";

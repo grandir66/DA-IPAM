@@ -45,6 +45,14 @@ test("lo script raddoppia gli apici della XPath dentro la stringa PowerShell", (
   assert.match(s, /-Oldest -MaxEvents 2000/);
 });
 
+test("lo script dà a ConvertTo-Json solo pscustomobject (PowerShell 5.1 dei DC: «Argument types do not match»)", () => {
+  const s = scriptEventiDc(null);
+  assert.doesNotMatch(s, /List\[object\]/);
+  assert.doesNotMatch(s, /\n@\{ nuovo/);
+  assert.match(s, /\[pscustomobject\]@\{ nuovo = \$nuovo;/);
+  assert.match(s, /d = \[pscustomobject\]\$d/);
+});
+
 test("risposta di PowerShell: BOM davanti, un solo evento come oggetto nudo, ordine per record", () => {
   const r = leggiRispostaDc('﻿  {"nuovo":900,"vecchio":10,"errore":null,"eventi":{"r":"55","t":"2026-10-29T08:00:00.0000000Z","id":4625,"d":{"TargetUserName":"mrossi","IpAddress":"::ffff:10.0.0.7"}}}');
   assert.equal(r.nuovo, 900);

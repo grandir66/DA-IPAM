@@ -53,7 +53,10 @@ function cli(args: string[], env: Record<string, string> = {}): Promise<{ status
         DA_VAULT_OPENBAO_ROLE_ID: finto.roleId,
         DA_VAULT_OPENBAO_SECRET_ID_FILE: fileSid,
         CREDENTIALS_DIRECTORY: "",
-        DA_VAULT_OPENBAO: "",
+        // Il backend è quello acceso (condizioni del passo 7, 29/10): a interruttori spenti la migrazione si rifiuta
+        // (prova in `migra-openbao-dalink.test.ts`). Qui OpenBao acceso: comportamento e uscita di prima.
+        DA_VAULT_OPENBAO: "1",
+        DA_VAULT_DALINK: "",
         ...env,
       },
     });

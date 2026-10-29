@@ -8,8 +8,11 @@
  *   byte. Niente `NODE_EXTRA_CA_CERTS`; la verifica non si spegne mai.
  * - **Gettone** (`dlv_…`) solo in `Authorization: Bearer`: mai in un log, in un errore, in `stato()`.
  * - **Cache in memoria**: `aggiorna()` = `GET /api/v1/vault/ambito` (tutte le voci dell'ambito dell'app coi valori e la
- *   versione), ogni 5 minuti. La cache vale **24 ore** dall'ultimo giro riuscito (decisione di Riccardo del 27/10), poi
- *   le letture sono `ErroreVault("non_raggiungibile")`. Un giro fallito (503, rete, tempo, certificato, risposta
+ *   versione), ogni 5 minuti. Le 24 ore (decisione di Riccardo del 27/10) valgono **per voce**: ogni voce porta la data
+ *   della sua ultima lettura buona (un giro in cui è arrivata in forma, una `get` da DA-Link, una `put` riuscita) e oltre
+ *   le 24 ore da quella la sua lettura è `ErroreVault("non_raggiungibile")`; così una voce tenuta perché arrivata
+ *   malformata scade anche se i giri riescono (condizione del passo 7, revisione del 29/10). Lo stato (`stato()`, la
+ *   lista, una voce che manca) resta legato all'ultimo giro riuscito: oltre 24 ore da quello non è pronto. Un giro fallito (503, rete, tempo, certificato, risposta
  *   illeggibile) tiene quello che c'è: una cache vuota sostituisce una piena solo con un 200 che dice 0 voci. Una voce
  *   illeggibile per forma dentro un 200 non tocca quella che la cache aveva per lo stesso percorso; se tutte le voci
  *   ricevute (almeno una) sono illeggibili il giro è una «risposta malformata» e fallisce. Un giro in volo non
@@ -53,7 +56,11 @@ export interface ConfigDaLink {
 interface Voce {
   valore: ValoreSegreto;
   versione: number;
+  /** Ultima lettura buona di questa voce (ms): giro in cui è arrivata in forma, `get` da DA-Link, `put` riuscita. */
+  lettaAlle: number;
 }
+
+type VoceLetta = Omit<Voce, "lettaAlle">;
 
 type Risposta = { status: number; corpo: unknown };
 
@@ -75,7 +82,7 @@ function versioneValida(v: unknown): v is number {
 }
 
 /** `{valori: {…}, versione: n}` come lo dà DA-Link; null se non è in quella forma. */
-function voceDa(v: unknown): Voce | null {
+function voceDa(v: unknown): VoceLetta | null {
   if (!oggetto(v) || !oggetto(v.valori) || !versioneValida(v.versione)) return null;
   return { valore: valoreDa(v.valori), versione: v.versione };
 }
@@ -168,7 +175,7 @@ export class DaLinkStore implements SecretStore {
   }
 
   /** La voce letta da DA-Link (`GET /voce`), senza cache. */
-  private async leggiRemoto(percorso: string): Promise<Voce> {
+  private async leggiRemoto(percorso: string): Promise<VoceLetta> {
     const r = await this.richiesta("GET", DaLinkStore.q(percorso));
     if (r.status !== 200) throw erroreHttp(r.status, `la lettura di «${percorso}»`);
     const v = voceDa(r.corpo);
@@ -198,9 +205,9 @@ export class DaLinkStore implements SecretStore {
 
   // ── Cache ─────────────────────────────────────────────────────────────────
 
-  /** Un cambio alla cache dovuto a una scrittura o a una rilettura puntuale (`null` = la voce esce). */
-  private scriviInCache(percorso: string, voce: Voce | null): void {
-    if (voce) this.cache.set(percorso, voce);
+  /** Un cambio alla cache dovuto a una scrittura o a una rilettura puntuale (`null` = la voce esce); la data è adesso. */
+  private scriviInCache(percorso: string, voce: VoceLetta | null): void {
+    if (voce) this.cache.set(percorso, { ...voce, lettaAlle: this.c.ora() });
     else this.cache.delete(percorso);
     this.toccatiDuranteIlGiro?.add(percorso);
   }
@@ -216,6 +223,7 @@ export class DaLinkStore implements SecretStore {
         const voci = oggetto(r.corpo) ? r.corpo.voci : undefined;
         if (!oggetto(voci)) throw new ErroreVault("non_raggiungibile", "La risposta di DA-Link al giro dell'ambito non è nella forma attesa: cache di prima tenuta");
         const nuova = new Map<string, Voce>();
+        const alle = this.c.ora();
         let scartate = 0;
         let illeggibili = 0;
         let ricevute = 0;
@@ -224,7 +232,8 @@ export class DaLinkStore implements SecretStore {
           const v = voceDa(grezza);
           if (!v) {
             illeggibili += 1;
-            // Illeggibile per forma: la voce che la cache aveva per questo percorso (se il percorso è valido) non si tocca.
+            // Illeggibile per forma: la voce che la cache aveva per questo percorso (se il percorso è valido) non si tocca,
+            // nemmeno la sua data: scade 24 ore dopo la sua ultima lettura buona.
             const prima = percorsoValido(p) ? this.cache.get(p) : undefined;
             if (prima) nuova.set(p, prima);
             continue;
@@ -233,7 +242,7 @@ export class DaLinkStore implements SecretStore {
             scartate += 1;
             continue;
           }
-          nuova.set(p, v);
+          nuova.set(p, { ...v, lettaAlle: alle });
         }
         if (ricevute > 0 && illeggibili === ricevute) {
           throw new ErroreVault("non_raggiungibile", "La risposta di DA-Link al giro dell'ambito non è nella forma attesa (nessuna voce leggibile): cache di prima tenuta");
@@ -246,7 +255,7 @@ export class DaLinkStore implements SecretStore {
           else nuova.delete(p);
         }
         this.cache = nuova;
-        this.caricatoAlle = this.c.ora();
+        this.caricatoAlle = alle;
         this.ultimoErrore = null;
       } catch (e) {
         const ev = e instanceof ErroreVault ? e : new ErroreVault("non_raggiungibile", "DA-Link non risponde");
@@ -260,15 +269,10 @@ export class DaLinkStore implements SecretStore {
     return this.inCorso;
   }
 
-  /** La cache vale ancora? Lancia l'errore dichiarato se no. */
+  /** L'ultimo giro riuscito è entro le 24 ore (l'elenco delle voci è recente)? Lancia l'errore dichiarato se no. */
   private controllaCache(): void {
-    if (this.caricatoAlle === null) {
-      if (this.ultimoErrore) {
-        throw new ErroreVault("non_raggiungibile", `I segreti di DA-Link non sono mai stati caricati: ${this.ultimoErrore.messaggio}`);
-      }
-      throw new ErroreVault("non_pronto", "I segreti di DA-Link non sono ancora stati caricati");
-    }
-    const eta = this.c.ora() - this.caricatoAlle;
+    this.controllaCaricata();
+    const eta = this.c.ora() - (this.caricatoAlle ?? 0);
     if (eta > this.c.durataCacheMs) {
       throw new ErroreVault(
         "non_raggiungibile",
@@ -278,12 +282,37 @@ export class DaLinkStore implements SecretStore {
     }
   }
 
+  /** La cache è stata caricata almeno una volta? Lancia l'errore dichiarato se no. */
+  private controllaCaricata(): void {
+    if (this.caricatoAlle !== null) return;
+    if (this.ultimoErrore) {
+      throw new ErroreVault("non_raggiungibile", `I segreti di DA-Link non sono mai stati caricati: ${this.ultimoErrore.messaggio}`);
+    }
+    throw new ErroreVault("non_pronto", "I segreti di DA-Link non sono ancora stati caricati");
+  }
+
+  /** La voce della cache vale ancora (24 ore dalla sua ultima lettura buona)? Lancia l'errore dichiarato se no. */
+  private controllaVoce(percorso: string, voce: Voce): void {
+    const eta = this.c.ora() - voce.lettaAlle;
+    if (eta <= this.c.durataCacheMs) return;
+    throw new ErroreVault(
+      "non_raggiungibile",
+      `Il segreto «${percorso}» non arriva buono da DA-Link da ${durata(eta)}: la sua copia in cache (${durata(this.c.durataCacheMs)}) è scaduta` +
+        (this.ultimoErrore ? ` (${this.ultimoErrore.messaggio})` : ""),
+    );
+  }
+
   /** Lettura dalla cache, sincrona: per il lettore unico dei segreti. */
   leggiSync(percorso: string): ValoreSegreto {
     controllaPercorso(percorso);
-    this.controllaCache();
+    this.controllaCaricata();
     const v = this.cache.get(percorso);
-    if (v) return v.valore;
+    if (v) {
+      this.controllaVoce(percorso, v);
+      return v.valore;
+    }
+    // Una voce che manca: vale «non c'è» solo se l'elenco è recente (ultimo giro entro le 24 ore).
+    this.controllaCache();
     // Una voce scritta in DA-Link ad app accesa non è in cache fino al giro dopo: errore dichiarato e UN giro (al più uno
     // ogni 30 secondi), come `OpenBaoStore`.
     const avviato = this.ricaricaPerMancanza();
@@ -313,7 +342,7 @@ export class DaLinkStore implements SecretStore {
     // Per conto di una persona: sempre da DA-Link, nessun ripiego sulla cache e nessuna scrittura in cache.
     if (opzioni.perConto !== undefined) return (await this.leggiRemoto(percorso)).valore;
     const inCache = this.cache.get(percorso);
-    if (inCache && this.caricatoAlle !== null && this.c.ora() - this.caricatoAlle <= this.c.aggiornaOgniMs) return inCache.valore;
+    if (inCache && this.c.ora() - inCache.lettaAlle <= this.c.aggiornaOgniMs) return inCache.valore;
     try {
       const v = await this.leggiRemoto(percorso);
       this.scriviInCache(percorso, v);
@@ -321,7 +350,7 @@ export class DaLinkStore implements SecretStore {
     } catch (e) {
       if (e instanceof ErroreVault && e.codice === "non_trovato") this.scriviInCache(percorso, null);
       if (!(e instanceof ErroreVault) || e.codice !== "non_raggiungibile" || !inCache) throw e;
-      this.controllaCache();
+      this.controllaVoce(percorso, inCache);
       return inCache.valore;
     }
   }

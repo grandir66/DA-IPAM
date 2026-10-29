@@ -217,6 +217,61 @@ describe("cache dell'ambito", () => {
     assert.ok(!st.pronto && /24 ore/.test(st.motivo), !st.pronto ? st.motivo : "");
   });
 
+  it("24 ore per voce: una voce che arriva malformata a ogni giro scade 24 ore dopo la sua ultima lettura buona, le altre no", async () => {
+    // Condizione del passo 7 (revisione del 29/10): con le 24 ore contate dal giro, una voce tenuta perché arrivata
+    // malformata non scadeva mai, perché ogni giro riuscito (grazie alle altre voci) rinfrescava la cache intera.
+    const s = store();
+    await s.aggiorna(); // ultima lettura buona di tutte: 08:00
+    const router = "clienti/70001/da-ipam/router-1";
+    const switch2 = "clienti/70001/da-ipam/switch-2";
+    const buone = ["app/da-ipam/encryption", "app/da-ipam/integrazioni/librenms", switch2];
+    // Da qui DA-Link dà il router malformato, al giro e a GET /voce; le altre voci arrivano buone.
+    finto.forza = (r) => {
+      if (r.url === "/api/v1/vault/ambito") {
+        const voci: Record<string, unknown> = { [router]: { valori: { password: "rotta" }, versione: "9" } };
+        for (const p of buone) voci[p] = finto.voci.get(p);
+        return { status: 200, body: JSON.stringify({ voci }) };
+      }
+      if (r.url.includes(encodeURIComponent(router))) return { status: 200, body: JSON.stringify({ valori: { password: "rotta" }, versione: "9" }) };
+      return null;
+    };
+    await console_(async () => {
+      for (let h = 1; h <= 23; h++) {
+        adesso += ORA;
+        await s.aggiorna(); // riesce: le altre voci sono buone
+      }
+    });
+    const dopoIGiri = s.stato();
+    assert.ok(dopoIGiri.pronto && !dopoIGiri.degradato && dopoIGiri.aggiornatoAlle === adesso, "i 23 giri sono riusciti");
+    adesso += 59 * MIN; // 23h59 dall'ultima lettura buona del router
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: PASSWORD }, "entro le 24 ore la voce tenuta si legge");
+    adesso += 2 * MIN; // 24h01
+    assert.equal(await codiceDi(() => s.leggiSync(router)), "non_raggiungibile");
+    assert.equal(await codiceDi(s.get(router)), "non_raggiungibile");
+    for (const p of buone) assert.ok(s.leggiSync(p), `${p}: letta buona al giro di un'ora fa, si legge`);
+    await console_(() => s.aggiorna()); // un giro riuscito non rinfresca la voce arrivata malformata
+    assert.equal(await codiceDi(() => s.leggiSync(router)), "non_raggiungibile");
+    assert.ok(s.stato().pronto, "lo stato resta quello del giro: pronto");
+    // DA-Link torna a darla buona: la lettura puntuale la rinfresca.
+    finto.forza = null;
+    assert.deepEqual(await s.get(router), { username: "admin", password: PASSWORD });
+    assert.deepEqual(s.leggiSync(router), { username: "admin", password: PASSWORD });
+  });
+
+  it("24 ore per voce: una voce scritta (put) vale 24 ore dalla scrittura, anche se i giri falliscono da prima", async () => {
+    const s = store();
+    await s.aggiorna(); // 08:00
+    adesso += 2 * ORA;
+    await s.put("clienti/70003/da-ipam/ap", { password: "ap-1" }); // 10:00
+    finto.giu = true;
+    adesso += 23 * ORA; // 25 ore dal giro, 23 dalla scrittura
+    await erroreDi(s.aggiorna());
+    assert.deepEqual(s.leggiSync("clienti/70003/da-ipam/ap"), { password: "ap-1" });
+    assert.equal(await codiceDi(() => s.leggiSync("app/da-ipam/encryption")), "non_raggiungibile");
+    adesso += 2 * ORA; // 25 ore dalla scrittura
+    assert.equal(await codiceDi(() => s.leggiSync("clienti/70003/da-ipam/ap")), "non_raggiungibile");
+  });
+
   it("caso 2 — DA-Link torna dopo 23 ore: la cache si riempie, nessuna voce persa", async () => {
     const s = store();
     await s.aggiorna();

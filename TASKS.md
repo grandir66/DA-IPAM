@@ -30,7 +30,7 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
   chiamata dall'hub: 200, 0 voci. Contratto: DA-Link `docs/superpowers/specs/2026-10-27-vault-gettone-app-design.md`
 - [x] (29/10) passo 6 in codice: backend `dalink` + copia verso DA-Link, spenti; prove viste rosse, una revisione
   (opus) con correzioni + una mirata, cancello verde (6335 prove). Piano DA-Link `docs/superpowers/plans/2026-10-29-vault-passo6-app.md`
-- [ ] **prima del passo 7 (accensione) sull'hub**, dalla revisione del 29/10: (a) `src/lib/credentials/aggiornamenti.ts:54-62`
+- [x] (29/10, DA-IPAM#47: migrazione col backend acceso, rilettura dal vivo, 24 ore per voce) **prima del passo 7 (accensione) sull'hub**, dalla revisione del 29/10: (a) `src/lib/credentials/aggiornamenti.ts:54-62`
   con DA-Link acceso un segreto cambiato dalla pagina toglie `credential_ref` e torna sulla colonna; (b)
   `scripts/da-vault-migra-openbao.ts` è legato a `OpenBaoStore` (le credenziali nuove non arrivano a DA-Link): far
   scegliere lo store allo script (`migraVersoOpenBao` accetta già un `SecretStore`); (c) la cache vale 24 ore per tutto

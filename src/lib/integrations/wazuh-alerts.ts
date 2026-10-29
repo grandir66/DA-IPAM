@@ -104,6 +104,22 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
     minLevel: 8,
   },
   {
+    // Solo dagli eventi letti dai DC via WinRM (29/10/2026): DCSync e Kerberoasting. Gruppi nostri
+    // (eventi-dc/eventi.ts): assignedOnly li tiene fuori dalla query all'indexer di Wazuh.
+    id: "domain_attack",
+    labelIt: "Attacchi al dominio",
+    groups: ["dcsync", "kerberoasting"],
+    minLevel: 8,
+    assignedOnly: true,
+  },
+  {
+    id: "malware",
+    labelIt: "Malware sui domain controller",
+    groups: ["malware"],
+    minLevel: 12,
+    assignedOnly: true,
+  },
+  {
     id: "agent_health",
     labelIt: "Salute degli agent",
     groups: ["agent_flooding", "agent_disconnected"],

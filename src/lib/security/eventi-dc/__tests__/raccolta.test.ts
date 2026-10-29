@@ -121,6 +121,51 @@ describe("giro di lettura dei DC", () => {
     assert.ok(e.dc.every((d) => !d.ok && /registro Sicurezza/.test(d.errore ?? "")));
   });
 
+  it("System e Defender: eventi con la loro chiave, cursori propri; Defender assente non ferma niente", async () => {
+    const chiamate: string[] = [];
+    const servizio = { r: 300, t: "2026-10-29T08:00:00Z", id: 7045, d: { ServiceName: "PSEXESVC", ImagePath: "C:\\Windows\\PSEXESVC.exe" } };
+    const esegui: EseguiWinrm = async (host, _p, _u, _pw, script) => {
+      chiamate.push(script);
+      if (host !== "dc01.cliente.local") return risposta([]);
+      return JSON.stringify({
+        registri: [
+          { registro: "Security", nuovo: 40, vecchio: 1, esaminato: null, errore: null, assente: false, eventi: [fallito(40, "mrossi")] },
+          { registro: "System", nuovo: 310, vecchio: 1, esaminato: 300, errore: null, assente: false, eventi: [servizio] },
+          { registro: "Defender", nuovo: null, vecchio: null, esaminato: null, errore: null, assente: true, eventi: [] },
+        ],
+      });
+    };
+    const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui, wazuh: false }));
+    assert.equal(e.dc.find((d) => d.dc === "dc01.cliente.local")!.nuovi, 2);
+    const l = letturaDc(dbt(), "dc01.cliente.local")!;
+    assert.equal(l.ultimoRecord, 40);
+    assert.deepEqual(l.cursoriAltri, { System: 300, Defender: null });
+    const righe = dbt().prepare("SELECT record_id, event_id FROM dc_evento ORDER BY record_id").all();
+    assert.deepEqual(righe, [{ record_id: 40, event_id: 4625 }, { record_id: 10_000_000_000_300, event_id: 7045 }]);
+    assert.equal((dbt().prepare("SELECT COUNT(*) AS n FROM wazuh_alert_event WHERE rule_id = 'dc-7045'").get() as { n: number }).n, 1);
+
+    chiamate.length = 0;
+    await withTenant(T, () => giroEventiDc(dbt(), { esegui, wazuh: false }));
+    const s = chiamate.find((c) => c.includes("EventRecordID>40"))!;
+    assert.match(s, /Leggi 'System' 'System' '.*EventRecordID>300/);
+    assert.match(s, /Leggi 'Defender' .*timediff/, "Defender mai letto: prima lettura");
+    assert.equal((dbt().prepare("SELECT COUNT(*) AS n FROM dc_evento").get() as { n: number }).n, 2, "riletti, non duplicati");
+  });
+
+  it("un errore su System non ferma il DC e lascia il cursore di System dov'è", async () => {
+    dbt().prepare("INSERT INTO dc_lettura (dc, ultimo_record, esito, cursore_system) VALUES ('dc01.cliente.local', 5, 'ok', 123)").run();
+    const esegui: EseguiWinrm = async () =>
+      JSON.stringify({
+        registri: [
+          { registro: "Security", nuovo: 6, vecchio: 1, esaminato: null, errore: null, assente: false, eventi: [] },
+          { registro: "System", nuovo: null, vecchio: null, esaminato: null, errore: "Attempted to perform an unauthorized operation.", assente: false, eventi: [] },
+        ],
+      });
+    const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui, wazuh: false }));
+    assert.ok(e.dc.every((d) => d.ok));
+    assert.equal(letturaDc(dbt(), "dc01.cliente.local")!.cursoriAltri.System, 123);
+  });
+
   it("auto con Wazuh: non legge; sempre: legge; mai: non legge", async () => {
     let chiamate = 0;
     const esegui: EseguiWinrm = async () => (chiamate++, risposta([]));

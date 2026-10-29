@@ -65,6 +65,9 @@ const COLORE_CATEGORIA: Record<string, string> = {
   auth_failure: "var(--alert-cat-1)",
   privileged_change: "var(--alert-cat-2)",
   ransomware: "var(--alert-cat-3)",
+  // Dai DC (29/10): non arrivano mai insieme al ransomware di Wazuh, possono condividerne il colore.
+  domain_attack: "var(--alert-cat-3)",
+  malware: "var(--alert-cat-3)",
 };
 
 export function seriesColor(categoryId: string): string {

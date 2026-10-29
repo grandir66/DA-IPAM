@@ -5,7 +5,7 @@
  * modifiche ad account, gruppi e diritti, letti dal registro Sicurezza dei domain controller via
  * WinRM. Pagina propria, non quella degli allarmi di Wazuh: funziona dove Wazuh non c'è.
  *
- * Stile: docs/STILE-UI.md (intestazione, barra di stato, quattro numeri, grafico e DC, poi l'elenco
+ * Stile: docs/STILE-UI.md (intestazione, barra di stato, cinque numeri, grafico e DC, poi l'elenco
  * completo degli eventi a tutta larghezza, paginato dal server).
  */
 
@@ -155,7 +155,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
     <div className="space-y-4">
       <IntestazionePagina
         titolo="Sicurezza del dominio"
-        sottotitolo="Login, logout, accessi falliti, account bloccati e modifiche ad account, gruppi e diritti, letti dai domain controller via WinRM, senza Wazuh."
+        sottotitolo="Login, accessi falliti, account bloccati, modifiche ad account, gruppi, diritti e GPO, servizi installati, attacchi al dominio e malware, letti dai domain controller via WinRM, senza Wazuh."
         azioni={
           <>
             {(dati?.windows ?? []).map((w) => (
@@ -185,7 +185,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
                 variant="outline"
                 onClick={() => void leggiAdesso()}
                 disabled={!admin || !acceso || leggendo}
-                title={!admin ? "Solo un amministratore" : !acceso ? `Non legge: ${l.motivo}` : "Legge subito il registro Sicurezza di tutti i DC"}
+                title={!admin ? "Solo un amministratore" : !acceso ? `Non legge: ${l.motivo}` : "Legge subito i registri Sicurezza, System e Defender di tutti i DC"}
               >
                 <RefreshCw className={`mr-1.5 h-4 w-4 ${leggendo ? "animate-spin" : ""}`} />
                 {leggendo ? "Lettura…" : "Leggi i DC adesso"}
@@ -198,7 +198,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
         />
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <TesseraNumero titolo="Login" valore={numero(n?.accessi)} nota={`accessi al dominio, ${finestraNome}`} />
         <TesseraNumero
           titolo="Accessi falliti"
@@ -208,15 +208,20 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
         />
         <TesseraNumero titolo="Account bloccati" valore={numero(n?.bloccati)} nota="dopo troppi tentativi" />
         <TesseraNumero
-          titolo="Account, gruppi e diritti"
-          valore={numero(n?.modifiche)}
+          titolo="Modifiche"
+          valore={n ? numero((n.modifiche ?? 0) + (n.gpo ?? 0) + (n.servizi ?? 0)) : null}
           qualifica={n?.registro ? `${numero(n.registro)} registri cancellati` : undefined}
-          nota="utenti creati, abilitati, aggiunti a gruppi"
+          nota={n ? `account, gruppi e diritti ${numero(n.modifiche)} · GPO ${numero(n.gpo)} · servizi ${numero(n.servizi)}` : "account, gruppi, diritti, GPO, servizi"}
+        />
+        <TesseraNumero
+          titolo="Attacchi e malware"
+          valore={n ? numero((n.attacchi ?? 0) + (n.malware ?? 0)) : null}
+          nota={n ? `DCSync e Kerberoasting ${numero(n.attacchi)} · malware ${numero(n.malware)}` : "DCSync, Kerberoasting, Defender"}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-12">
-        <Pannello className="lg:col-span-8" titolo="Allarmi nel tempo" sottotitolo={`Accessi falliti, blocchi e modifiche, ${finestraNome}`}>
+        <Pannello className="lg:col-span-8" titolo="Allarmi nel tempo" sottotitolo={`Accessi falliti, blocchi, modifiche, attacchi e malware, ${finestraNome}`}>
           {dati ? (
             <AlertsOverTime
               series={dati.stats.series}

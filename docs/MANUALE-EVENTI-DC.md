@@ -1,6 +1,7 @@
 # Eventi di sicurezza dai domain controller, senza Wazuh
 
-Dal 29/10/2026 DA-IPAM legge da solo il registro **Sicurezza** dei domain controller via WinRM e
+Dal 29/10/2026 DA-IPAM legge da solo i registri **Sicurezza**, **System** e **Defender** dei domain
+controller via WinRM e
 riempie la pagina **Sicurezza › Sicurezza del dominio**. Sui DC non si installa niente: servono un
 account con i permessi giusti e una GPO di audit fatta bene. Questo documento dice quali.
 
@@ -16,6 +17,16 @@ account con i permessi giusti e una GPO di audit fatta bene. Questo documento di
 | 4728, 4732, 4756 / 4729, 4733, 4757 | membro aggiunto o tolto da un gruppo (aggiunte a Domain Admins & co. = livello 12, notifica subito) | Account, gruppi e diritti |
 | 4704, 4705 | diritto utente assegnato o tolto | Account, gruppi e diritti |
 | 1102 | registro di controllo cancellato (notifica subito) | Registro cancellato |
+| 4662 con i diritti di replica | **DCSync**: un account che non è un DC chiede di replicare le password del dominio (livello 15, notifica subito). DC e Azure AD Connect (`MSOL_…`) si scartano sul DC | Attacchi al dominio |
+| 4769 con cifratura RC4 | ticket di servizio con cifratura debole, tipico del **Kerberoasting**. Servizi dei computer e `krbtgt` si scartano sul DC | Attacchi al dominio |
+| 5136 / 5137 / 5141 | GPO modificata (una riga per modifica), creata, eliminata; collegamenti GPO cambiati su un'OU | GPO |
+| 4697 (Sicurezza), 7045 (System) | servizio installato sul DC (nome ed eseguibile): tipico di PsExec e di molti accessi remoti | Servizi |
+| 4738 | account modificato, **solo** se cambia un'impostazione a rischio: password senza scadenza o non obbligatoria, delega, Kerberos senza preautenticazione, solo DES, SID History | Account, gruppi e diritti |
+| 4741 / 4743 | account computer creato o eliminato | Account, gruppi e diritti |
+| 4739 | criteri del dominio cambiati (lunghezza password, blocco account) | Account, gruppi e diritti |
+| 4706 / 4707 | trust con un altro dominio creato (livello 12) o rimosso | Account, gruppi e diritti |
+| 4794 | password di ripristino del DC (DSRM) cambiata (livello 12) | Account, gruppi e diritti |
+| 1116 / 1117 (Defender) | malware trovato sul DC, e l'azione presa (livello 12) | Malware |
 
 I login e i logout dei **PC** non stanno sul DC: il DC vede il login (4768), il logout lo registra
 solo la postazione. Per quello serve l'agente sul PC o la lettura WinRM del PC.
@@ -36,7 +47,7 @@ scritto nell'integrazione.
 
 Un account di dominio dedicato, **non** amministratore di dominio, nei gruppi:
 
-- **Event Log Readers** (Lettori registri eventi): legge il registro Sicurezza;
+- **Event Log Readers** (Lettori registri eventi): legge i registri Sicurezza, System e Defender;
 - **Remote Management Users** (Utenti gestione remota): apre la sessione WinRM.
 
 Sui DC questi gruppi sono gruppi locali di dominio predefiniti (contenitore `Builtin`): basta
@@ -63,8 +74,23 @@ sicurezza › Configurazione avanzata dei criteri di controllo › Criteri di co
 | Accesso/fine sessione | Blocco account | Operazione non riuscita | 4625 per account bloccato |
 | Modifica criteri | Modifica criteri di autorizzazione | Operazione riuscita | 4704, 4705 |
 | Modifica criteri | Modifica criteri di controllo | Operazione riuscita | modifiche all'audit stesso |
+| Accesso account | Operazioni ticket del servizio Kerberos | Operazione riuscita | 4769 (Kerberoasting) |
+| Gestione account | Gestione account computer | Operazione riuscita | 4741, 4743 |
+| Modifica criteri | Modifica criteri di autenticazione | Operazione riuscita | 4706, 4707, 4739 |
+| Sistema | Estensione sistema di sicurezza | Operazione riuscita | 4697 |
 | Accesso DS | Accesso al servizio directory | Operazione riuscita e non riuscita | 4662 (DCSync), per AD Health |
-| Accesso DS | Modifiche al servizio directory | Operazione riuscita | 5136, per AD Health |
+| Accesso DS | Modifiche al servizio directory | Operazione riuscita | 5136, 5137, 5141 (GPO), per AD Health |
+
+Le due righe «Accesso DS» scrivono solo dove l'oggetto ha un controllo (SACL). Di serie in
+Active Directory c'è già per le GPO (contenitore `Policies`); per **DCSync** verificare sulla radice
+del dominio (*Utenti e computer di AD › Visualizza › Funzionalità avanzate › proprietà del dominio ›
+Sicurezza › Avanzate › Controllo*) una voce «Everyone», tipo «Operazione riuscita», con
+«Replica modifiche directory» e «Replica tutte le modifiche directory». Se manca, aggiungerla.
+
+4769 riuscito è un evento frequente, ma DA-IPAM chiede al DC solo quelli con RC4: in un dominio
+senza sistemi vecchi sono pochissimi, e ognuno merita un'occhiata. 7045 (System) e Defender non
+chiedono niente alla GPO: Windows li scrive sempre. Se Defender non c'è sul DC, quel registro
+risulta assente e si salta senza errore.
 
 E inoltre, in *Impostazioni sicurezza › Criteri locali › Opzioni di sicurezza*:
 
@@ -89,8 +115,9 @@ spente che servono alla sicurezza.
 
 ## Carico sui DC
 
-Ogni 5 minuti una sessione WinRM per DC, uno alla volta. Il filtro (XPath) gira sul DC: tornano
-solo gli eventi dell'elenco sopra, al massimo 2000 per giro (il resto al giro dopo). I 4776
+Ogni 5 minuti una sessione WinRM per DC, uno alla volta, che legge i tre registri ognuno dal suo
+ultimo record. Il filtro (XPath) gira sul DC: tornano solo gli eventi dell'elenco sopra, al massimo
+2000 per registro e per giro (il resto al giro dopo). I 4776
 riusciti, che sono la gran parte del traffico NTLM, non lasciano nemmeno il DC.
 
 ## Con Wazuh

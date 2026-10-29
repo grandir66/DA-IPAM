@@ -12,7 +12,14 @@
  */
 
 import type { Database } from "better-sqlite3";
-import type { EventoDc } from "./eventi";
+import type { EventoDc, RegistroDc } from "./eventi";
+
+/** Cursori dei registri oltre a Sicurezza (arricchimento del 29/10): una colonna per registro. */
+const COLONNE_CURSORE: Record<Exclude<RegistroDc, "Security">, string> = {
+  System: "cursore_system",
+  Defender: "cursore_defender",
+};
+export type CursoriAltri = Partial<Record<Exclude<RegistroDc, "Security">, number | null>>;
 
 export const GIORNI_CONSERVAZIONE_DC = 31;
 
@@ -48,6 +55,10 @@ export function ensureEventiDcSchema(db: Database): void {
       persi INTEGER NOT NULL DEFAULT 0
     );
   `);
+  const colonne = new Set((db.prepare("SELECT name FROM pragma_table_info('dc_lettura')").all() as Array<{ name: string }>).map((c) => c.name));
+  for (const c of Object.values(COLONNE_CURSORE)) {
+    if (!colonne.has(c)) db.exec(`ALTER TABLE dc_lettura ADD COLUMN ${c} INTEGER`);
+  }
 }
 
 /** Scrive gli eventi; un record già visto (stesso DC e record) non si duplica. Ritorna i nuovi. */
@@ -79,11 +90,13 @@ export interface LetturaDc {
   eventiUltimoGiro: number;
   persiIl: string | null;
   persi: number;
+  /** Dove ripartono System e Defender. */
+  cursoriAltri: CursoriAltri;
 }
 
 export function letturaDc(db: Database, dc: string): LetturaDc | null {
   const r = db.prepare("SELECT * FROM dc_lettura WHERE dc = ?").get(dc) as
-    | { dc: string; ultimo_record: number | null; letto_il: string | null; esito: string | null; errore: string | null; eventi_ultimo_giro: number; persi_il: string | null; persi: number }
+    | { dc: string; ultimo_record: number | null; letto_il: string | null; esito: string | null; errore: string | null; eventi_ultimo_giro: number; persi_il: string | null; persi: number; cursore_system: number | null; cursore_defender: number | null }
     | undefined;
   if (!r) return null;
   return {
@@ -95,6 +108,7 @@ export function letturaDc(db: Database, dc: string): LetturaDc | null {
     eventiUltimoGiro: r.eventi_ultimo_giro,
     persiIl: r.persi_il,
     persi: r.persi,
+    cursoriAltri: { System: r.cursore_system ?? null, Defender: r.cursore_defender ?? null },
   };
 }
 
@@ -103,7 +117,7 @@ export function lettureDc(db: Database): LetturaDc[] {
   return nomi.map((n) => letturaDc(db, n.dc)).filter((l): l is LetturaDc => l !== null);
 }
 
-export function scriviLetturaRiuscita(db: Database, dc: string, v: { record: number | null; eventi: number; persi: number }): void {
+export function scriviLetturaRiuscita(db: Database, dc: string, v: { record: number | null; eventi: number; persi: number; altri?: CursoriAltri }): void {
   const ora = new Date().toISOString();
   db.prepare(
     `INSERT INTO dc_lettura (dc, ultimo_record, letto_il, esito, errore, eventi_ultimo_giro, persi_il, persi)
@@ -117,6 +131,10 @@ export function scriviLetturaRiuscita(db: Database, dc: string, v: { record: num
        persi_il = CASE WHEN excluded.persi > 0 THEN excluded.persi_il ELSE dc_lettura.persi_il END,
        persi = CASE WHEN excluded.persi > 0 THEN excluded.persi ELSE dc_lettura.persi END`,
   ).run(dc, v.record, ora, v.eventi, v.persi > 0 ? ora : null, v.persi);
+  // Un registro non letto (assente o in errore) non è nell'elenco: il suo cursore resta dov'è.
+  for (const [registro, record] of Object.entries(v.altri ?? {}) as Array<[keyof typeof COLONNE_CURSORE, number | null]>) {
+    db.prepare(`UPDATE dc_lettura SET ${COLONNE_CURSORE[registro]} = ? WHERE dc = ?`).run(record, dc);
+  }
 }
 
 /** Un errore lascia il cursore dov'è: il giro dopo rilegge lo stesso tratto. */
@@ -140,7 +158,11 @@ export const TIPI_EVENTO_DC = {
   uscite: { etichetta: "Logout", sql: "categoria = 'uscita'" },
   falliti: { etichetta: "Accessi falliti", sql: "categoria = 'auth_failure' AND event_id <> 4740" },
   bloccati: { etichetta: "Account bloccati", sql: "event_id = 4740" },
-  modifiche: { etichetta: "Account, gruppi e diritti", sql: "categoria = 'privileged_change'" },
+  modifiche: { etichetta: "Account, gruppi e diritti", sql: "categoria = 'privileged_change' AND event_id NOT IN (5136, 5137, 5141, 4697, 7045)" },
+  gpo: { etichetta: "GPO create, modificate, eliminate", sql: "event_id IN (5136, 5137, 5141)" },
+  servizi: { etichetta: "Servizi installati sui DC", sql: "event_id IN (4697, 7045)" },
+  attacchi: { etichetta: "Attacchi al dominio (DCSync, Kerberoasting)", sql: "categoria = 'domain_attack'" },
+  malware: { etichetta: "Malware sui DC (Defender)", sql: "categoria = 'malware'" },
   registro: { etichetta: "Registro cancellato", sql: "categoria = 'log_tampering'" },
 } as const;
 export type TipoEventoDc = keyof typeof TIPI_EVENTO_DC;

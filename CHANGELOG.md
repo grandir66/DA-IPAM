@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Vulnerabilità: rilievi riagganciati agli host scoperti dopo
+
+- **Corretto** — un rilievo della sonda si agganciava all'host per IP solo all'arrivo: se la sonda
+  aveva scansionato prima che DA-IPAM scoprisse la rete, restava «senza match» per sempre (prova
+  79994-ipam-3). Ora a ogni sincronia si riagganciano quelli liberi, se l'IP è di un host solo.
+
 ## [Non rilasciato] — 2026-10-29 · Vulnerabilità: la fonte dice lo strumento (Edge-G, Edge-N, Edge-C)
 
 - **Cambiato** — dalla sonda DA-Vul-can 0.8.208 arrivano anche i rilievi di Nuclei e dei controlli in

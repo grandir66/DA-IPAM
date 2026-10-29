@@ -135,7 +135,11 @@ export const authConfig: NextAuthConfig = {
         return true;
       }
 
-      return isLoggedIn;
+      // Redirect fatto qui e non da NextAuth: il suo aggiunge `callbackUrl` con l'indirizzo
+      // interno del server (https://0.0.0.0:3001/), che compariva nella barra del browser
+      // dietro nginx (prova del 29/10, 79994-ipam-4). La pagina di login non lo usa.
+      if (!isLoggedIn) return Response.redirect(new URL("/login", nextUrl));
+      return true;
     },
   },
 };

@@ -9,6 +9,7 @@
  * Il testo esteso sta in docs/MANUALE-EVENTI-DC.md: le due cose vanno tenute allineate.
  */
 
+import { Download } from "lucide-react";
 import { Etichetta } from "@/components/shared/console";
 
 interface VoceAudit {
@@ -68,6 +69,25 @@ export function GuidaAuditDc() {
         all&apos;OU Domain Controllers) e poi si lancia <code className="font-mono">gpupdate /force</code> su ogni DC. Le voci
         con «nuova» servono agli eventi aggiunti il 29/10: DCSync, Kerberoasting, GPO, servizi, account computer, trust.
       </p>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/25 bg-primary/10 p-3">
+        <div className="min-w-[220px] flex-1">
+          <p className="font-semibold">Script che fa tutto (punti 1-5)</p>
+          <p className="text-[13px] text-muted-foreground">
+            Su un DC, PowerShell come Domain Admin: <code className="font-mono">.\Configura-Audit-DC.ps1 -Account svc-ipam</code>.
+            Crea la GPO «DA-IPAM - Audit DC» sull&apos;OU Domain Controllers (la Default Domain Controllers Policy non si
+            tocca), aggiunge il controllo per DCSync e mette l&apos;account nei gruppi. Con <code className="font-mono">-Prova</code>{" "}
+            dice cosa farebbe senza cambiare niente.
+          </p>
+        </div>
+        <a
+          href="/api/ad-setup/script-audit"
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-[13px] font-medium hover:bg-muted"
+        >
+          <Download className="h-4 w-4" />
+          Configura-Audit-DC.ps1
+        </a>
+      </div>
 
       <section className="space-y-2">
         <Titolo n={1} testo="Criteri di controllo avanzati" />

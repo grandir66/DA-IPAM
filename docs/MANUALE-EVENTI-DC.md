@@ -59,6 +59,23 @@ manca Event Log Readers.
 
 ## La GPO di audit dei DC
 
+**Con lo script (consigliato).** `scripts/Configura-Audit-DC.ps1`, scaricabile dalla guida del DC
+(pagina Active Directory, scheda «Audit eventi») o da «Come configurare i DC» nella pagina
+Sicurezza del dominio. Su un DC, PowerShell come Domain Admin:
+
+```powershell
+.\Configura-Audit-DC.ps1 -Prova                 # dice cosa farebbe
+.\Configura-Audit-DC.ps1 -Account svc-ipam      # applica
+```
+
+Crea (o riusa) la GPO «DA-IPAM - Audit DC» collegata all'OU Domain Controllers con precedenza 1,
+senza toccare la Default Domain Controllers Policy: sottocategorie avanzate per GUID (valgono con
+Windows in qualsiasi lingua), forzatura delle sottocategorie, registro Security (di serie 1 GB,
+`-DimensioneRegistroMB`), controllo per DCSync sulla radice del dominio, account nei gruppi
+Event Log Readers e Remote Management Users. Idempotente. Poi `gpupdate /force` su ogni DC.
+
+**A mano**, le stesse voci:
+
 Si modifica la **Default Domain Controllers Policy** (o una GPO collegata all'OU Domain
 Controllers), in *Configurazione computer › Criteri › Impostazioni di Windows › Impostazioni
 sicurezza › Configurazione avanzata dei criteri di controllo › Criteri di controllo*.

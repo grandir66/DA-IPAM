@@ -10,6 +10,7 @@ import {
   FolderTree,
   RefreshCw,
   BookOpen,
+  ShieldCheck,
   Plus,
   Trash2,
   TestTube,
@@ -285,6 +286,7 @@ function PaginaActiveDirectory() {
   const [dialogOpen, setDialogOpen] = useState(false);
   // v0.2.657: guida configurazione DC
   const [adGuideOpen, setAdGuideOpen] = useState(false);
+  const [adGuideTab, setAdGuideTab] = useState<"prereq" | "audit">("prereq");
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
@@ -826,11 +828,20 @@ function PaginaActiveDirectory() {
           {/* v0.2.657: guida configurazione DC (LDAPS, WinRM, DHCP, svc account) */}
           <Button
             variant="outline"
-            onClick={() => setAdGuideOpen(true)}
+            onClick={() => { setAdGuideTab("prereq"); setAdGuideOpen(true); }}
             title="Guida configurazione Domain Controller (LDAPS, WinRM, DHCP, service account)"
           >
             <BookOpen className="w-4 h-4 mr-2" />
             Guida DC
+          </Button>
+          {/* 29/10/2026: audit dei DC per «Sicurezza del dominio», con lo script che lo applica */}
+          <Button
+            variant="outline"
+            onClick={() => { setAdGuideTab("audit"); setAdGuideOpen(true); }}
+            title="Voci della GPO di audit in inglese e italiano, e lo script Configura-Audit-DC.ps1"
+          >
+            <ShieldCheck className="w-4 h-4 mr-2" />
+            Audit dei DC
           </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button><Plus className="w-4 h-4 mr-2" />Nuova integrazione</Button>} />
@@ -946,7 +957,7 @@ function PaginaActiveDirectory() {
       </div>
 
       {/* v0.2.657: dialog guida configurazione DC */}
-      <ADSetupGuideDialog open={adGuideOpen} onOpenChange={setAdGuideOpen} />
+      <ADSetupGuideDialog key={adGuideTab} open={adGuideOpen} onOpenChange={setAdGuideOpen} initialTab={adGuideTab} />
 
       {/* Dialog modifica integrazione */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

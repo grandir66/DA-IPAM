@@ -17,6 +17,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { exploitPerRotte, type ExploitInfo } from "@/lib/vuln/exploit-feed/archivio";
+import { fonteEdgeSql } from "@/lib/severity-style";
 
 interface SeverityRollup {
   Critical: number;
@@ -40,7 +41,7 @@ interface UnifiedFinding {
   nvt_name: string | null;
   description: string | null;
   scanned_at: string;
-  sources: string[];     // ["Edge", "Wazuh"] — fonti che hanno rilevato la stessa CVE
+  sources: string[];     // ["Edge-G", "Edge-N", "Edge-C", "Wazuh"] — fonti che hanno rilevato la stessa CVE
   exploit: ExploitInfo | null;
 }
 
@@ -78,14 +79,13 @@ export async function GET(
 
     // ─── Step 1: Edge — vuln raccolte dal scanner-edge appliance (vuln_findings) ──
     // Dedup per (cve_id|nvt_oid, port). Per ogni gruppo teniamo MAX(scanned_at).
-    // Fonte etichettata "Edge" (= canale di sync uplink), lo strumento dietro
-    // (Greenbone/OpenVAS) non è esposto in UI.
+    // Fonte Edge-G/N/C: Greenbone, Nuclei o controlli in più (fonteEdgeSql, 29/10/2026).
     const edgeRows = db
       .prepare(
         `SELECT f.id, f.cve_id, MAX(f.cvss_score) AS cvss_score, f.cvss_vector,
                 f.severity, f.port, f.service, f.nvt_oid, f.nvt_name,
                 f.description, MAX(f.scanned_at) AS scanned_at,
-                'Edge' AS source
+                ${fonteEdgeSql("f")} AS source
            FROM vuln_findings_attuali f
           WHERE f.host_id = ?
             AND f.severity IN ('Critical','High','Medium','Low')

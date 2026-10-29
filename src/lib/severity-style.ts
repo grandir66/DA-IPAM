@@ -16,6 +16,11 @@ export const SEVERITY_STYLE: Record<string, string> = {
 export const SOURCE_BADGE_STYLE: Record<string, string> = {
   Wazuh: "bg-violet-600 text-white",
   Edge: "bg-emerald-700 text-white",
+  // La sonda dice da quale strumento viene il rilievo (Riccardo, 29/10/2026): stessa tinta, la
+  // lettera dopo il trattino distingue Greenbone, Nuclei e i controlli in più.
+  "Edge-G": "bg-emerald-700 text-white",
+  "Edge-N": "bg-emerald-700 text-white",
+  "Edge-C": "bg-emerald-700 text-white",
   Probe: "bg-sky-600 text-white",
   Agent: "bg-teal-600 text-white",
 };
@@ -46,4 +51,12 @@ export function normalizeSeverity(raw: string | null | undefined): Severity {
 
 export function nvdCveUrl(cve: string): string {
   return `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cve)}`;
+}
+
+/**
+ * Fonte di un rilievo di vuln_findings, letta da `nvt_oid` come lo scrive la sonda (DA-Vul-can 0.8.208):
+ * «nuclei:…» → Edge-N, «controllo:…» → Edge-C, il resto (Greenbone) → Edge-G. `alias` è la tabella.
+ */
+export function fonteEdgeSql(alias: string): string {
+  return `CASE WHEN ${alias}.nvt_oid LIKE 'nuclei:%' THEN 'Edge-N' WHEN ${alias}.nvt_oid LIKE 'controllo:%' THEN 'Edge-C' ELSE 'Edge-G' END`;
 }

@@ -73,7 +73,20 @@ interface StatsWindowDto {
   hours: number;
 }
 
+/** Stato della lettura di un domain controller (fonte «dc», senza Wazuh). */
+interface LetturaDcDto {
+  dc: string;
+  lettoIl: string | null;
+  esito: "ok" | "errore" | null;
+  errore: string | null;
+  persiIl: string | null;
+  persi: number;
+}
+
 interface StatsResponse {
+  /** Da dove vengono grafici e classifiche: l'indexer di Wazuh o i domain controller letti via WinRM. */
+  fonte?: "wazuh" | "dc";
+  letture?: LetturaDcDto[];
   windows: StatsWindowDto[];
   systems: { id: string; labelIt: string }[];
   system: string | null;
@@ -258,6 +271,8 @@ export function SecurityAlertsClient() {
   // da prendere in carico a sinistra, l'analisi a destra. Le spiegazioni stanno nei `title`.
   const statsAssenti = !stats?.stats;
   const motivoAssenti = statsError ?? stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
+  // Senza Wazuh i dati vengono dal registro Sicurezza dei DC (29/10): la pagina lo dice e chiama le cose col loro nome.
+  const daDc = stats?.fonte === "dc";
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
       {/* ── Testata: titolo, stato di Wazuh, aggiornamento ───────────── */}
@@ -269,7 +284,7 @@ export function SecurityAlertsClient() {
           <Siren className="h-5 w-5" />
           Alert sicurezza
         </h1>
-        <WazuhHealthBand refreshKey={refreshTick} compatta />
+        {daDc ? <FonteDc letture={stats?.letture ?? []} /> : <WazuhHealthBand refreshKey={refreshTick} compatta />}
         <div className="ml-auto flex items-center gap-2">
           {lastRefresh ? (
             <span className="text-[13px] text-muted-foreground">
@@ -334,8 +349,8 @@ export function SecurityAlertsClient() {
           title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${windowLabel} · ${split.diagnosticTotal} non ostili esclusi` : windowLabel}
         />
         <Numero titolo="Eventi aperti" valore={stats ? numero(stats.openTotal) : "—"} title="Da prendere in carico" />
-        <Numero titolo="Agent coinvolti" valore={statsAssenti ? "—" : numero(totals?.agents ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
-        <Numero titolo="Regole distinte" valore={statsAssenti ? "—" : numero(totals?.rules ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
+        <Numero titolo={daDc ? "DC coinvolti" : "Agent coinvolti"} valore={statsAssenti ? "—" : numero(totals?.agents ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
+        <Numero titolo={daDc ? "Tipi di evento" : "Regole distinte"} valore={statsAssenti ? "—" : numero(totals?.rules ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
         {stats?.unavailable ? (
           <span className={`self-center rounded-md border px-2 py-1 text-[13px] ${STILE_STATO.attenzione.classi}`}>
             {STILE_STATO.attenzione.segno} Grafici non disponibili: {stats.unavailable}
@@ -343,7 +358,7 @@ export function SecurityAlertsClient() {
         ) : null}
         {stats?.syncState.lastError ? (
           <span className={`self-center rounded-md border px-2 py-1 text-[13px] ${STILE_STATO.guasto.classi}`}>
-            {STILE_STATO.guasto.segno} Ultimo poll fallito: {stats.syncState.lastError}
+            {STILE_STATO.guasto.segno} {daDc ? "Lettura non riuscita" : "Ultimo poll fallito"}: {stats.syncState.lastError}
           </span>
         ) : null}
       </div>
@@ -369,8 +384,9 @@ export function SecurityAlertsClient() {
               <LoadError what="gli allarmi di sicurezza" message={loadError} onRetry={() => void load()} />
             ) : !loading && events.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Nessun evento in questo periodo. Se l&apos;integrazione Wazuh è appena stata
-                configurata, usa &quot;Aggiorna ora&quot; per il primo poll.
+                {daDc
+                  ? "Nessun evento dai domain controller in questo periodo."
+                  : "Nessun evento in questo periodo. Se l'integrazione Wazuh è appena stata configurata, usa «Aggiorna ora» per il primo poll."}
               </p>
             ) : (
               <Table fissa riserva={16}>
@@ -378,7 +394,7 @@ export function SecurityAlertsClient() {
                   <TableRow>
                     <TableHead title="Livello della regola Wazuh: ✕ 12 e oltre, ▲ 10-11, ● sotto 10">Liv.</TableHead>
                     <TableHead>Regola</TableHead>
-                    <TableHead>Agent</TableHead>
+                    <TableHead>{daDc ? "DC" : "Agent"}</TableHead>
                     <TableHead>Dettagli</TableHead>
                     <TableHead className="text-right">Occorrenze</TableHead>
                     <TableHead>Ultimo</TableHead>
@@ -534,6 +550,31 @@ function Numero({ titolo, valore, title }: { titolo: string; valore: string; tit
     <span className="flex flex-col justify-center rounded-md border bg-card px-3 py-1 leading-tight" title={title}>
       <span className="text-[13px] text-muted-foreground">{titolo}</span>
       <span className="text-xl font-bold leading-none tabular-nums">{valore}</span>
+    </span>
+  );
+}
+
+/**
+ * Testata quando i dati vengono dai DC: quali DC si leggono, quando, e cosa non va. Un registro
+ * girato prima della lettura si dice: vuol dire eventi persi, e il rimedio è ingrandirlo sul DC.
+ */
+function FonteDc({ letture }: { letture: LetturaDcDto[] }) {
+  const guasti = letture.filter((l) => l.esito === "errore");
+  const persi = letture.filter((l) => l.persi > 0);
+  const tono: ToniStato = guasti.length ? "guasto" : persi.length ? "attenzione" : "ok";
+  const st = STILE_STATO[tono];
+  const ultima = letture.map((l) => l.lettoIl).filter((x): x is string => !!x).sort().at(-1);
+  const titolo = [
+    "Registro Sicurezza dei domain controller letto via WinRM ogni 5 minuti, senza Wazuh.",
+    ...letture.map((l) => `${l.dc}: ${l.esito === "errore" ? `errore: ${l.errore ?? "—"}` : `letto ${l.lettoIl ? formatDate(l.lettoIl) : "mai"}`}`),
+    ...persi.map((l) => `${l.dc}: circa ${l.persi} record persi il ${l.persiIl ? formatDate(l.persiIl) : "—"}: il registro Sicurezza gira prima della lettura, va ingrandito.`),
+  ].join("\n");
+  return (
+    <span className={`rounded-md border px-2 py-1 text-[13px] ${st.classi}`} title={titolo}>
+      {st.segno} Fonte: {letture.length} domain controller
+      {ultima ? ` · letti ${formatDate(ultima)}` : ""}
+      {guasti.length ? ` · ${guasti.length} non letti` : ""}
+      {persi.length ? " · eventi persi: registro troppo piccolo" : ""}
     </span>
   );
 }

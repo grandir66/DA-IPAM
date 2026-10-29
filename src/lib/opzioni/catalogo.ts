@@ -45,6 +45,8 @@ import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
 import { CHIAVE_GIRO_ACCESO, dbCliente, giroAccessiAcceso, scriviImpostazione, ultimoGiroAccessi } from "@/lib/assegnatari/db";
 import { giroAccessiAdesso } from "@/lib/assegnatari/job";
+import { modoEventiDc, motivoPerNonLeggere, scriviModoEventiDc, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
+import { giroEventiDcAdesso, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { statoVault } from "@/lib/vault/appliance";
 import { vaultLocaleAcceso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
@@ -818,6 +820,46 @@ function opzioniAutomatismi(): Opzione[] {
         scriviImpostazione(db, CHIAVE_GIRO_ACCESO, acceso ? "1" : "0");
         // Accendendo, il primo giro parte subito (in sottofondo): la scheda dell'asset ha dati senza aspettare l'ora.
         if (acceso) void giroAccessiAdesso(tenant());
+      },
+    },
+    {
+      // Eventi di sicurezza dai DC senza Wazuh (29/10/2026): lettura del registro Sicurezza via WinRM ogni 5 minuti.
+      id: "automatismo.eventi_dc",
+      gruppo: "automatismi",
+      nome: "Eventi di sicurezza dai DC",
+      cosa: "login, logout, accessi falliti, account bloccati e modifiche ad account, gruppi e diritti letti dai domain controller via WinRM",
+      valePer: "cliente",
+      forma: "scelta",
+      diSerie: "auto",
+      scelte: [
+        { valore: "auto", etichetta: "solo dove Wazuh non li legge" },
+        { valore: "sempre", etichetta: "sempre, anche con Wazuh" },
+        { valore: "mai", etichetta: "mai" },
+      ],
+      configura: { href: "/sicurezza-dominio", etichetta: "Sicurezza del dominio ›" },
+      spegnendo: {
+        siFerma: "la lettura del registro Sicurezza dei DC: la pagina Sicurezza del dominio non si aggiorna più.",
+        resta: "gli eventi già letti (31 giorni) e quelli ancora da prendere in carico.",
+      },
+      leggi() {
+        const db = getTenantDb(tenant());
+        const modo = modoEventiDc(db);
+        const motivo = motivoPerNonLeggere(modo, wazuhLeggeGliAllarmi());
+        const ultimo = ultimoGiroDc(tenant());
+        const stato = motivo
+          ? esito("neutro", `non legge: ${motivo}`)
+          : !ultimo
+            ? esito("neutro", "non ancora girato")
+            : esito(ultimo.ok ? "ok" : "errore", `girato alle ${oraItaliana(ultimo.il)} · ${ultimo.testo}`);
+        return diSerieStato(motivo === null, stato, modo);
+      },
+      cambia(r) {
+        if (r.valore !== "auto" && r.valore !== "sempre" && r.valore !== "mai") {
+          throw new ErroreOpzione("Scelta non ammessa: auto, sempre oppure mai", 400);
+        }
+        scriviModoEventiDc(getTenantDb(tenant()), r.valore);
+        // Il primo giro subito, in sottofondo: la pagina ha dati senza aspettare 5 minuti.
+        if (r.valore !== "mai") void giroEventiDcAdesso(tenant()).catch(() => undefined);
       },
     },
     {

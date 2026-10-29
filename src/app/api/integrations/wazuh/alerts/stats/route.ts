@@ -24,6 +24,8 @@ import {
   tenantDb,
 } from "@/lib/integrations/wazuh-alerts-db";
 import { collectSelfIdentity } from "@/lib/integrations/self-identity";
+import { ciSonoEventiDc, ensureEventiDcSchema, lettureDc } from "@/lib/security/eventi-dc/db";
+import { statisticheDc } from "@/lib/security/eventi-dc/statistiche";
 
 const QuerySchema = z.object({
   window: z.string().max(10).optional(),
@@ -70,11 +72,33 @@ export async function GET(req: Request) {
         : null;
 
     if (!client) {
-      // Senza indexer la pagina resta usabile: tabella e conteggi locali.
+      // Senza Wazuh i grafici vengono dagli eventi letti dai domain controller (29/10), se ci sono.
+      ensureEventiDcSchema(db);
+      if (ciSonoEventiDc(db)) {
+        const letture = lettureDc(db);
+        const guasti = letture.filter((l) => l.esito === "errore");
+        const ultima = letture.map((l) => l.lettoIl).filter((x): x is string => !!x).sort().at(-1) ?? null;
+        return NextResponse.json({
+          ...base,
+          fonte: "dc",
+          letture,
+          syncState: {
+            ...base.syncState,
+            lastRunAt: ultima,
+            lastError: guasti.length ? guasti.map((l) => `${l.dc}: ${l.errore ?? "errore"}`).join(" · ") : null,
+          },
+          stats: statisticheDc(db, {
+            since: sinceForWindow(win.hours),
+            interval: bucketIntervalFor(win.hours),
+            system: parsed.data.system,
+          }),
+        });
+      }
+      // Senza indexer né DC la pagina resta usabile: tabella e conteggi locali.
       return NextResponse.json({
         ...base,
         stats: null,
-        unavailable: "Indexer Wazuh non configurato",
+        unavailable: "Indexer Wazuh non configurato e nessun domain controller letto",
       });
     }
 
@@ -90,7 +114,7 @@ export async function GET(req: Request) {
         system: parsed.data.system,
         extraRuleIds: cfg.deviceRuleIds,
       });
-      return NextResponse.json({ ...base, stats });
+      return NextResponse.json({ ...base, fonte: "wazuh", stats });
     } catch (e) {
       return NextResponse.json({
         ...base,

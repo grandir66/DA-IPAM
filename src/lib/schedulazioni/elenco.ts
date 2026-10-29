@@ -286,6 +286,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/dalink/segnale-job": "timer.dalink",
   "./src/lib/assegnatari/job": "timer.accessi_pc",
   "./src/lib/trunk/job": "timer.sensore_trunk",
+  "./src/lib/security/eventi-dc/job": "timer.eventi_dc",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
@@ -416,6 +417,26 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       esito: s.esito,
       dove: { href: `/settings/opzioni#${trunk.id}`, etichetta: "Opzioni ›" },
       cambio: { tipo: "opzione", id: trunk.id },
+    });
+  }
+
+  // Eventi di sicurezza dai DC (29/10): scelta per cliente in Opzioni, lettura ogni 5 minuti.
+  const eventiDc = catalogo().find((o) => o.id === "automatismo.eventi_dc");
+  if (eventiDc) {
+    const s = await leggiStato(eventiDc);
+    const acceso = s.acceso === true;
+    righe.push({
+      ...base,
+      id: "timer.eventi_dc",
+      nome: eventiDc.nome,
+      su: "i domain controller, via WinRM",
+      quando: "ogni 5 minuti",
+      prossimo: acceso ? dataSqlite(prossimoOgniMinuti(5, adesso)) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${eventiDc.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: eventiDc.id },
     });
   }
 

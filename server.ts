@@ -194,6 +194,16 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Eventi di sicurezza dai domain controller senza Wazuh (29/10/2026): registro Sicurezza
+    // via WinRM ogni 5 minuti, per la pagina «Alert sicurezza». Di serie solo dove Wazuh non
+    // legge già gli allarmi; si sceglie per cliente in Opzioni (automatismo.eventi_dc).
+    import("./src/lib/security/eventi-dc/job").then(({ avviaLetturaEventiDc }) => {
+      avviaLetturaEventiDc();
+      console.log("> Eventi dei DC: lettura ogni 5 minuti (dove Wazuh non li legge)");
+    }).catch((error) => {
+      console.error("WARNING: lettura degli eventi dei DC non avviata:", error);
+    });
+
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
     // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
     // senza quel file nessun giro arriva alla rete.

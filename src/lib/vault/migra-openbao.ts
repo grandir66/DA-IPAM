@@ -13,11 +13,91 @@
  * - `verificaMigrazione`: prima di accendere `DA_VAULT_OPENBAO`, confronta OpenBao e colonne voce per voce (una
  *   modifica fatta dalla pagina a interruttore spento non toglie il riferimento) ed elenca i percorsi ORFANI di OpenBao
  *   (sotto la cartella del cliente, senza voce che li usi: revisione del 23/10, rilievo 7).
+ * - **Il backend è quello acceso** (`storeDellaMigrazione`, condizioni del passo 7 del vault semplice, revisione del
+ *   29/10): `DA_VAULT_OPENBAO=1` → OpenBao, `DA_VAULT_DALINK=1` → DA-Link. Con DA-Link acceso una credenziale cambiata
+ *   dalla pagina perde il riferimento e torna sulla colonna (`togliRiferimentoSeCambianoSegreti`): questa migrazione la
+ *   riporta in DA-Link, sopra la voce vecchia, come con OpenBao. Spenti: OpenBao, come prima del passo 6 (si migra, poi
+ *   si accende); tutti e due accesi = rifiuto col motivo. I testi nominano il backend vero.
  */
 import type Database from "better-sqlite3";
 import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb } from "@/lib/credentials/segreti";
-import { ErroreVault, type SecretStore, type ValoreSegreto } from "./tipi";
+import { configurazioneDalink, configurazioneOpenBao, sceltaBackendRemoto } from "./avvio";
+import { DaLinkStore } from "./dalink";
+import { OpenBaoStore } from "./openbao";
+import { ErroreVault, type OpzioniGet, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
+
+/** Il nome del backend nei testi della migrazione. */
+export function nomeBackend(store: SecretStore): string {
+  if (store.backend === "dalink") return "DA-Link";
+  if (store.backend === "openbao") return "OpenBao";
+  return "il vault";
+}
+
+/**
+ * DA-Link per la migrazione: un giro dell'ambito (`aggiorna()`) prima di ogni `list` e di ogni `put`, così l'elenco è
+ * quello di adesso e il `put` manda la versione che DA-Link ha (una voce già presente col valore vecchio si sostituisce,
+ * non dà 409: senza giro la cache è vuota e la versione attesa sarebbe 0). Dopo un `put` (o un `delete`) la `get`
+ * successiva legge la voce DA-Link dal vivo (`leggiDalVivo`, `GET /voce`), non dalla cache: la cache ha già la voce
+ * scritta (anche se il giro dopo il `put` la dà malformata la cache tiene quella del `put`) e il riferimento non si
+ * rimette senza la conferma di DA-Link. Le `get` dopo una `list` (la verifica) vengono dal giro appena fatto.
+ */
+class DaLinkPerMigrazione implements SecretStore {
+  readonly backend = "dalink" as const;
+  /** La cache è quella di un giro appena fatto (dopo `list`) e non è stata toccata da una scrittura? */
+  private cacheDaGiro = false;
+  constructor(private readonly s: DaLinkStore) {}
+
+  async get(percorso: string, opzioni?: OpzioniGet): Promise<ValoreSegreto> {
+    if (this.cacheDaGiro || opzioni?.perConto !== undefined) return this.s.get(percorso, opzioni);
+    return this.s.leggiDalVivo(percorso);
+  }
+
+  async put(percorso: string, valore: ValoreSegreto): Promise<void> {
+    await this.s.aggiorna();
+    this.cacheDaGiro = false;
+    await this.s.put(percorso, valore);
+  }
+
+  async list(prefisso: string): Promise<string[]> {
+    await this.s.aggiorna();
+    this.cacheDaGiro = true;
+    return this.s.list(prefisso);
+  }
+
+  async delete(percorso: string): Promise<void> {
+    await this.s.aggiorna();
+    this.cacheDaGiro = false;
+    await this.s.delete(percorso);
+  }
+
+  stato(): StatoStore {
+    return this.s.stato();
+  }
+}
+
+/**
+ * Lo store della migrazione dall'interruttore acceso, con la configurazione dell'app (`sceltaBackendRemoto`,
+ * `configurazioneOpenBao`, `configurazioneDalink`). Nel motivo solo nomi di variabili, mai valori.
+ */
+export function storeDellaMigrazione(
+  env: Record<string, string | undefined>,
+): { ok: true; store: SecretStore; nome: string } | { ok: false; motivo: string } {
+  const scelta = sceltaBackendRemoto(env);
+  if (scelta.backend === "rifiutato") return { ok: false, motivo: scelta.motivo };
+  // Interruttori spenti: OpenBao, come prima del passo 6 — è il percorso previsto «si migra, poi si accende»
+  // (revisione dell'orchestratore, 29/10: il rifiuto rompeva quel flusso). DA-Link solo se acceso.
+  if (scelta.backend === "dalink") {
+    const c = configurazioneDalink(env);
+    if (!c.ok) return { ok: false, motivo: `DA-Link non configurato: ${c.motivo}` };
+    const store = new DaLinkPerMigrazione(new DaLinkStore(c.config));
+    return { ok: true, store, nome: nomeBackend(store) };
+  }
+  const c = configurazioneOpenBao(env);
+  if (!c.ok) return { ok: false, motivo: `OpenBao non configurato: ${c.motivo}` };
+  const store = new OpenBaoStore({ ...c.config, cartelle: [] });
+  return { ok: true, store, nome: nomeBackend(store) };
+}
 
 export interface TenantDaMigrare {
   codice: string;
@@ -35,12 +115,12 @@ function slug(t: string): string {
     .replace(/-+$/g, "");
 }
 
-/** La cartella di un cliente in OpenBao: `clienti/<codcli>/da-ipam`. */
+/** La cartella di un cliente nel vault (OpenBao o DA-Link): `clienti/<codcli>/da-ipam`. */
 export function prefissoCliente(codiceCliente: string): string {
   return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam`;
 }
 
-/** Il percorso di una voce in OpenBao: `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
+/** Il percorso di una voce nel vault (OpenBao o DA-Link): `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
 export function percorsoCredenziale(codiceCliente: string, credentialId: number, nome: string): string {
   return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam/${slug(nome) || "credenziale"}-${credentialId}`;
 }
@@ -99,7 +179,7 @@ export async function migraVersoOpenBao(op: {
         await op.store.put(percorso, valore);
         const riletto = await op.store.get(percorso);
         if (!uguali(riletto, valore)) {
-          throw new Error(`La voce #${r.id} «${r.name}» non torna uguale da OpenBao: riferimenti di questo cliente non scritti`);
+          throw new Error(`La voce #${r.id} «${r.name}» non torna uguale da ${nomeBackend(op.store)}: riferimenti di questo cliente non scritti`);
         }
         scritte.push({ id: r.id, percorso });
       }
@@ -157,7 +237,7 @@ export async function verificaMigrazione(op: {
         }
         try {
           const v = await op.store.get(r.credential_ref);
-          if (!uguali(v, { ...c.campi })) diverse.push({ id: r.id, nome: r.name, percorso: r.credential_ref, motivo: "valori diversi fra OpenBao e la colonna" });
+          if (!uguali(v, { ...c.campi })) diverse.push({ id: r.id, nome: r.name, percorso: r.credential_ref, motivo: `valori diversi fra ${nomeBackend(op.store)} e la colonna` });
         } catch (e) {
           diverse.push({ id: r.id, nome: r.name, percorso: r.credential_ref, motivo: messaggio(e) });
         }

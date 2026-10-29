@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Vault: condizioni prima di accendere DA-Link
+
+### Cambiato
+
+- **Migrazione col backend acceso**: `scripts/da-vault-migra-openbao.ts` scrive in DA-Link se è acceso
+  `DA_VAULT_DALINK=1` (in OpenBao come prima a interruttori spenti o con `DA_VAULT_OPENBAO=1`). Serve perché una
+  credenziale cambiata dalla pagina torna sulla colonna finché la migrazione non la riporta nel vault: con DA-Link
+  acceso niente la riportava. Dopo ogni scrittura rilegge la voce da DA-Link e rimette il riferimento solo se torna uguale.
+- **24 ore per voce** nella cache di DA-Link: una voce rimandata sempre malformata non resta più senza scadenza.
+  Prima del primo giro la cache non si usa (come in DA-Vul-can).
+
 ## [Non rilasciato] — 2026-10-29 · Vulnerabilità: rilievi riagganciati agli host scoperti dopo
 
 - **Corretto** — un rilievo della sonda si agganciava all'host per IP solo all'arrivo: se la sonda

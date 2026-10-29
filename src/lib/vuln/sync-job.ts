@@ -39,6 +39,23 @@ function nowIso(): string {
  * Lookup `host_id` per (ip, network_id?). Restituisce id se match singolo,
  * altrimenti null (zero match o ambiguità).
  */
+/**
+ * Rilievi arrivati prima che l'host fosse in inventario: l'aggancio per IP si faceva solo all'arrivo e
+ * restavano «senza match» per sempre (79994-ipam-3, 29/10/2026: la sonda aveva scansionato una rete che
+ * DA-IPAM scopre solo dopo). A ogni sincronia si riagganciano, con la stessa regola di `matchHostId`:
+ * un IP, un host solo.
+ */
+export function riagganciaHost(db: ReturnType<typeof getTenantDb>): number {
+  return db
+    .prepare(
+      `UPDATE vuln_findings
+          SET host_id = (SELECT h.id FROM hosts h WHERE h.ip = vuln_findings.ip)
+        WHERE host_id IS NULL
+          AND (SELECT COUNT(*) FROM hosts h WHERE h.ip = vuln_findings.ip) = 1`,
+    )
+    .run().changes;
+}
+
 function matchHostId(
   db: ReturnType<typeof getTenantDb>,
   ip: string,
@@ -229,6 +246,8 @@ export async function runVulnSync(): Promise<{
         break;
       }
     }
+
+    riagganciaHost(db);
 
     // Push-hosts periodico: aggiorna inventario sull'edge per le reti con
     // targeting_mode dinamico (found_ips / populated_24). Le reti full_subnet

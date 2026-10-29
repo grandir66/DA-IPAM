@@ -9485,17 +9485,16 @@ export function getLatestOkSoftwareScanForDevice(
 // AGGREGAZIONI GLOBALI: pagine /vulnerabilities e /software
 // Vista INVERSA: data una CVE / un software → lista host che lo presentano.
 // Sorgenti unificate per vulnerabilità:
-//  - "Edge"  = vuln_findings, ovvero le CVE che arrivano dal scanner-edge
-//              appliance (uplink sync periodico). Lo strumento dietro (Greenbone,
-//              OpenVAS, ecc.) NON viene esposto in UI: dal punto di vista
-//              DA-IPAM la fonte è il canale Edge stesso.
+//  - "Edge-G/N/C" = vuln_findings, i rilievi che arrivano dalla sonda (sync
+//              periodico): G Greenbone, N Nuclei, C controlli in più. Dal 29/10/2026
+//              lo strumento si vede (prima tutto «Edge»), vedi fonteEdgeSql.
 //  - "Wazuh" = wazuh_vuln, ovvero le CVE riportate dagli agent Wazuh installati
 //              sugli endpoint.
 // Sorgenti unificate per software: SOLO wazuh_software + software_inventory.
 // Le vuln_findings (Edge) NON sono una fonte di software (sono vulnerabilità).
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
+import { SEVERITY_RANK, fonteEdgeSql, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
 import { rangoExploit, type ExploitInfo } from "./vuln/exploit-feed/archivio";
 
 export type AggregatedVulnSourceLabel = string;
@@ -9740,7 +9739,7 @@ function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow
       f.ip,
       f.port,
       f.scanned_at,
-      'Edge' AS source
+      ${fonteEdgeSql("f")} AS source
     FROM vuln_findings f
     ${edgeOsJoin}
     WHERE f.severity IN ('Critical','High','Medium','Low')
@@ -9986,7 +9985,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
     .prepare(
       `SELECT f.host_id, f.ip, f.severity, f.cvss_score, f.scanned_at,
               f.nvt_name AS package_label,
-              'Edge' AS source
+              ${fonteEdgeSql("f")} AS source
          FROM vuln_findings_attuali f
         WHERE (
           (? IS NOT NULL AND f.cve_id = ?) OR

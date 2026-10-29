@@ -135,3 +135,28 @@ test("per CVE: exploit sulla riga, filtro «sfruttate», ricerca per nome host, 
     // senza archivio (feed mai scaricati) la vista funziona come prima
     assert.equal(getAggregatedVulnerabilities({ page: 1, pageSize: 50 }).data.every((r) => r.exploit === null), true);
   }));
+
+test("fonte del rilievo: Edge-G Greenbone, Edge-N Nuclei, Edge-C controlli (Riccardo, 29/10/2026)", () =>
+  withTenant(T, () => {
+    // Nuclei e controlli in più come li manda la sonda dalla 0.8.208: fonte in nvt_oid. Si tolgono a fine
+    // prova per non cambiare i conti delle altre.
+    const d = getTenantDb(T);
+    const run = (d.prepare("SELECT id FROM vuln_scan_runs LIMIT 1").get() as { id: number }).id;
+    const f = d.prepare(
+      `INSERT INTO vuln_findings (host_id, scan_run_id, ip, port, severity, nvt_oid, nvt_name, scanned_at)
+       VALUES (?, ?, '192.0.2.5', ?, ?, ?, ?, datetime('now', '-6 days'))`,
+    );
+    const ids = [
+      f.run(hFile, run, "5432/tcp", "Critical", "nuclei:pgsql-empty-password", "Postgresql Empty Password").lastInsertRowid,
+      f.run(hFile, run, "445", "High", "controllo:enum4linux-ng:smb", "Anonymous SMB access").lastInsertRowid,
+    ];
+    after(() => { for (const id of ids) d.prepare("DELETE FROM vuln_findings WHERE id = ?").run(id); });
+    const r = getAggregatedVulnerabilities({ ...base, sources: [] } as never);
+    const fonte = (nome: string) => r.data.find((v: { package_label?: string | null }) => v.package_label === nome)?.sources;
+    assert.deepEqual(fonte("Postgresql Empty Password"), ["Edge-N"]);
+    assert.deepEqual(fonte("Anonymous SMB access"), ["Edge-C"]);
+    assert.deepEqual(fonte("Apache Log4j"), ["Edge-G"]);
+    const soloNuclei = getAggregatedVulnerabilities({ ...base, sources: ["Edge-N"] } as never);
+    assert.deepEqual(soloNuclei.data.map((v: { package_label?: string | null }) => v.package_label), ["Postgresql Empty Password"]);
+  }),
+);

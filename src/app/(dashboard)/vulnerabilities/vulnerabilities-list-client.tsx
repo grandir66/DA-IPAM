@@ -123,7 +123,7 @@ type Vista = "cve" | "host";
 type FiltroExploit = "kev" | "edb";
 
 const PAGE_SIZE = 50;
-const SOURCE_FILTERS = ["Edge", "Wazuh"] as const;
+const SOURCE_FILTERS = ["Edge-G", "Edge-N", "Edge-C", "Wazuh"] as const;
 type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 const EXPLOIT_FILTERS: Array<{ id: FiltroExploit; label: string }> = [

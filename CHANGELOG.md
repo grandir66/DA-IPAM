@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Vulnerabilità: la fonte dice lo strumento (Edge-G, Edge-N, Edge-C)
+
+- **Cambiato** — dalla sonda DA-Vul-can 0.8.208 arrivano anche i rilievi di Nuclei e dei controlli in
+  più, oltre a Greenbone; la colonna «Sorgenti» diceva «Edge» per tutti. Ora dice Edge-G (Greenbone),
+  Edge-N (Nuclei), Edge-C (controlli), letto da `nvt_oid` come lo scrive la sonda (`fonteEdgeSql`), e
+  il filtro ha un bottone per ciascuno. Scelta di Riccardo («va bene edge-G edge-N edge-C»).
+
 ## [Non rilasciato] — 2026-10-29 · Vault: backend DA-Link (spento)
 
 ### Aggiunto

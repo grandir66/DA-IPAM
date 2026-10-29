@@ -84,12 +84,13 @@ app.prepare().then(() => {
   }
 
   async function initCron() {
-    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao, solo con un interruttore acceso (spenti di
+    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao o di DA-Link (passo 6 del vault semplice, 29/10),
+    // solo con un interruttore acceso (spenti di
     // serie: l'avvio resta quello di oggi). SI ASPETTA prima di ogni altra inizializzazione (revisione del 23/10): le
     // altre (migrazione dei segreti delle installazioni, scheduler, notificatori) possono chiamare `encrypt()`, che col
     // vault locale acceso e non ancora sbloccato lancia. `avviaVault()` sblocca dal TPM in modo sincrono; se non
     // riesce, il vault resta bloccato col motivo (banner, scansioni in pausa) e il resto parte comunque.
-    if (process.env.DA_VAULT_LOCALE === "1" || process.env.DA_VAULT_OPENBAO === "1") {
+    if (process.env.DA_VAULT_LOCALE === "1" || process.env.DA_VAULT_OPENBAO === "1" || process.env.DA_VAULT_DALINK === "1") {
       try {
         const { avviaVault } = await import("./src/lib/vault/avvio");
         avviaVault();
@@ -192,6 +193,16 @@ app.prepare().then(() => {
       console.log("> Sensore trunk: lettura ogni 2 minuti (solo i clienti che l'hanno acceso)");
     }).catch((error) => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
+    });
+
+    // Eventi di sicurezza dai domain controller senza Wazuh (29/10/2026): registro Sicurezza
+    // via WinRM ogni 5 minuti, per la pagina «Alert sicurezza». Di serie solo dove Wazuh non
+    // legge già gli allarmi; si sceglie per cliente in Opzioni (automatismo.eventi_dc).
+    import("./src/lib/security/eventi-dc/job").then(({ avviaLetturaEventiDc }) => {
+      avviaLetturaEventiDc();
+      console.log("> Eventi dei DC: lettura ogni 5 minuti (dove Wazuh non li legge)");
+    }).catch((error) => {
+      console.error("WARNING: lettura degli eventi dei DC non avviata:", error);
     });
 
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste

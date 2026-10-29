@@ -60,6 +60,7 @@ const CENSIMENTO: ReadonlyArray<[chiave: string, id: string]> = [
   // da-vault (piano 2026-10-23): i due interruttori del vault, nel file dell'appliance, spenti di serie.
   ["DA_VAULT_LOCALE", "file.vault_locale"],
   ["DA_VAULT_OPENBAO", "file.vault_openbao"],
+  ["DA_VAULT_DALINK", "file.vault_dalink"],
   ...VOCI_DA_AMBIENTE.map((v): [string, string] => [v.variabile, `file.${v.variabile.toLowerCase()}`]),
   ["DA_INVENT_BACKUP_CRON", "sempre.backup"],
   ["allarme salute", "sempre.allarme_salute"],
@@ -98,7 +99,7 @@ test("(a) ogni tipo di job ha una riga: per tipo, per controller, o per job", ()
   withTenant(T, () => {
     const creati = new Map<string, number>();
     for (const tipo of SCHEDULED_JOB_TYPES) {
-      if (tipo === "unifi_sync") continue;
+      if (tipo === "unifi_sync" || tipo === "ad_sync") continue;
       creati.set(tipo, createScheduledJob({ job_type: tipo, interval_minutes: 60, network_id: null }).id);
     }
     const presenti = new Set(catalogo().map((o) => o.id));
@@ -107,6 +108,8 @@ test("(a) ogni tipo di job ha una riga: per tipo, per controller, o per job", ()
     }
     // unifi_sync: le righe sono per controller; senza controller c'è la riga che chiede di aggiungerlo.
     assert.ok(presenti.has("controller.nessuno"));
+    // ad_sync (29/10/2026): senza job né integrazioni c'è la riga che chiede di aggiungerne una.
+    assert.ok(presenti.has("ad.nessuna"));
   });
 });
 
@@ -144,4 +147,40 @@ test("(d) cliente appena nato: le sei letture accese di serie (librenms spenta: 
     const illeggibili = righe.filter((r) => r.stato.esito.testo.startsWith("stato illeggibile")).map((r) => `${r.opzione.id}: ${r.stato.esito.testo}`);
     assert.deepEqual(illeggibili, []);
   });
+});
+
+test("(e) vault remoto: con DA-Link acceso la riga di OpenBao resta spenta e accesa quella di DA-Link; i due insieme sono un errore su tutte e due", async () => {
+  const salva = { o: process.env.DA_VAULT_OPENBAO, d: process.env.DA_VAULT_DALINK };
+  const stato = async () => {
+    const righe = await withTenant(T, () => leggiTutte(catalogo().filter((o) => o.id === "file.vault_openbao" || o.id === "file.vault_dalink")));
+    return Object.fromEntries(righe.map((r) => [r.opzione.id, r.stato]));
+  };
+  try {
+    delete process.env.DA_VAULT_OPENBAO;
+    delete process.env.DA_VAULT_DALINK;
+    let s = await stato();
+    assert.equal(s["file.vault_openbao"].acceso, false);
+    assert.equal(s["file.vault_dalink"].acceso, false);
+    process.env.DA_VAULT_DALINK = "1";
+    s = await stato();
+    assert.equal(s["file.vault_openbao"].acceso, false, "DA-Link acceso non accende la riga di OpenBao");
+    assert.equal(s["file.vault_dalink"].acceso, true);
+    delete process.env.DA_VAULT_DALINK;
+    process.env.DA_VAULT_OPENBAO = "1";
+    s = await stato();
+    assert.equal(s["file.vault_openbao"].acceso, true);
+    assert.equal(s["file.vault_dalink"].acceso, false);
+    process.env.DA_VAULT_DALINK = "1";
+    s = await stato();
+    for (const id of ["file.vault_openbao", "file.vault_dalink"]) {
+      assert.equal(s[id].acceso, true, id);
+      assert.equal(s[id].esito.tipo, "errore", id);
+      assert.match(s[id].esito.testo, /insieme/, id);
+    }
+  } finally {
+    for (const [k, v] of [["DA_VAULT_OPENBAO", salva.o], ["DA_VAULT_DALINK", salva.d]] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });

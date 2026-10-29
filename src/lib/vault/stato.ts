@@ -9,14 +9,22 @@
  * Gli interruttori stanno nel file dell'appliance (`.env.local`), si cambiano solo sul server con un riavvio, e sono
  * spenti di serie (piano: «interruttore spento di serie, attivazione per appliance»):
  * - `DA_VAULT_LOCALE=1`: chiave dei dati dagli slot (appliance dei clienti, passo 10);
- * - `DA_VAULT_OPENBAO=1`: credenziali dei device da OpenBao con `credential_ref` (hub, passo 6).
+ * - `DA_VAULT_OPENBAO=1`: credenziali dei device da OpenBao con `credential_ref` (hub, passo 6);
+ * - `DA_VAULT_DALINK=1`: le stesse credenziali da DA-Link (vault semplice, passo 6). Lo store sta nello stesso posto
+ *   (`openbao`) e i chiamanti non cambiano: `vaultOpenBaoAcceso()` vale «backend remoto acceso». I due interruttori
+ *   insieme sono una configurazione rifiutata (`avvio.ts`): nessuno store, e i lettori rifiutano.
  */
 import type { StatoStore, ValoreSegreto } from "./tipi";
 
 export type ModoSblocco = "tpm" | "passphrase" | "domarc";
 
-/** Quello che serve del backend OpenBao da qui (per non importare `openbao.ts` in `crypto.ts`). */
+/**
+ * Quello che serve del backend remoto da qui (per non importare `openbao.ts` in `crypto.ts`): `OpenBaoStore` o, con
+ * `DA_VAULT_DALINK=1`, `DaLinkStore`.
+ */
 export interface StoreOpenBaoProcesso {
+  /** Quale backend è (`OpenBaoStore` e `DaLinkStore` lo dichiarano); le prove con un finto possono ometterlo. */
+  readonly backend?: "openbao" | "locale" | "dalink";
   leggiSync(percorso: string): ValoreSegreto;
   get(percorso: string, opzioni?: { perConto?: string; perContoId?: string }): Promise<ValoreSegreto>;
   /** Cancella il segreto con tutte le sue versioni (metadata). */
@@ -31,6 +39,11 @@ export interface StatoVaultProcesso {
   /** Perché è bloccato (archivio assente, niente TPM, …); null = mai provato o sbloccato. */
   motivoBloccato: string | null;
   openbao: StoreOpenBaoProcesso | null;
+  /**
+   * Perché il backend remoto acceso non è partito (configurazione rifiutata all'avvio): solo nomi di variabili, mai
+   * valori. null = niente da dire. Lo scrive `avviaVault`; lo leggono il banner e i lettori dei segreti.
+   */
+  remotoNonAvviato: string | null;
   /** «Mostra password»: id utente → scadenza (ms) della conferma con la 2FA. */
   conferme: Map<string, number>;
   /** Credenziali già segnalate come lette dalla colonna (doppia lettura), per scriverlo una volta sola. */
@@ -49,6 +62,7 @@ export function statoVaultProcesso(): StatoVaultProcesso {
       sbloccatoAlle: null,
       motivoBloccato: null,
       openbao: null,
+      remotoNonAvviato: null,
       conferme: new Map(),
       doppiaLetturaSegnalata: new Set(),
     };
@@ -61,8 +75,47 @@ export function vaultLocaleAcceso(): boolean {
   return process.env.DA_VAULT_LOCALE === "1";
 }
 
+/**
+ * Un backend remoto del vault è acceso: OpenBao (`DA_VAULT_OPENBAO=1`) o DA-Link (`DA_VAULT_DALINK=1`). Il nome resta
+ * quello di prima perché i chiamanti (lettore dei segreti, «mostra password», cancellazione) non cambiano. Con i due
+ * accesi insieme vale true: l'avvio rifiuta e non mette lo store, e i lettori rifiutano (fail-closed).
+ */
 export function vaultOpenBaoAcceso(): boolean {
-  return process.env.DA_VAULT_OPENBAO === "1";
+  return process.env.DA_VAULT_OPENBAO === "1" || vaultDalinkAcceso();
+}
+
+/** Il backend remoto è DA-Link (`DA_VAULT_DALINK=1`). */
+export function vaultDalinkAcceso(): boolean {
+  return process.env.DA_VAULT_DALINK === "1";
+}
+
+/**
+ * Il nome del backend remoto per i testi a schermo: quello dello store avviato o, senza store, quello dell'interruttore
+ * acceso; null se non si sa (nessuno acceso, o tutti e due: configurazione rifiutata).
+ */
+export function backendRemotoAttivo(): "OpenBao" | "DA-Link" | null {
+  const b = statoVaultProcesso().openbao?.backend;
+  if (b === "dalink") return "DA-Link";
+  if (b === "openbao") return "OpenBao";
+  const openbao = process.env.DA_VAULT_OPENBAO === "1";
+  if (vaultDalinkAcceso() && !openbao) return "DA-Link";
+  if (openbao && !vaultDalinkAcceso()) return "OpenBao";
+  return null;
+}
+
+/** Il nome per aprire una frase («DA-Link non ha risposto»): il backend vero o, se non si sa, «Il vault remoto». */
+export function nomeBackendRemoto(): string {
+  return backendRemotoAttivo() ?? "Il vault remoto";
+}
+
+/** Perché il vault remoto acceso non ha uno store: il motivo dell'avvio, o quello che si deduce dagli interruttori. */
+export function motivoRemotoNonAvviato(): string {
+  const dichiarato = statoVaultProcesso().remotoNonAvviato;
+  if (dichiarato) return dichiarato;
+  const b = backendRemotoAttivo();
+  if (b === "DA-Link") return "DA-Link acceso ma non avviato (DALINK_VAULT_URL, DALINK_VAULT_GETTONE e DALINK_VAULT_IMPRONTA)";
+  if (b === "OpenBao") return "OpenBao acceso ma non configurato (DA_VAULT_OPENBAO_URL e AppRole)";
+  return "DA_VAULT_DALINK=1 e DA_VAULT_OPENBAO=1 insieme: se ne accende uno solo";
 }
 
 export function chiaveDatiAttiva(): Buffer | null {

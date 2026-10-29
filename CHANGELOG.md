@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Vault: condizioni prima di accendere DA-Link
+
+### Cambiato
+
+- **Migrazione col backend acceso**: `scripts/da-vault-migra-openbao.ts` scrive in DA-Link se è acceso
+  `DA_VAULT_DALINK=1` (in OpenBao come prima a interruttori spenti o con `DA_VAULT_OPENBAO=1`). Serve perché una
+  credenziale cambiata dalla pagina torna sulla colonna finché la migrazione non la riporta nel vault: con DA-Link
+  acceso niente la riportava. Dopo ogni scrittura rilegge la voce da DA-Link e rimette il riferimento solo se torna uguale.
+- **24 ore per voce** nella cache di DA-Link: una voce rimandata sempre malformata non resta più senza scadenza.
+  Prima del primo giro la cache non si usa (come in DA-Vul-can).
+
 ## [Non rilasciato] — 2026-10-29 · Vulnerabilità: rilievi riagganciati agli host scoperti dopo
 
 - **Corretto** — un rilievo della sonda si agganciava all'host per IP solo all'arrivo: se la sonda
@@ -16,6 +27,40 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   più, oltre a Greenbone; la colonna «Sorgenti» diceva «Edge» per tutti. Ora dice Edge-G (Greenbone),
   Edge-N (Nuclei), Edge-C (controlli), letto da `nvt_oid` come lo scrive la sonda (`fonteEdgeSql`), e
   il filtro ha un bottone per ciascuno. Scelta di Riccardo («va bene edge-G edge-N edge-C»).
+
+## [Non rilasciato] — 2026-10-29 · Vault: backend DA-Link (spento)
+
+### Aggiunto
+
+- **Backend `dalink` del vault** (`src/lib/vault/dalink.ts`): con `DA_VAULT_DALINK=1` le password si chiedono a
+  DA-Link (sulla 8443, gettone `DALINK_VAULT_GETTONE`, certificato verificato per impronta `DALINK_VAULT_IMPRONTA`)
+  invece che a OpenBao, che DA-Link sostituisce (vault semplice, decisione di Riccardo del 27/10). Stessa interfaccia
+  `SecretStore`: lettori e scrittori dei segreti non cambiano. Cache in memoria fino a 24 ore: se DA-Link non risponde
+  si tiene quello che si ha, mai «non ci sono password». I due interruttori insieme sono rifiutati. Spento di serie.
+- **`scripts/da-vault-copia-verso-dalink.ts`**: copia e verifica voce per voce da OpenBao a DA-Link (passo 7), a vuoto
+  di serie, mai i valori a schermo. Piano: DA-Link `docs/superpowers/plans/2026-10-29-vault-passo6-app.md`.
+
+## [Non rilasciato] — 2026-10-29 · Active Directory nella pagina Opzioni
+
+### Aggiunto
+
+- **Active Directory nelle Opzioni**: una levetta per ogni integrazione (la accende o la spegne, e accesa garantisce la sincronizzazione automatica) e la riga «Sincronizzazione Active Directory», una per tutte le integrazioni, con acceso/spento e ritmo (1, 6, 12 o 24 ore). Il job `ad_sync` non compare più fra i job generici e i rimandi dalla pagina dei job portano a questa riga. Senza integrazioni c'è la riga che porta ad aggiungerne una. Perché: Riccardo (29/10) «sarebbe comodo averla nella pagina delle opzioni».
+
+## [Non rilasciato] — 2026-10-29 · Active Directory: sincronizzazione anche se accesa dopo, interruttore in vista
+
+### Corretto
+
+- **Accendere un'integrazione AD da «Modifica» crea la sua sincronizzazione automatica** (`ad_sync`, ogni 6 ore), come già alla creazione. Su un'appliance (29/10) l'integrazione era stata salvata spenta e accesa dopo: risultava «abilitata» ma il job non c'era, quindi l'AD non si aggiornava più da solo. La funzione sta in `src/lib/ad/sincronizzazione.ts` e la usano le due rotte.
+
+### Cambiato
+
+- **Interruttore «Abilitata» accanto a «Test»** nella pagina Active Directory, con segno e fondo (✓ Abilitata su verde pieno, – Disabilitata tratteggiato): prima lo stato era un badge e si cambiava solo da «Modifica», così una spunta dimenticata non si vedeva (Riccardo, 29/10).
+
+## [Non rilasciato] — 2026-10-29 · Login senza indirizzo interno
+
+### Corretto
+
+- **Il rimando al login non porta più `callbackUrl=https://0.0.0.0:3001/`** nella barra del browser: era l'indirizzo interno del server dietro nginx, aggiunto da NextAuth (visto il 29/10 sulla 79994-ipam-4 preparata per il video). Ora il rimando a `/login` lo fa `authorized` di `auth.config.ts`, senza parametri: la pagina di login non li usava.
 
 ## [Non rilasciato] — 2026-10-28 · Reti viste sul trunk nel wizard
 

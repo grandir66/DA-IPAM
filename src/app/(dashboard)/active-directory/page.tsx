@@ -10,6 +10,7 @@ import {
   FolderTree,
   RefreshCw,
   BookOpen,
+  ShieldCheck,
   Plus,
   Trash2,
   TestTube,
@@ -31,6 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -248,6 +250,7 @@ function PaginaActiveDirectory() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<number | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
+  const [commutando, setCommutando] = useState(false);
 
   const [computers, setComputers] = useState<AdComputer[]>([]);
   const [computersTotal, setComputersTotal] = useState(0);
@@ -283,6 +286,7 @@ function PaginaActiveDirectory() {
   const [dialogOpen, setDialogOpen] = useState(false);
   // v0.2.657: guida configurazione DC
   const [adGuideOpen, setAdGuideOpen] = useState(false);
+  const [adGuideTab, setAdGuideTab] = useState<"prereq" | "audit">("prereq");
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
@@ -535,6 +539,28 @@ function PaginaActiveDirectory() {
       toast.error(err instanceof Error ? err.message : "Errore");
     } finally {
       setSyncing(null);
+    }
+  };
+
+  // Interruttore «Abilitata» accanto al test (Riccardo, 29/10/2026): prima si cambiava solo da
+  // «Modifica», e una spunta dimenticata lasciava l'integrazione spenta senza che si vedesse.
+  const handleAbilita = async (integrazione: AdIntegration, abilitata: boolean) => {
+    setCommutando(true);
+    try {
+      const res = await fetch(`/api/ad/${integrazione.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: abilitata }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Errore aggiornamento");
+      setSelectedIntegration(data);
+      setIntegrations((prev) => prev.map((i) => (i.id === data.id ? data : i)));
+      toast.success(abilitata ? "Integrazione abilitata: si sincronizza da sola ogni 6 ore" : "Integrazione disabilitata");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore");
+    } finally {
+      setCommutando(false);
     }
   };
 
@@ -802,11 +828,20 @@ function PaginaActiveDirectory() {
           {/* v0.2.657: guida configurazione DC (LDAPS, WinRM, DHCP, svc account) */}
           <Button
             variant="outline"
-            onClick={() => setAdGuideOpen(true)}
+            onClick={() => { setAdGuideTab("prereq"); setAdGuideOpen(true); }}
             title="Guida configurazione Domain Controller (LDAPS, WinRM, DHCP, service account)"
           >
             <BookOpen className="w-4 h-4 mr-2" />
             Guida DC
+          </Button>
+          {/* 29/10/2026: audit dei DC per «Sicurezza del dominio», con lo script che lo applica */}
+          <Button
+            variant="outline"
+            onClick={() => { setAdGuideTab("audit"); setAdGuideOpen(true); }}
+            title="Voci della GPO di audit in inglese e italiano, e lo script Configura-Audit-DC.ps1"
+          >
+            <ShieldCheck className="w-4 h-4 mr-2" />
+            Audit dei DC
           </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button><Plus className="w-4 h-4 mr-2" />Nuova integrazione</Button>} />
@@ -922,7 +957,7 @@ function PaginaActiveDirectory() {
       </div>
 
       {/* v0.2.657: dialog guida configurazione DC */}
-      <ADSetupGuideDialog open={adGuideOpen} onOpenChange={setAdGuideOpen} />
+      <ADSetupGuideDialog key={adGuideTab} open={adGuideOpen} onOpenChange={setAdGuideOpen} initialTab={adGuideTab} />
 
       {/* Dialog modifica integrazione */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -1080,9 +1115,22 @@ function PaginaActiveDirectory() {
 
             {selectedIntegration && (
               <div className="flex items-center gap-2 ml-auto">
-                <Badge variant={selectedIntegration.enabled ? "default" : "secondary"}>
-                  {selectedIntegration.enabled ? "Abilitata" : "Disabilitata"}
-                </Badge>
+                <label
+                  className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium ${
+                    selectedIntegration.enabled
+                      ? "border-[#1F7A4D] bg-[#1F7A4D] text-white"
+                      : "border-dashed border-muted-foreground/60 text-foreground"
+                  }`}
+                  title="Accende o spegne l'integrazione; accesa, si sincronizza da sola ogni 6 ore"
+                >
+                  <Switch
+                    checked={!!selectedIntegration.enabled}
+                    disabled={commutando}
+                    onCheckedChange={(c) => handleAbilita(selectedIntegration, !!c)}
+                    aria-label="Integrazione abilitata"
+                  />
+                  {selectedIntegration.enabled ? "✓ Abilitata" : "– Disabilitata"}
+                </label>
                 <Button
                   variant="outline"
                   size="sm"

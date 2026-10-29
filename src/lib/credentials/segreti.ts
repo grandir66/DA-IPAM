@@ -42,7 +42,7 @@
  */
 import type Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
-import { statoVaultProcesso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import type { SnmpV3CredentialRecord } from "@/lib/protocols/snmpv3";
 import { campiRichiesti, etichettaTipo, METODI_PER_TIPO, normalizzaTipo, tipiPerProtocollo, type MetodoAccesso, type TipoCredenziale } from "./tipi";
 
@@ -129,12 +129,12 @@ function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number,
     return { ok: true, riga };
   }
   const store = statoVaultProcesso().openbao;
-  if (!store) return { ok: false, motivo: `${chi}: OpenBao acceso (DA_VAULT_OPENBAO) ma non configurato` };
+  if (!store) return { ok: false, motivo: `${chi}: ${motivoRemotoNonAvviato()}` };
   let v: Readonly<Record<string, string>>;
   try {
     v = store.leggiSync(ref);
   } catch (e) {
-    return { ok: false, motivo: `${chi}: ${e instanceof Error ? e.message : "OpenBao non ha risposto"}` };
+    return { ok: false, motivo: `${chi}: ${e instanceof Error ? e.message : `${nomeBackendRemoto()} non ha risposto`}` };
   }
   const chiari: Record<string, string | null> = {};
   for (const [campo, colonna] of Object.entries(COLONNA_DEL_CAMPO)) chiari[colonna] = v[campo] ?? null;

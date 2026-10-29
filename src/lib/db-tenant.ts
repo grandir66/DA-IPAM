@@ -3440,6 +3440,10 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
   /** Frequenza dello scan attivo più rapido sulla rete (per derivare la soglia
    *  "unreachable = 4 cicli" in UI). Null se nessun job scan abilitato. */
   scan_interval_minutes?: number | null;
+  /** Inventario letto dall'apparato (stessa regola di `isNetworkDeviceAcquisitionComplete`). */
+  device_acquired?: boolean;
+  /** Quando: scansione Proxmox o ultima lettura; null se acquisito ma senza data. */
+  device_acquired_at?: string | null;
 }> {
   const rows = db().prepare(`
     SELECT h.*,
@@ -3451,6 +3455,13 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
            nd.name AS _dev_name,
            nd.vendor AS _dev_vendor,
            nd.device_type AS _dev_type,
+           -- Dati acquisiti: stessa regola di isNetworkDeviceAcquisitionComplete (niente blob JSON nel risultato).
+           CASE
+             WHEN COALESCE(nd.last_proxmox_scan_at, '') <> '' AND COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1
+             WHEN COALESCE(nd.last_device_info_json, '') <> '' THEN 1
+             ELSE 0
+           END AS _dev_acq,
+           COALESCE(NULLIF(nd.last_proxmox_scan_at, ''), NULLIF(nd.last_info_update, '')) AS _dev_acq_at,
            mpe.port_name AS _sw_port,
            sw.name AS _sw_name,
            ac.ad_dns AS _ad_dns,
@@ -3513,13 +3524,14 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
   `).all(limit) as Array<Host & {
     _net_name: string; _net_cidr: string; _net_vlan: number | null; _net_location: string;
     _dev_id?: number; _dev_name?: string; _dev_vendor?: string; _dev_type?: string;
+    _dev_acq?: number | null; _dev_acq_at?: string | null;
     _sw_port?: string; _sw_name?: string; _ad_dns?: string | null;
     _asset_id?: number | null; _asset_tag?: string | null; _asset_categoria?: string | null;
     _sw_scan_id?: number | null; _sw_apps_count?: number | null; _sw_scan_at?: string | null;
     _scan_interval?: number | null;
   }>;
 
-  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, _scan_interval, ...h }) => ({
+  return rows.map(({ _net_name, _net_cidr, _net_vlan, _net_location, _dev_id, _dev_name, _dev_vendor, _dev_type, _dev_acq, _dev_acq_at, _sw_port, _sw_name, _ad_dns, _asset_id, _asset_tag, _asset_categoria, _sw_scan_id, _sw_apps_count, _sw_scan_at, _scan_interval, ...h }) => ({
     ...h,
     network_name: _net_name,
     network_cidr: _net_cidr,
@@ -3529,6 +3541,8 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     device_name: _dev_name ?? undefined,
     device_vendor: _dev_vendor ?? undefined,
     device_type: _dev_type ?? undefined,
+    device_acquired: _dev_acq === 1,
+    device_acquired_at: _dev_acq === 1 ? (_dev_acq_at ?? null) : null,
     switch_port: _sw_port ?? undefined,
     switch_device_name: _sw_name ?? undefined,
     ad_dns_host_name: _ad_dns ?? undefined,

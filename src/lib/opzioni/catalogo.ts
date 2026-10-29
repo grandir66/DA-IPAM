@@ -22,6 +22,8 @@ import {
 import { leggiMappaCavi, scriviMappaCavi } from "@/lib/topology/letture/mappa";
 import { JOB_DI_SERIE, eJobDiSerie, lapide, scriviLapide, seminaJobDiSerie, togliLapide, type TipoJobDiSerie } from "./job-di-serie";
 import { listControllerViews, setClientScheduleFor } from "@/lib/controllers/service";
+import { getAdIntegrations, updateAdIntegration } from "@/lib/db-tenant";
+import { ensureAdSyncJob } from "@/lib/ad/sincronizzazione";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshState } from "@/lib/integrations/meshcentral/feature";
 import { getNetServicesState, uninstallNetServices } from "@/lib/network-services/feature";
@@ -43,9 +45,11 @@ import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
 import { CHIAVE_GIRO_ACCESO, dbCliente, giroAccessiAcceso, scriviImpostazione, ultimoGiroAccessi } from "@/lib/assegnatari/db";
 import { giroAccessiAdesso } from "@/lib/assegnatari/job";
+import { modoEventiDc, motivoPerNonLeggere, scriviModoEventiDc, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
+import { giroEventiDcAdesso, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { statoVault } from "@/lib/vault/appliance";
-import { vaultLocaleAcceso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { vaultDalinkAcceso, vaultLocaleAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
 import { ErroreOpzione, type Opzione, type RichiestaCambio, type Scelta, type StatoOpzione, type TipoEsito } from "./tipi";
 
@@ -370,13 +374,107 @@ function opzioniController(): Opzione[] {
   return out;
 }
 
+// Active Directory nelle Opzioni (Riccardo, 29/10/2026: «sarebbe comodo averla nella pagina delle
+// opzioni»). Una levetta per integrazione: accende o spegne l'integrazione, e accesa garantisce la
+// sincronizzazione automatica (ad_sync, uno per tutte le integrazioni) col suo ritmo.
+const RITMI_AD = ritmi(60, 360, 720, 1440);
+
+function jobAdSync(): ScheduledJob | undefined {
+  return getScheduledJobs().find((j) => j.job_type === "ad_sync" && j.network_id === null);
+}
+
+function opzioniActiveDirectory(): Opzione[] {
+  const integrazioni = getAdIntegrations();
+  const job = jobAdSync();
+  if (integrazioni.length === 0 && !job) {
+    return [{
+      id: "ad.nessuna",
+      gruppo: "job",
+      nome: "Active Directory",
+      cosa: "serve un'integrazione col dominio",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spenta",
+      configura: { href: "/active-directory", etichetta: "Aggiungi integrazione ›" },
+      leggi: () => diSerieStato(null, esito("neutro", "nessuna integrazione")),
+    }];
+  }
+  const righe = integrazioni.map((i): Opzione => ({
+    id: `ad.${i.id}`,
+    gruppo: "job",
+    nome: `Active Directory · ${i.name}`,
+    cosa: `utenti, computer e gruppi dal dominio ${i.domain}`,
+    valePer: "cliente",
+    forma: "levetta",
+    diSerie: "accesa alla creazione",
+    configura: { href: "/active-directory", etichetta: "Active Directory ›" },
+    tocchiJob: true,
+    spegnendo: {
+      siFerma: `la lettura del dominio di «${i.name}».`,
+      resta: "utenti, computer e gruppi già letti, che invecchiano; l'integrazione resta configurata.",
+    },
+    leggi() {
+      const corrente = getAdIntegrations().find((x) => x.id === i.id);
+      if (!corrente) return diSerieStato(null, esito("errore", "integrazione non più presente"));
+      const acceso = corrente.enabled === 1;
+      if (!acceso) return { acceso, da: null, il: null, esito: esito("neutro", "spenta") };
+      const j = jobAdSync();
+      if (!j || j.enabled !== 1) {
+        return { acceso, da: null, il: null, esito: esito("attenzione", "accesa, ma la sincronizzazione automatica è spenta") };
+      }
+      return {
+        acceso, da: null, il: null,
+        esito: corrente.last_sync_at
+          ? esito(corrente.last_sync_status === "error" ? "errore" : "ok", `letta alle ${oraItaliana(corrente.last_sync_at)}`)
+          : esito("neutro", "non ancora letta"),
+      };
+    },
+    cambia(r) {
+      updateAdIntegration(i.id, { enabled: soloAcceso(r) ? 1 : 0 });
+      if (r.acceso) ensureAdSyncJob(tenant());
+    },
+  }));
+  // Una sola sincronizzazione per tutte le integrazioni accese (job ad_sync, network_id NULL): è anche la riga a
+  // cui rimanda la pagina dei job (ancore.ts).
+  righe.push({
+    id: "ad.sincronizzazione",
+    gruppo: "job",
+    nome: "Sincronizzazione Active Directory",
+    cosa: "rilegge tutte le integrazioni accese",
+    valePer: "cliente",
+    forma: "levetta",
+    diSerie: "accesa con la prima integrazione, ogni 6 ore",
+    scelte: conAttuale(RITMI_AD, job?.interval_minutes ?? null),
+    configura: { href: "/active-directory", etichetta: "Active Directory ›" },
+    tocchiJob: true,
+    spegnendo: { siFerma: "la rilettura automatica del dominio.", resta: "le integrazioni, che si leggono solo a mano con «Sincronizza»." },
+    leggi() {
+      const j = jobAdSync();
+      this.scelte = conAttuale(RITMI_AD, j?.interval_minutes ?? null);
+      if (!j) return diSerieStato(false, esito("neutro", "spenta"));
+      const acceso = j.enabled === 1;
+      return {
+        acceso, da: null, il: null, valore: String(j.interval_minutes),
+        esito: acceso ? esitoGiro([j], false) : esito("neutro", "spenta"),
+      };
+    },
+    cambia(r) {
+      if (r.acceso === true || (r.valore !== undefined && !jobAdSync())) ensureAdSyncJob(tenant());
+      const j = jobAdSync();
+      if (r.acceso === false && j) toggleJob(j.id, false);
+      if (r.valore !== undefined && j) updateScheduledJobInterval(j.id, minuti(r.valore, conAttuale(RITMI_AD, j.interval_minutes)));
+    },
+  });
+  return righe;
+}
+
 function opzioniJob(): Opzione[] {
   const statiche = AGGREGATI.map(opzioneAggregata);
   const reti = new Map(listNetworksLite().map((n) => [n.id, n.name || n.cidr]));
   const dinamiche = getScheduledJobs()
-    .filter((j) => !TIPI_AGGREGATI.has(j.job_type) && j.job_type !== "unifi_sync")
+    .filter((j) => !TIPI_AGGREGATI.has(j.job_type) && j.job_type !== "unifi_sync" && j.job_type !== "ad_sync")
     .map((j) => opzioneJob(j, reti));
-  return [...statiche, ...opzioniController(), ...dinamiche];
+  return [...statiche, ...opzioniController(), ...opzioniActiveDirectory(), ...dinamiche];
 }
 
 // ── Moduli ───────────────────────────────────────────────────────────────────
@@ -725,6 +823,46 @@ function opzioniAutomatismi(): Opzione[] {
       },
     },
     {
+      // Eventi di sicurezza dai DC senza Wazuh (29/10/2026): lettura del registro Sicurezza via WinRM ogni 5 minuti.
+      id: "automatismo.eventi_dc",
+      gruppo: "automatismi",
+      nome: "Eventi di sicurezza dai DC",
+      cosa: "login, logout, accessi falliti, account bloccati e modifiche ad account, gruppi e diritti letti dai domain controller via WinRM",
+      valePer: "cliente",
+      forma: "scelta",
+      diSerie: "auto",
+      scelte: [
+        { valore: "auto", etichetta: "solo dove Wazuh non li legge" },
+        { valore: "sempre", etichetta: "sempre, anche con Wazuh" },
+        { valore: "mai", etichetta: "mai" },
+      ],
+      configura: { href: "/sicurezza-dominio", etichetta: "Sicurezza del dominio ›" },
+      spegnendo: {
+        siFerma: "la lettura del registro Sicurezza dei DC: la pagina Sicurezza del dominio non si aggiorna più.",
+        resta: "gli eventi già letti (31 giorni) e quelli ancora da prendere in carico.",
+      },
+      leggi() {
+        const db = getTenantDb(tenant());
+        const modo = modoEventiDc(db);
+        const motivo = motivoPerNonLeggere(modo, wazuhLeggeGliAllarmi());
+        const ultimo = ultimoGiroDc(tenant());
+        const stato = motivo
+          ? esito("neutro", `non legge: ${motivo}`)
+          : !ultimo
+            ? esito("neutro", "non ancora girato")
+            : esito(ultimo.ok ? "ok" : "errore", `girato alle ${oraItaliana(ultimo.il)} · ${ultimo.testo}`);
+        return diSerieStato(motivo === null, stato, modo);
+      },
+      cambia(r) {
+        if (r.valore !== "auto" && r.valore !== "sempre" && r.valore !== "mai") {
+          throw new ErroreOpzione("Scelta non ammessa: auto, sempre oppure mai", 400);
+        }
+        scriviModoEventiDc(getTenantDb(tenant()), r.valore);
+        // Il primo giro subito, in sottofondo: la pagina ha dati senza aspettare 5 minuti.
+        if (r.valore !== "mai") void giroEventiDcAdesso(tenant()).catch(() => undefined);
+      },
+    },
+    {
       id: "automatismo.senza_agente",
       gruppo: "automatismi",
       nome: "MeshCentral senza agente",
@@ -919,9 +1057,23 @@ function opzioniDaFile(): Opzione[] {
 }
 
 /**
- * da-vault (piano 2026-10-23): i due interruttori stanno nel file dell'appliance e si cambiano solo sul server, con
- * un riavvio, un'appliance alla volta (spenti di serie). Qui si leggono, col loro stato.
+ * da-vault (piano 2026-10-23): gli interruttori stanno nel file dell'appliance e si cambiano solo sul server, con
+ * un riavvio, un'appliance alla volta (spenti di serie). Qui si leggono, col loro stato. OpenBao e DA-Link (vault
+ * semplice, passo 6) sono due backend alternativi: ognuno ha la sua riga, accesa solo dal suo interruttore; tutti e
+ * due insieme sono una configurazione rifiutata all'avvio e le due righe lo dicono.
  */
+/** La riga di un backend remoto del vault: accesa solo dal suo interruttore; i due insieme = errore su tutte e due. */
+function leggiVaultRemoto(quale: "openbao" | "dalink"): StatoOpzione {
+  const openbao = process.env.DA_VAULT_OPENBAO === "1";
+  const dalink = vaultDalinkAcceso();
+  if (openbao && dalink) {
+    return diSerieStato(true, esito("errore", "DA_VAULT_DALINK e DA_VAULT_OPENBAO insieme: configurazione rifiutata, nessun backend avviato"));
+  }
+  if (quale === "openbao" ? !openbao : !dalink) return diSerieStato(false, esito("neutro", "spento"));
+  const o = statoVault().openbao;
+  return diSerieStato(true, o.pronto ? esito(o.motivo ? "attenzione" : "ok", o.motivo ?? "segreti caricati") : esito("errore", o.motivo ?? "non pronto"));
+}
+
 function opzioniVault(): Opzione[] {
   return [
     {
@@ -949,11 +1101,23 @@ function opzioniVault(): Opzione[] {
       forma: "file",
       diSerie: "spento",
       configura: { href: "/settings/vault", etichetta: "Vault ›" },
-      dove: "Riga DA_VAULT_OPENBAO=1 nel file .env.local, con DA_VAULT_OPENBAO_URL e l'AppRole, poi riavvio del servizio.",
+      dove: "Riga DA_VAULT_OPENBAO=1 nel file .env.local, con DA_VAULT_OPENBAO_URL e l'AppRole, poi riavvio del servizio. Alternativa a DA-Link: non insieme.",
       leggi() {
-        if (!vaultOpenBaoAcceso()) return diSerieStato(false, esito("neutro", "spento"));
-        const o = statoVault().openbao;
-        return diSerieStato(true, o.pronto ? esito(o.motivo ? "attenzione" : "ok", o.motivo ?? "segreti caricati") : esito("errore", o.motivo ?? "non pronto"));
+        return leggiVaultRemoto("openbao");
+      },
+    },
+    {
+      id: "file.vault_dalink",
+      gruppo: "da_file",
+      nome: "Credenziali da DA-Link",
+      cosa: "le credenziali dei device lette dal vault di DA-Link col riferimento (credential_ref), sull'hub",
+      valePer: "hub",
+      forma: "file",
+      diSerie: "spento",
+      configura: { href: "/settings/vault", etichetta: "Vault ›" },
+      dove: "Riga DA_VAULT_DALINK=1 nel file .env.local, con DALINK_VAULT_URL, DALINK_VAULT_GETTONE e DALINK_VAULT_IMPRONTA, poi riavvio del servizio. Alternativa a OpenBao: non insieme.",
+      leggi() {
+        return leggiVaultRemoto("dalink");
       },
     },
   ];

@@ -2,7 +2,7 @@
 import { joinCsvRow } from "@/lib/csv-utils";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { useEAdmin } from "@/hooks/use-e-admin";
@@ -28,6 +28,13 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuSeparator, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  aggiungiFiltroValore, colonnaFiltrabile, passaFiltriValore, passaFiltroAcquisizione,
+  togliFiltroValore, valoreLeggibile, type FiltroAcquisizione, type FiltroValore,
+} from "@/lib/discovery/filtri-valore";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
@@ -54,7 +61,7 @@ import {
   Terminal as TerminalIcon, Globe,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
-  BatteryCharging, Network, ArrowUp, ArrowDown, Merge, Split,
+  BatteryCharging, Network, ArrowUp, ArrowDown, Merge, Split, Filter, EyeOff, Copy,
 } from "lucide-react";
 
 /**
@@ -123,6 +130,9 @@ type EnrichedHost = Host & {
   device_name?: string;
   device_vendor?: string;
   device_type?: string;
+  /** Inventario letto dall'apparato (query o scansione Proxmox riuscita). */
+  device_acquired?: boolean;
+  device_acquired_at?: string | null;
   switch_port?: string;
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
@@ -213,6 +223,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "firmware",        label: "Firmware",        defaultVisible: false, group: "dettaglio" },
   { id: "asset_tag",       label: "Asset tag",       defaultVisible: false, group: "dettaglio" },
   { id: "software_scan",   label: "App scansionate", defaultVisible: false, group: "dettaglio" },
+  { id: "acquisizione",    label: "Dati acquisiti",  defaultVisible: false, group: "dettaglio" },
 
   // Nota: la colonna "Azioni" è hardcoded fuori da COLUMNS (vedi TableHead /
   // TableCell dedicati nel render della tabella) perché è sempre visibile e
@@ -413,6 +424,89 @@ function emptyBulkForm(): DiscoveryBulkForm {
 // Component
 // ---------------------------------------------------------------------------
 
+/** Le voci di un menu di riga: le stesse dentro i tre puntini e nel menu del tasto destro. */
+interface VoceMenuProps {
+  children?: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  title?: string;
+  render?: ReactElement;
+  variant?: "default" | "destructive";
+}
+interface KitMenu {
+  Voce: (p: VoceMenuProps) => ReactNode;
+  Separatore: () => ReactNode;
+}
+const KIT_TENDINA: KitMenu = {
+  Voce: (p) => <DropdownMenuItem {...p} />,
+  Separatore: () => <DropdownMenuSeparator />,
+};
+const KIT_TASTO_DESTRO: KitMenu = {
+  Voce: (p) => <ContextMenuItem {...p} />,
+  Separatore: () => <ContextMenuSeparator />,
+};
+
+/** Riga e cella su cui si è premuto il tasto destro; `colonna` null = checkbox o azioni. */
+interface BersaglioMenu {
+  host: EnrichedHost;
+  colonna: string | null;
+  valore: string;
+}
+
+/** Il menu del tasto destro resta quello del browser dove serve scrivere (caselle di testo). */
+function nelCampoDiTesto(t: EventTarget | null): boolean {
+  return t instanceof Element && t.closest("input, textarea, select, [contenteditable=true]") != null;
+}
+
+/** Testo di una cella (CSV, filtri dal tasto destro); «Profilo» lo calcola la pagina. */
+function testoCella(h: EnrichedHost, colId: string): string {
+  switch (colId) {
+    case "ip": return h.ip;
+    case "hostname": return displayName(h);
+    case "status": return h.status;
+    case "mac": return h.mac ?? "";
+    case "vendor": return h.vendor ?? "";
+    case "classification": return h.classification || "";
+    case "known_host": return h.known_host ? "Si" : "No";
+    case "ip_assignment": return h.ip_assignment;
+    case "notes": return h.notes || "";
+    case "network_name": return `${h.network_name} (${h.network_cidr})`;
+    case "vlan_id": return h.vlan_id != null ? String(h.vlan_id) : "";
+    case "location": return h.location || "";
+    case "switch_port": return h.switch_port ?? "";
+    case "ad_dns": return h.ad_dns_host_name ?? "";
+    case "os_info": return h.os_info ?? "";
+    case "open_ports": return parsePorts(h.open_ports);
+    case "open_ports_tcp": return parsePortsByProtocol(h.open_ports, "tcp");
+    case "open_ports_udp": return parsePortsByProtocol(h.open_ports, "udp");
+    case "validated_creds": return (h.validated_protocols ?? []).join(", ");
+    case "detected": { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; }
+    case "multihomed": return h.multihomed ? `${h.multihomed.peers.length + 1} IF` : "";
+    case "in_ad": return h.ad_dns_host_name ? "Si" : "No";
+    case "response_time": return h.last_response_time_ms != null ? String(h.last_response_time_ms) : "";
+    case "device_manufacturer": return getManufacturer(h).text;
+    case "model": return h.model ?? "";
+    case "serial_number": return h.serial_number ?? "";
+    case "firmware": return h.firmware ?? "";
+    case "last_seen": return formatDate(h.last_seen);
+    case "first_seen": return formatDate(h.first_seen);
+    case "fp_confidence": {
+      const c = getFpConfidence(h);
+      return c > 0 ? `${Math.round(c * 100)}%` : "";
+    }
+    case "vuln_max_severity": return h.vuln?.max_severity ?? "";
+    case "vuln_counts":
+      return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
+    case "asset_tag": return h.asset_tag ?? "";
+    case "software_scan":
+      return h.last_software_scan_apps != null ? String(h.last_software_scan_apps) : "";
+    case "acquisizione":
+      if (h.device_acquired) return h.device_acquired_at ? formatDate(h.device_acquired_at) : "Sì";
+      return h.device_id ? "Mai" : "";
+    default: return "";
+  }
+}
+
 export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
@@ -436,6 +530,14 @@ export default function DiscoveryPage() {
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
+  // Riccardo, 29/10: «solo quelli in cui l'acquisizione dei dati è stata fatta», e i filtri sul
+  // valore di una cella dal menu del tasto destro.
+  const [acqFilter, setAcqFilter] = useState<FiltroAcquisizione>("");
+  const [filtriValore, setFiltriValore] = useState<FiltroValore[]>([]);
+  // Un solo menu del tasto destro per tutta la tabella: la cella premuta fissa il bersaglio
+  // prima che il ContextMenuTrigger (sul corpo della tabella) chieda di aprire.
+  const bersaglioRef = useRef<BersaglioMenu | null>(null);
+  const [menuRiga, setMenuRiga] = useState<BersaglioMenu | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(loadPageSize);
   const [columnOrder, setColumnOrder] = useState<string[]>(loadColumnOrder);
@@ -924,6 +1026,8 @@ export default function DiscoveryPage() {
     if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
     if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
     if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
+    if (acqFilter) criteri.push((id) => prendi(id, (h) => passaFiltroAcquisizione(acqFilter, h)));
+    if (filtriValore.length > 0) criteri.push((id) => prendi(id, (h) => passaFiltriValore(filtriValore, (c) => testoCella(h, c))));
     if (lower) {
       criteri.push((id) => prendi(id, (h) =>
         [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer]
@@ -937,7 +1041,7 @@ export default function DiscoveryPage() {
       return true;
     });
     return { filtered: righe, comeSecondario: trovati };
-  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
+  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore, presets]);
 
   // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
   const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
@@ -983,6 +1087,9 @@ export default function DiscoveryPage() {
       return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
     },
     vuln_counts:         (h: EnrichedHost) => h.vuln ? (h.vuln.critical * 1000 + h.vuln.high) : -1,
+    acquisizione:        (h: EnrichedHost) => h.device_acquired
+      ? (h.device_acquired_at ? parseDbDate(h.device_acquired_at).getTime() : 1)
+      : (h.device_id ? 0 : -1),
   }), [hostExtras]);
 
   const { sortedRows, sortColumn, sortDirection, onSort } = useClientTableSort(
@@ -998,7 +1105,7 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter, vulnFilter]);
+  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
   const handlePageSizeChange = useCallback((size: number) => {
@@ -1348,62 +1455,21 @@ export default function DiscoveryPage() {
   };
 
   // ---------- render helpers ----------
+  // Testo della cella per CSV, ordinamento e filtri del tasto destro: «Profilo» dipende dalle
+  // integrazioni caricate in pagina, il resto da `testoCella` (fuori dal componente).
   function getCellText(h: EnrichedHost, colId: string): string {
-    switch (colId) {
-      case "ip": return h.ip;
-      case "hostname": return displayName(h);
-      case "status": return h.status;
-      case "mac": return h.mac ?? "";
-      case "vendor": return h.vendor ?? "";
-      case "classification": return h.classification || "";
-      case "known_host": return h.known_host ? "Si" : "No";
-      case "ip_assignment": return h.ip_assignment;
-      case "notes": return h.notes || "";
-      case "network_name": return `${h.network_name} (${h.network_cidr})`;
-      case "vlan_id": return h.vlan_id != null ? String(h.vlan_id) : "";
-      case "location": return h.location || "";
-      case "switch_port": return h.switch_port ?? "";
-      case "ad_dns": return h.ad_dns_host_name ?? "";
-      case "os_info": return h.os_info ?? "";
-      case "open_ports": return parsePorts(h.open_ports);
-      case "open_ports_tcp": return parsePortsByProtocol(h.open_ports, "tcp");
-      case "open_ports_udp": return parsePortsByProtocol(h.open_ports, "udp");
-      case "validated_creds": return (h.validated_protocols ?? []).join(", ");
-      case "detected": { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; }
-      case "multihomed": return h.multihomed ? `${h.multihomed.peers.length + 1} IF` : "";
-      case "in_ad": return h.ad_dns_host_name ? "Si" : "No";
-      case "response_time": return h.last_response_time_ms != null ? String(h.last_response_time_ms) : "";
-      case "device_manufacturer": return getManufacturer(h).text;
-      case "model": return h.model ?? "";
-      case "serial_number": return h.serial_number ?? "";
-      case "firmware": return h.firmware ?? "";
-      case "last_seen": return formatDate(h.last_seen);
-      case "first_seen": return formatDate(h.first_seen);
-      case "fp_confidence": {
-        const c = getFpConfidence(h);
-        return c > 0 ? `${Math.round(c * 100)}%` : "";
-      }
-      case "vuln_max_severity": return h.vuln?.max_severity ?? "";
-      case "vuln_counts":
-        return h.vuln ? `${h.vuln.critical}/${h.vuln.high}` : "";
-      case "profilo": {
-        // Score per sort: bitfield delle promozioni raggiunte.
-        // discovery=1 (sempre), device=2, asset=4, librenms=8, multihomed=16 → max 31.
-        let score = 1;
-        if (h.device_id) score += 2;
-        if (h.asset_id) score += 4;
-        if (librenmsMap.get(`${h.network_id}:${h.ip}`)) score += 8;
-        if (h.multihomed) score += 16;
-        // Presenza MeshCentral attiva (online + sync fresco) pesa nel sort "Profilo".
-        const mesh = meshMap.get(h.id);
-        if (mesh?.present && ((mesh.conn ?? 0) & 1) === 1) score += 32;
-        return String(score);
-      }
-      case "asset_tag": return h.asset_tag ?? "";
-      case "software_scan":
-        return h.last_software_scan_apps != null ? String(h.last_software_scan_apps) : "";
-      default: return "";
-    }
+    if (colId !== "profilo") return testoCella(h, colId);
+    // Score per sort: bitfield delle promozioni raggiunte.
+    // discovery=1 (sempre), device=2, asset=4, librenms=8, multihomed=16 → max 31.
+    let score = 1;
+    if (h.device_id) score += 2;
+    if (h.asset_id) score += 4;
+    if (librenmsMap.get(`${h.network_id}:${h.ip}`)) score += 8;
+    if (h.multihomed) score += 16;
+    // Presenza MeshCentral attiva (online + sync fresco) pesa nel sort "Profilo".
+    const mesh = meshMap.get(h.id);
+    if (mesh?.present && ((mesh.conn ?? 0) & 1) === 1) score += 32;
+    return String(score);
   }
 
   /** v0.2.618: salva un campo host inline e aggiorna lo state locale.
@@ -1863,9 +1929,274 @@ export default function DiscoveryPage() {
             {h.last_software_scan_apps} app
           </span>
         );
+      case "acquisizione":
+        // Segno + parola (STILE-UI regola 7): ✓ con la data, «– mai» per un apparato non ancora letto.
+        if (h.device_acquired) {
+          return (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap" title="Inventario letto dall'apparato">
+              <span aria-hidden className="font-semibold">✓</span>
+              <span className="font-mono text-[13px]">{h.device_acquired_at ? formatDate(h.device_acquired_at) : "sì"}</span>
+            </span>
+          );
+        }
+        return h.device_id
+          ? <span className="text-[13px] text-muted-foreground whitespace-nowrap" title="Apparato senza inventario letto: usa «Riscansiona dispositivo»">– mai</span>
+          : <span className="text-muted-foreground text-xs">—</span>;
       default:
         return null;
     }
+  }
+
+  // Voci del menu di una riga: le stesse nei tre puntini e nel tasto destro (Riccardo, 29/10).
+  function vociAzioniRiga(h: EnrichedHost, k: KitMenu) {
+    const isDev = h.device_id != null;
+    const busyHere = isDev && rowActionBusy?.id === h.device_id;
+    const label = h.hostname || h.ip;
+    const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
+    const isAddingLnms = librenmsAdding.has(h.id);
+    // Multihomed secondary: disabilita le azioni device-scan che
+    // lato server rifiuterebbero con 409 (vedi route /api/devices/*/{query,test,software-scan}).
+    // L'utente vede UNA spiegazione coerente invece di un errore generico.
+    const isMhSecondary = !!(h.multihomed && !h.multihomed.is_primary);
+    const mhPrimaryIp = h.multihomed?.primary_ip ?? null;
+    const mhSecondaryHint = mhPrimaryIp
+      ? `Secondary multihomed — esegui sul primary ${mhPrimaryIp}`
+      : "Secondary multihomed — esegui sul primary";
+    const lnmsDeviceLink = lnms && librenmsUrl
+      ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
+      : null;
+    return (
+      <>
+        {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
+            Se isDev → ?edit=1 auto-apre EditDeviceDialog.
+            Se !isDev (host non promosso) → ?promote=1 auto-apre RendiApparatoDialog. */}
+        <k.Voce
+          render={
+            <Link href={`/objects/${h.id}${!admin ? "" : isDev ? "?edit=1" : "?promote=1"}`}>
+              <Pencil className="h-3.5 w-3.5" />
+              {!admin ? "Apri la scheda" : isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
+            </Link>
+          }
+        />
+        {isDev && admin && (
+          <>
+            <k.Voce
+              disabled={busyHere || isMhSecondary}
+              onClick={() => handleRowTestCred(h.device_id!)}
+              title={isMhSecondary ? mhSecondaryHint : undefined}
+            >
+              <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
+              Testa credenziali device
+              {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
+            </k.Voce>
+            <k.Voce
+              disabled={busyHere || isMhSecondary}
+              onClick={() => handleRowRescan(h.device_id!)}
+              title={isMhSecondary ? mhSecondaryHint : undefined}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
+              Riscansiona dispositivo
+              {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
+            </k.Voce>
+          </>
+        )}
+        {admin && (
+        <>
+        <k.Voce onClick={() => openTestForRow(h)}>
+          <KeyRound className="h-3.5 w-3.5" />
+          Test credenziali host
+        </k.Voce>
+
+        {/* Installa agent/moduli (Windows/WinRM): Chocolatey,
+            MeshAgent RMM, GLPI inventario, Wazuh. Riusa gli
+            endpoint /api/patch/* verificati; la validazione
+            Windows/WinRM è lato server. */}
+        <k.Voce onClick={() => setInstallAgentsRow(h)}>
+          <Package className="h-3.5 w-3.5" />
+          Installa agent/moduli
+        </k.Voce>
+
+        {/* Terminale SSH interattivo (host con credenziali SSH salvate) */}
+        <k.Voce onClick={() => setSshTermRow(h)}>
+          <TerminalIcon className="h-3.5 w-3.5" />
+          Terminale SSH
+        </k.Voce>
+
+        {/* Desktop remoto senza agente, aperto dal server MeshCentral
+            dell'appliance (solo con modulo e flag accesi). */}
+        {senzaAgenteOn && (
+          <>
+            <k.Voce
+              render={
+                <Link href={`/rmm/${h.id}/senza-agente?p=rdp`}>
+                  <Monitor className="h-3.5 w-3.5" />
+                  Desktop remoto (RDP)
+                </Link>
+              }
+            />
+            <k.Voce
+              render={
+                <Link href={`/rmm/${h.id}/senza-agente?p=vnc`}>
+                  <Monitor className="h-3.5 w-3.5" />
+                  VNC
+                </Link>
+              }
+            />
+          </>
+        )}
+
+        </>
+        )}
+
+        {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
+        <k.Voce
+          onClick={() => {
+            const url = window.prompt(
+              `Apri servizio web su ${h.ip} (modifica schema/porta):`,
+              `https://${h.ip}`,
+            );
+            if (url) window.open(url, "_blank", "noopener,noreferrer");
+          }}
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Apri web (http/s)
+        </k.Voce>
+
+        <k.Separatore />
+
+        {/* Integrazione LibreNMS */}
+        {lnms ? (
+          lnmsDeviceLink ? (
+            <k.Voce
+              render={
+                <a href={lnmsDeviceLink} target="_blank" rel="noopener noreferrer">
+                  <Activity className="h-3.5 w-3.5 text-success" />
+                  Apri in LibreNMS
+                  <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+                </a>
+              }
+            />
+          ) : (
+            <k.Voce disabled>
+              <Activity className="h-3.5 w-3.5 text-success" />
+              In LibreNMS (URL non configurato)
+            </k.Voce>
+          )
+        ) : admin ? (
+          <k.Voce
+            disabled={isAddingLnms}
+            onClick={() => addHostToLibreNMS(h)}
+          >
+            {isAddingLnms
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <PlusCircle className="h-3.5 w-3.5" />}
+            Aggiungi a LibreNMS
+          </k.Voce>
+        ) : null}
+
+        {/* Wazuh: stato informativo nel menu kebab. L'azione (apri dashboard /
+            enrollment) sta sull'icona Shield della colonna "Profilo" che apre
+            il rispettivo dialog. */}
+        {(() => {
+          const ws = wazuhMap.get(h.id);
+          if (ws) {
+            const c = ws.status === "active"
+              ? "text-emerald-600"
+              : "text-rose-600";
+            return (
+              <k.Voce disabled>
+                <Shield className={`h-3.5 w-3.5 ${c}`} />
+                <span className={c}>In Wazuh ({ws.status ?? "?"})</span>
+              </k.Voce>
+            );
+          }
+          return (
+            <k.Voce disabled>
+              <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">Aggiungi a Wazuh (icona profilo)</span>
+            </k.Voce>
+          );
+        })()}
+
+        {admin && <k.Separatore />}
+
+        {!admin ? null : isDev ? (
+          <k.Voce
+            variant="destructive"
+            disabled={busyHere}
+            onClick={() => handleRowDeleteDevice(h.device_id!, label)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Elimina dispositivo
+          </k.Voce>
+        ) : (
+          <k.Voce
+            variant="destructive"
+            onClick={() => setDeleteHostRow(h)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Elimina host
+          </k.Voce>
+        )}
+      </>
+    );
+  }
+
+  function etichettaColonna(id: string): string {
+    return COLUMNS.find((c) => c.id === id)?.label ?? id;
+  }
+
+  /** Dove si preme il tasto destro (o si tiene premuto col dito): fissa riga, colonna e valore della cella. */
+  function puntaMenu(e: { target: EventTarget | null; stopPropagation: () => void }, h: EnrichedHost, colonna: string | null) {
+    if (nelCampoDiTesto(e.target)) {
+      // Nelle caselle di testo resta il menu del browser (copia/incolla).
+      e.stopPropagation();
+      bersaglioRef.current = null;
+      return;
+    }
+    bersaglioRef.current = { host: h, colonna, valore: colonna ? getCellText(h, colonna) : "" };
+  }
+
+  function menuTastoDestro({ host: h, colonna, valore }: BersaglioMenu) {
+    const filtrabile = colonna != null && colonnaFiltrabile(colonna);
+    const leggibile = valoreLeggibile(valore);
+    return (
+      <>
+        <ContextMenuLabel className="max-w-72 truncate" title={`${displayName(h) || h.ip} — ${h.ip}`}>
+          {displayName(h) ? `${displayName(h)} · ${h.ip}` : h.ip}
+        </ContextMenuLabel>
+        <ContextMenuSeparator />
+        {filtrabile && (
+          <>
+            <ContextMenuLabel className="max-w-72 truncate" title={valore}>
+              {etichettaColonna(colonna)}: <span className="font-mono text-foreground">{leggibile}</span>
+            </ContextMenuLabel>
+            <ContextMenuItem onClick={() => setFiltriValore((f) => aggiungiFiltroValore(f, { colonna, valore, escludi: false }))}>
+              <Filter className="h-3.5 w-3.5" />
+              Mostra solo questo valore
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => setFiltriValore((f) => aggiungiFiltroValore(f, { colonna, valore, escludi: true }))}>
+              <EyeOff className="h-3.5 w-3.5" />
+              Nascondi questo valore
+            </ContextMenuItem>
+            {valore.trim() !== "" && valore !== "—" && (
+              <ContextMenuItem
+                onClick={() => {
+                  void navigator.clipboard?.writeText(valore)
+                    .then(() => toast.success("Copiato"))
+                    .catch(() => toast.error("Il browser non permette di copiare"));
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copia il valore
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+          </>
+        )}
+        {vociAzioniRiga(h, KIT_TASTO_DESTRO)}
+      </>
+    );
   }
 
   // ---------- counts ----------
@@ -1954,6 +2285,18 @@ export default function DiscoveryPage() {
                   <SelectItem value="critical">Con CVE Critical</SelectItem>
                   <SelectItem value="critical_high">Con CVE Critical o High</SelectItem>
                   <SelectItem value="with_findings">Con qualsiasi finding</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Dati acquisiti: inventario letto dall'apparato (query o scansione Proxmox riuscita) */}
+              <Select value={acqFilter} onValueChange={(v) => setAcqFilter((v ?? "") as FiltroAcquisizione)}>
+                <SelectTrigger className="w-52" title="Apparati di cui DA-IPAM ha già letto l'inventario (modello, seriale, firmware…)">
+                  <SelectValue placeholder="Dati acquisiti" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Dati acquisiti: tutti</SelectItem>
+                  <SelectItem value="acquisiti">Solo con dati acquisiti</SelectItem>
+                  <SelectItem value="non_acquisiti">Senza dati acquisiti</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -2073,6 +2416,30 @@ export default function DiscoveryPage() {
             </Link>
           </div>
           </div>
+          {filtriValore.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <span className="text-[13px] text-muted-foreground">Filtri dal tasto destro:</span>
+              {filtriValore.map((f, i) => (
+                <Button
+                  key={`${f.colonna}:${f.valore}:${f.escludi}`}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-[13px]"
+                  title="Togli questo filtro"
+                  onClick={() => setFiltriValore((prec) => togliFiltroValore(prec, i))}
+                >
+                  {f.escludi ? <EyeOff className="h-3.5 w-3.5" /> : <Filter className="h-3.5 w-3.5" />}
+                  {etichettaColonna(f.colonna)} {f.escludi ? "≠" : "="} <span className="font-mono">{valoreLeggibile(f.valore)}</span>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              ))}
+              {filtriValore.length > 1 && (
+                <Button variant="ghost" size="sm" className="h-7 text-[13px] text-muted-foreground" onClick={() => setFiltriValore([])}>
+                  Togli tutti
+                </Button>
+              )}
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="p-0">
@@ -2206,238 +2573,54 @@ export default function DiscoveryPage() {
                     ))}
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <ContextMenu open={menuRiga !== null} onOpenChange={(o) => {
+                  setMenuRiga(o ? bersaglioRef.current : null);
+                  if (!o) bersaglioRef.current = null;
+                }}>
+                <ContextMenuTrigger render={<TableBody />}>
                   {pagedRows.map((h) => (
                     <TableRow key={h.id} className={`hover:bg-muted/40 ${selectedIds.has(h.id) ? "bg-primary/5" : ""}`}>
-                      <TableCell className="py-2">
+                      <TableCell className="py-2" onContextMenu={(e) => puntaMenu(e, h, null)} onTouchStart={(e) => puntaMenu(e, h, null)}>
                         <Checkbox
                           checked={selectedIds.has(h.id)}
                           onCheckedChange={() => toggleSelect(h.id)}
                         />
                       </TableCell>
-                      <TableCell className="py-2 text-center">
+                      <TableCell className="py-2 text-center" onContextMenu={(e) => puntaMenu(e, h, null)} onTouchStart={(e) => puntaMenu(e, h, null)}>
                         {/* Menu azioni "kebab" (tre puntini): contiene tutte le azioni
                             per riga. Estendibile aggiungendo nuove voci qui sotto
                             (es. Wazuh, esportazioni, sync verso integrazioni). */}
-                        {(() => {
-                          const isDev = h.device_id != null;
-                          const busyHere = isDev && rowActionBusy?.id === h.device_id;
-                          const label = h.hostname || h.ip;
-                          const lnms = librenmsMap.get(`${h.network_id}:${h.ip}`);
-                          const isAddingLnms = librenmsAdding.has(h.id);
-                          // Multihomed secondary: disabilita le azioni device-scan che
-                          // lato server rifiuterebbero con 409 (vedi route /api/devices/*/{query,test,software-scan}).
-                          // L'utente vede UNA spiegazione coerente invece di un errore generico.
-                          const isMhSecondary = !!(h.multihomed && !h.multihomed.is_primary);
-                          const mhPrimaryIp = h.multihomed?.primary_ip ?? null;
-                          const mhSecondaryHint = mhPrimaryIp
-                            ? `Secondary multihomed — esegui sul primary ${mhPrimaryIp}`
-                            : "Secondary multihomed — esegui sul primary";
-                          const lnmsDeviceLink = lnms && librenmsUrl
-                            ? librenmsDevicePath(librenmsUrl, lnms.librenms_device_id)
-                            : null;
-                          return (
-                            <div onClick={(e) => e.stopPropagation()} className="inline-flex">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger
-                                  render={
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      title="Azioni"
-                                      aria-label={`Azioni per ${label}`}
-                                    >
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  }
-                                />
-                                <DropdownMenuContent align="end" className="w-56">
-                                  {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
-                                      Se isDev → ?edit=1 auto-apre EditDeviceDialog.
-                                      Se !isDev (host non promosso) → ?promote=1 auto-apre RendiApparatoDialog. */}
-                                  <DropdownMenuItem
-                                    render={
-                                      <Link href={`/objects/${h.id}${!admin ? "" : isDev ? "?edit=1" : "?promote=1"}`}>
-                                        <Pencil className="h-3.5 w-3.5" />
-                                        {!admin ? "Apri la scheda" : isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
-                                      </Link>
-                                    }
-                                  />
-                                  {isDev && admin && (
-                                    <>
-                                      <DropdownMenuItem
-                                        disabled={busyHere || isMhSecondary}
-                                        onClick={() => handleRowTestCred(h.device_id!)}
-                                        title={isMhSecondary ? mhSecondaryHint : undefined}
-                                      >
-                                        <ShieldCheck className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "test" && busyHere ? "animate-pulse" : ""}`} />
-                                        Testa credenziali device
-                                        {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        disabled={busyHere || isMhSecondary}
-                                        onClick={() => handleRowRescan(h.device_id!)}
-                                        title={isMhSecondary ? mhSecondaryHint : undefined}
-                                      >
-                                        <RefreshCw className={`h-3.5 w-3.5 ${rowActionBusy?.kind === "query" && busyHere ? "animate-spin" : ""}`} />
-                                        Riscansiona dispositivo
-                                        {isMhSecondary && <span className="ml-auto text-[10px] text-muted-foreground">MH</span>}
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                  {admin && (
-                                  <>
-                                  <DropdownMenuItem onClick={() => openTestForRow(h)}>
-                                    <KeyRound className="h-3.5 w-3.5" />
-                                    Test credenziali host
-                                  </DropdownMenuItem>
-
-                                  {/* Installa agent/moduli (Windows/WinRM): Chocolatey,
-                                      MeshAgent RMM, GLPI inventario, Wazuh. Riusa gli
-                                      endpoint /api/patch/* verificati; la validazione
-                                      Windows/WinRM è lato server. */}
-                                  <DropdownMenuItem onClick={() => setInstallAgentsRow(h)}>
-                                    <Package className="h-3.5 w-3.5" />
-                                    Installa agent/moduli
-                                  </DropdownMenuItem>
-
-                                  {/* Terminale SSH interattivo (host con credenziali SSH salvate) */}
-                                  <DropdownMenuItem onClick={() => setSshTermRow(h)}>
-                                    <TerminalIcon className="h-3.5 w-3.5" />
-                                    Terminale SSH
-                                  </DropdownMenuItem>
-
-                                  {/* Desktop remoto senza agente, aperto dal server MeshCentral
-                                      dell'appliance (solo con modulo e flag accesi). */}
-                                  {senzaAgenteOn && (
-                                    <>
-                                      <DropdownMenuItem
-                                        render={
-                                          <Link href={`/rmm/${h.id}/senza-agente?p=rdp`}>
-                                            <Monitor className="h-3.5 w-3.5" />
-                                            Desktop remoto (RDP)
-                                          </Link>
-                                        }
-                                      />
-                                      <DropdownMenuItem
-                                        render={
-                                          <Link href={`/rmm/${h.id}/senza-agente?p=vnc`}>
-                                            <Monitor className="h-3.5 w-3.5" />
-                                            VNC
-                                          </Link>
-                                        }
-                                      />
-                                    </>
-                                  )}
-
-                                  </>
-                                  )}
-
-                                  {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      const url = window.prompt(
-                                        `Apri servizio web su ${h.ip} (modifica schema/porta):`,
-                                        `https://${h.ip}`,
-                                      );
-                                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                                    }}
-                                  >
-                                    <Globe className="h-3.5 w-3.5" />
-                                    Apri web (http/s)
-                                  </DropdownMenuItem>
-
-                                  <DropdownMenuSeparator />
-
-                                  {/* Integrazione LibreNMS */}
-                                  {lnms ? (
-                                    lnmsDeviceLink ? (
-                                      <DropdownMenuItem
-                                        render={
-                                          <a href={lnmsDeviceLink} target="_blank" rel="noopener noreferrer">
-                                            <Activity className="h-3.5 w-3.5 text-success" />
-                                            Apri in LibreNMS
-                                            <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
-                                          </a>
-                                        }
-                                      />
-                                    ) : (
-                                      <DropdownMenuItem disabled>
-                                        <Activity className="h-3.5 w-3.5 text-success" />
-                                        In LibreNMS (URL non configurato)
-                                      </DropdownMenuItem>
-                                    )
-                                  ) : admin ? (
-                                    <DropdownMenuItem
-                                      disabled={isAddingLnms}
-                                      onClick={() => addHostToLibreNMS(h)}
-                                    >
-                                      {isAddingLnms
-                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        : <PlusCircle className="h-3.5 w-3.5" />}
-                                      Aggiungi a LibreNMS
-                                    </DropdownMenuItem>
-                                  ) : null}
-
-                                  {/* Wazuh: stato informativo nel menu kebab. L'azione (apri dashboard /
-                                      enrollment) sta sull'icona Shield della colonna "Profilo" che apre
-                                      il rispettivo dialog. */}
-                                  {(() => {
-                                    const ws = wazuhMap.get(h.id);
-                                    if (ws) {
-                                      const c = ws.status === "active"
-                                        ? "text-emerald-600"
-                                        : "text-rose-600";
-                                      return (
-                                        <DropdownMenuItem disabled>
-                                          <Shield className={`h-3.5 w-3.5 ${c}`} />
-                                          <span className={c}>In Wazuh ({ws.status ?? "?"})</span>
-                                        </DropdownMenuItem>
-                                      );
-                                    }
-                                    return (
-                                      <DropdownMenuItem disabled>
-                                        <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
-                                        <span className="text-muted-foreground">Aggiungi a Wazuh (icona profilo)</span>
-                                      </DropdownMenuItem>
-                                    );
-                                  })()}
-
-                                  {admin && <DropdownMenuSeparator />}
-
-                                  {!admin ? null : isDev ? (
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      disabled={busyHere}
-                                      onClick={() => handleRowDeleteDevice(h.device_id!, label)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Elimina dispositivo
-                                    </DropdownMenuItem>
-                                  ) : (
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      onClick={() => setDeleteHostRow(h)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Elimina host
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          );
-                        })()}
+                        <div onClick={(e) => e.stopPropagation()} className="inline-flex">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  title="Azioni (anche col tasto destro sulla riga)"
+                                  aria-label={`Azioni per ${h.hostname || h.ip}`}
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="end" className="w-56">
+                              {vociAzioniRiga(h, KIT_TENDINA)}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                       {colonneMostrate.map((col) => (
-                        <TableCell key={col.id} className="py-2">
+                        <TableCell key={col.id} className="py-2" onContextMenu={(e) => puntaMenu(e, h, col.id)} onTouchStart={(e) => puntaMenu(e, h, col.id)}>
                           {renderCell(h, col.id)}
                         </TableCell>
                       ))}
                     </TableRow>
                   ))}
-                </TableBody>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="w-64">{menuRiga && menuTastoDestro(menuRiga)}</ContextMenuContent>
+                </ContextMenu>
               </Table>
             </div>
           )}

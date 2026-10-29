@@ -22,7 +22,8 @@ import {
   scriviLetturaFallita,
   scriviLetturaRiuscita,
 } from "./db";
-import { classificaEvento, comeAlert, eAllarme, leggiRispostaDc, prossimoCursore, scriptEventiDc, type EventoDc } from "./eventi";
+import { classificaEvento, comeAlert, eAllarme, leggiRispostaDc, prossimoCursore, scriptEventiDc, type EventoDc, type EventoGrezzo } from "./eventi";
+import type { CursoriAltri } from "./db";
 
 /** Impostazione del cliente: «auto» (di serie), «sempre», «mai». */
 export const CHIAVE_MODO_EVENTI_DC = "eventi_dc.modo";
@@ -108,14 +109,28 @@ export type EseguiWinrm = typeof runWinrmCommand;
 export async function leggiUnDc(db: Database, d: DcDaLeggere, esegui: EseguiWinrm, self = collectSelfIdentity(db)): Promise<EsitoDc & { aperti: number }> {
   const prima = letturaDc(db, d.dc);
   const cursore = prima?.ultimoRecord ?? null;
+  const cursoriAltri = prima?.cursoriAltri ?? {};
   try {
     const accesso = accessoWinrmDelDcDb(db, d.credentialId);
     if (!accesso.ok) throw new Error(accesso.motivo);
-    const raw = await esegui(d.dc, accesso.port, accesso.username, accesso.password, scriptEventiDc(cursore), true, d.realm);
+    const script = scriptEventiDc({ Security: cursore, ...cursoriAltri });
+    const raw = await esegui(d.dc, accesso.port, accesso.username, accesso.password, script, true, d.realm);
     const r = leggiRispostaDc(raw);
     if (r.errore) throw new Error(`il DC non ha dato il registro Sicurezza: ${r.errore}`);
     const prossimo = prossimoCursore(cursore, r);
-    const eventi = r.eventi.map((e) => classificaEvento(d.dc, e, self)).filter((e): e is EventoDc => e !== null);
+    // System e Defender non fermano il DC: assente o in errore, il loro cursore resta e si riprova al giro dopo.
+    const grezzi: EventoGrezzo[] = [...r.eventi];
+    const altri: CursoriAltri = {};
+    for (const a of r.altri) {
+      if (a.registro === "Security" || a.assente) continue;
+      if (a.errore) {
+        console.warn(`[eventi-dc] ${d.dc}: registro ${a.registro} non letto: ${a.errore}`);
+        continue;
+      }
+      altri[a.registro] = prossimoCursore(cursoriAltri[a.registro] ?? null, a).record;
+      grezzi.push(...a.eventi);
+    }
+    const eventi = grezzi.map((e) => classificaEvento(d.dc, e, self)).filter((e): e is EventoDc => e !== null);
     let nuovi = 0;
     let aperti = 0;
     db.transaction(() => {
@@ -126,7 +141,7 @@ export async function leggiUnDc(db: Database, d: DcDaLeggere, esegui: EseguiWinr
         // Login e logout riusciti restano nella pagina del dominio: non sono allarmi.
         if (eAllarme(e.categoria) && upsertAlertEvent(db, comeAlert(e)).created) aperti++;
       }
-      scriviLetturaRiuscita(db, d.dc, { record: prossimo.record, eventi: eventi.length, persi: prossimo.persi });
+      scriviLetturaRiuscita(db, d.dc, { record: prossimo.record, eventi: eventi.length, persi: prossimo.persi, altri });
     })();
     return { dc: d.dc, ok: true, eventi: eventi.length, nuovi, persi: prossimo.persi, aperti };
   } catch (e) {

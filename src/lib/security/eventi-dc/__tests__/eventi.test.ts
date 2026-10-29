@@ -15,8 +15,10 @@ import {
   leggiRispostaDc,
   motivoFallimento,
   prossimoCursore,
+  queryListRegistro,
   scriptEventiDc,
   xpathEventi,
+  xpathRegistro,
   type EventoGrezzo,
 } from "../eventi";
 import { ensureEventiDcSchema, salvaEventiDc } from "../db";
@@ -49,7 +51,8 @@ test("lo script dà a ConvertTo-Json solo pscustomobject (PowerShell 5.1 dei DC:
   const s = scriptEventiDc(null);
   assert.doesNotMatch(s, /List\[object\]/);
   assert.doesNotMatch(s, /\n@\{ nuovo/);
-  assert.match(s, /\[pscustomobject\]@\{ nuovo = \$nuovo;/);
+  assert.match(s, /\[pscustomobject\]@\{ registro = \[string\]\$nome; nuovo = \$nuovo;/);
+  assert.match(s, /\[pscustomobject\]@\{ registri = \$out \} \| ConvertTo-Json/);
   assert.match(s, /d = \[pscustomobject\]\$d/);
 });
 
@@ -197,4 +200,97 @@ test("grafici e classifiche dall'archivio dei DC, nostre sonde fuori dalle class
 
   const linux = statisticheDc(db, { since: "2026-10-29T08:00:00.000Z", interval: "1h", system: "linux", ora: new Date("2026-10-29T09:59:00.000Z") });
   assert.equal(linux.totals.alerts, 0, "i DC sono solo Windows");
+});
+
+// ---- Arricchimento del 29/10: altri eventi e altri registri ----
+
+test("ogni Select ha al massimo 10 ID semplici; i filtri di DCSync, Kerberoasting e GPO stanno sul DC", () => {
+  const sel = xpathRegistro("Security", 7);
+  for (const x of sel) assert.ok((x.match(/EventID=/g) ?? []).length <= 10, x);
+  const tutto = sel.join("\n");
+  assert.match(tutto, /EventID=4662 and EventRecordID>7\] and EventData\[Data\[@Name='AccessMask'\]='0x100'\]/);
+  assert.match(tutto, /EventID=4769 .*TicketEncryptionType'\]='0x17' and Data\[@Name='Status'\]='0x0'/);
+  assert.match(tutto, /AttributeLDAPDisplayName'\]='versionNumber' and Data\[@Name='ObjectClass'\]='groupPolicyContainer' or Data\[@Name='AttributeLDAPDisplayName'\]='gPLink'/);
+  assert.doesNotMatch(tutto, /EventID=7045|EventID=1116/, "System e Defender hanno le loro query");
+  assert.deepEqual(xpathRegistro("System", null).length, 1);
+  assert.match(xpathRegistro("System", 9)[0]!, /EventID=7045\) and EventRecordID>9/);
+  assert.match(xpathRegistro("Defender", null)[0]!, /EventID=1116 or EventID=1117/);
+});
+
+test("la QueryList protegge < in XML e punta al registro giusto", () => {
+  const q = queryListRegistro("Defender", null);
+  assert.match(q, /<Select Path="Microsoft-Windows-Windows Defender\/Operational">/);
+  assert.match(q, /timediff\(@SystemTime\) &lt;= 86400000/);
+  assert.doesNotMatch(q, /<= /);
+  assert.match(queryListRegistro("Security", 5), /EventRecordID>5/);
+});
+
+test("lo script legge i tre registri, ognuno dal suo cursore; la risposta vecchia di un solo registro vale ancora", () => {
+  const s = scriptEventiDc({ Security: 10, System: 20, Defender: null });
+  assert.match(s, /Leggi 'Security' 'Security' '<QueryList>/);
+  assert.match(s, /Leggi 'System' 'System' '.*EventRecordID>20/);
+  assert.match(s, /Leggi 'Defender' 'Microsoft-Windows-Windows Defender\/Operational' '.*timediff/);
+  const vecchia = leggiRispostaDc('{"nuovo":3,"vecchio":1,"errore":null,"eventi":[]}');
+  assert.equal(vecchia.registro, "Security");
+  assert.deepEqual(vecchia.altri, []);
+});
+
+test("risposta con più registri: Defender assente, System con un servizio, chiavi di record per registro", () => {
+  const r = leggiRispostaDc(JSON.stringify({
+    registri: [
+      { registro: "Security", nuovo: 50, vecchio: 1, esaminato: null, errore: null, assente: false, eventi: [] },
+      { registro: "System", nuovo: 900, vecchio: 1, esaminato: 900, errore: null, assente: false, eventi: { r: 900, t: "2026-10-29T08:00:00Z", id: 7045, d: { ServiceName: "PSEXESVC", ImagePath: "C:\\Windows\\PSEXESVC.exe", AccountName: "LocalSystem" } } },
+      { registro: "Defender", nuovo: null, vecchio: null, esaminato: null, errore: null, assente: true, eventi: [] },
+    ],
+  }));
+  assert.equal(r.nuovo, 50);
+  assert.equal(r.altri.length, 2);
+  const sys = r.altri.find((a) => a.registro === "System")!;
+  assert.equal(sys.eventi[0]!.registro, "System");
+  assert.equal(r.altri.find((a) => a.registro === "Defender")!.assente, true);
+  const e = classificaEvento("DC01", sys.eventi[0]!)!;
+  assert.equal(e.record, 10_000_000_000_900, "record di System con l'offset del registro: non si scontra con Sicurezza");
+  assert.equal(e.descrizione, "Servizio installato sul DC: PSEXESVC (C:\\Windows\\PSEXESVC.exe)");
+  assert.equal(e.categoria, "privileged_change");
+  assert.throws(() => leggiRispostaDc('{"registri":[]}'), /senza il registro Sicurezza/);
+});
+
+test("DCSync: chi chiede la replica, livello 15, categoria attacchi al dominio", () => {
+  const e = classificaEvento("DC01", grezzo(4662, { SubjectUserName: "mrossi", Properties: "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}", AccessMask: "0x100" }))!;
+  assert.equal(e.categoria, "domain_attack");
+  assert.equal(e.livello, 15);
+  assert.equal(e.account, "mrossi");
+  assert.equal(e.autore, "mrossi");
+  assert.ok(eAllarme(e.categoria));
+  assert.equal(comeAlert(e).ruleId, "dc-4662");
+});
+
+test("GPO, account a rischio, Kerberoasting, malware: la descrizione dice che cosa", () => {
+  const gplink = classificaEvento("DC01", grezzo(5136, { SubjectUserName: "admin", ObjectDN: "OU=Uffici,DC=cliente,DC=local", AttributeLDAPDisplayName: "gPLink", ObjectClass: "organizationalUnit" }))!;
+  assert.equal(gplink.descrizione, "GPO modificata: collegamenti cambiati su OU=Uffici");
+  assert.equal(gplink.account, null);
+  assert.equal(gplink.autore, "admin");
+  const gpo = classificaEvento("DC01", grezzo(5136, { ObjectDN: "CN={31B2F340-016D-11D2-945F-00C04FB984F9},CN=Policies,CN=System,DC=cliente,DC=local", AttributeLDAPDisplayName: "versionNumber" }))!;
+  assert.equal(gpo.descrizione, "GPO modificata: {31B2F340-016D-11D2-945F-00C04FB984F9}");
+  const acc = classificaEvento("DC01", grezzo(4738, { TargetUserName: "svc-backup", SubjectUserName: "admin", UserAccountControl: "%%2089 %%2091", SidHistory: "-", AllowedToDelegateTo: "-" }))!;
+  assert.equal(acc.descrizione, "Account modificato: password senza scadenza, delega senza vincoli");
+  assert.equal(acc.account, "svc-backup");
+  const kerb = classificaEvento("DC01", grezzo(4769, { TargetUserName: "mrossi@CLIENTE.LOCAL", ServiceName: "svc-sql", TicketEncryptionType: "0x17", IpAddress: "::ffff:10.0.0.9" }))!;
+  assert.equal(kerb.categoria, "domain_attack");
+  assert.equal(kerb.descrizione, "Ticket di servizio con cifratura debole RC4 (possibile Kerberoasting): servizio svc-sql");
+  assert.equal(kerb.ip, "10.0.0.9");
+  const mal = classificaEvento("DC01", { registro: "Defender", record: 4, quando: "2026-10-29T08:00:00.000Z", eventId: 1117, dati: { "Threat Name": "Trojan:Win32/Mimikatz", "Action Name": "Quarantine", Path: "file:_C:\\tmp\\m.exe", "Detection User": "CLIENTE\\mrossi" } })!;
+  assert.equal(mal.categoria, "malware");
+  assert.equal(mal.livello, 12);
+  assert.equal(mal.account, "CLIENTE\\mrossi");
+  assert.match(mal.descrizione, /Mimikatz · Quarantine · file:_C:/);
+  assert.equal(mal.record, 20_000_000_000_004);
+});
+
+test("lo script scarta sul DC i casi normali: DC e Azure AD Connect in DCSync, computer e krbtgt in Kerberoasting", () => {
+  const s = scriptEventiDc(null);
+  assert.match(s, /\$s\.EndsWith\('\$'\) -or \$s\.StartsWith\('MSOL_'\)/);
+  assert.match(s, /\$n\.EndsWith\('\$'\) -or \$n -like 'krbtgt\*'/);
+  assert.match(s, /'%%2089'/);
+  assert.match(s, /'1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'/);
 });

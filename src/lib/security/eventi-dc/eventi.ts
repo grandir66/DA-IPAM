@@ -180,26 +180,28 @@ export function scriptEventiDc(dopoRecord: number | null, massimo = MASSIMO_PER_
 $ErrorActionPreference = 'Stop'
 $campi = @(${campi})
 $nuovo = $null; $vecchio = $null
-try { $nuovo = (Get-WinEvent -LogName Security -MaxEvents 1).RecordId } catch {}
-try { $vecchio = (Get-WinEvent -LogName Security -MaxEvents 1 -Oldest).RecordId } catch {}
-$righe = New-Object System.Collections.Generic.List[object]
+try { $nuovo = [long](Get-WinEvent -LogName Security -MaxEvents 1).RecordId } catch {}
+try { $vecchio = [long](Get-WinEvent -LogName Security -MaxEvents 1 -Oldest).RecordId } catch {}
 $esaminato = $null
 $errore = $null
+$righe = @()
 try {
   $ev = Get-WinEvent -LogName Security -FilterXPath '${xpath}' -Oldest -MaxEvents ${Math.max(1, Math.floor(massimo))} -ErrorAction Stop
-  foreach ($e in $ev) {
-    $esaminato = $e.RecordId
+  # Solo pscustomobject e tipi semplici: ConvertTo-Json di PowerShell 5.1 sui DC si rompe sulle liste generiche
+  # e hashtable annidate («Argument types do not match», DA-DC01 29/10/2026).
+  $righe = @(foreach ($e in $ev) {
+    $esaminato = [long]$e.RecordId
     $x = [xml]$e.ToXml()
-    $d = @{}
-    foreach ($n in $x.Event.EventData.Data) { if ($campi -contains $n.Name) { $d[$n.Name] = [string]$n.'#text' } }
+    $d = [ordered]@{}
+    foreach ($n in $x.Event.EventData.Data) { if ($campi -contains [string]$n.Name) { $d[[string]$n.Name] = [string]$n.'#text' } }
     # I ticket dei computer (account con $) sono la gran parte dei 4768 e non dicono chi lavora: restano sul DC.
     if (($e.Id -eq 4768 -or $e.Id -eq 4624 -or $e.Id -eq 4634) -and ([string]$d['TargetUserName']).EndsWith('$')) { continue }
-    $righe.Add(@{ r = $e.RecordId; t = $e.TimeCreated.ToUniversalTime().ToString('o'); id = $e.Id; d = $d })
-  }
+    [pscustomobject]@{ r = [long]$e.RecordId; t = [string]$e.TimeCreated.ToUniversalTime().ToString('o'); id = [int]$e.Id; d = [pscustomobject]$d }
+  })
 } catch {
-  if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { $errore = $_.Exception.Message }
+  if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { $errore = [string]$_.Exception.Message }
 }
-@{ nuovo = $nuovo; vecchio = $vecchio; esaminato = $esaminato; errore = $errore; eventi = @($righe) } | ConvertTo-Json -Compress -Depth 4
+[pscustomobject]@{ nuovo = $nuovo; vecchio = $vecchio; esaminato = $esaminato; errore = $errore; eventi = $righe } | ConvertTo-Json -Compress -Depth 4
 `.trim();
 }
 

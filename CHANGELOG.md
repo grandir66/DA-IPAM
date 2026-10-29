@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Active Directory nella pagina Opzioni
+
+### Aggiunto
+
+- **Active Directory nelle Opzioni**: una levetta per ogni integrazione (la accende o la spegne, e accesa garantisce la sincronizzazione automatica) e la riga «Sincronizzazione Active Directory», una per tutte le integrazioni, con acceso/spento e ritmo (1, 6, 12 o 24 ore). Il job `ad_sync` non compare più fra i job generici e i rimandi dalla pagina dei job portano a questa riga. Senza integrazioni c'è la riga che porta ad aggiungerne una. Perché: Riccardo (29/10) «sarebbe comodo averla nella pagina delle opzioni».
+
 ## [Non rilasciato] — 2026-10-29 · Active Directory: sincronizzazione anche se accesa dopo, interruttore in vista
 
 ### Corretto

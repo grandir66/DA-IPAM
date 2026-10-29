@@ -98,7 +98,7 @@ test("(a) ogni tipo di job ha una riga: per tipo, per controller, o per job", ()
   withTenant(T, () => {
     const creati = new Map<string, number>();
     for (const tipo of SCHEDULED_JOB_TYPES) {
-      if (tipo === "unifi_sync") continue;
+      if (tipo === "unifi_sync" || tipo === "ad_sync") continue;
       creati.set(tipo, createScheduledJob({ job_type: tipo, interval_minutes: 60, network_id: null }).id);
     }
     const presenti = new Set(catalogo().map((o) => o.id));
@@ -107,6 +107,8 @@ test("(a) ogni tipo di job ha una riga: per tipo, per controller, o per job", ()
     }
     // unifi_sync: le righe sono per controller; senza controller c'è la riga che chiede di aggiungerlo.
     assert.ok(presenti.has("controller.nessuno"));
+    // ad_sync (29/10/2026): senza job né integrazioni c'è la riga che chiede di aggiungerne una.
+    assert.ok(presenti.has("ad.nessuna"));
   });
 });
 

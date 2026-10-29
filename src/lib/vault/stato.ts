@@ -9,13 +9,19 @@
  * Gli interruttori stanno nel file dell'appliance (`.env.local`), si cambiano solo sul server con un riavvio, e sono
  * spenti di serie (piano: «interruttore spento di serie, attivazione per appliance»):
  * - `DA_VAULT_LOCALE=1`: chiave dei dati dagli slot (appliance dei clienti, passo 10);
- * - `DA_VAULT_OPENBAO=1`: credenziali dei device da OpenBao con `credential_ref` (hub, passo 6).
+ * - `DA_VAULT_OPENBAO=1`: credenziali dei device da OpenBao con `credential_ref` (hub, passo 6);
+ * - `DA_VAULT_DALINK=1`: le stesse credenziali da DA-Link (vault semplice, passo 6). Lo store sta nello stesso posto
+ *   (`openbao`) e i chiamanti non cambiano: `vaultOpenBaoAcceso()` vale «backend remoto acceso». I due interruttori
+ *   insieme sono una configurazione rifiutata (`avvio.ts`): nessuno store, e i lettori rifiutano.
  */
 import type { StatoStore, ValoreSegreto } from "./tipi";
 
 export type ModoSblocco = "tpm" | "passphrase" | "domarc";
 
-/** Quello che serve del backend OpenBao da qui (per non importare `openbao.ts` in `crypto.ts`). */
+/**
+ * Quello che serve del backend remoto da qui (per non importare `openbao.ts` in `crypto.ts`): `OpenBaoStore` o, con
+ * `DA_VAULT_DALINK=1`, `DaLinkStore`.
+ */
 export interface StoreOpenBaoProcesso {
   leggiSync(percorso: string): ValoreSegreto;
   get(percorso: string, opzioni?: { perConto?: string; perContoId?: string }): Promise<ValoreSegreto>;
@@ -61,8 +67,18 @@ export function vaultLocaleAcceso(): boolean {
   return process.env.DA_VAULT_LOCALE === "1";
 }
 
+/**
+ * Un backend remoto del vault è acceso: OpenBao (`DA_VAULT_OPENBAO=1`) o DA-Link (`DA_VAULT_DALINK=1`). Il nome resta
+ * quello di prima perché i chiamanti (lettore dei segreti, «mostra password», cancellazione) non cambiano. Con i due
+ * accesi insieme vale true: l'avvio rifiuta e non mette lo store, e i lettori rifiutano (fail-closed).
+ */
 export function vaultOpenBaoAcceso(): boolean {
-  return process.env.DA_VAULT_OPENBAO === "1";
+  return process.env.DA_VAULT_OPENBAO === "1" || vaultDalinkAcceso();
+}
+
+/** Il backend remoto è DA-Link (`DA_VAULT_DALINK=1`). */
+export function vaultDalinkAcceso(): boolean {
+  return process.env.DA_VAULT_DALINK === "1";
 }
 
 export function chiaveDatiAttiva(): Buffer | null {

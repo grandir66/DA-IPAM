@@ -159,3 +159,80 @@ export async function postSegnale(
     req.end(corpo);
   });
 }
+
+/**
+ * Una richiesta qualunque verso DA-Link sullo stesso socket verificato del segnale (vault semplice, passo 6: le rotte
+ * `/api/v1/vault/…` col gettone dell'app). `url` è l'indirizzo completo, percorso e query compresi; le intestazioni
+ * (gettone incluso) le dà il chiamante e partono solo dopo il controllo dell'impronta.
+ *
+ * Rifiuta con `ErroreDalink` per rete, certificato, tempo o risposta oltre `maxRisposta` (di serie 64 KB: il giro
+ * dell'ambito del vault chiede di più); per un errore HTTP restituisce lo stato e il corpo, che interpreta il
+ * chiamante (e che non deve finire nei suoi messaggi).
+ */
+export async function richiestaDalink(
+  url: URL,
+  impronta: string,
+  metodo: string,
+  intestazioni: Record<string, string>,
+  corpo?: string,
+  opz: { timeoutMs?: number; maxRisposta?: number } = {},
+): Promise<RispostaDalink> {
+  const timeoutMs = opz.timeoutMs ?? 15_000;
+  const maxRisposta = opz.maxRisposta ?? MAX_RISPOSTA;
+  const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
+  const porta = url.port ? Number(url.port) : 443;
+  const sock = await apriSocketVerificato(host, porta, impronta, timeoutMs);
+
+  return new Promise((resolve, reject) => {
+    let finito = false;
+    const chiudi = (e: ErroreDalink | null, r?: RispostaDalink) => {
+      if (finito) return;
+      finito = true;
+      if (e) reject(e);
+      else if (r) resolve(r);
+    };
+    const testa: Record<string, string> = { ...intestazioni, Connection: "close" };
+    if (corpo !== undefined) testa["Content-Length"] = String(Buffer.byteLength(corpo));
+    let req: ReturnType<typeof httpsRequest>;
+    try {
+      req = httpsRequest(
+        {
+          host,
+          port: porta,
+          method: metodo,
+          path: url.pathname + url.search,
+          headers: testa,
+          // Il socket già verificato: niente agent, niente secondo handshake.
+          createConnection: () => sock,
+        },
+        (res) => {
+          const pezzi: Buffer[] = [];
+          let totale = 0;
+          res.on("data", (c: Buffer) => {
+            if (finito) return;
+            totale += c.length;
+            if (totale > maxRisposta) {
+              req.destroy();
+              chiudi(new ErroreDalink("risposta", `risposta di DA-Link oltre ${Math.round(maxRisposta / 1024)} KB: lettura interrotta`));
+              return;
+            }
+            pezzi.push(c);
+          });
+          res.on("end", () => chiudi(null, { status: res.statusCode ?? 0, body: Buffer.concat(pezzi).toString("utf8") }));
+          res.on("error", (e: NodeJS.ErrnoException) => chiudi(erroreDiRete(e)));
+        },
+      );
+    } catch {
+      // Intestazione non valida (Node lancia prima di scrivere): il messaggio grezzo non si propaga.
+      sock.destroy();
+      chiudi(new ErroreDalink("risposta", "richiesta verso DA-Link non costruita: intestazioni non valide"));
+      return;
+    }
+    req.on("error", (e: NodeJS.ErrnoException) => chiudi(erroreDiRete(e)));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      chiudi(new ErroreDalink("tempo", "DA-Link non ha risposto in tempo"));
+    });
+    req.end(corpo);
+  });
+}

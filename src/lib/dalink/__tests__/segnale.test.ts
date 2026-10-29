@@ -194,3 +194,11 @@ test("edge: sonda che non risponde → raggiungibile false e gli altri campi nul
   const corpo = costruisciSegnale(CFG, "solo_stato", { ...FATTI, edge: { raggiungibile: false } }, () => INV);
   assert.deepEqual(corpo.edge, { raggiungibile: false, versione_vera: null, hub: null, aggiornamento: null, disco: null });
 });
+
+test("rete nel segnale (29/10): parte se letta, anche a solo stato; assente se non letta", () => {
+  const rete = { interfaccia: "ens18", ip_cidr: "192.168.40.9/24", gateway: "192.168.40.1", dns: ["192.168.4.1"] };
+  const con = costruisciSegnale(CFG, "solo_stato", { ...FATTI, rete }, () => null);
+  assert.deepEqual(con.rete, rete);
+  const senza = costruisciSegnale(CFG, "solo_stato", { ...FATTI, rete: null }, () => null);
+  assert.equal("rete" in senza, false);
+});

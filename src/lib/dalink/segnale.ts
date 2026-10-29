@@ -7,7 +7,8 @@
  * `porte_netbird` ([int], ≤64), `inventario` (numeri o null), `aggiornamento`
  * (facoltativo, dal 16/10: stato dell'aggiornamento automatico, `AggiornamentoSegnale`),
  * `edge` (facoltativo, dal 20/10: stato dichiarato dalla sonda locale, `edge-segnale.ts`;
- * DA-Link lo scarta finché non lo conosce, `extra="ignore"`).
+ * DA-Link lo scarta finché non lo conosce, `extra="ignore"`), `rete` (facoltativo, dal 29/10:
+ * la rete dell'appliance stessa, `rete-appliance.ts`; non è inventario e parte a ogni livello).
  *
  * La scelta vale ALL'ORIGINE: con «solo stato», o senza scelta dichiarata, i numeri
  * dell'inventario non si leggono nemmeno (`leggiInventario` non viene chiamata). Anche
@@ -19,6 +20,7 @@ import type { Livello } from "./stato";
 import type { StatiComponenti } from "./stati-componenti";
 import { edgePerSegnale, type EdgeSegnale, type LetturaEdge } from "./edge-segnale";
 import { LIMITI } from "./segnale-limiti";
+import type { ReteAppliance } from "./rete-appliance";
 
 export interface FattiIstanza {
   versione: string;
@@ -32,6 +34,8 @@ export interface FattiIstanza {
   statiComponenti?: StatiComponenti | null;
   /** Lettura della sonda locale; null/assente = modulo edge non configurato (blocco omesso). */
   edge?: LetturaEdge | null;
+  /** La rete dell'appliance; null/assente = non letta (campo omesso, DA-Link tiene l'ultima). */
+  rete?: ReteAppliance | null;
 }
 
 /**
@@ -74,6 +78,8 @@ export interface CorpoSegnale {
   stati_componenti?: StatiComponenti;
   /** Stato della sonda locale (sonde integrate, 20/10); assente se il modulo edge non c'è. */
   edge?: EdgeSegnale;
+  /** Assente se la rete non si è letta. */
+  rete?: ReteAppliance;
 }
 
 /** Limiti del contratto di DA-Link: oltre, il segnale prende 422. */
@@ -142,5 +148,6 @@ export function costruisciSegnale(
     ...(fatti.aggiornamento ? { aggiornamento: { ...fatti.aggiornamento } } : {}),
     ...(fatti.statiComponenti ? { stati_componenti: { ...fatti.statiComponenti } } : {}),
     ...(fatti.edge ? { edge: edgePerSegnale(fatti.edge) } : {}),
+    ...(fatti.rete ? { rete: { ...fatti.rete, dns: [...fatti.rete.dns] } } : {}),
   };
 }

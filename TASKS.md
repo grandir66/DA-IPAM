@@ -28,7 +28,16 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
 - [x] (29/10) prerequisito del passo 6: DA-Link ha sul live l'API del vault per le app (`ambito`, `voce`
   sulla 8443) e il gettone `da-ipam` è nel `.env.local` dell'hub (`DALINK_VAULT_URL`, `DALINK_VAULT_GETTONE`);
   chiamata dall'hub: 200, 0 voci. Contratto: DA-Link `docs/superpowers/specs/2026-10-27-vault-gettone-app-design.md`
-- [ ] passo 6 (hub e DA-Vul-can leggono da DA-Link) e passo 8 (appliance dei clienti) del piano
+- [x] (29/10) passo 6 in codice: backend `dalink` + copia verso DA-Link, spenti; prove viste rosse, una revisione
+  (opus) con correzioni + una mirata, cancello verde (6335 prove). Piano DA-Link `docs/superpowers/plans/2026-10-29-vault-passo6-app.md`
+- [ ] **prima del passo 7 (accensione) sull'hub**, dalla revisione del 29/10: (a) `src/lib/credentials/aggiornamenti.ts:54-62`
+  con DA-Link acceso un segreto cambiato dalla pagina toglie `credential_ref` e torna sulla colonna; (b)
+  `scripts/da-vault-migra-openbao.ts` è legato a `OpenBaoStore` (le credenziali nuove non arrivano a DA-Link): far
+  scegliere lo store allo script (`migraVersoOpenBao` accetta già un `SecretStore`); (c) la cache vale 24 ore per tutto
+  il giro, non per voce: una voce sempre malformata resterebbe senza scadenza (dare a ogni voce la sua data)
+- [ ] `migra-openbao-cli.test.ts` probabilmente non prova gli orfani (il finto OpenBao non regge `LIST`, finisce in
+  `orfaniErrore`); `riferimentiDelleCredenziali()` avvisa invece di lanciare (la copia lo aggira intercettando `console.warn`)
+- [ ] passo 7 (live, con Riccardo) e passo 8 (appliance dei clienti) del piano
 
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`
 

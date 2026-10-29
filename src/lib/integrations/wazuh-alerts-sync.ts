@@ -83,7 +83,7 @@ function digestDue(lastDigestAt: string | null, intervalMinutes: number): boolea
  * Non lancia mai: un canale rotto non deve far fallire il sync, altrimenti il
  * cursore non avanza e si perde la raccolta per colpa di un SMTP giù.
  */
-async function notifyPendingEvents(
+export async function notifyPendingEvents(
   db: Database,
   tenant: string,
 ): Promise<{ immediate: number; digest: number }> {

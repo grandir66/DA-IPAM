@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   Siren,
+  KeyRound,
   Workflow,
   BookOpen,
   Ban,
@@ -106,6 +107,7 @@ const networkSubItems: readonly SubItem[] = [
 const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
+  { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
   { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
   { href: "/active-directory?tab=health", label: "Health Active Directory", icon: HeartPulse },
 ];
@@ -378,7 +380,7 @@ export function Sidebar() {
     !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/arp-table/trunk"].some((h) => pathname.startsWith(h)) ||
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk"].some((h) => pathname.startsWith(h)) ||
       (pathname === "/active-directory" && searchParams.get("tab") === "health")
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>

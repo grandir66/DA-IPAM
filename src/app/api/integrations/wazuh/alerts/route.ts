@@ -3,7 +3,7 @@
  *
  *   GET   → elenco eventi + conteggi per categoria (filtri: category, onlyOpen,
  *           window = eventi visti nella finestra, system = rule.groups del sistema)
- *   POST  → forza un poll immediato dell'indexer
+ *   POST  → forza un poll immediato dell'indexer e, dove si leggono, dei domain controller
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -19,6 +19,8 @@ import {
   tenantDb,
 } from "@/lib/integrations/wazuh-alerts-db";
 import { syncWazuhAlertsForTenant } from "@/lib/integrations/wazuh-alerts-sync";
+import { modoEventiDc, motivoPerNonLeggere, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
+import { giroEventiDcDelContesto, testoEsitoDc } from "@/lib/security/eventi-dc/job";
 
 const QuerySchema = z.object({
   category: z.string().max(40).optional(),
@@ -71,12 +73,26 @@ export async function POST() {
   return withTenantFromSession(async () => {
     const adminCheck = await requireAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
+    // Senza Wazuh la fonte sono i DC (29/10): «Aggiorna ora» legge loro.
+    const wazuh = wazuhLeggeGliAllarmi();
+    const leggeDc = motivoPerNonLeggere(modoEventiDc(tenantDb()), wazuh) === null;
     try {
-      const result = await syncWazuhAlertsForTenant();
-      return NextResponse.json(result);
+      if (!leggeDc) return NextResponse.json(await syncWazuhAlertsForTenant());
+      const dc = await giroEventiDcDelContesto();
+      const daWazuh = wazuh ? await syncWazuhAlertsForTenant() : null;
+      const esito = testoEsitoDc(dc);
+      if (!esito.ok && !daWazuh) {
+        return NextResponse.json({ error: `Lettura dei DC non riuscita: ${esito.testo}` }, { status: 502 });
+      }
+      return NextResponse.json({
+        skipped: false,
+        fetched: dc.dc.reduce((n, d) => n + d.nuovi, 0) + (daWazuh?.fetched ?? 0),
+        opened: dc.aperti + (daWazuh?.opened ?? 0),
+        dc: esito.testo,
+      });
     } catch (e) {
       return NextResponse.json(
-        { error: `Poll alert Wazuh fallito: ${(e as Error).message}` },
+        { error: `Aggiornamento degli allarmi fallito: ${(e as Error).message}` },
         { status: 500 },
       );
     }

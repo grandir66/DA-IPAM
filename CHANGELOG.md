@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-29 · Vault: backend DA-Link (spento)
+
+### Aggiunto
+
+- **Backend `dalink` del vault** (`src/lib/vault/dalink.ts`): con `DA_VAULT_DALINK=1` le password si chiedono a
+  DA-Link (sulla 8443, gettone `DALINK_VAULT_GETTONE`, certificato verificato per impronta `DALINK_VAULT_IMPRONTA`)
+  invece che a OpenBao, che DA-Link sostituisce (vault semplice, decisione di Riccardo del 27/10). Stessa interfaccia
+  `SecretStore`: lettori e scrittori dei segreti non cambiano. Cache in memoria fino a 24 ore: se DA-Link non risponde
+  si tiene quello che si ha, mai «non ci sono password». I due interruttori insieme sono rifiutati. Spento di serie.
+- **`scripts/da-vault-copia-verso-dalink.ts`**: copia e verifica voce per voce da OpenBao a DA-Link (passo 7), a vuoto
+  di serie, mai i valori a schermo. Piano: DA-Link `docs/superpowers/plans/2026-10-29-vault-passo6-app.md`.
+
 ## [Non rilasciato] — 2026-10-29 · Active Directory nella pagina Opzioni
 
 ### Aggiunto

@@ -7,7 +7,7 @@
  * Run: node --import tsx --test src/lib/vault/__tests__/mostra.test.ts
  */
 import "@/lib/__tests__/support/data-dir-isolata";
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { encrypt } from "@/lib/crypto";
@@ -180,5 +180,59 @@ describe("registro delle visualizzazioni", () => {
     const testo = righe.join("\n");
     assert.ok(!testo.includes(PW));
     assert.ok(!testo.includes(segretoTotp));
+  });
+});
+
+describe("con un backend remoto acceso, i testi nominano quello vero", () => {
+  const T0 = ORA + 3_600_000;
+  let idConRef: number;
+  const store = (backend: "openbao" | "dalink", get: () => Promise<never>) =>
+    ({ backend, leggiSync: () => { throw new Error("non usato"); }, get, delete: async () => undefined, stato: () => ({ pronto: true as const, aggiornatoAlle: null }) });
+
+  before(() => {
+    withTenant(T, () => {
+      const d = getTenantDb(T);
+      idConRef = creaCredenzialeDb(d, { name: "Con riferimento", credential_type: "ssh", encrypted_username: encrypt("u"), encrypted_password: encrypt("p") }).id;
+      d.prepare("UPDATE credentials SET credential_ref = ? WHERE id = ?").run("clienti/vaultmostra/da-ipam/con-riferimento", idConRef);
+    });
+  });
+  afterEach(() => {
+    delete process.env.DA_VAULT_OPENBAO;
+    delete process.env.DA_VAULT_DALINK;
+    statoVaultProcesso().openbao = null;
+    statoVaultProcesso().remotoNonAvviato = null;
+  });
+
+  const mostraRef = async () => {
+    statoVaultProcesso().conferme.set(admin.id, T0 + DURATA_CONFERMA_MS);
+    return withTenant(T, () => mostraVoce({ dbh: getTenantDb(T), utente: admin, credentialId: idConRef, ora: T0 }));
+  };
+
+  it("DA-Link acceso senza store: il rifiuto dice DA-Link (e il motivo dell'avvio), mai OpenBao", async () => {
+    process.env.DA_VAULT_DALINK = "1";
+    const m = await mostraRef();
+    assert.ok(!m.ok && m.stato === 503);
+    assert.ok(!m.ok && /DA-Link/.test(m.errore) && !/OpenBao/.test(m.errore), !m.ok ? m.errore : "");
+    statoVaultProcesso().remotoNonAvviato = "DA_VAULT_DALINK=1 ma manca DALINK_VAULT_IMPRONTA";
+    const m2 = await mostraRef();
+    assert.ok(!m2.ok && /DALINK_VAULT_IMPRONTA/.test(m2.errore) && !/OpenBao/.test(m2.errore), !m2.ok ? m2.errore : "");
+  });
+
+  it("lo store che non risponde con un errore anonimo: il testo porta il nome del backend dello store", async () => {
+    process.env.DA_VAULT_DALINK = "1";
+    statoVaultProcesso().openbao = store("dalink", () => Promise.reject("giù"));
+    const m = await mostraRef();
+    assert.ok(!m.ok && m.errore === "DA-Link non ha risposto", !m.ok ? m.errore : "");
+    process.env.DA_VAULT_DALINK = "";
+    process.env.DA_VAULT_OPENBAO = "1";
+    statoVaultProcesso().openbao = store("openbao", () => Promise.reject("giù"));
+    const o = await mostraRef();
+    assert.ok(!o.ok && o.errore === "OpenBao non ha risposto", !o.ok ? o.errore : "");
+  });
+
+  it("OpenBao acceso senza store: dice ancora OpenBao", async () => {
+    process.env.DA_VAULT_OPENBAO = "1";
+    const m = await mostraRef();
+    assert.ok(!m.ok && /OpenBao/.test(m.errore) && !/DA-Link/.test(m.errore), !m.ok ? m.errore : "");
   });
 });

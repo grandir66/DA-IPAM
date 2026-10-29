@@ -3,7 +3,8 @@
  *
  * - `openbao` (hub e app interne): KV v2 di OpenBao, AppRole, cache in memoria a tempo (`openbao.ts`);
  * - `locale` (appliance dei clienti): i segreti propri dell'app, cifrati con la chiave dei dati dell'archivio a slot
- *   (`locale.ts`, `archivio.ts`).
+ *   (`locale.ts`, `archivio.ts`);
+ * - `dalink` (hub, vault semplice passo 6): le quattro rotte del vault di DA-Link col gettone dell'app (`dalink.ts`).
  *
  * Un percorso è come nel piano: `app/<app>/<nome>`, `clienti/<codcli>/<sistema>/<servizio>`, minuscolo con trattini.
  * Un valore è un KV piatto (campo → testo), come un segreto KV v2.
@@ -34,7 +35,7 @@ export type StatoStore =
   | { pronto: false; motivo: string };
 
 export interface SecretStore {
-  readonly backend: "openbao" | "locale";
+  readonly backend: "openbao" | "locale" | "dalink";
   /** Il segreto del percorso; `ErroreVault` se non c'è o se il backend non risponde oltre la cache. */
   get(percorso: string, opzioni?: OpzioniGet): Promise<ValoreSegreto>;
   /** Scrive (sostituisce) il segreto del percorso. */

@@ -12,7 +12,7 @@
 import { resolveDataDir } from "@/lib/data-dir";
 import { apriConPassphrase, apriConTpm, archivioPresente, leggiArchivio, type NomeSlot } from "./archivio";
 import { conGuardiaPassphrase, type EsitoGuardia } from "./guardia-passphrase";
-import { backendRemotoAttivo, chiudiVault, impostaChiaveDati, motivoRemotoNonAvviato, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
+import { backendRemotoAttivo, chiudiVault, impostaChiaveDati, motivoRemotoNonAvviato, statoVaultProcesso, vaultDalinkAcceso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
 import { ErroreVault } from "./tipi";
 import { unisci } from "../percorsi";
 
@@ -113,7 +113,8 @@ export function statoVault(): StatoVaultPubblico {
       archivio,
     },
     openbao: {
-      nome: backendRemotoAttivo() ?? "Vault remoto",
+      // spento tutto: «OpenBao», come prima del passo 6; un nome neutro solo coi due interruttori accesi insieme
+      nome: backendRemotoAttivo() ?? (vaultDalinkAcceso() && process.env.DA_VAULT_OPENBAO === "1" ? "Vault remoto" : "OpenBao"),
       acceso: vaultOpenBaoAcceso(),
       pronto: ob ? ob.pronto : null,
       motivo: ob && !ob.pronto ? ob.motivo : ob && ob.pronto ? (ob.degradato ?? null) : vaultOpenBaoAcceso() ? motivoRemotoNonAvviato() : null,

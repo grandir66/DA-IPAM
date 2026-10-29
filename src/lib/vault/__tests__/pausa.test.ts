@@ -69,6 +69,8 @@ describe("interruttori spenti", () => {
     assert.deepEqual(await eseguiCleanup(), { esito: "eseguito" });
     assert.equal(statoVault().locale.acceso, false);
     assert.equal(statoVault().openbao.acceso, false);
+    // passo 6 (revisione mirata 29/10): spento tutto, la pagina dice «OpenBao» come prima, non «Vault remoto»
+    assert.equal(statoVault().openbao.nome, "OpenBao");
   });
 
   it("spento, anche con l'archivio presente l'avvio non lo apre", async () => {
@@ -209,7 +211,10 @@ describe("vault_dalink acceso: banner e pausa nominano DA-Link, non OpenBao", ()
     statoVaultProcesso().openbao = { ...fisso, backend: "openbao" };
     assert.equal(statoVault().openbao.nome, "OpenBao");
     statoVaultProcesso().openbao = null;
+    process.env.DA_VAULT_DALINK = "1";
+    assert.equal(statoVault().openbao.nome, "Vault remoto"); // i due accesi insieme: nome neutro
+    delete process.env.DA_VAULT_DALINK;
     delete process.env.DA_VAULT_OPENBAO;
-    assert.equal(statoVault().openbao.nome, "Vault remoto");
+    assert.equal(statoVault().openbao.nome, "OpenBao"); // spento tutto: come prima del passo 6
   });
 });

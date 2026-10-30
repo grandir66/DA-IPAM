@@ -71,6 +71,7 @@ import type { ScheduledJob, NetworkWithStats } from "@/types";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
+import { AzzeraAppliance } from "@/components/settings/azzera-appliance";
 import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
 import { EsitiApparatiScelti } from "@/components/jobs/esiti-apparati-scelti";
 import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
@@ -1456,6 +1457,8 @@ function SettingsPageInner() {
               </Button>
             </CardContent>
           </Card>
+
+          <AzzeraAppliance />
         </div>
       )}
     </div>

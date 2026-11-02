@@ -8,8 +8,8 @@
  *   di servizio (id 0) non ha la 2FA e non vede.
  * - **Ogni visualizzazione va nel registro** (`vault_visualizzazioni`, nel database del cliente): utente, voce, ora.
  *   Il cliente vede chi ha guardato cosa (Impostazioni › Vault).
- * - Sull'hub con OpenBao (`DA_VAULT_OPENBAO=1`) una voce con `credential_ref` si legge da OpenBao per conto della
- *   persona: il nome va in `X-Domarc-Utente` e finisce anche nel registro di OpenBao.
+ * - Sull'hub con DA-Link (`DA_VAULT_DALINK=1`) una voce con `credential_ref` si legge da DA-Link dal vivo, mai dalla
+ *   cache (`get` per conto della persona).
  *
  * Con gli interruttori spenti la funzione non c'è (404): l'app è quella di oggi.
  */
@@ -20,7 +20,7 @@ import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb, COLONNA_DEL_CAMPO, type CampoSegreto } from "@/lib/credentials/segreti";
 import { verificaTotp } from "@/lib/accesso/totp";
 import { clearRateLimit, isRateLimited, recordFailedAttempt } from "@/lib/rate-limit";
-import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso } from "./stato";
+import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultLocaleAcceso, vaultRemotoAcceso } from "./stato";
 import { ErroreVault } from "./tipi";
 
 export const DURATA_CONFERMA_MS = 5 * 60_000;
@@ -39,7 +39,7 @@ const rifiuto = (stato: number, errore: string): Rifiuto => ({ ok: false, stato,
 
 /** La «mostra password» c'è solo con un interruttore del vault acceso. */
 export function mostraPasswordAttiva(): boolean {
-  return vaultLocaleAcceso() || vaultOpenBaoAcceso();
+  return vaultLocaleAcceso() || vaultRemotoAcceso();
 }
 
 function eAdmin(u: UtenteSessione): boolean {
@@ -85,13 +85,13 @@ export function confermaValida(utenteId: string, ora: number = Date.now()): numb
 
 type Campi = Partial<Record<CampoSegreto, string>>;
 
-/** I campi di una voce: da OpenBao per conto della persona se la voce ha il riferimento, altrimenti dal lettore unico. */
+/** I campi di una voce: da DA-Link per conto della persona se la voce ha il riferimento, altrimenti dal lettore unico. */
 async function campiPerMostrare(dbh: Database.Database, credentialId: number, utente: UtenteSessione): Promise<{ ok: true; nome: string; campi: Campi } | Rifiuto> {
   const riga = dbh.prepare("SELECT * FROM credentials WHERE id = ?").get(credentialId) as Record<string, unknown> | undefined;
   if (!riga) return rifiuto(404, "Credenziale non trovata");
   const ref = typeof riga.credential_ref === "string" ? riga.credential_ref.trim() : "";
-  if (vaultOpenBaoAcceso() && ref) {
-    const store = statoVaultProcesso().openbao;
+  if (vaultRemotoAcceso() && ref) {
+    const store = statoVaultProcesso().remoto;
     if (!store) return rifiuto(503, motivoRemotoNonAvviato());
     try {
       const v = await store.get(ref, { perConto: utente.nome, perContoId: utente.id });

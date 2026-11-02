@@ -125,7 +125,7 @@ export function PaginaVault() {
   if (!stato) return <p className="text-sm text-muted-foreground">Caricamento…</p>;
 
   const locale = stato.locale;
-  const spento = !locale.acceso && !stato.openbao.acceso;
+  const spento = !locale.acceso && !stato.remoto.acceso;
   const pagine = registro ? Math.max(1, Math.ceil(registro.totale / PER_PAGINA)) : 1;
 
   return (
@@ -164,15 +164,15 @@ export function PaginaVault() {
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{stato.openbao.nome}:</span>
-            {!stato.openbao.acceso ? (
+            <span className="font-medium">{stato.remoto.nome}:</span>
+            {!stato.remoto.acceso ? (
               <Badge variant="outline">spento</Badge>
-            ) : stato.openbao.pronto ? (
-              <Badge>{stato.openbao.motivo ? "con la cache" : "pronto"}</Badge>
+            ) : stato.remoto.pronto ? (
+              <Badge>{stato.remoto.motivo ? "con la cache" : "pronto"}</Badge>
             ) : (
               <Badge variant="destructive">non disponibile</Badge>
             )}
-            {stato.openbao.motivo && <span className="text-muted-foreground">{stato.openbao.motivo}</span>}
+            {stato.remoto.motivo && <span className="text-muted-foreground">{stato.remoto.motivo}</span>}
           </div>
           {stato.pausa && <p className="font-medium text-destructive">Scansioni in pausa: {stato.pausa}</p>}
         </CardContent>

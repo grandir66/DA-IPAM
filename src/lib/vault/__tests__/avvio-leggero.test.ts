@@ -27,6 +27,7 @@ function figlio(env: Record<string, string>) {
       ENCRYPTION_KEY: "chiave-installazione-avvio",
       DA_VAULT_LOCALE: "",
       DA_VAULT_OPENBAO: "",
+      DA_VAULT_DALINK: "",
       CREDENTIALS_DIRECTORY: "",
       DA_VAULT_DIR: "",
       ...env,

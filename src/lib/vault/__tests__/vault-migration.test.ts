@@ -1,6 +1,6 @@
 /**
  * da-vault: lo schema del database del cliente. Additivo e idempotente, come le altre migrazioni di db-tenant:
- * - `credentials.credential_ref` (passo 6: il riferimento al segreto in OpenBao, accanto alle colonne cifrate);
+ * - `credentials.credential_ref` (passo 6: il riferimento al segreto in DA-Link, accanto alle colonne cifrate);
  * - `vault_visualizzazioni` (passo 10: chi ha visto o esportato cosa, e quando) col suo indice.
  *
  * Run: node --import tsx --test src/lib/vault/__tests__/vault-migration.test.ts

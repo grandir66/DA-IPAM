@@ -33,8 +33,8 @@
  *
  * Un rifiuto non contiene mai il segreto: solo nome, tipo e cosa manca.
  *
- * da-vault, passo 6 (hub, solo con `DA_VAULT_OPENBAO=1`): una voce con `credential_ref` si legge da OpenBao (la cache
- * del backend, `leggiSync`), mai dalle colonne; OpenBao oltre la cache o segreto assente = rifiuto col motivo. Una
+ * da-vault, passo 6 (hub, solo con `DA_VAULT_DALINK=1`): una voce con `credential_ref` si legge da DA-Link (la cache
+ * del backend, `leggiSync`), mai dalle colonne; DA-Link oltre la cache o segreto assente = rifiuto col motivo. Una
  * voce senza riferimento si legge dalle colonne e lo si scrive nel log, una volta per voce (doppia lettura, per una
  * versione). Interruttore spento: il riferimento non conta.
  *
@@ -42,7 +42,7 @@
  */
 import type Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
-import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { motivoRemotoNonAvviato, nomeBackendRemoto, statoVaultProcesso, vaultRemotoAcceso } from "@/lib/vault/stato";
 import type { SnmpV3CredentialRecord } from "@/lib/protocols/snmpv3";
 import { campiRichiesti, etichettaTipo, METODI_PER_TIPO, normalizzaTipo, tipiPerProtocollo, type MetodoAccesso, type TipoCredenziale } from "./tipi";
 
@@ -92,9 +92,9 @@ function tipiPerUso(uso: UsoSegreto): string[] {
   return tipiPerProtocollo(uso);
 }
 
-/** I valori in chiaro di una voce letta da OpenBao, per colonna: al posto della decifratura delle colonne. */
-const DA_OPENBAO = Symbol("da-openbao");
-type Riga = Record<string, unknown> & { [DA_OPENBAO]?: Readonly<Record<string, string | null>> };
+/** I valori in chiaro di una voce letta dal vault remoto (DA-Link), per colonna: al posto della decifratura delle colonne. */
+const DAL_VAULT = Symbol("dal-vault-remoto");
+type Riga = Record<string, unknown> & { [DAL_VAULT]?: Readonly<Record<string, string | null>> };
 
 /** Valore testuale di una colonna; colonna assente, NULL o non testo → null. */
 function testo(riga: Riga, colonna: string): string | null {
@@ -102,21 +102,21 @@ function testo(riga: Riga, colonna: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
-/** La colonna ha un valore (cifrato, o in chiaro da OpenBao). */
+/** La colonna ha un valore (cifrato, o in chiaro dal vault remoto). */
 function presente(riga: Riga, colonna: string): boolean {
-  const daOpenBao = riga[DA_OPENBAO];
-  return daOpenBao ? Boolean(daOpenBao[colonna]) : Boolean(testo(riga, colonna));
+  const dalVault = riga[DAL_VAULT];
+  return dalVault ? Boolean(dalVault[colonna]) : Boolean(testo(riga, colonna));
 }
 
 type Campo = { ok: true; valore: string | null } | { ok: false; motivo: string };
 
 /**
  * La riga pronta per la lettura (da-vault, passo 6). Interruttore spento: com'è. Acceso, con `credential_ref`: i
- * valori da OpenBao al posto delle colonne, o il rifiuto dichiarato. Acceso, senza riferimento: com'è, con un avviso
+ * valori da DA-Link al posto delle colonne, o il rifiuto dichiarato. Acceso, senza riferimento: com'è, con un avviso
  * nel log una volta per voce (doppia lettura).
  */
 function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number, nome: string): { ok: true; riga: Riga } | { ok: false; motivo: string } {
-  if (!vaultOpenBaoAcceso()) return { ok: true, riga };
+  if (!vaultRemotoAcceso()) return { ok: true, riga };
   const chi = `La credenziale «${nome}»`;
   const ref = testo(riga, "credential_ref")?.trim();
   if (!ref) {
@@ -124,11 +124,11 @@ function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number,
     const chiave = `${dbh.name}#${credentialId}`;
     if (!segnalate.has(chiave)) {
       segnalate.add(chiave);
-      console.warn(`[vault] credenziale #${credentialId} «${nome}» senza riferimento OpenBao: letta dalla colonna cifrata (doppia lettura, da migrare)`);
+      console.warn(`[vault] credenziale #${credentialId} «${nome}» senza riferimento al vault remoto: letta dalla colonna cifrata (doppia lettura, da migrare)`);
     }
     return { ok: true, riga };
   }
-  const store = statoVaultProcesso().openbao;
+  const store = statoVaultProcesso().remoto;
   if (!store) return { ok: false, motivo: `${chi}: ${motivoRemotoNonAvviato()}` };
   let v: Readonly<Record<string, string>>;
   try {
@@ -138,7 +138,7 @@ function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number,
   }
   const chiari: Record<string, string | null> = {};
   for (const [campo, colonna] of Object.entries(COLONNA_DEL_CAMPO)) chiari[colonna] = v[campo] ?? null;
-  return { ok: true, riga: { ...riga, [DA_OPENBAO]: chiari } };
+  return { ok: true, riga: { ...riga, [DAL_VAULT]: chiari } };
 }
 
 /**
@@ -146,9 +146,9 @@ function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number,
  * rifiuto (un segreto rotto non è un segreto assente).
  */
 function decifra(riga: Riga, colonna: string, chi: string, cosa: string): Campo {
-  const daOpenBao = riga[DA_OPENBAO];
-  if (daOpenBao) {
-    const v = daOpenBao[colonna] ?? null;
+  const dalVault = riga[DAL_VAULT];
+  if (dalVault) {
+    const v = dalVault[colonna] ?? null;
     return { ok: true, valore: v ? v : null };
   }
   const cifrato = testo(riga, colonna);
@@ -337,7 +337,7 @@ function leggiDaRiga(riga: Riga, credentialId: number, nome: string, codice: str
 }
 
 /**
- * I campi segreti di una voce, coi nomi del KV di OpenBao (da-vault): `username`, `password`, `private_key`,
+ * I campi segreti di una voce, coi nomi dei campi nel vault (da-vault): `username`, `password`, `private_key`,
  * `key_passphrase`, `auth_key`, `priv_key`. Una colonna vuota non c'è.
  */
 export type CampoSegreto = "username" | "password" | "private_key" | "key_passphrase" | "auth_key" | "priv_key";
@@ -366,7 +366,7 @@ export type EsitoCampi =
 
 /**
  * Tutti i campi segreti di una voce in chiaro (da-vault): la verifica della ricifra (stessi campi prima e dopo), la
- * «mostra password», l'esportazione KeePass, la migrazione verso OpenBao. Non guarda tipo né metodo: dà quello che
+ * «mostra password», l'esportazione KeePass, la migrazione verso DA-Link. Non guarda tipo né metodo: dà quello che
  * c'è. Un campo che non si decifra è un rifiuto col nome della voce, mai col valore.
  */
 export function campiVoceDb(dbh: Database.Database, credentialId: number, opzioni: { ignoraRiferimento?: boolean } = {}): EsitoCampi {
@@ -374,7 +374,7 @@ export function campiVoceDb(dbh: Database.Database, credentialId: number, opzion
   if (!riga) return { ok: false, motivo: `La credenziale #${credentialId} non esiste` };
   const nome = testo(riga, "name") ?? `#${credentialId}`;
   const chi = `La credenziale «${nome}»`;
-  // `ignoraRiferimento`: le colonne, anche con OpenBao acceso (la migrazione e la sua verifica).
+  // `ignoraRiferimento`: le colonne, anche con DA-Link acceso (la migrazione e la sua verifica).
   const pronta = opzioni.ignoraRiferimento ? { ok: true as const, riga } : rigaDaLeggere(dbh, riga, credentialId, nome);
   if (!pronta.ok) return pronta;
   const campi: Partial<Record<CampoSegreto, string>> = {};

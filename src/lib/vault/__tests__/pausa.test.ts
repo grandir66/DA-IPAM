@@ -32,7 +32,7 @@ after(() => {
   delete process.env.DA_VAULT_DALINK;
   delete process.env.DA_VAULT_DIR;
   chiudiVault(null);
-  statoVaultProcesso().openbao = null;
+  statoVaultProcesso().remoto = null;
   statoVaultProcesso().remotoNonAvviato = null;
 });
 
@@ -42,7 +42,7 @@ beforeEach(() => {
   delete process.env.DA_VAULT_DALINK;
   process.env.DA_VAULT_DIR = mkdtempSync(join(tmpdir(), "da-vault-pausa-"));
   chiudiVault(null);
-  statoVaultProcesso().openbao = null;
+  statoVaultProcesso().remoto = null;
   statoVaultProcesso().remotoNonAvviato = null;
 });
 
@@ -68,9 +68,9 @@ describe("interruttori spenti", () => {
     assert.equal(testoBannerVault(), null);
     assert.deepEqual(await eseguiCleanup(), { esito: "eseguito" });
     assert.equal(statoVault().locale.acceso, false);
-    assert.equal(statoVault().openbao.acceso, false);
-    // passo 6 (revisione mirata 29/10): spento tutto, la pagina dice «OpenBao» come prima, non «Vault remoto»
-    assert.equal(statoVault().openbao.nome, "OpenBao");
+    assert.equal(statoVault().remoto.acceso, false);
+    // spento tutto: la pagina dice «DA-Link» (OpenBao tolto il 02/11), non «Vault remoto»
+    assert.equal(statoVault().remoto.nome, "DA-Link");
   });
 
   it("spento, anche con l'archivio presente l'avvio non lo apre", async () => {
@@ -128,26 +128,39 @@ describe("vault_locale acceso", () => {
   });
 });
 
-describe("vault_openbao acceso", () => {
+describe("DA_VAULT_OPENBAO=1 rimasto nel file (OpenBao tolto il 02/11)", () => {
   beforeEach(() => {
     process.env.DA_VAULT_OPENBAO = "1";
   });
 
-  it("senza store OpenBao configurato: pausa dichiarata", async () => {
-    assert.match(motivoPausaVault() ?? "", /OpenBao/);
+  it("configurazione rifiutata: pausa col motivo che dice di usare DA_VAULT_DALINK=1, job saltati", async () => {
+    const orig = console.error;
+    console.error = () => undefined;
+    try {
+      avviaVault({ DA_VAULT_OPENBAO: "1" });
+    } finally {
+      console.error = orig;
+    }
+    assert.equal(statoVaultProcesso().remoto, null);
+    assert.match(motivoPausaVault() ?? "", /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/);
     const e = await eseguiCleanup();
     assert.equal(e.esito, "saltato");
+    assert.equal(statoVault().remoto.nome, "Vault remoto");
   });
+});
 
+describe("cache del vault remoto", () => {
   it("cache scaduta: pausa col motivo dello store; cache buona: nessuna pausa", async () => {
-    let stato: StatoStore = { pronto: false, motivo: "OpenBao non risponde da 31 minuti: la cache dei segreti (30 minuti) è scaduta" };
-    statoVaultProcesso().openbao = {
+    process.env.DA_VAULT_DALINK = "1";
+    let stato: StatoStore = { pronto: false, motivo: "DA-Link non risponde da 25 ore: la cache dei segreti (24 ore) è scaduta" };
+    statoVaultProcesso().remoto = {
+      backend: "dalink",
       leggiSync: () => { throw new Error("non usato"); },
       get: async () => { throw new Error("non usato"); },
       delete: async () => { throw new Error("non usato"); },
       stato: () => stato,
     };
-    assert.match(motivoPausaVault() ?? "", /OpenBao non risponde da 31 minuti/);
+    assert.match(motivoPausaVault() ?? "", /DA-Link non risponde da 25 ore/);
     stato = { pronto: true, aggiornatoAlle: Date.now() };
     assert.equal(motivoPausaVault(), null);
     assert.deepEqual(await eseguiCleanup(), { esito: "eseguito" });
@@ -173,17 +186,15 @@ describe("vault_dalink acceso: banner e pausa nominano DA-Link, non OpenBao", ()
     assert.doesNotMatch(testoBannerVault() ?? "", /OpenBao/);
   });
 
-  it("i due interruttori insieme (rifiutati dall'avvio): il banner dice quale configurazione è sbagliata", async () => {
+  it("con DA_VAULT_OPENBAO=1 ancora nel file (rifiutato dall'avvio): il banner dice di toglierlo", async () => {
     process.env.DA_VAULT_DALINK = "1";
     process.env.DA_VAULT_OPENBAO = "1";
     zitto(() => avviaVault({ ...BUONA, DA_VAULT_DALINK: "1", DA_VAULT_OPENBAO: "1" }));
+    assert.equal(statoVaultProcesso().remoto, null, "nessuno store, nemmeno DA-Link");
     const m = motivoPausaVault() ?? "";
-    assert.match(m, /DA_VAULT_DALINK/);
-    assert.match(m, /DA_VAULT_OPENBAO/);
-    assert.match(m, /insieme/);
-    assert.doesNotMatch(m, /AppRole|non configurato/);
+    assert.match(m, /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/);
     assert.equal((await eseguiCleanup()).esito, "saltato");
-    assert.match(statoVault().pausa ?? "", /insieme/);
+    assert.match(statoVault().pausa ?? "", /OpenBao è stato tolto/);
   });
 
   it("configurazione di DA-Link rifiutata: il banner porta il motivo dell'avvio (i nomi, mai i valori)", () => {
@@ -195,26 +206,17 @@ describe("vault_dalink acceso: banner e pausa nominano DA-Link, non OpenBao", ()
     assert.ok(!(testoBannerVault() ?? "").includes(GETTONE));
   });
 
-  it("la configurazione di OpenBao rifiutata: il banner porta il suo motivo", () => {
-    process.env.DA_VAULT_OPENBAO = "1";
-    zitto(() => avviaVault({ DA_VAULT_OPENBAO: "1" }));
-    assert.match(motivoPausaVault() ?? "", /DA_VAULT_OPENBAO_URL/);
-  });
-
-  it("lo stato pubblico nomina il backend dello store: DA-Link con DA-Link, OpenBao con OpenBao", () => {
+  it("lo stato pubblico nomina DA-Link; un nome neutro solo con la configurazione rifiutata", () => {
     process.env.DA_VAULT_DALINK = "1";
     const fisso = { leggiSync: () => { throw new Error("non usato"); }, get: async () => { throw new Error("non usato"); }, delete: async () => undefined, stato: (): StatoStore => ({ pronto: true, aggiornatoAlle: null }) };
-    statoVaultProcesso().openbao = { ...fisso, backend: "dalink" };
-    assert.equal(statoVault().openbao.nome, "DA-Link");
-    delete process.env.DA_VAULT_DALINK;
+    statoVaultProcesso().remoto = { ...fisso, backend: "dalink" };
+    assert.equal(statoVault().remoto.nome, "DA-Link");
+    statoVaultProcesso().remoto = null;
+    assert.equal(statoVault().remoto.nome, "DA-Link");
     process.env.DA_VAULT_OPENBAO = "1";
-    statoVaultProcesso().openbao = { ...fisso, backend: "openbao" };
-    assert.equal(statoVault().openbao.nome, "OpenBao");
-    statoVaultProcesso().openbao = null;
-    process.env.DA_VAULT_DALINK = "1";
-    assert.equal(statoVault().openbao.nome, "Vault remoto"); // i due accesi insieme: nome neutro
+    assert.equal(statoVault().remoto.nome, "Vault remoto"); // DA_VAULT_OPENBAO=1 rimasto: nome neutro
     delete process.env.DA_VAULT_DALINK;
     delete process.env.DA_VAULT_OPENBAO;
-    assert.equal(statoVault().openbao.nome, "OpenBao"); // spento tutto: come prima del passo 6
+    assert.equal(statoVault().remoto.nome, "DA-Link"); // spento tutto
   });
 });

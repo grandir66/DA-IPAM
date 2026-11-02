@@ -84,8 +84,8 @@ app.prepare().then(() => {
   }
 
   async function initCron() {
-    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao o di DA-Link (passo 6 del vault semplice, 29/10),
-    // solo con un interruttore acceso (spenti di
+    // da-vault (piano 2026-10-23): sblocco del vault e cache di DA-Link (passo 6 del vault semplice, 29/10), solo con
+    // un interruttore acceso (DA_VAULT_OPENBAO=1 rimasto nel file entra per essere rifiutato: OpenBao tolto il 02/11; spenti di
     // serie: l'avvio resta quello di oggi). SI ASPETTA prima di ogni altra inizializzazione (revisione del 23/10): le
     // altre (migrazione dei segreti delle installazioni, scheduler, notificatori) possono chiamare `encrypt()`, che col
     // vault locale acceso e non ancora sbloccato lancia. `avviaVault()` sblocca dal TPM in modo sincrono; se non

@@ -1,7 +1,7 @@
 /**
  * da-vault: `campiVoceDb`, tutti i campi segreti di una voce in chiaro, dal lettore unico. Serve alla verifica della
  * ricifra (stessi campi prima e dopo), alla «mostra password», all'esportazione KeePass e alla migrazione verso
- * OpenBao. I nomi dei campi sono quelli del KV di OpenBao: username, password, private_key, key_passphrase, auth_key,
+ * DA-Link. I nomi dei campi sono quelli del vault: username, password, private_key, key_passphrase, auth_key,
  * priv_key.
  *
  * Run: node --import tsx --test src/lib/credentials/__tests__/segreti-campi.test.ts

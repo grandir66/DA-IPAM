@@ -3039,7 +3039,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   }
 
-  // da-vault (piano 2026-10-23): riferimento a OpenBao e registro delle visualizzazioni, solo se mancano. Se fallisce il
+  // da-vault (piano 2026-10-23): riferimento al vault remoto (DA-Link) e registro delle visualizzazioni, solo se mancano. Se fallisce il
   // tenant si apre lo stesso: schemaVaultPresente() dice false e le funzioni del vault lo dicono (a interruttori spenti
   // nessuno le usa).
   try {
@@ -3048,7 +3048,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
       console.info(`[db-tenant] ${tenantCode}: vault, aggiunto ${added.join(", ")}`);
     }
   } catch (e) {
-    console.error(`[db-tenant] ${tenantCode}: migrazione del vault fallita (ROLLBACK), registro e riferimenti OpenBao non disponibili:`, e);
+    console.error(`[db-tenant] ${tenantCode}: migrazione del vault fallita (ROLLBACK), registro e riferimenti al vault non disponibili:`, e);
     try {
       if (schemaVaultPresente(newDb)) {
         const attuale = leggiSegno(newDb, SEGNO_VAULT);

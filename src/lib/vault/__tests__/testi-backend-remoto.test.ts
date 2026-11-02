@@ -1,6 +1,7 @@
 /**
  * Vault semplice, passo 6, correzioni della revisione: con DA-Link acceso i testi di errore del lettore unico dei
- * segreti nominano il backend vero (o un nome neutro), mai «OpenBao».
+ * segreti nominano il backend vero (o un nome neutro). OpenBao è stato tolto il 02/11/2026: `DA_VAULT_OPENBAO=1`
+ * rimasto nel file dà il motivo del rifiuto, che dice di usare `DA_VAULT_DALINK=1`.
  *
  * Run: node --import tsx --test src/lib/vault/__tests__/testi-backend-remoto.test.ts
  */
@@ -27,7 +28,7 @@ before(() => {
 afterEach(() => {
   delete process.env.DA_VAULT_OPENBAO;
   delete process.env.DA_VAULT_DALINK;
-  statoVaultProcesso().openbao = null;
+  statoVaultProcesso().remoto = null;
   statoVaultProcesso().remotoNonAvviato = null;
 });
 after(() => {
@@ -36,7 +37,7 @@ after(() => {
 });
 
 const leggi = () => withTenant(T, () => leggiSegretoDb(getTenantDb(T), idConRef, "ssh"));
-const finto = (backend: "openbao" | "dalink", leggiSync: () => never) => ({
+const finto = (backend: "dalink", leggiSync: () => never) => ({
   backend,
   leggiSync,
   get: async () => { throw new Error("non usato"); },
@@ -54,28 +55,19 @@ describe("lettore unico dei segreti: il rifiuto nomina il backend vero", () => {
     assert.ok(!r2.ok && /DALINK_VAULT_URL/.test(r2.motivo) && !/OpenBao/.test(r2.motivo), !r2.ok ? r2.motivo : "");
   });
 
-  it("OpenBao acceso senza store: dice ancora OpenBao", () => {
+  it("DA_VAULT_OPENBAO=1 rimasto nel file, da solo o con DA-Link: il motivo dice che OpenBao è stato tolto", () => {
     process.env.DA_VAULT_OPENBAO = "1";
     const r = leggi();
-    assert.ok(!r.ok && /OpenBao/.test(r.motivo) && !/DA-Link/.test(r.motivo), !r.ok ? r.motivo : "");
-  });
-
-  it("i due interruttori insieme: nome neutro e il motivo dell'avvio", () => {
-    process.env.DA_VAULT_OPENBAO = "1";
+    assert.ok(!r.ok && /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/.test(r.motivo), !r.ok ? r.motivo : "");
     process.env.DA_VAULT_DALINK = "1";
-    const r = leggi();
-    assert.ok(!r.ok && /DA_VAULT_DALINK/.test(r.motivo) && /DA_VAULT_OPENBAO/.test(r.motivo), !r.ok ? r.motivo : "");
+    const r2 = leggi();
+    assert.ok(!r2.ok && /OpenBao è stato tolto/.test(r2.motivo), !r2.ok ? r2.motivo : "");
   });
 
   it("lo store che lancia un errore anonimo: il testo porta il nome del suo backend", () => {
     process.env.DA_VAULT_DALINK = "1";
-    statoVaultProcesso().openbao = finto("dalink", () => { throw "giù"; });
+    statoVaultProcesso().remoto = finto("dalink", () => { throw "giù"; });
     const r = leggi();
     assert.ok(!r.ok && /DA-Link non ha risposto/.test(r.motivo) && !/OpenBao/.test(r.motivo), !r.ok ? r.motivo : "");
-    delete process.env.DA_VAULT_DALINK;
-    process.env.DA_VAULT_OPENBAO = "1";
-    statoVaultProcesso().openbao = finto("openbao", () => { throw "giù"; });
-    const o = leggi();
-    assert.ok(!o.ok && /OpenBao non ha risposto/.test(o.motivo), !o.ok ? o.motivo : "");
   });
 });

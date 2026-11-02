@@ -19,6 +19,7 @@ import { codiceTotp } from "@/lib/accesso/totp";
 import { clearRateLimit } from "@/lib/rate-limit";
 import { confermaConSecondaVerifica, confermaValida, DURATA_CONFERMA_MS, mostraVoce, registroVisualizzazioni, type UtenteSessione } from "../mostra";
 import { chiudiVault, impostaChiaveDati, statoVaultProcesso } from "../stato";
+import { VaultRemotoFinto } from "./support/vault-remoto-finto";
 
 const T = "VAULTMOSTRA";
 const PW = "Pw-mostra-prova-4d5e";
@@ -186,7 +187,7 @@ describe("registro delle visualizzazioni", () => {
 describe("con un backend remoto acceso, i testi nominano quello vero", () => {
   const T0 = ORA + 3_600_000;
   let idConRef: number;
-  const store = (backend: "openbao" | "dalink", get: () => Promise<never>) =>
+  const store = (backend: "dalink", get: () => Promise<never>) =>
     ({ backend, leggiSync: () => { throw new Error("non usato"); }, get, delete: async () => undefined, stato: () => ({ pronto: true as const, aggiornatoAlle: null }) });
 
   before(() => {
@@ -199,7 +200,7 @@ describe("con un backend remoto acceso, i testi nominano quello vero", () => {
   afterEach(() => {
     delete process.env.DA_VAULT_OPENBAO;
     delete process.env.DA_VAULT_DALINK;
-    statoVaultProcesso().openbao = null;
+    statoVaultProcesso().remoto = null;
     statoVaultProcesso().remotoNonAvviato = null;
   });
 
@@ -220,19 +221,25 @@ describe("con un backend remoto acceso, i testi nominano quello vero", () => {
 
   it("lo store che non risponde con un errore anonimo: il testo porta il nome del backend dello store", async () => {
     process.env.DA_VAULT_DALINK = "1";
-    statoVaultProcesso().openbao = store("dalink", () => Promise.reject("giù"));
+    statoVaultProcesso().remoto = store("dalink", () => Promise.reject("giù"));
     const m = await mostraRef();
     assert.ok(!m.ok && m.errore === "DA-Link non ha risposto", !m.ok ? m.errore : "");
-    process.env.DA_VAULT_DALINK = "";
-    process.env.DA_VAULT_OPENBAO = "1";
-    statoVaultProcesso().openbao = store("openbao", () => Promise.reject("giù"));
-    const o = await mostraRef();
-    assert.ok(!o.ok && o.errore === "OpenBao non ha risposto", !o.ok ? o.errore : "");
   });
 
-  it("OpenBao acceso senza store: dice ancora OpenBao", async () => {
+  it("la voce col riferimento si legge da DA-Link per conto della persona, mai dalla colonna", async () => {
+    process.env.DA_VAULT_DALINK = "1";
+    const finto = new VaultRemotoFinto({ "clienti/vaultmostra/da-ipam/con-riferimento": { username: "u-dalink", password: "p-dalink" } });
+    statoVaultProcesso().remoto = finto;
+    const m = await mostraRef();
+    assert.ok(m.ok, !m.ok ? m.errore : "");
+    assert.equal(JSON.stringify(m).includes("p-dalink"), true);
+    assert.equal(JSON.stringify(m).includes("\"p\""), false);
+    assert.deepEqual(finto.chiamate.map((c) => [c.metodo, c.perConto, c.perContoId]), [["get", admin.nome, admin.id]]);
+  });
+
+  it("DA_VAULT_OPENBAO=1 rimasto nel file: il rifiuto dice che OpenBao è stato tolto", async () => {
     process.env.DA_VAULT_OPENBAO = "1";
     const m = await mostraRef();
-    assert.ok(!m.ok && /OpenBao/.test(m.errore) && !/DA-Link/.test(m.errore), !m.ok ? m.errore : "");
+    assert.ok(!m.ok && m.stato === 503 && /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/.test(m.errore), !m.ok ? m.errore : "");
   });
 });

@@ -294,7 +294,7 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
-  // da-vault (piano 2026-10-23): vault bloccato o OpenBao oltre la cache = scansioni in pausa, col motivo. Interruttori
+  // da-vault (piano 2026-10-23): vault bloccato o DA-Link oltre la cache = scansioni in pausa, col motivo. Interruttori
   // spenti (di serie): sempre null, nessun cambiamento.
   const pausa = motivoPausaVault();
   if (pausa) return { esito: "saltato", motivo: pausa };

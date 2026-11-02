@@ -1,18 +1,18 @@
 /**
  * Vault semplice, condizioni del passo 7 (piano DA-Link `2026-10-29-vault-passo6-app.md`, Task S6, revisione del
- * 29/10): `scripts/da-vault-migra-openbao.ts` col backend acceso. Con DA-Link acceso una credenziale cambiata dalla
- * pagina perde `credential_ref` e torna sulla colonna (`aggiornamenti.ts`, `togliRiferimentoSeCambianoSegreti`): la
- * migrazione deve riportarla in DA-Link come oggi la riporta in OpenBao.
+ * 29/10): `scripts/da-vault-migra-verso-dalink.ts`. Con DA-Link acceso una credenziale cambiata dalla pagina perde
+ * `credential_ref` e torna sulla colonna (`aggiornamenti.ts`, `togliRiferimentoSeCambianoSegreti`): la migrazione la
+ * riporta in DA-Link.
  *
  * Si prova:
- * - la scelta dello store dall'interruttore (`sceltaBackendRemoto`): spenti → OpenBao come prima del passo 6, DA-Link
- *   solo acceso, i due insieme = rifiuto col motivo;
- * - con DA-Link: la voce già in DA-Link col valore vecchio si sostituisce (il `put` manda la versione giusta, niente
- *   409), il riferimento torna, `--verifica` dopo dice 0 diverse; i testi nominano DA-Link, mai valori né gettone.
+ * - lo store della migrazione (`storeDellaMigrazione`): DA-Link con la sua configurazione, anche a interruttore spento;
+ *   `DA_VAULT_OPENBAO=1` rimasto nel file (OpenBao tolto il 02/11) = rifiuto col motivo;
+ * - la voce già in DA-Link col valore vecchio si sostituisce (il `put` manda la versione giusta, niente 409), il
+ *   riferimento torna, `--verifica` dopo dice 0 diverse; i testi nominano DA-Link, mai valori né gettone.
  *
  * Contro il DA-Link finto col TLS vero (`support/dalink-finto.ts`), la CLI in un processo figlio.
  *
- * Run: node --import tsx --test src/lib/vault/__tests__/migra-openbao-dalink.test.ts
+ * Run: node --import tsx --test src/lib/vault/__tests__/migra-verso-dalink-cli.test.ts
  */
 import { TEST_DATA_DIR } from "@/lib/__tests__/support/data-dir-isolata";
 import { describe, it, before, after } from "node:test";
@@ -23,32 +23,26 @@ import { encrypt } from "@/lib/crypto";
 import { closeTenantDb, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { creaCredenzialeDb } from "@/lib/credentials/archivio";
-import { percorsoCredenziale, storeDellaMigrazione } from "../migra-openbao";
+import { percorsoCredenziale, storeDellaMigrazione } from "../migra-verso-dalink";
 import { creaDaLinkFinto, MARCA_CORPO, type DaLinkFinto } from "./support/dalink-finto";
 
 const T = "C70004";
 const PW_VECCHIA = "pw-vecchia-in-dalink-3141";
 const PW_NUOVA = "pw-nuova-dalla-pagina-2718";
 
-describe("storeDellaMigrazione: lo store è quello del backend acceso", () => {
+describe("storeDellaMigrazione: DA-Link, mai altro", () => {
   const dalink = { DALINK_VAULT_URL: "https://192.168.4.44:8443", DALINK_VAULT_GETTONE: "dlv_" + "g".repeat(43), DALINK_VAULT_IMPRONTA: "sha256//" + "A".repeat(43) + "=" };
-  const openbao = { DA_VAULT_OPENBAO_URL: "https://openbao.interno:8200", DA_VAULT_OPENBAO_ROLE_ID: "ruolo", DA_VAULT_OPENBAO_SECRET_ID_FILE: "/non/esiste" };
 
-  it("interruttori spenti: OpenBao come prima del passo 6 (si migra, poi si accende), mai DA-Link", () => {
-    const s = storeDellaMigrazione({ ...openbao, ...dalink });
-    assert.ok(s.ok && s.store.backend === "openbao", s.ok ? s.nome : s.motivo);
+  it("interruttore spento con la configurazione di DA-Link: DA-Link (si migra, poi si accende)", () => {
+    const s = storeDellaMigrazione({ ...dalink });
+    assert.ok(s.ok && s.store.backend === "dalink" && s.nome === "DA-Link", s.ok ? s.nome : s.motivo);
   });
 
-  it("tutti e due accesi: rifiuto (come all'avvio dell'app)", () => {
-    const s = storeDellaMigrazione({ ...openbao, ...dalink, DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1" });
-    assert.ok(!s.ok && /insieme/.test(s.motivo), !s.ok ? s.motivo : "");
-  });
-
-  it("OpenBao acceso: OpenBaoStore; senza configurazione il motivo dice cosa manca", () => {
-    const s = storeDellaMigrazione({ ...openbao, DA_VAULT_OPENBAO: "1" });
-    assert.ok(s.ok && s.store.backend === "openbao" && s.nome === "OpenBao");
-    const m = storeDellaMigrazione({ DA_VAULT_OPENBAO: "1" });
-    assert.ok(!m.ok && /DA_VAULT_OPENBAO_URL/.test(m.motivo) && /OpenBao/.test(m.motivo), !m.ok ? m.motivo : "");
+  it("DA_VAULT_OPENBAO=1 rimasto nel file: rifiuto col motivo che dice di usare DA_VAULT_DALINK=1", () => {
+    for (const env of [{ ...dalink, DA_VAULT_OPENBAO: "1" }, { ...dalink, DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1" }]) {
+      const s = storeDellaMigrazione(env);
+      assert.ok(!s.ok && /OpenBao è stato tolto/.test(s.motivo) && /DA_VAULT_DALINK=1/.test(s.motivo), !s.ok ? s.motivo : "");
+    }
   });
 
   it("DA-Link acceso: store di DA-Link; senza configurazione il motivo nomina la variabile, mai il gettone", () => {
@@ -59,7 +53,7 @@ describe("storeDellaMigrazione: lo store è quello del backend acceso", () => {
   });
 });
 
-describe("scripts/da-vault-migra-openbao.ts con DA-Link acceso", () => {
+describe("scripts/da-vault-migra-verso-dalink.ts con DA-Link acceso", () => {
   let dl: DaLinkFinto;
   let id = 0;
   let percorso = "";
@@ -85,17 +79,12 @@ describe("scripts/da-vault-migra-openbao.ts con DA-Link acceso", () => {
   /** spawn asincrono: il DA-Link finto gira in questo processo e deve poter rispondere. */
   function cli(args: string[], env: Record<string, string> = {}): Promise<{ status: number | null; stdout: string; stderr: string }> {
     return new Promise((ok) => {
-      const p = spawn(process.execPath, ["--import", "tsx", join(process.cwd(), "scripts", "da-vault-migra-openbao.ts"), ...args], {
+      const p = spawn(process.execPath, ["--import", "tsx", join(process.cwd(), "scripts", "da-vault-migra-verso-dalink.ts"), ...args], {
         cwd: process.cwd(),
         env: {
           ...process.env,
           DA_INVENT_DATA_DIR: TEST_DATA_DIR,
-          // OpenBao né acceso né configurato: la migrazione verso DA-Link non lo tocca.
           DA_VAULT_OPENBAO: "",
-          DA_VAULT_OPENBAO_URL: "",
-          DA_VAULT_OPENBAO_ROLE_ID: "",
-          DA_VAULT_OPENBAO_SECRET_ID_FILE: "",
-          CREDENTIALS_DIRECTORY: "",
           DA_VAULT_DALINK: "1",
           DALINK_VAULT_URL: dl.url,
           DALINK_VAULT_GETTONE: dl.gettone,
@@ -122,18 +111,21 @@ describe("scripts/da-vault-migra-openbao.ts con DA-Link acceso", () => {
     for (const v of [PW_VECCHIA, PW_NUOVA, dl.gettone, "dlv_", MARCA_CORPO]) assert.ok(!tutto.includes(v), `l'uscita contiene «${v.slice(0, 6)}…»`);
   }
 
-  it("interruttori spenti: va verso OpenBao come prima (qui non configurato: esce ≠0), niente chiesto a DA-Link", async () => {
+  it("interruttore spento: prova a vuoto verso DA-Link, niente chiesto a DA-Link né scritto", async () => {
     const n = dl.richieste.length;
     const r = await cli([], { DA_VAULT_DALINK: "" });
-    assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /OpenBao/);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /DA-Link/);
     assert.equal(dl.richieste.length, n);
+    assert.equal(riferimento(), null);
   });
 
-  it("tutti e due accesi: esce ≠0 col motivo", async () => {
+  it("DA_VAULT_OPENBAO=1 rimasto nel file: esce ≠0 col motivo, niente chiesto a DA-Link", async () => {
+    const n = dl.richieste.length;
     const r = await cli([], { DA_VAULT_OPENBAO: "1" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /insieme/);
+    assert.match(r.stderr, /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/);
+    assert.equal(dl.richieste.length, n);
   });
 
   it("configurazione di DA-Link che manca: esce ≠0 col nome della variabile, senza il gettone", async () => {

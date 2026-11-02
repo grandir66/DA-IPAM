@@ -5,7 +5,7 @@ import { mostraPasswordAttiva } from "@/lib/vault/mostra";
 import { statoVault } from "@/lib/vault/appliance";
 
 /**
- * Stato del vault (piano da-vault 2026-10-23): interruttori, sblocco, slot dell'archivio, OpenBao, pausa delle
+ * Stato del vault (piano da-vault 2026-10-23): interruttori, sblocco, slot dell'archivio, vault remoto (DA-Link), pausa delle
  * scansioni. Mai la chiave né un valore. Con gli interruttori spenti dice solo «spento».
  */
 export async function GET() {

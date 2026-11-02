@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-02 · Vault: OpenBao tolto dal codice
+
+### Tolto
+
+- **OpenBao**: il backend (`openbao.ts`), la copia una tantum verso DA-Link e la riga «Credenziali da OpenBao» nelle
+  Opzioni. Le password dell'hub stanno solo in DA-Link (`DA_VAULT_DALINK=1`). Se `DA_VAULT_OPENBAO=1` è rimasto nel
+  file, l'avvio lo rifiuta col motivo «OpenBao è stato tolto il 02/11, usa DA_VAULT_DALINK=1» e le scansioni restano
+  in pausa finché non si toglie la riga.
+
+### Cambiato
+
+- La migrazione delle credenziali cambiate dalla pagina si chiama ora `scripts/da-vault-migra-verso-dalink.ts` e va
+  solo verso DA-Link. `/api/vault/stato` dà il vault remoto sotto `remoto` (prima `openbao`).
+
 ## [Non rilasciato] — 2026-10-29 · Vault: condizioni prima di accendere DA-Link
 
 ### Cambiato

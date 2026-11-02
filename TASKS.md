@@ -14,6 +14,16 @@ ARP; (3) prima dell'aggiunta un ARP ping col tag giusto (il giro c'è già: `/ap
 - [x] prove `src/lib/trunk/__tests__/host-dal-trunk.test.ts` (la lettura vista rossa prima dell'aggancio); eslint verde; tsc e npm test rossi solo in `src/lib/vault/` per `age-encryption`/`kdbxweb` assenti dai node_modules locali (non toccati)
 - [x] promosso su main (0.9.919, poi 0.9.920 con la rete senza VLAN: VID 0), «tutto su main» di Riccardo 27/10. Collaudo su 72729-ipam (VM 999 del mini PC): VLAN 4 43/43 host col MAC, VLAN 6 12/12, nativa 192.168.40.0/24 da 0 a 42/43 MAC («1 nuovi, 41 MAC compilati» nel log delle 17:58 UTC)
 
+## 2026-11-02 — OpenBao tolto dal codice dell'hub
+
+Riccardo (02/11): «confermo il sì alla pulizia completa di OpenBao». Macchina, dati e DA-Link già puliti; qui il codice.
+- [x] tolti `src/lib/vault/openbao.ts`, `copia-verso-dalink.ts` con `scripts/da-vault-copia-verso-dalink.ts`,
+  `configurazioneOpenBao`, la riga «Credenziali da OpenBao» del catalogo e le prove solo-OpenBao
+- [x] `DA_VAULT_OPENBAO=1` = configurazione rifiutata («OpenBao è stato tolto il 02/11, usa DA_VAULT_DALINK=1»)
+- [x] la migrazione resta, solo verso DA-Link: `src/lib/vault/migra-verso-dalink.ts`, `scripts/da-vault-migra-verso-dalink.ts`
+- [x] nomi interni: `vaultRemotoAcceso`, `StoreRemotoProcesso`, `statoVaultProcesso().remoto`, `/api/vault/stato` →
+  `remoto`, `cancellaDalVaultRemoto`; prove generiche su `DaLinkStore` o sul finto `support/vault-remoto-finto.ts`
+
 ## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
 
 Riccardo (27/10): via OpenBao, gli slot, la 2FA per «Mostra», la ricifra e il recupero a tre comandi. Le
@@ -35,7 +45,7 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
   `scripts/da-vault-migra-openbao.ts` è legato a `OpenBaoStore` (le credenziali nuove non arrivano a DA-Link): far
   scegliere lo store allo script (`migraVersoOpenBao` accetta già un `SecretStore`); (c) la cache vale 24 ore per tutto
   il giro, non per voce: una voce sempre malformata resterebbe senza scadenza (dare a ogni voce la sua data)
-- [ ] `migra-openbao-cli.test.ts` probabilmente non prova gli orfani (il finto OpenBao non regge `LIST`, finisce in
+- [x] (02/11, superata: prova tolta con OpenBao) `migra-openbao-cli.test.ts` probabilmente non prova gli orfani (il finto OpenBao non regge `LIST`, finisce in
   `orfaniErrore`); `riferimentiDelleCredenziali()` avvisa invece di lanciare (la copia lo aggira intercettando `console.warn`)
 - [x] passo 7 sull'hub: 29/10 16:06-16:07 (ora italiana): DA-Vul-can 0.8.213 e hub DA-IPAM 0.9.938 con `DA_VAULT_DALINK=1` e `DA_VAULT_OPENBAO=0`
   (copie `.env.local.bak-20261029-15*-pre-accensione-dalink`); copia 17 voci (hub) + 3 (DA-Vul-can), `--verifica` tutte uguali;
@@ -43,7 +53,7 @@ DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e pia
   `DA_VAULT_DALINK=0`, riavvio (OpenBao ha ancora tutto, DA-Vul-can anche le colonne)
 - [ ] la skill `.claude/skills/deploy-prod` descrive ancora `da-invent` e un deploy a mano: l'hub gira come `da-ipam`
   da `/opt/da-ipam` con `da-ipam-update.timer` (pull di `dev`, build, riavvio ogni 15 minuti) — da aggiornare
-- [ ] passo 8 (appliance dei clienti) e passo 9 (spegnere OpenBao, non prima del 5/11) del piano
+- [ ] passo 8 (appliance dei clienti) del piano; passo 9 fatto il 02/11 (OpenBao tolto ovunque, anche dal codice)
 
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`
 

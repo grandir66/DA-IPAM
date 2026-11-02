@@ -58,8 +58,8 @@ const CENSIMENTO: ReadonlyArray<[chiave: string, id: string]> = [
   ["VULCAN_TOKEN", "uscite.vulcan"],
   ["oggetto.env", "uscite.dalink_segnale"],
   // da-vault (piano 2026-10-23): i due interruttori del vault, nel file dell'appliance, spenti di serie.
+  // DA_VAULT_OPENBAO (OpenBao tolto il 02/11) non ha più una riga: se è rimasto nel file lo dice quella di DA-Link.
   ["DA_VAULT_LOCALE", "file.vault_locale"],
-  ["DA_VAULT_OPENBAO", "file.vault_openbao"],
   ["DA_VAULT_DALINK", "file.vault_dalink"],
   ...VOCI_DA_AMBIENTE.map((v): [string, string] => [v.variabile, `file.${v.variabile.toLowerCase()}`]),
   ["DA_INVENT_BACKUP_CRON", "sempre.backup"],
@@ -149,33 +149,28 @@ test("(d) cliente appena nato: le sei letture accese di serie (librenms spenta: 
   });
 });
 
-test("(e) vault remoto: con DA-Link acceso la riga di OpenBao resta spenta e accesa quella di DA-Link; i due insieme sono un errore su tutte e due", async () => {
+test("(e) vault remoto: una riga sola, DA-Link; DA_VAULT_OPENBAO=1 rimasto nel file è un errore che dice di toglierlo", async () => {
   const salva = { o: process.env.DA_VAULT_OPENBAO, d: process.env.DA_VAULT_DALINK };
   const stato = async () => {
-    const righe = await withTenant(T, () => leggiTutte(catalogo().filter((o) => o.id === "file.vault_openbao" || o.id === "file.vault_dalink")));
+    const righe = await withTenant(T, () => leggiTutte(catalogo().filter((o) => o.id.startsWith("file.vault_"))));
     return Object.fromEntries(righe.map((r) => [r.opzione.id, r.stato]));
   };
   try {
     delete process.env.DA_VAULT_OPENBAO;
     delete process.env.DA_VAULT_DALINK;
     let s = await stato();
-    assert.equal(s["file.vault_openbao"].acceso, false);
+    assert.deepEqual(Object.keys(s).sort(), ["file.vault_dalink", "file.vault_locale"], "la riga di OpenBao non c'è più");
     assert.equal(s["file.vault_dalink"].acceso, false);
     process.env.DA_VAULT_DALINK = "1";
     s = await stato();
-    assert.equal(s["file.vault_openbao"].acceso, false, "DA-Link acceso non accende la riga di OpenBao");
     assert.equal(s["file.vault_dalink"].acceso, true);
-    delete process.env.DA_VAULT_DALINK;
-    process.env.DA_VAULT_OPENBAO = "1";
-    s = await stato();
-    assert.equal(s["file.vault_openbao"].acceso, true);
-    assert.equal(s["file.vault_dalink"].acceso, false);
-    process.env.DA_VAULT_DALINK = "1";
-    s = await stato();
-    for (const id of ["file.vault_openbao", "file.vault_dalink"]) {
-      assert.equal(s[id].acceso, true, id);
-      assert.equal(s[id].esito.tipo, "errore", id);
-      assert.match(s[id].esito.testo, /insieme/, id);
+    for (const dalink of ["", "1"]) {
+      process.env.DA_VAULT_DALINK = dalink;
+      process.env.DA_VAULT_OPENBAO = "1";
+      s = await stato();
+      assert.equal(s["file.vault_dalink"].acceso, true, dalink);
+      assert.equal(s["file.vault_dalink"].esito.tipo, "errore", dalink);
+      assert.match(s["file.vault_dalink"].esito.testo, /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/, dalink);
     }
   } finally {
     for (const [k, v] of [["DA_VAULT_OPENBAO", salva.o], ["DA_VAULT_DALINK", salva.d]] as const) {

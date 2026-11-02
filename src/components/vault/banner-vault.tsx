@@ -3,7 +3,7 @@ import { ShieldAlert } from "lucide-react";
 
 /**
  * «Vault bloccato» (piano da-vault 2026-10-23): in testa a ogni pagina quando le scansioni sono in pausa perché il
- * vault non è sbloccato (o OpenBao non risponde oltre la cache). Lo decide il server (`testoBannerVault`): con gli
+ * vault non è sbloccato (o DA-Link non risponde oltre la cache). Lo decide il server (`testoBannerVault`): con gli
  * interruttori spenti non c'è.
  */
 export function BannerVault({ testo }: { testo: string }) {

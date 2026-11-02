@@ -9,7 +9,7 @@
  */
 import type { z } from "zod";
 import { encrypt } from "@/lib/crypto";
-import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { vaultRemotoAcceso } from "@/lib/vault/stato";
 import type { CredentialSchema } from "@/lib/validators";
 import type { ColonneCredenziale } from "./archivio";
 
@@ -52,12 +52,12 @@ export function aggiornamentiCredenziale(data: Partial<DatiCredenziale>, corpo: 
 const COLONNE_SEGRETE = ["encrypted_username", "encrypted_password", "encrypted_private_key", "encrypted_key_passphrase", "encrypted_auth_key", "encrypted_priv_key"];
 
 /**
- * da-vault, passo 6: con `DA_VAULT_OPENBAO=1` un segreto cambiato (o svuotato) dalla pagina toglie `credential_ref`:
- * la voce torna a leggersi dalla colonna, che ha il valore nuovo, e la migrazione la riporta in OpenBao. Così il
- * valore in OpenBao non resta indietro senza che nessuno lo veda. Interruttore spento: niente.
+ * da-vault, passo 6: con `DA_VAULT_DALINK=1` un segreto cambiato (o svuotato) dalla pagina toglie `credential_ref`:
+ * la voce torna a leggersi dalla colonna, che ha il valore nuovo, e la migrazione (`da-vault-migra-verso-dalink`) la
+ * riporta in DA-Link. Così il valore in DA-Link non resta indietro senza che nessuno lo veda. Interruttore spento: niente.
  */
 export function togliRiferimentoSeCambianoSegreti(updates: Record<string, unknown>): void {
-  if (!vaultOpenBaoAcceso()) return;
+  if (!vaultRemotoAcceso()) return;
   if (COLONNE_SEGRETE.some((c) => c in updates)) updates.credential_ref = null;
 }
 

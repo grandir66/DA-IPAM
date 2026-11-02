@@ -1,13 +1,13 @@
 /**
  * da-vault (piano `docs/superpowers/plans/2026-10-23-da-vault.md`, passo 5): l'interfaccia comune dei due backend.
  *
- * - `openbao` (hub e app interne): KV v2 di OpenBao, AppRole, cache in memoria a tempo (`openbao.ts`);
  * - `locale` (appliance dei clienti): i segreti propri dell'app, cifrati con la chiave dei dati dell'archivio a slot
  *   (`locale.ts`, `archivio.ts`);
  * - `dalink` (hub, vault semplice passo 6): le quattro rotte del vault di DA-Link col gettone dell'app (`dalink.ts`).
  *
  * Un percorso è come nel piano: `app/<app>/<nome>`, `clienti/<codcli>/<sistema>/<servizio>`, minuscolo con trattini.
- * Un valore è un KV piatto (campo → testo), come un segreto KV v2.
+ * Un valore è un KV piatto (campo → testo).
+ * (OpenBao, il terzo backend di prima, è stato tolto il 02/11/2026: le password stanno solo in DA-Link.)
  *
  * Nessun messaggio d'errore contiene un valore: solo percorso, campo, cosa manca.
  */
@@ -16,11 +16,11 @@ export type ValoreSegreto = Readonly<Record<string, string>>;
 
 export interface OpzioniGet {
   /**
-   * Lettura fatta dall'app per conto di una persona (la «mostra password»): il nome va in `X-Domarc-Utente`, che
-   * OpenBao scrive nel registro. Una lettura per conto non passa dalla cache.
+   * Lettura fatta dall'app per conto di una persona (la «mostra password»): non passa dalla cache. Chi ha guardato
+   * lo scrive il registro dell'app (`vault_visualizzazioni`).
    */
   perConto?: string;
-  /** L'id dell'utente (hub.users.id): va in `X-Domarc-Utente` accanto al nome, che da solo può cambiare o ripetersi. */
+  /** L'id dell'utente (hub.users.id), accanto al nome, che da solo può cambiare o ripetersi. */
   perContoId?: string;
 }
 
@@ -29,13 +29,11 @@ export type StatoStore =
       pronto: true;
       aggiornatoAlle: number | null;
       degradato?: string;
-      /** Riferimenti di credenziali malformati saltati nell'ultimo giro della cache (solo il numero; i nomi stanno nel log). */
-      riferimentiSaltati?: number;
     }
   | { pronto: false; motivo: string };
 
 export interface SecretStore {
-  readonly backend: "openbao" | "locale" | "dalink";
+  readonly backend: "locale" | "dalink";
   /** Il segreto del percorso; `ErroreVault` se non c'è o se il backend non risponde oltre la cache. */
   get(percorso: string, opzioni?: OpzioniGet): Promise<ValoreSegreto>;
   /** Scrive (sostituisce) il segreto del percorso. */

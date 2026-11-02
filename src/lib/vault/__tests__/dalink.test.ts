@@ -1,7 +1,7 @@
 /**
  * Vault semplice, passo 6 (piano DA-Link `2026-10-29-vault-passo6-app.md`, S1): backend `dalink` dietro `SecretStore`.
- * L'hub chiede le password a DA-Link (le quattro rotte della 8443, contratto `2026-10-27-vault-gettone-app-design.md`)
- * invece che a OpenBao, col gettone dell'app e il pinning dell'impronta SPKI del certificato.
+ * L'hub chiede le password a DA-Link (le quattro rotte della 8443, contratto `2026-10-27-vault-gettone-app-design.md`),
+ * col gettone dell'app e il pinning dell'impronta SPKI del certificato.
  *
  * Si prova ogni riga dei «Vincoli globali» del piano e i casi 1-4:
  * 1. DA-Link spento all'avvio: nessuna cache, stato non pronto col motivo, letture rifiutate;

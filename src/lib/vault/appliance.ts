@@ -4,7 +4,7 @@
  * - `avviaVaultLocale()` (da `server.ts`, solo con `DA_VAULT_LOCALE=1`): apre l'archivio dallo slot TPM se c'è;
  *   altrimenti il vault resta **bloccato** col motivo (archivio assente, niente TPM, slot estraneo…).
  * - `sbloccaConPassphrase()`: lo sblocco a mano (Impostazioni › Vault) con la passphrase del cliente.
- * - `motivoPausaVault()`: con un interruttore acceso e il vault bloccato (o OpenBao oltre la cache) le scansioni sono
+ * - `motivoPausaVault()`: con un interruttore acceso e il vault bloccato (o DA-Link oltre la cache) le scansioni sono
  *   in pausa: `runJob` salta col motivo, il layout mostra il banner. Interruttori spenti: sempre null.
  *
  * La cartella dell'archivio è `<dati>/vault` (`DA_VAULT_DIR` la sposta, per le prove e per i volumi dedicati).
@@ -12,7 +12,7 @@
 import { resolveDataDir } from "@/lib/data-dir";
 import { apriConPassphrase, apriConTpm, archivioPresente, leggiArchivio, type NomeSlot } from "./archivio";
 import { conGuardiaPassphrase, type EsitoGuardia } from "./guardia-passphrase";
-import { backendRemotoAttivo, chiudiVault, impostaChiaveDati, motivoRemotoNonAvviato, statoVaultProcesso, vaultDalinkAcceso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
+import { backendRemotoAttivo, chiudiVault, impostaChiaveDati, motivoRemotoNonAvviato, statoVaultProcesso, vaultLocaleAcceso, vaultRemotoAcceso, type ModoSblocco } from "./stato";
 import { ErroreVault } from "./tipi";
 import { unisci } from "../percorsi";
 
@@ -61,9 +61,9 @@ export function motivoPausaVault(): string | null {
   if (vaultLocaleAcceso() && !s.chiaveDati) {
     return `Vault bloccato: ${s.motivoBloccato ?? "la chiave degli slot non è aperta"}`;
   }
-  if (vaultOpenBaoAcceso()) {
-    if (!s.openbao) return `${motivoRemotoNonAvviato()}: credenziali non leggibili`;
-    const st = s.openbao.stato();
+  if (vaultRemotoAcceso()) {
+    if (!s.remoto) return `${motivoRemotoNonAvviato()}: credenziali non leggibili`;
+    const st = s.remoto.stato();
     if (!st.pronto) return st.motivo;
   }
   return null;
@@ -84,8 +84,8 @@ export interface StatoVaultPubblico {
     motivo: string | null;
     archivio: { presente: boolean; slot: Record<NomeSlot, boolean> | null };
   };
-  /** Il vault remoto (OpenBao o DA-Link: la chiave resta `openbao` per l'API di prima); `nome` è quello vero. */
-  openbao: { nome: string; acceso: boolean; pronto: boolean | null; motivo: string | null; aggiornatoAlle: string | null };
+  /** Il vault remoto (DA-Link); `nome` è «DA-Link», o «Vault remoto» con una configurazione rifiutata. */
+  remoto: { nome: string; acceso: boolean; pronto: boolean | null; motivo: string | null; aggiornatoAlle: string | null };
   pausa: string | null;
 }
 
@@ -101,7 +101,7 @@ export function statoVault(): StatoVaultPubblico {
       archivio = { presente: true, slot: null };
     }
   }
-  const ob = vaultOpenBaoAcceso() ? (s.openbao?.stato() ?? null) : null;
+  const ob = vaultRemotoAcceso() ? (s.remoto?.stato() ?? null) : null;
   const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
   return {
     locale: {
@@ -112,12 +112,12 @@ export function statoVault(): StatoVaultPubblico {
       motivo: vaultLocaleAcceso() && !s.chiaveDati ? s.motivoBloccato : null,
       archivio,
     },
-    openbao: {
-      // spento tutto: «OpenBao», come prima del passo 6; un nome neutro solo coi due interruttori accesi insieme
-      nome: backendRemotoAttivo() ?? (vaultDalinkAcceso() && process.env.DA_VAULT_OPENBAO === "1" ? "Vault remoto" : "OpenBao"),
-      acceso: vaultOpenBaoAcceso(),
+    remoto: {
+      // spento: «DA-Link»; un nome neutro solo con la configurazione rifiutata (DA_VAULT_OPENBAO=1 rimasto nel file)
+      nome: backendRemotoAttivo() ?? (vaultRemotoAcceso() ? "Vault remoto" : "DA-Link"),
+      acceso: vaultRemotoAcceso(),
       pronto: ob ? ob.pronto : null,
-      motivo: ob && !ob.pronto ? ob.motivo : ob && ob.pronto ? (ob.degradato ?? null) : vaultOpenBaoAcceso() ? motivoRemotoNonAvviato() : null,
+      motivo: ob && !ob.pronto ? ob.motivo : ob && ob.pronto ? (ob.degradato ?? null) : vaultRemotoAcceso() ? motivoRemotoNonAvviato() : null,
       aggiornatoAlle: ob && ob.pronto ? iso(ob.aggiornatoAlle) : null,
     },
     pausa: motivoPausaVault(),

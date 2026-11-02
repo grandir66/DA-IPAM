@@ -2,13 +2,14 @@
  * Vault semplice, passo 6 (piano DA-Link `2026-10-29-vault-passo6-app.md`, S1): configurazione e selezione del
  * backend `dalink` all'avvio.
  *
- * - Spento di serie: `DA_VAULT_DALINK` assente o `0` = l'avvio di oggi (OpenBao solo con `DA_VAULT_OPENBAO=1`).
- * - `DA_VAULT_DALINK=1` e `DA_VAULT_OPENBAO=1` insieme: configurazione rifiutata, nessun backend, errore nel log
- *   (fail-closed: i lettori vedono un vault acceso senza store e rifiutano).
+ * - Spento di serie: `DA_VAULT_DALINK` assente o `0` = l'avvio di oggi.
+ * - `DA_VAULT_OPENBAO=1` rimasto nel file (OpenBao tolto il 02/11), da solo o con `DA_VAULT_DALINK=1`: configurazione
+ *   rifiutata col motivo «usa DA_VAULT_DALINK=1», nessun backend, errore nel log (fail-closed: i lettori vedono un
+ *   vault acceso senza store e rifiutano).
  * - `DALINK_VAULT_URL`, `DALINK_VAULT_GETTONE`, `DALINK_VAULT_IMPRONTA`: uno che manca o è malformato rifiuta la
  *   configurazione col nome della variabile, mai col valore.
  * - Con DA-Link acceso i chiamanti di oggi (`segreti.ts`, «mostra password», cancellazione) vedono lo store senza
- *   cambiare: `vaultOpenBaoAcceso()` vale «backend remoto del vault acceso».
+ *   cambiare: `vaultRemotoAcceso()` vale «backend remoto del vault acceso».
  *
  * Run: node --import tsx --test src/lib/vault/__tests__/dalink-avvio.test.ts
  */
@@ -17,7 +18,7 @@ import { describe, it, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { avviaVault, configurazioneDalink, sceltaBackendRemoto } from "../avvio";
 import { DaLinkStore } from "../dalink";
-import { statoVaultProcesso, vaultDalinkAcceso, vaultOpenBaoAcceso } from "../stato";
+import { statoVaultProcesso, vaultDalinkAcceso, vaultRemotoAcceso } from "../stato";
 import { creaDaLinkFinto } from "./support/dalink-finto";
 
 const GETTONE = "dlv_" + "AbC-_9".repeat(7) + "x";
@@ -43,7 +44,7 @@ function console_(fn: () => void): string {
 
 const ambientePrima = { ...process.env };
 afterEach(() => {
-  statoVaultProcesso().openbao = null;
+  statoVaultProcesso().remoto = null;
 });
 after(() => {
   for (const k of ["DA_VAULT_DALINK", "DA_VAULT_OPENBAO"]) {
@@ -94,43 +95,38 @@ describe("configurazioneDalink", () => {
   });
 });
 
-describe("sceltaBackendRemoto: spento di serie, i due interruttori insieme rifiutati", () => {
+describe("sceltaBackendRemoto: spento di serie, DA_VAULT_OPENBAO=1 rifiutato", () => {
   it("nessun interruttore, o DA_VAULT_DALINK=0: nessun backend remoto", () => {
     assert.deepEqual(sceltaBackendRemoto({}), { backend: "nessuno" });
     assert.deepEqual(sceltaBackendRemoto({ DA_VAULT_DALINK: "0" }), { backend: "nessuno" });
     assert.deepEqual(sceltaBackendRemoto({ DA_VAULT_DALINK: "", DA_VAULT_OPENBAO: "0" }), { backend: "nessuno" });
   });
 
-  it("uno solo acceso: quello", () => {
-    assert.deepEqual(sceltaBackendRemoto({ DA_VAULT_OPENBAO: "1" }), { backend: "openbao" });
-    assert.deepEqual(sceltaBackendRemoto({ DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "0" }), { backend: "openbao" });
+  it("DA_VAULT_DALINK=1: DA-Link", () => {
     assert.deepEqual(sceltaBackendRemoto({ DA_VAULT_DALINK: "1" }), { backend: "dalink" });
   });
 
-  it("tutti e due accesi: rifiutato, il motivo nomina i due interruttori", () => {
-    const s = sceltaBackendRemoto({ DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1" });
-    assert.equal(s.backend, "rifiutato");
-    assert.ok(s.backend === "rifiutato" && /DA_VAULT_DALINK/.test(s.motivo) && /DA_VAULT_OPENBAO/.test(s.motivo));
+  it("DA_VAULT_OPENBAO=1, da solo o con DA-Link: rifiutato, il motivo dice che OpenBao è stato tolto", () => {
+    for (const env of [{ DA_VAULT_OPENBAO: "1" }, { DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "0" }, { DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1" }]) {
+      assert.deepEqual(sceltaBackendRemoto(env), { backend: "rifiutato", motivo: "OpenBao è stato tolto il 02/11, usa DA_VAULT_DALINK=1" });
+    }
   });
 });
 
 describe("avviaVault", () => {
-  it("tutti e due accesi: nessuno store, errore nel log; i lettori vedono il vault acceso senza store (rifiutano)", () => {
+  it("DA_VAULT_OPENBAO=1 rimasto con DA-Link: nessuno store, errore nel log; i lettori vedono il vault acceso senza store (rifiutano)", () => {
     process.env.DA_VAULT_OPENBAO = "1";
     process.env.DA_VAULT_DALINK = "1";
-    const log = console_(() =>
-      avviaVault({ ...BUONA, DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1", DA_VAULT_OPENBAO_URL: "https://openbao:8200", DA_VAULT_OPENBAO_ROLE_ID: "r", DA_VAULT_OPENBAO_SECRET_ID_FILE: "/x" }),
-    );
-    assert.equal(statoVaultProcesso().openbao, null);
-    assert.match(log, /DA_VAULT_DALINK/);
-    assert.match(log, /DA_VAULT_OPENBAO/);
-    assert.equal(vaultOpenBaoAcceso(), true, "fail-closed: un vault remoto risulta acceso, e senza store i lettori rifiutano");
+    const log = console_(() => avviaVault({ ...BUONA, DA_VAULT_OPENBAO: "1", DA_VAULT_DALINK: "1" }));
+    assert.equal(statoVaultProcesso().remoto, null);
+    assert.match(log, /OpenBao è stato tolto il 02\/11, usa DA_VAULT_DALINK=1/);
+    assert.equal(vaultRemotoAcceso(), true, "fail-closed: un vault remoto risulta acceso, e senza store i lettori rifiutano");
     assert.ok(!log.includes(GETTONE));
   });
 
   it("DA_VAULT_DALINK=1 con la configurazione che manca: nessuno store, errore col nome della variabile", () => {
     const log = console_(() => avviaVault({ ...BUONA, DA_VAULT_DALINK: "1", DALINK_VAULT_IMPRONTA: undefined }));
-    assert.equal(statoVaultProcesso().openbao, null);
+    assert.equal(statoVaultProcesso().remoto, null);
     assert.match(log, /DALINK_VAULT_IMPRONTA/);
     assert.ok(!log.includes(GETTONE));
   });
@@ -144,14 +140,14 @@ describe("avviaVault", () => {
       const log = console_(() =>
         avviaVault({ DA_VAULT_DALINK: "1", DALINK_VAULT_URL: finto.url, DALINK_VAULT_GETTONE: finto.gettone, DALINK_VAULT_IMPRONTA: finto.impronta.replace("sha256/", "sha256//") }),
       );
-      const store = statoVaultProcesso().openbao;
+      const store = statoVaultProcesso().remoto;
       assert.ok(store instanceof DaLinkStore);
       assert.equal(store.backend, "dalink");
       assert.match(log, /DA-Link/);
       assert.ok(!log.includes(finto.gettone));
       await new Promise((r) => setTimeout(r, 300));
       assert.deepEqual(store.leggiSync("clienti/70001/da-ipam/router-1"), { password: "p-avvio-1" });
-      assert.equal(vaultOpenBaoAcceso(), true);
+      assert.equal(vaultRemotoAcceso(), true);
       assert.equal(vaultDalinkAcceso(), true);
     } finally {
       await finto.chiudi();
@@ -162,9 +158,9 @@ describe("avviaVault", () => {
     process.env.DA_VAULT_OPENBAO = "";
     process.env.DA_VAULT_DALINK = "";
     const log = console_(() => avviaVault({ ...BUONA }));
-    assert.equal(statoVaultProcesso().openbao, null);
+    assert.equal(statoVaultProcesso().remoto, null);
     assert.equal(log, "");
-    assert.equal(vaultOpenBaoAcceso(), false);
+    assert.equal(vaultRemotoAcceso(), false);
     assert.equal(vaultDalinkAcceso(), false);
   });
 });

@@ -25,8 +25,8 @@ import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { Credential } from "@/types";
 import type { CredentialSchema } from "@/lib/validators";
-import { cancellaDaOpenBao } from "@/lib/vault/cancella";
-import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
+import { cancellaDalVaultRemoto } from "@/lib/vault/cancella";
+import { vaultRemotoAcceso } from "@/lib/vault/stato";
 import { aggiornamentiCredenziale, colonneNuovaCredenziale, togliRiferimentoSeCambianoSegreti } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
 import {
@@ -58,7 +58,7 @@ export interface ColonneCredenziale {
   priv_protocol?: string | null;
   security_level?: string | null;
   port?: number | null;
-  /** da-vault: il percorso in OpenBao (lo scrive la migrazione; la pagina lo toglie quando cambia un segreto). */
+  /** da-vault: il percorso in DA-Link (lo scrive la migrazione; la pagina lo toglie quando cambia un segreto). */
   credential_ref?: string | null;
 }
 
@@ -134,10 +134,10 @@ function nomeCliente(dbh: Database.Database): string {
 }
 
 export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolean {
-  // da-vault (passo 6): con OpenBao acceso il segreto della voce va tolto anche da lì (i metadata, tutte le versioni).
-  const riferimento = vaultOpenBaoAcceso() ? riferimentoDi(dbh, id) : null;
+  // da-vault (passo 6): con DA-Link acceso il segreto della voce va tolto anche da lì.
+  const riferimento = vaultRemotoAcceso() ? riferimentoDi(dbh, id) : null;
   const eliminata = dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
-  if (eliminata && riferimento) cancellaDaOpenBao(riferimento, `${nomeCliente(dbh)}#${id}`);
+  if (eliminata && riferimento) cancellaDalVaultRemoto(riferimento, `${nomeCliente(dbh)}#${id}`);
   return eliminata;
 }
 

@@ -1,36 +1,31 @@
 /**
- * Migrazione delle credenziali dei device verso OpenBao (piano da-vault 2026-10-23, passo 6, l'hub).
+ * Migrazione delle credenziali dei device verso DA-Link (piano da-vault 2026-10-23, passo 6; vault semplice, condizioni
+ * del passo 7, revisione del 29/10). Prima andava verso OpenBao, tolto il 02/11/2026: ora solo DA-Link.
  *
- * - **Prova a vuoto di default**: si contano le voci e si calcolano i percorsi; niente si scrive, né in OpenBao né nel
+ * - **Prova a vuoto di default**: si contano le voci e si calcolano i percorsi; niente si scrive, né in DA-Link né nel
  *   database. Il rapporto non contiene mai valori.
- * - **`applica`**: per ogni cliente, ogni voce senza `credential_ref` va in OpenBao
+ * - **`applica`**: per ogni cliente, ogni voce senza `credential_ref` va in DA-Link
  *   (`clienti/<codcli>/da-ipam/<nome>-<id>`, campi `username`, `password`, `private_key`, `key_passphrase`,
  *   `auth_key`, `priv_key`), si rilegge e si confronta; solo se tutte tornano uguali si scrivono i riferimenti, in una
- *   transazione per cliente. Un errore di OpenBao a metà lascia il cliente senza riferimenti nuovi (i segreti già
- *   scritti in OpenBao restano lì e si riscrivono uguali al giro dopo). Una voce che non si legge si salta e si dice.
- * - **Le colonne cifrate restano**: per una versione la lettura è doppia (con l'interruttore acceso, una voce senza
- *   riferimento si legge dalla colonna con un avviso). Svuotarle, con `VACUUM`, è il passo della versione dopo.
- * - `verificaMigrazione`: prima di accendere `DA_VAULT_OPENBAO`, confronta OpenBao e colonne voce per voce (una
- *   modifica fatta dalla pagina a interruttore spento non toglie il riferimento) ed elenca i percorsi ORFANI di OpenBao
- *   (sotto la cartella del cliente, senza voce che li usi: revisione del 23/10, rilievo 7).
- * - **Il backend è quello acceso** (`storeDellaMigrazione`, condizioni del passo 7 del vault semplice, revisione del
- *   29/10): `DA_VAULT_OPENBAO=1` → OpenBao, `DA_VAULT_DALINK=1` → DA-Link. Con DA-Link acceso una credenziale cambiata
- *   dalla pagina perde il riferimento e torna sulla colonna (`togliRiferimentoSeCambianoSegreti`): questa migrazione la
- *   riporta in DA-Link, sopra la voce vecchia, come con OpenBao. Spenti: OpenBao, come prima del passo 6 (si migra, poi
- *   si accende); tutti e due accesi = rifiuto col motivo. I testi nominano il backend vero.
+ *   transazione per cliente. Un errore a metà lascia il cliente senza riferimenti nuovi (i segreti già scritti restano
+ *   in DA-Link e si riscrivono uguali al giro dopo). Una voce che non si legge si salta e si dice.
+ * - **A cosa serve oggi**: con DA-Link acceso una credenziale cambiata dalla pagina perde il riferimento e torna sulla
+ *   colonna (`togliRiferimentoSeCambianoSegreti`): questa migrazione la riporta in DA-Link, sopra la voce vecchia.
+ * - `verificaMigrazione`: confronta DA-Link e colonne voce per voce ed elenca i percorsi ORFANI (sotto la cartella del
+ *   cliente, senza voce che li usi: revisione del 23/10, rilievo 7).
+ * - **Lo store** (`storeDellaMigrazione`): DA-Link con la configurazione dell'app, anche a interruttore spento (si migra,
+ *   poi si accende); `DA_VAULT_OPENBAO=1` rimasto nel file = rifiuto col motivo.
  */
 import type Database from "better-sqlite3";
 import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb } from "@/lib/credentials/segreti";
-import { configurazioneDalink, configurazioneOpenBao, sceltaBackendRemoto } from "./avvio";
+import { configurazioneDalink, sceltaBackendRemoto } from "./avvio";
 import { DaLinkStore } from "./dalink";
-import { OpenBaoStore } from "./openbao";
 import { ErroreVault, type OpzioniGet, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
 
 /** Il nome del backend nei testi della migrazione. */
 export function nomeBackend(store: SecretStore): string {
   if (store.backend === "dalink") return "DA-Link";
-  if (store.backend === "openbao") return "OpenBao";
   return "il vault";
 }
 
@@ -77,25 +72,18 @@ class DaLinkPerMigrazione implements SecretStore {
 }
 
 /**
- * Lo store della migrazione dall'interruttore acceso, con la configurazione dell'app (`sceltaBackendRemoto`,
- * `configurazioneOpenBao`, `configurazioneDalink`). Nel motivo solo nomi di variabili, mai valori.
+ * Lo store della migrazione: DA-Link con la configurazione dell'app (`configurazioneDalink`), anche con l'interruttore
+ * spento (si migra, poi si accende). `DA_VAULT_OPENBAO=1` rimasto nel file = rifiuto. Nel motivo solo nomi di
+ * variabili, mai valori.
  */
 export function storeDellaMigrazione(
   env: Record<string, string | undefined>,
 ): { ok: true; store: SecretStore; nome: string } | { ok: false; motivo: string } {
   const scelta = sceltaBackendRemoto(env);
   if (scelta.backend === "rifiutato") return { ok: false, motivo: scelta.motivo };
-  // Interruttori spenti: OpenBao, come prima del passo 6 — è il percorso previsto «si migra, poi si accende»
-  // (revisione dell'orchestratore, 29/10: il rifiuto rompeva quel flusso). DA-Link solo se acceso.
-  if (scelta.backend === "dalink") {
-    const c = configurazioneDalink(env);
-    if (!c.ok) return { ok: false, motivo: `DA-Link non configurato: ${c.motivo}` };
-    const store = new DaLinkPerMigrazione(new DaLinkStore(c.config));
-    return { ok: true, store, nome: nomeBackend(store) };
-  }
-  const c = configurazioneOpenBao(env);
-  if (!c.ok) return { ok: false, motivo: `OpenBao non configurato: ${c.motivo}` };
-  const store = new OpenBaoStore({ ...c.config, cartelle: [] });
+  const c = configurazioneDalink(env);
+  if (!c.ok) return { ok: false, motivo: `DA-Link non configurato: ${c.motivo}` };
+  const store = new DaLinkPerMigrazione(new DaLinkStore(c.config));
   return { ok: true, store, nome: nomeBackend(store) };
 }
 
@@ -115,12 +103,12 @@ function slug(t: string): string {
     .replace(/-+$/g, "");
 }
 
-/** La cartella di un cliente nel vault (OpenBao o DA-Link): `clienti/<codcli>/da-ipam`. */
+/** La cartella di un cliente in DA-Link: `clienti/<codcli>/da-ipam`. */
 export function prefissoCliente(codiceCliente: string): string {
   return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam`;
 }
 
-/** Il percorso di una voce nel vault (OpenBao o DA-Link): `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
+/** Il percorso di una voce in DA-Link: `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
 export function percorsoCredenziale(codiceCliente: string, credentialId: number, nome: string): string {
   return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam/${slug(nome) || "credenziale"}-${credentialId}`;
 }
@@ -145,7 +133,7 @@ export interface EsitoTenant {
   errore: string | null;
 }
 
-export async function migraVersoOpenBao(op: {
+export async function migraVersoDalink(op: {
   store: SecretStore;
   tenants: TenantDaMigrare[];
   applica?: boolean;
@@ -200,11 +188,11 @@ export interface EsitoVerificaTenant {
   controllate: number;
   diverse: Array<{ id: number; nome: string; percorso: string; motivo: string }>;
   /**
-   * Percorsi in OpenBao sotto la cartella del cliente che nessuna voce usa più (voce cancellata con OpenBao che non
+   * Percorsi in DA-Link sotto la cartella del cliente che nessuna voce usa più (voce cancellata con DA-Link che non
    * rispondeva, segreto cambiato dalla pagina, cancellazione in massa). Mai i valori.
    */
   orfani: string[];
-  /** Se l'elenco di OpenBao non si è potuto leggere: gli orfani NON sono stati verificati. */
+  /** Se l'elenco di DA-Link non si è potuto leggere: gli orfani NON sono stati verificati. */
   orfaniErrore: string | null;
 }
 

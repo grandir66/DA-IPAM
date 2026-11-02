@@ -1,6 +1,6 @@
 /**
  * Backend `dalink` del vault (vault semplice, passo 6: piano DA-Link `2026-10-29-vault-passo6-app.md`): l'hub chiede le
- * password a DA-Link invece che a OpenBao, dietro la stessa interfaccia `SecretStore`. Contratto delle rotte: DA-Link
+ * password a DA-Link, dietro la stessa interfaccia `SecretStore`. Contratto delle rotte: DA-Link
  * `docs/superpowers/specs/2026-10-27-vault-gettone-app-design.md` e `dalink/api/vault_app.py`.
  *
  * - **Trasporto**: `richiestaDalink` (`src/lib/dalink/trasporto.ts`), la stessa del segnale di vita: il certificato della
@@ -36,7 +36,7 @@ const TIMEOUT_MS = 15_000;
 const MAX_AMBITO = 8 * 1024 * 1024;
 /** Una voce: DA-Link accetta scritture fino a 64 KB. */
 const MAX_VOCE = 256 * 1024;
-/** Una voce che manca dalla cache fa partire un giro, ma non più di uno ogni 30 secondi (come `OpenBaoStore`). */
+/** Una voce che manca dalla cache fa partire un giro, ma non più di uno ogni 30 secondi. */
 const RICARICA_PER_MANCANZA_OGNI_MS = 30_000;
 const API = "/api/v1/vault";
 
@@ -314,7 +314,7 @@ export class DaLinkStore implements SecretStore {
     // Una voce che manca: vale «non c'è» solo se l'elenco è recente (ultimo giro entro le 24 ore).
     this.controllaCache();
     // Una voce scritta in DA-Link ad app accesa non è in cache fino al giro dopo: errore dichiarato e UN giro (al più uno
-    // ogni 30 secondi), come `OpenBaoStore`.
+    // ogni 30 secondi).
     const avviato = this.ricaricaPerMancanza();
     throw new ErroreVault(
       "non_trovato",

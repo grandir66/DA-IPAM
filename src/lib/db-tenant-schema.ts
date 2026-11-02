@@ -526,8 +526,8 @@ export const VERSIONE_ASSEGNATARI_AD = 1;
 
 /**
  * da-vault (piano 2026-10-23):
- * - `credentials.credential_ref` (passo 6): il percorso del segreto in OpenBao (`clienti/<codcli>/…`), accanto alle
- *   colonne cifrate. Si legge solo con `DA_VAULT_OPENBAO=1`; NULL = la voce si legge dalle colonne (doppia lettura);
+ * - `credentials.credential_ref` (passo 6): il percorso del segreto in DA-Link (`clienti/<codcli>/…`), accanto alle
+ *   colonne cifrate. Si legge solo con `DA_VAULT_DALINK=1`; NULL = la voce si legge dalle colonne (doppia lettura);
  * - `vault_visualizzazioni` (passo 10): chi ha visto una password o esportato l'archivio, e quando. Niente chiave
  *   esterna sulla credenziale: il registro resta anche se la voce si elimina (col nome di allora).
  *

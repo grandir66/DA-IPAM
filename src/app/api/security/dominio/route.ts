@@ -47,6 +47,7 @@ export async function GET(req: Request) {
     ensureEventiDcSchema(db);
     const modo = modoEventiDc(db);
     const disponibili = dcDisponibili(db);
+    const scelti = new Set(disponibili.filter((d) => d.scelto).map((d) => d.dc.toLowerCase()));
     const { righe, totale } = listaEventiDc(db, { since, tipo: q.tipo, cerca: q.cerca, limit: PER_PAGINA, offset: (pagina - 1) * PER_PAGINA });
 
     return NextResponse.json({
@@ -58,7 +59,8 @@ export async function GET(req: Request) {
         sceltaManuale: dcScelti(db) !== null,
         maxAutomatici: MAX_DC_AUTOMATICI,
         ultimoGiro: ultimoGiroDc(code),
-        letture: lettureDc(db),
+        // Solo i DC da leggere: con decine di DC le letture vecchie di quelli tolti confondono (riccardo, 03/11/2026).
+        letture: lettureDc(db).filter((x) => scelti.has(x.dc.toLowerCase())),
       },
       window: win.id,
       windows: STATS_WINDOWS.filter((w) => w.id !== "1h"),

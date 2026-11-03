@@ -14,6 +14,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { BookOpen, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,7 +22,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { Pagination } from "@/components/shared/pagination";
 import { BarraStato, Etichetta, IntestazionePagina, Pannello, TesseraNumero, Vuoto } from "@/components/shared/console";
-import { Dialog, DialogContent, DialogHeader, DialogScrollableArea, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogScrollableArea, DialogTitle } from "@/components/ui/dialog";
 import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { fetchJson } from "@/lib/fetch-json";
@@ -59,6 +60,9 @@ interface Risposta {
     modo: "auto" | "sempre" | "mai";
     motivo: string | null;
     dcConfigurati: number;
+    dcDisponibili: { dc: string; scelto: boolean; dellIntegrazione: boolean }[];
+    sceltaManuale: boolean;
+    maxAutomatici: number;
     ultimoGiro: { il: string; ok: boolean; testo: string } | null;
     letture: LetturaDto[];
   };
@@ -100,6 +104,9 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
   const [caricando, setCaricando] = useState(true);
   const [leggendo, setLeggendo] = useState(false);
   const [guida, setGuida] = useState(false);
+  const [scelta, setScelta] = useState<Set<string> | null>(null);
+  const [cercaDc, setCercaDc] = useState("");
+  const [salvandoDc, setSalvandoDc] = useState(false);
   const [finestra, setFinestra] = useState("24h");
   const [tipo, setTipo] = useState<string>(TUTTI);
   const [cerca, setCerca] = useState("");
@@ -144,6 +151,31 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
       await carica();
     } finally {
       setLeggendo(false);
+    }
+  }
+
+  function apriScelta() {
+    setCercaDc("");
+    setScelta(new Set((dati?.lettura.dcDisponibili ?? []).filter((d) => d.scelto).map((d) => d.dc)));
+  }
+
+  async function salvaScelta(dc: string[] | null) {
+    setSalvandoDc(true);
+    try {
+      const r = await fetchJson<{ ok: boolean }>("/api/security/dominio", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dc }),
+      });
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      toast.success(dc === null ? "Torna la scelta automatica dei DC" : `${dc.length} DC da leggere`);
+      setScelta(null);
+      await carica();
+    } finally {
+      setSalvandoDc(false);
     }
   }
 
@@ -248,7 +280,18 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           className="lg:col-span-4"
           titolo="Domain controller"
           conteggio={l?.letture.length}
-          sottotitolo="Ognuno registra solo i suoi accessi: si leggono tutti"
+          sottotitolo={
+            l && l.dcDisponibili.length > 0
+              ? `Ognuno registra solo i suoi accessi: ${l.dcConfigurati} di ${l.dcDisponibili.length} da leggere${l.sceltaManuale ? ", scelti a mano" : ""}`
+              : "Ognuno registra solo i suoi accessi"
+          }
+          azioni={
+            l && l.dcDisponibili.length > 0 ? (
+              <Button size="sm" variant="outline" onClick={apriScelta} disabled={!admin} title={admin ? "Quali DC leggere" : "Solo un amministratore"}>
+                Scegli i DC
+              </Button>
+            ) : undefined
+          }
           piede="L'account (WinRM del DC o, se manca, quello di AD) deve stare in «Event Log Readers» e «Remote Management Users»; serve il profilo di audit nella GPO dei DC."
         >
           {l && l.letture.length === 0 ? (
@@ -388,6 +431,58 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           </Table>
         )}
       </Pannello>
+
+      <Dialog open={scelta !== null} onOpenChange={(o) => { if (!o) setScelta(null); }}>
+        <DialogContent className="w-full sm:max-w-lg">
+          <DialogHeader className="border-b border-border/50 px-4 pt-4 pb-3">
+            <DialogTitle>Quali domain controller leggere</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 px-4 pt-3 text-[13px] text-muted-foreground">
+            <p>
+              Ogni DC registra solo gli accessi che passano da lui. Si leggono uno alla volta ogni 5 minuti: con molti DC conviene
+              scegliere quelli che servono. Senza scelta si leggono tutti fino a {l?.maxAutomatici ?? 5}, oltre solo quello
+              dell&apos;integrazione.
+            </p>
+            <Input value={cercaDc} onChange={(e) => setCercaDc(e.target.value)} placeholder="Cerca un DC" className="bg-background" />
+          </div>
+          <DialogScrollableArea className="max-h-[50vh] px-4 py-3">
+            <ul className="space-y-1.5">
+              {(l?.dcDisponibili ?? [])
+                .filter((d) => d.dc.toLowerCase().includes(cercaDc.trim().toLowerCase()))
+                .map((d) => (
+                  <li key={d.dc}>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={scelta?.has(d.dc) ?? false}
+                        onCheckedChange={(v) =>
+                          setScelta((prima) => {
+                            const n = new Set(prima ?? []);
+                            if (v) n.add(d.dc);
+                            else n.delete(d.dc);
+                            return n;
+                          })
+                        }
+                      />
+                      <span className="font-mono">{d.dc}</span>
+                      {d.dellIntegrazione && <span className="text-[13px] text-muted-foreground">· quello dell&apos;integrazione</span>}
+                    </label>
+                  </li>
+                ))}
+            </ul>
+          </DialogScrollableArea>
+          <DialogFooter className="border-t border-border/50 px-4 py-3">
+            <Button variant="ghost" size="sm" onClick={() => void salvaScelta(null)} disabled={salvandoDc || !l?.sceltaManuale}>
+              Scelta automatica
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setScelta(new Set((l?.dcDisponibili ?? []).map((d) => d.dc)))} disabled={salvandoDc}>
+              Tutti
+            </Button>
+            <Button size="sm" onClick={() => void salvaScelta([...(scelta ?? [])])} disabled={salvandoDc || !scelta || scelta.size === 0}>
+              {salvandoDc ? "Salvataggio…" : `Salva (${scelta?.size ?? 0})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={guida} onOpenChange={setGuida}>
         <DialogContent className="w-full sm:max-w-5xl">

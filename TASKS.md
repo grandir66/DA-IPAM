@@ -854,4 +854,4 @@ Riccardo: «puoi metterlo anche su dev»; livello Leggero, integrazione della re
 - [x] Base origin/dev aggiornata e worktree isolato; codice collector invariato rispetto al collaudo, nessuna modifica ai lavori concorrenti.
 - [x] Cancello finale 03/11: lint exit 0 (72 avvisi storici), npm test exit 0 (6.321 passate, zero fallite, 2 saltate e 1 TODO), build e tsc exit 0 con Node 22.
 - [x] Snapshot VM 533 `pre-aruba-cx-20261103` su `DA-PX-03` (192.168.40.3), confermato da qm listsnapshot il 03/11 prima del push.
-- [ ] Release e push su dev, verifica del commit remoto; nessun aggiornamento firmware.
+- [x] Release 0.9.949, commit `77aa3800`, push su dev riuscito; git ls-remote origin refs/heads/dev conferma lo stesso hash il 03/11. Nessun aggiornamento firmware.

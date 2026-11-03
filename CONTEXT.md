@@ -15,7 +15,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## Aruba AOS-CX — integrazione 03/11/2026
 
-Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. Collector `aruba-cx` separato da ProCurve: collaudato su 6100 JL675A / PL.10.12.0006, solo SSH; contratto e CLI comuni, riconoscimento AOS-CX esplicito. Limiti nel manuale `docs/modules/acquisition.md`: LACP popolato, contatori/duplex/ifIndex e memoria in byte non letti. Snapshot preventivo della VM hub 533 `pre-aruba-cx-20261103` sul nodo DA-PX-03. Nessuna funzione o operazione firmware aggiunta. Stato della pubblicazione e verifiche in TASKS.
+Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. Collector `aruba-cx` separato da ProCurve: collaudato su 6100 JL675A / PL.10.12.0006, solo SSH; contratto e CLI comuni, riconoscimento AOS-CX esplicito. Limiti nel manuale `docs/modules/acquisition.md`: LACP popolato, contatori/duplex/ifIndex e memoria in byte non letti. Snapshot preventivo della VM hub 533 `pre-aruba-cx-20261103` sul nodo DA-PX-03. Nessuna funzione o operazione firmware aggiunta. Pubblicato su origin/dev nella release 0.9.949 (77aa3800), verificato con git ls-remote; lint, 6.321 prove, build e tsc verdi il 03/11. Dettagli in TASKS.
 
 ## 3. Flusso di rilascio (CRITICO)
 

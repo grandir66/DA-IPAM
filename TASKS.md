@@ -21,8 +21,11 @@ Avviato dalla sessione «Contesto progetto Domarc» (Riccardo ha dato il via). W
 - [x] Promozione dev→main col sì di Riccardo (03/11): `main` 0.9.955 → **0.9.957** in fast-forward alle 15:46 UTC
       (89204238, `git ls-remote`: main = dev). 70151 ripartita da sola alle 15:52 UTC: `/api/health` ok, DB ok,
       chiave di cifratura invariata (15 credenziali leggibili), scheduler ok, 0 ripieghi; `/login` 200.
-- [ ] 70151: la chiave SSH di 172.20.40.194 non corrisponde a `~/.ssh/known_hosts:449` (probabile reinstallazione
-      dall'immagine). Non scavalcata: serve il sì di Riccardo per accettarla. Controlli fatti solo via HTTPS.
+- [x] 70151: chiave SSH nuova di 172.20.40.194 accettata col sì di Riccardo (impronta ED25519 `SHA256:n5EMxpvO…`
+      verificata con ssh-keyscan; copia `~/.ssh/known_hosts.bak-*`). `root` via SSH dà «Permission denied (publickey)»:
+      si entra da PX01 172.20.40.191 con `qm guest exec 104`. Lì: 70151-ipam-2 su `main` 89204238, 0.9.957,
+      `da-ipam` attivo dalle 15:52:03 UTC, 0 riavvii, nessun errore nel journal, nessuna variabile `DA_VAULT_*`.
+- [ ] Da guardare in DA-Link: il segnale di 70151 porta il blocco `rete` (non verificato da qui).
 
 ## 2026-10-27 — Reti dal sensore trunk: host e MAC insieme alla rete (da approvare)
 

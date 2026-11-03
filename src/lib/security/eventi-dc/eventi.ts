@@ -270,11 +270,16 @@ export function xpathEventi(dopoRecord: number | null): string {
 // In XML basta proteggere & e <: «EventRecordID>N» resta leggibile.
 const xmlEsc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-/** La QueryList di un registro per `Get-WinEvent -FilterXml`. */
+/**
+ * La QueryList di un registro. Con un cursore c'è anche il record del cursore stesso («confine»):
+ * lo script legge dal più nuovo indietro e si ferma lì. Senza confine, finiti gli eventi nuovi,
+ * Windows continuerebbe a scorrere tutto il registro fino al primo record.
+ */
 export function queryListRegistro(registro: RegistroDc, dopoRecord: number | null): string {
   const log = REGISTRI_DC[registro].log;
-  const sel = xpathRegistro(registro, dopoRecord).map((x) => `<Select Path="${log}">${xmlEsc(x)}</Select>`).join("");
-  return `<QueryList><Query Id="0" Path="${log}">${sel}</Query></QueryList>`;
+  const sel = xpathRegistro(registro, dopoRecord).map((x) => `<Select Path="${log}">${xmlEsc(x)}</Select>`);
+  if (dopoRecord != null && dopoRecord > 0) sel.push(`<Select Path="${log}">*[System[EventRecordID=${Math.floor(dopoRecord)}]]</Select>`);
+  return `<QueryList><Query Id="0" Path="${log}">${sel.join("")}</Query></QueryList>`;
 }
 
 /**
@@ -289,7 +294,10 @@ export function scriptEventiDc(cursori: number | null | Partial<Record<RegistroD
   const max = Math.max(1, Math.floor(massimo));
   const ps = (t: string) => t.replace(/'/g, "''");
   const chiamate = NOMI_REGISTRI.map(
-    (r) => `$out += Leggi '${r}' '${ps(REGISTRI_DC[r].log)}' '${ps(queryListRegistro(r, c[r] ?? null))}' ${(c[r] ?? null) == null || (c[r] ?? 0) <= 0 ? "$true" : "$false"}`,
+    (r) => {
+      const dopo = c[r] != null && (c[r] ?? 0) > 0 ? Math.floor(c[r] ?? 0) : 0;
+      return `$out += Leggi '${r}' '${ps(REGISTRI_DC[r].log)}' '${ps(queryListRegistro(r, dopo > 0 ? dopo : null))}' ${dopo > 0 ? "$false" : "$true"} ${dopo}`;
+    },
   ).join("\n");
   return `
 $ErrorActionPreference = 'Stop'
@@ -322,10 +330,12 @@ function Tieni($id, $d) {
   }
   return $true
 }
-# Prima lettura ($primo): dal più nuovo indietro, fino al massimo. Con -Oldest il registro si scorre
-# dall'inizio: su un DC carico (GAMODCOP01 di 70151, 03/11/2026) superava i 120 s a ogni giro e il DC
-# non veniva mai letto. Si riparte poi dal più nuovo: il resto delle 24 ore resta sul DC.
-function Leggi($nome, $log, $query, $primo) {
+# Si legge sempre dal più nuovo indietro: con -Oldest Windows scorre il registro dall'inizio, e su un
+# DC carico (GAMODCOP01 di 70151, 03/11/2026) non finiva nemmeno in 270 s, a ogni giro.
+# Prima lettura ($primo): fino al massimo, il resto delle 24 ore resta sul DC.
+# Dal cursore ($dopo): ci si ferma al record del cursore (è nella query come confine), poi si
+# rimettono in ordine e si tengono i più vecchi fino al massimo, così il cursore non salta niente.
+function Leggi($nome, $log, $query, $primo, $dopo) {
   $nuovo = $null; $vecchio = $null; $esaminato = $null; $errore = $null; $assente = $false
   $righe = @()
   # Il registro Sicurezza c'è sempre: se non si legge è un errore da dire, mai «assente».
@@ -338,7 +348,21 @@ function Leggi($nome, $log, $query, $primo) {
         $ev = @(Get-WinEvent -FilterXml ([xml]$query) -MaxEvents ${max} -ErrorAction Stop)
         [array]::Reverse($ev)
       } else {
-        $ev = Get-WinEvent -FilterXml ([xml]$query) -Oldest -MaxEvents ${max} -ErrorAction Stop
+        $q = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($log, [System.Diagnostics.Eventing.Reader.PathType]::LogName, $query)
+        $q.ReverseDirection = $true
+        $lettore = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($q)
+        $nuovi = New-Object System.Collections.ArrayList
+        try {
+          while ($true) {
+            $e = $lettore.ReadEvent()
+            if ($null -eq $e) { break }
+            if ([long]$e.RecordId -le [long]$dopo) { $e.Dispose(); break }
+            [void]$nuovi.Add($e)
+          }
+        } finally { $lettore.Dispose() }
+        $ev = $nuovi.ToArray()
+        [array]::Reverse($ev)
+        if ($ev.Count -gt ${max}) { $ev = $ev[0..(${max} - 1)] }
       }
       $righe = @(foreach ($e in $ev) {
         $esaminato = [long]$e.RecordId

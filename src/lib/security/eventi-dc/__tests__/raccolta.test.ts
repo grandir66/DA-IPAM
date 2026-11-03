@@ -109,6 +109,22 @@ describe("giro di lettura dei DC", () => {
     assert.equal(e.saltato, "nessun DC scelto");
   });
 
+  it("un nome di DC che il DNS non conosce dà un errore chiaro, non un timeout", async () => {
+    let chiamato = false;
+    const e = await withTenant(T, () =>
+      giroEventiDc(dbt(), {
+        esegui: async () => ((chiamato = true), risposta([])),
+        risolvi: async (n) => {
+          if (n !== "10.0.0.10") throw new Error("ENOTFOUND");
+        },
+        wazuh: false,
+      }),
+    );
+    assert.equal(chiamato, false, "senza nome risolto WinRM non parte");
+    assert.ok(e.dc.every((d) => !d.ok));
+    assert.match(letturaDc(dbt(), "dc01.cliente.local")?.errore ?? "", /non si risolve dal DNS.*cliente\.local/);
+  });
+
   it("eventi in archivio e in coda, un evento aperto per DC e tipo; il giro dopo riparte dal cursore", async () => {
     const chiamate: Array<{ host: string; user: string; realm?: string; script: string }> = [];
     const esegui: EseguiWinrm = async (host, _p, user, _pw, script, _ps, realm) => {

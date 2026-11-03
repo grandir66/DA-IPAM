@@ -9,6 +9,8 @@
  */
 
 import type { Database } from "better-sqlite3";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { accessoWinrmDaAccountAdDb, accessoWinrmDelDcDb } from "@/lib/ad/credenziale-ldap";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
@@ -168,15 +170,45 @@ export interface EsitoGiroDc {
   aperti: number;
 }
 
+/** Risoluzione del nome del DC (sostituibile nelle prove). */
+export type RisolviNome = (nome: string) => Promise<void>;
+
+const risolviConIlSistema: RisolviNome = async (nome) => {
+  if (isIP(nome)) return;
+  await lookup(nome);
+};
+
+/**
+ * Il nome del DC deve risolversi dal DNS della VM: Kerberos ne ha bisogno e non si può ripiegare
+ * sull'IP. Su 70151 (03/11/2026) il DNS della VM non conosceva il dominio AD e l'errore usciva come
+ * «TCP_TIMEOUT» sulle porte WinRM, che portava a cercare un firewall inesistente.
+ */
+async function controllaNome(dc: string, realm: string, risolvi: RisolviNome): Promise<void> {
+  try {
+    await risolvi(dc);
+  } catch {
+    throw new Error(
+      `il nome ${dc} non si risolve dal DNS di questa macchina: il DNS deve conoscere il dominio ${realm} (di solito si inoltra ${realm} ai DC)`,
+    );
+  }
+}
+
 /** Il comando WinRM (sostituibile nelle prove). */
 export type EseguiWinrm = typeof runWinrmCommand;
 
 /** Legge un DC e salva; non lancia: l'errore resta nello stato del DC. */
-export async function leggiUnDc(db: Database, d: DcDaLeggere, esegui: EseguiWinrm, self = collectSelfIdentity(db)): Promise<EsitoDc & { aperti: number }> {
+export async function leggiUnDc(
+  db: Database,
+  d: DcDaLeggere,
+  esegui: EseguiWinrm,
+  self = collectSelfIdentity(db),
+  risolvi: RisolviNome = risolviConIlSistema,
+): Promise<EsitoDc & { aperti: number }> {
   const prima = letturaDc(db, d.dc);
   const cursore = prima?.ultimoRecord ?? null;
   const cursoriAltri = prima?.cursoriAltri ?? {};
   try {
+    await controllaNome(d.dc, d.realm, risolvi);
     const accesso = d.fonte === "ad" ? accessoWinrmDaAccountAdDb(db, d.credentialId) : accessoWinrmDelDcDb(db, d.credentialId);
     if (!accesso.ok) throw new Error(accesso.motivo);
     const script = scriptEventiDc({ Security: cursore, ...cursoriAltri });
@@ -217,7 +249,7 @@ export async function leggiUnDc(db: Database, d: DcDaLeggere, esegui: EseguiWinr
   }
 }
 
-export async function giroEventiDc(db: Database, opz: { esegui?: EseguiWinrm; wazuh?: boolean } = {}): Promise<EsitoGiroDc> {
+export async function giroEventiDc(db: Database, opz: { esegui?: EseguiWinrm; wazuh?: boolean; risolvi?: RisolviNome } = {}): Promise<EsitoGiroDc> {
   ensureEventiDcSchema(db);
   ensureWazuhAlertSchema(db);
   const saltato = motivoPerNonLeggere(modoEventiDc(db), opz.wazuh ?? wazuhLeggeGliAllarmi());
@@ -232,7 +264,7 @@ export async function giroEventiDc(db: Database, opz: { esegui?: EseguiWinrm; wa
   let aperti = 0;
   // Un DC alla volta: il carico sul cliente resta quello di una sessione WinRM.
   for (const d of elenco) {
-    const { aperti: a, ...esito } = await leggiUnDc(db, d, opz.esegui ?? runWinrmCommand, self);
+    const { aperti: a, ...esito } = await leggiUnDc(db, d, opz.esegui ?? runWinrmCommand, self, opz.risolvi ?? (opz.esegui ? async () => {} : risolviConIlSistema));
     aperti += a;
     esiti.push(esito);
   }

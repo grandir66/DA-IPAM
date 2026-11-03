@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-03 · Sicurezza del dominio: in elenco solo i DC scelti
+
+- **Corretto**: l'elenco delle letture dei DC (pagina Sicurezza del dominio e grafici senza Wazuh)
+  mostrava tutti i DC con una riga in `dc_lettura`, anche quelli non più scelti, con errori di giri vecchi.
+  Su 70151 se ne leggevano 2 e l'elenco ne mostrava 11, tutti rossi. Ora mostra solo i DC scelti. Le righe
+  degli altri DC restano nel DB e il loro cursore riparte se si riscelgono (chiesto da Riccardo il 03/11).
+
 ## [Non rilasciato] — 2026-11-02 · Vault: OpenBao tolto dal codice
 
 ### Tolto

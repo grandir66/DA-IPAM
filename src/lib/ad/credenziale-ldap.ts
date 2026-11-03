@@ -128,6 +128,17 @@ export function accessoWinrmDelDcDb(dbh: Database.Database, credentialId: number
   return { ok: true, nome: e.nome, username: e.segreto.username, password: e.segreto.password, port: portaCredenziale({ port: e.port }, "winrm") };
 }
 
+/**
+ * Ripiego per la lettura dei DC (riccardo, 03/11/2026): senza voce WinRM si entra con l'account LDAP
+ * dell'integrazione, sulla 5985 con Kerberos come la prova WinRM. Serve che l'account sia in
+ * «Event Log Readers» e «Remote Management Users» dei DC.
+ */
+export function accessoWinrmDaAccountAdDb(dbh: Database.Database, credentialId: number): AccessoWinrmDc {
+  const c = credenzialeLdapDb(dbh, { encrypted_username: "", encrypted_password: "", credential_id: credentialId });
+  if (!c.ok) return { ok: false, motivo: c.motivo };
+  return { ok: true, nome: c.nome, username: c.username, password: c.password, port: 5985 };
+}
+
 export function accessoWinrmDelDc(credentialId: number): AccessoWinrmDc {
   return accessoWinrmDelDcDb(getDb(), credentialId);
 }

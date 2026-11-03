@@ -12,7 +12,9 @@ Avviato dalla sessione «Contesto progetto Domarc» (Riccardo ha dato il via). W
 - [x] `main` non ha codice assente da `dev`: `git merge-tree origin/dev origin/main` cambia solo
       `VERSION`/`package*.json` (Aruba 0.9.955 e i port WinRM/DC sono già in dev). Unito main in dev
       tenendo la versione di dev, così la promozione è un fast-forward.
-- [ ] Cancello completo (lint, build, tsc, test) verde sul ramo, poi `version:release` e push su `dev`.
+- [x] Cancello completo verde sul ramo (lint 0 errori, build, tsc, test 6334 pass / 0 fail), `version:release`
+      **0.9.957**, push su `dev` (50eecbdc, `git ls-remote`). #59 risulta MERGED, #49 chiusa con commento.
+      533 ripartita da sola alle 15:42 UTC su 50eecbdc: health, login, edge 200, journal senza errori.
 - [x] VM 533: DA-IPAM sano (`da-ipam` attivo, health 200, 0.9.956), edge `healthy` e `/api/v1/health` 200;
       tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103` (task Proxmox stopped OK). Restano
       `pre-aruba-cx-20261103` e `pre-sonda-0830-20261103` delle altre sessioni.

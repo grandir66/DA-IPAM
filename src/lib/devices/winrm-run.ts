@@ -53,7 +53,9 @@ export async function runWinrmCommand(
   password: string,
   command: string,
   usePowershell: boolean,
-  realm?: string
+  realm?: string,
+  /** Limite del bridge; di serie 120 s. La lettura dei registri di un DC carico ne chiede di più. */
+  timeoutMs: number = TIMEOUT_MS,
 ): Promise<string> {
   // Pre-check TCP: se le porte WinRM non rispondono, evitiamo i 120s di pywinrm
   // e restituiamo subito una WinrmError classificata. Test entrambe le porte
@@ -101,7 +103,7 @@ export async function runWinrmCommand(
     const child = execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
-      { timeout: TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
+      { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
       (error, stdout, _stderr) => {
         if (error && !stdout) {
           const msg = error.message || "Errore esecuzione WinRM bridge";
@@ -115,7 +117,7 @@ export async function runWinrmCommand(
           } else if (msg.includes("ETIMEDOUT") || msg.includes("timeout") || error.killed) {
             reject(new WinrmError({
               code: "BRIDGE_TIMEOUT",
-              message: `Il bridge WinRM ha superato i ${Math.round(TIMEOUT_MS / 1000)}s — il target è raggiungibile in TCP ma non completa la sessione (auth lentissima o config WinRM rotta).`,
+              message: `Il bridge WinRM ha superato i ${Math.round(timeoutMs / 1000)}s — il target è raggiungibile in TCP ma non completa la sessione (auth lentissima o config WinRM rotta).`,
               hint: "Sul target: winrm enumerate winrm/config/Listener ; verifica che il servizio WinRM non sia bloccato in MaxConcurrentOperations.",
               original: msg,
             }));

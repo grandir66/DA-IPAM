@@ -44,16 +44,30 @@ test("senza cursore la XPath guarda le ultime 24 ore", () => {
 test("lo script raddoppia gli apici della XPath dentro la stringa PowerShell", () => {
   const s = scriptEventiDc(5);
   assert.match(s, /Data\[@Name=''Status''\]!=''0x0''/);
-  assert.match(s, /-Oldest -MaxEvents 2000/);
+  assert.doesNotMatch(s, /-Oldest -MaxEvents/);
 });
 
 test("prima lettura dal più nuovo (senza -Oldest), poi dal cursore (70151, GAMODCOP01 oltre i 120 s)", () => {
   const s = scriptEventiDc({ Security: null, System: 20, Defender: null });
-  assert.match(s, /\$out \+= Leggi 'Security' .* \$true$/m, "Security senza cursore: prima lettura");
-  assert.match(s, /\$out \+= Leggi 'System' .* \$false$/m, "System col cursore: lettura normale");
+  assert.match(s, /\$out \+= Leggi 'Security' .* \$true 0$/m, "Security senza cursore: prima lettura");
+  assert.match(s, /\$out \+= Leggi 'System' .* \$false 20$/m, "System col cursore: lettura normale");
   assert.match(s, /if \(\$primo\) \{\n\s+\$ev = @\(Get-WinEvent -FilterXml \(\[xml\]\$query\) -MaxEvents 2000/);
   assert.match(s, /\[array\]::Reverse\(\$ev\)/);
   assert.match(s, /if \(\$primo -and \$null -eq \$errore -and \$null -ne \$nuovo\) \{ \$esaminato = \$nuovo \}/);
+});
+
+test("dal cursore si legge dal più nuovo e ci si ferma al confine (70151, GAMODCOP01 oltre i 270 s con -Oldest)", () => {
+  const s = scriptEventiDc({ Security: 1837383494, System: null, Defender: null });
+  assert.doesNotMatch(s, /-Oldest -MaxEvents/, "-Oldest scorre il registro dall'inizio");
+  assert.match(s, /\$q\.ReverseDirection = \$true/);
+  assert.match(s, /if \(\[long\]\$e\.RecordId -le \[long\]\$dopo\) \{ \$e\.Dispose\(\); break \}/);
+  assert.match(s, /if \(\$ev\.Count -gt 2000\) \{ \$ev = \$ev\[0\.\.\(2000 - 1\)\] \}/, "si tengono i più vecchi: il cursore non salta");
+  assert.match(s, /Leggi 'Security' 'Security' '.*EventRecordID=1837383494\]\]<\/Select>.*' \$false 1837383494$/m);
+});
+
+test("la QueryList ha il record del cursore come confine solo quando c'è un cursore", () => {
+  assert.match(queryListRegistro("Security", 5), /<Select Path="Security">\*\[System\[EventRecordID=5\]\]<\/Select><\/Query>/);
+  assert.doesNotMatch(queryListRegistro("Security", null), /EventRecordID=/);
 });
 
 test("lo script dà a ConvertTo-Json solo pscustomobject (PowerShell 5.1 dei DC: «Argument types do not match»)", () => {

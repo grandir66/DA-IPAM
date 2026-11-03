@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { ensureWazuhAlertSchema } from "@/lib/integrations/wazuh-alerts-db";
-import { dcDaLeggere, dcDisponibili, giroEventiDc, lettureDcScelti, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
+import { LIMITE_LETTURA_DC_MS, dcDaLeggere, dcDisponibili, giroEventiDc, lettureDcScelti, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
 import { ensureEventiDcSchema, letturaDc, scriviLetturaFallita } from "../db";
 
 void TEST_DATA_DIR;
@@ -132,6 +132,15 @@ describe("giro di lettura dei DC", () => {
     assert.equal(chiamato, false, "senza nome risolto WinRM non parte");
     assert.ok(e.dc.every((d) => !d.ok));
     assert.match(letturaDc(dbt(), "dc01.cliente.local")?.errore ?? "", /non si risolve dal DNS.*cliente\.local/);
+  });
+
+  it("la lettura di un DC ha più tempo dei 120 s di serie, dentro il giro di 5 minuti (GAMODCOP01 di 70151)", async () => {
+    const limiti: Array<number | undefined> = [];
+    const esegui: EseguiWinrm = async (_h, _p, _u, _pw, _s, _ps, _r, limite) => ((limiti.push(limite), risposta([])));
+    await withTenant(T, () => giroEventiDc(dbt(), { esegui, wazuh: false }));
+    assert.ok(limiti.length > 0);
+    assert.ok(limiti.every((l) => l === LIMITE_LETTURA_DC_MS));
+    assert.ok(LIMITE_LETTURA_DC_MS > 120_000 && LIMITE_LETTURA_DC_MS < 300_000);
   });
 
   it("eventi in archivio e in coda, un evento aperto per DC e tipo; il giro dopo riparte dal cursore", async () => {

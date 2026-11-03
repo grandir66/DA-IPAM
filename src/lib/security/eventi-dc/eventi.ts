@@ -289,7 +289,7 @@ export function scriptEventiDc(cursori: number | null | Partial<Record<RegistroD
   const max = Math.max(1, Math.floor(massimo));
   const ps = (t: string) => t.replace(/'/g, "''");
   const chiamate = NOMI_REGISTRI.map(
-    (r) => `$out += Leggi '${r}' '${ps(REGISTRI_DC[r].log)}' '${ps(queryListRegistro(r, c[r] ?? null))}'`,
+    (r) => `$out += Leggi '${r}' '${ps(REGISTRI_DC[r].log)}' '${ps(queryListRegistro(r, c[r] ?? null))}' ${(c[r] ?? null) == null || (c[r] ?? 0) <= 0 ? "$true" : "$false"}`,
   ).join("\n");
   return `
 $ErrorActionPreference = 'Stop'
@@ -322,7 +322,10 @@ function Tieni($id, $d) {
   }
   return $true
 }
-function Leggi($nome, $log, $query) {
+# Prima lettura ($primo): dal più nuovo indietro, fino al massimo. Con -Oldest il registro si scorre
+# dall'inizio: su un DC carico (GAMODCOP01 di 70151, 03/11/2026) superava i 120 s a ogni giro e il DC
+# non veniva mai letto. Si riparte poi dal più nuovo: il resto delle 24 ore resta sul DC.
+function Leggi($nome, $log, $query, $primo) {
   $nuovo = $null; $vecchio = $null; $esaminato = $null; $errore = $null; $assente = $false
   $righe = @()
   # Il registro Sicurezza c'è sempre: se non si legge è un errore da dire, mai «assente».
@@ -331,7 +334,12 @@ function Leggi($nome, $log, $query) {
     try { $nuovo = [long](Get-WinEvent -LogName $log -MaxEvents 1).RecordId } catch {}
     try { $vecchio = [long](Get-WinEvent -LogName $log -MaxEvents 1 -Oldest).RecordId } catch {}
     try {
-      $ev = Get-WinEvent -FilterXml ([xml]$query) -Oldest -MaxEvents ${max} -ErrorAction Stop
+      if ($primo) {
+        $ev = @(Get-WinEvent -FilterXml ([xml]$query) -MaxEvents ${max} -ErrorAction Stop)
+        [array]::Reverse($ev)
+      } else {
+        $ev = Get-WinEvent -FilterXml ([xml]$query) -Oldest -MaxEvents ${max} -ErrorAction Stop
+      }
       $righe = @(foreach ($e in $ev) {
         $esaminato = [long]$e.RecordId
         $x = [xml]$e.ToXml()
@@ -343,6 +351,7 @@ function Leggi($nome, $log, $query) {
     } catch {
       if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { $errore = [string]$_.Exception.Message }
     }
+    if ($primo -and $null -eq $errore -and $null -ne $nuovo) { $esaminato = $nuovo }
   }
   [pscustomobject]@{ registro = [string]$nome; nuovo = $nuovo; vecchio = $vecchio; esaminato = $esaminato; errore = $errore; assente = $assente; eventi = $righe }
 }

@@ -8,11 +8,12 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-rilievi-controlli";
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { withTenant, getTenantDb, deleteTenantDatabase, getAggregatedVulnerabilities } from "@/lib/db-tenant";
+import { withTenant, getTenantDb, closeTenantDb, deleteTenantDatabase, getAggregatedVulnerabilities } from "@/lib/db-tenant";
 import { normalizzaRilievoControllo, ripulisciRilieviControlli } from "@/lib/vuln/rilievi-controlli";
 
 const T = "TESTRILIEVICONTROLLI";
-after(() => deleteTenantDatabase(T));
+const T2 = "TESTRILIEVIAPERTURA";
+after(() => { deleteTenantDatabase(T); deleteTenantDatabase(T2); });
 const oggi = new Date().toISOString().slice(0, 19).replace("T", " ");
 
 test("all'arrivo: IP senza nome davanti, voto e avvisi a Log, autofirmato Media", () => {
@@ -60,3 +61,15 @@ test("righe già salvate: spariscono dalla vista, agganciate all'host, idempoten
     assert.equal(ripulisciRilieviControlli(d), 0);
   }),
 );
+
+test("all'apertura del DB (riavvio dopo l'aggiornamento) le righe si correggono senza aspettare la sonda", () => {
+  // 03/11/2026: con la 0.9.941 la pulizia girava solo nella sincronia; sulla 533 «overall_grade» restava Critical.
+  const d = getTenantDb(T2);
+  const sc = Number(d.prepare("INSERT INTO vuln_scanners (name, base_url, token_encrypted) VALUES ('E', 'https://x', 'x')").run().lastInsertRowid);
+  const run = Number(d.prepare("INSERT INTO vuln_scan_runs (scanner_id, edge_scan_id, status) VALUES (?, 1, 'done')").run(sc).lastInsertRowid);
+  d.prepare(`INSERT INTO vuln_findings (scan_run_id, ip, severity, nvt_oid, nvt_name, scanned_at)
+             VALUES (?, '192.168.40.9/192.168.40.9', 'Critical', 'controllo:tls-deep:tls_weakness', 'overall_grade', ?)`).run(run, oggi);
+  closeTenantDb(T2);
+  const r = getTenantDb(T2).prepare("SELECT ip, severity, nvt_oid FROM vuln_findings").get() as { ip: string; severity: string; nvt_oid: string };
+  assert.deepEqual(r, { ip: "192.168.40.9", severity: "Log", nvt_oid: "controllo:tls-deep:tls_weakness:overall_grade" });
+});

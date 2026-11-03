@@ -116,6 +116,7 @@ import type {
   ExcludedIpWithNetwork,
 } from "@/types";
 import { unisci, risolvi } from "./percorsi";
+import { ripulisciRilieviControlli } from "./vuln/rilievi-controlli";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT CONTEXT (AsyncLocalStorage)
@@ -3059,6 +3060,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VAULT}, segno non scritto:`, e2);
     }
+  }
+
+  // Rilievi Edge-C copiati prima della sonda 0.8.224 (Riccardo, 03/11/2026: «overall_grade» ancora Critical su 60 host
+  // dopo la 0.9.941). La pulizia girava solo dentro la sincronia con la sonda, che parte di rado e salta tutto se la sonda
+  // non risponde: si fa anche all'apertura del DB (riavvio dopo l'aggiornamento). Idempotente; un errore non blocca l'apertura.
+  try {
+    const n = ripulisciRilieviControlli(newDb);
+    if (n > 0) console.info(`[db-tenant] ${tenantCode}: rilievi Edge-C corretti, ${n} righe`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: correzione dei rilievi Edge-C non riuscita:`, e instanceof Error ? e.message : e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

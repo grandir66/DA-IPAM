@@ -92,6 +92,13 @@ export async function runVulnSync(): Promise<{
     return { ok: true, newScans: 0, newFindings: 0 };
   }
 
+  // Prima di parlare con la sonda: se la sonda non risponde il resto salta, la correzione delle righe già salvate no.
+  try {
+    ripulisciRilieviControlli(db);
+  } catch (e) {
+    console.error("[vuln-sync] correzione dei rilievi Edge-C non riuscita:", e instanceof Error ? e.message : e);
+  }
+
   const since = scanner.last_sync_at ?? undefined;
   let newScans = 0;
   let newFindings = 0;

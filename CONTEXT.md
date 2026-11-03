@@ -119,3 +119,7 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 - `Select` ricava `items` dalle `SelectItem`; date del DB con `parseDbDate`; pagine con `timeZone: FUSO_UTENTI`; un caricamento usa `fetchJson` + `LoadError`; admin solo con `eAdmin`/`useEAdmin`.
 - **`db.ts` e `db-tenant.ts` divergono**: guarda da quale importa il chiamante.
 - Scansioni (ADR 0006): `last_run` = fine del giro; lucchetto in memoria. Niente retention sugli storici (il più grosso è `mac_ip_history`).
+
+## Aggiornamento 03/11/2026 — integrazione conclusa
+
+Riccardo ha autorizzato e il collector è ora pubblicato su origin/dev, release 0.9.949, codice 77aa3800 e consuntivo f07b522c. Checkout canonico `/Users/riccardo/Progetti/Domarc/DA-IPAM` allineato. Le precedenti indicazioni di conferma push in attesa sono superate; fonti correnti CONTEXT e TASKS del checkout canonico. Nessuna operazione firmware.

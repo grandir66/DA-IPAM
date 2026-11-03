@@ -796,3 +796,15 @@ Riccardo: confermato AOS-CX, accesso admin fornito; livello Leggero, solo lettur
 - [x] Riccardo (27/10): verificare download firmware aggiornato e percorso di upgrade Aruba 6100; **operazione una tantum**, nessuna funzione di prodotto o automazione. Installazione da confermare, solo ricerca in questa sessione.
 
   Fonti consultate il 27/10: `https://networkingsupport.hpe.com/downloads`; bollettino HPE `hpesbnw05134en_us` del 01/09/2026 (10.16.1060+ / 10.13.1190+); note upgrade 6100/10.13 (minimo 10.10.0002). Download binario e salto diretto 10.12→10.16 non verificati. Nessuna installazione.
+
+- [ ] Riccardo (27/10): scaricare il firmware Aruba 6100, operazione una tantum. Portale HPE aperto; download bloccato da verifica email ed accettazione EULA (`https://networkingsupport.hpe.com/pre-landing-email-verification`). Nessun dato inviato, nessuna licenza accettata, nessun binario scaricato. Attesi indirizzo email e autorizzazione EULA.
+
+- [x] Riccardo (27/10): autorizzata EULA HPE e fornita email per il download. Modulo inviato una volta; portale conferma «Email verification mail sent successfully».
+- [ ] Atteso link di verifica HPE nella casella di Riccardo; nessun firmware ancora scaricato o installato. Pagina IAB mantenuta per riprendere dopo verifica email.
+
+- [x] Riccardo (27/10): prima email HPE non ricevuta; richiesto nuovo invio all’indirizzo aziendale indicato in chat. Conferma nuova «Email verification mail sent successfully» osservata dopo aver rimosso quella precedente; attesa verifica nella casella aziendale. Nessun firmware scaricato.
+
+- [x] 27/10: link email HPE verificato nel browser. Catalogo pubblico consultato: ricerca 6100 senza risultati, filtro AOS-CX mostra solo vecchi file/MIB, nessuna immagine 6100. Accesso completo HPE richiede password; nessun riferimento trovato nel vault tecnico per auth.hpe.com/networkingsupport.hpe.com. Richiesto recupero ufficiale via email aziendale: pagina HPE conferma invio istruzioni.
+- [ ] Riccardo deve impostare personalmente la nuova password e accedere; poi riprendere download firmware. Nessuna password cambiata dall’agente, nessun firmware scaricato. Link di verifica/token non custoditi nel repository.
+
+- [x] Riccardo (03/11): pubblicare il collector anche su dev. Eseguito dalla base aggiornata: release 0.9.949, 77aa3800 + f07b522c, remoto e dev locale allineati. Snapshot VM 533 su DA-PX-03; cancello completo verde, 6.321 prove passate. I precedenti blocchi di pubblicazione sono superati.

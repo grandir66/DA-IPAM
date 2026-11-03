@@ -8,7 +8,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunto
 
-- Profilo `infoblox-nios` per acquisire IPAM, DHCP e DNS via WAPI in sola lettura, senza scritture DB o configurazione. Versione/oggetti/campi scoperti dallo schema, paginazione limitata, viste conservate, TLS verificato prima delle credenziali e dati parziali espliciti. Colloquio reale vNIOS / WAPI 2.12.3 riuscito; acquisizione estesa DNS/lease da completare dopo timeout del target.
+- Profilo `infoblox-nios` per acquisire IPAM, DHCP e DNS via WAPI in sola lettura, senza scritture DB o configurazione. Versione/oggetti/campi scoperti dallo schema, paginazione limitata, viste conservate, TLS verificato prima delle credenziali e dati parziali espliciti. Collaudo vNIOS / WAPI 2.12.3 completato dopo nuova conferma della raggiungibilità: 23 tabelle e 6.853 record letti in 37 s, compresi DNS e 3.953 lease; limiti di campo IPv6/firmware dichiarati.
 
 ## [Non rilasciato] — 2026-11-03 · Collector Aruba AOS-CX
 

@@ -55,7 +55,7 @@ export const CATALOGO = [
     {
         id: "infoblox-nios", versione: "1.0.0", famiglia: "ddi", prodotti: ["Infoblox NIOS (WAPI IPAM/DHCP/DNS)"],
         credenziali: { ammesse: ["api"], una_di: ["api"] }, sezioni: ["identity", "ddi"], comandi: null,
-        limiti: { timeout_ms: 15000, total_timeout_ms: 300000 }, collaudo: "collaudato", collaudati: [{ modello: "Infoblox vNIOS", firmware: "NIOS non rilevato (WAPI 2.12.3)", nota: "Reti, range e prenotazioni acquisiti; lease parziali e collaudo completo DNS da riprendere dopo timeout TLS del target" }],
+        limiti: { timeout_ms: 15000, total_timeout_ms: 300000 }, collaudo: "collaudato", collaudati: [{ modello: "Infoblox vNIOS", firmware: "NIOS non rilevato (WAPI 2.12.3)", nota: "Collaudo WAPI completo: reti, DHCP e DNS; firmware NIOS non rilevato, opzioni dei range IPv6 non disponibili" }],
     },
     {
         id: "qnap-switch", versione: "1.0.0", famiglia: "switch", prodotti: ["QNAP QSS (switch gestiti)"],

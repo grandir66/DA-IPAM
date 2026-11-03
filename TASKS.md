@@ -862,7 +862,7 @@ Riccardo: approvato livello Leggero, credenziale fornita tramite vault-a-stdin. 
 - [x] Verifica reale API, versione e schema: WAPI 2.12.3, HTTP 200 sui 23 oggetti selezionati.
 - [x] Trasporto, parser, catalogo e contratto DDI opzionale implementati; 58 prove mirate verdi e tsc exit 0. Nessun DB/UI/cron.
 - [x] Cancello finale 03/11: lint 0 errori/72 avvisi storici, npm test 6.335 passate/0 fallite (2 saltate/1 TODO), build e tsc exit 0.
-- [!] Collaudo reale completo: parziale per timeout TLS del target; attesa conferma raggiungibilità da Riccardo.
+- [x] Riccardo (03/11): conferma raggiungibilità e chiede «riprova». Nuova acquisizione riuscita in 37 s: 23 tabelle/6.853 record, DNS e 3.953 lease completi, senza timeout. Rimangono soltanto limiti di campo dichiarati (firmware e opzioni IPv6).
 - [x] Manuale/CHANGELOG/CONTEXT/scheda e release locale 0.9.953 (`ed181f9d`), nessun push/dev o deploy. Resta aperto il collaudo esteso per timeout TLS del target.
 
-- [ ] Collaudo completo interrotto: 18 reti, 28 range, 633 prenotazioni, 2.000 lease prima di un timeout; poi handshake TLS non completato anche nel controllo diagnostico. Chiarimento richiesto a Riccardo; niente tentativi ripetuti. DNS e campioni degli altri oggetti erano leggibili al preflight (23 HTTP 200). I lease ora vengono dopo reti e DNS per non anteporre la lettura più pesante.
+- [x] Primo collaudo interrotto (superato dal ricollaudo sopra): 18 reti, 28 range, 633 prenotazioni, 2.000 lease prima di un timeout; poi handshake TLS non completato anche nel controllo diagnostico. Chiarimento richiesto a Riccardo; niente tentativi ripetuti. DNS e campioni degli altri oggetti erano leggibili al preflight (23 HTTP 200). I lease ora vengono dopo reti e DNS per non anteporre la lettura più pesante.

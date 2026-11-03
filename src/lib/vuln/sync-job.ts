@@ -14,6 +14,7 @@
  *   6. update last_sync_at; errori → last_error, non rilancia
  */
 
+import { normalizzaRilievoControllo, ripulisciRilieviControlli } from "@/lib/vuln/rilievi-controlli";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getNetworks } from "@/lib/db";
 import {
@@ -202,7 +203,8 @@ export async function runVulnSync(): Promise<{
 
     // Transaction wrapper per bulk insert
     const insertMany = db.transaction((findings: EdgeFinding[]) => {
-      for (const f of findings) {
+      for (const grezzo of findings) {
+        const f = normalizzaRilievoControllo(grezzo);
         let runRef = scanRunByEdgeId.get(f.scan_id);
         if (!runRef) {
           const r = findRunByEdgeId.get(scanner.id, f.scan_id) as
@@ -247,6 +249,7 @@ export async function runVulnSync(): Promise<{
       }
     }
 
+    ripulisciRilieviControlli(db);
     riagganciaHost(db);
 
     // Push-hosts periodico: aggiorna inventario sull'edge per le reti con

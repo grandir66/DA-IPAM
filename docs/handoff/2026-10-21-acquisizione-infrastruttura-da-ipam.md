@@ -257,3 +257,186 @@ Sono aggiunti i profili `unifi-controller`, `synology-dsm`, `qnap-nas`, `mikroti
 L'adapter deve trattare `inventory.tables` come osservazioni con stato e fonte; mai trasformare una tabella fallita in cancellazione. Le tabelle cluster Proxmox non appartengono tutte al solo chassis di target: `scope=proxmox-cluster-visible`, ogni risorsa mantiene node/id/type. Le porte virtuali Linux non sono cavi; le righe VLAN RouterOS hanno il bridge come contesto. `*_vendor_units` non sono byte. Il profilo dichiarato dal chiamante non dimostra da solo il produttore. Il controller UniFi resta distinto dai device diretti: correlare MAC e seriale, mantenendo fonte e sito. Token/password/chiavi restano nel vault; local_ssh è solo per CLI e ambienti con OpenSSH configurato.
 
 Letture SSH Ubiquiti non ancora validate per rifiuto autenticazione; usare SNMP/API disponibili e chiedere conferma dell'accesso device senza tentativi ripetuti. Synology irraggiungibile resta non collaudato. Persistenza, interfaccia, radio avanzate e completa copertura per famiglia restano passi successivi: niente importazione automatica dai nuovi campioni.
+
+## Integrazione Infoblox in DA-IPAM — contesto aggiornato 03/11/2026
+
+Questa sezione aggiorna la consegna storica sopra per **Infoblox**. Riccardo ha
+chiesto di scrivere il contesto per l'integrazione: **non è un incarico a eseguire
+ora importazioni, migrazioni o pubblicazioni**. Il collector è implementato e
+collaudato; manca il flusso di prodotto che utilizzi i dati DDI. Le parti della
+fotografia del 21/10 che dicono genericamente «nessun aggancio UI» non descrivono
+lo stato attuale di tutti gli altri collector: per quello leggere CONTEXT e codice
+correnti, senza rimettere mano a flussi già decisi.
+
+### Fonte del codice, ramo e verifiche
+
+Sul **Mac**, il lavoro Infoblox è nel worktree:
+`/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox`, ramo locale
+`codex/infoblox`, ultima release locale **0.9.954**. Non è pubblicato su origin/dev.
+Non tentare di recuperare quel ramo da origin come se fosse già remoto.
+
+Commit utili: `ed181f9d` implementazione e release locale 0.9.953;
+`f264d704` aggiornamento del collaudo e release locale 0.9.954;
+`235db5aa` e `8e83dfa6` consuntivi; la documentazione di consegna viene aggiornata
+successivamente. Per verificare il commit corrente usare git nel worktree.
+
+File da integrare, confrontandoli con origin/dev aggiornato:
+
+- `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/src/lib/acquisition/infoblox.ts`: collector e costruzione dello snapshot.
+- `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/src/lib/acquisition/infoblox-transport.ts`: GET HTTPS, schema WAPI, versioni, paginazione e limiti.
+- `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/src/lib/acquisition/infoblox-schema.ts`: contratto DDI, allowlist e parser.
+- `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/src/lib/acquisition/__tests__/infoblox.test.ts`: prove specifiche.
+- Modifiche comuni nello stesso worktree: `src/lib/acquisition/{catalogo,index,schema}.ts` e `src/lib/acquisition/__tests__/contratto-fixture.ts`.
+- Manuale e piano: `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/docs/modules/acquisition.md` e `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox/docs/superpowers/plans/2026-11-03-infoblox.md`.
+
+Riportare codice, test e integrazioni del registro, **non** sovrascrivere interi
+file comuni con la loro versione del worktree e **non** riportare indietro
+VERSION/package.json/lock alla release locale. Il versionamento finale segue la
+versione di origin/dev al momento dell'integrazione. Non includere nel trasferimento
+i campioni reali o le credenziali. Un agente cloud non vede automaticamente questi
+file locali: prima occorre rendere disponibili i soli sorgenti revisionati.
+
+Verifiche del 03/11: Node 22, lint senza errori (72 avvisi storici), **6.335 prove
+passate**, zero fallite, 2 saltate e 1 TODO; build e tsc exit 0. Dopo l'aggiornamento
+della sola nota di collaudo: lint/tsc/build nuovamente exit 0. Prima di pubblicare
+un'integrazione su una base più recente, eseguire il cancello su quella base.
+
+### Cosa è stato letto realmente
+
+Apparato **Infoblox vNIOS**, WAPI massima esposta **2.12.3**. La versione WAPI **non
+è** il firmware NIOS. Primo giro interrotto da timeout; Riccardo ha confermato la
+raggiungibilità e chiesto di riprovare. Il giro successivo ha completato in **37 s**
+23 tabelle e **6.853 record**, senza errori di accesso o limiti di paging:
+
+- IPAM: una network view, **18 reti IPv4**; reti/contenitori IPv6 e contenitori IPv4 vuoti.
+- DHCP: **28 range**, **633 prenotazioni**, **3.953 lease**; corrispondenti tabelle IPv6 vuote.
+- DNS: una vista, **66 zone autoritative**, **11 zone forward**, **380 record host**, **505 A**, **4 CNAME**, **755 PTR**, **1 MX**, **495 TXT**; AAAA e SRV vuoti.
+- Grid e membri: un oggetto grid e un membro osservati. Sono contesti/oggetti distinti dal singolo indirizzo di gestione interrogato.
+
+Sono conteggi di **record sorgente alla data del collaudo**, non un numero di
+host unici. Record host, A, PTR e lease possono descrivere la stessa risorsa e
+non vanno sommati per creare nuovi apparati.
+
+Sul **Mac**, campione completo autorizzato (privato, fuori repo):
+`/Users/riccardo/Progetti-Clienti/Acquisizioni-DA-IPAM/2026-11-03-infoblox/snapshot-completo.json`.
+Nella stessa cartella ci sono `discovery.json` (schemi/primi campioni),
+`preflight.json` (schema e fingerprint TLS) e il primo `snapshot.json` parziale:
+**per il collaudo completo usare snapshot-completo.json**. Non copiare dati reali
+nel repo, in fixture pubbliche o in servizi/modelli esterni.
+
+Credenziale di collaudo: riferimento alla voce `infoblox-manager.md` dell'archivio
+locale, usata tramite `/Users/riccardo/.claude/bin/vault-a-stdin` con
+`VAULT_FONTE=file`. Il contenuto è un input JSON codificato base64: **base64 non è
+cifratura**; il valore resta un segreto e va solo allo stdin del processo autorizzato.
+Non mostrarlo, non inserirlo in argv/log e non usarlo dal browser. L'integrazione
+di prodotto deve seguire la fonte credenziali corrente dichiarata in AGENTS
+(DA-Link → Vault / API autorizzata): non hardcodare questo riferimento locale nel
+codice distribuito. Target, utente e pin restano nei riferimenti privati; non
+ricercare credenziali ulteriori di propria iniziativa.
+
+### Contratto già pronto e limiti effettivi
+
+Profilo `infoblox-nios`, famiglia `ddi`, credenziale `api`, registro statico
+`collectDevice`. Lo schema snapshot **1.0** contiene una sezione opzionale `ddi`:
+
+- `ddi.data.scope = grid-visible-to-account`: dati visibili all'account, non attestazione di inventario globale del grid.
+- `ddi.data.wapi_version`: versione API rilevata.
+- `ddi.data.tables[]`: `object`, `status`, `sources`, `warnings`, `fields_requested`, `records`.
+- I record conservano `_ref`, `network_view`/`view` e i campi esplicitamente ammessi. `fields_requested` indica campi leggibili richiesti, non garantisce che ogni record abbia ogni campo.
+
+Gli oggetti sono grid/member, viste/reti/contenitori IPv4/IPv6, range,
+fixedaddress, lease, viste/zone DNS e record host/A/AAAA/CNAME/PTR/MX/TXT/SRV.
+Si usano soltanto GET di endpoint statici; niente chiamate funzione WAPI o
+configurazioni complete. CA attendibile oppure pin SHA256 verificato **prima**
+di inviare Basic auth; nessun redirect con credenziali. La versione è scelta
+numericamente dallo schema (2.12 > 2.9), campi e oggetti sono verificati sul server.
+
+Paging: 250 record per pagina, massimo 1.000 pagine, limite righe per tabella,
+budget byte complessivo e deadline. Nel collaudo: 20.000 righe per tabella,
+4 MiB totali, 15 s per richiesta e 300 s totali. I lease sono in coda per non
+anteporre la lettura più pesante a reti/DNS. 401 ferma il lotto; 403 non diventa
+lista vuota; paging incompleto conserva i record già letti come `partial`.
+
+Lo stato globale dell'ultimo snapshot resta `partial` **senza letture interrotte**:
+firmware/seriale NIOS non raccolti e `options` non esposto per `ipv6range`.
+Valutare gli stati delle **singole tabelle**, non scartare tutto per il solo stato
+globale. Le tabelle vuote correttamente lette sono `ok`; `error`, `skipped` e
+`unsupported` non provano assenza di oggetti. Opzioni DHCP e TTL sono i valori
+restituiti, senza risoluzione completa dell'eredità. Non presenti gestione
+failover, DNSSEC/TSIG, RPZ, ogni tipo di record DNS o prefix delegation DHCPv6.
+
+### Dove si aggancia e cosa non basta fare
+
+Il collector non è un importatore. `src/lib/acquisition/adapter.ts` traduce solo
+l'identità in DeviceInfo. Le proiezioni attuali in
+`src/lib/acquisition/proiezioni/index.ts` e l'applicazione in
+`src/lib/acquisizione-modulare/applica.ts` non contengono un mapping DDI:
+aggiungere il profilo al riconoscimento o premere «Aggiorna» non basta a popolare
+reti, DHCP e DNS. Non riversare gli indirizzi del grid nelle interfacce/IP del
+singolo Infoblox e non creare porte switch per la famiglia `ddi`.
+
+Riusare, dopo averne verificato le firme sul ramo corrente, il flusso già presente:
+`acquisizione-modulare/{richiesta,esegui,archivio,fonte,scheda,applica}.ts` e
+`acquisition/proiezioni/`. Conservare lo snapshot con fonte/versione/stati; costruire
+proiezioni pure DDI e una anteprima delle differenze prima di applicarle in
+transazione. Non cambiare per simmetria la regola di «Aggiorna» già decisa per i
+collector esistenti. Il flusso DDI che modifica inventario, reti o relazioni va
+proposto esplicitamente; fino ad allora niente applicazione implicita.
+
+### Vincoli del modello da risolvere prima di scrivere dati
+
+Verificati nel checkout DA-IPAM locale il 03/11, da ricontrollare su origin/dev
+prima della migrazione; questa è un'indicazione del problema, non uno schema già approvato.
+
+1. **Reti:** `networks.cidr` è `UNIQUE`. Due network view Infoblox possono contenere
+   lo stesso CIDR. Non fondere le viste o lasciar scegliere al vincolo quale rete
+   tenere: mantenere inizialmente osservazioni separate, poi definire una mappatura
+   esplicita della vista o introdurre la dimensione di vista nel modello approvato.
+2. **Lease:** `dhcp_leases` richiede MAC non nullo, ha unicità
+   `(source_device_id, ip_address)` e `source_type` limitato a
+   `mikrotik|windows|cisco|other`. Non scrivere `infoblox` violando il CHECK, non
+   usare `other` come ripiego muto, non inventare un MAC per dati che hanno solo
+   un DUID. Decidere esplicitamente la provenienza e preservare la vista nel modello.
+3. **DNS:** definire la destinazione canonica e i suoi writer prima del mapping;
+   non è stato ancora progettato uno storage DDI nel collector. I campi riassuntivi
+   DNS di un host non sostituiscono l'inventario di zone/viste/record multipli.
+4. **Identità:** chiave di osservazione almeno fonte Infoblox + tipo oggetto +
+   riferimento WAPI, conservando vista e riferimento originali. Non correlare
+   automaticamente tra viste per il solo IP, nome o MAC. Non trattare `_ref` come
+   garanzia di UUID eterno senza verificare cosa accade nelle rinomine.
+5. **Semantica:** range ≠ rete; fixedaddress ≠ lease attivo; record host può avere
+   più IP/alias e configurazione DHCP per indirizzo. Preservare stati dei lease,
+   `never_starts`/`never_ends` e tempi originali; non inventare `last_seen` dalla
+   scadenza del lease. Normalizzare date UTC al confine e rispettare i confronti SQLite.
+
+Regole di arricchimento: il manuale vince, niente sovrascritture mute;
+`null`/campo assente non cancella un valore noto. Da una tabella parziale si
+aggiunge/aggiorna solo ciò che è osservato; **mai bonifiche per assenza**. Anche una
+tabella `ok` è limitata all'account: la scomparsa di un record non autorizza
+immediatamente un DELETE. Persistenza/audit devono conservare fonte e istante.
+
+### Sequenza raccomandata per l'integrazione, quando incaricata
+
+1. Ripartire da origin/dev aggiornato e isolato, integrare collector/test/contratto;
+   non abbassare la versione dell'app. Mantenere inizialmente inattivi i giri automatici.
+2. Preparare il mapping per viste, reti, range, prenotazioni, lease e DNS; proporre
+   schema e interfaccia oggetto per oggetto. **Controllo Completo** per migrazioni,
+   credenziali e applicazione dei dati; nessun nuovo agente o orchestrazione implicita.
+3. Conservare snapshot e osservazioni nel flusso esistente; implementare proiezioni
+   pure e anteprima in sola lettura su DB dev isolato. Non applicare i 6.853 record al
+   DB live per vedere cosa succede.
+4. Prove nella forma vera con fixture anonime: IP/CIDR duplicati tra viste,
+   DNS multipli sullo stesso nome/IP, host con più indirizzi, lease senza MAC,
+   scadenze/never_*, pagina troncata, 401/403, pin errato, ripetizione idempotente e
+   conflitto con dati manuali. Verificare persistenza/provenienza e assenza di segreti.
+5. Applicazione esplicita secondo il flusso approvato, in transazione e con audit;
+   nessuna cancellazione automatica da letture incomplete. Verifica UI resa a
+   larghezza d'uso e ingresso reale senza scritture; cancello del progetto Node 22.
+6. Release/push/deploy seguono autorizzazione e regole correnti: non dedurli da
+   questo documento. Prima di interventi live lo snapshot della VM richiesto da
+   AGENTS; per `main` e sistemi dei clienti restano le conferme previste.
+
+**Accettazione:** ogni valore importato è riconducibile al record Infoblox e alla
+vista; la stessa acquisizione ripetuta non crea duplicati; nessuna collisione tra
+viste o cancellazione da dati parziali; conflitti manuali visibili; i numeri delle
+osservazioni corrispondono alle tabelle dello snapshot, senza scambiarli per host unici.

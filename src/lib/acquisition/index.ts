@@ -1,3 +1,4 @@
+import { collectArubaCx } from "./aruba-cx";
 import { collectNetappOntap } from "./netapp-ontap";
 import { collectVmwareEsxi } from "./vmware-esxi";
 import { collectInventoryDevice } from "./inventory-collector";
@@ -18,6 +19,7 @@ const IMPLEMENTAZIONI: Record<CollectorId, Collect> = {
     "vmware-esxi": (request: AcquisitionRequest) => collectVmwareEsxi(request),
     "hp-comware": collectHpComware,
     "hp-procurve": collectHpProcurve,
+    "aruba-cx": collectArubaCx,
     "qnap-switch": collectQnapSwitch,
     "qnap-nas": collectInventoryDevice,
     "mikrotik-routeros": collectInventoryDevice,

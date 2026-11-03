@@ -15,7 +15,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## Lavoro aperto del 03/11/2026
 
-PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni): la promozione è un fast-forward pronto, **aspetta il sì di Riccardo**. VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.
+PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni) e **promosso col sì di Riccardo: dal 03/11 15:46 UTC `main` = `dev` = 0.9.957**; 70151 aggiornata alle 15:52 e sana (controllo via HTTPS: la sua chiave SSH è cambiata e non è stata accettata). VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.
 
 ## Aruba AOS-CX — integrazione 03/11/2026
 

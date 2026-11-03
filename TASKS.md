@@ -18,8 +18,11 @@ Avviato dalla sessione «Contesto progetto Domarc» (Riccardo ha dato il via). W
 - [x] VM 533: DA-IPAM sano (`da-ipam` attivo, health 200, 0.9.956), edge `healthy` e `/api/v1/health` 200;
       tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103` (task Proxmox stopped OK). Restano
       `pre-aruba-cx-20261103` e `pre-sonda-0830-20261103` delle altre sessioni.
-- [ ] Promozione dev→main: **aspetta il sì di Riccardo** (è un rilascio a 70151 e alle appliance da immagine).
-      Comando: `git push origin origin/dev:main` (fast-forward). Dopo: controllo 70151.
+- [x] Promozione dev→main col sì di Riccardo (03/11): `main` 0.9.955 → **0.9.957** in fast-forward alle 15:46 UTC
+      (89204238, `git ls-remote`: main = dev). 70151 ripartita da sola alle 15:52 UTC: `/api/health` ok, DB ok,
+      chiave di cifratura invariata (15 credenziali leggibili), scheduler ok, 0 ripieghi; `/login` 200.
+- [ ] 70151: la chiave SSH di 172.20.40.194 non corrisponde a `~/.ssh/known_hosts:449` (probabile reinstallazione
+      dall'immagine). Non scavalcata: serve il sì di Riccardo per accettarla. Controlli fatti solo via HTTPS.
 
 ## 2026-10-27 — Reti dal sensore trunk: host e MAC insieme alla rete (da approvare)
 

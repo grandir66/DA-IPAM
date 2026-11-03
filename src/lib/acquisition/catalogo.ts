@@ -6,7 +6,7 @@
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
 import { SCRIPT_WINDOWS } from "./windows-script";
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_DSM_COMMANDS, UBIQUITI_DEVICE_COMMANDS, PROXMOX_VE_COMMANDS } from "./comandi";
+import { ARUBA_CX_COMMANDS, QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_DSM_COMMANDS, UBIQUITI_DEVICE_COMMANDS, PROXMOX_VE_COMMANDS } from "./comandi";
 
 /** Le credenziali che l'archivio dell'app sa assegnare a un apparato. */
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
@@ -62,6 +62,13 @@ export const CATALOGO = [
         credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
         sezioni: [...switchSezioni, "hardware", "modules", "environment"], comandi: PROCURVE_COMMANDS, collaudo: "collaudato",
         collaudati: [{ modello: "Aruba JL357A 2540-48G-PoE+-4SFP+", firmware: "YC.16.11.0020" }, { modello: "HP J9850A 5406R zl2", firmware: "KB.16.09.0003" }],
+    },
+    {
+        id: "aruba-cx", versione: "1.0.0", famiglia: "switch", prodotti: ["Aruba AOS-CX"],
+        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
+        sezioni: [...switchSezioni, "resources"], comandi: ARUBA_CX_COMMANDS,
+        limiti: { timeout_ms: 15000, total_timeout_ms: 240000 },
+        collaudo: "collaudato", collaudati: [{ modello: "Aruba JL675A 6100 48G CL4 4SFP+", firmware: "PL.10.12.0006", nota: "SSH; nessun LAG configurato, appartenenza LACP attiva da collaudare" }],
     },
     {
         id: "hp-comware", versione: "1.0.0", famiglia: "switch", prodotti: ["HPE FlexFabric (Comware)"],

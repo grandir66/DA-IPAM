@@ -22,6 +22,7 @@ test("ProCurve/Aruba nel sysDescr: un HP registrato Comware torna ProCurve; AOS-
   assert.equal(profiloHpDaSysDescr({ vendor: "hp", product_profile: "hp_switch_comware" }, ARUBA), "hp_switch_procurve");
   assert.equal(profiloHpDaSysDescr({ vendor: "hp", product_profile: "hp_switch_comware" }, "ProCurve J9145A Switch 2910al-24G"), "hp_switch_procurve");
   assert.equal(profiloHpDaSysDescr({ vendor: "hp", product_profile: "hp_switch_comware" }, "Aruba JL658A 6300M ArubaOS-CX Virtual.10.11"), null);
+  assert.equal(profiloHpDaSysDescr({ vendor: "hp", product_profile: "hp_switch_comware" }, "Aruba JL675A 6100 48G CL4 4SFP+ Swch PL.10.12.0006"), null);
 });
 
 test("niente da correggere: profilo già giusto, sysDescr vuoto o muto, altro produttore, iLO e stampanti", () => {

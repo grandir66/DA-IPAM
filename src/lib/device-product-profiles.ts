@@ -1,5 +1,6 @@
 import type { NetworkDevice } from "@/types";
 import { canonicalizza } from "./classification/canonico";
+import { eAosCx } from "./acquisition/riconosci";
 
 /**
  * Profilo prodotto: marca (vendor DB) + tipologia funzionale.
@@ -294,7 +295,7 @@ export function profiloHpDaSysDescr(
   const attuale = device.product_profile ?? null;
   if (!PROFILI_SWITCH_HP.has(attuale)) return null;
   if (/\b(Comware|H3C)\b/i.test(sysDescr)) return attuale === "hp_switch_comware" ? null : "hp_switch_comware";
-  if (attuale === "hp_switch_comware" && /\b(ProCurve|Aruba)\b/i.test(sysDescr) && !/AOS-CX|ArubaOS-CX/i.test(sysDescr)) {
+  if (attuale === "hp_switch_comware" && /\b(ProCurve|Aruba)\b/i.test(sysDescr) && !eAosCx(sysDescr)) {
     return "hp_switch_procurve";
   }
   return null;

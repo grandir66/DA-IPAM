@@ -855,3 +855,11 @@ Riccardo: «puoi metterlo anche su dev»; livello Leggero, integrazione della re
 - [x] Cancello finale 03/11: lint exit 0 (72 avvisi storici), npm test exit 0 (6.321 passate, zero fallite, 2 saltate e 1 TODO), build e tsc exit 0 con Node 22.
 - [x] Snapshot VM 533 `pre-aruba-cx-20261103` su `DA-PX-03` (192.168.40.3), confermato da qm listsnapshot il 03/11 prima del push.
 - [x] Release 0.9.949, commit `77aa3800`, push su dev riuscito; git ls-remote origin refs/heads/dev conferma lo stesso hash il 03/11. Nessun aggiornamento firmware.
+
+## 2026-11-03 — Collector Infoblox IPAM/DHCP/DNS
+
+Riccardo: approvato livello Leggero, credenziale fornita tramite vault-a-stdin. Piano `docs/superpowers/plans/2026-11-03-infoblox.md`.
+- [x] Verifica reale API, versione e schema: WAPI 2.12.3, HTTP 200 sui 23 oggetti selezionati.
+- [ ] Trasporto, parser, catalogo e contratto DDI opzionale, senza DB/UI/cron.
+- [ ] Collaudo reale completo e cancello finale.
+- [ ] Documentazione e release locale. Nessun push/dev o deploy implicito.

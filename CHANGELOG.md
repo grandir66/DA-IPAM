@@ -16,6 +16,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   mostrava tutti i DC con una riga in `dc_lettura`, anche quelli non più scelti, con errori di giri vecchi.
   Su 70151 se ne leggevano 2 e l'elenco ne mostrava 11, tutti rossi. Ora mostra solo i DC scelti. Le righe
   degli altri DC restano nel DB e il loro cursore riparte se si riscelgono (chiesto da Riccardo il 03/11).
+- **Corretto**: dal secondo giro la lettura di un DC chiedeva gli eventi «dal più vecchio» (`-Oldest`) e Windows
+  scorreva tutto il registro Sicurezza dall'inizio. Su GAMODCOP01 di 70151 non finiva nemmeno in 270 s, a ogni
+  giro. Ora si legge dal più nuovo indietro e ci si ferma al record del cursore, messo nella query come confine;
+  poi si tengono i più vecchi fino al massimo per giro, così il cursore non salta eventi.
 
 ## [Non rilasciato] — 2026-11-02 · Vault: OpenBao tolto dal codice
 

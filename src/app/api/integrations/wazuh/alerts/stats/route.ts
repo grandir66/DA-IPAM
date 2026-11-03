@@ -24,7 +24,8 @@ import {
   tenantDb,
 } from "@/lib/integrations/wazuh-alerts-db";
 import { collectSelfIdentity } from "@/lib/integrations/self-identity";
-import { ciSonoEventiDc, ensureEventiDcSchema, lettureDc } from "@/lib/security/eventi-dc/db";
+import { ciSonoEventiDc, ensureEventiDcSchema } from "@/lib/security/eventi-dc/db";
+import { lettureDcScelti } from "@/lib/security/eventi-dc/raccolta";
 import { statisticheDc } from "@/lib/security/eventi-dc/statistiche";
 
 const QuerySchema = z.object({
@@ -75,7 +76,7 @@ export async function GET(req: Request) {
       // Senza Wazuh i grafici vengono dagli eventi letti dai domain controller (29/10), se ci sono.
       ensureEventiDcSchema(db);
       if (ciSonoEventiDc(db)) {
-        const letture = lettureDc(db);
+        const letture = lettureDcScelti(db);
         const guasti = letture.filter((l) => l.esito === "errore");
         const ultima = letture.map((l) => l.lettoIl).filter((x): x is string => !!x).sort().at(-1) ?? null;
         return NextResponse.json({

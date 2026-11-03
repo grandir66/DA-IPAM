@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { ensureWazuhAlertSchema } from "@/lib/integrations/wazuh-alerts-db";
-import { dcDaLeggere, dcDisponibili, giroEventiDc, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
-import { ensureEventiDcSchema, letturaDc } from "../db";
+import { dcDaLeggere, dcDisponibili, giroEventiDc, lettureDcScelti, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
+import { ensureEventiDcSchema, letturaDc, scriviLetturaFallita } from "../db";
 
 void TEST_DATA_DIR;
 const T = "TESTEVENTIDC";
@@ -101,6 +101,15 @@ describe("giro di lettura dei DC", () => {
 
     scriviDcScelti(db, null);
     assert.deepEqual(dcDaLeggere(db).map((d) => d.dc), ["dc01.cliente.local"], "torna la scelta automatica");
+  });
+
+  it("l'elenco delle letture mostra solo i DC scelti, anche con righe vecchie di altri DC (70151, 03/11)", () => {
+    const db = dbt();
+    scriviLetturaFallita(db, "dc01.cliente.local", "[TCP_TIMEOUT] vecchio");
+    scriviLetturaFallita(db, "DC02", "[TCP_TIMEOUT] vecchio");
+    scriviDcScelti(db, ["dc01.cliente.local"]);
+    assert.deepEqual(lettureDcScelti(db).map((l) => l.dc), ["dc01.cliente.local"]);
+    assert.ok(letturaDc(db, "DC02"), "la riga dell'altro DC resta nel DB");
   });
 
   it("una scelta che non tocca nessun DC presente non legge e dice perché", async () => {

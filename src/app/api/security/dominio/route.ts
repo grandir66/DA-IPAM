@@ -11,9 +11,9 @@ import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { STATS_WINDOWS, bucketIntervalFor, sinceForWindow, windowById } from "@/lib/integrations/wazuh-alerts-stats";
-import { ensureEventiDcSchema, listaEventiDc, lettureDc, numeriEventiDc, TIPI_EVENTO_DC, type TipoEventoDc } from "@/lib/security/eventi-dc/db";
+import { ensureEventiDcSchema, listaEventiDc, numeriEventiDc, TIPI_EVENTO_DC, type TipoEventoDc } from "@/lib/security/eventi-dc/db";
 import { statisticheDc } from "@/lib/security/eventi-dc/statistiche";
-import { dcDisponibili, dcScelti, MAX_DC_AUTOMATICI, modoEventiDc, motivoPerNonLeggere, scriviDcScelti, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
+import { dcDisponibili, dcScelti, lettureDcScelti, MAX_DC_AUTOMATICI, modoEventiDc, motivoPerNonLeggere, scriviDcScelti, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
 import { giroEventiDcDelContesto, testoEsitoDc, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 
 const PER_PAGINA = 50;
@@ -47,7 +47,6 @@ export async function GET(req: Request) {
     ensureEventiDcSchema(db);
     const modo = modoEventiDc(db);
     const disponibili = dcDisponibili(db);
-    const scelti = new Set(disponibili.filter((d) => d.scelto).map((d) => d.dc.toLowerCase()));
     const { righe, totale } = listaEventiDc(db, { since, tipo: q.tipo, cerca: q.cerca, limit: PER_PAGINA, offset: (pagina - 1) * PER_PAGINA });
 
     return NextResponse.json({
@@ -59,8 +58,7 @@ export async function GET(req: Request) {
         sceltaManuale: dcScelti(db) !== null,
         maxAutomatici: MAX_DC_AUTOMATICI,
         ultimoGiro: ultimoGiroDc(code),
-        // Solo i DC da leggere: con decine di DC le letture vecchie di quelli tolti confondono (riccardo, 03/11/2026).
-        letture: lettureDc(db).filter((x) => scelti.has(x.dc.toLowerCase())),
+        letture: lettureDcScelti(db),
       },
       window: win.id,
       windows: STATS_WINDOWS.filter((w) => w.id !== "1h"),

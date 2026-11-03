@@ -20,12 +20,13 @@ import {
   ensureEventiDcSchema,
   eliminaEventiDcVecchi,
   letturaDc,
+  lettureDc,
   salvaEventiDc,
   scriviLetturaFallita,
   scriviLetturaRiuscita,
 } from "./db";
 import { classificaEvento, comeAlert, eAllarme, leggiRispostaDc, prossimoCursore, scriptEventiDc, type EventoDc, type EventoGrezzo } from "./eventi";
-import type { CursoriAltri } from "./db";
+import type { CursoriAltri, LetturaDc } from "./db";
 
 /** Impostazione del cliente: «auto» (di serie), «sempre», «mai». */
 export const CHIAVE_MODO_EVENTI_DC = "eventi_dc.modo";
@@ -153,6 +154,15 @@ export function dcDaLeggere(db: Database): DcDaLeggere[] {
   return dcDisponibili(db)
     .filter((d) => d.scelto)
     .map(({ integrationId, dc, realm, credentialId, fonte }) => ({ integrationId, dc, realm, credentialId, fonte }));
+}
+
+/**
+ * Le letture dei soli DC scelti (Riccardo, 03/11/2026): su 70151 l'elenco mostrava gli 11 DC
+ * dell'OU con errori di giri vecchi, mentre se ne leggevano 2. Le righe degli altri restano nel DB.
+ */
+export function lettureDcScelti(db: Database): LetturaDc[] {
+  const scelti = new Set(dcDisponibili(db).filter((d) => d.scelto).map((d) => d.dc.toLowerCase()));
+  return lettureDc(db).filter((l) => scelti.has(l.dc.toLowerCase()));
 }
 
 export interface EsitoDc {

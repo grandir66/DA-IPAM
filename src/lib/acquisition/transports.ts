@@ -114,7 +114,7 @@ export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">,
             else if (profile === 'hp-procurve' ? !text.trimEnd().endsWith(prompt) : last !== prompt)
                 return;
             if (index >= 0) {
-                const unsupported = (profile === 'hp-procurve' ? /(?:%\s*)?(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i : /%\s*(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i).test(text);
+                const unsupported = ((profile === 'hp-procurve' || profile === 'aruba-cx') ? /(?:%\s*)?(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i : /%\s*(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i).test(text);
                 const denied = /(?:permission denied|not authorized|authorization failed)/i.test(text);
                 result[commands[index]] = { status: denied ? 'error' : unsupported ? 'unsupported' : 'ok', data: denied || unsupported ? '' : text, warnings: denied ? ['SSH_PERMISSION_DENIED'] : unsupported ? ['COMMAND_UNSUPPORTED'] : [] };
             }
@@ -307,7 +307,7 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
                         conn.end();
                         resolve(Object.fromEntries(commands.map(c => [c, fail('', 'SSH_OPEN_TIMEOUT')])));
                     }, Math.max(1, Math.min(input.limits.timeout_ms, deadline - Date.now())));
-                    conn.shell(input.collector === 'hp-procurve' ? { term: 'vt100', cols: 160, rows: 48 } : {}, (err, stream) => {
+                    conn.shell(input.collector === 'aruba-cx' ? { term: 'vt100', cols: 220, rows: 2000 } : input.collector === 'hp-procurve' ? { term: 'vt100', cols: 160, rows: 48 } : {}, (err, stream) => {
                         if (opened) {
                             stream?.end();
                             return;

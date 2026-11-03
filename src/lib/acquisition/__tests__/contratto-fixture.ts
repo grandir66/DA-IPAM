@@ -278,6 +278,11 @@ function unifiFixture(): FixtureCollector {
 }
 
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
+    "aruba-cx": perExec({ collector: "aruba-cx", host: "192.0.2.110", ssh: { username: "lab", password: SEGRETO } }, c => ({
+        "show version": "ArubaOS-CX\nVersion : PL.10.12.0006",
+        "show system": "Hostname : switch-lab\nProduct Name : JL675A 6100\nArubaOS-CX Version : PL.10.12.0006",
+        "show interface brief": "Port           Native  Mode   Type             Enabled Status  Reason                  Speed   Description\n1/1/1          1       access 1GbT             yes     up                              1000    lab",
+    }[c] ?? ""), ["show version", "show system"]),
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
     "hp-comware": conGarbage(perShell(comwareReq, consola({ identita: comwareIdent, snmp: comwareSnmp }, comwareNormale)), comwareIdent, comwareSnmp),

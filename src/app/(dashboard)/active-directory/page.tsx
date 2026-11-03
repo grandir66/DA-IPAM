@@ -907,17 +907,17 @@ function PaginaActiveDirectory() {
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-1">
                   <Wifi className="w-3.5 h-3.5" />
-                  Credenziale WinRM (opzionale — per DHCP Windows Server)
+                  Credenziale WinRM del DC (per DHCP; la Sicurezza del dominio, se manca, usa l&apos;account di AD)
                 </label>
                 <Select
                   value={form.winrm_credential_id?.toString() ?? "none"}
                   onValueChange={(v) => setForm({ ...form, winrm_credential_id: v === "none" || !v ? null : parseInt(v) })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Nessuna (DHCP disabilitato)" />
+                    <SelectValue placeholder="Nessuna (DHCP spento)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Nessuna (DHCP disabilitato)</SelectItem>
+                    <SelectItem value="none">Nessuna (DHCP spento)</SelectItem>
                     {winrmCredentials.map((c) => (
                       <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
                     ))}
@@ -1024,17 +1024,17 @@ function PaginaActiveDirectory() {
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-1">
                 <Wifi className="w-3.5 h-3.5" />
-                Credenziale WinRM (opzionale — per DHCP Windows Server)
+                Credenziale WinRM del DC (per DHCP; la Sicurezza del dominio, se manca, usa l&apos;account di AD)
               </label>
               <Select
                 value={editForm.winrm_credential_id?.toString() ?? "none"}
                 onValueChange={(v) => setEditForm({ ...editForm, winrm_credential_id: v === "none" || !v ? null : parseInt(v) })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Nessuna (DHCP disabilitato)" />
+                  <SelectValue placeholder="Nessuna (DHCP spento)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Nessuna (DHCP disabilitato)</SelectItem>
+                  <SelectItem value="none">Nessuna (DHCP spento)</SelectItem>
                   {winrmCredentials.map((c) => (
                     <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
                   ))}

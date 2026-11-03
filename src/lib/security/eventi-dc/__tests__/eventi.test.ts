@@ -47,6 +47,15 @@ test("lo script raddoppia gli apici della XPath dentro la stringa PowerShell", (
   assert.match(s, /-Oldest -MaxEvents 2000/);
 });
 
+test("prima lettura dal più nuovo (senza -Oldest), poi dal cursore (70151, GAMODCOP01 oltre i 120 s)", () => {
+  const s = scriptEventiDc({ Security: null, System: 20, Defender: null });
+  assert.match(s, /\$out \+= Leggi 'Security' .* \$true$/m, "Security senza cursore: prima lettura");
+  assert.match(s, /\$out \+= Leggi 'System' .* \$false$/m, "System col cursore: lettura normale");
+  assert.match(s, /if \(\$primo\) \{\n\s+\$ev = @\(Get-WinEvent -FilterXml \(\[xml\]\$query\) -MaxEvents 2000/);
+  assert.match(s, /\[array\]::Reverse\(\$ev\)/);
+  assert.match(s, /if \(\$primo -and \$null -eq \$errore -and \$null -ne \$nuovo\) \{ \$esaminato = \$nuovo \}/);
+});
+
 test("lo script dà a ConvertTo-Json solo pscustomobject (PowerShell 5.1 dei DC: «Argument types do not match»)", () => {
   const s = scriptEventiDc(null);
   assert.doesNotMatch(s, /List\[object\]/);

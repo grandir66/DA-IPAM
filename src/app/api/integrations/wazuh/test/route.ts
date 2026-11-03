@@ -20,6 +20,7 @@ const BodySchema = z.object({
   indexerUrl:      z.string().optional(),
   indexerUsername: z.string().optional(),
   indexerPassword: z.string().optional(),
+  indexerVerifyTls: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     indexerUrl:      parsed.data.indexerUrl      ?? saved.indexerUrl,
     indexerUsername: parsed.data.indexerUsername ?? saved.indexerUsername,
     indexerPassword: parsed.data.indexerPassword ?? saved.indexerPassword,
+    indexerVerifyTls: parsed.data.indexerVerifyTls ?? saved.indexerVerifyTls,
   };
   if (!cfg.url || !cfg.username || !cfg.password) {
     return NextResponse.json(
@@ -79,7 +81,7 @@ export async function POST(req: Request) {
       url: cfg.indexerUrl,
       username: cfg.indexerUsername,
       password: cfg.indexerPassword,
-      verifyTls: cfg.verifyTls,
+      verifyTls: cfg.indexerVerifyTls,
     });
     if (idx) {
       try {

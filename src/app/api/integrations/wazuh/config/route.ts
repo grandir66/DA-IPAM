@@ -27,6 +27,7 @@ const PostSchema = z.object({
   indexerUrl:      z.string().max(500).optional(),
   indexerUsername: z.string().max(200).optional(),
   indexerPassword: z.string().max(500).optional(),
+  indexerVerifyTls: z.boolean().optional(),
   /** Intervallo di sync schedulato in minuti (default 60) */
   syncIntervalMinutes: z.number().int().min(5).max(1440).optional(),
   // Endpoint di stato repliche/archivio immutabile (cruscotto salute, fase 2).

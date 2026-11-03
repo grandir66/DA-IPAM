@@ -21,6 +21,13 @@ export interface WazuhConfig {
   indexerUrl: string;       // es. https://da-wazuh.domarc.it:9200
   indexerUsername: string;  // utente OS read-only (es. "da-ipam-os")
   indexerPassword: string;  // plaintext lato applicativo, cifrato a riposo
+  /**
+   * Verifica TLS dell'indexer, separata da quella della Manager API: su DA-WAZUH
+   * la 55000 ha il certificato pubblico (si verifica) e la 9200 quello della CA
+   * interna di Wazuh (no). Mai salvata = vale `verifyTls`, come prima della
+   * separazione (03/11/2026).
+   */
+  indexerVerifyTls: boolean;
 
   /**
    * ID delle regole locali degli apparati (MikroTik, firewall, VPN) da
@@ -65,6 +72,7 @@ const KEY_VERIFY_TLS    = "integration_wazuh_verify_tls";
 const KEY_IDX_URL       = "integration_wazuh_indexer_url";
 const KEY_IDX_USERNAME  = "integration_wazuh_indexer_username";
 const KEY_IDX_PASSWORD  = "integration_wazuh_indexer_password_encrypted";
+const KEY_IDX_VERIFY_TLS = "integration_wazuh_indexer_verify_tls";
 const KEY_DEVICE_RULES  = "integration_wazuh_device_rule_ids";
 const KEY_IMMUTABLE_URL      = "integration_immutable_store_url";
 const KEY_IMMUTABLE_TOKEN    = "integration_immutable_store_token_encrypted";
@@ -74,15 +82,18 @@ export function getWazuhConfig(): WazuhConfig {
   const passwordEnc = getSetting(KEY_PASSWORD);
   const idxPasswordEnc = getSetting(KEY_IDX_PASSWORD);
   const immutableTokenEnc = getSetting(KEY_IMMUTABLE_TOKEN);
+  const verifyTls = getSetting(KEY_VERIFY_TLS) === "1";
+  const idxVerifyTls = getSetting(KEY_IDX_VERIFY_TLS);
   return {
     enabled:         getSetting(KEY_ENABLED) === "1",
     url:             getSetting(KEY_URL) ?? "",
     username:        getSetting(KEY_USERNAME) ?? "",
     password:        passwordEnc ? (safeDecrypt(passwordEnc) ?? "") : "",
-    verifyTls:       getSetting(KEY_VERIFY_TLS) === "1",
+    verifyTls,
     indexerUrl:      getSetting(KEY_IDX_URL) ?? "",
     indexerUsername: getSetting(KEY_IDX_USERNAME) ?? "",
     indexerPassword: idxPasswordEnc ? (safeDecrypt(idxPasswordEnc) ?? "") : "",
+    indexerVerifyTls: idxVerifyTls == null ? verifyTls : idxVerifyTls === "1",
     deviceRuleIds: (getSetting(KEY_DEVICE_RULES) ?? "")
       .split(/[,;\s]+/)
       .map((v) => v.trim())
@@ -106,6 +117,7 @@ export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
   if (cfg.verifyTls !== undefined) setSetting(KEY_VERIFY_TLS, cfg.verifyTls ? "1" : "0");
   if (cfg.indexerUrl !== undefined)      setSetting(KEY_IDX_URL, cfg.indexerUrl.trim());
   if (cfg.indexerUsername !== undefined) setSetting(KEY_IDX_USERNAME, cfg.indexerUsername.trim());
+  if (cfg.indexerVerifyTls !== undefined) setSetting(KEY_IDX_VERIFY_TLS, cfg.indexerVerifyTls ? "1" : "0");
   if (cfg.indexerPassword !== undefined && cfg.indexerPassword !== "") {
     setSetting(KEY_IDX_PASSWORD, encrypt(cfg.indexerPassword));
   }

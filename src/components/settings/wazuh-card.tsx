@@ -16,6 +16,7 @@ interface WazuhConfig {
   indexerUrl: string;
   indexerUsername: string;
   indexerPasswordSet: boolean;
+  indexerVerifyTls: boolean;
   immutableStoreUrl: string;
   immutableStoreCertPin: string | null;
   immutableStoreTokenSet: boolean;
@@ -68,6 +69,7 @@ export function WazuhCard() {
     indexerUrl: "https://da-wazuh.domarc.it:9200",
     indexerUsername: "",
     indexerPassword: "",
+    indexerVerifyTls: false,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -159,6 +161,7 @@ export function WazuhCard() {
             verifyTls: data.verifyTls,
             indexerUrl: data.indexerUrl || f.indexerUrl,
             indexerUsername: data.indexerUsername,
+            indexerVerifyTls: data.indexerVerifyTls,
           }));
         }
         // Il token è write-only: non viene mai ripopolato in lettura.
@@ -393,7 +396,8 @@ export function WazuhCard() {
             <div><span className="text-muted-foreground">Manager user:</span> <code className="text-xs">{cfg!.username}</code></div>
             <div><span className="text-muted-foreground">Indexer URL:</span> <code className="text-xs">{cfg!.indexerUrl || "—"}</code></div>
             <div><span className="text-muted-foreground">Indexer user:</span> <code className="text-xs">{cfg!.indexerUsername || "—"}</code></div>
-            <div><span className="text-muted-foreground">Verifica TLS:</span> {cfg!.verifyTls ? "sì" : "no (self-signed)"}</div>
+            <div><span className="text-muted-foreground">Verifica TLS Manager API:</span> {cfg!.verifyTls ? "sì" : "no (self-signed)"}</div>
+            <div><span className="text-muted-foreground">Verifica TLS indexer:</span> {cfg!.indexerVerifyTls ? "sì" : "no (self-signed)"}</div>
             <div><span className="text-muted-foreground">Ultimo sync:</span> {status?.lastSyncedAt ?? "—"}</div>
             <div><span className="text-muted-foreground">Agent visibili:</span> {status?.totalAgents ?? 0}</div>
             <div><span className="text-muted-foreground">Agent matchati a host:</span> {status?.matched ?? 0}</div>
@@ -515,7 +519,15 @@ export function WazuhCard() {
                 checked={form.verifyTls}
                 onChange={(e) => { setForm({ ...form, verifyTls: e.target.checked }); setTestResult(null); }}
               />
-              <span>Verifica certificato TLS (lascia disattivato per Wazuh self-signed)</span>
+              <span>Verifica il certificato TLS della Manager API (55000): attivalo se ha un certificato pubblico</span>
+            </label>
+            <label className="text-sm flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.indexerVerifyTls}
+                onChange={(e) => { setForm({ ...form, indexerVerifyTls: e.target.checked }); setTestResult(null); }}
+              />
+              <span>Verifica il certificato TLS dell&apos;indexer (9200): di solito è della CA interna di Wazuh, lascialo disattivato</span>
             </label>
           </div>
 

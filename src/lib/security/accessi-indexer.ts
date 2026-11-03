@@ -161,7 +161,7 @@ export async function leggiAccessiIndexer(tenantCode: string): Promise<LetturaAc
       url: cfg.indexerUrl,
       username: cfg.indexerUsername,
       password: cfg.indexerPassword,
-      verifyTls: cfg.verifyTls,
+      verifyTls: cfg.indexerVerifyTls,
     });
     if (!client) return ricorda({ serie: null, motivo: "indexer di Wazuh non configurato" });
     const ora = new Date();

@@ -156,7 +156,7 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
     url: cfg.indexerUrl,
     username: cfg.indexerUsername,
     password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
+    verifyTls: cfg.indexerVerifyTls,
   });
 
   const all = await client.listAgents(true);
@@ -239,7 +239,7 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
     url: cfg.indexerUrl,
     username: cfg.indexerUsername,
     password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
+    verifyTls: cfg.indexerVerifyTls,
   });
 
   let agents: WazuhAgent[];

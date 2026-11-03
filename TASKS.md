@@ -866,3 +866,5 @@ Riccardo: approvato livello Leggero, credenziale fornita tramite vault-a-stdin. 
 - [x] Manuale/CHANGELOG/CONTEXT/scheda e release locale 0.9.953 (`ed181f9d`), nessun push/dev o deploy. Collaudo esteso successivamente completato: release locale aggiornata 0.9.954 (`f264d704`), nota descrittiva allineata e lint/tsc/build exit 0 dopo il ricollaudo.
 
 - [x] Primo collaudo interrotto (superato dal ricollaudo sopra): 18 reti, 28 range, 633 prenotazioni, 2.000 lease prima di un timeout; poi handshake TLS non completato anche nel controllo diagnostico. Chiarimento richiesto a Riccardo; niente tentativi ripetuti. DNS e campioni degli altri oggetti erano leggibili al preflight (23 HTTP 200). I lease ora vengono dopo reti e DNS per non anteporre la lettura più pesante.
+
+- [x] Riccardo (03/11): «scrivi il contesto per l’integrazione dentro DA-IPAM». Aggiornata la consegna esistente `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`, sezione Infoblox: sorgenti locali/commit, contratto DDI, collaudo completo, limiti, vincoli reali reti/lease, mapping e prove da sviluppare. Solo documentazione; nessuna integrazione o pubblicazione eseguita.

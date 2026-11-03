@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-03 · Contesto integrazione Infoblox
+
+### Documentazione
+
+- Aggiornata la consegna infrastruttura con fonti del collector Infoblox, contratto DDI, collaudo completo e vincoli del modello reti/DHCP: serve a integrare il codice senza confondere viste o importare dati implicitamente. Nessuna modifica funzionale.
+
 ## [Non rilasciato] — 2026-11-03 · Collector Infoblox DDI
 
 ### Aggiunto

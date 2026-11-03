@@ -126,3 +126,7 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 - `Select` ricava `items` dalle `SelectItem`; date del DB con `parseDbDate`; pagine con `timeZone: FUSO_UTENTI`; un caricamento usa `fetchJson` + `LoadError`; admin solo con `eAdmin`/`useEAdmin`.
 - **`db.ts` e `db-tenant.ts` divergono**: guarda da quale importa il chiamante.
 - Scansioni (ADR 0006): `last_run` = fine del giro; lucchetto in memoria. Niente retention sugli storici (il più grosso è `mac_ip_history`).
+
+### Consegna integrazione Infoblox (03/11/2026)
+
+Contesto operativo nel documento esistente `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`, sezione «Integrazione Infoblox in DA-IPAM». Include dove recuperare il collector ancora locale, contratto/stati DDI, collaudo, vincoli di networks.cidr e dhcp_leases, fasi e accettazione del mapping. Questa richiesta autorizza la scrittura del contesto, non migrazioni/importazioni o pubblicazioni.

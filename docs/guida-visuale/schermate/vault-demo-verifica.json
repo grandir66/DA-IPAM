@@ -1,0 +1,14 @@
+[
+  {
+    "parte": "kdbx",
+    "status": 200,
+    "bytes": 1669,
+    "voci": "3"
+  },
+  {
+    "parte": "keyfile",
+    "status": 200,
+    "bytes": 277,
+    "voci": null
+  }
+]

@@ -14,7 +14,7 @@ process.env.DA_IPAM_HUB_DB_PATH = path.join(
 
 import { test, describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { closeHubDb } from "@/lib/db-hub";
+import { closeHubDb, deleteSetting } from "@/lib/db-hub";
 import { getWazuhConfig, setWazuhConfig, normalizeSpkiPin } from "../wazuh-config";
 
 after(() => {
@@ -95,4 +95,24 @@ test("setWazuhConfig produce lo stesso valore canonico con o senza prefisso/spaz
   setWazuhConfig({ immutableStoreCertPin: `  sha256/${base64}  \n` });
   const conPrefisso = getWazuhConfig().immutableStoreCertPin;
   assert.equal(conSoloBase64, conPrefisso);
+});
+
+// 03/11/2026 (DA-Wazuh): su DA-WAZUH la Manager API (55000) ha il certificato
+// pubblico e l'indexer (9200) quello della CA interna di Wazuh. Con una sola
+// casella si doveva spegnere la verifica anche dove si poteva fare.
+describe("verifica TLS separata per l'indexer", () => {
+  it("mai salvata, vale quella della Manager API (le installazioni di prima non cambiano)", () => {
+    deleteSetting("integration_wazuh_indexer_verify_tls");
+    setWazuhConfig({ verifyTls: true });
+    assert.equal(getWazuhConfig().indexerVerifyTls, true);
+    setWazuhConfig({ verifyTls: false });
+    assert.equal(getWazuhConfig().indexerVerifyTls, false);
+  });
+
+  it("salvata, è indipendente da quella della Manager API", () => {
+    setWazuhConfig({ verifyTls: true, indexerVerifyTls: false });
+    const cfg = getWazuhConfig();
+    assert.equal(cfg.verifyTls, true);
+    assert.equal(cfg.indexerVerifyTls, false);
+  });
 });

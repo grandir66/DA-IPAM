@@ -187,7 +187,7 @@ export async function syncWazuhAlertsForTenant(opts?: {
       url: cfg.indexerUrl,
       username: cfg.indexerUsername,
       password: cfg.indexerPassword,
-      verifyTls: cfg.verifyTls,
+      verifyTls: cfg.indexerVerifyTls,
     });
     if (!client) return { skipped: true, reason: "client indexer non creato", ...empty };
 

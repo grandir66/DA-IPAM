@@ -40,7 +40,7 @@ function indexerDelWazuh(): IndexerAccessi | null {
     url: cfg.indexerUrl,
     username: cfg.indexerUsername,
     password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
+    verifyTls: cfg.indexerVerifyTls,
   });
 }
 

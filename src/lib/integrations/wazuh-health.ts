@@ -93,7 +93,7 @@ async function probeIndexer(): Promise<BlockHealth> {
     url: cfg.indexerUrl,
     username: cfg.indexerUsername,
     password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
+    verifyTls: cfg.indexerVerifyTls,
   });
   if (!idx) {
     // L'indexer è opzionale (come in modules/health.ts): la sua assenza non
@@ -181,7 +181,7 @@ async function probeIngestion(tenantCode: string): Promise<BlockHealth> {
     url: cfg.indexerUrl,
     username: cfg.indexerUsername,
     password: cfg.indexerPassword,
-    verifyTls: cfg.verifyTls,
+    verifyTls: cfg.indexerVerifyTls,
   });
 
   const statsPromise = withTimeoutReject(

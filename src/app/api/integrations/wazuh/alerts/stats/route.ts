@@ -68,7 +68,7 @@ export async function GET(req: Request) {
             url: cfg.indexerUrl,
             username: cfg.indexerUsername,
             password: cfg.indexerPassword,
-            verifyTls: cfg.verifyTls,
+            verifyTls: cfg.indexerVerifyTls,
           })
         : null;
 

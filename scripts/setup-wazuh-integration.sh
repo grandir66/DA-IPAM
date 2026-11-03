@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SUPERATO (03/11/2026) dove c'è DA-Wazuh: pagina «Collegamento DA-IPAM» (docs/playbooks/wazuh-integration.md).
 # DA-IPAM ↔ Wazuh — provisioning utenti read-only per integrazione.
 #
 # Crea (in modo idempotente) su un server Wazuh:

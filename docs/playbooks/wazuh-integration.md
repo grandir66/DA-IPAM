@@ -1,5 +1,11 @@
 # Playbook — Integrazione DA-IPAM ↔ Wazuh
 
+> **Superato (03/11/2026)** sui server Wazuh dove è installato DA-Wazuh: le credenziali si
+> creano, si riparano e si ruotano dalla pagina **«Collegamento DA-IPAM»** di DA-Wazuh (con
+> l'audit e senza password sulla riga di comando). Questo script resta per i server Wazuh senza
+> DA-Wazuh. In DA-IPAM le due verifiche TLS sono separate: la Manager API (55000) di solito ha
+> un certificato pubblico e si verifica, l'indexer (9200) ha quello della CA interna di Wazuh.
+
 Provisioning di credenziali read-only su un server Wazuh per consentire a DA-IPAM di leggere agenti, syscollector e CVE.
 
 ## TL;DR

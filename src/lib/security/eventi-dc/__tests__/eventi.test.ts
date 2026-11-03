@@ -65,6 +65,14 @@ test("dal cursore si legge dal più nuovo e ci si ferma al confine (70151, GAMOD
   assert.match(s, /Leggi 'Security' 'Security' '.*EventRecordID=1837383494\]\]<\/Select>.*' \$false 1837383494$/m);
 });
 
+test("lo script si ferma da solo prima del limite del bridge (shell WinRM rimaste aperte su GAMODCOP01)", () => {
+  const s = scriptEventiDc({ Security: 10, System: null, Defender: null });
+  assert.match(s, /\$secondi = 200\n/);
+  assert.match(s, /if \(\$orologio\.Elapsed\.TotalSeconds -gt \$secondi\) \{ \$nuovi\.Clear\(\); throw/);
+  assert.match(s, /if \(\$orologio\.Elapsed\.TotalSeconds -gt \$secondi\) \{ break \}\n\s+\$esaminato = /);
+  assert.match(scriptEventiDc(10, 2000, 5), /\$secondi = 10\n/, "mai sotto 10 s");
+});
+
 test("la QueryList ha il record del cursore come confine solo quando c'è un cursore", () => {
   assert.match(queryListRegistro("Security", 5), /<Select Path="Security">\*\[System\[EventRecordID=5\]\]<\/Select><\/Query>/);
   assert.doesNotMatch(queryListRegistro("Security", null), /EventRecordID=/);

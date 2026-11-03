@@ -9,7 +9,7 @@
  */
 
 import type { Database } from "better-sqlite3";
-import { accessoWinrmDelDcDb } from "@/lib/ad/credenziale-ldap";
+import { accessoWinrmDaAccountAdDb, accessoWinrmDelDcDb } from "@/lib/ad/credenziale-ldap";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { collectSelfIdentity } from "@/lib/integrations/self-identity";
@@ -59,13 +59,22 @@ export interface DcDaLeggere {
   dc: string;
   realm: string;
   credentialId: number;
+  /** «winrm»: la voce WinRM dell'integrazione; «ad»: senza voce WinRM, l'account LDAP dell'integrazione. */
+  fonte: "winrm" | "ad";
 }
 
-/** I DC di ogni integrazione con la credenziale WinRM: per nome DNS, così Kerberos trova il servizio. */
+/**
+ * I DC di ogni integrazione accesa, per nome DNS, così Kerberos trova il servizio. Si entra con la
+ * credenziale WinRM del DC; se manca, con l'account di AD dell'integrazione (03/11/2026: su 70151
+ * AD era letto ma la pagina diceva «0 DC» perché la voce WinRM non c'era).
+ */
 export function dcDaLeggere(db: Database): DcDaLeggere[] {
   const integrazioni = db
-    .prepare("SELECT id, dc_host, domain, winrm_credential_id FROM ad_integrations WHERE enabled = 1 AND winrm_credential_id IS NOT NULL ORDER BY id")
-    .all() as Array<{ id: number; dc_host: string; domain: string; winrm_credential_id: number }>;
+    .prepare(
+      `SELECT id, dc_host, domain, winrm_credential_id, credential_id FROM ad_integrations
+        WHERE enabled = 1 AND (winrm_credential_id IS NOT NULL OR credential_id IS NOT NULL) ORDER BY id`,
+    )
+    .all() as Array<{ id: number; dc_host: string; domain: string; winrm_credential_id: number | null; credential_id: number | null }>;
   const out: DcDaLeggere[] = [];
   const visti = new Set<string>();
   const perIntegrazione = db.prepare(
@@ -74,6 +83,8 @@ export function dcDaLeggere(db: Database): DcDaLeggere[] {
       ORDER BY dns_host_name`,
   );
   for (const i of integrazioni) {
+    const fonte = i.winrm_credential_id != null ? "winrm" : "ad";
+    const credentialId = (i.winrm_credential_id ?? i.credential_id) as number;
     const nomi = (perIntegrazione.all(i.id) as Array<{ dns_host_name: string | null; sam_account_name: string }>)
       .map((c) => (c.dns_host_name ?? "").trim() || c.sam_account_name.replace(/\$$/, ""))
       .filter(Boolean);
@@ -81,7 +92,7 @@ export function dcDaLeggere(db: Database): DcDaLeggere[] {
       const k = dc.toLowerCase();
       if (visti.has(k)) continue;
       visti.add(k);
-      out.push({ integrationId: i.id, dc, realm: i.domain, credentialId: i.winrm_credential_id });
+      out.push({ integrationId: i.id, dc, realm: i.domain, credentialId, fonte });
     }
   }
   return out;
@@ -111,7 +122,7 @@ export async function leggiUnDc(db: Database, d: DcDaLeggere, esegui: EseguiWinr
   const cursore = prima?.ultimoRecord ?? null;
   const cursoriAltri = prima?.cursoriAltri ?? {};
   try {
-    const accesso = accessoWinrmDelDcDb(db, d.credentialId);
+    const accesso = d.fonte === "ad" ? accessoWinrmDaAccountAdDb(db, d.credentialId) : accessoWinrmDelDcDb(db, d.credentialId);
     if (!accesso.ok) throw new Error(accesso.motivo);
     const script = scriptEventiDc({ Security: cursore, ...cursoriAltri });
     const raw = await esegui(d.dc, accesso.port, accesso.username, accesso.password, script, true, d.realm);
@@ -157,7 +168,7 @@ export async function giroEventiDc(db: Database, opz: { esegui?: EseguiWinrm; wa
   const saltato = motivoPerNonLeggere(modoEventiDc(db), opz.wazuh ?? wazuhLeggeGliAllarmi());
   if (saltato) return { saltato, dc: [], aperti: 0 };
   const elenco = dcDaLeggere(db);
-  if (elenco.length === 0) return { saltato: "nessuna integrazione AD con la credenziale WinRM del DC", dc: [], aperti: 0 };
+  if (elenco.length === 0) return { saltato: "nessuna integrazione AD accesa con un account (né WinRM né AD)", dc: [], aperti: 0 };
   const self = collectSelfIdentity(db);
   const esiti: EsitoDc[] = [];
   let aperti = 0;

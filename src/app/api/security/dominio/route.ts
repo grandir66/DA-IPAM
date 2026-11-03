@@ -76,8 +76,12 @@ export async function POST() {
     try {
       const esito = await giroEventiDcDelContesto();
       const t = testoEsitoDc(esito);
-      if (esito.saltato) return NextResponse.json({ ok: false, testo: t.testo }, { status: 409 });
-      return NextResponse.json({ ok: t.ok, testo: t.testo, nuovi: esito.dc.reduce((n, d) => n + d.nuovi, 0) }, { status: t.ok ? 200 : 502 });
+      // «error» porta il motivo a fetchJson: senza, la pagina diceva solo «Errore del server (HTTP 409)» (70151, 03/11/2026).
+      if (esito.saltato) return NextResponse.json({ ok: false, testo: t.testo, error: t.testo }, { status: 409 });
+      return NextResponse.json(
+        { ok: t.ok, testo: t.testo, ...(t.ok ? {} : { error: t.testo }), nuovi: esito.dc.reduce((n, d) => n + d.nuovi, 0) },
+        { status: t.ok ? 200 : 502 },
+      );
     } catch (e) {
       return NextResponse.json({ error: `Lettura dei DC non riuscita: ${(e as Error).message}` }, { status: 500 });
     }

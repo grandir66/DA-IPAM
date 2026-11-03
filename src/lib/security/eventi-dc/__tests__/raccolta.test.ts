@@ -60,6 +60,31 @@ describe("giro di lettura dei DC", () => {
     assert.deepEqual(dcDaLeggere(dbt()).map((d) => d.dc), ["10.0.0.10"]);
   });
 
+  it("senza credenziale WinRM entra con l'account di AD dell'integrazione", async () => {
+    const db = dbt();
+    const ad = Number(
+      db.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('AD · Dominio', 'ad', ?, ?)")
+        .run(encrypt("svc-ldap@cliente.local"), encrypt("pw-ad")).lastInsertRowid,
+    );
+    db.prepare("UPDATE ad_integrations SET winrm_credential_id = NULL, credential_id = ?").run(ad);
+    assert.deepEqual(dcDaLeggere(db).map((d) => [d.dc, d.fonte]), [["DC02", "ad"], ["dc01.cliente.local", "ad"]]);
+    const utenti: string[] = [];
+    const esegui: EseguiWinrm = async (_h, porta, user) => {
+      utenti.push(`${user}:${porta}`);
+      return risposta([]);
+    };
+    const e = await withTenant(T, () => giroEventiDc(db, { esegui, wazuh: false }));
+    assert.equal(e.saltato, null);
+    assert.deepEqual(utenti, ["svc-ldap@cliente.local:5985", "svc-ldap@cliente.local:5985"]);
+  });
+
+  it("senza credenziale WinRM né account di AD non legge e dice perché", async () => {
+    dbt().prepare("UPDATE ad_integrations SET winrm_credential_id = NULL, credential_id = NULL").run();
+    assert.equal(dcDaLeggere(dbt()).length, 0);
+    const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui: async () => risposta([]), wazuh: false }));
+    assert.match(e.saltato ?? "", /né WinRM né AD/);
+  });
+
   it("eventi in archivio e in coda, un evento aperto per DC e tipo; il giro dopo riparte dal cursore", async () => {
     const chiamate: Array<{ host: string; user: string; realm?: string; script: string }> = [];
     const esegui: EseguiWinrm = async (host, _p, user, _pw, script, _ps, realm) => {

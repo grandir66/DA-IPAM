@@ -148,7 +148,10 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
   }
 
   const l = dati?.lettura;
-  const acceso = l ? l.motivo === null : false;
+  // Nessuna integrazione AD accesa con un account: nessun DC da leggere, non è «acceso» (70151, 03/11/2026).
+  const senzaDc = l ? l.motivo === null && l.dcConfigurati === 0 && l.letture.length === 0 : false;
+  const motivo = l?.motivo ?? (senzaDc ? "nessuna integrazione Active Directory accesa con un account" : null);
+  const acceso = l ? motivo === null : false;
   const ultima = l?.letture.map((x) => x.lettoIl).filter((x): x is string => !!x).sort().at(-1) ?? null;
   const finestraNome = dati?.windows.find((w) => w.id === finestra)?.labelIt.toLowerCase() ?? "";
   const n = dati?.numeri;
@@ -179,7 +182,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
             ultima ? `letti ${data(ultima)}` : "mai letti",
             `ogni 5 minuti`,
             `modo: ${MODO[l.modo] ?? l.modo}`,
-            ...(l.motivo ? [`non legge: ${l.motivo}`] : []),
+            ...(motivo ? [`non legge: ${motivo}`] : []),
           ]}
           azioni={
             <>
@@ -188,7 +191,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
                 variant="outline"
                 onClick={() => void leggiAdesso()}
                 disabled={!admin || !acceso || leggendo}
-                title={!admin ? "Solo un amministratore" : !acceso ? `Non legge: ${l.motivo}` : "Legge subito i registri Sicurezza, System e Defender di tutti i DC"}
+                title={!admin ? "Solo un amministratore" : !acceso ? `Non legge: ${motivo}` : "Legge subito i registri Sicurezza, System e Defender di tutti i DC"}
               >
                 <RefreshCw className={`mr-1.5 h-4 w-4 ${leggendo ? "animate-spin" : ""}`} />
                 {leggendo ? "Lettura…" : "Leggi i DC adesso"}
@@ -246,12 +249,12 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           titolo="Domain controller"
           conteggio={l?.letture.length}
           sottotitolo="Ognuno registra solo i suoi accessi: si leggono tutti"
-          piede="Servono il gruppo «Event Log Readers» per l'account WinRM e il profilo di audit nella GPO dei DC."
+          piede="L'account (WinRM del DC o, se manca, quello di AD) deve stare in «Event Log Readers» e «Remote Management Users»; serve il profilo di audit nella GPO dei DC."
         >
           {l && l.letture.length === 0 ? (
             <p className="text-[13px] text-muted-foreground">
               {l.dcConfigurati === 0
-                ? "Nessuna integrazione Active Directory con la credenziale WinRM del DC."
+                ? <>Nessuna integrazione Active Directory accesa con un account. Si entra con la «Credenziale WinRM del DC» o, se manca, con l&apos;account di AD: si scelgono in <Link href="/active-directory" className="text-cian-testo hover:underline">Active Directory</Link> → Modifica integrazione.</>
                 : `${l.dcConfigurati} DC da leggere, nessuna lettura ancora.`}
             </p>
           ) : (

@@ -8,6 +8,7 @@ test('AOS-CX: identità propria, firmware distinto da BIOS, nessun ProCurve', ()
     assert.equal(id?.part_number, 'JL675A');
     assert.equal(id?.uptime_seconds, 2220);
     assert.equal(parseCxIdentity('ArubaOS-Switch YC.16.11', 'Hostname : lab'), null);
+    assert.equal(parseCxIdentity('ArubaOS-CX\nVersion : PL.10.13.0005', 'Product Name : R8N85A 6000 48G CL4 4SFP Swch')?.part_number, 'R8N85A');
 });
 const brief = 'Port           Native  Mode   Type             Enabled Status  Reason                  Speed   Description\n               VLAN                                                                    (Mb/s)\n1/1/1          1       access 1GbT             yes     up                              1000    lab\n1/1/2          16      trunk  1GbT             yes     down    Waiting for link        --      --';
 test('AOS-CX: velocità negoziata, down senza velocità inventata e ifIndex ignoto', () => {
@@ -28,4 +29,8 @@ test('AOS-CX: più vicini sulla stessa porta, più istanze STP', () => {
     assert.equal(n.length, 2); assert.equal(n[0].ttl_seconds, 120);
     const s = parseCxStp('Spanning tree status : Enabled Protocol: MSTP\nMST0\n1/1/1 Root Forwarding 20000 128 P2P\nMST1\n1/1/1 Alternate Blocking 20000 128 P2P');
     assert.equal(s.ports.length, 2); assert.equal(s.ports[1].instance, 'MST1');
+});
+test('AOS-CX: continuazione VLAN senza virgola finale e LAG su riga a parte', () => {
+    const v = parseCxVlans('VLAN  Name                              Status  Reason                  Type        Interfaces\n16    VLAN_16                           up      ok                      static      1/1/1\n                                                                                    lag1', [...parseCxInterfaces(brief), { ...parseCxInterfaces(brief)[0], name: 'lag1', pvid: 1 }]);
+    assert.deepEqual(v[0].tagged_ports, ['1/1/1', 'lag1']);
 });

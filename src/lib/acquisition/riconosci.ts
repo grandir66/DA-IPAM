@@ -17,6 +17,15 @@ export interface ApparatoDaRiconoscere {
   sysdescr?: string | null;
 }
 
+/**
+ * AOS-CX dal testo letto. Il sysDescr SNMP di un CX non dice sempre «ArubaOS-CX» (es. «Aruba JL675A 6100 48G CL4
+ * 4SFP+ Swch PL.10.12.0006»): lo dice il firmware, due lettere e «.10.» (ArubaOS-Switch/ProCurve è 15.x/16.x,
+ * Comware 5.x/7.x). Senza questa regola un CX finiva nel collector ProCurve, che lo rifiuta.
+ */
+export function eAosCx(testo: string): boolean {
+  return /AOS-CX|ArubaOS-CX|\bAruba\s+CX\b|\b[A-Z]{2}\.10\.\d{2}\.\d{4}\b/i.test(testo);
+}
+
 export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
   const vendor = (a.vendor ?? "").toLowerCase();
   const profilo = a.product_profile ?? "";
@@ -24,7 +33,7 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
 
   if (vendor === "hp") {
     if (profilo === "hp_server_ilo" || profilo === "hp_stampante") return [];
-    if (/AOS-CX|ArubaOS-CX|\bAruba\s+CX\b/i.test(testo)) return ["aruba-cx"];
+    if (eAosCx(testo)) return ["aruba-cx"];
     if (profilo === "hp_switch_procurve" || a.vendor_subtype === "procurve") return ["hp-procurve"];
     if (profilo === "hp_switch_comware" || a.vendor_subtype === "comware") return ["hp-comware"];
     if (/comware/i.test(testo)) return ["hp-comware"];

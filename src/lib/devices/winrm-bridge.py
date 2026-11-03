@@ -20,6 +20,40 @@ import os
 import subprocess
 import shutil
 import platform
+import signal
+import types
+
+
+# Il processo Node ferma il bridge con SIGTERM allo scadere del suo limite. Senza questo il
+# processo muore senza chiudere la shell remota, che resta aperta sul target fino a 2 ore:
+# su GAMODCOP01 di 70151 (03/11/2026) se ne erano accumulate 23 e WinRM rifiutava le nuove
+# (30 per utente). Con SystemExit i blocchi finally girano e la shell si chiude.
+def _termina(_signum, _frame):
+    raise SystemExit(124)
+
+
+signal.signal(signal.SIGTERM, _termina)
+
+
+def _run_cmd_chiude(self, command, args=()):
+    """Come Session.run_cmd di pywinrm, ma la shell si chiude anche se il comando fallisce o
+    il bridge viene fermato (l'originale non ha try/finally)."""
+    import winrm
+    shell_id = self.protocol.open_shell()
+    try:
+        command_id = self.protocol.run_command(shell_id, command, args)
+        try:
+            return winrm.Response(self.protocol.get_command_output(shell_id, command_id))
+        finally:
+            try:
+                self.protocol.cleanup_command(shell_id, command_id)
+            except Exception:
+                pass
+    finally:
+        try:
+            self.protocol.close_shell(shell_id)
+        except Exception:
+            pass
 
 
 def run_large_ps(session, script):
@@ -328,6 +362,8 @@ def main():
             server_cert_validation="ignore",
             read_timeout_sec=120,
         )
+        # run_ps passa da self.run_cmd: così anche PowerShell chiude sempre la shell.
+        s.run_cmd = types.MethodType(_run_cmd_chiude, s)
         if use_powershell:
             return run_large_ps(s, command)
         return s.run_cmd(command)

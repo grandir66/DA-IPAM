@@ -227,6 +227,11 @@ export const CAMPI_DATI = [
 
 /** Quanti eventi al massimo per DC e per giro: oltre si riprende al giro dopo. */
 export const MASSIMO_PER_GIRO = 2000;
+/**
+ * Quanti secondi lo script può lavorare sul DC prima di fermarsi da solo, sotto il limite del bridge
+ * (270 s): finisce bene, la shell WinRM si chiude e il cursore riparte da dove è arrivato.
+ */
+export const SECONDI_SUL_DC = 200;
 /** Prima lettura di un DC: quanto indietro si guarda. */
 export const ORE_PRIMA_LETTURA = 24;
 
@@ -288,7 +293,7 @@ export function queryListRegistro(registro: RegistroDc, dopoRecord: number | nul
  * leggessimo (eventi persi, si dice); se il più nuovo è sotto il cursore, il registro è stato
  * svuotato e si riparte. Un registro che sul DC non c'è (Defender spento) risulta «assente».
  */
-export function scriptEventiDc(cursori: number | null | Partial<Record<RegistroDc, number | null>>, massimo = MASSIMO_PER_GIRO): string {
+export function scriptEventiDc(cursori: number | null | Partial<Record<RegistroDc, number | null>>, massimo = MASSIMO_PER_GIRO, secondi = SECONDI_SUL_DC): string {
   const c: Partial<Record<RegistroDc, number | null>> = cursori != null && typeof cursori === "object" ? cursori : { Security: cursori };
   const campi = CAMPI_DATI.map((k) => `'${k}'`).join(",");
   const max = Math.max(1, Math.floor(massimo));
@@ -301,6 +306,8 @@ export function scriptEventiDc(cursori: number | null | Partial<Record<RegistroD
   ).join("\n");
   return `
 $ErrorActionPreference = 'Stop'
+$orologio = [Diagnostics.Stopwatch]::StartNew()
+$secondi = ${Math.max(10, Math.floor(secondi))}
 $campi = @(${campi})
 $replica = @(${GUID_REPLICA.map((g) => `'${g}'`).join(",")})
 $uac = @(${Object.keys(UAC_A_RISCHIO).map((k) => `'${k}'`).join(",")})
@@ -358,6 +365,8 @@ function Leggi($nome, $log, $query, $primo, $dopo) {
             if ($null -eq $e) { break }
             if ([long]$e.RecordId -le [long]$dopo) { $e.Dispose(); break }
             [void]$nuovi.Add($e)
+            # Oltre il tempo non si sa ancora dove sia il cursore: niente eventi, si riprova al giro dopo.
+            if ($orologio.Elapsed.TotalSeconds -gt $secondi) { $nuovi.Clear(); throw "lettura del registro oltre $secondi s, riprende al giro dopo" }
           }
         } finally { $lettore.Dispose() }
         $ev = $nuovi.ToArray()
@@ -365,6 +374,8 @@ function Leggi($nome, $log, $query, $primo, $dopo) {
         if ($ev.Count -gt ${max}) { $ev = $ev[0..(${max} - 1)] }
       }
       $righe = @(foreach ($e in $ev) {
+        # Gli eventi sono in ordine: fermarsi qui non salta niente, il cursore riparte dall'ultimo.
+        if ($orologio.Elapsed.TotalSeconds -gt $secondi) { break }
         $esaminato = [long]$e.RecordId
         $x = [xml]$e.ToXml()
         $d = [ordered]@{}

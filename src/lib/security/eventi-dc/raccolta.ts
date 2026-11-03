@@ -203,6 +203,13 @@ async function controllaNome(dc: string, realm: string, risolvi: RisolviNome): P
   }
 }
 
+/**
+ * Limite di una lettura di un DC: 4 minuti e mezzo, dentro il giro di 5 (i giri non si sovrappongono).
+ * Su GAMODCOP01 di 70151 (03/11/2026) la lettura del registro Sicurezza a volte superava i 120 s di
+ * serie del bridge e il DC saltava il giro.
+ */
+export const LIMITE_LETTURA_DC_MS = 270_000;
+
 /** Il comando WinRM (sostituibile nelle prove). */
 export type EseguiWinrm = typeof runWinrmCommand;
 
@@ -222,7 +229,7 @@ export async function leggiUnDc(
     const accesso = d.fonte === "ad" ? accessoWinrmDaAccountAdDb(db, d.credentialId) : accessoWinrmDelDcDb(db, d.credentialId);
     if (!accesso.ok) throw new Error(accesso.motivo);
     const script = scriptEventiDc({ Security: cursore, ...cursoriAltri });
-    const raw = await esegui(d.dc, accesso.port, accesso.username, accesso.password, script, true, d.realm);
+    const raw = await esegui(d.dc, accesso.port, accesso.username, accesso.password, script, true, d.realm, LIMITE_LETTURA_DC_MS);
     const r = leggiRispostaDc(raw);
     if (r.errore) throw new Error(`il DC non ha dato il registro Sicurezza: ${r.errore}`);
     const prossimo = prossimoCursore(cursore, r);

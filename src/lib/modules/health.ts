@@ -338,7 +338,7 @@ async function probeWazuh(probedAt: string): Promise<ModuleHealth> {
   let idxOk = true, idxErr: string | null = null;
   if (cfg.indexerUrl) {
     const idx = createWazuhIndexerClient({
-      url: cfg.indexerUrl, username: cfg.indexerUsername, password: cfg.indexerPassword, verifyTls: cfg.verifyTls,
+      url: cfg.indexerUrl, username: cfg.indexerUsername, password: cfg.indexerPassword, verifyTls: cfg.indexerVerifyTls,
     });
     if (idx) {
       try {

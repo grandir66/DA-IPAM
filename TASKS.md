@@ -882,3 +882,17 @@ Riccardo: «puoi metterlo anche su dev»; livello Leggero, integrazione della re
 - [x] Cancello finale 03/11: lint exit 0 (72 avvisi storici), npm test exit 0 (6.321 passate, zero fallite, 2 saltate e 1 TODO), build e tsc exit 0 con Node 22.
 - [x] Snapshot VM 533 `pre-aruba-cx-20261103` su `DA-PX-03` (192.168.40.3), confermato da qm listsnapshot il 03/11 prima del push.
 - [x] Release 0.9.949, commit `77aa3800`, push su dev riuscito; git ls-remote origin refs/heads/dev conferma lo stesso hash il 03/11. Nessun aggiornamento firmware.
+
+## 2026-11-03 — Collector Infoblox IPAM, DHCP, DNS
+
+Riccardo: approvato livello Leggero e collector in sola lettura; target e utente indicati in chat, password da fornire separatamente.
+- [x] Verificato il contratto dei collector e la documentazione ufficiale Infoblox: WAPI schema per versioni/oggetti, GET e paginazione.
+- [ ] Acquisire la credenziale autorizzata tramite vault-a-stdin, mai in chat o nel repo; definire versione WAPI, TLS e permessi effettivi sul target.
+- [ ] Preparare collector/parser per IPAM, DHCP e DNS con dati parziali espliciti, prove offline e collaudo autenticato; nessun DB, configurazione, UI o automatismo modificato.
+
+- [x] Infoblox, aggiornamento 03/11: credenziale autorizzata trovata nella copia locale e letta solo con vault-a-stdin; WAPI 2.12.3 autenticata. Collector in `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox`, ramo codex/infoblox, release locale 0.9.953 (ed181f9d); cancello completo verde (6.335 prove passate).
+- [!] Infoblox: collaudo esteso DNS/lease interrotto da timeout TLS; 18 reti, 28 range, 633 prenotazioni e 2.000 lease acquisiti. Attesa risposta di Riccardo sulla raggiungibilità. Piano/consuntivo nel worktree `docs/superpowers/plans/2026-11-03-infoblox.md`; niente push/dev, DB o configurazione modificati.
+
+- [x] Infoblox, ricollaudo 03/11 su richiesta di Riccardo: raccolta completa in 37 s, 23 tabelle/6.853 record; DNS e 3.953 lease completati senza timeout. Superati i blocchi di accesso precedenti. Resta `partial` per firmware NIOS non letto e `options` di ipv6range non esposto. Snapshot privato aggiornato; nessuna modifica a DB/apparato o push. Fonte corrente: CONTEXT/TASKS del worktree da-ipam-infoblox.
+
+- [x] Riccardo (03/11): «scrivi il contesto per l’integrazione dentro DA-IPAM». Aggiornata la consegna esistente `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`, sezione Infoblox: sorgenti locali/commit, contratto DDI, collaudo completo, limiti, vincoli reali reti/lease, mapping e prove da sviluppare. Solo documentazione; nessuna integrazione o pubblicazione eseguita.

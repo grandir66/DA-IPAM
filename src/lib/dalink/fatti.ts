@@ -34,6 +34,7 @@ import { getModulesHealth, type ModuleHealthVerdict, type ModuleVerdict } from "
 import { leggiStatoAggiornamento } from "@/lib/aggiornamento-servizio";
 import { getConfiguredUpdateBranch } from "@/lib/update-branch";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
+import { leggiReteAppliance, type ReteAppliance } from "./rete-appliance";
 import { aggiornamentoPerSegnale, type AggiornamentoSegnale, type FattiIstanza, type Inventario } from "./segnale";
 import { statiComponentiBase, type StatiComponenti } from "./stati-componenti";
 import { leggiEdgeSonda } from "./edge-sonda";
@@ -82,6 +83,8 @@ export interface DipendenzeFatti {
   statiComponenti: () => Promise<StatiComponenti | null>;
   /** `/api/v1/health` della sonda del cliente; null se il modulo edge non è configurato. */
   edge: (tenant: string) => Promise<LetturaEdge | null>;
+  /** La rete dell'appliance (29/10); null se non si legge. */
+  rete?: () => ReteAppliance | null;
 }
 
 let versioneLetta: string | null = null;
@@ -124,6 +127,7 @@ export const dipendenzeFattiReali: DipendenzeFatti = {
     return tutti.length === 1 && tutti[0].codice_cliente === CLIENTE_APPLIANCE && tutti[0].active === 1;
   },
   porte: () => leggiPorteWt0(),
+  rete: () => leggiReteAppliance(),
   moduli: async (codcli) => {
     const stati = await withTenant(codcli, () => resolveModules(codcli, "admin"));
     return Object.fromEntries(stati.map((m) => [m.key, m.enabled]));
@@ -220,10 +224,17 @@ export async function fattiIstanza(
 
   const edge = await edgeInCorso;
 
+  let rete: ReteAppliance | null = null;
+  try {
+    rete = d.rete?.() ?? null;
+  } catch {
+    rete = null; // campo omesso: DA-Link tiene l'ultima rete ricevuta
+  }
+
   return {
     clienteTrovato,
     tenant,
-    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento, statiComponenti, edge },
+    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento, statiComponenti, edge, rete },
   };
 }
 

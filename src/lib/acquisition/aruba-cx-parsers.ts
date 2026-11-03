@@ -15,7 +15,7 @@ export function parseCxIdentity(version: string, system: string): Identity | nul
     const units: Record<string, number> = { year: 31536000, week: 604800, day: 86400, hour: 3600, minute: 60, second: 1 };
     let uptime: number | null = null;
     for (const m of (up ?? '').matchAll(/(\d+)\s+(year|week|day|hour|minute|second)s?/g)) uptime = (uptime ?? 0) + Number(m[1]) * units[m[2]];
-    return { manufacturer: 'Aruba', model: product, part_number: product?.match(/^([A-Z]{2}\d{3}[A-Z])\b/)?.[1] ?? null, firmware: field(system, 'ArubaOS-CX Version') ?? field(version, 'Version'), serial_number: field(system, 'Chassis Serial Nbr'), hostname: field(system, 'Hostname'), mac: field(system, 'Base MAC Address')?.toLowerCase() ?? null, sys_object_id: null, uptime_seconds: uptime };
+    return { manufacturer: 'Aruba', model: product, part_number: product?.match(/^([A-Z]{2}\d{3}[A-Z]|[A-Z]\d[A-Z]\d{2}[A-Z])\b/)?.[1] ?? null, firmware: field(system, 'ArubaOS-CX Version') ?? field(version, 'Version'), serial_number: field(system, 'Chassis Serial Nbr'), hostname: field(system, 'Hostname'), mac: field(system, 'Base MAC Address')?.toLowerCase() ?? null, sys_object_id: null, uptime_seconds: uptime };
 }
 export function parseCxInterfaces(text: string): DeviceInterface[] {
     const ls = lines(text), header = ls.find(l => /^Port\s+Native\s+Mode/.test(l));
@@ -51,7 +51,7 @@ export function parseCxVlans(text: string, ports: DeviceInterface[]): Vlan[] {
     for (const l of ls) {
         const m = l.match(/^(\d+)\s+/);
         if (m) { const id = Number(m[1]); if (id > 0 && id <= 4094) rows.push({ id, name: l.slice(cols[0], cols[1]).trim(), members: l.slice(cols[2]).trim() }); }
-        else if (/^\s+\d+\/\d+\//.test(l) && rows.length) rows[rows.length - 1].members += l.trim();
+        else if (/^\s+(?:\d+\/\d+\/|lag\d)/i.test(l) && rows.length) rows[rows.length - 1].members += ',' + l.trim();
     }
     return rows.map(r => { const members = cxPorts(r.members); return { id: r.id, name: r.name || null, tagged_ports: members.filter(p => { const i = ports.find(i => i.name === p); return i?.pvid != null && i.pvid !== r.id; }), untagged_ports: members.filter(p => ports.find(i => i.name === p)?.pvid === r.id), forbidden_ports: [] }; });
 }

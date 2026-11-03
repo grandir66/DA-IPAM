@@ -210,7 +210,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           acceso={acceso}
           titolo="Lettura dei domain controller"
           dettagli={[
-            `${l.letture.length || l.dcConfigurati} DC`,
+            `${l.dcConfigurati} DC`,
             ultima ? `letti ${data(ultima)}` : "mai letti",
             `ogni 5 minuti`,
             `modo: ${MODO[l.modo] ?? l.modo}`,
@@ -279,7 +279,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
         <Pannello
           className="lg:col-span-4"
           titolo="Domain controller"
-          conteggio={l?.letture.length}
+          conteggio={l?.dcConfigurati}
           sottotitolo={
             l && l.dcDisponibili.length > 0
               ? `Ognuno registra solo i suoi accessi: ${l.dcConfigurati} di ${l.dcDisponibili.length} da leggere${l.sceltaManuale ? ", scelti a mano" : ""}`

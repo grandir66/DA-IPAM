@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { ensureWazuhAlertSchema } from "@/lib/integrations/wazuh-alerts-db";
-import { dcDaLeggere, dcDisponibili, giroEventiDc, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
-import { ensureEventiDcSchema, letturaDc } from "../db";
+import { dcDaLeggere, dcDisponibili, giroEventiDc, lettureDcScelti, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
+import { ensureEventiDcSchema, letturaDc, scriviLetturaFallita } from "../db";
 
 void TEST_DATA_DIR;
 const T = "TESTEVENTIDC";
@@ -103,10 +103,35 @@ describe("giro di lettura dei DC", () => {
     assert.deepEqual(dcDaLeggere(db).map((d) => d.dc), ["dc01.cliente.local"], "torna la scelta automatica");
   });
 
+  it("l'elenco delle letture mostra solo i DC scelti, anche con righe vecchie di altri DC (70151, 03/11)", () => {
+    const db = dbt();
+    scriviLetturaFallita(db, "dc01.cliente.local", "[TCP_TIMEOUT] vecchio");
+    scriviLetturaFallita(db, "DC02", "[TCP_TIMEOUT] vecchio");
+    scriviDcScelti(db, ["dc01.cliente.local"]);
+    assert.deepEqual(lettureDcScelti(db).map((l) => l.dc), ["dc01.cliente.local"]);
+    assert.ok(letturaDc(db, "DC02"), "la riga dell'altro DC resta nel DB");
+  });
+
   it("una scelta che non tocca nessun DC presente non legge e dice perché", async () => {
     scriviDcScelti(dbt(), ["dc99.cliente.local"]);
     const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui: async () => risposta([]), wazuh: false }));
     assert.equal(e.saltato, "nessun DC scelto");
+  });
+
+  it("un nome di DC che il DNS non conosce dà un errore chiaro, non un timeout", async () => {
+    let chiamato = false;
+    const e = await withTenant(T, () =>
+      giroEventiDc(dbt(), {
+        esegui: async () => ((chiamato = true), risposta([])),
+        risolvi: async (n) => {
+          if (n !== "10.0.0.10") throw new Error("ENOTFOUND");
+        },
+        wazuh: false,
+      }),
+    );
+    assert.equal(chiamato, false, "senza nome risolto WinRM non parte");
+    assert.ok(e.dc.every((d) => !d.ok));
+    assert.match(letturaDc(dbt(), "dc01.cliente.local")?.errore ?? "", /non si risolve dal DNS.*cliente\.local/);
   });
 
   it("eventi in archivio e in coda, un evento aperto per DC e tipo; il giro dopo riparte dal cursore", async () => {

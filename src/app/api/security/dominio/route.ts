@@ -11,9 +11,9 @@ import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { STATS_WINDOWS, bucketIntervalFor, sinceForWindow, windowById } from "@/lib/integrations/wazuh-alerts-stats";
-import { ensureEventiDcSchema, listaEventiDc, lettureDc, numeriEventiDc, TIPI_EVENTO_DC, type TipoEventoDc } from "@/lib/security/eventi-dc/db";
+import { ensureEventiDcSchema, listaEventiDc, numeriEventiDc, TIPI_EVENTO_DC, type TipoEventoDc } from "@/lib/security/eventi-dc/db";
 import { statisticheDc } from "@/lib/security/eventi-dc/statistiche";
-import { dcDisponibili, dcScelti, MAX_DC_AUTOMATICI, modoEventiDc, motivoPerNonLeggere, scriviDcScelti, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
+import { dcDisponibili, dcScelti, lettureDcScelti, MAX_DC_AUTOMATICI, modoEventiDc, motivoPerNonLeggere, scriviDcScelti, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
 import { giroEventiDcDelContesto, testoEsitoDc, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 
 const PER_PAGINA = 50;
@@ -58,7 +58,7 @@ export async function GET(req: Request) {
         sceltaManuale: dcScelti(db) !== null,
         maxAutomatici: MAX_DC_AUTOMATICI,
         ultimoGiro: ultimoGiroDc(code),
-        letture: lettureDc(db),
+        letture: lettureDcScelti(db),
       },
       window: win.id,
       windows: STATS_WINDOWS.filter((w) => w.id !== "1h"),

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { ensureWazuhAlertSchema } from "@/lib/integrations/wazuh-alerts-db";
-import { dcDaLeggere, giroEventiDc, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
+import { dcDaLeggere, dcDisponibili, giroEventiDc, scriviDcScelti, scriviModoEventiDc, type EseguiWinrm } from "../raccolta";
 import { ensureEventiDcSchema, letturaDc } from "../db";
 
 void TEST_DATA_DIR;
@@ -58,6 +58,55 @@ describe("giro di lettura dei DC", () => {
   it("senza DC sincronizzati legge il DC dell'integrazione", () => {
     dbt().exec("DELETE FROM ad_computers");
     assert.deepEqual(dcDaLeggere(dbt()).map((d) => d.dc), ["10.0.0.10"]);
+  });
+
+  it("senza credenziale WinRM entra con l'account di AD dell'integrazione", async () => {
+    const db = dbt();
+    const ad = Number(
+      db.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('AD · Dominio', 'ad', ?, ?)")
+        .run(encrypt("svc-ldap@cliente.local"), encrypt("pw-ad")).lastInsertRowid,
+    );
+    db.prepare("UPDATE ad_integrations SET winrm_credential_id = NULL, credential_id = ?").run(ad);
+    assert.deepEqual(dcDaLeggere(db).map((d) => [d.dc, d.fonte]), [["DC02", "ad"], ["dc01.cliente.local", "ad"]]);
+    const utenti: string[] = [];
+    const esegui: EseguiWinrm = async (_h, porta, user) => {
+      utenti.push(`${user}:${porta}`);
+      return risposta([]);
+    };
+    const e = await withTenant(T, () => giroEventiDc(db, { esegui, wazuh: false }));
+    assert.equal(e.saltato, null);
+    assert.deepEqual(utenti, ["svc-ldap@cliente.local:5985", "svc-ldap@cliente.local:5985"]);
+  });
+
+  it("senza credenziale WinRM né account di AD non legge e dice perché", async () => {
+    dbt().prepare("UPDATE ad_integrations SET winrm_credential_id = NULL, credential_id = NULL").run();
+    assert.equal(dcDaLeggere(dbt()).length, 0);
+    const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui: async () => risposta([]), wazuh: false }));
+    assert.match(e.saltato ?? "", /né WinRM né AD/);
+  });
+
+  it("con decine di DC legge solo quello dell'integrazione finché non si sceglie", () => {
+    const db = dbt();
+    const integ = (db.prepare("SELECT id FROM ad_integrations").get() as { id: number }).id;
+    db.prepare("UPDATE ad_integrations SET dc_host = 'dc01.cliente.local'").run();
+    const pc = db.prepare(
+      "INSERT INTO ad_computers (integration_id, object_guid, sam_account_name, dns_host_name, distinguished_name, enabled) VALUES (?, ?, ?, ?, ?, 1)",
+    );
+    for (let n = 10; n < 40; n++) pc.run(integ, `gx${n}`, `DC${n}$`, `dc${n}.cliente.local`, `CN=DC${n},OU=Domain Controllers,DC=cliente,DC=local`);
+    assert.equal(dcDisponibili(db).length, 32);
+    assert.deepEqual(dcDaLeggere(db).map((d) => d.dc), ["dc01.cliente.local"]);
+
+    scriviDcScelti(db, ["DC12.cliente.local", "dc20.cliente.local"]);
+    assert.deepEqual(dcDaLeggere(db).map((d) => d.dc), ["dc12.cliente.local", "dc20.cliente.local"]);
+
+    scriviDcScelti(db, null);
+    assert.deepEqual(dcDaLeggere(db).map((d) => d.dc), ["dc01.cliente.local"], "torna la scelta automatica");
+  });
+
+  it("una scelta che non tocca nessun DC presente non legge e dice perché", async () => {
+    scriviDcScelti(dbt(), ["dc99.cliente.local"]);
+    const e = await withTenant(T, () => giroEventiDc(dbt(), { esegui: async () => risposta([]), wazuh: false }));
+    assert.equal(e.saltato, "nessun DC scelto");
   });
 
   it("eventi in archivio e in coda, un evento aperto per DC e tipo; il giro dopo riparte dal cursore", async () => {

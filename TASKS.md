@@ -1,5 +1,24 @@
 # TASKS — DA-IPAM
 
+## 2026-11-03 — Lavoro aperto DA-IPAM: #59, #49, promozione dev→main, snapshot 533
+
+Avviato dalla sessione «Contesto progetto Domarc» (Riccardo ha dato il via). Worktree
+`.claude/worktrees/lavoro-aperto-20261103`, ramo `lavoro-aperto-20261103` da `origin/dev`.
+
+- [x] PR #59 (Wazuh, verifica TLS indexer separata): rivista; trovato un client indexer rimasto sulla
+      verifica della Manager API (`src/lib/modules/health.ts`), corretto in un commit a parte.
+- [x] PR #49 (rete dell'appliance nel segnale): **non** superata — DA-Link ha già il modello `Rete`
+      (DA-Link #35 unita), DA-IPAM `dev` non lo mandava. Rifatta su dev (cherry-pick pulito); la #49 si chiude.
+- [x] `main` non ha codice assente da `dev`: `git merge-tree origin/dev origin/main` cambia solo
+      `VERSION`/`package*.json` (Aruba 0.9.955 e i port WinRM/DC sono già in dev). Unito main in dev
+      tenendo la versione di dev, così la promozione è un fast-forward.
+- [ ] Cancello completo (lint, build, tsc, test) verde sul ramo, poi `version:release` e push su `dev`.
+- [x] VM 533: DA-IPAM sano (`da-ipam` attivo, health 200, 0.9.956), edge `healthy` e `/api/v1/health` 200;
+      tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103` (task Proxmox stopped OK). Restano
+      `pre-aruba-cx-20261103` e `pre-sonda-0830-20261103` delle altre sessioni.
+- [ ] Promozione dev→main: **aspetta il sì di Riccardo** (è un rilascio a 70151 e alle appliance da immagine).
+      Comando: `git push origin origin/dev:main` (fast-forward). Dopo: controllo 70151.
+
 ## 2026-10-27 — Reti dal sensore trunk: host e MAC insieme alla rete (da approvare)
 
 Riccardo (27/10, mini PC dimostrativo 72729-ipam): «Aggiungi» di una rete vista dal trunk crea solo la

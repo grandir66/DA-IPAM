@@ -13,13 +13,17 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## Lavoro aperto del 03/11/2026
+
+PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni): la promozione è un fast-forward pronto, **aspetta il sì di Riccardo**. VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.
+
 ## Aruba AOS-CX — integrazione 03/11/2026
 
 Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. Collector `aruba-cx` separato da ProCurve: collaudato su 6100 JL675A / PL.10.12.0006, solo SSH; contratto e CLI comuni, riconoscimento AOS-CX esplicito. Limiti nel manuale `docs/modules/acquisition.md`: LACP popolato, contatori/duplex/ifIndex e memoria in byte non letti. Snapshot preventivo della VM hub 533 `pre-aruba-cx-20261103` sul nodo DA-PX-03. Nessuna funzione o operazione firmware aggiunta. Pubblicato su origin/dev nella release 0.9.949 (77aa3800), verificato con git ls-remote; lint, 6.321 prove, build e tsc verdi il 03/11. Dettagli in TASKS.
 
 ## 3. Flusso di rilascio (CRITICO)
 
-- Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance pullano `main`, **ma oggi (Riccardo, 22/10) tutte le installazioni sono su `dev`**: ogni push su `dev` arriva a tutte; la promozione a `main` si farà più avanti. Ogni modifica: `npm run version:release` + `git push origin dev`.
+- Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance pullano `main`: **dal 03/11 70151 e le appliance da immagine seguono `main`** (entro 15 min), l'hub 533 e DTS seguono `dev`. Una modifica singola va su `main` con un ramo `<ramo>-main` (main N, dev N+1: **dev sempre ≥ main**). Promozione: prima si unisce `main` in `dev` tenendo la versione di dev (`git merge-tree origin/dev origin/main` deve cambiare solo `VERSION`/`package*.json`), poi `git push origin origin/dev:main` in fast-forward, col sì di Riccardo; dopo, controllo di 70151. Ogni modifica: `npm run version:release` + `git push origin dev`.
 - **`dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer`, 15 min: pull + build + restart): un push di codice su `dev` è un rilascio. Un commit di soli `.md` non riavvia.
 - Hub: VM 533 `/opt/da-invent`, segue `dev`, `ssh root@192.168.4.8` diretto (il salto via `.40.4` cade nei comandi lunghi: lavori lunghi con `nohup` e log). **Mai `npm run build` senza riavviare subito.** Aggiornamento a due cartelle (`.next-a`/`.next-b`, `.next-attiva`, `data/aggiornamento.json`, 3 tentativi per commit).
 - «Aggiorna ora» e `scripts/update.sh` a mano si rompono a vicenda (niente lucchetto): prima `ps -eo pid,args | grep -E "[u]pdate\.sh|[n]ext build"` in una chiamata ssh a parte.

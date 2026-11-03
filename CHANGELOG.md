@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-03 · Wazuh: due verifiche TLS; rete dell'appliance verso DA-Link
+
+- **Aggiunto**: verifica TLS dell'indexer (9200) separata da quella della Manager API (55000), PR #59. Su
+  DA-WAZUH la 55000 ha il certificato pubblico e la 9200 quello della CA interna di Wazuh: con una casella
+  sola si spegneva la verifica anche dove si poteva fare. Mai salvata, vale come quella della Manager API,
+  quindi le installazioni di oggi non cambiano. Anche la salute del modulo usa la verifica dell'indexer.
+- **Aggiunto**: il segnale verso DA-Link porta la rete dell'appliance (interfaccia, IP/prefisso, gateway,
+  DNS), rifatto su dev dalla PR #49. Riccardo (29/10): DA-Link deve sapere come raggiungere le
+  installazioni e con che IP; DA-Link lo accettava già, DA-IPAM non lo mandava.
+
 ## [Non rilasciato] — 2026-11-03 · Collector Aruba AOS-CX
 
 ### Aggiunto

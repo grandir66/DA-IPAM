@@ -1,3 +1,4 @@
+import { infobloxDdiSchema } from "./infoblox-schema";
 import { z } from "zod";
 import {ontapStorageSchema} from "./ontap-schema";
 import { virtualizationSchema } from "./vmware-schema";
@@ -45,6 +46,7 @@ export const snapshotSchema = z.object({
     schema_version: z.literal("1.0"), collector: z.enum(COLLECTOR_IDS), collector_version: z.string().regex(/^\d+\.\d+\.\d+$/), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
     inventory: section(z.object({ scope: z.enum(['device','proxmox-cluster-visible']), tables: z.array(z.object({ name: z.string(), status: sectionStatus, sources: z.array(z.string()), warnings: z.array(z.string()), records: z.array(z.record(z.string(), z.union([z.string(),z.number(),z.boolean(),z.null()]))) })) })).optional(),
     controller_inventory: section(z.object({ site: z.string(), tls_pin: nullableString, devices: z.array(z.object({ mac: nullableString, name: nullableString, model: nullableString, type: nullableString, ip: nullableString, state: nullableNumber, version: nullableString, serial: nullableString, adopted: z.boolean().nullable(), port_table: z.array(z.object({ port_idx: z.number(), name: nullableString, up: z.boolean().nullable(), enable: z.boolean().nullable(), speed: nullableNumber, full_duplex: z.boolean().nullable(), poe_power: nullableNumber, stp_state: nullableString, aggregated_by: nullableNumber })), lldp_table: z.array(z.object({ chassis_id: nullableString, port_id: nullableString, local_port_idx: nullableNumber, local_port_name: nullableString, mgmt_ips: z.array(z.string()) })), uplink: z.object({ port_idx: nullableNumber, uplink_mac: nullableString, uplink_remote_port: nullableNumber, uplink_device_name: nullableString, uplink_source: nullableString, type: z.enum(["wire", "wireless"]).nullable() }).nullable() })) })).optional(),
+    ddi: section(infobloxDdiSchema).optional(),
     storage: section(ontapStorageSchema).optional(),
     virtualization: section(virtualizationSchema).optional(),
     system: section(systemSchema).optional(),

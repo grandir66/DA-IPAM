@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-03 · Collector Infoblox DDI
+
+### Aggiunto
+
+- Profilo `infoblox-nios` per acquisire IPAM, DHCP e DNS via WAPI in sola lettura, senza scritture DB o configurazione. Versione/oggetti/campi scoperti dallo schema, paginazione limitata, viste conservate, TLS verificato prima delle credenziali e dati parziali espliciti. Colloquio reale vNIOS / WAPI 2.12.3 riuscito; acquisizione estesa DNS/lease da completare dopo timeout del target.
+
 ## [Non rilasciato] — 2026-11-03 · Collector Aruba AOS-CX
 
 ### Aggiunto

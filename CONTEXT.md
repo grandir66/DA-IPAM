@@ -17,6 +17,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. Collector `aruba-cx` separato da ProCurve: collaudato su 6100 JL675A / PL.10.12.0006, solo SSH; contratto e CLI comuni, riconoscimento AOS-CX esplicito. Limiti nel manuale `docs/modules/acquisition.md`: LACP popolato, contatori/duplex/ifIndex e memoria in byte non letti. Snapshot preventivo della VM hub 533 `pre-aruba-cx-20261103` sul nodo DA-PX-03. Nessuna funzione o operazione firmware aggiunta. Pubblicato su origin/dev nella release 0.9.949 (77aa3800), verificato con git ls-remote; lint, 6.321 prove, build e tsc verdi il 03/11. Dettagli in TASKS.
 
+## Infoblox — ripartenza 03/11/2026
+
+Collector `infoblox-nios`, ramo isolato `codex/infoblox`, piano `docs/superpowers/plans/2026-11-03-infoblox.md`. Solo WAPI GET, sezione DDI opzionale del JSON 1.0, nessun DB/UI/cron/aggancio automatico. Accesso manager riuscito da credenziale autorizzata letta solo con vault-a-stdin (presente nella copia locale, non trovata in Keeper); versione WAPI 2.12.3, vNIOS. 23 schemi/primi campioni HTTP 200; esteso: 18 reti, 28 range, 633 prenotazioni, 2.000 lease poi timeout; controllo successivo bloccato in handshake TLS. DNS/lease estesi da ricollaudare quando il target torna accessibile; domanda a Riccardo aperta. Lease spostati in coda per non ritardare reti/DNS. Nessuna versione NIOS dedotta da WAPI. Dettagli/limiti nel manuale acquisition; dati identificativi fuori git, nel dossier privato. Cancello finale verde il 03/11: lint, 6.335 prove passate, build e tsc. Nessun push/dev o deploy autorizzato implicitamente dal collaudo.
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance pullano `main`, **ma oggi (Riccardo, 22/10) tutte le installazioni sono su `dev`**: ogni push su `dev` arriva a tutte; la promozione a `main` si farà più avanti. Ogni modifica: `npm run version:release` + `git push origin dev`.

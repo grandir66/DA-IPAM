@@ -860,6 +860,9 @@ Riccardo: «puoi metterlo anche su dev»; livello Leggero, integrazione della re
 
 Riccardo: approvato livello Leggero, credenziale fornita tramite vault-a-stdin. Piano `docs/superpowers/plans/2026-11-03-infoblox.md`.
 - [x] Verifica reale API, versione e schema: WAPI 2.12.3, HTTP 200 sui 23 oggetti selezionati.
-- [ ] Trasporto, parser, catalogo e contratto DDI opzionale, senza DB/UI/cron.
-- [ ] Collaudo reale completo e cancello finale.
+- [x] Trasporto, parser, catalogo e contratto DDI opzionale implementati; 58 prove mirate verdi e tsc exit 0. Nessun DB/UI/cron.
+- [x] Cancello finale 03/11: lint 0 errori/72 avvisi storici, npm test 6.335 passate/0 fallite (2 saltate/1 TODO), build e tsc exit 0.
+- [!] Collaudo reale completo: parziale per timeout TLS del target; attesa conferma raggiungibilità da Riccardo.
 - [ ] Documentazione e release locale. Nessun push/dev o deploy implicito.
+
+- [ ] Collaudo completo interrotto: 18 reti, 28 range, 633 prenotazioni, 2.000 lease prima di un timeout; poi handshake TLS non completato anche nel controllo diagnostico. Chiarimento richiesto a Riccardo; niente tentativi ripetuti. DNS e campioni degli altri oggetti erano leggibili al preflight (23 HTTP 200). I lease ora vengono dopo reti e DNS per non anteporre la lettura più pesante.

@@ -1,3 +1,4 @@
+import { collectInfoblox } from "../infoblox";
 /**
  * Fixture del contratto comune (C0.5): una per collector, con la forma delle uscite vere e dati inventati
  * (IP di documentazione, MAC 02:00:00, nessun nome di cliente). Una famiglia nuova aggiunge qui la sua voce:
@@ -278,6 +279,11 @@ function unifiFixture(): FixtureCollector {
 }
 
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
+    "infoblox-nios": {
+        richiesta: { collector: "infoblox-nios", host: "192.0.2.120", api: { username: "lab", password: SEGRETO } },
+        normale: async () => ({ snapshot: await collectInfoblox({ collector: "infoblox-nios", host: "192.0.2.120", api: { username: "lab", password: SEGRETO } }, async () => ({ scope: "grid-visible-to-account", wapi_version: "2.12.3", tables: [{ object: "grid", status: "ok", sources: ["api:WAPI:grid"], warnings: [], fields_requested: ["name"], records: [{ _ref: "grid/LAB", name: `grid-${SEGRETO}` }] }] })), chiamateShell: 0 }),
+        trasportoGuasto: async () => ({ snapshot: await collectInfoblox({ collector: "infoblox-nios", host: "192.0.2.120", api: { username: "lab", password: SEGRETO } }, async () => { throw Error(SEGRETO); }), chiamateShell: 0 }),
+    },
     "aruba-cx": perExec({ collector: "aruba-cx", host: "192.0.2.110", ssh: { username: "lab", password: SEGRETO } }, c => ({
         "show version": "ArubaOS-CX\nVersion : PL.10.12.0006",
         "show system": "Hostname : switch-lab\nProduct Name : JL675A 6100\nArubaOS-CX Version : PL.10.12.0006",

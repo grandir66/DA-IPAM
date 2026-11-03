@@ -1,3 +1,4 @@
+import { collectInfoblox } from "./infoblox";
 import { collectArubaCx } from "./aruba-cx";
 import { collectNetappOntap } from "./netapp-ontap";
 import { collectVmwareEsxi } from "./vmware-esxi";
@@ -15,6 +16,7 @@ import type { CollectorId } from "./catalogo";
 type Collect = (request: AcquisitionInput, transports?: AcquisitionTransports) => Promise<AcquisitionSnapshot>;
 /** Implementazioni per id: il tipo `Record<CollectorId, …>` fa fallire `tsc` se il catalogo ha un id senza collector. */
 const IMPLEMENTAZIONI: Record<CollectorId, Collect> = {
+    "infoblox-nios": (request: AcquisitionRequest) => collectInfoblox(request),
     "netapp-ontap": (request: AcquisitionRequest) => collectNetappOntap(request),
     "vmware-esxi": (request: AcquisitionRequest) => collectVmwareEsxi(request),
     "hp-comware": collectHpComware,

@@ -14,6 +14,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   scorreva tutto il registro Sicurezza dall'inizio. Su GAMODCOP01 di 70151 non finiva nemmeno in 270 s, a ogni
   giro. Ora si legge dal più nuovo indietro e ci si ferma al record del cursore, messo nella query come confine;
   poi si tengono i più vecchi fino al massimo per giro, così il cursore non salta eventi.
+- **Corretto**: una lettura andata in timeout lasciava aperta la shell WinRM sul DC (fino a 2 ore). Su
+  GAMODCOP01 se ne erano accumulate 23 e il DC rifiutava le nuove sessioni. Ora il bridge chiude sempre la shell,
+  anche quando viene fermato, e lo script sul DC si ferma da solo dopo 200 s (sotto i 270 del bridge) senza
+  saltare eventi.
 
 ## [Non rilasciato] — 2026-10-29 · Vault: condizioni prima di accendere DA-Link
 

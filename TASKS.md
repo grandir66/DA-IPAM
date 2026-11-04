@@ -1,5 +1,15 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — WMI nelle reti senza WinRM (72729, da decidere)
+
+Riccardo (04/11): «ho una rete vecchia e mi aspettavo che in assenza di winrm wmi funzionasse». Su 72729-ipam: 20 macchine con 135/445, 16 senza WinRM; nessun tentativo WMI o WinRM nei log.
+- [x] Causa: il ripiego WMI c'è (`src/lib/devices/wmi-bridge.py`, impacket presente nel venv) ma scatta solo in `getDeviceInfo` per un apparato Windows con credenziale. La scansione prova solo WinRM (`discovery.ts`), quindi senza WinRM non lega nessuna credenziale; in più la rete 1 ha in catena solo la voce SNMP `public`
+- [x] Prova vera (Riccardo: «puoi provare tu con le credenziali registrate»): `runWmiProbe` su 192.168.0.227, una volta, voce `WinRM`, script temporaneo tolto. Esito `AUTH_REJECTED`, `rpc_s_access_denied` in 0,5 s. Login LDAP della stessa voce riuscito: password giusta. È lo stesso utente della voce `ad`, solo Domain Users (gruppo primario 513, 0 gruppi diretti). Causa: mancano i diritti sul PC
+- [ ] Serve un account dedicato amministratore locale dei PC (GPO del loro IT), non Domain Admins. Poi nuova prova su un PC. Il passaggio del firewall oltre la 135 resta da confermare: il rifiuto arriva prima di usare le porte dinamiche
+- [ ] Riccardo (04/11): «potrebbero esserci tante macchine windows che rispondono wmi con account di dominio». Piano: [`docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`](docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md), bozza con livello completo proposto; primo passo la misura sui PC del 72729. Va in appliance solo con rilascio su `main`
+- [ ] Difetto già presente, nel piano: con 5985 chiusa la scansione conta un fallimento senza nessun login, e dopo 3 host esclude la voce dall'esecuzione
+- [ ] Con WMI mancano software da registro, ultimo utente collegato, PowerShell (limiti scritti in `getDeviceInfoFromWmi`). `device-connection-test.ts:313` dice ancora che si usa solo WinRM: da riallineare
+
 ## 2026-11-03 — Lavoro aperto DA-IPAM: #59, #49, promozione dev→main, snapshot 533
 
 Avviato dalla sessione «Contesto progetto Domarc» (Riccardo ha dato il via). Worktree

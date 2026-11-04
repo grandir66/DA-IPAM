@@ -9,9 +9,9 @@
  * niente DirectorySearcher AD, niente script PowerShell.
  */
 
-import { execFile } from "child_process";
+import { execFile, type ExecFileException, type ExecFileOptionsWithStringEncoding } from "child_process";
 
-import { probeTcpPort } from "./tcp-precheck";
+import { probeTcpPort, type TcpProbeResult } from "./tcp-precheck";
 import { formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
 import { findBridgePython } from "./find-bridge-python";
 import { risolvi } from "../percorsi";
@@ -42,36 +42,68 @@ export interface WmiProbeData {
   _probe_transport?: "wmi/dcom";
 }
 
+/** Tetto della prova leggera di identità: una macchina che non risponde non ferma la scansione. */
+const TIMEOUT_IDENTITA_MS = 20_000;
+
+export type OpzioniExecFile = ExecFileOptionsWithStringEncoding;
+
 /**
- * Esegue la batteria di query WMI sul target Windows.
- * Pre-controlla la porta 135 (RPC). Se chiusa/timeout, ritorna subito WmiError.
+ * Punti di ingresso sostituibili dalle prove: `execFile`, il controllo della 135 e la ricerca di Python.
+ * In produzione valgono sempre `DIPENDENZE_REALI`; nessuna firma pubblica esistente li richiede.
  */
-export async function runWmiProbe(
-  host: string,
-  username: string,
-  password: string,
+export interface DipendenzeWmi {
+  execFile: (
+    file: string,
+    args: readonly string[],
+    opts: OpzioniExecFile,
+    cb: (error: ExecFileException | null, stdout: string, stderr: string) => void,
+  ) => { stdin: { write(chunk: string): unknown; end(): unknown } | null };
+  probeTcpPort: (host: string, port: number, timeoutMs?: number) => Promise<TcpProbeResult>;
+  trovaPython: () => string;
+}
+
+const DIPENDENZE_REALI: DipendenzeWmi = {
+  execFile: (file, args, opts, cb) => execFile(file, [...args], opts, cb),
+  probeTcpPort,
+  trovaPython: findBridgePython,
+};
+
+export interface WmiIdentita {
+  hostname: string;
+  dominio: string | null;
+}
+
+/** Controlla la porta RPC 135: se non è aperta, WmiError subito (TCP_CLOSED / TCP_TIMEOUT). */
+async function controllaPorta135(host: string, deps: DipendenzeWmi): Promise<void> {
+  const probe = await deps.probeTcpPort(host, 135, TCP_PRECHECK_TIMEOUT_MS);
+  if (probe.state === "open") return;
+  const code: WinrmErrorCode = probe.state === "refused" ? "TCP_CLOSED" : "TCP_TIMEOUT";
+  throw new WmiError({
+    code,
+    message: `Porta RPC 135 non disponibile su ${host} (${probe.state}). WMI fallback non possibile.`,
+    hint: probe.state === "refused"
+      ? "Sul target: verifica che il servizio 'Remote Procedure Call (RPC)' sia avviato e che il firewall permetta in ingresso 'Windows Management Instrumentation (WMI-In)'."
+      : "Firewall sta droppando i pacchetti RPC — verifica regole per il profilo di rete attivo.",
+    original: JSON.stringify(probe),
+  });
+}
+
+/**
+ * Lancia il bridge Python passando l'input (password compresa) su stdin e ritorna il campo `data` della risposta.
+ * `timeoutMs` è il tetto: allo scadere execFile uccide il processo e l'errore è `BRIDGE_TIMEOUT`.
+ */
+export function eseguiBridge(
+  input: Record<string, unknown>,
+  timeoutMs: number,
+  deps: DipendenzeWmi = DIPENDENZE_REALI,
 ): Promise<WmiProbeData> {
-  const probe = await probeTcpPort(host, 135, TCP_PRECHECK_TIMEOUT_MS);
-  if (probe.state !== "open") {
-    const code: WinrmErrorCode = probe.state === "refused" ? "TCP_CLOSED" : "TCP_TIMEOUT";
-    throw new WmiError({
-      code,
-      message: `Porta RPC 135 non disponibile su ${host} (${probe.state}). WMI fallback non possibile.`,
-      hint: probe.state === "refused"
-        ? "Sul target: verifica che il servizio 'Remote Procedure Call (RPC)' sia avviato e che il firewall permetta in ingresso 'Windows Management Instrumentation (WMI-In)'."
-        : "Firewall sta droppando i pacchetti RPC — verifica regole per il profilo di rete attivo.",
-      original: JSON.stringify(probe),
-    });
-  }
-
   return new Promise((resolve, reject) => {
-    const pythonBin = findBridgePython();
-    const input = JSON.stringify({ host, username, password });
+    const pythonBin = deps.trovaPython();
 
-    const child = execFile(
+    const child = deps.execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
-      { timeout: TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
+      { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
       (error, stdout, _stderr) => {
         if (error && !stdout) {
           const msg = error.message || "Errore esecuzione WMI bridge";
@@ -85,7 +117,7 @@ export async function runWmiProbe(
           } else if (msg.includes("ETIMEDOUT") || error.killed) {
             reject(new WmiError({
               code: "BRIDGE_TIMEOUT",
-              message: `Il bridge WMI ha superato i ${Math.round(TIMEOUT_MS / 1000)}s.`,
+              message: `Il bridge WMI ha superato i ${Math.round(timeoutMs / 1000)}s.`,
               original: msg,
             }));
           } else {
@@ -117,7 +149,45 @@ export async function runWmiProbe(
       }
     );
 
-    child.stdin?.write(input);
+    child.stdin?.write(JSON.stringify(input));
     child.stdin?.end();
   });
+}
+
+/**
+ * Esegue la batteria di query WMI sul target Windows.
+ * Pre-controlla la porta 135 (RPC). Se chiusa/timeout, ritorna subito WmiError.
+ */
+export async function runWmiProbe(
+  host: string,
+  username: string,
+  password: string,
+): Promise<WmiProbeData> {
+  await controllaPorta135(host, DIPENDENZE_REALI);
+  return eseguiBridge({ host, username, password }, TIMEOUT_MS);
+}
+
+/**
+ * Prova leggera: una sola query su Win32_ComputerSystem (nome e dominio), tetto di 20 secondi.
+ * Serve al motore di scansione per sapere se l'account entra, senza il peso della batteria completa.
+ * Solo lettura. Password solo su stdin.
+ */
+export async function runWmiIdentita(
+  host: string,
+  username: string,
+  password: string,
+  deps: DipendenzeWmi = DIPENDENZE_REALI,
+): Promise<WmiIdentita> {
+  await controllaPorta135(host, deps);
+  const data = await eseguiBridge({ host, username, password, solo_identita: true }, TIMEOUT_IDENTITA_MS, deps);
+  const hostname = typeof data.hostname === "string" ? data.hostname.trim() : "";
+  if (!hostname) {
+    throw new WmiError({
+      code: "UNKNOWN",
+      message: `Il bridge WMI non ha restituito il nome di ${host}.`,
+      original: JSON.stringify(data),
+    });
+  }
+  const dominio = typeof data.domain === "string" && data.domain.trim() ? data.domain.trim() : null;
+  return { hostname, dominio };
 }

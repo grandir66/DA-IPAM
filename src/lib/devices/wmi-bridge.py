@@ -13,7 +13,8 @@ Limitazioni rispetto a WinRM:
     AD enrichment richiedono WinRM e NON sono replicabili qui.
 
 Input JSON (stdin):
-  host, username, password, namespace (opzionale, default "//./root/cimv2")
+  host, username, password, namespace (opzionale, default "//./root/cimv2"),
+  solo_identita (opzionale, vero → una sola query Name,Domain su Win32_ComputerSystem)
 
 Output JSON: stessa shape del dict $r prodotto dallo script PowerShell in
 device-info.ts (sottoinsieme — vedi limitazioni).
@@ -65,6 +66,20 @@ def _domain_role_label(n):
         return roles.get(int(n))
     except Exception:
         return None
+
+
+def _chiudi(iWbemServices, dcom):
+    """Rilascia il servizio WMI e la connessione DCOM, ignorando gli errori di chiusura."""
+    try:
+        if iWbemServices:
+            iWbemServices.RemRelease()
+    except Exception:
+        pass
+    try:
+        if dcom:
+            dcom.disconnect()
+    except Exception:
+        pass
 
 
 def main():
@@ -153,6 +168,24 @@ def main():
             return out
         except Exception:
             return []
+
+    if req.get("solo_identita"):
+        # Prova leggera: una sola query, stessa disconnessione della prova completa.
+        try:
+            rows = query("SELECT Name,Domain FROM Win32_ComputerSystem", 1)
+            if not rows or not rows[0].get("Name"):
+                _err("UNKNOWN", "WMI: nessuna riga da Win32_ComputerSystem")
+            print(json.dumps({
+                "data": {
+                    "hostname": rows[0].get("Name"),
+                    "domain": rows[0].get("Domain"),
+                    "_probe_transport": "wmi/dcom",
+                },
+                "transport": "wmi/dcom",
+            }))
+        finally:
+            _chiudi(iWbemServices, dcom)
+        return
 
     r = {}
 

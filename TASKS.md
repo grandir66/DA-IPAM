@@ -104,6 +104,17 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-05 — Valutazione: popolare la tabella degli IP e quella degli apparati
+
+Riccardo: «andrebbe valutato come usare i dati acquisiti per popolare la tabella degli ip e dei
+devices». Valutazione scritta, niente codice: [`docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`](docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md).
+
+- [x] Misurato sul 72729: `hosts` 132 righe con `model` 14, `serial_number` 11, `firmware` 6, `hostname` e `os_info` 46; apparati 22 con `model` 11, `serial_number` 10, `firmware` 8. Classi: 45 `unknown`, 18 `iot`, 18 `workstation`, 11 `hmi`, 8 `rete_ot`
+- [x] **Causa principale trovata**: fra `unknown`, `iot`, `workstation`, `hmi` e `rete_ot` i rilievi sono **zero** — il profilo è girato solo sui 13 host scelti a mano (10 server, hypervisor, NAS, VoIP), mentre 17 dei 45 `unknown` e **11 HMI su 11** hanno porte aperte e nessuno li ha interrogati. Nessuna lettura migliore riempie le colonne finché il giro non punta lì
+- [x] Secondo buco: la lettura lascia fuori `snmp-info`, `vmware-version`, `ldap-rootdse` (e 12 altri tipi) — sono quelli che porterebbero modello e firmware di NAS, ESXi/vCenter e DC
+- [x] Terzo buco: in `src/lib/scanner/profili/` **non c'è un riferimento a `network_devices`**: ciò che il profilo legge non arriva mai all'apparato
+- [ ] Tre interventi proposti nel documento, in ordine di resa (giro sugli indecisi senza codice · tre script in più nella lettura · propagazione all'apparato con `serialeValido` e prova a vuoto) e tre domande aperte: giro largo subito o prima la misura del costo per host; propagazione automatica o proposta; tutti e tre gli script o solo `snmp-info`. **Aspetta il sì di Riccardo**
+
 ## 2026-11-05 — I dati dei profili: riconosciuti, memorizzati, mostrati, usati?
 
 Riccardo: «non ho capito se i dati rilevati dalle scansioni di nmap più specifiche vengono

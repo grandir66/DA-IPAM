@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-04 · Detect dei vendor OT non classificati
+
+- **Aggiunto**: riconoscimento di apparati OT che restavano `unknown` alla 72729. Dall'OUI: **Weintek** → HMI, **CREVIS** → PLC (remote I/O di campo), **Kronotech** (Zucchetti, terminali presenze/accessi) → IoT. Dalle porte, vendor-neutro: **Modbus TCP 502** e **EtherNet/IP 44818** → PLC. Regole builtin in `device_fingerprint_rules` (seed idempotente per gli hub esistenti) e nel classifier di fallback.
+- **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
+- **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
+
 ## [Non rilasciato] — 2026-11-04 · Zyxel GS1900 e switch di marche fuori elenco
 
 - **Aggiunto**: profilo SNMP `zyxel_gs1900` (modello, seriale e firmware dagli OID Zyxel) e riconoscimento come switch dal sysObjectID. Alla 72729 il GS1900-48HP rispondeva, ma nessun profilo lo conosceva e l'ENTITY-MIB ha il telaio all'indice 67108992, non 1: modello e firmware restavano vuoti.

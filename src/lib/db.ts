@@ -1901,6 +1901,9 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision (porte)", label: "Hikvision", cls: "telecamera", pri: 10, keyPorts: [554, 8000], optPorts: [80, 8001, 443] },
     { name: "Dahua / NVR (porte)", label: "Dahua / NVR", cls: "telecamera", pri: 10, keyPorts: [554, 37777], optPorts: [80, 443] },
     { name: "Telecam XMEye/clone (porte)", label: "Telecam XMEye/clone", cls: "telecamera", pri: 10, keyPorts: [34567, 554], optPorts: [80] },
+    // OT: firme di porta di campo, vendor-neutre (prendono anche i device su OUI generici come Microchip)
+    { name: "PLC Modbus (porte)", label: "PLC Modbus", cls: "plc", pri: 40, keyPorts: [502], optPorts: [80, 443, 161], note: "Modbus TCP 502: firma OT specifica; sotto le firme con OID/vendor" },
+    { name: "PLC EtherNet/IP (porte)", label: "PLC EtherNet/IP", cls: "plc", pri: 40, keyPorts: [44818], optPorts: [80, 443, 2222], note: "EtherNet/IP 44818 (CIP)" },
     {
       name: "Windows Server (porte)",
       label: "Windows Server",
@@ -1958,6 +1961,11 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision MAC", label: "Hikvision", cls: "telecamera", pri: 70, macVendor: "hikvision|hangzhou" },
     { name: "VM MAC", label: "VM", cls: "vm", pri: 70, macVendor: "vmware|proxmox\\s*server|microsoft\\s*virtual|hyper-v|qemu|xensource|oracle\\s*vm|red\\s*hat.*kvm" },
     { name: "Apple MAC", label: "Client Apple", cls: "workstation", pri: 75, macVendor: "apple" },
+    // OT: vendor dall'OUI. Weintek = HMI; CREVIS = remote I/O di campo; Kronotech (Zucchetti) = terminali
+    // presenze/accessi. Microchip NON è qui: OUI di chip montato da terzi, ambiguo → solo firme di porta.
+    { name: "Weintek HMI (MAC)", label: "Weintek HMI", cls: "hmi", pri: 68, macVendor: "weintek" },
+    { name: "CREVIS I/O (MAC)", label: "CREVIS Remote I/O", cls: "plc", pri: 68, macVendor: "crevis" },
+    { name: "Kronotech (MAC)", label: "Kronotech", cls: "iot", pri: 72, macVendor: "kronotech" },
     // ── Banner HTTP ──
     { name: "Proxmox banner", label: "Proxmox VE", cls: "hypervisor", pri: 25, banner: "proxmox|pve-manager" },
     { name: "Synology banner", label: "Synology DSM", cls: "storage", pri: 25, banner: "synology|diskstation" },

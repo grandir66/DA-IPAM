@@ -682,6 +682,30 @@ describe("smb-login.py: lo script vero contro un impacket finto", () => {
     });
   });
 
+  describe("un rifiuto vale solo sul dominio dell'integrazione", () => {
+    const casi: Array<[string, string, EsitoPassword]> = [
+      ["nome NetBIOS del dominio", "CLIENTE", "errata"],
+      ["senza badare alle maiuscole", "cliente", "errata"],
+      ["nome DNS intero", "CLIENTE.LOCAL", "errata"],
+      ["un altro dominio", "ALTRO", "non_so"],
+      // In workgroup il nome di dominio della sfida NTLM è quello del PC, e impacket lascia `ServerDomain` vuoto.
+      ["macchina in workgroup: il server non dice nessun dominio", "", "non_so"],
+      ["macchina fuori dominio: risponde col suo nome", "PC-CONTAB", "non_so"],
+      ["getServerDomain che lancia", "!lancia", "non_so"],
+    ];
+    for (const [nome, serverDomain, atteso] of casi) {
+      it(`${nome} → ${atteso}`, { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
+        const { deps } = lancia("CLIENTE\\scansioni", "bad", finto);
+        process.env.SMB_FINTO_DOMINIO = serverDomain;
+        try {
+          assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), atteso);
+        } finally {
+          delete process.env.SMB_FINTO_DOMINIO;
+        }
+      });
+    }
+  });
+
   it("impacket assente: non_so, senza lanciare", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
     const { deps } = lancia("CLIENTE\\scansioni", "bad", vuoto);
     // Il Python di sistema può avere impacket vero: allora il finto non c'è e il giro andrebbe in rete. Si evita

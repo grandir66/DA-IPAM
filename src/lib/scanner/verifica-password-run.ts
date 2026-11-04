@@ -17,12 +17,14 @@
  * resta (decisione del 04/11/2026).
  *
  * Tre esiti, `errata` SOLO con prova certa: LDAP `InvalidCredentialsError` con `data 52e`, SMB
- * `STATUS_LOGON_FAILURE`. `valida` da SMB solo su una macchina del dominio dell'integrazione. Account disabilitato (533), scaduto (532, 773), bloccato (775), utente ignoto (525),
- * timeout, trasporto: `non_so`. Un errore di trasporto non è una risposta.
+ * `STATUS_LOGON_FAILURE`. Da SMB `valida` ed `errata` valgono solo su una macchina del dominio dell'integrazione: `errata` toglie
+ * la validazione a tutta la voce, e un PC in workgroup rifiuta `DOM\utente` senza aver chiesto niente al DC. Account disabilitato
+ * (533), scaduto (532, 773), bloccato (775), utente ignoto (525), timeout, trasporto: `non_so`. Un errore di trasporto non è una
+ * risposta.
  *
  * Il risultato sta in memoria per la vita dell'istanza e non si scrive da nessuna parte. Si memorizza la Promise,
- * non il risultato: due chiamate contemporanee per lo stesso account fanno una verifica sola. Una voce con `non_so`
- * non ritenta su un altro host. Con `account` la verifica è una per account e non per voce, e `errata` si ricorda anche
+ * non il risultato: due chiamate contemporanee con lo stesso utente e la stessa password fanno una verifica sola. Una voce con `non_so`
+ * non ritenta su un altro host. Con `account` la verifica è una per utente e password e non per voce, e `errata` si ricorda anche
  * fra un giro e l'altro (`RicordoErrate`): un bind sbagliato a ogni giro è la strada per il blocco.
  */
 import { execFile } from "child_process";
@@ -55,7 +57,7 @@ export class VerificaPasswordRun {
   ) {}
 
   /**
-   * Una sola verifica per account in tutta l'esecuzione; senza `account`, per voce. `ip` serve solo se LDAP dà non_so.
+   * Una sola verifica per utente e password in tutta l'esecuzione; senza `account`, per voce. `ip` serve solo se LDAP dà non_so.
    * `account` è `chiaveAccount`: due voci con la stessa chiave hanno lo stesso utente e la stessa password.
    */
   esito(credId: number, ip: string, account?: string): Promise<EsitoPassword> {
@@ -249,7 +251,7 @@ function esitoDaOutputSmb(stdout: string): EsitoPassword {
 /**
  * Login SMB con l'account della voce, senza aprire condivisioni (`smb-login.py`). Solo per un utente del dominio
  * dell'integrazione AD accesa: ogni altro account è `non_so` senza alcun login (vedi in cima). Se la 445 non è aperta: `non_so`.
- * Password solo su stdin. `STATUS_LOGON_FAILURE` = `errata`, sessione vera = `valida`, il resto `non_so`.
+ * Password solo su stdin. Su una macchina del dominio `STATUS_LOGON_FAILURE` = `errata`, sessione vera = `valida`; il resto `non_so`.
  */
 export async function provaSmbDellaVoce(credId: number, ip: string, deps: Partial<DipendenzeSmb> = {}): Promise<EsitoPassword> {
   const d: DipendenzeSmb = { ...SMB_REALI, ...deps };

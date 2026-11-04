@@ -14,7 +14,10 @@ Output JSON (stdout, exit 0 sempre): {"esito": "valida" | "errata" | "non_so", "
     gli utenti ignoti a guest, e il login «riuscirebbe» con qualunque password) su una macchina
     del dominio dell'integrazione: fuori dominio può aver risposto un account locale con lo
     stesso nome e la stessa password, che non dice niente del dominio;
-  - errata: SOLO STATUS_LOGON_FAILURE (0xC000006D);
+  - errata: SOLO STATUS_LOGON_FAILURE (0xC000006D) da una macchina del dominio dell'integrazione: fuori
+    dominio il rifiuto lo dà la macchina da sola, senza chiedere al DC, e `errata` toglie la validazione
+    a tutta la voce. Il dominio si legge anche dopo un rifiuto: impacket lo prende dalla sfida NTLM, che
+    arriva prima del logon (smb3.py e smb.py, login), e con un PC in workgroup lo lascia vuoto;
   - non_so: tutto il resto (account disabilitato, scaduto, bloccato, rete, timeout, impacket assente).
 
 La password non compare mai né nell'output né negli errori.
@@ -35,6 +38,13 @@ def _stesso_dominio(server: str, dominio: str) -> bool:
     server = (server or "").strip().lower()
     dominio = (dominio or "").strip().lower()
     return bool(server) and bool(dominio) and server in (dominio, dominio.split(".", 1)[0])
+
+
+def _dominio_del_server(conn) -> str:
+    try:
+        return conn.getServerDomain()
+    except Exception:
+        return ""
 
 
 def main():
@@ -74,10 +84,7 @@ def main():
         conn.login(user, password, domain)
         if conn.isGuestSession():
             _fine("non_so", "sessione guest")
-        try:
-            server = conn.getServerDomain()
-        except Exception:
-            server = ""
+        server = _dominio_del_server(conn)
         try:
             conn.logoff()
         except Exception:
@@ -91,6 +98,8 @@ def main():
         except Exception:
             codice = None
         if codice == STATUS_LOGON_FAILURE:
+            if not _stesso_dominio(_dominio_del_server(conn), dominio):
+                _fine("non_so", "rifiuto fuori dal dominio dell'integrazione")
             _fine("errata", "STATUS_LOGON_FAILURE")
         _fine("non_so", "SessionError 0x%x" % codice if isinstance(codice, int) else "SessionError")
     except SystemExit:

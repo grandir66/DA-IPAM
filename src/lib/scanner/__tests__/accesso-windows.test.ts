@@ -40,8 +40,14 @@ const ENTRAMBE = [135, 5985];
 // Le funzioni vere devono entrare nei tipi delle prove: se la firma si sposta, qui non compila.
 const proveVere: { winrm: ProvaWinrm; wmi: ProvaWmi } = { winrm: runWinrmCommand, wmi: runWmiIdentita };
 
-const errWinrm = (code: WinrmErrorCode, message = "messaggio del bridge") => new WinrmError({ code, message });
-const errWmi = (code: WinrmErrorCode, message = "messaggio del bridge") => new WmiError({ code, message });
+/** Forma vera: `TCP_CLOSED` e `TCP_TIMEOUT` qui sono del controllo fatto prima del bridge. Quelli del bridge hanno il loro doppio. */
+const dalControllo = (code: WinrmErrorCode): boolean => code === "TCP_CLOSED" || code === "TCP_TIMEOUT";
+const errWinrm = (code: WinrmErrorCode, message = "messaggio del bridge") => new WinrmError({ code, message, primaDelBridge: dalControllo(code) });
+const errWmi = (code: WinrmErrorCode, message = "messaggio del bridge") => new WmiError({ code, message, primaDelBridge: dalControllo(code) });
+const dalBridgeWinrm = (code: WinrmErrorCode, rifiutato = false) => new WinrmError({ code, message: "messaggio del bridge", rifiutato });
+const dalBridgeWmi = (code: WinrmErrorCode) => new WmiError({ code, message: "messaggio del bridge" });
+
+type ProvaInCausa = "winrm" | "wmi";
 
 interface Scena {
   ip?: string;
@@ -52,6 +58,10 @@ interface Scena {
   backoff?: Partial<Record<"winrm" | "wmi", string>>;
   budget?: CredentialRunBudget;
   verifica?: VerificaPasswordRun;
+  stradaValidata?: "winrm" | "wmi" | null;
+  credId?: number;
+  username?: string;
+  passwordVoce?: string;
 }
 
 /** Una prova col suo conto delle chiamate. */
@@ -89,15 +99,16 @@ async function prova(s: Scena): Promise<EsitoAccesso> {
   return provaAccessoWindows({
     ip: s.ip ?? "10.0.0.1",
     hostId: 1,
-    credId: CRED,
+    credId: s.credId ?? CRED,
     porteAperte: s.porte ?? ENTRAMBE,
-    username: UTENTE,
-    password: PASSWORD,
+    username: s.username ?? UTENTE,
+    password: s.passwordVoce ?? PASSWORD,
     dominioAd: "dominio.local",
     verifica: s.verifica ?? c.verifica(s.password ?? "valida"),
     budget: s.budget ?? new CredentialRunBudget(() => {}),
     backoffDi: (strada) => s.backoff?.[strada] ?? null,
     nowIso: NOW,
+    stradaValidata: s.stradaValidata ?? null,
     prova: { winrm: s.winrm ?? c.winrmOk, wmi: s.wmi ?? c.wmiOk },
   });
 }
@@ -205,7 +216,8 @@ describe("tabella del piano", () => {
   });
 
   for (const password of ["valida", "non_so"] as const) {
-    for (const codice of ["TCP_TIMEOUT", "BRIDGE_TIMEOUT"] as const) {
+    // Con `non_so` il BRIDGE_TIMEOUT conta come fallimento: sta in «password non verificabile», sotto.
+    for (const codice of password === "valida" ? (["TCP_TIMEOUT", "BRIDGE_TIMEOUT"] as const) : (["TCP_TIMEOUT"] as const)) {
       it(`riga 4: ${password} + ${codice} con la 135 aperta → firewall, nessun budget, strada dopo`, async () => {
         const c = contatore();
         const budget = new CredentialRunBudget(() => {});
@@ -287,6 +299,236 @@ describe("password non verificabile: ogni errore che può nascondere un logon ri
     assert.equal(budget.consecutiveFailures(CRED), 1);
     assert.match(e.dettaglio, /WinRM/);
     assert.match(e.dettaglio, /WMI/);
+  });
+});
+
+describe("password non verificabile: sono esenti solo il controllo TCP e ciò che non fa logon", () => {
+  const dalBridge: Array<[string, unknown, ProvaInCausa]> = [
+    ["BRIDGE_TIMEOUT di WinRM", errWinrm("BRIDGE_TIMEOUT"), "winrm"],
+    ["BRIDGE_TIMEOUT di WMI", errWmi("BRIDGE_TIMEOUT"), "wmi"],
+    ["TCP_TIMEOUT dal bridge WinRM", dalBridgeWinrm("TCP_TIMEOUT"), "winrm"],
+    ["TCP_CLOSED dal bridge WinRM", dalBridgeWinrm("TCP_CLOSED"), "winrm"],
+    ["TCP_TIMEOUT dal bridge WMI", dalBridgeWmi("TCP_TIMEOUT"), "wmi"],
+    ["TCP_CLOSED dal bridge WMI", dalBridgeWmi("TCP_CLOSED"), "wmi"],
+  ];
+  for (const [nome, errore, strada] of dalBridge) {
+    it(`non_so + ${nome}: conta come fallimento, ci si ferma`, async () => {
+      const c = contatore();
+      const budget = new CredentialRunBudget(() => {});
+      const e = await prova({
+        password: "non_so",
+        budget,
+        porte: strada === "wmi" ? SOLO_WMI : ENTRAMBE,
+        winrm: c.winrmKo(errore),
+        wmi: c.wmiKo(errore),
+      });
+      assert.equal(e.motivo, "errore");
+      assert.equal(e.strada, strada);
+      assert.equal(budget.consecutiveFailures(CRED), 1);
+      assert.equal(c.conto.winrm + c.conto.wmi, 1, "una volta sola");
+    });
+  }
+
+  for (const codice of ["IMPACKET_MISSING", "BRIDGE_INPUT"] as const) {
+    for (const password of ["non_so", "valida"] as const) {
+      it(`${password} + ${codice}: nessun logon, nessun budget, strada dopo`, async () => {
+        const c = contatore();
+        const budget = new CredentialRunBudget(() => {});
+        const e = await prova({ password, budget, porte: ENTRAMBE, winrm: c.winrmKo(errWinrm("TCP_TIMEOUT")), wmi: c.wmiKo(errWmi(codice)) });
+        assert.equal(budget.consecutiveFailures(CRED), 0);
+        assert.equal(e.motivo, "firewall");
+      });
+    }
+  }
+});
+
+describe("il rifiuto dichiarato dal bridge vale anche se l'ultimo errore è un timeout", () => {
+  it("valida: diritti mancanti, non firewall", async () => {
+    const c = contatore();
+    const e = await prova({ password: "valida", winrm: c.winrmKo(dalBridgeWinrm("TCP_TIMEOUT", true)), wmi: c.wmiKo(errWmi("TCP_CLOSED")) });
+    assert.equal(e.motivo, "diritti_mancanti");
+    assert.equal(e.strada, "winrm");
+  });
+
+  it("non_so: conta e ferma, come un rifiuto, con un codice che da solo non direbbe nulla", async () => {
+    const c = contatore();
+    const budget = new CredentialRunBudget(() => {});
+    const e = await prova({ password: "non_so", budget, winrm: c.winrmKo(dalBridgeWinrm("WSMAN_FAULT", true)), wmi: c.wmiOk });
+    assert.equal(e.motivo, "errore");
+    assert.equal(budget.consecutiveFailures(CRED), 1);
+    assert.equal(c.conto.wmi, 0);
+    assert.equal(e.strade[0].logon, "rifiutato");
+  });
+});
+
+describe("una prova WinRM con password non verificata è un logon solo", () => {
+  /** Quello che il motore passa alla prova WinRM, oltre ai sette argomenti di sempre. */
+  async function opzioniViste(password: EsitoPassword): Promise<unknown[]> {
+    const viste: unknown[] = [];
+    await prova({
+      password,
+      porte: SOLO_WINRM,
+      winrm: async (...args) => {
+        viste.push(...args.slice(7));
+        return "PC-01";
+      },
+    });
+    return viste;
+  }
+
+  it("non_so: lo chiede", async () => {
+    assert.deepEqual(await opzioniViste("non_so"), [{ unSoloLogon: true }]);
+  });
+
+  it("valida: resta la catena, che con la password giusta non fa logon errati", async () => {
+    assert.deepEqual(await opzioniViste("valida"), []);
+  });
+});
+
+describe("l'esito riporta tutte le strade provate", () => {
+  const riassunto = (e: EsitoAccesso) => e.strade.map((s) => [s.strada, s.porta, s.motivo, s.logon]);
+
+  it("WinRM rifiutato e WMI riuscito: ok su wmi, e il rifiuto di WinRM resta scritto", async () => {
+    const c = contatore();
+    const e = await prova({ winrm: c.winrmKo(errWinrm("AUTH_REJECTED")), wmi: c.wmiOk });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "diritti_mancanti", "rifiutato"], ["wmi", 135, "ok", "riuscito"]]);
+    assert.match(e.strade[0].dettaglio, /^WinRM:/);
+  });
+
+  it("due rifiuti: tutti e due", async () => {
+    const c = contatore();
+    const e = await prova({ winrm: c.winrmKo(errWinrm("AUTH_REJECTED")), wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "diritti_mancanti", "rifiutato"], ["wmi", 135, "diritti_mancanti", "rifiutato"]]);
+  });
+
+  it("firewall e porta chiusa: nessun rifiuto", async () => {
+    const c = contatore();
+    const e = await prova({ winrm: c.winrmKo(errWinrm("TCP_CLOSED")), wmi: c.wmiKo(errWmi("TCP_TIMEOUT")) });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "porte_chiuse", "ignoto"], ["wmi", 135, "firewall", "ignoto"]]);
+  });
+
+  it("il fermo per un rifiuto con password non verificata tiene la strada di prima", async () => {
+    const c = contatore();
+    const e = await prova({ password: "non_so", winrm: c.winrmKo(errWinrm("TCP_TIMEOUT")), wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "firewall", "ignoto"], ["wmi", 135, "errore", "rifiutato"]]);
+  });
+
+  it("un errore che può nascondere un logon, senza dire che c'è stato: ignoto", async () => {
+    const c = contatore();
+    const e = await prova({ password: "non_so", winrm: c.winrmKo(errWinrm("BRIDGE_TIMEOUT")) });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "errore", "ignoto"]]);
+  });
+
+  it("risposta vuota: il logon è passato", async () => {
+    const e = await prova({ porte: SOLO_WINRM, winrm: async () => " " });
+    assert.deepEqual(riassunto(e), [["winrm", 5985, "errore", "riuscito"]]);
+  });
+
+  it("nessun login: nessuna strada", async () => {
+    const c = contatore();
+    assert.deepEqual((await prova({ porte: [] })).strade, []);
+    assert.deepEqual((await prova({ password: "errata", verifica: c.verifica("errata") })).strade, []);
+    assert.deepEqual((await prova({ backoff: { winrm: FUTURO, wmi: FUTURO } })).strade, []);
+  });
+
+  it("il dettaglio di ogni strada non porta utente né password", async () => {
+    const c = contatore();
+    const sporco = `logon di ${UTENTE} con ${PASSWORD}`;
+    const e = await prova({ winrm: c.winrmKo(errWinrm("UNKNOWN", sporco)), wmi: c.wmiKo(errWmi("UNKNOWN", sporco)) });
+    for (const s of e.strade) {
+      assert.ok(!s.dettaglio.includes(PASSWORD), s.dettaglio);
+      assert.ok(!s.dettaglio.toLowerCase().includes("mario.rossi"), s.dettaglio);
+    }
+  });
+});
+
+describe("la strada già validata si prova per prima", () => {
+  it("WMI validata con WinRM aperto: WinRM non parte", async () => {
+    const c = contatore();
+    const e = await prova({ stradaValidata: "wmi", winrm: c.winrmOk, wmi: c.wmiOk });
+    assert.equal(e.strada, "wmi");
+    assert.deepEqual([c.conto.winrm, c.conto.wmi], [0, 1]);
+  });
+
+  it("se la validata non entra più, si prova l'altra", async () => {
+    const c = contatore();
+    const e = await prova({ stradaValidata: "wmi", winrm: c.winrmOk, wmi: c.wmiKo(errWmi("WSMAN_FAULT")) });
+    assert.equal(e.strada, "winrm");
+    assert.deepEqual([c.conto.wmi, c.conto.winrm], [1, 1]);
+  });
+
+  it("validata su una porta che non c'è più: l'ordine resta quello delle porte", async () => {
+    const c = contatore();
+    const e = await prova({ stradaValidata: "wmi", porte: SOLO_WINRM, winrm: c.winrmOk });
+    assert.equal(e.strada, "winrm");
+  });
+});
+
+describe("il fermo si legge prima della verifica, che è un logon", () => {
+  it("tutte le strade in fermo: niente bind", async () => {
+    const c = contatore();
+    await prova({ verifica: c.verifica("non_so"), backoff: { winrm: FUTURO, wmi: FUTURO } });
+    assert.equal(c.conto.verifiche, 0);
+  });
+
+  it("una strada libera: la verifica parte, e la strada in fermo no", async () => {
+    const c = contatore();
+    const e = await prova({ verifica: c.verifica("valida"), backoff: { winrm: FUTURO }, winrm: c.winrmOk, wmi: c.wmiOk });
+    assert.equal(c.conto.verifiche, 1);
+    assert.equal(e.strada, "wmi");
+    assert.equal(c.conto.winrm, 0);
+  });
+
+  it("backoff scaduto: si prova", async () => {
+    const c = contatore();
+    const e = await prova({ verifica: c.verifica("valida"), backoff: { winrm: "2026-11-04T09:00:00.000Z" }, winrm: c.winrmOk });
+    assert.equal(e.strada, "winrm");
+    assert.equal(c.conto.verifiche, 1);
+  });
+});
+
+describe("budget e verifica sono per account, non per voce", () => {
+  it("due voci con lo stesso utente e la stessa password: una verifica, un conto", async () => {
+    const c = contatore();
+    const verifica = c.verifica("non_so");
+    const budget = new CredentialRunBudget(() => {});
+    const motivi: MotivoAccesso[] = [];
+    for (let i = 0; i < 8; i++) {
+      const e = await prova({
+        ip: `10.0.0.${i}`,
+        credId: i % 2 === 0 ? 1 : 2,
+        porte: SOLO_WMI,
+        verifica,
+        budget,
+        wmi: c.wmiKo(errWmi("AUTH_REJECTED")),
+      });
+      motivi.push(e.motivo);
+    }
+    assert.equal(c.conto.verifiche, 1);
+    assert.equal(c.conto.wmi, MAX_CONSECUTIVE_FAILURES_PER_RUN);
+    assert.deepEqual(motivi.slice(MAX_CONSECUTIVE_FAILURES_PER_RUN), Array(5).fill("budget_esaurito"));
+  });
+
+  it("lo stesso account scritto in due forme è uno solo", async () => {
+    const c = contatore();
+    const verifica = c.verifica("non_so");
+    const budget = new CredentialRunBudget(() => {});
+    await prova({ credId: 1, username: "DOM\\Mario", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    await prova({ credId: 2, username: "mario@dom.local", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    assert.equal(c.conto.verifiche, 1);
+    assert.equal(budget.consecutiveFailures(1), 2);
+    assert.equal(budget.consecutiveFailures(2), 2);
+  });
+
+  it("stesso utente, password diverse: due verifiche e due conti", async () => {
+    const c = contatore();
+    const verifica = c.verifica("non_so");
+    const budget = new CredentialRunBudget(() => {});
+    await prova({ credId: 1, passwordVoce: "una", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    await prova({ credId: 2, passwordVoce: "altra", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    assert.equal(c.conto.verifiche, 2);
+    assert.equal(budget.consecutiveFailures(1), 1);
+    assert.equal(budget.consecutiveFailures(2), 1);
   });
 });
 

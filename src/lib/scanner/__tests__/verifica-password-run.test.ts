@@ -20,6 +20,7 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import type { AdIntegration } from "@/lib/db";
 import type { DipendenzeWmi, OpzioniExecFile } from "@/lib/devices/wmi-run";
 import type { TcpProbeResult } from "@/lib/devices/tcp-precheck";
+import { RicordoErrate, VALIDITA_ERRATA_MS } from "../account-windows";
 import {
   VerificaPasswordRun,
   provaLdapDellaVoce,
@@ -124,6 +125,56 @@ describe("VerificaPasswordRun: una sola verifica per voce", () => {
 });
 
 /* ------------------------------------------------------------ utente/dominio */
+
+describe("VerificaPasswordRun: per account, e l'errata fra un giro e l'altro", () => {
+  it("due voci con lo stesso account: una verifica sola", async () => {
+    const { prove, chiamate } = proveFinte("non_so", "non_so");
+    const run = new VerificaPasswordRun(prove);
+    await Promise.all([run.esito(1, "10.0.0.1", "acc"), run.esito(2, "10.0.0.2", "acc")]);
+    assert.deepEqual(chiamate.ldap, [1]);
+  });
+
+  it("errata ricordata: al giro dopo nessun logon", async () => {
+    const ricordo = new RicordoErrate();
+    const primo = proveFinte("errata", "non_so");
+    assert.equal(await new VerificaPasswordRun(primo.prove, ricordo).esito(1, "10.0.0.1", "acc"), "errata");
+    const secondo = proveFinte("valida", "valida");
+    assert.equal(await new VerificaPasswordRun(secondo.prove, ricordo).esito(1, "10.0.0.1", "acc"), "errata");
+    assert.deepEqual([secondo.chiamate.ldap, secondo.chiamate.smb], [[], []]);
+  });
+
+  it("errata da SMB: si ricorda anche quella", async () => {
+    const ricordo = new RicordoErrate();
+    await new VerificaPasswordRun(proveFinte("non_so", "errata").prove, ricordo).esito(1, "10.0.0.1", "acc");
+    assert.equal(ricordo.ricorda("acc"), true);
+  });
+
+  it("scaduto il ricordo si verifica di nuovo", async () => {
+    const ora = { ms: 0 };
+    const ricordo = new RicordoErrate(() => ora.ms);
+    await new VerificaPasswordRun(proveFinte("errata", "non_so").prove, ricordo).esito(1, "10.0.0.1", "acc");
+    ora.ms = VALIDITA_ERRATA_MS;
+    const dopo = proveFinte("valida", "non_so");
+    assert.equal(await new VerificaPasswordRun(dopo.prove, ricordo).esito(1, "10.0.0.1", "acc"), "valida");
+    assert.deepEqual(dopo.chiamate.ldap, [1]);
+  });
+
+  it("valida e non_so non si ricordano: un timeout non è una risposta", async () => {
+    for (const esito of ["valida", "non_so"] as const) {
+      const ricordo = new RicordoErrate();
+      await new VerificaPasswordRun(proveFinte(esito, "non_so").prove, ricordo).esito(1, "10.0.0.1", "acc");
+      assert.equal(ricordo.ricorda("acc"), false, esito);
+    }
+  });
+
+  it("un altro account non legge il ricordo", async () => {
+    const ricordo = new RicordoErrate();
+    ricordo.segna("acc");
+    const { prove, chiamate } = proveFinte("valida", "non_so");
+    assert.equal(await new VerificaPasswordRun(prove, ricordo).esito(1, "10.0.0.1", "altro"), "valida");
+    assert.deepEqual(chiamate.ldap, [1]);
+  });
+});
 
 describe("utenteDelDominio: l'account locale non si verifica su LDAP", () => {
   const dominio = "cliente.local";

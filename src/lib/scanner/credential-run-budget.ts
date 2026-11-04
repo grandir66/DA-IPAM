@@ -44,12 +44,30 @@ export class CredentialRunBudget {
   private readonly skippedAfterExclusion = new Map<number, number>();
   private readonly denied = new Map<number, number>();
   private readonly wrongPassword = new Set<number>();
+  /** Voce → prima voce vista dello stesso account: tutti i conti stanno su quella. */
+  private readonly primaVoce = new Map<number, number>();
+  private readonly voceDiAccount = new Map<string, number>();
 
   constructor(private readonly log: CredentialRunBudgetLogger) {}
 
+  /**
+   * Dichiara l'account della voce: due voci con lo stesso account hanno un conto solo. Il limite è sui logon errati di un
+   * account, e due voci uguali raddoppierebbero quelli ammessi. Una voce non dichiarata conta da sola.
+   */
+  legaAccount(credId: number, account: string): void {
+    if (this.primaVoce.has(credId)) return;
+    const prima = this.voceDiAccount.get(account) ?? credId;
+    this.voceDiAccount.set(account, prima);
+    this.primaVoce.set(credId, prima);
+  }
+
+  private conto(credId: number): number {
+    return this.primaVoce.get(credId) ?? credId;
+  }
+
   /** Fallimenti consecutivi correnti di questa credenziale in questo run. */
   consecutiveFailures(credId: number): number {
-    return this.failStreak.get(credId) ?? 0;
+    return this.failStreak.get(this.conto(credId)) ?? 0;
   }
 
   /**
@@ -69,14 +87,12 @@ export class CredentialRunBudget {
     if (decision.attempt) return true;
 
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES_PER_RUN) {
-      if (!this.excludedAt.has(input.credId)) {
-        this.excludedAt.set(input.credId, consecutiveFailures);
+      const conto = this.conto(input.credId);
+      if (!this.excludedAt.has(conto)) {
+        this.excludedAt.set(conto, consecutiveFailures);
         this.log(`⛔ credenziale #${input.credId} esclusa per il resto del run: ${decision.reason}`);
       }
-      this.skippedAfterExclusion.set(
-        input.credId,
-        (this.skippedAfterExclusion.get(input.credId) ?? 0) + 1
-      );
+      this.skippedAfterExclusion.set(conto, (this.skippedAfterExclusion.get(conto) ?? 0) + 1);
     } else {
       this.log(`⏭ ${input.ip} cred#${input.credId}: ${decision.reason}`);
     }
@@ -85,12 +101,12 @@ export class CredentialRunBudget {
 
   /** Fallimento reale osservato dal chiamante: incrementa lo streak. */
   recordFailure(credId: number): void {
-    this.failStreak.set(credId, this.consecutiveFailures(credId) + 1);
+    this.failStreak.set(this.conto(credId), this.consecutiveFailures(credId) + 1);
   }
 
   /** Successo reale osservato dal chiamante: azzera lo streak — SOLO qui. */
   recordSuccess(credId: number): void {
-    this.failStreak.set(credId, 0);
+    this.failStreak.set(this.conto(credId), 0);
   }
 
   /**
@@ -101,7 +117,8 @@ export class CredentialRunBudget {
    * diritti e non la password. Contati come fallimenti, il budget avrebbe fermato la scansione dopo 3 macchine.
    */
   recordDenied(credId: number): void {
-    this.denied.set(credId, (this.denied.get(credId) ?? 0) + 1);
+    const conto = this.conto(credId);
+    this.denied.set(conto, (this.denied.get(conto) ?? 0) + 1);
   }
 
   /**
@@ -110,8 +127,9 @@ export class CredentialRunBudget {
    * veri anche se la stessa voce passa da un percorso che non usa la verifica.
    */
   recordWrongPassword(credId: number): void {
-    if (this.wrongPassword.has(credId)) return;
-    this.wrongPassword.add(credId);
+    const conto = this.conto(credId);
+    if (this.wrongPassword.has(conto)) return;
+    this.wrongPassword.add(conto);
     this.recordFailure(credId);
   }
 

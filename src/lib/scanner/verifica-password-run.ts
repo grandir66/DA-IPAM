@@ -20,8 +20,9 @@
  * timeout, trasporto: `non_so`. Un errore di trasporto non è una risposta.
  *
  * Il risultato sta in memoria per la vita dell'istanza e non si scrive da nessuna parte. Si memorizza la Promise,
- * non il risultato: due chiamate contemporanee per la stessa voce fanno una verifica sola. Una voce con `non_so`
- * non ritenta su un altro host.
+ * non il risultato: due chiamate contemporanee per lo stesso account fanno una verifica sola. Una voce con `non_so`
+ * non ritenta su un altro host. Con `account` la verifica è una per account e non per voce, e `errata` si ricorda anche
+ * fra un giro e l'altro (`RicordoErrate`): un bind sbagliato a ogni giro è la strada per il blocco.
  */
 import { execFile } from "child_process";
 import { Client, InvalidCredentialsError } from "ldapts";
@@ -32,6 +33,7 @@ import { findBridgePython } from "@/lib/devices/find-bridge-python";
 import { probeTcpPort } from "@/lib/devices/tcp-precheck";
 import type { DipendenzeWmi } from "@/lib/devices/wmi-run";
 import { risolvi } from "@/lib/percorsi";
+import type { RicordoErrate } from "./account-windows";
 
 export type EsitoPassword = "valida" | "errata" | "non_so";
 
@@ -41,26 +43,38 @@ const TIMEOUT_PORTA_445_MS = 3000;
 const SCRIPT_SMB = risolvi(process.cwd(), "src/lib/devices/smb-login.py");
 
 export class VerificaPasswordRun {
-  private readonly verifiche = new Map<number, Promise<EsitoPassword>>();
+  private readonly verifiche = new Map<number | string, Promise<EsitoPassword>>();
 
   constructor(
     private readonly prove: {
       ldap: (credId: number) => Promise<EsitoPassword>;
       smb: (credId: number, ip: string) => Promise<EsitoPassword>;
     },
+    private readonly ricordo?: RicordoErrate,
   ) {}
 
-  /** Una sola verifica per voce in tutta l'esecuzione. `ip` serve solo se LDAP dà non_so. */
-  esito(credId: number, ip: string): Promise<EsitoPassword> {
-    let verifica = this.verifiche.get(credId);
+  /**
+   * Una sola verifica per account in tutta l'esecuzione; senza `account`, per voce. `ip` serve solo se LDAP dà non_so.
+   * `account` è `chiaveAccount`: due voci con la stessa chiave hanno lo stesso utente e la stessa password.
+   */
+  esito(credId: number, ip: string, account?: string): Promise<EsitoPassword> {
+    const chiave = account ?? credId;
+    let verifica = this.verifiche.get(chiave);
     if (!verifica) {
-      verifica = this.verifica(credId, ip);
-      this.verifiche.set(credId, verifica);
+      verifica = this.verifica(credId, ip, account);
+      this.verifiche.set(chiave, verifica);
     }
     return verifica;
   }
 
-  private async verifica(credId: number, ip: string): Promise<EsitoPassword> {
+  private async verifica(credId: number, ip: string, account: string | undefined): Promise<EsitoPassword> {
+    if (account && this.ricordo?.ricorda(account)) return "errata";
+    const esito = await this.domanda(credId, ip);
+    if (esito === "errata" && account) this.ricordo?.segna(account);
+    return esito;
+  }
+
+  private async domanda(credId: number, ip: string): Promise<EsitoPassword> {
     const ldap = await this.prova(() => this.prove.ldap(credId));
     if (ldap !== "non_so") return ldap;
     return this.prova(() => this.prove.smb(credId, ip));

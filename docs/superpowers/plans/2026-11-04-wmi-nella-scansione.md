@@ -27,7 +27,7 @@
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | [x] | Misura sul 72729 col codice di oggi | orchestratore | — | esito noto | tabella nel Registro |
-| S1 | [ ] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
+| S1 | [x] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
 | S2 | [ ] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
 | S3 | [ ] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
 | S4 | [ ] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
@@ -54,7 +54,7 @@
 
 Verifica: script temporaneo sulla VM 100 → 13 PC, 12 `AUTH_REJECTED`, 1 `TCP_TIMEOUT`, 0 accessi. Dettaglio nel Registro.
 
-### [ ] Task 1 — Prova leggera WMI, tetto ai tempi (S1)
+### [x] Task 1 — Prova leggera WMI, tetto ai tempi (S1)
 
 **File**
 - Modifica: `src/lib/devices/wmi-bridge.py`, `src/lib/devices/wmi-run.ts`.
@@ -77,6 +77,8 @@ export async function runWmiIdentita(
 **Verifica:** prova con `execFile` finto: identità, `AUTH_REJECTED`, 135 chiusa, tetto superato. Vista fallire prima del codice.
 
 **Commit:** `WMI: prova leggera di identità con tetto di 20 secondi`.
+
+Verifica: `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.ts` → 8 verdi, viste rosse prima del codice.
 
 ### [ ] Task 2 — Protocollo `wmi` e colonna `motivo` (S2)
 

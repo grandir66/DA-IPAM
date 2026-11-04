@@ -3,22 +3,27 @@
 import { useRef, useState } from "react";
 import { ClipboardCopy, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
-import { Etichetta, Legenda, Pannello } from "@/components/shared/console";
+import { Etichetta, Pannello } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { dirittiDi, FAMIGLIE_DIRITTI, type FamigliaDiritti } from "@/lib/credentials/diritti";
-import type { SegnoStato } from "@/lib/credentials/motivi-accesso";
-import { dirittiMancanti, testoRichiestaIt } from "@/lib/credentials/richiesta-it";
+import type { AspettoSegno } from "@/lib/credentials/motivi-accesso";
+import { dirittiMancanti, testoConteggioMancanti, testoRichiestaIt } from "@/lib/credentials/richiesta-it";
 import type { RigaControllo, RisultatoControllo, StatoDiritto } from "@/lib/credentials/controllo-account";
 import { fetchJson } from "@/lib/fetch-json";
 import { AccessoWindowsPerHost, formattaTentativo } from "./accesso-windows-per-host";
-import { Segno, VOCI_LEGENDA_SEGNI } from "./segno-stato";
+import { LegendaSegni, Segno } from "./segno-stato";
 
 type Controllo = { fase: "da_fare" } | { fase: "in_corso" } | { fase: "errore"; messaggio: string } | ({ fase: "fatto" } & RisultatoControllo);
 
-const SEGNO_DEL_DIRITTO: Record<StatoDiritto, SegnoStato> = { si: "si", no: "no", non_verificato: "non_provato" };
-const PAROLA_DEL_DIRITTO: Record<StatoDiritto, string> = { si: "Sì", no: "No", non_verificato: "Non provato" };
+const ASPETTO_DEL_DIRITTO: Record<StatoDiritto, AspettoSegno> = {
+  si: { segno: "si", forma: "spunta" },
+  in_parte: { segno: "attenzione", forma: "meta" },
+  no: { segno: "no", forma: "croce" },
+  non_verificato: { segno: "non_provato", forma: "trattino" },
+};
+const PAROLA_DEL_DIRITTO: Record<StatoDiritto, string> = { si: "Sì", in_parte: "In parte", no: "No", non_verificato: "Non provato" };
 
 /** Copia negli appunti; fuori da un contesto sicuro (http) `navigator.clipboard` non c'è e si ripiega su `execCommand`. */
 async function copiaTesto(testo: string): Promise<boolean> {
@@ -70,7 +75,7 @@ function PannelloDiritti({ famiglia, righe }: { famiglia: FamigliaDiritti; righe
                   <span>{d.abilitare}</span> <Etichetta mono={false}>{d.dove}</Etichetta>
                 </TableCell>
                 <TableCell className="align-top whitespace-normal">
-                  <Segno segno={SEGNO_DEL_DIRITTO[stato]}>{PAROLA_DEL_DIRITTO[stato]}</Segno>
+                  <Segno {...ASPETTO_DEL_DIRITTO[stato]}>{PAROLA_DEL_DIRITTO[stato]}</Segno>
                   {r?.base && <p className="mt-1 text-[13px] leading-snug text-muted-foreground">{r.base}</p>}
                 </TableCell>
               </TableRow>
@@ -156,16 +161,14 @@ export function DirittiAccount({ voce, onChiudi }: { voce: { id: number; name: s
 
       <PannelloDiritti famiglia="utente_scansioni" righe={righe} />
       <PannelloDiritti famiglia="sicurezza_dominio" righe={righe} />
-      <Legenda voci={VOCI_LEGENDA_SEGNI} />
+      <LegendaSegni />
 
       {controllo.fase === "fatto" && (
         <div className="space-y-2 rounded-xl border bg-card px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             {mancanti.length > 0 ? (
               <>
-                <p className="text-sm font-semibold">
-                  {mancanti.length === 1 ? "Manca 1 diritto" : `Mancano ${mancanti.length} diritti`} da chiedere all&apos;IT del cliente
-                </p>
+                <p className="text-sm font-semibold">{testoConteggioMancanti(mancanti)}</p>
                 <Button onClick={() => void copia()}>
                   <ClipboardCopy className="h-4 w-4 mr-2" />
                   Copia richiesta per l&apos;IT

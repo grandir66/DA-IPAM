@@ -11,14 +11,14 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ORDINE_MOTIVI, type MotivoAccesso } from "@/lib/scanner/accesso-windows";
 import { dirittoPerId } from "../diritti";
-import { azioneDelMotivo, comeMotivo, MOTIVI, motivoDaPosizione, parolaDelMotivo, segnoDelMotivo } from "../motivi-accesso";
+import { aspettoDelMotivo, azioneDelMotivo, comeMotivo, MOTIVI, motivoDaPosizione, parolaDelMotivo, segnoDelMotivo } from "../motivi-accesso";
 
 describe("ogni motivo ha una parola e un segno", () => {
   for (const m of MOTIVI) {
     it(m, () => {
       assert.ok(parolaDelMotivo(m).length > 0);
       assert.ok(!/\s/.test(parolaDelMotivo(m)), `«${parolaDelMotivo(m)}» deve essere una parola sola`);
-      assert.ok(["si", "no", "non_provato"].includes(segnoDelMotivo(m)));
+      assert.ok(["si", "attenzione", "no", "non_provato"].includes(segnoDelMotivo(m)));
     });
   }
 
@@ -32,9 +32,17 @@ describe("ogni motivo ha una parola e un segno", () => {
     assert.equal(segnoDelMotivo("budget_esaurito"), "non_provato");
   });
 
-  it("solo «ok» è sì; gli altri esiti veri (diritti, password, firewall, errore) sono no", () => {
+  it("solo «ok» è sì; diritti, password ed errore sono no; il firewall non dice niente della voce: attenzione", () => {
     assert.equal(segnoDelMotivo("ok"), "si");
-    for (const m of ["diritti_mancanti", "password_errata", "firewall", "errore"] as const) assert.equal(segnoDelMotivo(m), "no", m);
+    for (const m of ["diritti_mancanti", "password_errata", "errore"] as const) assert.equal(segnoDelMotivo(m), "no", m);
+    assert.equal(segnoDelMotivo("firewall"), "attenzione");
+  });
+
+  it("stato e forma: Firewall ambra con lo scudo, Negato pieno col lucchetto, mai la stessa forma", () => {
+    assert.deepEqual(aspettoDelMotivo("firewall"), { segno: "attenzione", forma: "scudo" });
+    assert.deepEqual(aspettoDelMotivo("diritti_mancanti"), { segno: "no", forma: "lucchetto" });
+    assert.deepEqual(aspettoDelMotivo("ok"), { segno: "si", forma: "spunta" });
+    assert.deepEqual(aspettoDelMotivo(null), { segno: "non_provato", forma: "trattino" });
   });
 });
 

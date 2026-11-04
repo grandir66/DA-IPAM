@@ -141,9 +141,10 @@ describe("getEsitiAccessoPerVoce: «N su M» conta gli host provati", () => {
     riga(s, "h4", s.voceB, "wmi", "budget_esaurito", "2026-11-04T09:08:00.000Z");
     const esiti = withTenant(T, () => getEsitiAccessoPerVoce(s.voceA));
     // winrm di A: h1 ok, h2 diritti, h5 errore provati; h3 porte chiuse, h4 vuoto, h7 sconosciuto no.
-    assert.deepEqual(esiti.find((e) => e.strada === "winrm"), { strada: "winrm", provati: 3, riusciti: 1 });
-    assert.deepEqual(esiti.find((e) => e.strada === "wmi"), { strada: "wmi", provati: 1, riusciti: 1 });
-    assert.deepEqual(withTenant(T, () => getEsitiAccessoPerVoce(s.voceB)), [{ strada: "winrm", provati: 1, riusciti: 1 }]);
+    const nessuno = { diritti: 0, firewall: 0, errori: 0, password: 0 };
+    assert.deepEqual(esiti.find((e) => e.strada === "winrm"), { strada: "winrm", provati: 3, riusciti: 1, ...nessuno, diritti: 1, errori: 1 });
+    assert.deepEqual(esiti.find((e) => e.strada === "wmi"), { strada: "wmi", provati: 1, riusciti: 1, ...nessuno });
+    assert.deepEqual(withTenant(T, () => getEsitiAccessoPerVoce(s.voceB)), [{ strada: "winrm", provati: 1, riusciti: 1, ...nessuno }]);
   });
 
   it("una voce senza righe non ha esiti", () => {

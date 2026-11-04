@@ -5785,6 +5785,11 @@ export interface EsitoAccessoVoce {
   strada: StradaAccesso;
   provati: number;
   riusciti: number;
+  /** Host con un diritto che manca. Gli altri tre conti dicono perché non si sa. */
+  diritti: number;
+  firewall: number;
+  errori: number;
+  password: number;
 }
 
 /**
@@ -5817,14 +5822,19 @@ export function getEsitiAccessoPerVoce(credentialId: number): EsitoAccessoVoce[]
   const rows = db()
     .prepare(
       `${cteEsitiAccesso(true)}
-       SELECT strada, COUNT(DISTINCT host_id) AS provati, COUNT(DISTINCT CASE WHEN motivo = 'ok' THEN host_id END) AS riusciti
+       SELECT strada, COUNT(DISTINCT host_id) AS provati,
+         COUNT(DISTINCT CASE WHEN motivo = 'ok' THEN host_id END) AS riusciti,
+         COUNT(DISTINCT CASE WHEN motivo = 'diritti_mancanti' THEN host_id END) AS diritti,
+         COUNT(DISTINCT CASE WHEN motivo = 'firewall' THEN host_id END) AS firewall,
+         COUNT(DISTINCT CASE WHEN motivo = 'errore' THEN host_id END) AS errori,
+         COUNT(DISTINCT CASE WHEN motivo = 'password_errata' THEN host_id END) AS password
        FROM esiti
        WHERE motivo IN ('ok', 'password_errata', 'diritti_mancanti', 'firewall', 'errore')
        GROUP BY strada
        ORDER BY strada DESC`
     )
-    .all(credentialId, credentialId) as Array<{ strada: StradaAccesso; provati: number; riusciti: number }>;
-  return rows.map((r) => ({ strada: r.strada, provati: r.provati, riusciti: r.riusciti }));
+    .all(credentialId, credentialId) as EsitoAccessoVoce[];
+  return rows;
 }
 
 /** L'esito di una strada su un host: `motivo` null = nessun esito (nessuna riga, o riga senza motivo). */

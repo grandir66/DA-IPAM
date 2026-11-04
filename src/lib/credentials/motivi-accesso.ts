@@ -5,8 +5,10 @@
  * `MotivoAccesso` del motore di scansione; qui sta come si dicono a chi legge la pagina. Le azioni dei diritti si leggono da
  * `diritti.ts`, non si ricopiano: una guida sola.
  *
- * Il segno ha tre valori e non due: porte chiuse e budget esaurito vogliono dire che su quell'host non è partito nessun
- * login, quindi si vedono come «non provato», uguali a una riga che non c'è (non si prova niente e non si inventa un «no»).
+ * Il segno ha quattro valori. Porte chiuse e budget esaurito vogliono dire che su quell'host non è partito nessun login,
+ * quindi si vedono come «non provato», uguali a una riga che non c'è (non si prova niente e non si inventa un «no»). Il
+ * firewall non dice niente della voce: «attenzione», con lo scudo. Stato e forma sono due cose: «Negato» è un «no» col
+ * lucchetto, perché dice cosa fare, e non deve assomigliare al firewall (verifica a schermo del 04/11).
  *
  * Il modulo è puro e lo importano anche i componenti client: niente database, niente import di server (solo tipi).
  */
@@ -14,7 +16,14 @@ import type { MotivoAccesso } from "@/lib/scanner/accesso-windows";
 import { dirittoPerId } from "./diritti";
 
 export type StradaAccesso = "winrm" | "wmi";
-export type SegnoStato = "si" | "no" | "non_provato";
+export type SegnoStato = "si" | "attenzione" | "no" | "non_provato";
+/** L'icona del segno: si legge senza il colore. */
+export type FormaSegno = "spunta" | "meta" | "scudo" | "lucchetto" | "croce" | "trattino";
+
+export interface AspettoSegno {
+  segno: SegnoStato;
+  forma: FormaSegno;
+}
 
 /**
  * Tutti i motivi, nell'ordine di utilità del motore (`ORDINE_MOTIVI`) più quelli che il motore non classifica per strada.
@@ -35,23 +44,29 @@ const PAROLE: Readonly<Record<MotivoAccesso, string>> = {
   errore: "Errore",
 };
 
-const SEGNI: Readonly<Record<MotivoAccesso, SegnoStato>> = {
-  ok: "si",
-  diritti_mancanti: "no",
-  password_errata: "no",
-  firewall: "no",
-  errore: "no",
-  porte_chiuse: "non_provato",
-  budget_esaurito: "non_provato",
-  nessuna_voce: "non_provato",
+const ASPETTI: Readonly<Record<MotivoAccesso, AspettoSegno>> = {
+  ok: { segno: "si", forma: "spunta" },
+  diritti_mancanti: { segno: "no", forma: "lucchetto" },
+  password_errata: { segno: "no", forma: "croce" },
+  firewall: { segno: "attenzione", forma: "scudo" },
+  errore: { segno: "no", forma: "croce" },
+  porte_chiuse: { segno: "non_provato", forma: "trattino" },
+  budget_esaurito: { segno: "non_provato", forma: "trattino" },
+  nessuna_voce: { segno: "non_provato", forma: "trattino" },
 };
+
+const NESSUN_ESITO: AspettoSegno = { segno: "non_provato", forma: "trattino" };
 
 export function parolaDelMotivo(motivo: MotivoAccesso | null): string {
   return motivo ? PAROLE[motivo] : "Non provato";
 }
 
+export function aspettoDelMotivo(motivo: MotivoAccesso | null): AspettoSegno {
+  return motivo ? ASPETTI[motivo] : NESSUN_ESITO;
+}
+
 export function segnoDelMotivo(motivo: MotivoAccesso | null): SegnoStato {
-  return motivo ? SEGNI[motivo] : "non_provato";
+  return aspettoDelMotivo(motivo).segno;
 }
 
 const NOME_STRADA: Readonly<Record<StradaAccesso, string>> = { winrm: "WinRM", wmi: "WMI" };

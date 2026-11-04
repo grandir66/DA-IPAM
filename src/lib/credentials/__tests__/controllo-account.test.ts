@@ -339,15 +339,38 @@ describe("non_verificato, mai «no», quando non si può sapere", () => {
 });
 
 describe("sui PC non si prova niente: lo stato viene dagli esiti scritti", () => {
-  it("«2 su 3»: entrato in 2 host su 3 provati → sì, e la base lo dice", async () => {
+  it("«2 su 3» con diritti mancanti sul terzo: in parte. Prima diceva Sì e «nessun diritto mancante», ed era falso", async () => {
     const s = scena();
     esito(s, 0, "winrm", "ok");
     esito(s, 1, "winrm", "ok");
     esito(s, 2, "winrm", "diritti_mancanti");
     const c = await controlla(s);
-    assert.equal(riga(c.righe, "inventario_winrm").stato, "si");
+    assert.equal(riga(c.righe, "inventario_winrm").stato, "in_parte");
     assert.match(riga(c.righe, "inventario_winrm").base, /2 su 3/);
+    assert.equal(riga(c.righe, "software_patch").stato, "in_parte");
   });
+
+  it("entrato dove ha risposto, il resto muto: sì, nessun host ha detto che manca un diritto", async () => {
+    const s = scena();
+    esito(s, 0, "winrm", "ok");
+    esito(s, 1, "winrm", "firewall");
+    const c = await controlla(s);
+    assert.equal(riga(c.righe, "inventario_winrm").stato, "si");
+    assert.match(riga(c.righe, "inventario_winrm").base, /1 su 2/);
+  });
+
+  for (const motivo of ["firewall", "errore", "password_errata"] as const) {
+    it(`solo ${motivo}: non si sa se il diritto c'è, non_verificato col motivo, mai «no»`, async () => {
+      const s = scena();
+      esito(s, 0, "wmi", motivo);
+      esito(s, 1, "wmi", motivo);
+      const c = await controlla(s);
+      const r = riga(c.righe, "inventario_wmi");
+      assert.equal(r.stato, "non_verificato");
+      assert.match(r.base, { firewall: /2 firewall/, errore: /2 con errore/, password_errata: /2 con password errata/ }[motivo]);
+      assert.match(r.base, /WMI/);
+    });
+  }
 
   it("«0 su N»: provato su host e mai entrato → no; conta gli host provati, non quelli con la porta chiusa", async () => {
     const s = scena();

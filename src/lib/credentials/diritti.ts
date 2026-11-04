@@ -44,21 +44,27 @@ export const GRUPPI = {
   domainAdmins: "Domain Admins",
 } as const;
 
-export const FAMIGLIE_DIRITTI: Readonly<Record<FamigliaDiritti, { nome: string; descrizione: string }>> = {
+export const FAMIGLIE_DIRITTI: Readonly<Record<FamigliaDiritti, { nome: string; conArticolo: string; accountEsempio: string; descrizione: string }>> = {
   utente_scansioni: {
     nome: "Utente delle scansioni",
+    conArticolo: "l'utente delle scansioni",
+    accountEsempio: "svc-ipam",
     descrizione: "L'account con cui DA-IPAM entra su PC e server per inventario, software e patch.",
   },
   sicurezza_dominio: {
     nome: "Sicurezza del dominio",
+    conArticolo: "la sicurezza del dominio",
+    accountEsempio: "svc-ipam-dc",
     descrizione: "Ciò che si abilita sui domain controller e nel dominio perché DA-IPAM legga utenti, eventi e DHCP.",
   },
 };
 
+export const REGOLA_ACCOUNT_SEPARATI = `L'account delle scansioni (${GRUPPI.amministratoriLocali} locale sui PC e server) è separato da quello di sola lettura sui domain controller: chi legge gli eventi non deve poter amministrare i computer.`;
+
 /** Regole che valgono per tutte le voci. Scritte una volta, qui. */
 export const REGOLE_DIRITTI: readonly string[] = [
   `Mai ${GRUPPI.domainAdmins}: nessuna funzione di DA-IPAM lo richiede, e un account con quel potere in giro è un rischio per tutto il dominio.`,
-  `L'account delle scansioni (${GRUPPI.amministratoriLocali} locale sui PC e server) è separato da quello di sola lettura sui domain controller: chi legge gli eventi non deve poter amministrare i computer.`,
+  REGOLA_ACCOUNT_SEPARATI,
   `Sui domain controller ${GRUPPI.amministratoriLocali} non serve: bastano i gruppi dell'elenco, tutti non amministrativi.`,
 ];
 

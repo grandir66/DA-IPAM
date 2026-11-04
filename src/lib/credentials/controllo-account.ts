@@ -9,9 +9,11 @@
  *    altro gruppo è dentro. I gruppi di sistema si cercano per SID noto (Event Log Readers S-1-5-32-573, Remote Management
  *    Users S-1-5-32-580), non per nome: su un DC in italiano i nomi sono altri. DHCP Administrators non ha un SID noto:
  *    si cerca per nome, e se quel nome sul DC non esiste lo stato è `non_verificato`, non «no».
- *  - **PC e server**: al clic non si prova niente. Lo stato viene dagli esiti già scritti in `host_credentials` dalle
- *    scansioni (nessun logon in più, nessun tentativo consumato). «2 su 3» conta gli host provati: porte chiuse e budget
- *    esaurito non lo sono. Senza esiti: `non_verificato`.
+ *  - **PC e server**: al clic non si prova niente. Lo stato viene dagli esiti già scritti dalle scansioni (nessun logon in
+ *    più, nessun tentativo consumato). «2 su 3» conta gli host provati: porte chiuse e budget esaurito non lo sono. `no` solo
+ *    con almeno un `diritti_mancanti` e nessun host riuscito; alcuni riusciti e altri con `diritti_mancanti` è `in_parte`
+ *    (con «6 su 36» la pagina diceva Sì e «nessun diritto mancante», ed era falso). Firewall, errore o password errata non
+ *    dicono se il diritto c'è: `non_verificato` col motivo. Senza esiti: `non_verificato`.
  *  - **Registrazione degli eventi** (GPO di audit): non si verifica da qui, resta `non_verificato`.
  *  - **Password**: si riusa `provaLdapDellaVoce` (solo cifrato, mai un bind in chiaro se StartTLS fallisce; `errata` solo con
  *    prova certa). Con `non_so` si dice «non verificabile» e il controllo continua. Una password `errata` si ricorda per
@@ -39,7 +41,8 @@ import { provaLdapDellaVoce, utenteDelDominio, type EsitoPassword } from "@/lib/
 import { DIRITTI, GRUPPI } from "./diritti";
 import type { StradaAccesso } from "./motivi-accesso";
 
-export type StatoDiritto = "si" | "no" | "non_verificato";
+/** `in_parte`: entra su alcuni host e su altri mancano i diritti. Per chi chiede all'IT è un diritto che manca. */
+export type StatoDiritto = "si" | "in_parte" | "no" | "non_verificato";
 
 export interface RigaControllo {
   dirittoId: string;
@@ -196,7 +199,7 @@ async function leggiAnnuario(integrazione: AdIntegration, username: string, deps
   }
 }
 
-const PAROLA_STATO: Readonly<Record<StatoDiritto, string>> = { si: "sì", no: "no", non_verificato: "non verificabile" };
+const PAROLA_STATO: Readonly<Record<StatoDiritto, string>> = { si: "sì", in_parte: "in parte", no: "no", non_verificato: "non verificabile" };
 
 function riunisci(stati: readonly StatoDiritto[]): StatoDiritto {
   if (stati.includes("no")) return "no";
@@ -235,11 +238,15 @@ function daiPc(dirittoId: string, strada: StradaAccesso, esiti: readonly EsitoAc
   if (!e || e.provati === 0) {
     return { dirittoId, stato: "non_verificato", base: `Nessun host provato con ${nome}: lancia una scansione.` };
   }
-  return {
-    dirittoId,
-    stato: e.riusciti > 0 ? "si" : "no",
-    base: `${e.riusciti} su ${e.provati} host provati con ${nome}, dall'ultima scansione.`,
-  };
+  const base = `${e.riusciti} su ${e.provati} host provati con ${nome}, dall'ultima scansione.`;
+  if (e.riusciti > 0) return { dirittoId, stato: e.diritti > 0 ? "in_parte" : "si", base };
+  if (e.diritti > 0) return { dirittoId, stato: "no", base };
+  const cause = [
+    e.firewall > 0 ? `${e.firewall} firewall` : "",
+    e.errori > 0 ? `${e.errori} con errore` : "",
+    e.password > 0 ? `${e.password} con password errata` : "",
+  ].filter(Boolean);
+  return { dirittoId, stato: "non_verificato", base: `Provati ${e.provati} host con ${nome}: nessuno dice se il diritto c'è (${cause.join(", ")}).` };
 }
 
 /* ---------------------------------------------------------------- insieme */

@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pannello, Legenda, Vuoto } from "@/components/shared/console";
+import { Pannello, Vuoto } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { azioneDelMotivo, parolaDelMotivo, segnoDelMotivo, type StradaAccesso } from "@/lib/credentials/motivi-accesso";
+import { aspettoDelMotivo, azioneDelMotivo, parolaDelMotivo, type StradaAccesso } from "@/lib/credentials/motivi-accesso";
 import type { CellaAccesso, RigaAccessoWindows } from "@/lib/db-tenant";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
-import { Segno, VOCI_LEGENDA_SEGNI } from "./segno-stato";
+import { LegendaSegni, Segno } from "./segno-stato";
 
 interface Risposta {
   righe: RigaAccessoWindows[];
@@ -39,7 +39,7 @@ function CellaStrada({ cella, strada }: { cella: CellaAccesso; strada: StradaAcc
   const azione = azioneDelMotivo(cella.motivo, strada);
   return (
     <div className="space-y-1">
-      <Segno segno={segnoDelMotivo(cella.motivo)}>{parolaDelMotivo(cella.motivo)}</Segno>
+      <Segno {...aspettoDelMotivo(cella.motivo)}>{parolaDelMotivo(cella.motivo)}</Segno>
       {azione && <p className="max-w-64 text-[13px] leading-snug text-muted-foreground">{azione}</p>}
     </div>
   );
@@ -49,7 +49,7 @@ function CellaStrada({ cella, strada }: { cella: CellaAccesso; strada: StradaAcc
  * «Accesso Windows per host» (piano accesso Windows, Task 9): per ogni host una colonna per WinRM e una per WMI, perché la
  * stessa voce può entrare da una strada e mancare dei diritti sull'altra. Una parola per esito, una sola azione, la data
  * dell'ultimo tentativo. Paginata dal server. Con `voceId` conta quella voce; senza (copertura) l'esito migliore fra tutte.
- * `senzaLegenda`: la pagina che lo ospita ha già la legenda dei tre segni (una cosa si dice una volta).
+ * `senzaLegenda`: la pagina che lo ospita ha già la legenda dei segni (una cosa si dice una volta).
  */
 export function AccessoWindowsPerHost({ voceId, senzaLegenda = false }: { voceId?: number; senzaLegenda?: boolean }) {
   const [pagina, setPagina] = useState(1);
@@ -100,7 +100,7 @@ export function AccessoWindowsPerHost({ voceId, senzaLegenda = false }: { voceId
           />
         ) : undefined
       }
-      piede={senzaLegenda ? undefined : <Legenda voci={VOCI_LEGENDA_SEGNI} />}
+      piede={senzaLegenda ? undefined : <LegendaSegni />}
       corpoClassName="p-0"
     >
       {stato.fase === "caricamento" ? (

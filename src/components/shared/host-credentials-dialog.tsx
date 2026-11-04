@@ -31,7 +31,7 @@ import { vociPerProtocollo } from "@/lib/credential-protocol-map";
 import { etichettaTipo } from "@/lib/credentials/tipi";
 import { Etichetta } from "@/components/shared/console";
 import { Segno } from "@/components/credentials/segno-stato";
-import { azioneDelMotivo, comeMotivo, parolaDelMotivo, segnoDelMotivo } from "@/lib/credentials/motivi-accesso";
+import { aspettoDelMotivo, azioneDelMotivo, comeMotivo, parolaDelMotivo } from "@/lib/credentials/motivi-accesso";
 
 const PROTOCOL_LABELS: Record<string, string> = {
   ssh: "SSH",
@@ -95,7 +95,7 @@ function EsitoRiga({ riga }: { riga: HostCredential }) {
     const azione = azioneDelMotivo(motivo, strada);
     return (
       <div className="space-y-1">
-        <Segno segno={segnoDelMotivo(motivo)}>{parolaDelMotivo(motivo)}</Segno>
+        <Segno {...aspettoDelMotivo(motivo)}>{parolaDelMotivo(motivo)}</Segno>
         {azione && <p className="text-[13px] leading-snug text-muted-foreground">{azione}</p>}
       </div>
     );

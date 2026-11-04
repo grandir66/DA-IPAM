@@ -10,7 +10,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { DIRITTI, dirittoPerId } from "../diritti";
-import { dirittiMancanti, testoRichiestaIt } from "../richiesta-it";
+import { dirittiMancanti, testoConteggioMancanti, testoRichiestaIt } from "../richiesta-it";
 
 describe("dirittiMancanti: solo lo stato «no»", () => {
   it("un diritto non verificato non è mancante: non lo si può chiedere all'IT senza sapere", () => {
@@ -20,6 +20,11 @@ describe("dirittiMancanti: solo lo stato «no»", () => {
       { dirittoId: "account_dominio", stato: "si" },
     ]);
     assert.deepEqual(m.map((d) => d.id), ["eventi_dc"]);
+  });
+
+  it("«in parte» è un diritto mancante: su alcuni host manca davvero", () => {
+    const m = dirittiMancanti([{ dirittoId: "inventario_wmi", stato: "in_parte" }]);
+    assert.deepEqual(m.map((d) => d.id), ["inventario_wmi"]);
   });
 
   it("l'ordine è quello del catalogo, non quello delle righe", () => {
@@ -35,7 +40,44 @@ describe("dirittiMancanti: solo lo stato «no»", () => {
   });
 });
 
+describe("testoConteggioMancanti", () => {
+  it("il conto per famiglia: i due account sono separati, un totale non direbbe a chi chiedere cosa", () => {
+    const m = [dirittoPerId("inventario_wmi"), dirittoPerId("inventario_winrm"), dirittoPerId("eventi_dc")];
+    assert.equal(testoConteggioMancanti(m), "Mancano 2 per l'utente delle scansioni · 1 per la sicurezza del dominio");
+  });
+
+  it("una famiglia sola, e il singolare", () => {
+    assert.equal(testoConteggioMancanti([dirittoPerId("eventi_dc")]), "Manca 1 per la sicurezza del dominio");
+  });
+
+  it("niente che manchi: vuoto", () => {
+    assert.equal(testoConteggioMancanti([]), "");
+  });
+});
+
 describe("testoRichiestaIt", () => {
+  it("una richiesta, due blocchi, un account per blocco: dice che sono due account separati", () => {
+    const testo = testoRichiestaIt([dirittoPerId("inventario_wmi"), dirittoPerId("eventi_dc")]);
+    assert.equal(testo.split("Richiesta per l'IT").length - 1, 1);
+    assert.match(testo, /== Utente delle scansioni — account svc-ipam ==/);
+    assert.match(testo, /== Sicurezza del dominio — account svc-ipam-dc ==/);
+    assert.match(testo, /due account separati/);
+    assert.ok(testo.indexOf("svc-ipam ==") < testo.indexOf("svc-ipam-dc =="));
+  });
+
+  it("anche con una famiglia sola si spiega che sono due: chi legge non deve unire gli account", () => {
+    assert.match(testoRichiestaIt([dirittoPerId("inventario_wmi")]), /due account separati/);
+  });
+
+  it("elenca tutti i nomi d'esempio usati nei comandi", () => {
+    const testo = testoRichiestaIt(DIRITTI.filter((d) => d.comandoIt));
+    const elenco = /Nei comandi i nomi \(([^)]*)\) sono d'esempio/.exec(testo)?.[1] ?? "";
+    for (const nome of ["svc-ipam", "svc-ipam-dc", "DOMINIO", "dominio.fqdn"]) {
+      assert.ok(elenco.split(", ").includes(nome), `manca ${nome} in «${elenco}»`);
+      assert.ok(DIRITTI.some((d) => d.comandoIt?.includes(nome)), `${nome} non è più nei comandi`);
+    }
+  });
+
   it("nessun diritto mancante: testo vuoto", () => {
     assert.equal(testoRichiestaIt([]), "");
   });

@@ -25,6 +25,11 @@ import re
 from datetime import datetime
 
 
+# I codici veri dell'accesso negato: 0x5 scritto intero, con o senza zeri, e il suo HRESULT. Il confronto col solo
+# prefisso prendeva anche 0x52e, 0x5b4 e simili, e un guasto qualsiasi diventava un rifiuto.
+CODICE_ACCESSO_NEGATO = re.compile(r"\b0x(?:0*5|80070005)\b", re.IGNORECASE)
+
+
 def _err(code: str, msg: str):
     print(json.dumps({"error": msg, "errorCode": code, "transport": "wmi/dcom"}))
     sys.exit(1)
@@ -135,7 +140,7 @@ def main():
     except Exception as e:
         msg = str(e)
         lower = msg.lower()
-        if "rpc_s_access_denied" in lower or "access_denied" in lower or "0x5" in msg:
+        if "access_denied" in lower or "e_accessdenied" in lower or CODICE_ACCESSO_NEGATO.search(msg):
             _err("AUTH_REJECTED", f"WMI access denied: {msg}. Verifica che l'utente sia in Administrators o abbia 'Remote Enable' sul namespace WMI.")
         if "ept_s_not_registered" in lower or "endpoint" in lower:
             _err("TCP_CLOSED", f"WMI/RPC endpoint mapper non disponibile (porta 135 chiusa o servizio RPC fermo): {msg}")

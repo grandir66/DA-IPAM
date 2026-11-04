@@ -26,6 +26,10 @@ import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
 import { recordCredentialFailure, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { classifyWinrmError } from "@/lib/devices/winrm-errors";
+import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
+import { eUtenteDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
+import { chiaveAccount, utenteNormalizzato } from "@/lib/scanner/account-windows";
+import type { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
 
 export const TETTO_WINDOWS = 3;
 const TEST_TIMEOUT_MS = 25000;
@@ -73,8 +77,43 @@ export interface EsitoProvaSuHost {
    * credenziale. Chi chiama non registra il fallimento e non esclude nulla.
    */
   trasporto: boolean;
+  /** La verifica sul controller di dominio ha detto «password errata» (o il ricordo la sapeva già): nessun logon è partito. */
+  passwordErrata?: boolean;
+  /** La verifica sul controller di dominio ha detto «password giusta»: un rifiuto dell'host dopo non è una password sbagliata. */
+  passwordValida?: boolean;
   /** Corpo JSON della rotta test (stessa forma di prima). */
   risposta: Record<string, unknown>;
+}
+
+/** Le prove si possono sostituire (niente rete). Di serie le prove vere. */
+export interface OpzioniProvaSuHost extends DipendenzeFreno {
+  /**
+   * La prova fa parte di una ricerca su più host: il limite di 3 prove in 15 minuti per utente (quello dei clic) non si
+   * consuma, perché la ricerca ha il suo conto sui logon errati (`CredentialRunBudget`).
+   */
+  ricerca?: boolean;
+  winrm?: (
+    host: string,
+    port: number,
+    username: string,
+    password: string,
+    command: string,
+    usePowershell: boolean,
+    realm: string,
+    opzioni?: OpzioniWinrm,
+  ) => Promise<unknown>;
+}
+
+/** Utente e password di una voce Windows come sono salvati; null se manca la voce o non è leggibile. */
+function accountWindows(dbh: Database.Database, credentialId: number): { username: string; password: string } | null {
+  const r = dbh.prepare(`SELECT credential_type, encrypted_username, encrypted_password FROM credentials WHERE id = ?`).get(credentialId) as
+    | { credential_type: string; encrypted_username: string | null; encrypted_password: string | null }
+    | undefined;
+  if (!r || String(r.credential_type || "").toLowerCase() !== "windows") return null;
+  const username = r.encrypted_username ? safeDecrypt(r.encrypted_username) : "";
+  const password = r.encrypted_password ? safeDecrypt(r.encrypted_password) : "";
+  if (!username || !password) return null;
+  return { username, password };
 }
 
 function conTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -132,6 +171,7 @@ export async function provaCredenzialeSuHost(
   credentialId: number,
   host: string,
   portaChiesta?: number | null,
+  opzioniProva: OpzioniProvaSuHost = {},
 ): Promise<EsitoProvaSuHost> {
   const cred = dbh
     .prepare(`SELECT id, name, credential_type, port, encrypted_username, encrypted_password FROM credentials WHERE id = ?`)
@@ -199,14 +239,27 @@ export async function provaCredenzialeSuHost(
     if (username === null || password === null) return nonProvata("Credenziale corrotta: rigenerare la password");
     if (!username || !password) return nonProvata("Username e password richiesti");
     const port = porta("winrm");
+    let passwordValida = false;
+    // Solo un account di dominio può bloccarsi per tutti: gli stessi freni della prova del legame. Con la password non
+    // verificata un trasporto solo, la catena del bridge farebbe fino a quattro logon errati per clic.
+    let opzioniWinrm: OpzioniWinrm | undefined;
+    if (eUtenteDiDominio(username)) {
+      const freno = await freniDelLogon(username, password, opzioniProva, { limitePerUtente: !opzioniProva.ricerca });
+      if ("fermata" in freno) {
+        const passwordErrata = freno.fermata.motivo !== "limite";
+        return { ...nonProvata(freno.fermata.messaggio), ...(passwordErrata ? { passwordErrata } : {}) };
+      }
+      if (freno.password !== "valida") opzioniWinrm = { unSoloLogon: true };
+      passwordValida = freno.password === "valida";
+    }
     try {
-      const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
+      const runWinrm = opzioniProva.winrm ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
       const ad = dbh.prepare(`SELECT domain FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1`).get() as { domain: string } | undefined;
-      await conTimeout(runWinrmCommand(host, port, username, password, "echo test", false, ad?.domain || ""), TEST_TIMEOUT_MS);
+      await conTimeout(Promise.resolve(runWinrm(host, port, username, password, "echo test", false, ad?.domain || "", opzioniWinrm)), TEST_TIMEOUT_MS);
       return { ok: true, protocollo: "winrm", porta: port, registra: true, trasporto: false, risposta: { success: true, message: "Connessione WinRM riuscita" } };
     } catch (e) {
       const errore = e instanceof Error ? e.message : "Connessione WinRM fallita.";
-      return fallita("winrm", port, errore, { success: false, error: errore });
+      return { ...fallita("winrm", port, errore, { success: false, error: errore }), ...(passwordValida ? { passwordValida } : {}) };
     }
   }
 
@@ -305,7 +358,16 @@ export function candidatiPerHost(
 // ---------------------------------------------------------------- ricerca
 
 /** `nonProvata`: non si è arrivati a tentare l'host (segreto mancante, tipo non provabile): niente traccia, niente tetto. */
-export type EsitoProva = { ok: boolean; errore?: string; nonProvata?: boolean; trasporto?: boolean };
+export type EsitoProva = {
+  ok: boolean;
+  errore?: string;
+  nonProvata?: boolean;
+  trasporto?: boolean;
+  /** Il controller di dominio dice che la password è errata: nessun logon è partito, ma quello del bind sbagliato è reale e si conta. */
+  passwordErrata?: boolean;
+  /** Il controller di dominio dice che la password è giusta: un rifiuto dell'host non è un logon errato, non consuma il budget. */
+  passwordValida?: boolean;
+};
 
 export interface OpzioniRicerca {
   /**
@@ -313,6 +375,11 @@ export interface OpzioniRicerca {
    * si fermano senza prova, per non far bloccare un account di dominio con password scaduta.
    */
   escludi?: number[];
+  /**
+   * Il conto dei logon errati per utente su tutta la ricerca (uno per ricerca, condiviso fra gli host): 3 e l'account
+   * si ferma per il resto della ricerca, qualunque sia l'host. Solo per le voci Windows di dominio.
+   */
+  budget?: CredentialRunBudget;
 }
 
 export async function trovaCredenziale(
@@ -390,12 +457,33 @@ export async function trovaCredenziale(
       continue;
     }
 
+    // Il limite di 3 logon errati è dell'account, non dell'host: il conto sta in `budget`, uno per tutta la ricerca.
+    const budget = proto === "winrm" ? opzioni.budget : undefined;
+    if (budget) {
+      const account = accountWindows(dbh, c.credentialId);
+      if (account && eUtenteDiDominio(account.username)) {
+        budget.legaAccount(c.credentialId, utenteNormalizzato(account.username), chiaveAccount(account.username, account.password));
+        // L'identificativo dell'host, non l'indirizzo: il registro non porta indirizzi.
+        if (!budget.gate({ ip: `host ${hostId}`, credId: c.credentialId, credType: "windows", hasWindowsIndicator: true, backoffUntil: null })) {
+          tentativi.push({
+            credentialId: c.credentialId,
+            nome: c.nome,
+            esito: "fermata",
+            motivo: `Account già rifiutato ${TETTO_WINDOWS} volte in questa ricerca: non si riprova su altri host per non bloccarlo. Correggi la voce.`,
+            quando: ora(),
+          });
+          continue;
+        }
+      }
+    }
+
     let esito: EsitoProva;
     try {
       esito = await prova(c.credentialId);
     } catch (e) {
       esito = { ok: false, errore: e instanceof Error ? e.message : "Errore nella prova" };
     }
+    if (budget && esito.passwordErrata) budget.recordWrongPassword(c.credentialId);
     if (esito.nonProvata && !esito.ok) {
       tentativi.push({ credentialId: c.credentialId, nome: c.nome, esito: "fermata", motivo: esito.errore || "Non provabile", quando: ora() });
       continue;
@@ -412,6 +500,11 @@ export async function trovaCredenziale(
       break;
     }
     veri++;
+    if (budget) {
+      if (esito.ok) budget.recordSuccess(c.credentialId);
+      else if (esito.passwordValida) budget.recordDenied(c.credentialId);
+      else budget.recordFailure(c.credentialId);
+    }
     registraProva(hostId, c.credentialId, proto, porta, esito);
     if (esito.ok) {
       trovata = { credentialId: c.credentialId, nome: c.nome };

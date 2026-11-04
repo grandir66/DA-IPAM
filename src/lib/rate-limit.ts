@@ -84,6 +84,22 @@ export function checkRateLimit(key: string, maxAttempts: number, windowMs: numbe
 }
 
 /**
+ * Quanto manca perché `checkRateLimit` torni a concedere un tentativo: millisecondi fino alla scadenza del più vecchio
+ * fra quelli in finestra. 0 se il limite non è raggiunto (o la chiave non esiste). Non consuma niente: serve a dire
+ * a chi è stato fermato quanto deve aspettare.
+ */
+export function attesaRateLimitMs(key: string, maxAttempts: number, windowMs: number = 15 * 60 * 1000): number {
+  const entry = store.get(key);
+  if (!entry) return 0;
+  const now = Date.now();
+  const recent = entry.timestamps.filter((t) => now - t < windowMs).sort((a, b) => a - b);
+  if (recent.length < maxAttempts) return 0;
+  // il tentativo che libera un posto è il più vecchio fra quelli che eccedono il limite
+  const liberante = recent[recent.length - maxAttempts];
+  return Math.max(0, liberante + windowMs - now);
+}
+
+/**
  * Registra un tentativo fallito senza consumare un "pass".
  * Usato per login falliti: il tentativo deve essere registrato anche se non consumato.
  */

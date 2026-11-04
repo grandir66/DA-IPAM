@@ -10,10 +10,9 @@ import { apriSessioneCommunity, etichettaVersioneSnmp, type VersioneSnmp } from 
 import { leggiSegretoDb, type AccessoSsh } from "@/lib/credentials/segreti";
 import { provaV3 } from "@/lib/protocols/snmpv3";
 import { safeDecrypt } from "@/lib/crypto";
-import { getCurrentTenantCode } from "@/lib/db-tenant";
-import { checkRateLimit } from "@/lib/rate-limit";
-import { chiaveAccount, ricordoDelTenant, utenteNormalizzato, type RicordoErrate } from "@/lib/scanner/account-windows";
-import { provaLdapDellaVoce, type EsitoPassword } from "@/lib/scanner/verifica-password-run";
+import { freniDelLogon as freniCondivisi } from "@/lib/credentials/freno-logon-windows";
+import { utenteNormalizzato, type RicordoErrate } from "@/lib/scanner/account-windows";
+import type { EsitoPassword } from "@/lib/scanner/verifica-password-run";
 import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
 
 /** Esito della prova: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
@@ -49,44 +48,16 @@ export interface DipendenzeProvaBinding {
   verificaPassword?: (username: string, password: string) => Promise<EsitoPassword>;
 }
 
-/** Le prove a mano di un account, come il limite della scansione: oltre, l'account si blocca. */
-const MAX_PROVE_PER_ACCOUNT = 3;
-const FINESTRA_PROVE_MS = 15 * 60 * 1000;
-
 /** La prova non è partita: non è un rifiuto, e il legame non si marca (`nonDisponibile`). */
 function nonPartita(message: string): EsitoProvaBinding {
   return { success: false, nonDisponibile: true, message };
 }
 
-/**
- * I freni della prova a mano, gli stessi della scansione (revisione finale, piano accesso Windows). Il pulsante è un logon
- * vero, e cinque clic su una password sbagliata bloccano un account di dominio. Nell'ordine:
- * 1. il ricordo delle password errate: se la password è già nota errata non si fa niente;
- * 2. 3 prove in 15 minuti per utente, non per voce: l'account è l'utente (`utenteNormalizzato`);
- * 3. la verifica sul DC, un bind che non lascia effetti sull'host, che dà la sola risposta certa: `errata` aggiorna il ricordo.
- *
- * Un rifiuto dell'host non aggiorna il ricordo: WMI e WinRM rispondono allo stesso modo a una password sbagliata e a un
- * diritto che manca, e `errata` toglierebbe la validazione a tutta la voce.
- */
+/** I freni sono quelli condivisi con il pulsante Test e la ricerca: `src/lib/credentials/freno-logon-windows.ts`. */
 async function freniDelLogon(username: string, password: string, deps: DipendenzeProvaBinding): Promise<{ fermata: EsitoProvaBinding } | { password: EsitoPassword }> {
-  const tenant = getCurrentTenantCode() ?? "DEFAULT";
-  const ricordo = deps.ricordo ?? ricordoDelTenant(tenant);
-  const chiave = chiaveAccount(username, password);
-  if (ricordo.ricorda(chiave)) return { fermata: nonPartita("Password errata, già verificata di recente: nessun tentativo. Correggi la voce.") };
-  if (!checkRateLimit(`prova-legame:${tenant}:${utenteNormalizzato(username)}`, MAX_PROVE_PER_ACCOUNT, FINESTRA_PROVE_MS)) {
-    return { fermata: nonPartita(`Troppe prove su questo account: al massimo ${MAX_PROVE_PER_ACCOUNT} in 15 minuti, per non bloccarlo. Riprova più tardi.`) };
-  }
-  const verifica = deps.verificaPassword ?? ((u: string, p: string) => provaLdapDellaVoce(0, { account: () => ({ username: u, password: p }) }));
-  let esito: EsitoPassword;
-  try {
-    esito = await verifica(username, password);
-  } catch (err) {
-    console.warn(`[prova-binding] verifica della password non riuscita: ${err instanceof Error ? err.name : "errore"}`);
-    esito = "non_so";
-  }
-  if (esito !== "errata") return { password: esito };
-  ricordo.segna(chiave);
-  return { fermata: nonPartita("Password errata, verificata sul controller di dominio: nessun tentativo su questo host. Correggi la voce.") };
+  const freno = await freniCondivisi(username, password, deps);
+  if ("fermata" in freno) return { fermata: nonPartita(freno.fermata.messaggio) };
+  return freno;
 }
 
 /** Prova una singola credenziale binding su un host. */

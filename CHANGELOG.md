@@ -23,6 +23,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Cambiato**: la prova a mano di un legame WMI, o WinRM con una voce di dominio, ha gli stessi freni della scansione:
   una password già nota errata non si prova, al massimo 3 prove in 15 minuti per utente, e prima si chiede al DC. Cinque
   clic su una password sbagliata bloccavano l'account.
+  Lo stesso freno vale ora per il pulsante «Test» di una voce Windows di dominio e per «Cerca la credenziale»: il Test
+  ferma al terzo logon errato in 15 minuti e dice fra quanto riprovare; la ricerca conta i logon errati per utente su tutti
+  gli host, non per host, e se il DC dice che la password è errata non fa nessun logon sugli host. SSH, SNMP e API come prima.
 - **Cambiato**: i diritti hanno una sola definizione, in due famiglie, «utente delle scansioni» e «sicurezza
   del dominio» (`src/lib/credentials/diritti.ts`); le guide dell'applicativo e i manuali la leggono.
   Riccardo (04/11): «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni».

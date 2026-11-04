@@ -4,13 +4,14 @@ import { getDb } from "@/lib/db";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
+import { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
 import { candidatiPerHost, provaCredenzialeSuHost, trovaCredenziale, type EsitoRicerca } from "@/lib/credentials/trova";
 
 /**
  * Ricerca della credenziale che funziona su uno o più host (tappe 3-5, T3, 21/10).
  * - GET `?host_id=&protocollo=&porta=` → candidati in ordine, con le escluse e la data: non prova nulla.
  * - POST `{ host_ids: number[] (1..50), protocollo, porta }` → `EsitoRicerca[]`, host in sequenza (solo amministratori:
- *   tenta accessi veri). Windows: al più 3 tentativi per host.
+ *   tenta accessi veri). Windows: al più 3 tentativi per host e 3 logon errati per utente su tutta la ricerca.
  * Logica in `src/lib/credentials/trova.ts`.
  */
 const PROTOCOLLI = ["ssh", "snmp_v2", "snmp_v3", "winrm", "api"] as const;
@@ -53,6 +54,8 @@ export async function POST(req: Request) {
     try {
       const dbh = getDb();
       const esiti: EsitoRicerca[] = [];
+      // Il conto dei logon errati per utente vale su tutta la ricerca, non per host. Il registro non porta indirizzi.
+      const budget = new CredentialRunBudget((msg) => console.warn(`[trova-credenziale] ${msg}`));
       for (const hostId of p.data.host_ids) {
         const host = dbh.prepare(`SELECT ip FROM hosts WHERE id = ?`).get(hostId) as { ip: string } | undefined;
         if (!host) {
@@ -61,10 +64,10 @@ export async function POST(req: Request) {
         }
         esiti.push(
           await trovaCredenziale(dbh, hostId, p.data.protocollo, p.data.porta, async (credentialId) => {
-            const e = await provaCredenzialeSuHost(dbh, credentialId, host.ip, p.data.porta);
+            const e = await provaCredenzialeSuHost(dbh, credentialId, host.ip, p.data.porta, { ricerca: true });
             // un segreto mancante o un tipo non provabile non è un rifiuto dell'host: non lascia traccia
-            return { ok: e.ok, errore: e.ok ? undefined : e.errore, nonProvata: !e.registra, trasporto: e.trasporto };
-          }, { escludi: p.data.escludi_credenziali }),
+            return { ok: e.ok, errore: e.ok ? undefined : e.errore, nonProvata: !e.registra, trasporto: e.trasporto, passwordErrata: e.passwordErrata, passwordValida: e.passwordValida };
+          }, { escludi: p.data.escludi_credenziali, budget }),
         );
       }
       // WinRM verificato: Chocolatey si installa da solo, se serve (come dopo la «Prova» a mano, 21/10).

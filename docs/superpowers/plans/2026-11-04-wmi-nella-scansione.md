@@ -28,9 +28,9 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | [x] | Misura sul 72729 col codice di oggi | orchestratore | — | esito noto | tabella nel Registro |
 | S1 | [x] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
-| S2 | [ ] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
+| S2 | [~] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
 | S3 | [x] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
-| S4 | [ ] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
+| S4 | [~] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
 | S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
 | S6 | [ ] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
 | S7 | [x] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
@@ -80,7 +80,7 @@ export async function runWmiIdentita(
 
 Verifica: `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.ts` → 8 verdi, viste rosse prima del codice.
 
-### [ ] Task 2 — Protocollo `wmi` e colonna `motivo` (S2)
+### [~] Task 2 — Protocollo `wmi` e colonna `motivo` (S2)
 
 **File**
 - `src/lib/credentials/porte.ts`: `CredProtocol` con `"wmi"`, `DEFAULT_PORTS.wmi = 135`.
@@ -131,7 +131,7 @@ export class VerificaPasswordRun {
 
 Verifica: `node --import tsx --test src/lib/scanner/__tests__/verifica-password-run.test.ts` → 48 verdi. `smb-login.py` provato con un finto impacket: la prova vera sta nel collaudo.
 
-### [ ] Task 4 — Motore: strada e motivo per host (S4)
+### [~] Task 4 — Motore: strada e motivo per host (S4)
 
 **File**
 - Crea: `src/lib/scanner/accesso-windows.ts`, `src/lib/scanner/__tests__/accesso-windows.test.ts`.

@@ -520,15 +520,89 @@ describe("budget e verifica sono per account, non per voce", () => {
     assert.equal(budget.consecutiveFailures(2), 2);
   });
 
-  it("stesso utente, password diverse: due verifiche e due conti", async () => {
+  it("stesso utente, password diverse: due verifiche e un conto solo, l'account è quello", async () => {
     const c = contatore();
     const verifica = c.verifica("non_so");
     const budget = new CredentialRunBudget(() => {});
     await prova({ credId: 1, passwordVoce: "una", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
     await prova({ credId: 2, passwordVoce: "altra", porte: SOLO_WMI, verifica, budget, wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
     assert.equal(c.conto.verifiche, 2);
+    assert.equal(budget.consecutiveFailures(1), 2);
+    assert.equal(budget.consecutiveFailures(2), 2);
+  });
+
+  it("stesso utente, password errate diverse: al massimo 3 logon errati in un giro, non 6", async () => {
+    const c = contatore();
+    const verifica = c.verifica("non_so");
+    const budget = new CredentialRunBudget(() => {});
+    for (let i = 0; i < 12; i++) {
+      await prova({
+        ip: `10.0.0.${i}`,
+        credId: i % 2 === 0 ? 1 : 2,
+        passwordVoce: i % 2 === 0 ? "una" : "altra",
+        porte: SOLO_WMI,
+        verifica,
+        budget,
+        wmi: c.wmiKo(errWmi("AUTH_REJECTED")),
+      });
+    }
+    assert.equal(c.conto.wmi, MAX_CONSECUTIVE_FAILURES_PER_RUN);
+  });
+
+  it("ogni password errata certa ha fatto il suo logon: contano tutte, e la quarta non si verifica nemmeno", async () => {
+    const c = contatore();
+    const verifica = c.verifica("errata");
+    const budget = new CredentialRunBudget(() => {});
+    const motivi: MotivoAccesso[] = [];
+    for (let credId = 1; credId <= 4; credId++) {
+      motivi.push((await prova({ credId, passwordVoce: `sbagliata-${credId}`, verifica, budget })).motivo);
+    }
+    assert.equal(c.conto.verifiche, MAX_CONSECUTIVE_FAILURES_PER_RUN);
+    assert.deepEqual(motivi, ["password_errata", "password_errata", "password_errata", "budget_esaurito"]);
+  });
+
+  it("la stessa password errata letta da più host conta una volta: la verifica è una", async () => {
+    const c = contatore();
+    const verifica = c.verifica("errata");
+    const budget = new CredentialRunBudget(() => {});
+    for (let i = 0; i < 6; i++) await prova({ ip: `10.0.0.${i}`, credId: 1 + (i % 2), passwordVoce: "sbagliata", verifica, budget });
+    assert.equal(c.conto.verifiche, 1);
     assert.equal(budget.consecutiveFailures(1), 1);
-    assert.equal(budget.consecutiveFailures(2), 1);
+  });
+
+  it("la voce giusta dello stesso utente non azzera i logon errati dell'altra: 3 in tutto il giro, non uno per host", async () => {
+    const c = contatore();
+    const verifica = c.verifica("non_so");
+    const budget = new CredentialRunBudget(() => {});
+    let errati = 0;
+    const wmi: ProvaWmi = async (_ip, _utente, password) => {
+      if (password === "giusta") return { hostname: "PC-01" };
+      errati++;
+      throw errWmi("AUTH_REJECTED");
+    };
+    for (let i = 0; i < 20; i++) {
+      const ip = `10.0.0.${i}`;
+      await prova({ ip, credId: 1, passwordVoce: "sbagliata", porte: SOLO_WMI, verifica, budget, wmi });
+      await prova({ ip, credId: 2, passwordVoce: "giusta", porte: SOLO_WMI, verifica, budget, wmi });
+    }
+    assert.equal(errati, MAX_CONSECUTIVE_FAILURES_PER_RUN);
+  });
+
+  it("il successo azzera i fallimenti della sua password", async () => {
+    const budget = new CredentialRunBudget(() => {});
+    budget.legaAccount(1, "mario@dom", "mario@dom|una");
+    budget.recordFailure(1);
+    budget.recordFailure(1);
+    budget.recordSuccess(1);
+    assert.equal(budget.consecutiveFailures(1), 0);
+  });
+
+  it("utenti diversi: ciascuno il suo conto", async () => {
+    const budget = new CredentialRunBudget(() => {});
+    budget.legaAccount(1, "mario@dom", "mario@dom|una");
+    budget.legaAccount(2, "luigi@dom", "luigi@dom|una");
+    budget.recordFailure(1);
+    assert.equal(budget.consecutiveFailures(2), 0);
   });
 });
 

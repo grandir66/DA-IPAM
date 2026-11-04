@@ -1,8 +1,10 @@
 /**
- * L'account come lo vede il dominio (piano accesso Windows, revisione del 04/11/2026): due voci con lo stesso utente e la
- * stessa password sono un account solo, e il limite di 3 conta i suoi logon errati, non le voci. Puro: niente database.
+ * L'account come lo vede il dominio (piano accesso Windows, revisione del 04/11/2026): l'account è l'utente. Due voci con lo
+ * stesso utente sono un account solo anche con password diverse, e il limite di 3 conta i suoi logon errati (`utenteNormalizzato`),
+ * non le voci. Puro: niente database.
  *
- * La chiave è utente normalizzato + impronta della password: SHA-256 con un sale casuale di processo, mai la password.
+ * `chiaveAccount` è utente normalizzato + impronta della password: SHA-256 con un sale casuale di processo, mai la password.
+ * Serve a quello che dipende dalla password: la verifica e il ricordo di `errata`, che non valgono per un'altra password.
  *
  * `RicordoErrate` tiene fra un giro e l'altro la risposta certa `errata`: senza, ogni giro rifarebbe un bind sbagliato sul
  * DC, e un giro ogni pochi minuti basta a bloccare l'account. Sta in memoria, per tenant, e scade: una password corretta

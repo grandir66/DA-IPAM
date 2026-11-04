@@ -126,6 +126,11 @@ for (const tipo of ["windows", "credential_validate"] as const) {
       assert.equal(perAccount(logon).get("scansioni@cliente"), LIMITE, logon.join("\n"));
     });
 
+    it(`due voci con lo stesso utente, password errate diverse: ${LIMITE} logon in tutto, non il doppio`, { skip: salta, timeout: 120_000 }, async () => {
+      const { logon } = await giroSu(() => [5985], [ACCOUNT, { utente: "scansioni@cliente.local", password: "Altra-sbagliata!2" }], tipo);
+      assert.equal(perAccount(logon).get("scansioni@cliente"), LIMITE, logon.join("\n"));
+    });
+
     it("due account diversi: ciascuno col suo limite", { skip: salta, timeout: 120_000 }, async () => {
       const { logon } = await giroSu(() => [5985], [ACCOUNT, { utente: "CLIENTE\\altro", password: "Altra-sbagliata!1" }], tipo);
       const conti = perAccount(logon);

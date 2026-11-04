@@ -11,13 +11,14 @@
  *
  * Il limite conta i logon errati veri, non le voci e non le chiamate. Per questo una strada è un logon solo: con la
  * password non verificata WinRM parte con `unSoloLogon` (NTLM, niente kinit), altrimenti il bridge ne farebbe fino a
- * quattro; WMI ne fa uno da solo. E il conto è per account (`chiaveAccount`): due voci uguali contano una volta.
+ * quattro; WMI ne fa uno da solo. E il conto è per account, cioè per utente: due voci dello stesso utente hanno un limite
+ * solo, anche con password diverse. La verifica invece è per utente e password (`chiaveAccount`).
  *
  * Ordine per ogni host:
  * 1. nessuna porta di gestione aperta: `porte_chiuse`, senza login e senza toccare il budget;
  * 2. budget esaurito: `budget_esaurito`, prima della verifica, che è anch'essa un logon;
  * 3. tutte le strade in fermo: nessun login, e nemmeno il bind della verifica;
- * 4. verifica della password, una per account in tutta l'esecuzione: `errata` ferma qui, zero tentativi su ogni macchina;
+ * 4. verifica della password, una per utente e password in tutta l'esecuzione: `errata` ferma qui, zero tentativi su ogni macchina;
  * 5. le strade in ordine, prima quella già validata, col gate prima di ognuna, un tentativo per strada, ci si ferma alla
  *    prima riuscita.
  *
@@ -25,7 +26,7 @@
  * chi persiste l'esito non deve registrare un fallimento, altrimenti allungherebbe il backoff di una voce mai provata.
  * `strade` riporta ogni strada provata, perché un rifiuto su WinRM resta vero anche se poi WMI entra.
  */
-import { chiaveAccount } from "./account-windows";
+import { chiaveAccount, utenteNormalizzato } from "./account-windows";
 import type { CredentialRunBudget } from "./credential-run-budget";
 import type { EsitoPassword, VerificaPasswordRun } from "./verifica-password-run";
 import type { WinrmErrorCode } from "@/lib/devices/winrm-errors";
@@ -229,7 +230,7 @@ export async function provaAccessoWindows(input: InputAccessoWindows): Promise<E
   }
 
   const account = chiaveAccount(username, password);
-  budget.legaAccount(credId, account);
+  budget.legaAccount(credId, utenteNormalizzato(username), account);
 
   const ammessa = (backoffUntil: string | null): boolean =>
     budget.gate({ ip, credId, credType: "windows", hasWindowsIndicator: true, backoffUntil, nowIso: input.nowIso });

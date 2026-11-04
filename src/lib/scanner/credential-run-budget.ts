@@ -44,30 +44,46 @@ export class CredentialRunBudget {
   private readonly skippedAfterExclusion = new Map<number, number>();
   private readonly denied = new Map<number, number>();
   private readonly wrongPassword = new Set<number>();
-  /** Voce → prima voce vista dello stesso account: tutti i conti stanno su quella. */
+  /** Voce → prima voce vista con lo stesso utente e la stessa password: il conto di quella coppia sta lì. */
   private readonly primaVoce = new Map<number, number>();
-  private readonly voceDiAccount = new Map<string, number>();
+  private readonly voceDiCoppia = new Map<string, number>();
+  /** I conti di un utente, uno per password: il limite si legge sulla loro somma. */
+  private readonly contiDiUtente = new Map<string, Set<number>>();
+  private readonly contiDelConto = new Map<number, Set<number>>();
 
   constructor(private readonly log: CredentialRunBudgetLogger) {}
 
   /**
-   * Dichiara l'account della voce: due voci con lo stesso account hanno un conto solo. Il limite è sui logon errati di un
-   * account, e due voci uguali raddoppierebbero quelli ammessi. Una voce non dichiarata conta da sola.
+   * Dichiara l'account della voce. Il limite è sui logon errati dell'account, che è l'utente: due voci con password diverse
+   * fanno 3 + 3 = 6 logon errati sullo stesso account di dominio, se contano ognuna per sé. Una voce non dichiarata conta
+   * da sola.
+   *
+   * `coppia` (utente + password, `chiaveAccount`) tiene il conto per password dentro l'utente, per due motivi: ogni password
+   * errata ha fatto il suo logon e va contata, mentre la stessa letta da due voci è una verifica sola; e un successo azzera
+   * solo la sua password. Con un conto unico la voce giusta azzererebbe a ogni host quella sbagliata, e il limite non
+   * scatterebbe mai.
    */
-  legaAccount(credId: number, account: string): void {
+  legaAccount(credId: number, utente: string, coppia: string): void {
     if (this.primaVoce.has(credId)) return;
-    const prima = this.voceDiAccount.get(account) ?? credId;
-    this.voceDiAccount.set(account, prima);
+    const prima = this.voceDiCoppia.get(coppia) ?? credId;
+    this.voceDiCoppia.set(coppia, prima);
     this.primaVoce.set(credId, prima);
+    const conti = this.contiDiUtente.get(utente) ?? new Set<number>();
+    conti.add(prima);
+    this.contiDiUtente.set(utente, conti);
+    this.contiDelConto.set(prima, conti);
   }
 
   private conto(credId: number): number {
     return this.primaVoce.get(credId) ?? credId;
   }
 
-  /** Fallimenti consecutivi correnti di questa credenziale in questo run. */
+  /** Fallimenti consecutivi correnti dell'account di questa credenziale in questo run, su tutte le sue password. */
   consecutiveFailures(credId: number): number {
-    return this.failStreak.get(this.conto(credId)) ?? 0;
+    const conto = this.conto(credId);
+    let totale = 0;
+    for (const c of this.contiDelConto.get(conto) ?? [conto]) totale += this.failStreak.get(c) ?? 0;
+    return totale;
   }
 
   /**
@@ -101,10 +117,11 @@ export class CredentialRunBudget {
 
   /** Fallimento reale osservato dal chiamante: incrementa lo streak. */
   recordFailure(credId: number): void {
-    this.failStreak.set(this.conto(credId), this.consecutiveFailures(credId) + 1);
+    const conto = this.conto(credId);
+    this.failStreak.set(conto, (this.failStreak.get(conto) ?? 0) + 1);
   }
 
-  /** Successo reale osservato dal chiamante: azzera lo streak — SOLO qui. */
+  /** Successo reale osservato dal chiamante: azzera lo streak della sua password — SOLO qui. */
   recordSuccess(credId: number): void {
     this.failStreak.set(this.conto(credId), 0);
   }
@@ -122,7 +139,7 @@ export class CredentialRunBudget {
   }
 
   /**
-   * La verifica ha trovato la password errata: quel logon sbagliato è reale e va contato, una volta sola per voce
+   * La verifica ha trovato la password errata: quel logon sbagliato è reale e va contato, una volta sola per password
    * perché la verifica è una sola per esecuzione, per quanti host la leggano. Così il limite resta sui logon errati
    * veri anche se la stessa voce passa da un percorso che non usa la verifica.
    */

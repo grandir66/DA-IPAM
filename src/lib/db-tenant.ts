@@ -5751,7 +5751,11 @@ export function recordCredentialPasswordErrata(credentialId: number): void {
     d.prepare(
       `UPDATE device_credential_bindings SET test_status = 'failed', test_message = ?, tested_at = datetime('now') WHERE credential_id = ?`
     ).run(messaggio, credentialId);
-    d.prepare(`UPDATE accesso_windows_esiti SET motivo = 'password_errata', tentato_il = ? WHERE credential_id = ?`).run(nowIso, credentialId);
+    // Porte chiuse, budget esaurito e nessuna voce sono strade senza logon: non dicono niente della password.
+    d.prepare(
+      `UPDATE accesso_windows_esiti SET motivo = 'password_errata', tentato_il = ?
+       WHERE credential_id = ? AND motivo NOT IN ('porte_chiuse', 'budget_esaurito', 'nessuna_voce')`
+    ).run(nowIso, credentialId);
   })();
 }
 
@@ -5765,18 +5769,22 @@ export interface EsitoAccessoDaScrivere {
 
 /**
  * Scrive gli esiti in una transazione sola: anche una voce con la password errata su cento host è una scrittura, mai una per
- * host. Non tocca `host_credentials`: una riga lì metterebbe la voce fra i candidati dell'host. Una sola copia: db.ts la riesporta.
+ * host. Non tocca `host_credentials`: una riga lì metterebbe la voce fra i candidati dell'host. Un host o una voce cancellati
+ * durante il giro si saltano: un esito di ciò che non c'è più non serve a nessuno, e non deve far fallire il giro.
+ * Una sola copia: db.ts la riesporta.
  */
 export function recordEsitiAccessoWindows(esiti: readonly EsitoAccessoDaScrivere[]): void {
   if (esiti.length === 0) return;
   const d = db();
   const nowIso = new Date().toISOString();
   const scrivi = d.prepare(
-    `INSERT INTO accesso_windows_esiti (host_id, credential_id, strada, motivo, tentato_il) VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO accesso_windows_esiti (host_id, credential_id, strada, motivo, tentato_il)
+     SELECT @hostId, @credentialId, @strada, @motivo, @tentatoIl
+     WHERE EXISTS (SELECT 1 FROM hosts WHERE id = @hostId) AND EXISTS (SELECT 1 FROM credentials WHERE id = @credentialId)
      ON CONFLICT(host_id, credential_id, strada) DO UPDATE SET motivo = excluded.motivo, tentato_il = excluded.tentato_il`
   );
   d.transaction(() => {
-    for (const e of esiti) scrivi.run(e.hostId, e.credentialId, e.strada, e.motivo, nowIso);
+    for (const e of esiti) scrivi.run({ hostId: e.hostId, credentialId: e.credentialId, strada: e.strada, motivo: e.motivo, tentatoIl: nowIso });
   })();
 }
 

@@ -188,7 +188,7 @@ export function RendiApparatoCredenziale({ riga, archivio, protocollo, escluse, 
             <li key={`${t.credentialId}-${i}`} className="flex flex-wrap items-center gap-2">
               <BadgeEsito esito={{ stato: t.esito, quando: t.quando, nome: t.nome, dettaglio: t.motivo, tetto: t.esito === "fermata" && eMotivoTetto(t.motivo) }} />
               {t.esito !== "esclusa" && <span className="text-muted-foreground">{t.nome}</span>}
-              {t.motivo && t.esito === "rifiutata" && <span className="text-muted-foreground">— {t.motivo}</span>}
+              {t.motivo && (t.esito === "rifiutata" || t.esito === "diritti_mancanti") && <span className="text-muted-foreground">— {t.motivo}</span>}
             </li>
           ))}
           {fatti > 0 && <li className="text-muted-foreground">{fatti === 1 ? "1 tentativo" : `${fatti} tentativi`}</li>}

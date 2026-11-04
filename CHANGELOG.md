@@ -23,9 +23,22 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Cambiato**: la prova a mano di un legame WMI, o WinRM con una voce di dominio, ha gli stessi freni della scansione:
   una password già nota errata non si prova, al massimo 3 prove in 15 minuti per utente, e prima si chiede al DC. Cinque
   clic su una password sbagliata bloccavano l'account.
-  Lo stesso freno vale ora per il pulsante «Test» di una voce Windows di dominio e per «Cerca la credenziale»: il Test
-  ferma al terzo logon errato in 15 minuti e dice fra quanto riprovare; la ricerca conta i logon errati per utente su tutti
-  gli host, non per host, e se il DC dice che la password è errata non fa nessun logon sugli host. SSH, SNMP e API come prima.
+  Lo stesso freno vale ora per il pulsante «Test» di una voce Windows di dominio, per «Cerca la credenziale» e per il «Test»
+  di un apparato Windows, salvato o ancora da salvare: il Test ferma alla terza prova in 15 minuti e dice fra quanto riprovare;
+  la ricerca conta i logon errati per utente su tutti gli host, non per host, e se il DC dice che la password è errata non fa
+  nessun logon sugli host. Resta fuori `/api/ad/kerberos`, la diagnostica dell'integrazione AD, con l'account
+  dell'integrazione. SSH, SNMP e API come prima.
+- **Cambiato, cosa vede il cliente**: con un'integrazione AD accesa ogni utente Windows conta come account di dominio, anche
+  `mario` e `.\mario`: il bridge fa `kinit mario@REALM`, un logon vero sul DC, e prima passavano senza limite. Il limite di 3
+  prove in 15 minuti conta ogni prova per utente, anche quelle riuscite: un «Test» su più di 3 apparati Windows con lo stesso
+  account si ferma alla terza. Il «Test» di un apparato Windows ora è solo per gli amministratori: è un logon vero, e un
+  account in sola lettura riceve un rifiuto. Un account locale senza integrazione AD non ha limiti, nemmeno sul legame WMI.
+- **Cambiato**: la ricerca e il pulsante «Test» leggono l'errore di WinRM come la scansione. Una porta chiusa, pywinrm assente
+  o un errore del servizio dopo l'autenticazione non contano e non escludono la voce; un timeout dopo l'avvio del bridge può
+  nascondere un rifiuto, quindi conta, alza il fermo e lascia la validazione. Con la password verificata giusta un rifiuto
+  dell'host è «diritti mancanti», anche nella prova del legame, e la validazione resta. Il successo di una password non azzera
+  più i rifiuti di un'altra password dello stesso utente: la voce giusta faceva ripartire il conto di quella sbagliata a ogni
+  host, e il limite non scattava mai.
 - **Cambiato**: i diritti hanno una sola definizione, in due famiglie, «utente delle scansioni» e «sicurezza
   del dominio» (`src/lib/credentials/diritti.ts`); le guide dell'applicativo e i manuali la leggono.
   Riccardo (04/11): «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni».
@@ -52,9 +65,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Aggiunto**: i legami WMI si scelgono di nuovo nelle tendine e si provano a mano con la stessa query leggera
   della scansione (`runWmiIdentita`, solo lettura); un host che non risponde non fa passare il legame per fallito.
 - **Corretto**: la prova del legame WMI non risponde più «non disponibile».
-- **Corretto**: un host Windows per classificazione ma senza porte note risultava «porte chiuse» senza provare: ora si
-  provano le due strade, e il controllo TCP prima del bridge chiude il caso senza logon. Un errore del database nel
-  leggere le credenziali di un host non ferma più tutto il giro: è un errore di quell'host, e il resto va avanti.
+- **Corretto**: un host Windows per classificazione ma senza porte note risultava «porte chiuse» senza provare: ora un
+  controllo TCP su 5985, 5986 e 135 dice quali porte rispondono, una volta per host, e il motore prova quelle. Se non risponde
+  nessuna non parte niente, nemmeno LDAP o SMB. Un errore del database nel leggere le credenziali di un host non ferma più
+  tutto il giro: è un errore di quell'host, e il resto va avanti.
+- **Corretto**: un host o una voce cancellati durante il giro non fanno più fallire la scrittura degli esiti, e il riepilogo
+  non trasforma in fallito un giro già finito: lo scrive nel registro. La password errata non sovrascrive gli esiti di porte
+  chiuse, budget esaurito e nessuna voce, dove nessun logon è partito.
 - **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.

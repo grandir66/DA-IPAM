@@ -1,8 +1,10 @@
-import { getDb, getDeviceCredentials, getHostByIp, portaSshApparato } from "@/lib/db";
+import { getAdRealm, getDb, getDeviceCredentials, getHostByIp, portaSshApparato } from "@/lib/db";
 import { scegliSegretoHostDb, type CredProtocol } from "@/lib/credentials/resolve";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
+import type { OpzioniWinrm, runWinrmCommand } from "@/lib/devices/winrm-run";
+import { eAccountDiDominio, freniDelLogon, type DipendenzeFreno } from "@/lib/credentials/freno-logon-windows";
 import { sshExec, SshError } from "@/lib/devices/ssh-helper";
 import { haSegretoSsh, segretoSsh } from "@/lib/devices/ssh-transport";
 import { opzioniSsh, type AccessoSsh } from "@/lib/credentials/segreti";
@@ -48,6 +50,16 @@ export function isProxmoxDevice(device: {
 export function isWindowsDevice(device: { vendor?: string; protocol?: string; scan_target?: string | null }): boolean {
   if (device.scan_target === "windows") return true;
   return device.protocol === "winrm" || device.vendor === "windows";
+}
+
+/** Il test di questo apparato è un logon Windows? Lo stesso ordine di `runDeviceConnectionTest`: Proxmox e router vengono prima. */
+export function testFaLogonWindows(device: NetworkDevice): boolean {
+  return !isProxmoxDevice(device) && !networkDeviceUsesArpPoll(device) && isWindowsDevice(device);
+}
+
+/** Le prove si possono sostituire (niente rete). Di serie le prove vere. */
+export interface DipendenzeTestApparato extends DipendenzeFreno {
+  winrm?: typeof runWinrmCommand;
 }
 
 export function isSshScannableDevice(device: { vendor?: string; protocol?: string; scan_target?: string | null }): boolean {
@@ -155,7 +167,7 @@ function resolveCredentials(device: NetworkDevice): AccessoSsh | null {
   return a && (protocollo === "ssh" || a.password) ? a : null;
 }
 
-export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?: number): Promise<DeviceTestResult> {
+export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?: number, deps: DipendenzeTestApparato = {}): Promise<DeviceTestResult> {
   const effectiveTimeout = timeoutMs ?? (isProxmoxDevice(device) ? Math.min(180_000, 15_000 + resolveProxmoxTargetIps(device).length * 25_000) : 15_000);
 
   const timeoutPromise = new Promise<never>((_, reject) =>
@@ -255,8 +267,17 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
     }
 
     if (isWindowsDevice(device)) {
-      const client = await createWinrmClient(device);
-      const ok = await client.testConnection();
+      const client = await createWinrmClient(device, deps.winrm);
+      // Un clic è un logon vero: gli stessi freni della prova del legame. Con la password non verificata un trasporto solo.
+      const creds = getDeviceCredentials(device);
+      const realm = getAdRealm()?.realm ?? null;
+      let opzioni: OpzioniWinrm | undefined;
+      if (creds?.username && creds.password && eAccountDiDominio(creds.username, realm)) {
+        const freno = await freniDelLogon(creds.username, creds.password, deps, { realm });
+        if ("fermata" in freno) return { success: false, device_type: "windows", error: freno.fermata.messaggio };
+        if (freno.password !== "valida") opzioni = { unSoloLogon: true };
+      }
+      const ok = await client.testConnection(opzioni);
       return { success: ok, device_type: "windows", message: ok ? "Connessione WinRM OK" : undefined };
     }
 
@@ -290,9 +311,9 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
   return Promise.race([testPromise, timeoutPromise]);
 }
 
-export async function runProvisionalDeviceTest(provisional: ProvisionalDevice): Promise<DeviceTestResult> {
+export async function runProvisionalDeviceTest(provisional: ProvisionalDevice, deps: DipendenzeTestApparato = {}): Promise<DeviceTestResult> {
   const device = buildDeviceFromProvisional(provisional);
-  return runDeviceConnectionTest(device);
+  return runDeviceConnectionTest(device, undefined, deps);
 }
 
 export function getWindowsHint(errorMessage: string): string {

@@ -23,11 +23,13 @@ import { provaCredenzialeSnmpDb } from "./prova-snmp";
 import { tipiPerProtocollo } from "./tipi";
 import { accessoSshDb } from "./segreti";
 import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
-import { getCurrentTenantCode, recordCredentialFailure, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
+import { getCurrentTenantCode, recordCredentialFailure, recordCredentialProblema, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { classifyWinrmError } from "@/lib/devices/winrm-errors";
-import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
-import { attesaInParole, eUtenteDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
+// Statico, non `await import`: sotto tsx sarebbe un'altra istanza, e `instanceof WinrmError` nel motore non la riconoscerebbe.
+import { runWinrmCommand, WinrmError, type OpzioniWinrm } from "@/lib/devices/winrm-run";
+import { CODICI_TIMEOUT, leggiErrore, puoNascondereUnRifiuto } from "@/lib/scanner/accesso-windows";
+import { attesaInParole, eAccountDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
 import { contoLogonDelTenant, FINESTRA_LOGON_MS, MAX_LOGON_RIFIUTATI, type ContoLogonRicerca, type Prenotazione } from "./conto-logon-ricerca";
 import { chiaveAccount, utenteNormalizzato } from "@/lib/scanner/account-windows";
 import type { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
@@ -35,7 +37,8 @@ import type { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
 export const TETTO_WINDOWS = 3;
 const TEST_TIMEOUT_MS = 25000;
 
-export type EsitoTentativo = "riuscita" | "rifiutata" | "esclusa" | "fermata";
+/** `diritti_mancanti`: la password è giusta, l'host nega. Non è un rifiuto: chi conta i rifiuti non deve contarlo. */
+export type EsitoTentativo = "riuscita" | "rifiutata" | "diritti_mancanti" | "esclusa" | "fermata";
 
 export interface Tentativo {
   credentialId: number;
@@ -82,6 +85,10 @@ export interface EsitoProvaSuHost {
   passwordErrata?: boolean;
   /** La verifica sul controller di dominio ha detto «password giusta»: un rifiuto dell'host dopo non è una password sbagliata. */
   passwordValida?: boolean;
+  /** Password verificata giusta e rifiuto vero dell'host: mancano i diritti, la voce resta valida. */
+  motivo?: "diritti_mancanti";
+  /** Dopo l'avvio del bridge qualcosa è andato storto e un logon respinto non si può escludere: conta, ma non toglie la validazione. */
+  rifiutoPossibile?: boolean;
   /** Corpo JSON della rotta test (stessa forma di prima). */
   risposta: Record<string, unknown>;
 }
@@ -103,6 +110,8 @@ export interface OpzioniProvaSuHost extends DipendenzeFreno {
     realm: string,
     opzioni?: OpzioniWinrm,
   ) => Promise<unknown>;
+  /** Tetto della prova; di serie `TEST_TIMEOUT_MS`. Solo per le prove. */
+  tettoMs?: number;
 }
 
 /** Utente e password di una voce Windows come sono salvati; null se manca la voce o non è leggibile. */
@@ -117,10 +126,10 @@ function accountWindows(dbh: Database.Database, credentialId: number): { usernam
   return { username, password };
 }
 
-function conTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+function conTimeout<T>(p: Promise<T>, ms: number, errore: (messaggio: string) => Error = (m) => new Error(m)): Promise<T> {
   let t: ReturnType<typeof setTimeout>;
   const scadenza = new Promise<never>((_, reject) => {
-    t = setTimeout(() => reject(new Error(`Timeout: nessuna risposta entro ${ms / 1000} secondi`)), ms);
+    t = setTimeout(() => reject(errore(`Timeout: nessuna risposta entro ${ms / 1000} secondi`)), ms);
   });
   return Promise.race([p, scadenza]).finally(() => clearTimeout(t));
 }
@@ -164,6 +173,36 @@ function fallita(protocollo: CredProtocol, porta: number | null, errore: string,
     trasporto,
     risposta: trasporto ? { ...risposta, error: `Host non raggiungibile: ${errore}`, trasporto: true } : risposta,
   };
+}
+
+/**
+ * Un errore di WinRM, letto dal codice come fa il motore e non dal testo: il messaggio di una porta chiusa non assomiglia a
+ * nessuna impronta di `classifyWinrmError`, e diventava un rifiuto. Quattro casi:
+ * - controllo TCP prima del bridge: nessun logon, l'host non risponde (`trasporto`);
+ * - il bridge non è partito o il servizio ha risposto dopo l'autenticazione: nessun rifiuto, niente da registrare;
+ * - rifiuto dichiarato: con la password verificata giusta sono i diritti, altrimenti è un rifiuto pieno;
+ * - tutto il resto, timeout compreso: un rifiuto possibile. Con la password giusta un timeout o una porta chiusa restano trasporto.
+ */
+function fallitaWinrm(porta: number, err: unknown, passwordValida: boolean): EsitoProvaSuHost {
+  const letto = leggiErrore(err);
+  const { codice, messaggio: errore } = letto;
+  const base = { ok: false, errore, protocollo: "winrm" as const, porta, ...(passwordValida ? { passwordValida } : {}) };
+  const risposta = { success: false, error: errore };
+  const fermoDiTrasporto = (): EsitoProvaSuHost => ({
+    ...base,
+    registra: true,
+    trasporto: true,
+    risposta: { ...risposta, error: `Host non raggiungibile: ${errore}`, trasporto: true },
+  });
+  if (letto.primaDelBridge) return fermoDiTrasporto();
+  if (!puoNascondereUnRifiuto(letto)) return { ...base, registra: false, trasporto: false, risposta };
+  if (codice === "AUTH_REJECTED") {
+    return passwordValida
+      ? { ...base, registra: true, trasporto: false, motivo: "diritti_mancanti", risposta: { ...risposta, motivo: "diritti_mancanti" } }
+      : { ...base, registra: true, trasporto: false, risposta };
+  }
+  if (passwordValida && (CODICI_TIMEOUT.has(codice) || codice === "TCP_CLOSED")) return fermoDiTrasporto();
+  return { ...base, registra: true, trasporto: false, rifiutoPossibile: true, risposta };
 }
 
 /** Prova UNA credenziale su UN host (indirizzo). Mai scrive: l'esito lo registra chi chiama. */
@@ -240,12 +279,14 @@ export async function provaCredenzialeSuHost(
     if (username === null || password === null) return nonProvata("Credenziale corrotta: rigenerare la password");
     if (!username || !password) return nonProvata("Username e password richiesti");
     const port = porta("winrm");
+    const ad = dbh.prepare(`SELECT domain FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1`).get() as { domain: string } | undefined;
+    const realm = ad ? ad.domain : null;
     let passwordValida = false;
     // Solo un account di dominio può bloccarsi per tutti: gli stessi freni della prova del legame. Con la password non
     // verificata un trasporto solo, la catena del bridge farebbe fino a quattro logon errati per clic.
     let opzioniWinrm: OpzioniWinrm | undefined;
-    if (eUtenteDiDominio(username)) {
-      const freno = await freniDelLogon(username, password, opzioniProva, { limitePerUtente: !opzioniProva.ricerca });
+    if (eAccountDiDominio(username, realm)) {
+      const freno = await freniDelLogon(username, password, opzioniProva, { realm, limitePerUtente: !opzioniProva.ricerca });
       if ("fermata" in freno) {
         const passwordErrata = freno.fermata.motivo !== "limite";
         return { ...nonProvata(freno.fermata.messaggio), ...(passwordErrata ? { passwordErrata } : {}) };
@@ -254,13 +295,16 @@ export async function provaCredenzialeSuHost(
       passwordValida = freno.password === "valida";
     }
     try {
-      const runWinrm = opzioniProva.winrm ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
-      const ad = dbh.prepare(`SELECT domain FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1`).get() as { domain: string } | undefined;
-      await conTimeout(Promise.resolve(runWinrm(host, port, username, password, "echo test", false, ad?.domain || "", opzioniWinrm)), TEST_TIMEOUT_MS);
+      const runWinrm = opzioniProva.winrm ?? runWinrmCommand;
+      // Il tetto scatta col bridge già partito: il controllo TCP dura al più 3 secondi.
+      await conTimeout(
+        Promise.resolve(runWinrm(host, port, username, password, "echo test", false, realm ?? "", opzioniWinrm)),
+        opzioniProva.tettoMs ?? TEST_TIMEOUT_MS,
+        (message) => new WinrmError({ code: "BRIDGE_TIMEOUT", message }),
+      );
       return { ok: true, protocollo: "winrm", porta: port, registra: true, trasporto: false, risposta: { success: true, message: "Connessione WinRM riuscita" } };
     } catch (e) {
-      const errore = e instanceof Error ? e.message : "Connessione WinRM fallita.";
-      return { ...fallita("winrm", port, errore, { success: false, error: errore }), ...(passwordValida ? { passwordValida } : {}) };
+      return fallitaWinrm(port, e, passwordValida);
     }
   }
 
@@ -272,21 +316,30 @@ export async function provaCredenzialeSuHost(
  * Registra l'esito di una prova vera sull'host: successo azzera fallimenti e riabilita una esclusa,
  * fallimento la esclude (e fa partire il backoff). Va chiamata solo se `EsitoProvaSuHost.registra`.
  *
- * WinRM e WMI scrivono anche il motivo, che la pagina «Accesso Windows per host» legge. Un rifiuto a mano è `errore`:
- * senza la verifica della scansione non si distingue una password sbagliata da un diritto che manca.
+ * WinRM e WMI scrivono anche il motivo, che la pagina «Accesso Windows per host» legge. Un rifiuto a mano è `errore`, se la
+ * password non è verificata: non si distingue una password sbagliata da un diritto che manca. Come nella scansione, non toglie la
+ * validazione né `diritti_mancanti` (password verificata giusta, voce valida) né un rifiuto solo possibile, che alza il fermo.
  */
 export function registraProva(
   hostId: number,
   credentialId: number,
   protocollo: CredProtocol,
   porta: number,
-  esito: { ok: boolean; errore?: string },
+  esito: { ok: boolean; errore?: string; passwordValida?: boolean; rifiutoPossibile?: boolean },
 ): void {
   const strada = protocollo === "winrm" || protocollo === "wmi" ? protocollo : null;
-  const motivo = strada ? (esito.ok ? "ok" : "errore") : null;
+  const negato = dirittiMancanti(esito);
+  const motivo = strada ? (esito.ok ? "ok" : negato ? "diritti_mancanti" : "errore") : null;
+  const errore = esito.errore || "Autenticazione non riuscita";
   if (esito.ok) recordCredentialSuccess(hostId, credentialId, protocollo, porta, motivo);
-  else recordCredentialFailure(hostId, credentialId, protocollo, porta, esito.errore || "Autenticazione non riuscita", motivo);
+  else if (strada && motivo && (negato || esito.rifiutoPossibile)) recordCredentialProblema(hostId, credentialId, protocollo, porta, errore, motivo, !negato);
+  else recordCredentialFailure(hostId, credentialId, protocollo, porta, errore, motivo);
   if (strada && motivo) recordEsitiAccessoWindows([{ hostId, credentialId, strada, motivo }]);
+}
+
+/** Password verificata giusta e logon respinto per certo: la sola combinazione che vale `diritti_mancanti`. */
+function dirittiMancanti(esito: { ok: boolean; passwordValida?: boolean; rifiutoPossibile?: boolean }): boolean {
+  return !esito.ok && esito.passwordValida === true && !esito.rifiutoPossibile;
 }
 
 // ---------------------------------------------------------------- candidati
@@ -368,7 +421,22 @@ export type EsitoProva = {
   passwordErrata?: boolean;
   /** Il controller di dominio dice che la password è giusta: un rifiuto dell'host non è un logon errato, non consuma il budget. */
   passwordValida?: boolean;
+  /** Un logon respinto non si può escludere: conta come un rifiuto, ma non toglie la validazione. */
+  rifiutoPossibile?: boolean;
 };
+
+/** L'esito della prova come lo vuole la ricerca. Un segreto mancante o un tipo non provabile non è un rifiuto: niente traccia. */
+export function esitoDellaRicerca(e: EsitoProvaSuHost): EsitoProva {
+  return {
+    ok: e.ok,
+    errore: e.ok ? undefined : e.errore,
+    nonProvata: !e.registra,
+    trasporto: e.trasporto,
+    passwordErrata: e.passwordErrata,
+    passwordValida: e.passwordValida,
+    rifiutoPossibile: e.rifiutoPossibile,
+  };
+}
 
 export interface OpzioniRicerca {
   /**
@@ -400,6 +468,8 @@ export async function trovaCredenziale(
   const proto = protocolloCredenziale(protocollo);
   const candidati = candidatiPerHost(dbh, hostId, protocollo, porta);
   const conTetto = proto === "winrm";
+  const ad = dbh.prepare(`SELECT domain FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1`).get() as { domain: string } | undefined;
+  const realm = ad ? ad.domain : null;
   const tipi = new Map(
     (dbh.prepare(`SELECT id, credential_type FROM credentials`).all() as Array<{ id: number; credential_type: string }>).map((r) => [r.id, r.credential_type.toLowerCase()]),
   );
@@ -466,7 +536,7 @@ export async function trovaCredenziale(
     // Il limite di 3 logon errati è dell'account, non dell'host: il conto sta in `budget`, uno per tutta la ricerca.
     const budget = proto === "winrm" ? opzioni.budget : undefined;
     const account = proto === "winrm" ? accountWindows(dbh, c.credentialId) : null;
-    const diDominio = account !== null && eUtenteDiDominio(account.username);
+    const diDominio = account !== null && eAccountDiDominio(account.username, realm);
     if (budget && account && diDominio) {
       budget.legaAccount(c.credentialId, utenteNormalizzato(account.username), chiaveAccount(account.username, account.password));
       // L'identificativo dell'host, non l'indirizzo: il registro non porta indirizzi.
@@ -486,7 +556,7 @@ export async function trovaCredenziale(
     let posto: Prenotazione | null = null;
     if (account && diDominio) {
       const conto = opzioni.conto ?? contoLogonDelTenant(getCurrentTenantCode() ?? "DEFAULT");
-      posto = conto.prenota(utenteNormalizzato(account.username));
+      posto = conto.prenota(utenteNormalizzato(account.username), chiaveAccount(account.username, account.password));
       if (!posto.ok) {
         const riprova = posto.attesaMs > 0 ? `Riprova ${attesaInParole(posto.attesaMs)}.` : "Altre ricerche su questo account sono in corso: riprova fra un minuto.";
         tentativi.push({
@@ -532,13 +602,15 @@ export async function trovaCredenziale(
     veri++;
     if (budget) {
       if (esito.ok) budget.recordSuccess(c.credentialId);
-      else if (esito.passwordValida) budget.recordDenied(c.credentialId);
-      else budget.recordFailure(c.credentialId);
+      else if (dirittiMancanti(esito)) budget.recordDenied(c.credentialId);
+      else if (!esito.passwordValida) budget.recordFailure(c.credentialId);
     }
     registraProva(hostId, c.credentialId, proto, porta, esito);
     if (esito.ok) {
       trovata = { credentialId: c.credentialId, nome: c.nome };
       tentativi.push({ credentialId: c.credentialId, nome: c.nome, esito: "riuscita", motivo: null, quando: ora() });
+    } else if (dirittiMancanti(esito)) {
+      tentativi.push({ credentialId: c.credentialId, nome: c.nome, esito: "diritti_mancanti", motivo: esito.errore || "Accesso negato: mancano i diritti", quando: ora() });
     } else {
       tentativi.push({ credentialId: c.credentialId, nome: c.nome, esito: "rifiutata", motivo: esito.errore || "Autenticazione non riuscita", quando: ora() });
     }

@@ -201,7 +201,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (!testResult.success && eErroreDiTrasporto(proto, testResult.message, testResult.kind)) {
         return NextResponse.json({ ...testResult, message: `Host non raggiungibile: ${testResult.message}`, trasporto: true });
       }
-      updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
+      // Diritti mancanti con la password giusta: il legame non è fallito, e il motore delle credenziali non deve scartarlo.
+      const negato = testResult.motivo === "diritti_mancanti";
+      if (!negato) updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
       // Come la «Prova» a mano e la ricerca (T3): l'esito passa da `registraProva`, quindi un successo azzera
       // fallimenti e backoff dell'host e riabilita una credenziale esclusa; un rifiuto la esclude.
       if (binding.credential_id) {
@@ -210,7 +212,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           const h = getHostByIp(device.host);
           if (h?.id) {
             if (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "wmi") {
-              registraProva(h.id, binding.credential_id, proto, binding.port, { ok: testResult.success, errore: testResult.message });
+              registraProva(h.id, binding.credential_id, proto, binding.port, { ok: testResult.success, errore: testResult.message, passwordValida: negato });
             } else if (testResult.success) {
               setHostCredentialValidatedByKey(h.id, binding.credential_id, proto, binding.port, { auto_detected: false });
             }

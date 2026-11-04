@@ -10,8 +10,8 @@ import { apriSessioneCommunity, etichettaVersioneSnmp, type VersioneSnmp } from 
 import { leggiSegretoDb, type AccessoSsh } from "@/lib/credentials/segreti";
 import { provaV3 } from "@/lib/protocols/snmpv3";
 import { safeDecrypt } from "@/lib/crypto";
-import { freniDelLogon as freniCondivisi } from "@/lib/credentials/freno-logon-windows";
-import { utenteNormalizzato, type RicordoErrate } from "@/lib/scanner/account-windows";
+import { eAccountDiDominio, freniDelLogon as freniCondivisi } from "@/lib/credentials/freno-logon-windows";
+import type { RicordoErrate } from "@/lib/scanner/account-windows";
 import type { EsitoPassword } from "@/lib/scanner/verifica-password-run";
 import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
 
@@ -23,6 +23,8 @@ export interface EsitoProvaBinding {
   success: boolean;
   message: string;
   nonDisponibile?: boolean;
+  /** Password verificata giusta e rifiuto vero: mancano i diritti. Il legame e la validazione non si toccano. */
+  motivo?: "diritti_mancanti";
   kind?: string;
   hint?: string;
   methodsOffered?: string[];
@@ -54,10 +56,23 @@ function nonPartita(message: string): EsitoProvaBinding {
 }
 
 /** I freni sono quelli condivisi con il pulsante Test e la ricerca: `src/lib/credentials/freno-logon-windows.ts`. */
-async function freniDelLogon(username: string, password: string, deps: DipendenzeProvaBinding): Promise<{ fermata: EsitoProvaBinding } | { password: EsitoPassword }> {
-  const freno = await freniCondivisi(username, password, deps);
+async function freniDelLogon(username: string, password: string, realm: string | null, deps: DipendenzeProvaBinding): Promise<{ fermata: EsitoProvaBinding } | { password: EsitoPassword }> {
+  const freno = await freniCondivisi(username, password, deps, { realm });
   if ("fermata" in freno) return { fermata: nonPartita(freno.fermata.messaggio) };
   return freno;
+}
+
+/** Il dominio dell'integrazione AD accesa, `null` se non ce n'è una. */
+async function realmAd(): Promise<string | null> {
+  const { getAdRealm } = await import("@/lib/db");
+  return getAdRealm()?.realm ?? null;
+}
+
+/** Con la password verificata giusta, un rifiuto dichiarato dice che mancano i diritti. */
+async function negatoConPasswordGiusta(err: unknown, password: EsitoPassword | null): Promise<boolean> {
+  if (password !== "valida") return false;
+  const { leggiErrore } = await import("@/lib/scanner/accesso-windows");
+  return leggiErrore(err).codice === "AUTH_REJECTED";
 }
 
 /** Prova una singola credenziale binding su un host. */
@@ -166,18 +181,19 @@ export async function provaBinding(
       if (!username) return { success: false, message: "Username mancante" };
       // Solo una voce di dominio può bloccare un account per tutti. Con la password non verificata un trasporto solo: la
       // catena del bridge farebbe fino a quattro logon errati per clic (stessa regola della scansione).
+      const realm = await realmAd();
       let opzioni: OpzioniWinrm | undefined;
-      if (utenteNormalizzato(username).includes("@")) {
+      let esitoPassword: EsitoPassword | null = null;
+      if (eAccountDiDominio(username, realm)) {
         // Una password vuota sarebbe un logon errato per niente, e sul DC un bind anonimo che riesce.
         if (!password) return { success: false, message: "Password mancante" };
-        const freno = await freniDelLogon(username, password, deps);
+        const freno = await freniDelLogon(username, password, realm, deps);
         if ("fermata" in freno) return freno.fermata;
+        esitoPassword = freno.password;
         if (freno.password !== "valida") opzioni = { unSoloLogon: true };
       }
       try {
         const runWinrm = deps.winrm ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
-        const { getAdRealm } = await import("@/lib/db");
-        const realm = getAdRealm()?.realm ?? "";
         const out = await runWinrm(
           host,
           binding.port ?? 5985,
@@ -185,14 +201,15 @@ export async function provaBinding(
           password ?? "",
           "echo DA-IPAM-TEST",
           false,
-          realm,
+          realm ?? "",
           opzioni
         );
         return String(out).includes("DA-IPAM-TEST")
           ? { success: true, message: "WinRM funzionante" }
           : { success: false, message: "WinRM: risposta inattesa" };
       } catch (err: unknown) {
-        return { success: false, message: `WinRM: ${err instanceof Error ? err.message : "errore"}` };
+        const message = `WinRM: ${err instanceof Error ? err.message : "errore"}`;
+        return { success: false, message, ...((await negatoConPasswordGiusta(err, esitoPassword)) ? { motivo: "diritti_mancanti" as const } : {}) };
       }
     }
 
@@ -212,7 +229,8 @@ export async function provaBinding(
       if (!username) return { success: false, message: "Username mancante" };
       // Una password vuota sarebbe un logon errato per niente.
       if (!password) return { success: false, message: "Password mancante" };
-      const freno = await freniDelLogon(username, password, deps);
+      // Il freno lascia passare un account locale: non blocca il dominio, come nel ramo WinRM.
+      const freno = await freniDelLogon(username, password, await realmAd(), deps);
       if ("fermata" in freno) return freno.fermata;
       try {
         const prova = deps.wmiIdentita ?? (await import("@/lib/devices/wmi-run")).runWmiIdentita;
@@ -224,7 +242,12 @@ export async function provaBinding(
         const { WmiError } = await import("@/lib/devices/wmi-run");
         const testo = err instanceof Error ? err.message : "errore";
         // `kind` è il codice del motore: serve a chi decide se è un rifiuto o una macchina muta (`eErroreDiTrasporto`).
-        return { success: false, message: `WMI: ${maschera(testo, username, password)}`, ...(err instanceof WmiError ? { kind: err.code } : {}) };
+        return {
+          success: false,
+          message: `WMI: ${maschera(testo, username, password)}`,
+          ...(err instanceof WmiError ? { kind: err.code } : {}),
+          ...((await negatoConPasswordGiusta(err, freno.password)) ? { motivo: "diritti_mancanti" as const } : {}),
+        };
       }
     }
 

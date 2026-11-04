@@ -107,6 +107,8 @@ export interface InputAccessoWindows {
 
 const PORTE_WINRM: readonly number[] = [5985, 5986];
 const PORTA_WMI = 135;
+/** Le porte delle due strade: il controllo TCP di un host senza porte note guarda queste. */
+export const PORTE_DI_GESTIONE: readonly number[] = [...PORTE_WINRM, PORTA_WMI];
 
 const NOME_STRADA: Record<StradaWindows, string> = { winrm: "WinRM", wmi: "WMI" };
 
@@ -137,7 +139,7 @@ const CODICI_SENZA_LOGON_RIFIUTATO: ReadonlySet<string> = new Set<WinrmErrorCode
   "PYWINRM_MISSING", "IMPACKET_MISSING", "BRIDGE_INPUT", "WSMAN_FAULT",
 ]);
 
-const CODICI_TIMEOUT: ReadonlySet<string> = new Set<WinrmErrorCode>(["TCP_TIMEOUT", "BRIDGE_TIMEOUT"]);
+export const CODICI_TIMEOUT: ReadonlySet<string> = new Set<WinrmErrorCode>(["TCP_TIMEOUT", "BRIDGE_TIMEOUT"]);
 
 /** Limite dell'estratto dell'errore nel dettaglio, applicato dopo la maschera. */
 const LIMITE_ESTRATTO = 200;
@@ -179,12 +181,17 @@ export function maschera(testo: string, username: string, password: string): str
 }
 
 /** L'errore come lo legge il motore. Un rifiuto dichiarato dal bridge è `AUTH_REJECTED`, qualunque sia l'ultimo errore. */
-function leggiErrore(err: unknown): { codice: string; messaggio: string; primaDelBridge: boolean } {
+export function leggiErrore(err: unknown): { codice: string; messaggio: string; primaDelBridge: boolean } {
   if (err instanceof WinrmError) {
     return { codice: err.rifiutato ? "AUTH_REJECTED" : err.code, messaggio: err.message, primaDelBridge: err.primaDelBridge };
   }
   if (err instanceof WmiError) return { codice: err.code, messaggio: err.message, primaDelBridge: err.primaDelBridge };
   return { codice: "UNKNOWN", messaggio: err instanceof Error ? err.message : String(err), primaDelBridge: false };
+}
+
+/** Dietro questo errore può esserci un logon rifiutato? La stessa risposta per il motore e per le prove a mano. */
+export function puoNascondereUnRifiuto(errore: { codice: string; primaDelBridge: boolean }): boolean {
+  return !errore.primaDelBridge && !CODICI_SENZA_LOGON_RIFIUTATO.has(errore.codice);
 }
 
 interface Classificato {
@@ -201,14 +208,15 @@ function classifica(
   password: Exclude<EsitoPassword, "errata">,
   input: InputAccessoWindows,
 ): Classificato {
-  const { codice, messaggio, primaDelBridge } = leggiErrore(err);
+  const letto = leggiErrore(err);
+  const { codice, messaggio } = letto;
   const nome = NOME_STRADA[strada];
   const logon: EsitoLogon = codice === "AUTH_REJECTED" ? "rifiutato" : "ignoto";
   const esito = (motivo: MotivoDiStrada, nota: string, ferma = false): Classificato => ({
     motivo, dettaglio: `${nome}: ${nota}`, logon, ferma,
   });
 
-  if (!primaDelBridge && !CODICI_SENZA_LOGON_RIFIUTATO.has(codice) && password === "non_so") {
+  if (puoNascondereUnRifiuto(letto) && password === "non_so") {
     return esito("errore", `accesso non riuscito con password non verificabile [${codice}]`, true);
   }
   if (codice === "AUTH_REJECTED") return esito("diritti_mancanti", "password giusta, accesso negato: mancano i diritti");

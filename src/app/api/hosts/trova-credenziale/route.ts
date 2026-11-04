@@ -5,7 +5,7 @@ import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
-import { candidatiPerHost, provaCredenzialeSuHost, trovaCredenziale, type EsitoRicerca } from "@/lib/credentials/trova";
+import { candidatiPerHost, esitoDellaRicerca, provaCredenzialeSuHost, trovaCredenziale, type EsitoRicerca } from "@/lib/credentials/trova";
 
 /**
  * Ricerca della credenziale che funziona su uno o più host (tappe 3-5, T3, 21/10).
@@ -64,9 +64,7 @@ export async function POST(req: Request) {
         }
         esiti.push(
           await trovaCredenziale(dbh, hostId, p.data.protocollo, p.data.porta, async (credentialId) => {
-            const e = await provaCredenzialeSuHost(dbh, credentialId, host.ip, p.data.porta, { ricerca: true });
-            // un segreto mancante o un tipo non provabile non è un rifiuto dell'host: non lascia traccia
-            return { ok: e.ok, errore: e.ok ? undefined : e.errore, nonProvata: !e.registra, trasporto: e.trasporto, passwordErrata: e.passwordErrata, passwordValida: e.passwordValida };
+            return esitoDellaRicerca(await provaCredenzialeSuHost(dbh, credentialId, host.ip, p.data.porta, { ricerca: true }));
           }, { escludi: p.data.escludi_credenziali, budget }),
         );
       }

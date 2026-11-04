@@ -2,8 +2,10 @@
  * Il freno di ogni logon Windows fatto a mano, in un posto solo (piano accesso Windows, revisione finale).
  *
  * Un logon con una password sbagliata su un account di dominio conta per il blocco dell'account, per tutti. La scansione
- * ha i suoi freni; il pulsante «Prova» del legame, il pulsante «Test» di una voce e la ricerca della credenziale sono logon
- * veri a ogni clic, e li usano questa stessa funzione. Nell'ordine:
+ * ha i suoi freni. Usano questa funzione i logon a clic che provano una voce o un legame su un host: «Prova» del legame,
+ * «Test» di una voce, la ricerca della credenziale, «Test» di un apparato (`GET /api/devices/[id]/test`) e la prova
+ * prima di salvarlo (`POST /api/devices/test-provisional`). Resta fuori `/api/ad/kerberos`: è la diagnostica dell'integrazione
+ * AD, con l'account dell'integrazione. Un account non di dominio passa senza freni. Nell'ordine:
  * 1. il ricordo delle password errate: se la password è già nota errata non si fa niente;
  * 2. 3 prove in 15 minuti per utente, non per voce (`utenteNormalizzato`): l'account è l'utente. Solo se chi chiama lo chiede:
  *    la ricerca su più host ha il suo conto, `CredentialRunBudget`, e non deve consumare anche questo;
@@ -27,6 +29,8 @@ export interface DipendenzeFreno {
 }
 
 export interface OpzioniFreno {
+  /** Il dominio dell'integrazione AD accesa, `null` se non ce n'è una. Si legge da chi chiama, che ha il suo accesso al database. */
+  realm: string | null;
   /** Il limite di 3 prove in 15 minuti per utente. Di serie sì; la ricerca lo toglie perché ha il suo budget. */
   limitePerUtente?: boolean;
 }
@@ -36,9 +40,13 @@ export type MotivoFermata = "ricordo" | "limite" | "errata";
 
 export type EsitoFreno = { fermata: { motivo: MotivoFermata; messaggio: string } } | { password: EsitoPassword };
 
-/** Una forma di utente di dominio (`DOM\mario`, `mario@dom.local`): solo questi possono bloccare un account per tutti. */
-export function eUtenteDiDominio(username: string): boolean {
-  return utenteNormalizzato(username).includes("@");
+/**
+ * Un logon con questo utente può bloccare un account di dominio? `DOM\mario` e `mario@dom.local` sempre. Con un'integrazione AD
+ * accesa ogni utente: `winrm-bridge.py` fa `kinit utente@REALM` anche per `mario` e per `.\mario`. `realm` è il dominio
+ * dell'integrazione, anche vuoto; `null` vuol dire nessuna integrazione accesa. Una sola definizione per tutti i freni.
+ */
+export function eAccountDiDominio(username: string, realm: string | null): boolean {
+  return realm !== null || utenteNormalizzato(username).includes("@");
 }
 
 /** «tra circa 5 minuti», mai un conto che non torna: si arrotonda per eccesso. */
@@ -48,7 +56,8 @@ export function attesaInParole(ms: number): string {
   return `tra circa ${minuti} minuti`;
 }
 
-export async function freniDelLogon(username: string, password: string, deps: DipendenzeFreno = {}, opzioni: OpzioniFreno = {}): Promise<EsitoFreno> {
+export async function freniDelLogon(username: string, password: string, deps: DipendenzeFreno, opzioni: OpzioniFreno): Promise<EsitoFreno> {
+  if (!eAccountDiDominio(username, opzioni.realm)) return { password: "non_so" };
   const tenant = getCurrentTenantCode() ?? "DEFAULT";
   const ricordo = deps.ricordo ?? ricordoDelTenant(tenant);
   const chiave = chiaveAccount(username, password);

@@ -82,7 +82,8 @@ describe("recordEsitiAccessoWindows", () => {
       withTenant(T, () =>
         recordEsitiAccessoWindows([
           { hostId: s.host[0], credentialId: s.voce, strada: "winrm", motivo: "password_errata" },
-          { hostId: 999_999, credentialId: s.voce, strada: "winrm", motivo: "password_errata" },
+          // Un host che non c'è più si salta (più sotto): qui la riga è rifiutata dal NOT NULL.
+          { hostId: s.host[1], credentialId: s.voce, strada: "winrm", motivo: null as unknown as "password_errata" },
         ]),
       ),
     );
@@ -151,5 +152,45 @@ describe("password errata", () => {
       recordCredentialPasswordErrata(s.voce);
     });
     assert.deepEqual(righeEsiti(s), [{ host_id: s.host[0], strada: "winrm", motivo: "password_errata" }]);
+  });
+});
+
+describe("scritture di fine giro su host e voci che non ci sono più", () => {
+  it("un host cancellato durante il giro: l'esito si salta, gli altri si scrivono", () => {
+    const s = scena();
+    withTenant(T, () =>
+      recordEsitiAccessoWindows([
+        { hostId: 9999, credentialId: s.voce, strada: "winrm", motivo: "ok" },
+        { hostId: s.host[0], credentialId: s.voce, strada: "winrm", motivo: "ok" },
+      ]),
+    );
+    assert.deepEqual(righeEsiti(s), [{ host_id: s.host[0], strada: "winrm", motivo: "ok" }]);
+  });
+
+  it("una voce cancellata durante il giro: nessuna riga orfana", () => {
+    const s = scena();
+    withTenant(T, () => recordEsitiAccessoWindows([{ hostId: s.host[0], credentialId: 9999, strada: "wmi", motivo: "errore" }]));
+    assert.deepEqual(righeEsiti(s), []);
+  });
+});
+
+describe("la password errata sugli esiti", () => {
+  it("le strade senza logon restano come sono: porte chiuse, budget esaurito e nessuna voce non dicono niente della password", () => {
+    const s = scena();
+    withTenant(T, () => {
+      recordEsitiAccessoWindows([
+        { hostId: s.host[0], credentialId: s.voce, strada: "winrm", motivo: "porte_chiuse" },
+        { hostId: s.host[0], credentialId: s.voce, strada: "wmi", motivo: "budget_esaurito" },
+        { hostId: s.host[1], credentialId: s.voce, strada: "winrm", motivo: "nessuna_voce" },
+        { hostId: s.host[1], credentialId: s.voce, strada: "wmi", motivo: "errore" },
+      ]);
+      recordCredentialPasswordErrata(s.voce);
+    });
+    assert.deepEqual(righeEsiti(s), [
+      { host_id: s.host[0], strada: "winrm", motivo: "porte_chiuse" },
+      { host_id: s.host[0], strada: "wmi", motivo: "budget_esaurito" },
+      { host_id: s.host[1], strada: "winrm", motivo: "nessuna_voce" },
+      { host_id: s.host[1], strada: "wmi", motivo: "password_errata" },
+    ]);
   });
 });

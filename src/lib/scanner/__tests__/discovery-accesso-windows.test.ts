@@ -118,18 +118,20 @@ interface ScenaProve {
   /** Il nome che dà la macchina, o l'errore che dà. Di serie rifiuta. */
   winrm?: (ip: string, username: string) => string | Error;
   wmi?: (ip: string, username: string) => string | Error;
+  /** Le porte che il controllo TCP trova aperte su un host senza porte note. Di serie nessuna. */
+  porte?: number[];
 }
 
 interface Banco {
   prove: ProveAccessoWindows;
-  chiamate: { winrm: string[]; wmi: string[]; ldap: number[]; smb: string[] };
+  chiamate: { winrm: string[]; wmi: string[]; ldap: number[]; smb: string[]; sonde: string[] };
   /** Le fasi viste dalle prove durante il giro. */
   fasi: string[];
   leggiFase: { fn: () => string | undefined };
 }
 
 function banco(s: ScenaProve = {}): Banco {
-  const chiamate: Banco["chiamate"] = { winrm: [], wmi: [], ldap: [], smb: [] };
+  const chiamate: Banco["chiamate"] = { winrm: [], wmi: [], ldap: [], smb: [], sonde: [] };
   const fasi: string[] = [];
   const leggiFase: Banco["leggiFase"] = { fn: () => undefined };
   const annota = (): void => {
@@ -158,6 +160,10 @@ function banco(s: ScenaProve = {}): Banco {
     async smb(_credId, ip) {
       chiamate.smb.push(ip);
       return "non_so";
+    },
+    async porteAperte(ip) {
+      chiamate.sonde.push(ip);
+      return s.porte ?? [];
     },
   };
   return { prove, chiamate, fasi, leggiFase };
@@ -884,23 +890,51 @@ describe("il fermo illeggibile: nessun logon, e il giro va avanti", () => {
 describe("un host Windows senza porte note", () => {
   const scena = (): Tenant => tenant(codice("SENZAPORTE"), [{ ip: ipDi(1), porte: [], classification: "windows_server" }]);
 
-  it("la verifica TCP chiude il caso: nessun logon, e l'esito è «porte chiuse» su tutte e due le strade", async () => {
+  it("il controllo TCP chiude il caso prima di tutto: niente logon, LDAP né SMB, porte chiuse su tutte e due le strade", async () => {
     const t = scena();
     voce(t, "Scansioni");
-    const b = banco({ password: "non_so", winrm: () => rifiutoWinrm("TCP_CLOSED"), wmi: () => rifiutoWmi("TCP_CLOSED") });
+    const b = banco({ password: "non_so" });
     await giro(t, "credential_validate", b);
-    assert.deepEqual(b.chiamate.winrm, [ipDi(1)], "si arriva al controllo TCP, che sta prima del bridge");
-    assert.deepEqual(b.chiamate.wmi, [ipDi(1)]);
+    assert.deepEqual([b.chiamate.winrm, b.chiamate.wmi, b.chiamate.ldap, b.chiamate.smb], [[], [], [], []]);
+    assert.deepEqual(b.chiamate.sonde, [ipDi(1)]);
     const esiti = t.d.prepare("SELECT strada, motivo FROM accesso_windows_esiti ORDER BY strada").all();
     assert.deepEqual(esiti, [{ strada: "winrm", motivo: "porte_chiuse" }, { strada: "wmi", motivo: "porte_chiuse" }]);
     assert.deepEqual(righe(t, ipDi(1)), []);
   });
 
+  it("il controllo si fa una volta per host, non una per voce", async () => {
+    const t = scena();
+    voce(t, "Prima");
+    voce(t, "Seconda", "windows", "CLIENTE\\altra");
+    const b = banco({ password: "non_so" });
+    await giro(t, "credential_validate", b);
+    assert.deepEqual(b.chiamate.sonde, [ipDi(1)]);
+  });
+
+  it("al motore arrivano le porte vere: con la sola 5986 si prova WinRM su quella, e WMI no", async () => {
+    const t = scena();
+    const id = voce(t, "Scansioni");
+    const b = banco({ password: "valida", winrm: () => "PC-1", porte: [5986] });
+    await giro(t, "credential_validate", b);
+    assert.deepEqual(b.chiamate.wmi, []);
+    assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.credential_id, r.port, r.motivo, r.validated]), [[id, 5986, "ok", 1]]);
+  });
+
   it("se la macchina risponde si entra: prima diceva «porte chiuse» senza provare", async () => {
     const t = scena();
     const id = voce(t, "Scansioni");
-    await giro(t, "credential_validate", banco({ password: "valida", winrm: () => "PC-1" }));
+    await giro(t, "credential_validate", banco({ password: "valida", winrm: () => "PC-1", porte: [5985, 135] }));
     assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.credential_id, r.motivo, r.validated]), [[id, "ok", 1]]);
+  });
+});
+
+describe("il riepilogo di fine giro", () => {
+  it("una scrittura che fallisce non fa fallire un giro finito: lo dice nel registro", async () => {
+    const t = tenant(codice("RIEPILOGO"), hostUguali(2, [5985]));
+    voce(t, "Scansioni");
+    t.d.exec("CREATE TRIGGER guasto_esiti BEFORE INSERT ON accesso_windows_esiti BEGIN SELECT RAISE(ABORT, 'guasto di prova'); END");
+    const log = await giro(t, "credential_validate", banco({ password: "errata" }));
+    assert.match(log, /Accesso Windows: riepilogo non scritto/);
   });
 });
 

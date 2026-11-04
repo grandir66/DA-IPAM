@@ -8,11 +8,12 @@
 
 import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials, getAdRealm } from "@/lib/db";
-import { runWinrmCommand } from "./winrm-run";
+import { runWinrmCommand, type OpzioniWinrm } from "./winrm-run";
 
 export interface WinrmClient {
   runCommand(command: string, usePowershell?: boolean): Promise<string>;
-  testConnection(): Promise<boolean>;
+  /** `opzioni` solo da chi ha già passato i freni del logon: con la password non verificata, un logon solo. */
+  testConnection(opzioni?: OpzioniWinrm): Promise<boolean>;
 }
 
 /**
@@ -31,7 +32,7 @@ export function isAccessoSoloWmi(e: unknown): boolean {
   return e instanceof Error && e.name === "AccessoSoloWmiError";
 }
 
-export async function createWinrmClient(device: NetworkDevice): Promise<WinrmClient> {
+export async function createWinrmClient(device: NetworkDevice, esegui: typeof runWinrmCommand = runWinrmCommand): Promise<WinrmClient> {
   const creds = getDeviceCredentials(device);
   if (creds?.protocollo === "wmi") throw new AccessoSoloWmiError(device);
   const username = creds?.username ?? "";
@@ -48,12 +49,12 @@ export async function createWinrmClient(device: NetworkDevice): Promise<WinrmCli
 
   return {
     async runCommand(command: string, usePowershell = false): Promise<string> {
-      return runWinrmCommand(host, port, username, password, command, usePowershell, realm);
+      return esegui(host, port, username, password, command, usePowershell, realm);
     },
 
-    async testConnection(): Promise<boolean> {
+    async testConnection(opzioni?: OpzioniWinrm): Promise<boolean> {
       try {
-        const out = await runWinrmCommand(host, port, username, password, "echo test", false, realm);
+        const out = await esegui(host, port, username, password, "echo test", false, realm, opzioni);
         return out != null && String(out).trim().length >= 0;
       } catch {
         return false;

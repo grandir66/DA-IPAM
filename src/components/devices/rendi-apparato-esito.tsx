@@ -9,7 +9,7 @@ import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-mod
 import { cn } from "@/lib/utils";
 import { dataBreve, quandoBreve } from "@/lib/devices/rendi-apparato";
 
-export type StatoEsito = "non_provata" | "in_corso" | "riuscita" | "rifiutata" | "fermata" | "esclusa";
+export type StatoEsito = "non_provata" | "in_corso" | "riuscita" | "rifiutata" | "diritti_mancanti" | "fermata" | "esclusa";
 
 export interface EsitoCredenziale {
   stato: StatoEsito;
@@ -33,6 +33,7 @@ export function eMotivoTetto(motivo: string | null | undefined): boolean {
 const TONO: Record<StatoEsito, ToniStato> = {
   riuscita: "ok",
   rifiutata: "guasto",
+  diritti_mancanti: "attenzione",
   esclusa: "guasto",
   fermata: "attenzione",
   non_provata: "da_verificare",
@@ -49,6 +50,8 @@ export function testoEsito(e: EsitoCredenziale): string {
       const q = quandoBreve(e.quando);
       return q ? `✕ Rifiutata · ${q}` : "✕ Rifiutata";
     }
+    case "diritti_mancanti":
+      return "▲ Password giusta, mancano i diritti";
     case "esclusa": {
       const d = dataBreve(e.quando);
       return `✕ ${e.nome ? `«${e.nome}» ` : ""}esclusa: rifiutata${d ? ` il ${d}` : ""}`;

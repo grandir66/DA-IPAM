@@ -11,9 +11,13 @@
  * Un posto si PRENOTA prima del logon e si chiude con l'esito: le richieste del client possono arrivare insieme, e un
  * controllo fatto prima dell'`await` del logon le farebbe passare tutte. Esiti:
  * - `rifiutato`: il logon è partito ed è stato respinto: conta nella finestra;
- * - `riuscito`: l'account funziona, il conto riparte da zero;
+ * - `riuscito`: quella password funziona, i suoi rifiuti si azzerano;
  * - `nessunLogon`: il logon non è partito o non è una password sbagliata (host non raggiungibile, diritti mancanti con
  *   password verificata giusta, voce non provabile): il posto si libera, niente conta.
+ *
+ * I rifiuti stanno per utente e password (`chiaveAccount`) e il limite si legge sulla loro somma, come `legaAccount` nel budget:
+ * il limite è dell'account, ma un successo azzera solo la sua password. Con un conto unico la voce giusta azzererebbe a ogni host
+ * quella sbagliata dello stesso utente, e il limite non scatterebbe mai.
  *
  * Non conta la risposta `errata` del DC: quel bind lo ferma già il ricordo (una sola volta ogni 30 minuti per password) e
  * dopo non parte nessun logon sugli host.
@@ -26,8 +30,14 @@ export type Prenotazione =
   | { ok: false; /** Millisecondi prima che torni un posto; 0 se i posti sono tutti prenotati da logon ancora in corso. */ attesaMs: number };
 
 interface StatoUtente {
-  rifiuti: number[];
+  /** Password (`chiaveAccount`) → momenti dei rifiuti. */
+  rifiuti: Map<string, number[]>;
   inCorso: number;
+}
+
+/** Tutti i rifiuti dell'utente, su tutte le password, dal più vecchio. */
+function rifiutiInOrdine(stato: StatoUtente): number[] {
+  return [...stato.rifiuti.values()].flat().sort((a, b) => a - b);
 }
 
 export class ContoLogonRicerca {
@@ -35,23 +45,27 @@ export class ContoLogonRicerca {
 
   constructor(private readonly adesso: () => number = Date.now) {}
 
-  /** Toglie i rifiuti fuori finestra e gli utenti ormai vuoti: la mappa non cresce. */
-  private recenti(utente: string): StatoUtente {
+  /** Toglie i rifiuti fuori finestra e gli utenti ormai vuoti, tutti: un utente che non torna non deve restare qui. */
+  private pulisci(): void {
     const ora = this.adesso();
-    const stato = this.utenti.get(utente) ?? { rifiuti: [], inCorso: 0 };
-    stato.rifiuti = stato.rifiuti.filter((t) => ora - t < FINESTRA_LOGON_MS);
-    if (stato.rifiuti.length === 0 && stato.inCorso === 0) this.utenti.delete(utente);
-    else this.utenti.set(utente, stato);
-    return stato;
+    for (const [utente, stato] of this.utenti) {
+      for (const [chiave, momenti] of stato.rifiuti) {
+        const recenti = momenti.filter((t) => ora - t < FINESTRA_LOGON_MS);
+        if (recenti.length > 0) stato.rifiuti.set(chiave, recenti);
+        else stato.rifiuti.delete(chiave);
+      }
+      if (stato.rifiuti.size === 0 && stato.inCorso === 0) this.utenti.delete(utente);
+    }
   }
 
-  prenota(utente: string): Prenotazione {
-    const stato = this.recenti(utente);
-    if (stato.rifiuti.length + stato.inCorso >= MAX_LOGON_RIFIUTATI) {
+  /** `chiave` è la password dentro l'utente (`chiaveAccount`); senza, l'utente ha una password sola. */
+  prenota(utente: string, chiave: string = utente): Prenotazione {
+    this.pulisci();
+    const stato = this.utenti.get(utente) ?? { rifiuti: new Map<string, number[]>(), inCorso: 0 };
+    const rifiuti = rifiutiInOrdine(stato);
+    if (rifiuti.length + stato.inCorso >= MAX_LOGON_RIFIUTATI) {
       const attesaMs =
-        stato.rifiuti.length >= MAX_LOGON_RIFIUTATI
-          ? Math.max(0, stato.rifiuti[stato.rifiuti.length - MAX_LOGON_RIFIUTATI] + FINESTRA_LOGON_MS - this.adesso())
-          : 0;
+        rifiuti.length >= MAX_LOGON_RIFIUTATI ? Math.max(0, rifiuti[rifiuti.length - MAX_LOGON_RIFIUTATI] + FINESTRA_LOGON_MS - this.adesso()) : 0;
       return { ok: false, attesaMs };
     }
     stato.inCorso += 1;
@@ -64,13 +78,15 @@ export class ContoLogonRicerca {
       s.inCorso = Math.max(0, s.inCorso - 1);
       agisci(s);
       this.utenti.set(utente, s);
-      this.recenti(utente);
+      this.pulisci();
     };
     return {
       ok: true,
-      rifiutato: chiudi((s) => s.rifiuti.push(this.adesso())),
+      rifiutato: chiudi((s) => {
+        s.rifiuti.set(chiave, [...(s.rifiuti.get(chiave) ?? []), this.adesso()]);
+      }),
       riuscito: chiudi((s) => {
-        s.rifiuti = [];
+        s.rifiuti.delete(chiave);
       }),
       nessunLogon: chiudi(() => undefined),
     };

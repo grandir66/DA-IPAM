@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getMultihomedStatusByDeviceId } from "@/lib/db";
 import {
   runDeviceConnectionTest,
+  testFaLogonWindows,
   isWindowsDevice,
   getWindowsHint,
 } from "@/lib/devices/device-connection-test";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
 /**
  * Testa la connessione a un dispositivo (router, switch o Proxmox).
@@ -22,6 +23,12 @@ export async function GET(
     const device = getNetworkDeviceById(Number(id));
     if (!device) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+    }
+
+    // Su un apparato Windows il test è un logon vero, che conta per il blocco dell'account: solo gli amministratori.
+    if (testFaLogonWindows(device)) {
+      const adminCheck = await requireAdmin();
+      if (isAuthError(adminCheck)) return adminCheck;
     }
 
     // Multihomed dedup: se è secondary, skip a meno di ?force=1.

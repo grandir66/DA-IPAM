@@ -11,7 +11,7 @@ import type { EsitoCredenziale } from "./rendi-apparato-esito";
 export interface TentativoVista {
   credentialId: number;
   nome: string;
-  esito: "riuscita" | "rifiutata" | "esclusa" | "fermata";
+  esito: "riuscita" | "rifiutata" | "diritti_mancanti" | "esclusa" | "fermata";
   motivo: string | null;
   quando: string;
 }
@@ -70,7 +70,7 @@ export interface AzioniCredenziale {
 
 /** Quante prove vere (riuscite o rifiutate) ha fatto l'ultima ricerca: le escluse e la «fermata» non sono tentativi. */
 export function tentativiFatti(t: readonly TentativoVista[]): number {
-  return t.filter((x) => x.esito === "riuscita" || x.esito === "rifiutata").length;
+  return t.filter((x) => x.esito === "riuscita" || x.esito === "rifiutata" || x.esito === "diritti_mancanti").length;
 }
 
 /**

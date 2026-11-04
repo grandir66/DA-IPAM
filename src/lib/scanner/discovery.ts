@@ -84,6 +84,7 @@ import { CredentialRunBudget } from "./credential-run-budget";
 import { ricordoDelTenant } from "./account-windows";
 import {
   ORDINE_MOTIVI,
+  PORTE_DI_GESTIONE,
   portaDellaStrada,
   provaAccessoWindows,
   stradeDaProvare,
@@ -97,6 +98,7 @@ import {
 import { VerificaPasswordRun, provaLdapDellaVoce, provaSmbDellaVoce, type EsitoPassword } from "./verifica-password-run";
 import { runWinrmCommand, WinrmError, type DipendenzeWinrm } from "@/lib/devices/winrm-run";
 import { runWmiIdentita } from "@/lib/devices/wmi-run";
+import { probeTcpPorts } from "@/lib/devices/tcp-precheck";
 import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
 import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
 import { recordEvidence } from "@/lib/attribution/evidence";
@@ -256,6 +258,14 @@ export interface ProveAccessoWindows {
   smb: (credId: number, ip: string) => Promise<EsitoPassword>;
   /** La lettura dei candidati, solo per le prove: di serie il motore delle credenziali. */
   candidati?: typeof resolveCredentialsForDb;
+  /** Il controllo TCP di un host senza porte note, solo per le prove: di serie `porteWindowsAperte`. */
+  porteAperte?: (ip: string) => Promise<number[]>;
+}
+
+/** Quali porte di gestione rispondono: un connect TCP, nessun logon. Una porta che non risponde in tempo non è aperta. */
+async function porteWindowsAperte(ip: string): Promise<number[]> {
+  const esiti = await probeTcpPorts(ip, [...PORTE_DI_GESTIONE]);
+  return esiti.filter((r) => r.state === "open").map((r) => r.port);
 }
 
 /** Porta per le prove, come quella di `getScanIoOverride`: in produzione è vuota, nessun codice dell'applicazione la scrive. */
@@ -274,7 +284,6 @@ function proveAccessoDelGiro(): ProveAccessoWindows {
 
 const NOME_STRADA: Record<StradaWindows, string> = { winrm: "WinRM", wmi: "WMI" };
 const STRADE_WINDOWS: readonly StradaWindows[] = ["winrm", "wmi"];
-const PORTE_SENZA_SCANSIONE: readonly number[] = [5985, 135];
 
 /** Parole del log, della fase e del riepilogo: mai utenti né nomi di voci. */
 const TESTO_MOTIVO: Record<MotivoAccesso, string> = {
@@ -374,6 +383,7 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
   const motivoDiHost = new Map<number, MotivoAccesso>();
   const vociErrateScritte = new Set<number>();
   const esitiPasswordErrata: EsitoAccessoDaScrivere[] = [];
+  const porteControllate = new Map<string, Promise<number[]>>();
   const guastiDelTenant = new Set<string>();
   // L'evidenza vuole il codice dell'errore WinRM, che l'esito del motore non porta: dettaglio è un testo per chi legge.
   let codiceWinrm: string | null = null;
@@ -480,6 +490,16 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
     /** I candidati di un host col fermo, dal motore. Lancia su un errore del DB: chi chiama lo tratta come un errore di quell'host. */
     candidati: ((target, protocol) => leggiCandidati(getDb(), target, protocol, { includeBackoff: true })) satisfies LetturaCandidati,
 
+    /** Le porte vere di un host senza porte note: un controllo solo per host, le voci dopo leggono questo. */
+    porteVere(ip: string): Promise<number[]> {
+      let porte = porteControllate.get(ip);
+      if (!porte) {
+        porte = (prove.porteAperte ?? porteWindowsAperte)(ip);
+        porteControllate.set(ip, porte);
+      }
+      return porte;
+    },
+
     /** Prova una voce su un host e ne scrive l'esito. `null`: la voce non ha i dati per provare. */
     async prova(p: ProvaVoceWindows): Promise<EsitoVoceWindows | null> {
       const { id: hostId, ip } = p.host;
@@ -529,9 +549,15 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
       conta(hostId, "nessuna_voce");
     },
 
-    /** Fine giro: gli esiti raccolti, e quanti host per ogni motivo. Solo conti: né utenti né voci. */
+    /** Fine giro: gli esiti raccolti, e quanti host per ogni motivo. Solo conti: né utenti né voci. Mai fa fallire un giro già finito. */
     riepilogo(): void {
-      salva(null, () => recordEsitiAccessoWindows(esitiPasswordErrata));
+      try {
+        salva(null, () => recordEsitiAccessoWindows(esitiPasswordErrata));
+      } catch (e) {
+        const { code } = e as { code?: unknown };
+        log(`⛔ Accesso Windows: riepilogo non scritto (${typeof code === "string" ? code : "errore"}).`);
+        console.error(`[Discovery] riepilogo accesso Windows non scritto: ${e instanceof Error ? e.message : "errore"}`);
+      }
       if (motivoDiHost.size === 0) return;
       const conti = new Map<MotivoAccesso, number>();
       for (const motivo of motivoDiHost.values()) conti.set(motivo, (conti.get(motivo) ?? 0) + 1);
@@ -2921,9 +2947,9 @@ async function runDiscovery(
           const esito = await accessoWindows.prova({
             host,
             credId,
-            // Windows dalla classificazione, ma nessuna porta nota: si provano le due strade. Prima del bridge c'è il controllo
-            // TCP, che chiude il caso senza logon su una macchina spenta.
-            porteAperte: openPorts.length > 0 ? openPorts.map((p) => p.port) : PORTE_SENZA_SCANSIONE,
+            // Windows dalla classificazione, ma nessuna porta nota: si guarda quali rispondono. Con nessuna il motore chiude il caso
+            // prima della verifica: niente logon, e niente LDAP o SMB per una macchina spenta.
+            porteAperte: openPorts.length > 0 ? openPorts.map((p) => p.port) : await accessoWindows.porteVere(ip),
             nowIso,
             backoffDi: backoffDaCandidati(getResolvedForProtocol, credId),
             stradaValidata: stradaValidataDaCandidati(getResolvedForProtocol, credId),

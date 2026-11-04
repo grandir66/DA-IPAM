@@ -7,7 +7,7 @@
 **Architettura:** nuovo protocollo di credenziale `wmi` (porta 135), accanto a `winrm`, con una prova leggera di sola identità. Una verifica unica della password per esecuzione distingue «password errata» da «diritti mancanti»: solo il primo caso consuma il budget anti-blocco.
 **Spec:** nessun documento separato. Requisiti da Riccardo il 04/11/2026 (72729, sezione in `TASKS.md`): «in assenza di winrm wmi funzionasse», «potrebbero esserci tante macchine windows che rispondono wmi con account di dominio».
 **Livello di controllo:** completo, proposto da Claude perché tocca credenziali e migrazione del database. Da confermare da Riccardo.
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-04
+**Stato:** sospeso (S0: nessun PC accetta l'account attuale; si riparte quando c'è l'account dedicato dell'IT del cliente) · **Ultimo aggiornamento:** 2026-11-04
 
 ## Vincoli globali
 
@@ -27,7 +27,7 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| S0 | [ ] | Misura sul 72729 col codice di oggi | orchestratore | sì di Riccardo | numero di PC che accettano l'account è noto | tabella nel Registro |
+| S0 | [x] | Misura sul 72729 col codice di oggi | orchestratore | sì di Riccardo | numero di PC che accettano l'account è noto | tabella nel Registro |
 | S1 | [ ] | Prova leggera di identità | implementer | — | `runWmiIdentita` provata | `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.ts` |
 | S2 | [ ] | Protocollo `wmi` e migrazione | implementer | — | migrazione provata su database vero in memoria | `npx tsc --noEmit` e prova di migrazione |
 | S3 | [ ] | Verifica della password per esecuzione | implementer | — | tre esiti provati | prova del task |
@@ -46,7 +46,7 @@
 
 ## Task
 
-### [ ] Task 0 — Misura sul 72729 col codice di oggi (S0)
+### [x] Task 0 — Misura sul 72729 col codice di oggi (S0)
 
 Serve a sapere quanto vale il lavoro prima di scriverlo. Nessuna modifica al codice.
 
@@ -54,6 +54,8 @@ Serve a sapere quanto vale il lavoro prima di scriverlo. Nessuna modifica al cod
 - **Cosa fare:** con la voce `WinRM`, prima un login LDAP su `192.168.0.10`. Se non riesce ci si ferma. Poi `runWmiProbe` una volta per host, uno alla volta, sugli host di rete 1 con 135 aperta e 5985/5986 chiuse, esclusi stampanti e DC.
 - **Stampa:** IP, nome, esito (`ok` / `AUTH_REJECTED` / altro codice), mai utente o password.
 - **Verifica:** tabella nel Registro.
+Verifica: script temporaneo sulla VM 100 → 13 PC, 12 `AUTH_REJECTED`, 1 `TCP_TIMEOUT`, 0 accessi riusciti.
+
 - **Decisione:** se nessun PC accetta l'account, si aspetta l'account amministratore dal loro IT prima di S1.
 
 ### [ ] Task 1 — Prova leggera di identità (S1)
@@ -211,6 +213,24 @@ export async function provaWmiHost(input: {
 - **Fatto quando:** i PC che hanno accettato in S0 risultano con credenziale `wmi`, nessun account bloccato, il riepilogo conta i rifiuti per diritti.
 
 ## Registro
+
+- 2026-11-04 Task 0 → [x] Voce `WinRM` (utente readonly, solo Domain Users), password verificata in LDAP su 192.168.0.10. Una prova per PC, in sequenza.
+
+| IP | PC | Esito |
+| --- | --- | --- |
+| 192.168.0.80 | FedeAiO-PC | `AUTH_REJECTED` |
+| 192.168.0.82 | CelleSF-PC | `AUTH_REJECTED` |
+| 192.168.0.204 | SERENAGIU-PC | `AUTH_REJECTED` |
+| 192.168.0.205 | Veronica-PC | `AUTH_REJECTED` |
+| 192.168.0.207 | LICIAB-PC | `TCP_TIMEOUT` sulla 135 |
+| 192.168.0.213 | Daniele-PC | `AUTH_REJECTED` |
+| 192.168.0.214 | AlfonsoB-PC (Windows 7) | `AUTH_REJECTED` |
+| 192.168.0.217 | Clara-pc | `AUTH_REJECTED` |
+| 192.168.0.222 | DOLORES-PC | `AUTH_REJECTED` |
+| 192.168.0.223 | Simonaz-PC | `AUTH_REJECTED` |
+| 192.168.0.227 | ClaudiaR-PC (prova precedente) | `AUTH_REJECTED` |
+| 192.168.0.230 | Roberto-PC | `AUTH_REJECTED` |
+| 192.168.0.234 | Lucio-PC | `AUTH_REJECTED` |
 
 ## Consuntivo
 

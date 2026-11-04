@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Check, ExternalLink, Download, FileText } from "lucide-react";
+import { GRUPPI, REGOLE_DIRITTI, dirittiDi } from "@/lib/credentials/diritti";
 
 interface Props {
   open: boolean;
@@ -68,10 +69,16 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
 
         <DialogScrollableArea className="px-4 py-3 max-h-[75vh]">
           <p className="text-xs text-muted-foreground mb-3">
-            DA-IPAM usa WinRM (porta 5985 HTTP / 5986 HTTPS) per inventario software, fingerprint OS,
-            esecuzione comandi. Tutti i comandi qui sotto si eseguono <strong>sul server target</strong>,
-            in <strong>PowerShell come amministratore</strong>.
+            DA-IPAM prova da solo WinRM (porta 5985 HTTP / 5986 HTTPS) e WMI per inventario, software,
+            fingerprint OS ed esecuzione comandi: basta che una delle due strade sia aperta. Tutti i comandi
+            qui sotto si eseguono <strong>sul server target</strong>, in <strong>PowerShell come amministratore</strong>.
           </p>
+          <ul className="text-xs text-muted-foreground mb-3 space-y-1">
+            {dirittiDi("utente_scansioni").map((d) => (
+              <li key={d.id}>• <strong>{d.funzione}</strong> ({d.dove}): {d.abilitare}</li>
+            ))}
+            {REGOLE_DIRITTI.slice(0, 2).map((r) => <li key={r}>• {r}</li>)}
+          </ul>
 
           {/* v0.2.656: download script PowerShell automatico + manuale completo */}
           <div className="mb-4 p-3 rounded-md border border-primary/30 bg-primary/5 flex flex-wrap items-center gap-3">
@@ -107,7 +114,7 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
             <TabsList className="grid grid-cols-5 mb-3">
               <TabsTrigger value="workgroup-builtin">Workgroup<br/>Administrator</TabsTrigger>
               <TabsTrigger value="workgroup-custom">Workgroup<br/>admin custom</TabsTrigger>
-              <TabsTrigger value="domain-admin">Dominio<br/>admin AD</TabsTrigger>
+              <TabsTrigger value="domain-admin">Dominio<br/>account AD</TabsTrigger>
               <TabsTrigger value="domain-local">Dominio<br/>admin locale</TabsTrigger>
               <TabsTrigger value="troubleshoot">Diagnostica</TabsTrigger>
             </TabsList>
@@ -188,9 +195,9 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
               </p>
 
               <h4 className="text-sm font-semibold">4. Verifica</h4>
-              <CodeBlock code={`# Sul server\nnetstat -ano | findstr ":5985"\nTest-NetConnection -ComputerName localhost -Port 5985\nnet localgroup Administrators`} />
+              <CodeBlock code={`# Sul server\nnetstat -ano | findstr ":5985"\nTest-NetConnection -ComputerName localhost -Port 5985\nnet localgroup ${GRUPPI.amministratoriLocali}`} />
               <p className="text-xs text-muted-foreground">
-                <code>net localgroup Administrators</code> deve elencare il tuo utente.
+                <code>{`net localgroup ${GRUPPI.amministratoriLocali}`}</code> deve elencare il tuo utente.
               </p>
             </TabsContent>
 
@@ -198,7 +205,7 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
             <TabsContent value="domain-admin" className="space-y-3">
               <div className="flex items-center gap-2">
                 <Badge variant="outline">Server joinato a dominio</Badge>
-                <Badge variant="outline">Account di dominio (Domain Admins / membro Administrators)</Badge>
+                <Badge variant="outline">{`Account di dominio, membro di ${GRUPPI.amministratoriLocali} locale (mai ${GRUPPI.domainAdmins})`}</Badge>
               </div>
               <p className="text-sm">
                 Caso più semplice in ambiente AD: l&apos;account di dominio usa Kerberos automaticamente.
@@ -215,8 +222,8 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
               <h4 className="text-sm font-semibold">2. Credenziale in DA-IPAM</h4>
               <ul className="text-sm space-y-1 list-disc ml-5">
                 <li>Tipo: <strong>Windows (host)</strong></li>
-                <li>Username: <strong><code>utente@dominio.fqdn</code></strong> (UPN — es. <code>admin@corp.acme.local</code>) — preferito per Kerberos</li>
-                <li>Oppure: <strong><code>DOMINIO\utente</code></strong> (NetBIOS — es. <code>CORP\admin</code>) — funziona via NTLM</li>
+                <li>Username: <strong><code>utente@dominio.fqdn</code></strong> (UPN — es. <code>svc-ipam@corp.acme.local</code>) — preferito per Kerberos</li>
+                <li>Oppure: <strong><code>DOMINIO\utente</code></strong> (NetBIOS — es. <code>CORP\svc-ipam</code>) — funziona via NTLM</li>
                 <li>Password: la password AD</li>
               </ul>
               <p className="text-xs text-muted-foreground">
@@ -265,7 +272,7 @@ export function WinRMSetupGuideDialog({ open, onOpenChange, initialTab = "workgr
                 <li><strong>Username senza prefisso</strong> per account locale → metti <code>.\nomeutente</code></li>
                 <li><strong>LocalAccountTokenFilterPolicy non impostata</strong> → vedi tab Workgroup/admin custom o Dominio/admin locale</li>
                 <li><strong>Password sbagliata</strong> — banale ma testa con <code>net user nomeutente</code> sul server, deve essere <code>Account active=Yes</code></li>
-                <li><strong>Account non nel gruppo Administrators</strong> (o per non-admin: non in &quot;Remote Management Users&quot;)</li>
+                <li><strong>{`Account non nel gruppo ${GRUPPI.amministratoriLocali}`}</strong> locale del server</li>
                 <li><strong>NTLM disabilitato</strong> (Windows hardened): <code>Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa | Select RestrictReceivingNTLMTraffic</code> — se vale 2, sblocca con 0</li>
               </ol>
 
@@ -312,8 +319,8 @@ Test-NetConnection -ComputerName localhost -Port 5985
 # Gruppi local del tuo utente
 net user nomeutente
 
-# Membri Administrators
-net localgroup Administrators`} />
+# Membri del gruppo ${GRUPPI.amministratoriLocali}
+net localgroup ${GRUPPI.amministratoriLocali}`} />
             </TabsContent>
           </Tabs>
 

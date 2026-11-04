@@ -20,12 +20,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Check, ExternalLink, FileText } from "lucide-react";
 import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
+import { GRUPPI, REGOLE_DIRITTI, dirittiDi, dirittoPerId } from "@/lib/credentials/diritti";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: "prereq" | "ldaps" | "winrm-dhcp" | "svc-account" | "audit" | "troubleshoot";
 }
+
+const ACCOUNT = dirittoPerId("account_dominio");
+const EVENTI = dirittoPerId("eventi_dc");
+const DHCP = dirittoPerId("dhcp");
 
 function CodeBlock({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -182,15 +187,10 @@ Restart-Service NTDS -Force`} />
               <CodeBlock code={`Enable-PSRemoting -Force`} />
 
               <h4 className="text-sm font-semibold">2. Aggiungi il service account ai gruppi DHCP</h4>
-              <CodeBlock code={`# Crea gruppi se non esistono (server appena promosso a DHCP)
-Add-DhcpServerSecurityGroup
-Restart-Service DHCPServer
-
-# Aggiungi svc-ipam ai DHCP Administrators
-Add-ADGroupMember -Identity "DHCP Administrators" -Members "svc-ipam"
-
-# Per WinRM serve anche essere admin del DC:
-Add-LocalGroupMember -Group "Administrators" -Member "DOMINIO\\svc-ipam"`} />
+              <p className="text-xs text-muted-foreground">
+                Servono <strong>{DHCP.abilitare}</strong>: nessun gruppo amministrativo, né sul DC né nel dominio.
+              </p>
+              <CodeBlock code={DHCP.comandoIt ?? ""} />
 
               <h4 className="text-sm font-semibold">3. Test cmdlet DHCP</h4>
               <CodeBlock code={`# Lo stesso comando che DA-IPAM esegue:
@@ -207,28 +207,20 @@ Get-DhcpServerv4Scope | ConvertTo-Json -Depth 2 -Compress`} />
               </p>
 
               <h4 className="text-sm font-semibold">1. Crea account svc-ipam</h4>
-              <CodeBlock code={`Import-Module ActiveDirectory
-
-$pwd = ConvertTo-SecureString "PasswordLungaSicura!2026" -AsPlainText -Force
-New-ADUser \`
-  -Name "svc-ipam" \`
-  -SamAccountName "svc-ipam" \`
-  -UserPrincipalName "svc-ipam@dominio.fqdn" \`
-  -AccountPassword $pwd \`
-  -PasswordNeverExpires $true \`
-  -Enabled $true \`
-  -Description "Service account per DA-IPAM"`} />
+              <CodeBlock code={ACCOUNT.comandoIt ?? ""} />
 
               <h4 className="text-sm font-semibold">2. Permessi minimi necessari</h4>
               <div className="text-xs space-y-1">
-                <p>• <strong>Sync LDAP utenti/computer/gruppi</strong>: Authenticated Users (default OK)</p>
-                <p>• <strong>Sync DHCP</strong>: gruppo <code>DHCP Administrators</code></p>
-                <p>• <strong>WinRM connect al DC</strong>: gruppo <code>Administrators</code> locale del DC (o Domain Admins)</p>
+                {dirittiDi("sicurezza_dominio").map((d) => (
+                  <p key={d.id}>• <strong>{d.funzione}</strong> ({d.dove}): {d.abilitare}</p>
+                ))}
               </div>
+              <ul className="text-xs list-disc ml-5 space-y-1">
+                {REGOLE_DIRITTI.map((r) => <li key={r}>{r}</li>)}
+              </ul>
 
-              <CodeBlock code={`# Aggiungi ai gruppi
-Add-ADGroupMember "DHCP Administrators" -Members svc-ipam
-Add-LocalGroupMember -Group "Administrators" -Member "DOMINIO\\svc-ipam"`} />
+              <CodeBlock code={EVENTI.comandoIt ?? ""} />
+              <CodeBlock code={DHCP.comandoIt ?? ""} />
 
               <h4 className="text-sm font-semibold">3. Test connessione</h4>
               <CodeBlock code={`# Da una macchina in dominio:
@@ -272,8 +264,8 @@ Get-DhcpServerInDC
 # 4. Scope visibili direttamente
 Get-DhcpServerv4Scope
 
-# 5. Permessi: utente in DHCP Administrators
-net localgroup "DHCP Administrators"   # cerca svc-ipam
+# 5. Permessi: utente in ${GRUPPI.dhcpAdmin}
+net localgroup "${GRUPPI.dhcpAdmin}"   # cerca svc-ipam
 
 # 6. Test esecuzione via WinRM (replica esatta di DA-IPAM)
 Invoke-Command -ComputerName localhost -ScriptBlock {

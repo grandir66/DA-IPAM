@@ -57,6 +57,20 @@ e si sceglie come «Credenziale WinRM del DC» nell'integrazione AD.
 Se il DC risponde «accesso negato» al registro, la pagina lo dice sul DC interessato: di solito
 manca Event Log Readers.
 
+Per leggere il DHCP dello stesso DC l'account sta anche in **DHCP Administrators**, sempre con
+Remote Management Users. **Mai Domain Admins, e Administrators sul DC non serve**: l'account che
+legge i DC è separato da quello delle scansioni dei PC (Administrators locale). Comandi per l'IT, con
+`Add-ADGroupMember` per i gruppi `Builtin`:
+
+```powershell
+Add-ADGroupMember -Identity "Event Log Readers" -Members "svc-ipam"
+Add-ADGroupMember -Identity "Remote Management Users" -Members "svc-ipam"
+Add-ADGroupMember -Identity "DHCP Administrators" -Members "svc-ipam"   # solo se il DC ha il DHCP
+```
+
+La definizione completa, per funzione, sta in `src/lib/credentials/diritti.ts`: le guide
+dell'applicativo e questo documento vanno tenuti allineati a quel file.
+
 ## La GPO di audit dei DC
 
 **Con lo script (consigliato).** `scripts/Configura-Audit-DC.ps1`, scaricabile dalla guida del DC

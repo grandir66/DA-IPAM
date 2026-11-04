@@ -49,6 +49,13 @@
 
 Il bridge Python `winrm-bridge.py` (lato DA-IPAM appliance) tenta una catena di autenticazione automatica: **Kerberos → NTLM → CredSSP → Basic**.
 
+**WMI e WinRM in automatico**: nella scansione DA-IPAM prova da solo sia WinRM sia WMI (RPC, porta 135 e porte dinamiche) e si ferma alla prima strada che riesce: per l'inventario basta che una delle due sia aperta.
+
+**Diritti**: una sola definizione, in due famiglie, in `src/lib/credentials/diritti.ts` (le guide dell'applicativo leggono da lì).
+- *Utente delle scansioni* (PC e server): `Administrators` locale, più il servizio WinRM attivo oppure la regola firewall WMI.
+- *Sicurezza del dominio* (DC): `Event Log Readers` + `Remote Management Users` per gli eventi, `DHCP Administrators` + `Remote Management Users` per il DHCP, la GPO di audit per registrare gli eventi. Dettaglio in `MANUALE-EVENTI-DC.md`.
+- **Mai `Domain Admins`**, e l'account delle scansioni è separato da quello di sola lettura dei DC.
+
 ---
 
 ## 2. Decisione architetturale: HTTP vs HTTPS
@@ -146,7 +153,7 @@ net user da   # cerca "Account active=Yes" e "Locked=No"
 
 ### 3.3 Server in dominio + utenza AD
 
-**Profilo**: server joinato ad Active Directory, autenticazione con utenza di dominio (membro di `Domain Admins` o `Administrators` locale via gruppo AD).
+**Profilo**: server joinato ad Active Directory, autenticazione con utenza di dominio, membro di `Administrators` locale (anche via gruppo AD). **Mai `Domain Admins`.**
 
 **Esempio**: file server, database server, hypervisor in dominio aziendale.
 
@@ -204,7 +211,7 @@ Enable-PSRemoting -Force
 
 **Importante**: per le **postazioni** (non server), considerare:
 - L'utente loggato spesso è un domain user senza privilegi admin → DA-IPAM deve usare credenziale AD admin **separata** (es. un service account `svc-ipam`)
-- L'account `svc-ipam` deve essere in `Domain Admins` **oppure** in `Administrators` locale di ogni macchina (deployato via GPO Restricted Groups)
+- L'account `svc-ipam` deve essere in `Administrators` locale di ogni macchina (deployato via GPO Restricted Groups). Non serve, e non si usa, `Domain Admins`
 - Per inventario software completo (Win32_Product, registry HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall) serve admin: un utente normale vede solo i propri programmi
 
 > ⚠ **Sicurezza**: meglio creare un service account dedicato `svc-ipam` con scope limitato anziché usare un domain admin generico. Vedi `[reference-da-ipam-ldaps-client-dc]` per pattern di delegazione.
@@ -239,8 +246,8 @@ Enable-PSRemoting -Force
 ```
 
 **Credenziale**:
-- Utenza in gruppo `Domain Admins` (necessario per query AD privilegiate via WMI)
-- Format: `admin@dominio.fqdn`
+- Utenza di dominio **non amministratore**, separata dall'account delle scansioni dei PC, nei gruppi `Event Log Readers` e `Remote Management Users` (e `DHCP Administrators` se il DC ha il DHCP). **Mai `Domain Admins`**: non serve a nessuna funzione di DA-IPAM, vedi `MANUALE-EVENTI-DC.md`
+- Format: `svc-ipam@dominio.fqdn`
 
 > ⚠ Limitare WinRM sul DC alle sole IP del DA-IPAM appliance via firewall rule:
 > ```powershell

@@ -4,6 +4,25 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
+
+- **Cambiato**: la scansione prova da sola WinRM e WMI su ogni host e si ferma alla prima strada che riesce,
+  con un motivo preciso per ogni esito (porte chiuse, firewall, password rifiutata, diritti mancanti).
+  Riccardo (04/11): «testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma
+  in generale». Un cliente con una sola delle due strade aperte deve avere l'inventario senza interventi.
+  Le password errate o non verificabili contano come prima verso il tetto di 3 insuccessi, quindi nessun
+  account in più si blocca.
+- **Cambiato**: i diritti hanno una sola definizione, in due famiglie, «utente delle scansioni» e «sicurezza
+  del dominio» (`src/lib/credentials/diritti.ts`); le guide dell'applicativo e i manuali la leggono.
+  Riccardo (04/11): «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni».
+  Tre guide si contraddicevano: la guida del DC chiedeva Administrators sul DC per WinRM mentre per leggere
+  gli eventi bastano Event Log Readers e Remote Management Users, e il manuale WinRM dava Domain Admins come
+  «necessario». Ora la regola è una: mai Domain Admins, e l'account delle scansioni (Administrators locale su
+  PC e server) è separato da quello di sola lettura dei DC.
+- **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
+  password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
+  che DA-IPAM usa solo WinRM.
+
 ## [Non rilasciato] — 2026-11-03 · Contesto integrazione Infoblox
 
 ### Documentazione

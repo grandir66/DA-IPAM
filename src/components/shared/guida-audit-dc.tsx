@@ -11,6 +11,9 @@
 
 import { Download } from "lucide-react";
 import { Etichetta } from "@/components/shared/console";
+import { dirittoPerId } from "@/lib/credentials/diritti";
+
+const EVENTI = dirittoPerId("eventi_dc");
 
 interface VoceAudit {
   categoriaEn: string;
@@ -164,8 +167,8 @@ export function GuidaAuditDc() {
       <section className="space-y-2">
         <Titolo n={5} testo="Account per la lettura e verifica" />
         <p className="text-[13px] text-muted-foreground">
-          L&apos;account WinRM dell&apos;integrazione AD sta in <strong className="text-foreground">Event Log Readers</strong> e{" "}
-          <strong className="text-foreground">Remote Management Users</strong> (va bene anche un Domain Admin). Dopo{" "}
+          L&apos;account WinRM dell&apos;integrazione AD ha questi gruppi, e nessun gruppo amministrativo:{" "}
+          <strong className="text-foreground">{EVENTI.abilitare}</strong> (mai un Domain Admin). Dopo{" "}
           <code className="font-mono">gpupdate /force</code>, su ogni DC: <code className="font-mono">auditpol /get /category:*</code>{" "}
           deve mostrare le voci sopra accese.
         </p>

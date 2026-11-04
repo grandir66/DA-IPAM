@@ -310,7 +310,7 @@ export function getWindowsHint(errorMessage: string): string {
     return " Assegna una credenziale di tipo Windows al dispositivo.";
   }
   if (errorMessage.includes("Connessione rifiutata") || errorMessage.includes("ECONNREFUSED")) {
-    return " Su Windows: winrm quickconfig e firewall in ingresso verso questo server (5985/5986). DA-IPAM usa solo WinRM, non WMI su RPC.";
+    return " Su Windows: winrm quickconfig e firewall in ingresso verso questo server (5985/5986 per WinRM; 135 e le porte RPC per WMI). DA-IPAM prova da solo sia WinRM sia WMI e si ferma alla prima strada che risponde: basta che una sia aperta.";
   }
   return "";
 }

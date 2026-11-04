@@ -181,17 +181,18 @@ Enable-PSRemoting -Force
 
 ### 4.2 Permessi sull'utente per leggere DHCP
 
-L'utente WinRM (vedi §5) deve essere membro di **uno** dei seguenti gruppi sul DC:
-- **DHCP Administrators** (preferito — scope minimo necessario)
-- **Domain Admins**
-- **Enterprise Admins**
+L'utente WinRM (vedi §5) deve essere membro di questi due gruppi sul DC, e di nessun gruppo amministrativo
+(**mai Domain Admins né Enterprise Admins**):
+- **DHCP Administrators** (legge scope e lease);
+- **Remote Management Users** (apre la sessione WinRM).
 
-Aggiungere a DHCP Administrators:
+I due gruppi sono i gruppi predefiniti (contenitore `Builtin`) del DC: si riempiono in Active Directory.
 ```powershell
 Add-DhcpServerSecurityGroup
 # Crea il gruppo "DHCP Administrators" e "DHCP Users" se non esistono.
 Restart-Service DHCPServer
 Add-ADGroupMember -Identity "DHCP Administrators" -Members "svc-ipam"
+Add-ADGroupMember -Identity "Remote Management Users" -Members "svc-ipam"
 ```
 
 ### 4.3 Verifica cmdlet DHCP
@@ -252,13 +253,14 @@ Per **audit, isolation, principio del minimo privilegio**: invece di usare `Admi
 # Importa il modulo AD
 Import-Module ActiveDirectory
 
-# Crea l'account (password lunga, non scade, account abilitato)
-$pwd = ConvertTo-SecureString "PasswordLungaSicura!2026" -AsPlainText -Force
+# Crea l'account (password lunga, non scade, account abilitato).
+# La password si digita al momento: non sta scritta in nessun comando.
+$password = Read-Host "Password di svc-ipam" -AsSecureString
 New-ADUser `
   -Name "svc-ipam" `
   -SamAccountName "svc-ipam" `
   -UserPrincipalName "svc-ipam@dominio.fqdn" `
-  -AccountPassword $pwd `
+  -AccountPassword $password `
   -PasswordNeverExpires $true `
   -Enabled $true `
   -Description "Service account per DA-IPAM (sync AD + DHCP)"
@@ -269,22 +271,25 @@ New-ADUser `
 | Funzione DA-IPAM | Permesso richiesto |
 |---|---|
 | Sync computer/users/groups via LDAP | Lettura su tutto il dominio (Authenticated Users di default ce l'hanno) |
-| Sync DHCP | Membership in `DHCP Administrators` o `Domain Admins` |
-| WinRM connect al DC | Membership in `Remote Management Users` o `Administrators` sul DC |
+| Sync DHCP | Membership in `DHCP Administrators` |
+| WinRM connect al DC | Membership in `Remote Management Users` |
+| Eventi di sicurezza dei DC | Membership in `Event Log Readers` (più `Remote Management Users`) |
 
 ```powershell
 # DHCP read
 Add-ADGroupMember -Identity "DHCP Administrators" -Members "svc-ipam"
 
-# WinRM sul DC (necessario per Get-DhcpServerv4Scope)
-# Opzione 1: Remote Management Users (scope minore — solo read)
-Add-LocalGroupMember -Group "Remote Management Users" -Member "DOMINIO\svc-ipam"
+# WinRM sul DC (necessario per Get-DhcpServerv4Scope e per leggere i registri)
+Add-ADGroupMember -Identity "Remote Management Users" -Members "svc-ipam"
 
-# Opzione 2: Administrators (più semplice, scope ampio)
-Add-LocalGroupMember -Group "Administrators" -Member "DOMINIO\svc-ipam"
+# Registri Sicurezza, System e Defender dei DC
+Add-ADGroupMember -Identity "Event Log Readers" -Members "svc-ipam"
 ```
 
-> ⚠ **Nota**: per inventario software completo via WMI (caso patch management Chocolatey), serve `Administrators`. Solo Remote Management Users non basta.
+> **Regola**: sui DC `Administrators` non serve e **Domain Admins non si usa mai**. `Administrators` locale
+> serve solo sui PC e server da inventariare (WMI, WinRM, software e patch), con un account **separato** da
+> quello di sola lettura dei DC. Il catalogo completo, per funzione, sta in `src/lib/credentials/diritti.ts`
+> ed è lo stesso che mostrano le guide dell'applicativo.
 
 ### 5.4 Test connessione con svc-ipam
 
@@ -371,7 +376,7 @@ Possibili cause:
 
 ### WinRM connect al DC fallisce con 401
 
-Identica situazione del MANUALE-WINRM.md §3.3 — credenziale UPN, account in Administrators del DC.
+Identica situazione del MANUALE-WINRM.md §3.3 — credenziale UPN, account in `Remote Management Users` del DC (non in Administrators).
 
 ### "DHCP Administrators" non esiste sul DC
 
@@ -448,7 +453,7 @@ Install-WindowsFeature RSAT-DHCP
 
 # Add svc-ipam ai gruppi necessari
 Add-ADGroupMember "DHCP Administrators" -Members svc-ipam
-Add-LocalGroupMember -Group "Administrators" -Member "DOMINIO\svc-ipam"
+Add-ADGroupMember "Remote Management Users" -Members svc-ipam
 ```
 
 ---

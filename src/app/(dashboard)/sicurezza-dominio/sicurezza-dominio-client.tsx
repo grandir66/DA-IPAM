@@ -27,6 +27,7 @@ import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
+import { dirittoPerId } from "@/lib/credentials/diritti";
 import type { AlertStats } from "@/lib/integrations/wazuh-alerts-stats";
 import { AlertsOverTime } from "../security-alerts/alert-charts";
 
@@ -292,7 +293,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
               </Button>
             ) : undefined
           }
-          piede="L'account (WinRM del DC o, se manca, quello di AD) deve stare in «Event Log Readers» e «Remote Management Users»; serve il profilo di audit nella GPO dei DC."
+          piede={`L'account (WinRM del DC o, se manca, quello di AD): ${dirittoPerId("eventi_dc").abilitare}. Per registrare gli eventi: ${dirittoPerId("audit_gpo").abilitare}.`}
         >
           {l && l.letture.length === 0 ? (
             <p className="text-[13px] text-muted-foreground">

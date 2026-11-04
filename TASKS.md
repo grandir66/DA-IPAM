@@ -1,5 +1,20 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (piano in attesa del sì)
+
+Riccardo (04/11): lo switch GS1900 risponde in SNMP ma non si vedono porte, VLAN e altre informazioni, «aggiungere un parser». Numero del cliente scritto 72279 in chat: è 72729. Rilievo in sola lettura, walk completo di 11.517 righe, `GS1900-48HP`, sysObjectID `1.3.6.1.4.1.890.1.15`, firmware V2.70(AAHO.5).
+
+- [x] Causa di ciò che non si vede: i dati ci sono. Apparato 18: 58 porte, 73 MAC, 1 VLAN, 58 PVID, 1 vicino LLDP. Ma `classification=server` con `vendor=hp`: `tipoScheda` dà `generico`, che non ha le tab Porte, VLAN, Vicini. La scansione ha poi portato l'host a `switch`, l'apparato no
+- [x] Causa del `vendor=hp`/ProCurve: creato in blocco alle 11:28 da «Rendi apparato» insieme ai due HP. Non è dimostrato chi l'abbia scelto; di certo `other` non offre nessun profilo switch, quindi uno switch di altra marca non ha una voce giusta
+- [x] Lettori attuali provati sul walk vero: 58 porte (50 + 8 LAG), VLAN `letto`, STP letto. Le MIB sono standard: non serve un parser nuovo per porte e VLAN
+- [ ] Profilo SNMP `zyxel_gs1900`: modello `…890.1.15.3.1.11.0`, seriale `.12.0`, firmware `.6.0`, nel catalogo e nel seed dell'hub, idempotente per gli hub esistenti. ENTITY-MIB non basta: il telaio ha indice 67108992, non 1
+- [ ] Profilo prodotto `generic_switch` sotto `other`, nessuna ricostruzione di `network_devices`; proposta di «Rendi apparato» per Zyxel: switch, mai ProCurve
+- [ ] Duplex da EtherLike (`dot3StatsDuplexStatus`) quando la MAU-MIB manca: oggi è nullo su tutte le porte
+- [ ] STP: root illeggibile. Il GS1900 dà `dot1dStpDesignatedRoot` come testo «0/00:00:00:00:00:00» e oggi esce un id senza senso (`12335.30:30:3a…`), con porta radice 52 su uno switch a 50 porte: root e porta radice a null
+- [ ] Prove con fixture anonimizzata dal walk (repo pubblico: niente IP e MAC veri), CHANGELOG, limiti nel manuale `docs/modules/acquisition.md`
+- [ ] Rilascio: dev, poi `main` col sì di Riccardo (72729 segue `main`), poi correggere l'apparato 18 e rileggerlo
+- Limiti misurati, non risolvibili via SNMP su questo firmware: PoE assente (nessuna POWER-ETHERNET-MIB, 0 righe, pur essendo un 48HP); porta 22 chiusa nella scansione, solo 80 e 443; i valori numerici `…890.1.15.3.2.x` non hanno un significato documentato e non si leggono
+
 ## 2026-11-04 — WMI nelle reti senza WinRM (72729, da decidere)
 
 Riccardo (04/11): «ho una rete vecchia e mi aspettavo che in assenza di winrm wmi funzionasse». Su 72729-ipam: 20 macchine con 135/445, 16 senza WinRM; nessun tentativo WMI o WinRM nei log.

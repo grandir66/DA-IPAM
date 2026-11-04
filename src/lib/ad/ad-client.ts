@@ -66,6 +66,14 @@ function ouFromDn(dn: string): string | null {
   return match ? match[1] : null;
 }
 
+/** StartTLS non è riuscito e chi chiama non vuole un bind in chiaro (`soloCifrato`): nessuna password è partita. */
+export class BindInChiaroRifiutato extends Error {
+  constructor() {
+    super("Connessione LDAP non cifrata: bind in chiaro non permesso");
+    this.name = "BindInChiaroRifiutato";
+  }
+}
+
 /** Crea il client LDAP: quello vero, o uno finto nelle prove (niente rete). */
 export type NuovoClientLdap = (opzioni: ClientOptions) => Client;
 
@@ -79,8 +87,16 @@ const clientLdapVero: NuovoClientLdap = (opzioni) => new Client(opzioni);
  * `credenziale-ldap.ts`); le colonne della riga solo per una riga mai
  * convertita. Senza account («Credenziale mancante») si lancia prima di
  * creare il client: nessun bind parte verso il DC.
+ *
+ * `soloCifrato`: se StartTLS fallisce niente bind in chiaro, si lancia
+ * `BindInChiaroRifiutato`. Serve quando l'account è anche una voce Windows, che
+ * è un amministratore: la sua password non deve viaggiare in chiaro in LAN.
  */
-export async function connectLdap(integration: AdIntegration, nuovoClient: NuovoClientLdap = clientLdapVero): Promise<Client> {
+export async function connectLdap(
+  integration: AdIntegration,
+  nuovoClient: NuovoClientLdap = clientLdapVero,
+  opzioni: { soloCifrato?: boolean } = {},
+): Promise<Client> {
   const account = credenzialeLdapDi(integration);
   if (!account.ok) throw new Error(account.motivo);
   const { username, password } = account;
@@ -107,6 +123,10 @@ export async function connectLdap(integration: AdIntegration, nuovoClient: Nuovo
     try {
       await client.startTLS({ rejectUnauthorized: false });
     } catch {
+      if (opzioni.soloCifrato) {
+        await client.unbind().catch(() => undefined);
+        throw new BindInChiaroRifiutato();
+      }
       // DC senza TLS/cert: fallback a bind in chiaro
     }
   }

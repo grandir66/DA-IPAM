@@ -33,7 +33,7 @@ import {
   updateAdIntegration as updateAdTenant,
 } from "@/lib/db-tenant";
 import { getAdIntegrationById, type AdIntegration } from "@/lib/db";
-import { connectLdap, syncAdDhcpLeases } from "../ad-client";
+import { BindInChiaroRifiutato, connectLdap, syncAdDhcpLeases } from "../ad-client";
 import { collectWinrmProbe } from "../health/winrm-probe";
 import { creaIntegrazioneAd, aggiornaIntegrazioneAd } from "@/lib/credentials/lega-voce";
 import { convertiControllerEAd } from "@/lib/credentials/converti-integrazioni";
@@ -130,6 +130,44 @@ beforeEach(() => {
   withTenant(T, () => dbt());
 });
 after(() => deleteTenantDatabase(T));
+
+describe("connectLdap con soloCifrato", () => {
+  function integrazioneSenzaSsl(): AdIntegration {
+    const id = rigaVecchia();
+    segna(PARZIALE);
+    convertiControllerEAd(dbt(), { aVuoto: false });
+    segna(DONE);
+    return { ...riga(id), use_ssl: 0, port: 389 };
+  }
+
+  function clientSenzaTls() {
+    const passi: string[] = [];
+    const nuovoClient = (): Client =>
+      ({
+        startTLS: async () => {
+          passi.push("startTLS");
+          throw new Error("unsupported extended operation");
+        },
+        bind: async () => void passi.push("bind"),
+        unbind: async () => void passi.push("unbind"),
+      }) as unknown as Client;
+    return { nuovoClient, passi };
+  }
+
+  it("StartTLS fallito: nessun bind, il client si chiude, e l'errore dice perché", async () => {
+    const finto = clientSenzaTls();
+    const i = integrazioneSenzaSsl();
+    await assert.rejects(withTenant(T, () => connectLdap(i, finto.nuovoClient, { soloCifrato: true })), BindInChiaroRifiutato);
+    assert.deepEqual(finto.passi, ["startTLS", "unbind"]);
+  });
+
+  it("senza l'opzione resta com'era: StartTLS fallito e bind in chiaro, come la sincronizzazione", async () => {
+    const finto = clientSenzaTls();
+    const i = integrazioneSenzaSsl();
+    await withTenant(T, () => connectLdap(i, finto.nuovoClient));
+    assert.deepEqual(finto.passi, ["startTLS", "bind"]);
+  });
+});
 
 describe("connectLdap prende l'account dalla voce", () => {
   it("la voce dà lo stesso utente e la stessa password che erano nelle colonne", async () => {

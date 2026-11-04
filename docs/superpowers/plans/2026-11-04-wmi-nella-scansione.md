@@ -306,6 +306,8 @@ Verifica: pagina resa a 1280 e 1920 con dati finti, nessuno scorrimento orizzont
 | 192.168.0.230 | Roberto-PC | `AUTH_REJECTED` |
 | 192.168.0.234 | Lucio-PC | `AUTH_REJECTED` |
 
+- 2026-11-04 Riccardo: collaudo in una rete finta, 72729 non si modifica. Task 10 da riscrivere su quella rete, promozione ferma.
+
 ## Consuntivo
 
 ### Fatto

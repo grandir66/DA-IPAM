@@ -6,8 +6,8 @@
 **Obiettivo:** su qualsiasi cliente la scansione prova da sola WinRM e WMI senza fermarsi e senza bloccare account, e l'applicativo dice con chiarezza cosa abilitare per l'utente delle scansioni e cosa per la sicurezza del dominio.
 **Architettura:** tre pezzi. Un motore unico sceglie la strada per ogni host e dà a ogni esito un motivo preciso. Un catalogo unico dei diritti sostituisce il testo sparso nelle guide. Un controllo dell'account confronta quel catalogo con ciò che l'account può fare davvero.
 **Spec:** nessun documento separato. Requisiti di Riccardo del 04/11/2026 in `TASKS.md`: «testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma in generale»; «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni»; «nell'applicativo deve essere chiaro cosa abilitare per l'utente e cosa abilitare per la sicurezza del dominio».
-**Livello di controllo:** completo, proposto da Claude perché tocca credenziali e migrazione del database. Da confermare da Riccardo.
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-04
+**Livello di controllo:** completo (deciso da Riccardo il 2026-11-04).
+**Stato:** in corso · **Ultimo aggiornamento:** 2026-11-04
 
 ## Vincoli globali
 
@@ -33,7 +33,7 @@
 | S4 | [ ] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
 | S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
 | S6 | [ ] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
-| S7 | [ ] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
+| S7 | [x] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
 | S8 | [ ] | Controllo dell'account e pagina | implementer | S3 S6 S7 | pagina resa a 1280 e 1920 | verifica resa |
 | S9 | [ ] | Stato per host e copertura | implementer | S5 S7 | motivo visibile per host | verifica resa |
 | S10 | [ ] | Collaudo sul 72729 | orchestratore | tutti, promozione approvata | esito confrontato con S0 | tabella nel Registro |
@@ -227,7 +227,7 @@ export const DIRITTI: readonly DirittoRichiesto[];
 
 **Commit:** `Diritti: una sola definizione per guide e pagine`.
 
-### [ ] Task 7 — Tavola degli oggetti approvata (S7)
+### [x] Task 7 — Tavola degli oggetti approvata (S7)
 
 Si propone a Riccardo la tavola grafica degli oggetti del Task 8 e del Task 9, oggetto per oggetto. Nessun codice di interfaccia prima del sì. Il sì si scrive nel Registro.
 
@@ -274,6 +274,7 @@ export async function controllaAccount(credId: number): Promise<RigaControllo[]>
 
 ## Registro
 
+- 2026-11-04 Riccardo: «Sì, parti». Piano e tavola approvati, livello completo, subagent fino al cancello su `dev`, nessuna promozione su `main`. Task 10 escluso.
 - 2026-11-04 Riccardo: il piano si allarga dal solo WMI al motore generale e alla chiarezza sui diritti.
 - 2026-11-04 Task 0 → [x] Voce `WinRM` (utente readonly, solo Domain Users), password verificata in LDAP su 192.168.0.10. Una prova per PC, in sequenza. Account non bloccato, `badPwdCount` 0.
 

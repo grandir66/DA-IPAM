@@ -42,6 +42,7 @@ import { provaBinding } from "@/lib/devices/prova-binding";
 
 const CHECK_REDFISH = "'ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif'";
 const CHECK_VECCHISSIMO = "'ssh', 'snmp', 'winrm', 'api'";
+const INLINE = { username: "CLIENTE\\scansioni", segreto: "cifrato-finto" };
 
 /** Le due tabelle come sono sui tenant di oggi (5500d771): colonna per colonna, col CHECK che si passa. */
 function hostCredentialsPrima(check: string, conMotivo = false): string {
@@ -123,7 +124,22 @@ function semina(d: Database.Database, opzioni: { conMotivo?: boolean } = {}): vo
   legame.run({ id: 8, cred: 2, proto: "ssh", porta: 22, ordine: 5, stato: "failed", messaggio: "Rifiutata", provato: "2026-10-03 08:00:00", auto: 0, nato: "2026-01-04 03:04:05" });
   legame.run({ id: 30, cred: 2, proto: "ssh", porta: 2222, ordine: 6, stato: "untested", messaggio: null, provato: null, auto: 0, nato: "2026-01-05 03:04:05" });
   d.prepare("DELETE FROM device_credential_bindings WHERE id = 30").run();
+  // Due inline uguali: con credential_id NULL il vincolo UNIQUE non le vede come doppione, una copia con DISTINCT o
+  // con «INSERT OR IGNORE» su una chiave che tratta NULL come valore ne perderebbe una.
+  const inline = d.prepare(
+    `INSERT INTO device_credential_bindings (id, device_id, credential_id, protocol_type, port, inline_username, inline_encrypted_password)
+     VALUES (?, 1, NULL, 'winrm', 5986, ?, ?)`,
+  );
+  for (const id of [10, 11]) inline.run(id, INLINE.username, INLINE.segreto);
   d.pragma("foreign_keys = ON");
+}
+
+/** Le due righe inline di `semina`, così come devono uscire dalla ricostruzione. */
+function assertInlineIntatte(d: Database.Database): void {
+  assert.deepEqual(
+    d.prepare("SELECT id, credential_id, inline_username, inline_encrypted_password FROM device_credential_bindings WHERE credential_id IS NULL ORDER BY id").all(),
+    [10, 11].map((id) => ({ id, credential_id: null, inline_username: INLINE.username, inline_encrypted_password: INLINE.segreto })),
+  );
 }
 
 /** Un tenant su disco com'era prima: schema di oggi, salvo le due tabelle, poi chiuso. Lo apre `getTenantDb`. */
@@ -224,7 +240,7 @@ describe("apertura di un tenant di prima", () => {
     const hostPrima = righeSuDisco(c, "host_credentials");
     const legamiPrima = righeSuDisco(c, "device_credential_bindings");
     assert.equal(hostPrima.length, 3);
-    assert.equal(legamiPrima.length, 2);
+    assert.equal(legamiPrima.length, 4);
 
     const d = getTenantDb(c);
 
@@ -232,6 +248,7 @@ describe("apertura di un tenant di prima", () => {
     assert.deepEqual(hostDopo.map(SENZA_MOTIVO), hostPrima);
     assert.ok(hostDopo.every((r) => r.motivo === null));
     assert.deepEqual(righe(d, "device_credential_bindings"), legamiPrima);
+    assertInlineIntatte(d);
     accettaWmi(d);
   });
 
@@ -283,6 +300,7 @@ describe("apertura di un tenant di prima", () => {
 
     assert.deepEqual(righe(d, "host_credentials").map(SENZA_MOTIVO), hostPrima);
     assert.deepEqual(righe(d, "device_credential_bindings"), legamiPrima);
+    assertInlineIntatte(d);
     d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port) VALUES (2, 1, 'redfish', 443)").run();
     accettaWmi(d);
   });
@@ -422,6 +440,28 @@ describe("ricostruzione a mano, per i casi che un tenant vero non dà", () => {
     d.close();
   });
 
+  it("un guasto dopo il DROP torna indietro: la RENAME fallisce e righe, sql e contatore restano", () => {
+    const d = inMemoria(hostCredentialsPrima(CHECK_REDFISH));
+    const ins = d.prepare("INSERT INTO host_credentials (id, host_id, credential_id, protocol_type, port) VALUES (?, 1, 1, 'winrm', ?)");
+    ins.run(7, 5985);
+    ins.run(21, 5986);
+    d.prepare("DELETE FROM host_credentials WHERE id = 21").run();
+    // Dopo il DROP la vista punta al vuoto, e SQLite rifiuta la RENAME perché non riesce a riscriverla.
+    d.exec("CREATE VIEW vista_di_qualcuno AS SELECT id, port FROM host_credentials");
+    const sql = d.prepare("SELECT sql FROM sqlite_master WHERE name = 'host_credentials'").get();
+    const prima = righe(d, "host_credentials");
+
+    assert.throws(() => migraProtocolloWmi(d, "host_credentials"), /vista_di_qualcuno.*no such table: main\.host_credentials/);
+
+    assert.deepEqual(d.prepare("SELECT sql FROM sqlite_master WHERE name = 'host_credentials'").get(), sql);
+    assert.deepEqual(righe(d, "host_credentials"), prima);
+    assert.deepEqual(d.prepare("SELECT id, port FROM vista_di_qualcuno").all(), [{ id: 7, port: 5985 }]);
+    assert.equal(contatore(d, "host_credentials"), 21);
+    assert.equal(d.prepare("SELECT 1 FROM sqlite_master WHERE name = 'host_credentials_wmi'").get(), undefined);
+    assert.equal(d.pragma("foreign_keys", { simple: true }), 1);
+    d.close();
+  });
+
   it("una colonna che la copia non conosce ferma tutto: si perderebbe in silenzio", () => {
     const d = inMemoria(hostCredentialsPrima(CHECK_REDFISH));
     d.exec("ALTER TABLE device_credential_bindings ADD COLUMN colonna_di_qualcuno TEXT");
@@ -467,6 +507,12 @@ describe("path legacy (ipam.db)", () => {
     raw.prepare("INSERT INTO hosts (id, network_id, ip) VALUES (1, 1, '10.71.0.5')").run();
     raw.prepare("INSERT INTO credentials (id, name, credential_type) VALUES (1, 'voce-windows', 'windows')").run();
     raw.prepare("INSERT INTO host_credentials (id, host_id, credential_id, protocol_type, port, validated, sort_order) VALUES (6, 1, 1, 'winrm', 5985, 1, 3)").run();
+    raw.prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol) VALUES (1, 'server-legacy', '10.71.0.5', 'router', 'windows', 'winrm')").run();
+    const inline = raw.prepare(
+      `INSERT INTO device_credential_bindings (id, device_id, credential_id, protocol_type, port, inline_username, inline_encrypted_password)
+       VALUES (?, 1, NULL, 'winrm', 5986, ?, ?)`,
+    );
+    for (const id of [10, 11]) inline.run(id, INLINE.username, INLINE.segreto);
     raw.close();
 
     const programma = `
@@ -474,7 +520,8 @@ describe("path legacy (ipam.db)", () => {
       const d = getDb();
       d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port) VALUES (1, 1, 'wmi', 135)").run();
       const righe = d.prepare("SELECT id, protocol_type, validated, sort_order, motivo FROM host_credentials ORDER BY id").all();
-      process.stdout.write("ESITO" + JSON.stringify(righe));
+      const legami = d.prepare("SELECT id, credential_id, inline_username, inline_encrypted_password FROM device_credential_bindings ORDER BY id").all();
+      process.stdout.write("ESITO" + JSON.stringify({ righe, legami }));
     `;
     const uscita = execFileSync(process.execPath, ["--import", "tsx", "-e", programma], {
       cwd: process.cwd(),
@@ -482,10 +529,13 @@ describe("path legacy (ipam.db)", () => {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    assert.deepEqual(JSON.parse(uscita.slice(uscita.indexOf("ESITO") + 5)), [
-      { id: 6, protocol_type: "winrm", validated: 1, sort_order: 3, motivo: null },
-      { id: 7, protocol_type: "wmi", validated: 0, sort_order: 0, motivo: null },
-    ]);
+    assert.deepEqual(JSON.parse(uscita.slice(uscita.indexOf("ESITO") + 5)), {
+      righe: [
+        { id: 6, protocol_type: "winrm", validated: 1, sort_order: 3, motivo: null },
+        { id: 7, protocol_type: "wmi", validated: 0, sort_order: 0, motivo: null },
+      ],
+      legami: [10, 11].map((id) => ({ id, credential_id: null, inline_username: INLINE.username, inline_encrypted_password: INLINE.segreto })),
+    });
   });
 });
 

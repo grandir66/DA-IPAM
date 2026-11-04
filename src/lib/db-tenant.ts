@@ -1865,6 +1865,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
         );
         console.info(`[db-tenant] ${tenantCode}: vuln_scan_runs.edge_scan_uid aggiunto`);
       }
+      if (!rcols.some((c) => c.name === "error_message")) {
+        newDb.exec("ALTER TABLE vuln_scan_runs ADD COLUMN error_message TEXT");
+      }
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione cert_pin fallita:`, e);

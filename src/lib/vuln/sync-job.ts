@@ -14,6 +14,7 @@
  *   6. update last_sync_at; errori → last_error, non rilancia
  */
 
+import { statoDelGiro } from "@/lib/vuln/esito-scansione";
 import { normalizzaRilievoControllo, ripulisciRilieviControlli } from "@/lib/vuln/rilievi-controlli";
 import { riallineaConteggioRilievi } from "@/lib/vuln/conteggio-rilievi";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
@@ -105,7 +106,10 @@ export async function runVulnSync(): Promise<{
   let newFindings = 0;
 
   try {
-    const scans: EdgeScan[] = await listScans(scanner, since);
+    // Le fallite senza `since`: una scansione fermata prima di un aggiornamento dell'edge arriva lo
+    // stesso, l'UUID evita i doppioni. Un edge vecchio ignora `stato` e rimanda le riuscite.
+    const fallite = (await listScans(scanner, undefined, "error")).filter((s) => s.status === "error");
+    const scans: EdgeScan[] = [...(await listScans(scanner, since)), ...fallite];
 
     // network_id qui resta NULL: l'ID arrivato dall'edge è dello *suo*
     // namespace e non corrisponde a `networks.id` lato IPAM. Il match host
@@ -120,8 +124,8 @@ export async function runVulnSync(): Promise<{
     const insertScanRun = db.prepare(
       `INSERT INTO vuln_scan_runs
         (scanner_id, edge_scan_id, edge_scan_uid, network_id, started_at,
-         finished_at, finding_count, status)
-       VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`,
+         finished_at, finding_count, status, error_message)
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     );
     const findByUid = db.prepare(
       "SELECT id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_uid = ?",
@@ -171,7 +175,8 @@ export async function runVulnSync(): Promise<{
           s.started_at,
           s.finished_at,
           s.finding_count,
-          s.status,
+          statoDelGiro(s),
+          s.error_message ?? null,
         );
         // networkId qui mantengo come arriva dall'edge perché serve solo
         // come hint per matchHostId (lookup hosts per ip+network_id IPAM

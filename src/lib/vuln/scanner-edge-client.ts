@@ -157,6 +157,8 @@ export interface EdgeScan {
   started_at: string;
   finished_at: string | null;
   finding_count: number;
+  /** Motivo di una scansione fallita. Assente sugli edge più vecchi. */
+  error_message?: string | null;
 }
 
 export interface EdgeFinding {
@@ -540,8 +542,12 @@ export async function listEdgeProfiles(
 export async function listScans(
   scanner: VulnScannerRow,
   since?: string,
+  stato?: "error",
 ): Promise<EdgeScan[]> {
-  const q = since ? `?since=${encodeURIComponent(since)}` : "";
+  const params = new URLSearchParams();
+  if (since) params.set("since", since);
+  if (stato) params.set("stato", stato);
+  const q = params.size > 0 ? `?${params}` : "";
   return edgeFetch<EdgeScan[]>(scanner, `/api/v1/scans${q}`);
 }
 

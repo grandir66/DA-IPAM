@@ -10,6 +10,7 @@
  * righe ma la POST rifiuta. Per cambiare token: DELETE → POST.
  */
 
+import { ultimaNonRiuscita } from "@/lib/vuln/esito-scansione";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
@@ -79,7 +80,13 @@ export async function GET() {
     // URL dell'interfaccia dal nodo che serve davvero la 6443 (passo 4b), non
     // ricavato da base_url nel browser.
     return NextResponse.json({
-      scanner: scanner ? { ...scanner, ui_url: resolveEdgeBrowserUrl(scanner.base_url) } : null,
+      scanner: scanner
+        ? {
+            ...scanner,
+            ui_url: resolveEdgeBrowserUrl(scanner.base_url),
+            ultima_non_riuscita: ultimaNonRiuscita(getTenantDb(getCurrentTenantCode() ?? "DEFAULT"), scanner.id),
+          }
+        : null,
     });
   });
 }

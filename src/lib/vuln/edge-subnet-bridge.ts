@@ -40,6 +40,7 @@ export interface EdgeSubnetLastScan {
   started_at: string | null;
   finished_at: string | null;
   finding_count: number;
+  error_message?: string | null;
 }
 
 export interface EdgeVulnSchedule {

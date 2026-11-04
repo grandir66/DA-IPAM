@@ -521,6 +521,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                 {last.started_at && <>Inizio {formatRelative(last.started_at)}</>}
                 {last.finished_at && <> · Fine {formatRelative(last.finished_at)}</>}
               </p>
+              {last.error_message && <p className="text-sm font-medium">{last.error_message}</p>}
             </div>
           )}
 

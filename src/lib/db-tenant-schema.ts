@@ -2003,6 +2003,7 @@ CREATE TABLE IF NOT EXISTS vuln_scan_runs (
   finished_at TEXT,
   finding_count INTEGER DEFAULT 0,
   status TEXT,
+  error_message TEXT,
   pulled_at TEXT DEFAULT (datetime('now')),
   UNIQUE(scanner_id, edge_scan_id)
 );

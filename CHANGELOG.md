@@ -6,6 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Cambiato**: le analisi di Edge fallite arrivano in DA-IPAM col motivo, in Impostazioni e nel pannello della rete. Prima passavano solo le riuscite: il 04/11 sul 72729 un'analisi fermata al 98% non lasciava traccia. Una fallita con rilievi diventa `parziale` e aggiorna solo gli host finiti, gli altri tengono i loro.
 - **Cambiato**: la scansione prova da sola WinRM e WMI su ogni host e si ferma alla prima strada che riesce,
   con un motivo preciso per ogni esito (porte chiuse, firewall, password rifiutata, diritti mancanti).
   Riccardo (04/11): «testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma

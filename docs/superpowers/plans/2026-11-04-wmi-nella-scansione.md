@@ -29,7 +29,7 @@
 | S0 | [x] | Misura sul 72729 col codice di oggi | orchestratore | — | esito noto | tabella nel Registro |
 | S1 | [x] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
 | S2 | [ ] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
-| S3 | [ ] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
+| S3 | [x] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
 | S4 | [ ] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
 | S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
 | S6 | [ ] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
@@ -101,7 +101,7 @@ Verifica: `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.
 
 **Commit:** `Credenziali: protocollo wmi e motivo dell'esito`.
 
-### [ ] Task 3 — Verifica della password per esecuzione (S3)
+### [x] Task 3 — Verifica della password per esecuzione (S3)
 
 **File**
 - Crea: `src/lib/scanner/verifica-password-run.ts`, `src/lib/devices/smb-login.py`, e la prova `src/lib/scanner/__tests__/verifica-password-run.test.ts`.
@@ -128,6 +128,8 @@ export class VerificaPasswordRun {
 **Verifica:** i tre esiti per entrambe le prove, una sola verifica per voce. Viste fallire prima del codice.
 
 **Commit:** `Scansione: verifica la password una volta per esecuzione`.
+
+Verifica: `node --import tsx --test src/lib/scanner/__tests__/verifica-password-run.test.ts` → 48 verdi. `smb-login.py` provato con un finto impacket: la prova vera sta nel collaudo.
 
 ### [ ] Task 4 — Motore: strada e motivo per host (S4)
 

@@ -17,6 +17,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni) e **promosso col sì di Riccardo: dal 03/11 15:46 UTC `main` = `dev` = 0.9.957**; 70151 aggiornata alle 15:52 e sana (controllo via HTTPS: la sua chiave SSH è cambiata e non è stata accettata). VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.
 
+## Zyxel GS1900 e switch fuori elenco — 04/11/2026
+
+Rilascio 0.9.958, `main` = `dev`. Il GS1900 si legge con le MIB standard: nessun collector, profilo SNMP `zyxel_gs1900` per modello, seriale e firmware. Profilo prodotto `generic_switch` sotto «Altro», senza toccare il CHECK di `network_devices`. **Trappola**: `vendor=other` vuol dire Linux/SSH in `tipoLetturaApparato` e `getDeviceInfo`; `eSwitchGenerico` lo esclude. Limiti nel manuale `docs/modules/acquisition.md`, aperto in TASKS.
+
 ## Aruba AOS-CX — integrazione 03/11/2026
 
 Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. Collector `aruba-cx` separato da ProCurve: collaudato su 6100 JL675A / PL.10.12.0006, solo SSH; contratto e CLI comuni, riconoscimento AOS-CX esplicito. Limiti nel manuale `docs/modules/acquisition.md`: LACP popolato, contatori/duplex/ifIndex e memoria in byte non letti. Snapshot preventivo della VM hub 533 `pre-aruba-cx-20261103` sul nodo DA-PX-03. Nessuna funzione o operazione firmware aggiunta. Pubblicato su origin/dev nella release 0.9.949 (77aa3800), verificato con git ls-remote; lint, 6.321 prove, build e tsc verdi il 03/11. Dettagli in TASKS.

@@ -10,6 +10,153 @@ import type Database from "better-sqlite3";
 import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 
 /**
+ * Protocolli di `host_credentials` e `device_credential_bindings`: stessa costante nello schema e nella ricostruzione.
+ * `wmi` (piano 2026-11-04 accesso Windows): chi entra via WMI/DCOM sulla 135 ma non via WinRM, con una voce `windows`.
+ */
+export const PROTOCOLLI_CREDENZIALE_CHECK_SQL = "protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif', 'wmi')";
+
+export type TabellaProtocollo = "host_credentials" | "device_credential_bindings";
+
+/** Una voce per colonna, nell'ordine dello schema qui sotto: `migraProtocolloWmi` copia per nome. */
+const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly string[]; ddl: (nome: string) => string }> = {
+  host_credentials: {
+    colonne: [
+      "id", "host_id", "credential_id", "protocol_type", "port", "validated", "validated_at", "sort_order", "auto_detected",
+      "created_at", "fail_count", "last_error", "last_attempt_at", "backoff_until", "motivo",
+    ],
+    ddl: (nome) => `CREATE TABLE ${nome} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+      credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+      protocol_type TEXT NOT NULL CHECK(${PROTOCOLLI_CREDENZIALE_CHECK_SQL}),
+      port INTEGER NOT NULL,
+      validated INTEGER NOT NULL DEFAULT 0,
+      validated_at TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      auto_detected INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      last_attempt_at TEXT,
+      backoff_until TEXT,
+      motivo TEXT,
+      UNIQUE(host_id, credential_id, protocol_type, port)
+    )`,
+  },
+  device_credential_bindings: {
+    colonne: [
+      "id", "device_id", "credential_id", "protocol_type", "port", "sort_order", "inline_username", "inline_encrypted_password",
+      "test_status", "test_message", "tested_at", "auto_detected", "created_at",
+    ],
+    ddl: (nome) => `CREATE TABLE ${nome} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+      credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
+      protocol_type TEXT NOT NULL CHECK(${PROTOCOLLI_CREDENZIALE_CHECK_SQL}),
+      port INTEGER NOT NULL DEFAULT 22,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      inline_username TEXT,
+      inline_encrypted_password TEXT,
+      test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('success', 'failed', 'untested')),
+      test_message TEXT,
+      tested_at TEXT,
+      auto_detected INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(device_id, credential_id, protocol_type, port)
+    )`,
+  },
+};
+
+/** Aggiunge `host_credentials.motivo` se manca (esito della prova di accesso). Additiva e ripetibile. */
+export function assicuraColonnaMotivoCredenziali(db: Database.Database): boolean {
+  const colonne = new Set((db.prepare("PRAGMA table_info(host_credentials)").all() as Array<{ name: string }>).map((c) => c.name));
+  if (colonne.size === 0 || colonne.has("motivo")) return false;
+  db.exec("ALTER TABLE host_credentials ADD COLUMN motivo TEXT");
+  return true;
+}
+
+/**
+ * Ricostruisce una delle due tabelle perché il CHECK di `protocol_type` accetti `wmi` (un CHECK di SQLite non si altera).
+ * Stessa forma di `migrateScheduledJobsV11`, non delle ricostruzioni `redfish` lì accanto: quelle non hanno transazione,
+ * e un guasto fra il DROP e il RENAME lascerebbe un cliente senza credenziali. Qui:
+ * - tutto in una transazione, con foreign_keys spento prima: le righe orfane si copiano invece di far fallire la copia;
+ * - colonne copiate per nome, solo quelle presenti: la tabella può avere `motivo` o no, e sul path legacy (`db.ts`) non
+ *   ha nemmeno le colonne dei fallimenti, che nascono coi loro valori predefiniti;
+ * - una colonna che la copia non conosce ferma tutto, invece di perdersi in silenzio;
+ * - righe contate prima e dopo, contatore AUTOINCREMENT conservato, indici e trigger riletti da sqlite_master e ricreati.
+ * Se qualcosa non riesce la tabella resta com'era e l'errore sale al chiamante.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare: un DB nuovo nasce già con `wmi`.
+ * Esportata per le prove (`migrazione-protocollo-wmi.test.ts`).
+ */
+export function migraProtocolloWmi(db: Database.Database, tabella: TabellaProtocollo): boolean {
+  const daFare = (): boolean => {
+    const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tabella) as { sql?: string } | undefined;
+    return !!row?.sql && !row.sql.includes("'wmi'");
+  };
+  if (!daFare()) return false;
+
+  const { colonne, ddl } = RICOSTRUZIONE_PROTOCOLLO[tabella];
+  const appoggio = `${tabella}_wmi`;
+  const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  let fatta = false;
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      // Si riguarda dentro la transazione: un'altra connessione può aver già ricostruito.
+      if (!daFare()) return;
+      const presenti = (db.prepare(`PRAGMA table_info(${tabella})`).all() as Array<{ name: string }>).map((c) => c.name);
+      const ignote = presenti.filter((c) => !colonne.includes(c));
+      if (ignote.length > 0) throw new Error(`wmi: colonne di ${tabella} sconosciute alla copia: ${ignote.join(", ")}`);
+      const copiate = colonne.filter((c) => presenti.includes(c)).join(", ");
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(tabella) as { seq: number } | undefined;
+      const accessori = db
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name")
+        .all(tabella) as Array<{ sql: string }>;
+      const prima = conta(tabella);
+      db.exec(`DROP TABLE IF EXISTS ${appoggio}`);
+      db.exec(ddl(appoggio));
+      db.exec(`INSERT INTO ${appoggio} (${copiate}) SELECT ${copiate} FROM ${tabella}`);
+      const dopo = conta(appoggio);
+      if (dopo !== prima) throw new Error(`wmi: copiate ${dopo} righe di ${tabella} su ${prima}`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?").run(seq.seq, appoggio);
+        if (upd.changes === 0) db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(appoggio, seq.seq);
+      }
+      db.exec(`DROP TABLE ${tabella}`);
+      db.exec(`ALTER TABLE ${appoggio} RENAME TO ${tabella}`);
+      for (const a of accessori) db.exec(a.sql);
+      fatta = true;
+    }).immediate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return fatta;
+}
+
+/**
+ * Protocollo `wmi` e `motivo` sui DB esistenti: la chiamano `getTenantDb` e il path legacy di `getDb`, dopo le ricostruzioni
+ * `redfish` (quelle copiano un elenco fisso di colonne: `motivo` deve nascere dopo). Ogni passo per conto suo: un guasto
+ * si registra, il DB si apre lo stesso e al prossimo avvio si riprova. Chi chiede `wmi` nel frattempo riceve l'errore del CHECK.
+ */
+export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
+  try {
+    if (assicuraColonnaMotivoCredenziali(db)) console.info(`${chi}: host_credentials.motivo aggiunto`);
+  } catch (e) {
+    console.error(`${chi}: migrazione host_credentials.motivo fallita:`, e);
+  }
+  for (const tabella of ["host_credentials", "device_credential_bindings"] as const) {
+    try {
+      if (migraProtocolloWmi(db, tabella)) console.info(`${chi}: ${tabella} CHECK aggiornato (+ wmi)`);
+    } catch (e) {
+      console.error(`${chi}: migrazione ${tabella} protocollo wmi fallita:`, e);
+    }
+  }
+}
+
+/**
  * MDM (passo 3 del piano di solidità, 16/10): `last_attempt_at` = ultimo tentativo
  * di sincronizzazione, riuscito o no; `last_success_at` = ultima riuscita.
  * `last_sync_at` resta com'era (aggiornato a ogni tentativo) per chi lo legge già.
@@ -1106,7 +1253,7 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+  protocol_type TEXT NOT NULL CHECK(${PROTOCOLLI_CREDENZIALE_CHECK_SQL}),
   port INTEGER NOT NULL,
   validated INTEGER NOT NULL DEFAULT 0,
   validated_at TEXT,
@@ -1123,6 +1270,8 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   last_error TEXT,
   last_attempt_at TEXT,
   backoff_until TEXT,
+  -- Esito dell'ultima prova di accesso Windows (piano 2026-11-04): un valore di MotivoAccesso, oppure NULL.
+  motivo TEXT,
   UNIQUE(host_id, credential_id, protocol_type, port)
 );
 
@@ -1150,7 +1299,7 @@ CREATE TABLE IF NOT EXISTS device_credential_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
   credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+  protocol_type TEXT NOT NULL CHECK(${PROTOCOLLI_CREDENZIALE_CHECK_SQL}),
   port INTEGER NOT NULL DEFAULT 22,
   sort_order INTEGER NOT NULL DEFAULT 0,
   inline_username TEXT,

@@ -99,6 +99,7 @@ const NOME_PROTOCOLLO: Record<CredProtocol, string> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 const NOME_FONTE: Partial<Record<ResolvedCredentialSource, string>> = {
@@ -208,14 +209,14 @@ function protocolloLogin(p: string | null): CredProtocol {
 }
 
 function protocolloBinding(p: string): CredProtocol {
-  if (p === "ssh" || p === "snmp" || p === "winrm" || p === "api" || p === "redfish" || p === "onvif") return p;
+  if (p === "ssh" || p === "snmp" || p === "winrm" || p === "api" || p === "redfish" || p === "onvif" || p === "wmi") return p;
   throw new Error(`protocollo di binding sconosciuto: «${p}»`);
 }
 
 /** Tipo d'archivio della voce che nasce da un binding o da colonne di quel protocollo. */
 function tipoPerProtocollo(p: CredProtocol): TipoCredenziale {
   if (p === "snmp") return "snmp";
-  if (p === "winrm") return "windows";
+  if (p === "winrm" || p === "wmi") return "windows";
   if (p === "ssh") return "ssh";
   return "api";
 }
@@ -230,6 +231,7 @@ function protocolloDelTipo(t: TipoCredenziale): CredProtocol | null {
 }
 
 function usoPer(p: CredProtocol): UsoSegreto {
+  if (p === "wmi") return "winrm";
   return p === "ssh" || p === "winrm" || p === "snmp" ? p : "api";
 }
 

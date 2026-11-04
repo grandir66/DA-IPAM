@@ -30,7 +30,7 @@ const BulkHostUpdateSchema = z.object({
   ip_assignment: z.enum(["dynamic", "static", "reserved", "unknown"]).optional(),
   // Credenziali da assegnare a tutti gli host selezionati
   credential_id: z.coerce.number().int().positive().optional().nullable(),
-  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]).optional(),
+  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif", "wmi"]).optional(),
   credential_port: z.coerce.number().int().min(1).max(65535).optional(),
   // network_devices (applicati a quelli linkati via IP=hosts.ip)
   device_type: deviceTypeSchema.optional(),
@@ -98,7 +98,7 @@ export async function PATCH(request: Request) {
       let credentialsFailed = 0;
       if (credential_id != null && credential_id > 0) {
         const proto = credential_protocol ?? "ssh";
-        const port = credential_port ?? (proto === "snmp" ? 161 : proto === "winrm" ? 5985 : proto === "api" ? 443 : 22);
+        const port = credential_port ?? (proto === "snmp" ? 161 : proto === "winrm" ? 5985 : proto === "wmi" ? 135 : proto === "api" ? 443 : 22);
         try {
           const esito = assegnaCredenzialeAgliHost(host_ids, credential_id, proto, port);
           credentialsAdded = esito.aggiunte;

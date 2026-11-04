@@ -168,9 +168,11 @@ const NOME_PROTOCOLLO: Record<CredProtocol, string> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 function usoPer(protocol: CredProtocol): UsoSegreto {
+  if (protocol === "wmi") return "winrm";
   if (protocol === "ssh" || protocol === "winrm" || protocol === "snmp") return protocol;
   return "api";
 }
@@ -823,7 +825,9 @@ const nonEsiste = (device: ApparatoInAcquisizione): { ok: false; motivo: string 
  *
  * Forme (T14, D6 = (a)):
  * - ssh: utente con password o con chiave, nell'ordine dei candidati;
- * - winrm: utente e password;
+ * - winrm: utente e password; senza un legame WinRM buono, quello WMI (piano
+ *   2026-11-04 accesso Windows): è la voce di un host raggiunto solo sulla 135.
+ *   Non nella conversione della 2e, che ricostruisce la scelta di allora;
  * - api: prima utente e password (l'API li vuole); solo se nessun candidato
  *   li ha, una voce SSH a chiave. È l'SSH di Proxmox (voce `ssh` legata
  *   all'API, regola della tappa 1): con la chiave l'SSH entra, l'API no, e
@@ -851,7 +855,14 @@ export function sceltaLoginApparatoDb(
   const conPassword = scegliPerApparato(dbh, app, protocollo, motore, (s) =>
     s.forma === "utente" ? null : `l'apparato «${app.name}» per ${NOME_PROTOCOLLO[protocollo]} accede solo con utente e password`
   );
-  if (conPassword.ok || protocollo !== "api") return conPassword;
+  if (conPassword.ok) return conPassword;
+  if (protocollo === "winrm" && opts.fonti === undefined) {
+    const conWmi = scegliPerApparato(dbh, app, "wmi", motore, (s) =>
+      s.forma === "utente" ? null : `l'apparato «${app.name}» per WMI accede solo con utente e password`
+    );
+    return conWmi.ok ? conWmi : conPassword;
+  }
+  if (protocollo !== "api") return conPassword;
   const conChiave = scegliPerApparato(dbh, app, "api", motore, (s) => (s.forma === "chiave_ssh" ? null : "nessuna chiave SSH"));
   return conChiave.ok ? conChiave : conPassword;
 }

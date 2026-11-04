@@ -775,7 +775,7 @@ export interface HostDetail extends Host {
     id: number;
     host_id: number;
     credential_id: number;
-    protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+    protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
     port: number;
     validated: number;
     validated_at: string | null;

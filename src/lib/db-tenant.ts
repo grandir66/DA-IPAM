@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -2619,6 +2619,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione device_credential_bindings protocol_type fallita:`, e);
   }
 
+  // Protocollo wmi e host_credentials.motivo (piano 2026-11-04 accesso Windows). Dopo le due qui sopra: vedi la funzione.
+  migraCredenzialiWmi(newDb, `[db-tenant] ${tenantCode}`);
+
   // Topologia fase 1 (piano 2026-10-13): colonne e tabella delle correzioni.
   // Gira PER ULTIMA: i rebuild di network_devices qui sopra (CHECK 'firewall',
   // 'access_point') copiano solo le colonne che conoscono, e una migrazione
@@ -4737,7 +4740,9 @@ export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
     const protocols = CREDENTIAL_COVERAGE_PROTOCOLS[row.category];
     if (!protocols || protocols.length === 0) continue;
     try {
-      const placeholders = protocols.map(() => "?").join(",");
+      // Chi è entrato solo via WMI è coperto quanto chi è entrato via WinRM: l'etichetta attesa non cambia.
+      const cercati = protocols.includes("winrm") ? [...protocols, "wmi"] : protocols;
+      const placeholders = cercati.map(() => "?").join(",");
       const withValid = d
         .prepare(
           `SELECT COUNT(*) AS n FROM hosts h
@@ -4746,7 +4751,7 @@ export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
              WHERE hc.host_id = h.id AND hc.validated = 1 AND hc.protocol_type IN (${placeholders})
            )`
         )
-        .get(row.category, ...protocols) as { n: number };
+        .get(row.category, ...cercati) as { n: number };
       out.push({
         category: row.category,
         hosts: row.hosts,
@@ -5355,13 +5360,15 @@ export interface HostCredentialRow {
   id: number;
   host_id: number;
   credential_id: number;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
   port: number;
   validated: number;
   validated_at: string | null;
   sort_order: number;
   auto_detected: number;
   created_at: string;
+  /** Esito dell'ultima prova di accesso Windows (piano 2026-11-04), o NULL. */
+  motivo: string | null;
   credential_name: string;
   credential_type: string;
 }
@@ -5476,7 +5483,7 @@ export function getAllMultihomedLinks(): Map<number, { group_id: string; match_t
 export function addHostCredential(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi",
   port: number,
   options?: { validated?: boolean; auto_detected?: boolean }
 ): void {
@@ -5527,7 +5534,7 @@ export function setHostCredentialValidated(id: number, validated: boolean): void
 export function setHostCredentialValidatedByKey(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi",
   port: number,
   options?: { auto_detected?: boolean }
 ): void {
@@ -7072,7 +7079,7 @@ export interface DeviceCredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
   port: number;
   sort_order: number;
   inline_username: string | null;

@@ -15,6 +15,10 @@ const PROTOCOL_CONFIG: Record<string, { label: string; className: string }> = {
     label: "WinRM",
     className: "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400",
   },
+  wmi: {
+    label: "WMI",
+    className: "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400",
+  },
   api: {
     label: "API",
     className: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400",

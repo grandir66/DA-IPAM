@@ -152,7 +152,7 @@ export type DiscoverNetworkOptions = {
 function autoBindCredentialToDevice(
   hostIp: string,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi",
   port: number,
   hostId?: number | null
 ): void {

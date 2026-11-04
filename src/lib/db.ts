@@ -23,6 +23,7 @@ import path from "path";
 import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
+import { migraCredenzialiWmi } from "./db-tenant-schema";
 import { canonicalizza, type Canonica } from "./classification/canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -1873,6 +1874,11 @@ export function getDb(): Database.Database {
     console.error("[db] migrazione device_credential_bindings protocol_type fallita:", e);
   }
 
+  // Protocollo wmi e host_credentials.motivo: la stessa di db-tenant.ts, per parità del path legacy. Un ipam.db che ha
+  // ancora il CHECK vecchio rifiuterebbe wmi, e `ipam.empty.db` è fra questi. La ricostruzione copia ciò che trova; le
+  // colonne dei fallimenti, che qui possono mancare, nascono coi valori predefiniti.
+  migraCredenzialiWmi(_db, "[db]");
+
   return _db;
 }
 
@@ -3632,7 +3638,9 @@ export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
     const protocols = CREDENTIAL_COVERAGE_PROTOCOLS[row.category];
     if (!protocols || protocols.length === 0) continue;
     try {
-      const placeholders = protocols.map(() => "?").join(",");
+      // Chi è entrato solo via WMI è coperto quanto chi è entrato via WinRM: l'etichetta attesa non cambia.
+      const cercati = protocols.includes("winrm") ? [...protocols, "wmi"] : protocols;
+      const placeholders = cercati.map(() => "?").join(",");
       const withValid = d
         .prepare(
           `SELECT COUNT(*) AS n FROM hosts h
@@ -3641,7 +3649,7 @@ export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
              WHERE hc.host_id = h.id AND hc.validated = 1 AND hc.protocol_type IN (${placeholders})
            )`
         )
-        .get(row.category, ...protocols) as { n: number };
+        .get(row.category, ...cercati) as { n: number };
       out.push({
         category: row.category,
         hosts: row.hosts,
@@ -3944,13 +3952,15 @@ export interface HostCredentialRow {
   id: number;
   host_id: number;
   credential_id: number;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
   port: number;
   validated: number;
   validated_at: string | null;
   sort_order: number;
   auto_detected: number;
   created_at: string;
+  /** Esito dell'ultima prova di accesso Windows (piano 2026-11-04), o NULL. */
+  motivo: string | null;
   credential_name: string;
   credential_type: string;
 }
@@ -3992,7 +4002,7 @@ export function getHostValidatedProtocolsByNetwork(networkId: number): Map<numbe
 export function addHostCredential(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi",
   port: number,
   options?: { validated?: boolean; auto_detected?: boolean }
 ): void {
@@ -4045,7 +4055,7 @@ export function setHostCredentialValidated(id: number, validated: boolean): void
 export function setHostCredentialValidatedByKey(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi",
   port: number,
   options?: { auto_detected?: boolean }
 ): void {
@@ -5275,7 +5285,7 @@ export interface DeviceCredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
   port: number;
   sort_order: number;
   inline_username: string | null;

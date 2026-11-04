@@ -48,6 +48,7 @@ export const NOME_PROTOCOLLO: Readonly<Record<CredProtocol, string>> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 /** Conferma chiesta prima di togliere binding («Nessuna»). */
@@ -135,7 +136,7 @@ function protocolloLogin(p: string | null): CredProtocol {
 /** Il tipo della voce che nasce per un protocollo. */
 function tipoPerProtocollo(p: CredProtocol): TipoCredenziale {
   if (p === "snmp") return "snmp";
-  if (p === "winrm") return "windows";
+  if (p === "winrm" || p === "wmi") return "windows";
   if (p === "ssh") return "ssh";
   return "api";
 }
@@ -669,7 +670,8 @@ export function usataAdessoDb(dbh: Database.Database, deviceId: number): UsataAd
     riga(
       dbh,
       "principale",
-      protocolloLogin(r.protocol),
+      // Il protocollo del candidato: un apparato winrm può essere arrivato al legame wmi.
+      login.ok ? login.candidato.protocol : protocolloLogin(r.protocol),
       login.ok ? { ok: true, credential_id: login.candidato.credential_id, fonte: login.candidato.source, porta: login.candidato.port } : login,
     ),
   );

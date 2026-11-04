@@ -38,6 +38,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -47,6 +48,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
   api: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400",
   redfish: "bg-rose-500/15 text-rose-600 border-rose-300 dark:text-rose-400",
   onvif: "bg-cyan-500/15 text-cyan-600 border-cyan-300 dark:text-cyan-400",
+  wmi: "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400",
 };
 
 const PROTOCOL_PORTS: Record<string, number> = {
@@ -56,6 +58,7 @@ const PROTOCOL_PORTS: Record<string, number> = {
   api: 443,
   redfish: 443,
   onvif: 80,
+  wmi: 135,
 };
 
 interface HostCredential {
@@ -315,6 +318,7 @@ export function HostCredentialsDialog({
                       <SelectItem value="ssh">SSH</SelectItem>
                       <SelectItem value="snmp">SNMP</SelectItem>
                       <SelectItem value="winrm">WinRM</SelectItem>
+                      <SelectItem value="wmi">WMI</SelectItem>
                       <SelectItem value="api">API</SelectItem>
                       <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                       <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>

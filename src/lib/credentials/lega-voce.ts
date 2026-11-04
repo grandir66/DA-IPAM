@@ -41,7 +41,7 @@ export class VoceNonValePerProtocollo extends Error {
   }
 }
 
-export type ProtocolloLegame = "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+export type ProtocolloLegame = "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
 
 function controlla(credentialId: number, protocollo: string): void {
   const errore = erroreVocePerProtocollo(credentialId, getCredentialById(credentialId), protocollo);

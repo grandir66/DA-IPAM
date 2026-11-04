@@ -389,7 +389,7 @@ export function campiVoceDb(dbh: Database.Database, credentialId: number, opzion
 /** Tipo d'archivio che corrisponde al protocollo di un binding inline. */
 function tipoDelBinding(protocollo: string): string {
   if (protocollo === "snmp") return "snmp";
-  if (protocollo === "winrm") return "windows";
+  if (protocollo === "winrm" || protocollo === "wmi") return "windows";
   if (protocollo === "api" || protocollo === "redfish" || protocollo === "onvif") return "api";
   return "ssh";
 }

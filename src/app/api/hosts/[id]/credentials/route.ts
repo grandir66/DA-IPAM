@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 const PostSchema = z.object({
   credential_id: z.number().int().positive(),
-  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]),
+  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif", "wmi"]),
   port: z.number().int().min(1).max(65535),
   validated: z.boolean().optional(),
 });

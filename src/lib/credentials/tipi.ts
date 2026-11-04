@@ -66,7 +66,7 @@ export function etichettaTipo(t: string | null | undefined): string {
  * protocollo, di apparato (`network_devices.protocol`) o di binding
  * (`protocol_type`).
  * - SSH: `ssh` e l'alias `linux`;
- * - WinRM: solo `windows`. L'account AD non entra (D7 = (a)): finirebbe nelle
+ * - WinRM e WMI: solo `windows`. L'account AD non entra (D7 = (a)): finirebbe nelle
  *   catene e nelle prove in sequenza, cioè in accessi falliti con l'account
  *   più delicato;
  * - SNMP (`snmp`, `snmp_v2`, `snmp_v3`): `snmp` e `snmp_v3`, la versione la
@@ -83,6 +83,7 @@ export function tipiPerProtocollo(protocollo: string | null | undefined): string
     case "ssh":
       return ["ssh", "linux"];
     case "winrm":
+    case "wmi":
       return ["windows"];
     case "snmp":
     case "snmp_v2":
@@ -116,6 +117,7 @@ export function tipiPerRuoloVecchio(ruolo: keyof typeof PROTOCOLLO_DEL_RUOLO): s
 const TIPI_PROPRI: Readonly<Record<string, readonly TipoCredenziale[]>> = {
   ssh: ["ssh"],
   winrm: ["windows"],
+  wmi: ["windows"],
   snmp: ["snmp", "snmp_v3"],
   snmp_v2: ["snmp", "snmp_v3"],
   snmp_v3: ["snmp", "snmp_v3"],
@@ -253,6 +255,7 @@ const NOMI_PROTOCOLLO: Readonly<Record<string, string>> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 /** Nome leggibile di un protocollo d'accesso (di apparato, binding o riga host). */

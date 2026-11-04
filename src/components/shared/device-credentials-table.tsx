@@ -38,7 +38,7 @@ interface CredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif" | "wmi";
   port: number;
   sort_order: number;
   inline_username: string | null;
@@ -66,6 +66,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   api: "API",
   redfish: "Redfish",
   onvif: "ONVIF",
+  wmi: "WMI",
 };
 
 const PROTOCOL_PORTS: Record<string, number> = {
@@ -75,6 +76,7 @@ const PROTOCOL_PORTS: Record<string, number> = {
   api: 443,
   redfish: 443,
   onvif: 80,
+  wmi: 135,
 };
 
 const STATUS_ICONS = {
@@ -413,8 +415,8 @@ export function DeviceCredentialsTable({
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(b)}>
                         <Edit3 className="h-3.5 w-3.5" />
                       </Button>
-                      {/* Per API, Redfish e ONVIF una prova non c'è (tappa 1). */}
-                      {!["api", "redfish", "onvif"].includes(b.protocol_type) && (
+                      {/* Per API, Redfish, ONVIF e WMI una prova non c'è (tappa 1). */}
+                      {!["api", "redfish", "onvif", "wmi"].includes(b.protocol_type) && (
                         <Button
                           size="icon" variant="ghost" className="h-7 w-7"
                           disabled={testing === b.id}
@@ -458,6 +460,7 @@ export function DeviceCredentialsTable({
                     <SelectItem value="ssh">SSH</SelectItem>
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
+                    <SelectItem value="wmi">WMI</SelectItem>
                     <SelectItem value="api">API</SelectItem>
                     <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                     <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>
@@ -527,6 +530,7 @@ export function DeviceCredentialsTable({
                     <SelectItem value="ssh">SSH</SelectItem>
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
+                    <SelectItem value="wmi">WMI</SelectItem>
                     <SelectItem value="api">API</SelectItem>
                     <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                     <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>

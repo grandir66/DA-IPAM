@@ -92,6 +92,7 @@ export function credTypeForProtocol(protocol: string | undefined | null): Creden
   const allowedPrimary = tipiCredenzialePerProtocollo(protocol);
   switch (protocol) {
     case "winrm":
+    case "wmi":
       return { primary: "windows", allowedPrimary };
     case "snmp_v2":
     case "snmp_v3":

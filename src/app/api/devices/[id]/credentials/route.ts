@@ -57,7 +57,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const AddBindingSchema = z.object({
   credential_id: z.number().int().positive().optional().nullable(),
-  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]),
+  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif", "wmi"]),
   port: z.number().int().min(1).max(65535),
   inline_username: z.string().max(100).optional().nullable(),
   inline_password: z.string().max(200).optional().nullable(),
@@ -115,7 +115,7 @@ const UpdateBindingSchema = z.object({
   binding_id: z.number().int().positive().optional(),
   // Per update
   credential_id: z.number().int().positive().optional().nullable(),
-  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]).optional(),
+  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif", "wmi"]).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   inline_username: z.string().max(100).optional().nullable(),
   inline_password: z.string().max(200).optional().nullable(),

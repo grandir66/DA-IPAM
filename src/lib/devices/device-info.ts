@@ -5,8 +5,7 @@
  */
 
 import type { NetworkDevice } from "@/types";
-import { credenzialeSnmpApparato, getDb, getDeviceCredentialBindings, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
-import { leggiSegretoDb } from "@/lib/credentials/segreti";
+import { credenzialeSnmpApparato, getCredentialLoginPair, getDeviceCredentialBindings, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
@@ -1320,8 +1319,7 @@ export function accountLegameWmiValidato(device: Pick<NetworkDevice, "id">): { u
   const legame = getDeviceCredentialBindings(device.id).find((b) => b.protocol_type === "wmi" && b.test_status === "success");
   if (legame?.credential_id == null) return null;
   try {
-    const e = leggiSegretoDb(getDb(), legame.credential_id, "winrm");
-    return e.ok && e.segreto.forma === "utente" ? { username: e.segreto.username, password: e.segreto.password } : null;
+    return getCredentialLoginPair(legame.credential_id, "windows");
   } catch (err) {
     console.warn(`[device-info] voce #${legame.credential_id} del legame wmi non leggibile: ${err instanceof Error ? err.name : "errore"}`);
     return null;

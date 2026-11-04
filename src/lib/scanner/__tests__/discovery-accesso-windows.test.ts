@@ -1020,6 +1020,11 @@ describe("getDeviceInfo: WinRM rifiutato e un legame wmi validato", () => {
     );
   });
 
+  it("l'account del legame wmi esce ripulito, come il login", async () => {
+    const { code, device } = await apparato([{ protocollo: "wmi", porta: 135, stato: "success", utente: "  CLIENTE\\wmi " }]);
+    assert.equal(withTenant(code, () => accountLegameWmiValidato(device))?.username, "CLIENTE\\wmi");
+  });
+
   it("l'account che va a WMI è quello del legame wmi, non quello appena rifiutato da WinRM", async () => {
     const { code, device } = await apparato([
       { ...WINRM_BUONO, utente: "CLIENTE\\winrm" },

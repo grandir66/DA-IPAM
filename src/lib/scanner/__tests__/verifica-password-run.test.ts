@@ -248,14 +248,15 @@ describe("provaLdapDellaVoce: l'esito dal bind", () => {
     assert.equal(await provaLdapDellaVoce(1, depsLdap({}, f)), "valida");
     assert.deepEqual(f.eventi, ["startTLS", "bind:CLIENTE\\scansioni", "unbind"]);
   });
-  it("StartTLS rifiutato: si procede col bind (come connectLdap)", async () => {
+  it("StartTLS rifiutato: nessun bind in chiaro, la voce è un amministratore; non_so, e tocca a SMB", async () => {
     const f = clienteFinto(
       async () => {},
       async () => {
         throw new Error("no TLS");
       },
     );
-    assert.equal(await provaLdapDellaVoce(1, depsLdap({}, f)), "valida");
+    assert.equal(await provaLdapDellaVoce(1, depsLdap({}, f)), "non_so");
+    assert.deepEqual(f.eventi, ["startTLS", "unbind"]);
   });
   it("InvalidCredentialsError con data 52e (anche 52E): errata, l'unico caso", async () => {
     for (const data of ["52e", "52E"]) {
@@ -393,6 +394,7 @@ describe("provaSmbDellaVoce: l'esito dal bridge", () => {
       assert.equal(input.host, "10.0.0.5");
       assert.equal(input.username, "CLIENTE\\scansioni");
       assert.equal(input.password, PASSWORD);
+      assert.equal(input.dominio, "cliente.local");
     }
   });
   it("esito sconosciuto, output non JSON, vuoto, processo fallito o scaduto: non_so", async () => {
@@ -552,6 +554,11 @@ class SMBConnection:
         raise OSError("rete irraggiungibile")
     def isGuestSession(self):
         return self.guest
+    def getServerDomain(self):
+        dominio = os.environ.get("SMB_FINTO_DOMINIO", "CLIENTE")
+        if dominio == "!lancia":
+            raise RuntimeError("sessione chiusa")
+        return dominio
     def logoff(self):
         open(os.environ["SMB_FINTO_LOG"], "a").write("logoff\\n")
     def close(self):
@@ -642,6 +649,39 @@ describe("smb-login.py: lo script vero contro un impacket finto", () => {
     assert.deepEqual(visti, []);
     assert.equal(fs.readFileSync(log, "utf-8"), "");
   });
+  describe("una sessione vale solo sul dominio dell'integrazione", () => {
+    const casi: Array<[string, string, EsitoPassword]> = [
+      ["nome NetBIOS del dominio", "CLIENTE", "valida"],
+      ["senza badare alle maiuscole", "cliente", "valida"],
+      ["nome DNS intero", "CLIENTE.LOCAL", "valida"],
+      ["macchina fuori dominio: risponde col suo nome", "PC-CONTAB", "non_so"],
+      ["un altro dominio", "ALTRO", "non_so"],
+      ["il server non lo dice", "", "non_so"],
+    ];
+    for (const [nome, serverDomain, atteso] of casi) {
+      it(`${nome} → ${atteso}`, { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
+        const { deps } = lancia("CLIENTE\\scansioni", "ok", finto);
+        process.env.SMB_FINTO_DOMINIO = serverDomain;
+        try {
+          assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), atteso);
+        } finally {
+          delete process.env.SMB_FINTO_DOMINIO;
+        }
+        assert.equal(fs.readFileSync(log, "utf-8").trim().split("\n").at(-1), "logoff", "la sessione si chiude comunque");
+      });
+    }
+
+    it("getServerDomain che lancia: non_so", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
+      const { deps } = lancia("CLIENTE\\scansioni", "ok", finto);
+      process.env.SMB_FINTO_DOMINIO = "!lancia";
+      try {
+        assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+      } finally {
+        delete process.env.SMB_FINTO_DOMINIO;
+      }
+    });
+  });
+
   it("impacket assente: non_so, senza lanciare", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
     const { deps } = lancia("CLIENTE\\scansioni", "bad", vuoto);
     // Il Python di sistema può avere impacket vero: allora il finto non c'è e il giro andrebbe in rete. Si evita
@@ -669,6 +709,28 @@ function integrazione(nome: string, enabled: number, dominio: string, dcHost: st
     )
     .run(nome, dcHost, dominio, enabled);
 }
+
+describe("le prove leggono l'account come il login: ripulito dagli spazi", () => {
+  // Il login di discovery passa da `coppiaLoginDb`, che ripulisce: una password con uno spazio in coda, verificata com'è,
+  // dava `errata` su una voce che entra.
+  it("LDAP e SMB ricevono utente e password senza spazi attorno", async () => {
+    dbt().exec("DELETE FROM credentials; DELETE FROM ad_integrations;");
+    const id = voce("Scansioni", "windows", "  CLIENTE\\scansioni ", ` ${PASSWORD}  `);
+    integrazione("Accesa", 1, "cliente.local", "10.1.1.1");
+
+    const binds: Array<[string, string]> = [];
+    const client = { startTLS: async () => {}, bind: async (dn: string, pw: string) => void binds.push([dn, pw]), unbind: async () => {} } as unknown as Client;
+    assert.equal(await withTenant(T, () => provaLdapDellaVoce(id, { nuovoClient: () => client })), "valida");
+    assert.deepEqual(binds, [["CLIENTE\\scansioni", PASSWORD]]);
+
+    const { deps, chiamate } = depsSmb({});
+    delete deps.account;
+    delete deps.integrazione;
+    assert.equal(await withTenant(T, () => provaSmbDellaVoce(id, "10.0.0.5", deps)), "valida");
+    const input = JSON.parse(chiamate[0].stdin.join("")) as Record<string, string>;
+    assert.deepEqual([input.username, input.password], ["CLIENTE\\scansioni", PASSWORD]);
+  });
+});
 
 describe("le prove vere leggono la voce Windows dall'archivio", () => {
   beforeEach(() => {

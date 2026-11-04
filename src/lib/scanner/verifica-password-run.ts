@@ -5,7 +5,8 @@
  * una password sbagliata produce un logon errato per ogni host e per ogni strada: in dominio è il blocco
  * dell'account. Qui si fa UNA domanda per voce in tutta l'esecuzione, con la strada che non lascia effetti:
  * - LDAP sul DC (sulla prima integrazione AD accesa), solo se l'utente è del dominio dell'integrazione: un account
- *   locale su LDAP sarebbe un logon errato inutile sul DC;
+ *   locale su LDAP sarebbe un logon errato inutile sul DC. Solo cifrato: se StartTLS fallisce niente bind in chiaro, la
+ *   voce è un amministratore, e sul DC del cliente StartTLS fallisce davvero;
  * - se LDAP non sa rispondere, e solo per lo stesso utente del dominio dell'integrazione, SMB sulla 445 del primo host
  *   (login, nessuna condivisione aperta).
  *
@@ -16,7 +17,7 @@
  * resta (decisione del 04/11/2026).
  *
  * Tre esiti, `errata` SOLO con prova certa: LDAP `InvalidCredentialsError` con `data 52e`, SMB
- * `STATUS_LOGON_FAILURE`. Account disabilitato (533), scaduto (532, 773), bloccato (775), utente ignoto (525),
+ * `STATUS_LOGON_FAILURE`. `valida` da SMB solo su una macchina del dominio dell'integrazione. Account disabilitato (533), scaduto (532, 773), bloccato (775), utente ignoto (525),
  * timeout, trasporto: `non_so`. Un errore di trasporto non è una risposta.
  *
  * Il risultato sta in memoria per la vita dell'istanza e non si scrive da nessuna parte. Si memorizza la Promise,
@@ -28,7 +29,7 @@ import { execFile } from "child_process";
 import { Client, InvalidCredentialsError } from "ldapts";
 import type { NuovoClientLdap } from "@/lib/ad/ad-client";
 import { getAdIntegrations, getDb, type AdIntegration } from "@/lib/db";
-import { leggiSegretoDb } from "@/lib/credentials/segreti";
+import { coppiaLoginDb } from "@/lib/credentials/segreti";
 import { findBridgePython } from "@/lib/devices/find-bridge-python";
 import { probeTcpPort } from "@/lib/devices/tcp-precheck";
 import type { DipendenzeWmi } from "@/lib/devices/wmi-run";
@@ -97,12 +98,14 @@ export interface AccountVoce {
   password: string;
 }
 
-/** L'utente e la password della voce Windows; voce assente, di altro tipo o senza utente/password → null. */
+/**
+ * L'utente e la password della voce Windows, ripuliti come per il login: si verifica la password che userà il login, non
+ * un'altra con uno spazio in coda, che darebbe `errata` su una voce che entra. Voce assente, di altro tipo o senza
+ * utente/password → null.
+ */
 function accountDellaVoce(credId: number): AccountVoce | null {
   try {
-    const e = leggiSegretoDb(getDb(), credId, "winrm");
-    if (!e.ok || e.segreto.forma !== "utente") return null;
-    return { username: e.segreto.username, password: e.segreto.password };
+    return coppiaLoginDb(getDb(), credId, "windows");
   } catch (err) {
     console.warn(`[verifica-password] voce #${credId} non leggibile: ${err instanceof Error ? err.name : "errore"}`);
     return null;
@@ -169,8 +172,8 @@ async function chiudi(client: Client): Promise<void> {
 }
 
 /**
- * Bind LDAP con l'account della voce sulla prima integrazione AD accesa, con la sequenza di `connectLdap`
- * (StartTLS tentato, poi bind). Un account che non è del dominio non fa nessun logon sul DC: `non_so`.
+ * Bind LDAP con l'account della voce sulla prima integrazione AD accesa. Come `connectLdap` tenta StartTLS, ma se fallisce
+ * non fa il bind in chiaro: `non_so`, e tocca a SMB. Un account che non è del dominio non fa nessun logon sul DC: `non_so`.
  */
 export async function provaLdapDellaVoce(credId: number, deps: Partial<DipendenzeLdap> = {}): Promise<EsitoPassword> {
   const d: DipendenzeLdap = { ...LDAP_REALI, ...deps };
@@ -193,7 +196,7 @@ export async function provaLdapDellaVoce(credId: number, deps: Partial<Dipendenz
       try {
         await client.startTLS({ rejectUnauthorized: false });
       } catch {
-        /* DC senza TLS: bind in chiaro, come connectLdap */
+        return "non_so";
       }
     }
     await client.bind(account.username, account.password);
@@ -265,7 +268,7 @@ export async function provaSmbDellaVoce(credId: number, ip: string, deps: Partia
         { timeout: TETTO_VERIFICA_MS, maxBuffer: 1024 * 1024, encoding: "utf-8" },
         (error, stdout) => resolve(error && !stdout ? "non_so" : esitoDaOutputSmb(stdout)),
       );
-      figlio.stdin?.write(JSON.stringify({ host: ip, username: account.username, password: account.password, port: 445 }));
+      figlio.stdin?.write(JSON.stringify({ host: ip, username: account.username, password: account.password, dominio: integrazione.domain, port: 445 }));
       figlio.stdin?.end();
     } catch {
       resolve("non_so");

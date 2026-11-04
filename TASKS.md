@@ -1,5 +1,19 @@
 # TASKS — DA-IPAM
 
+
+## 2026-11-04 — Edge: analisi del 72729 fermata e risultati persi
+
+Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep, partita 13:15, fermata alle 21:53 ora italiana dal guardiano (`scansione ferma al 98% da 3 ore`). Greenbone: 0 rapporti, 0 risultati; `cve_findings` 0. Non era bloccata: alle 21:53 era ancora in prova su 192.168.0.218 (stampante Kyocera) e 192.168.0.246 (D-Link), con test web in corso; 94 host su 96 finiti. Il guardiano guarda solo la percentuale. Il log c'è: `/var/log/openvas/openvas.log`, 2 GB in DEBUG.
+
+- [x] Edge, `scan_runner.py`: prima di `delete_task` si salvano i rilievi degli host finiti; gli host a metà si scartano e si nominano nel motivo. Prove: `tests/test_scan_parziali.py`. Da provare su Greenbone vero: `<end>` vuoto sugli host fermati.
+- [x] Edge `GET /api/v1/scans?stato=error` e DA-IPAM: fallite col motivo in Impostazioni e nel pannello della rete; con rilievi diventano `parziale` e valgono per host (`vuln_findings_attuali`). Prova: `src/lib/vuln/__tests__/scansioni-fallite.test.ts`.
+- [ ] Deploy-Appliance: `openvas.log` in DEBUG cresce di 2 GB a scansione, senza rotazione visibile; con una scansione al giorno va abbassato o ruotato.
+- [ ] Edge: il guardiano ferma una scansione che lavora ancora; andrebbe guardata l'attività, non solo la percentuale.
+- [ ] Vulcan `analisi-periodiche/selezione.ts`: oggi usa un solo rapporto per rete, l'ultimo del periodo; va fatto per host. Le parziali oggi non vanno all'hub apposta, altrimenti nasconderebbero gli host della scansione completa.
+- [ ] Riccardo (04/11): i rilievi del mese si sommano per host; un rilievo si sostituisce solo con quelli nuovi di quello stesso host, così si invia la copia completa anche se alcuni IP non rispondono sempre. Vale anche in DA-IPAM.
+- [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
+- [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
+
 ## 2026-11-04 — Il conteggio dei rilievi della sonda conta solo Greenbone
 
 Riccardo (04/11) ha chiesto di guardare perché `finding_count` non torna. Misurato sull'hub, tenant 70791.
@@ -23,6 +37,7 @@ in tabella i rilievi / i campi significativi».
 - [ ] Da verificare su apparati veri: con zero PLC raggiungibili la tabella è provata solo su fixture. Al primo giro su un apparato di campo si guarda se i campi letti sono quelli attesi
 - [x] Trappola trovata nel cancello: due prove (`cron/scansione-attesa.test.ts`, `scanner/__tests__/esecutore-finto.test.ts`) asseriscono `data/ipam.db` **assente** («niente ripiego sul DB legacy») senza crearlo né rimetterlo com'era. Alle 20:07 del 04/11 il file c'era — vuoto, 0 host e 0 reti, ignorato da git — e le due prove sono diventate rosse senza che il codice avesse colpa. Spostato in `scratchpad/ipam-vuoto-20261104.db` (non cancellato) e le prove tornano verdi. **Chi lo ha creato non è dimostrato**: in quel momento girava il nostro `npm test`/`npm run build` insieme al `next dev` di Riccardo sulla 3001, vivo dal 21/10, che condivide `.next/` col build. Da sistemare nelle prove, non nell'ambiente: chi asserisce quello stato deve prepararlo (lezione #8)
 - [x] Promossa su `main` col sì di Riccardo (04/11): `git push origin origin/dev:main` in fast-forward, `origin/main` = `origin/dev` = `e27a4309` = **0.9.967**, verificato con `git ls-remote`. Il promote porta su main anche l'accesso Windows (0.9.965/966) e il conteggio dei rilievi: era già tutto su dev
+- [x] 70151 sulla nuova: `/api/version` 0.9.967 alle 22:07 (il pull, ~22 min dal push) e `/api/health` 0.9.967 con `uptime_seconds` 59 alle 22:09 — **il riavvio è quello che conta**, `/api/version` cambia col pull (alle 21:07 diceva già 0.9.967 mentre il servizio girava da 4h sulla 0.9.964). Salute: `status ok`, DB ok, 15 credenziali leggibili, scheduler senza job in ritardo, 0 ripieghi. Letto solo via HTTPS: la chiave SSH di quell'appliance è cambiata e non è stata accettata
 - [x] Trappola: l'appliance 70151 sul NetBird è il peer **`70151-ipam-2`** (`100.107.145.24`), non `70151-ipam`; col nome sbagliato il controllo dà «nessuna risposta» e sembra irraggiungibile. Alle 21:4x del 04/11 rispondeva 0.9.964 (la main di prima): l'aggiornamento arriva col suo timer entro 15 minuti
 - [ ] Rimandato: il rilievo **grezzo** (`elems_json`, `output`) non ha nessuna pagina. La tab mostra solo i campi significativi, come chiesto; se servirà il grezzo, un dettaglio espandibile per riga
 

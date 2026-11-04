@@ -28,7 +28,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | [x] | Misura sul 72729 col codice di oggi | orchestratore | — | esito noto | tabella nel Registro |
 | S1 | [x] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
-| S2 | [~] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
+| S2 | [x] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
 | S3 | [x] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
 | S4 | [~] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
 | S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
@@ -43,7 +43,7 @@
 1. Porta 5985 chiusa: oggi la scansione conta un fallimento senza alcun login e dopo tre host esclude la voce. Task 4.
 2. Password giusta e diritti mancanti sui primi tre PC: il quarto va provato. Task 4.
 3. Password errata: nessun tentativo su nessuna macchina. Task 3 e 4.
-4. Account locale, senza integrazione AD: la verifica passa da SMB sulla prima macchina; se nemmeno lì si sa, 3 e stop. Task 3.
+4. Account locale, o dominio che non è quello dell'integrazione AD: la verifica dà sempre «non so» e vale il limite di 3, perché una password valida su una macchina non dice nulla sulle altre. SMB serve solo a un account del dominio noto quando il DC non risponde. Task 3.
 5. WinRM rifiutato con password verificata: oggi WMI non parte, perché `device-info.ts` presume che fallirebbe anche lui. I diritti delle due strade sono diversi, quindi si prova. Task 4.
 6. 135 aperta e porte dinamiche chiuse dal firewall: il tentativo resterebbe appeso fino a 90 secondi. Il tetto di 20 secondi lo chiude come `firewall`. Task 1 e 4.
 7. Controllo dell'account eseguito con un account senza diritti di lettura sui gruppi: «non verificato», mai «no». Task 8.
@@ -80,7 +80,7 @@ export async function runWmiIdentita(
 
 Verifica: `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.ts` → 8 verdi, viste rosse prima del codice.
 
-### [~] Task 2 — Protocollo `wmi` e colonna `motivo` (S2)
+### [x] Task 2 — Protocollo `wmi` e colonna `motivo` (S2)
 
 **File**
 - `src/lib/credentials/porte.ts`: `CredProtocol` con `"wmi"`, `DEFAULT_PORTS.wmi = 135`.
@@ -100,6 +100,8 @@ Verifica: `node --import tsx --test src/lib/devices/__tests__/wmi-identita.test.
 **Verifica:** database SQLite vero con lo schema di prima e righe presenti, migrazione, righe intatte, `wmi` accettato, secondo avvio senza effetto.
 
 **Commit:** `Credenziali: protocollo wmi e motivo dell'esito`.
+
+Verifica: `npm test` → 6595 pass, 0 fail, dopo revisione e correzioni. Colonne confrontate col database del 72729.
 
 ### [x] Task 3 — Verifica della password per esecuzione (S3)
 

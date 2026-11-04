@@ -10,6 +10,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
 - **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
 
+## [Non rilasciato] — 2026-11-04 · Marca rilevata degli apparati sotto «Altro»
+
+- **Aggiunto**: nella tab Gestione la riga «Marca» per gli apparati sotto «Altro», ricavata da ciò che la scansione sa già. Riccardo (04/11): il GS1900 è uno Zyxel. La piattaforma dice come si legge un apparato, non chi lo produce: la marca si mostra senza toccare il CHECK di `network_devices.vendor`, così una marca nuova non chiede una ricostruzione della tabella su ogni appliance.
+- **Corretto**: il campo Piattaforma stampava lo slug grezzo (`other`, `hp`), ora il nome («Altro», «HPE»). L'intestazione della scheda mostra la marca senza ragione sociale.
+
 ## [Non rilasciato] — 2026-11-04 · Zyxel GS1900 e switch di marche fuori elenco
 
 - **Aggiunto**: profilo SNMP `zyxel_gs1900` (modello, seriale e firmware dagli OID Zyxel) e riconoscimento come switch dal sysObjectID. Alla 72729 il GS1900-48HP rispondeva, ma nessun profilo lo conosceva e l'ENTITY-MIB ha il telaio all'indice 67108992, non 1: modello e firmware restavano vuoti.

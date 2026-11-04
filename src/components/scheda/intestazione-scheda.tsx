@@ -14,6 +14,7 @@ import { BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { ETICHETTE_RUOLI, type RuoloServer } from "@/lib/classification/canonico";
 import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
+import { marcaRilevata } from "@/lib/devices/marca-rilevata";
 import type { TipoScheda } from "@/lib/scheda/tipo-scheda";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
@@ -87,7 +88,7 @@ export function IntestazioneScheda({
   const stato = host.status === "online" ? STILE_STATO.ok : host.status === "offline" ? STILE_STATO.guasto : STILE_STATO.da_verificare;
   const testoStato = host.status === "online" ? "online" : host.status === "offline" ? "offline" : "stato sconosciuto";
 
-  const marca = device?.device_info?.manufacturer ?? host.device_manufacturer ?? (device?.vendor && device.vendor !== "other" ? maiuscolaIniziale(device.vendor) : null) ?? host.vendor;
+  const marca = (device?.vendor === "other" ? marcaRilevata(host) : null) ?? device?.device_info?.manufacturer ?? host.device_manufacturer ?? (device?.vendor && device.vendor !== "other" ? maiuscolaIniziale(device.vendor) : null) ?? host.vendor;
   const identita = vmSu
     ? null
     : [marca, device?.model ?? host.model, device?.firmware ?? host.firmware].filter((v): v is string => !!v && v.trim() !== "").join(" · ");

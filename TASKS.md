@@ -1,5 +1,24 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — Profili di scansione: detect approfondito e profilo IoT/OT
+
+Riccardo (04/11): «dovrei arricchire la scansione dei device con un profilo dedicato ad IoT OT […]
+per identificare meglio quello che è poco visibile», con l'elenco delle porte OT/IoT in chat; poi
+«non si potrebbero utilizzare altri profili nmap per fare un discover più approfondito dei sistemi
+in rete». Piano: [`docs/superpowers/plans/2026-11-04-profili-di-scansione.md`](docs/superpowers/plans/2026-11-04-profili-di-scansione.md),
+bozza con livello completo proposto, in attesa del via.
+
+- [x] Misurato cosa usa nmap oggi: `-O` **mai passato** (e `parseNmapXml` legge già `osmatch`, campo mai riempito), `--version-intensity` a **0** senza override sull'hub, **due** script NSE in tutto il codice (`smb-os-discovery`, `snmp-info`), output degli altri **buttato**, secondo profilo nmap **vietato** dalla rotta («È supportato un solo profilo Nmap»). L'app gira root sull'hub, quindi `-O` e `-sU` funzionerebbero
+- [x] Trovato il motivo per cui le regole OT di stamattina non scatteranno mai: 102, 502, 1883, 8883, 4840 e 44818 non sono in `NMAP_DEFAULT_TCP_PORTS`, 47808/5683/2222 non sono nella lista UDP. Le firme aspettano porte che nessuno prova
+- [x] `bacnet-discover` del comando di Riccardo non esiste: lo script è `bacnet-info`, UDP 47808. Un nome inesistente fa abortire tutta la scansione, non salta lo script. Mancano anche `dnp3-info` e qualunque cosa per Profinet, GE SRTP e FINS oltre a `omron-info`
+- [x] Decisioni di Riccardo (04/11): probe OT solo di lettura, **niente `modbus-discover`** (intrusive); **`mqtt-subscribe` incluso com'è**, payload compresi (conseguenza a verbale: dati di processo del cliente nel nostro database, il piano mette un tetto in byte); PLC e HMI **foglie distinte** da IoT; interruttore **globale** in Opzioni
+- [ ] Da confermare al via: la radice nuova di livello 1 `ot` (foglie `plc`, `hmi`, `drive`, `rtu`, `io_remoto`, `gateway`) invece di `iot.plc`/`iot.hmi`. «Distinti da IoT» non diceva dove
+- [ ] Ordine scelto: prima il profilo **Approfondito** (nessun rischio, rende su ogni cliente, collauda il parser), poi **IoT/OT**, che è quello che manda pacchetti ai PLC
+- [ ] Da verificare sulle appliance dei clienti, non solo sull'hub: se il processo ha i privilegi per `-O` e `-sU`. Senza, il profilo deve degradare e dirlo, non fallire muto
+- [ ] `--version-intensity` si alza solo con la misura del tempo prima e dopo su una rete vera (passo S5). Se costa troppo resta a 0 e si scrive
+- [ ] Chiude l'«asse 2 (GET della pagina web)» rimasto aperto nella sezione delle stampanti: lo coprono `http-title`/`http-headers` del profilo Approfondito
+- [ ] `rdp-ntlm-info` dà nome DNS, nome NetBIOS, dominio e build di Windows **senza credenziali**: tocca anche il filo WMI/WinRM aperto oggi, dove 12 PC su 13 rifiutano l'account
+
 ## 2026-11-04 — Stampanti: seriale e part number; regole OT mai arrivate alle appliance
 
 Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto e anche il part number delle stampanti, inoltre il detect dei device che ti avevo chiesto». Il detect è la sezione «Arricchire il detect» più sotto, chiesta nella sessione «Device classification da-ipam 72279».
@@ -8,13 +27,14 @@ Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto 
 - [x] Part number: HP sì (`…11.2.4.3.1.10.0`, W1A29A), Epson e Kyocera no: nessun campo nei rami vendor letti. HP espone anche il codice del toner (`…9.4.2.1.4.1.10.1.1.1.1.0`, CF259A): non letto, proposta
 - [x] Regole OT: 0 righe nell'hub.db della 72729. Stavano solo in `db.ts`, le appliance seminano da `db-hub.ts`. Portate, con prova che confronta i due seed
 - [x] Nessuna bonifica: «Aggiorna» riscrive il seriale, la scansione sostituisce un finto. Restano in `physical_devices` le righe vecchie dove la risoluzione non trova il MAC
-- [x] Rilascio 0.9.962 (af2aae7b): cancello verde (6.394 prove passate, 0 fallite), hub 533 alle 14:35 UTC con 5 regole OT e profili corretti da soli su un database esistente, `main` col sì di Riccardo, 72729 ripartita alle 14:54 UTC, health 200. Snapshot `pre-stampanti-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Il primo push su `main` è stato rifiutato senza motivo letto, il secondo è passato (ramo non protetto, prova a vuoto pulita)
+- [x] Rilascio 0.9.962 (af2aae7b): cancello verde (6.394 prove passate, 0 fallite), hub 533 alle 14:35 UTC con 5 regole OT e profili corretti da soli su un database esistente, `main` col sì di Riccardo, 72729 ripartita alle 14:54 UTC, health 200. Snapshot `pre-stampanti-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Il primo push su `main` è fallito per un errore mio: in zsh `$C:refs/…` è letto come modificatore `:r` (lezione 15, sempre `${C}`)
 - [x] Il `fast_scan` delle 15:00 non riclassifica: è un giro di ping (0 porte), non passa dal fingerprint. Al 15:09 UTC gli OT restano `unknown` e i seriali finti restano: nessuna scansione con porte, nessun «Aggiorna»
 - [x] Riccardo (04/11): scansione Nmap completa 15:14-15:29 UTC, 95 host, 273 porte. Stampante 192.168.0.201 letta: modello, seriale, part number W1A29A, firmware. Le altre 9 non risultano lette
 - [x] Trovato: le regole OT funzionano (`final_device: "Weintek HMI"`, `rule:mac_vendor`) ma non scrivono la classe. Dal Fix C1 l'unico motore che scrive `hosts.classification` è l'attribuzione v2, e dall'OUI prendeva solo il vendor. Prima avevo indicato la soglia 0,56 del fingerprint: sbagliato, quel percorso non scrive
 - [x] Evidenza categoria dall'OUI per i produttori solo OT (`OUI_SOLO_OT` in `attribution/emitters.ts`). Weintek e CREVIS finiscono `iot`, non `hmi`/`plc`: `legacy-projection.ts` collassa le foglie `iot.*` per regola esplicita e le prove esistenti la fissano
 - [ ] Da decidere con Riccardo: PLC e HMI distinti da IoT nella classificazione (nuove foglie della tassonomia e prove da rivedere)
-- [ ] Dopo `main`: rileggere classi e seriali sulla 72729, leggere le altre 9 stampanti, togliere lo snapshot `pre-stampanti-20261104`
+- [x] 0.9.963 su `main` e sulla 72729 (ripartita alle 16:09 UTC, health 200), 70151 a 0.9.963. `scripts/attribution-recompute-cli.ts DEFAULT 192.168.0.0/24 --no-vendor-refresh` alle 16:10 UTC: 30 host cambiati, tutti `unknown → iot`, 11 Weintek, 10 CREVIS, 6 Control Techniques, 3 Kronotech, nessun altro. Classi di prima in `/root/classi-prima-20261104.txt` sulla VM 100. Unknown da 77 a 47. Le altre appliance si riallineano alla prossima scansione con porte
+- [x] Riccardo «Aggiorna selezionati» alle 15:50 UTC: 8 seriali veri su 10, 6 part number HP, modelli precisi. Restano senza seriale la WF-6590 (192.168.0.131, nessuna Printer-MIB per il seriale) e 192.168.1.215 (lettura senza dati, da guardare). Snapshot `pre-stampanti-20261104` tolto. Verifica dal database: la pagina non l'ho vista
 - [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
 
 ## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (rilasciato, 0.9.958)

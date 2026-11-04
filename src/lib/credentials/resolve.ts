@@ -867,10 +867,15 @@ export function sceltaLoginApparatoDb(
   return conChiave.ok ? conChiave : conPassword;
 }
 
-/** getDeviceCredentials: l'accesso di `sceltaLoginApparatoDb` (password o chiave), o null senza una credenziale buona. */
+/**
+ * getDeviceCredentials: l'accesso di `sceltaLoginApparatoDb` (password o chiave), o null senza una credenziale buona.
+ * Un accesso venuto dal legame `wmi` lo dice (`protocollo`): non deve arrivare a un login WinRM.
+ */
 export function loginApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): AccessoSsh | null {
   const s = sceltaLoginApparatoDb(dbh, device);
-  return s.ok ? opzioniSsh(s.segreto) : null;
+  if (!s.ok) return null;
+  const accesso = opzioniSsh(s.segreto);
+  return accesso && s.candidato.protocol === "wmi" ? { ...accesso, protocollo: "wmi" } : accesso;
 }
 
 /** `etichetta` solo per una `fonte_vecchia` (conversione della 2e). */

@@ -417,7 +417,18 @@ export function leggiSegretoInline(b: { protocol_type: string; inline_username: 
  * (`SshOptions`) e l'acquisizione (`getDeviceCredentials`) ricevono dalla
  * tappa 2, T14 (D6 = (a)).
  */
-export type AccessoSsh = { username: string; password?: string; privateKey?: string; passphrase?: string };
+export type AccessoSsh = {
+  username: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  /**
+   * Da quale legame viene l'accesso, quando non è quello del protocollo di login dell'apparato. Oggi solo `wmi`: un
+   * apparato `winrm` raggiunto sulla 135. Chi fa un login WinRM deve rifiutarlo (`createWinrmClient`). Assente per tutti
+   * gli altri: la forma resta quella che ssh2 e l'acquisizione ricevono da sempre.
+   */
+  protocollo?: "wmi";
+};
 
 /** Opzioni di connessione SSH (ssh2) da un segreto: password o chiave. Altre forme → null. */
 export function opzioniSsh(s: Segreto): AccessoSsh | null {

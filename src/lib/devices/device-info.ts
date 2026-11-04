@@ -1486,6 +1486,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   // attivo (TCP_CLOSED/TCP_TIMEOUT), tenta automaticamente WMI/DCOM su 135 come
   // fallback. NON facciamo fallback su AUTH_REJECTED/KERBEROS_*/BASIC_DISABLED:
   // le stesse credenziali falliranno anche su WMI.
+  // Un accesso venuto dal legame wmi non fa nessun login WinRM: `createWinrmClient` lo rifiuta e si va direttamente a WMI.
   if (hasWinrm) {
     try {
       const winrmInfo = await getDeviceInfoFromWinrm(device);
@@ -1494,8 +1495,10 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       const originalWinrmError: Error = e instanceof Error ? e : new Error(String(e));
       winrmFailure = originalWinrmError;
       const { WinrmError } = await import("./winrm-run");
+      const { isAccessoSoloWmi } = await import("./winrm-client");
+      const soloWmi = isAccessoSoloWmi(originalWinrmError);
       const fallbackCodes = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT", "UNKNOWN"]);
-      const shouldFallback = originalWinrmError instanceof WinrmError && fallbackCodes.has(originalWinrmError.code);
+      const shouldFallback = soloWmi || (originalWinrmError instanceof WinrmError && fallbackCodes.has(originalWinrmError.code));
       if (shouldFallback) {
         try {
           const wmiInfo = await getDeviceInfoFromWmi(device);
@@ -1507,8 +1510,9 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
         } catch (wmiErr) {
           // Fallback WMI fallito: conserva l'errore WinRM originale (più informativo
           // sul probable root cause), aggiungi suffisso diagnostico.
+          // Con un accesso solo WMI non c'è un errore WinRM da conservare: WinRM non è partito.
           const wmiMsg = wmiErr instanceof Error ? wmiErr.message : String(wmiErr);
-          winrmFailure = new Error(`${originalWinrmError.message}\n[Fallback WMI fallito] ${wmiMsg}`);
+          winrmFailure = soloWmi ? new Error(wmiMsg) : new Error(`${originalWinrmError.message}\n[Fallback WMI fallito] ${wmiMsg}`);
         }
       }
     }

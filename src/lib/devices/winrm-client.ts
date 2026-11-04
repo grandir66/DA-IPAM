@@ -15,8 +15,25 @@ export interface WinrmClient {
   testConnection(): Promise<boolean>;
 }
 
+/**
+ * L'accesso dell'apparato viene dal legame `wmi`: con quell'account WinRM non si prova. Sarebbe un login che fallisce a ogni
+ * acquisizione, e su un account di dominio i login errati ripetuti sono il blocco dell'account.
+ */
+export class AccessoSoloWmiError extends Error {
+  constructor(device: Pick<NetworkDevice, "name">) {
+    super(`L'apparato «${device.name}» ha un accesso solo WMI: WinRM non si prova con questo account.`);
+    this.name = "AccessoSoloWmiError";
+  }
+}
+
+/** Per nome, non con `instanceof`: chi lo cerca importa questo modulo a runtime e sotto tsx può averne un'altra istanza. */
+export function isAccessoSoloWmi(e: unknown): boolean {
+  return e instanceof Error && e.name === "AccessoSoloWmiError";
+}
+
 export async function createWinrmClient(device: NetworkDevice): Promise<WinrmClient> {
   const creds = getDeviceCredentials(device);
+  if (creds?.protocollo === "wmi") throw new AccessoSoloWmiError(device);
   const username = creds?.username ?? "";
   const password = creds?.password ?? "";
 

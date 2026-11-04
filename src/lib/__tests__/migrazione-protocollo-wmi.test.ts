@@ -614,7 +614,7 @@ describe("motore delle credenziali", () => {
     assert.deepEqual(r, { credential_type: "windows" });
   });
 
-  it("wmi non arriva mai a WinRM: la prova del binding dice «non disponibile», senza toccare l'host", async () => {
+  it("la prova del binding wmi non è disponibile", async () => {
     const esito = await provaBinding(
       "10.72.0.5",
       { protocol_type: "wmi", port: 135, credential_id: null, inline_username: "scansioni", inline_encrypted_password: encrypt("segreto-di-prova") },

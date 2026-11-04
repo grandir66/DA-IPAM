@@ -1,6 +1,11 @@
 # TASKS — DA-IPAM
 
 
+
+## 2026-11-05 — Idea: scansione a finestra con IP casuali e nuovi tentativi
+
+- [ ] Riccardo (05/11): modalità di scansione che distribuisce in ordine casuale gli IP di una rete dentro una fascia oraria e in giorni scelti (esempio: 8-20 di lunedì, martedì, mercoledì). Gli IP che non rispondono si ritentano n volte in fasce diverse. Tutti i dati si archiviano per l'invio e si vedono man mano in DA-IPAM e in Edge. Si appoggia alla somma per host di Vulcan 0.8.235 (`docs/superpowers/plans/2026-11-04-rilievi-del-periodo-per-host.md` in DA-Vul-can).
+
 ## 2026-11-04 — Analisi: attività da fare
 
 Controllato il 04/11 su `origin/dev` (0.9.969, 7aa1493c) e `origin/main` (0.9.967, e27a4309), più due letture sull'hub 533 in sola lettura. **I clienti non sono stati toccati né misurati**: i dati del 72729 sono quelli già scritti qui il 04/11. Dimensioni: S = una sessione corta, M = un giorno, L = progetto con piano.

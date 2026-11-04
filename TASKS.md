@@ -1,6 +1,86 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-04 — Analisi: attività da fare
+
+Controllato il 04/11 su `origin/dev` (0.9.969, 7aa1493c) e `origin/main` (0.9.967, e27a4309), più due letture sull'hub 533 in sola lettura. **I clienti non sono stati toccati né misurati**: i dati del 72729 sono quelli già scritti qui il 04/11. Dimensioni: S = una sessione corta, M = un giorno, L = progetto con piano.
+
+I 157 aperti di prima: **43 fatti e mai spuntati, 21 superati, 7 doppioni, 86 vivi**, raggruppati in 33 voci qui sotto. I numeri fra parentesi sono le righe di `TASKS.md` prima di questa sezione. Le vecchie caselle sono rimaste come stavano: si spuntano con l'ok di Riccardo.
+
+**Correzioni a ciò che si credeva aperto:**
+- Detect OT e scheda stampante **non aspettano la promozione**: sono su `main` dalla 0.9.962-963 e il 72729 gira la 0.9.967.
+- Invio diretto AD e inventario a DA-Vul-can (8b, 10) **è fatto**: `vulcan_coda` piena sull'hub e sul 72729, nessun errore. Il piano A2 non blocca più nulla.
+- Login con `callbackUrl` `0.0.0.0:3001` **è risolto** dal 29/10 (54b3d6c8, su `main`, con prova). Controllato dal di fuori sull'hub: `/` risponde 302 verso `/login`, senza parametri. Non provato su un'appliance.
+- Infoblox non è più fermo sull'accesso: il blocco ora è il modello dei dati (voce C1).
+
+### A. Tocca i clienti
+
+- [ ] **A1. Sonda del 72729 ferma alla 0.8.234** (34). Ogni giro fermato dal guardiano sparisce senza traccia. In DA-IPAM non c'è niente da fare: serve il rilascio di DA-Vul-can, chiesto alla sessione «Password non funziona su 72279». Poi si controlla `GET /api/v1/scans?stato=error`. S. Nessuna decisione.
+- [ ] **A2. Promozione `dev`→`main`** (fast-forward): porta solo la 0.9.968 (analisi di Edge fallite visibili col motivo, una colonna aggiunta) e la 0.9.969 (pagina «Cosa serve»). L'hub gira già la 0.9.969. La 0.9.968 sul 72729 rende davvero solo dopo A1. S. **Decide Riccardo**: è un rilascio alle appliance.
+- [ ] **A3. Classi del 72729 da ricalcolare** (1087 riaperta in forma nuova). Il ricalcolo del 04/11 16:10 ha messo in `iot` 30 host, fra cui 11 Weintek e 10 CREVIS. Dopo è arrivata la radice `ot`: il codice ora dà `hmi` e `plc`, ma quei host cambiano solo con un ricalcolo o una scansione con porte (non misurato se sia già successo). Comando già provato: `scripts/attribution-recompute-cli.ts`. S. **Decide Riccardo**: scrive sul cliente, snapshot della VM 100 prima.
+- [ ] **A4. Collaudo Windows ancora da fare** (162; piano WMI S10). WinRM/WMI automatico è su `main` ma non è mai stato provato su un DC vero, né con un account che i PC accettano: al 72729 12 PC su 13 rifiutano quello attuale. Servono la rete finta di Riccardo e l'account amministratore locale dell'IT del cliente. M. **Serve Riccardo**.
+- [ ] **A5. Stampanti del 72729** (1107, 1108): 8 seriali su 10. Restano la WF-6590 (192.168.0.131, nessun seriale in Printer-MIB) e 192.168.1.215 (lettura senza dati). La scheda stampante non è mai stata guardata a schermo. S. Nessuna decisione.
+- [ ] **A6. Rete «parma» 192.168.2.0/24 del 72729 muta** (150): 0 host, compresi gateway e switch «pese». Da guardare criteri e rotte sul Fortinet, o se è una sede in VPN. Sul posto, anche le porte 26, 29, 40, 45 a 10 Mbps half (148). S. **Serve Riccardo** (accesso al Fortinet o risposta dell'IT).
+- [ ] **A7. 35 ripieghi nella salute del 72729** (52), l'hub ne ha 0. S, diagnosi. Nessuna decisione.
+- [ ] **A8. Profili di scansione mai visti su apparati veri** (73, 74, 102, 103, 104, 105): resa della tab «Rilievi» (ora si può, 13 host sul 72729), output degli script OT, privilegi per `-O` e `-sU` sulle appliance, costo di `--version-intensity 7`, `--osscan-limit` che salta gli host filtrati. S. **Si sovrappone alla sessione «Scansione device IoT/OT in da-ipam»**: lo fa lei, non si duplica.
+- [ ] **A9. Vault sulle appliance dei clienti** (250, 291). Hub fatto il 29/10; manca il passo 8, da coordinare con DA-Link. `ENCRYPTION_KEY` resta per i segreti TOTP (ADR 0034). M. **Decide Riccardo** quando, appliance per appliance.
+- [ ] **A10. Token API di LibreNMS di 70151 da rigenerare** (556): finito nel trascritto il 23/10. S. **Serve Riccardo**.
+- [ ] **A11. Accessi da chiarire**: impronta ssh cambiata su 192.168.99.51, che ferma la misura dei server non agganciati (694); feed vulnerabilità del cliente A, manca quale file del vault (505); chiave SSH di 70151 cambiata (CONTEXT, 03/11). S. **Serve Riccardo**.
+- [ ] **A12. Blocco `rete` di 70151 in DA-Link** (195), mai verificato. S, da guardare lato DA-Link.
+
+### B. Difetti
+
+- [ ] **B1. `finding_count` e «N CVE»** (62, 63). La colonna conta solo Greenbone e l'etichetta sovrastima: sul giro 124, 2135 rilievi su 2402 sono di livello Log. Proposta: UPDATE a fine `sync-job` e testo «rilievi». Il numero del pannello però viene dalla sonda: serve anche DA-Vul-can. S. **Decide Riccardo**.
+- [ ] **B2. Comware, letture SNMP** (531, 534, 931; 542 è un'alternativa da scrivere sullo switch). Le VLAN arrivano già dal collector su 5 su 5: resta `TEMPO_SCADUTO` su 1-3 walk e i nomi persi su *tooBig*. M. Solo `snmp-agent packet max-size` decide Riccardo, non serve ora.
+- [ ] **B3. ProMax** (664): PVID diverso dalla nativa su 6 porte su 14, porte 33-52 assenti da SNMP. Forse LAG. M.
+- [ ] **B4. Windows lato Assegnatari** (387, 388): WinRM 0 righe su 70791, 3 agenti Wazuh su 11 senza host, 18 postazioni non trovate. S.
+- [ ] **B5. Native VLAN senza scadenza** (665): uno switch uscito dal controller lascia righe vecchie (140 sull'hub). S. **Decide Riccardo** se farle scadere.
+- [ ] **B6. Piccoli difetti di codice**: MAU-MIB con due indici letta come uno (149, serve un apparato); per un non admin `action=all` legge l'export e lo scarta (806); job creato da script che chiede un riavvio (639); `next build --webpack` che cade in locale (310). S ciascuno.
+- [ ] **B7. Interfaccia**: a 1280 px le ultime colonne scorrono (506); panoramica switch 150 px di troppo con «Trunk» e «Tutte» (637); Opzioni dice «Cliente» dove ADR 0033 dice «istanza» (309); rifiniture della scheda per tipo e casella AD di DA-DC01 (730, 744, 750). M in tutto. Solo 637 chiede una scelta: accettarlo o accorciare la tabella.
+- [ ] **B8. Documenti fermi**: skill `deploy-prod` e `CLAUDE.md` parlano del servizio `da-invent`, sull'hub è attivo `da-ipam` (248); i limiti WMI nel messaggio di `device-connection-test.ts` (168). S.
+
+### C. Miglioramenti
+
+- [ ] **C1. Infoblox**, due passi distinti.
+  - **Portare il collector su `dev`**: `origin/codex/infoblox`, 6 commit, conflitti solo in CHANGELOG, TASKS e versione. Raccolta collaudata (6.853 record in 37 s), resta da CLI, nessun effetto sui dati. Il documento di consegna dice che il ramo non è su origin: ora c'è. S. **Decide Riccardo**.
+  - **Far entrare i dati in DA-IPAM**: è questo il blocco vero. Mai progettato. `networks.cidr` è UNIQUE e due viste possono avere lo stesso CIDR; `dhcp_leases` vuole il MAC e il CHECK di `source_type` non ammette `infoblox`; DNS senza una destinazione. L, livello Completo, sequenza in `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`. **Decide Riccardo** se serve e per quale cliente.
+- [ ] **C2. Rilievi sommati per host** (17, 18; lato DA-Vul-can 16). Il rilievo di un host si sostituisce solo con quelli nuovi di quell'host; il giorno per giorno copre tutta la subnet. Il primo pezzo c'è (`vuln_findings_attuali`). M qui, più DA-Vul-can. Richiesta di Riccardo già fatta, va messa in ordine con Edge.
+- [ ] **C3. Proxmox** (1035, 1043). `proxmox-ve` è fuori dal pulsante e lì resta (`riconosci.ts`). Mancano: modello, seriale e produttore dei nodi (vuoti nel collaudo su 4 nodi; codice scritto, mai riprovato), IP dei guest su 24 di 52, schede di rete non proiettate, `sockets` fisso a 1. La scansione di oggi dà già tutto, quindi agganciarlo non aggiunge dati. Proposta: resta fuori. M per la parità. **Decide Riccardo**.
+- [ ] **C4. SSH Ubiquiti** (995). Fermo dal 22/10 su autenticazione rifiutata, nessun tentativo in più. SNMP e controller UniFi danno già i dati e il 23/10 si è deciso che Ubiquiti resta in SNMP; l'SSH aggiungerebbe poco (`mca-status`). Proposta: chiudere. In alternativa serve la credenziale dei device dal controller. S. **Decide Riccardo**.
+- [ ] **C5. LibreNMS** (602, 608, 610, 613, 615). I dati sull'hub arrivano (52 apparati, 1094 porte), ma: vicini nella mappa non fatti, `librenms_vicino` non è letta dalla topologia (M, zona rossa); nessun ADR; limiti di avviso non letti; 5 server mai interrogati da provare; prove T1 e T5. Dimensione totale M.
+- [ ] **C6. Collaudi dei collector** (805, 808, 812, 830, 831, 845, 852, 996, 1034, 719, 721, 663): prove in locale su apparati veri, tutte «in attesa di Riccardo» dal 21-22/10, molte ormai implicite nell'uso su 70151. M. Da leggere una volta sola, tenendo solo quelle che non sono già state esercitate.
+- [ ] **C7. Decisioni rimaste sui collector** (817, 821, 853): ritirare `src/lib/devices/acquisition/`? Togliere «(anteprima)» dall'interruttore? S. **Decide Riccardo**.
+- [ ] **C8. Controller UniFi** (516): strumento da CLI, fotografia per apparato, o radio e client. M. **Decide Riccardo**.
+- [ ] **C9. Detect, assi 2 e 3** (1088). L'asse 2 è in parte coperto da `http-title` e `http-headers`. Asse 3: password di default negli apparati dei clienti, da far decidere anche rispetto a DA-Vul-can. M. **Decide Riccardo**.
+- [ ] **C10. Rinviati per famiglia** (897, 912, 929, 945, 960, 997): QNAP, HP, Comware, VMware, NetApp, estensioni. Restano rinviati, nessuno ha chiesto di farli. VMware e NetApp possono toccare la sessione «Deploy soluzione su vSphere 8».
+- [ ] **C11. Occhiate e cose minori di Riccardo** (308, 539, 555, 638, 402, 659, 79): scheda Istanza da superadmin, tab VLAN su 70151, pastiglia «spenta», NB-AGUZZOLI n. 31, cluster iLO, rilievo grezzo. S.
+- [ ] **C12. Bacheca dei piani**: `recupero-dadude3-mknet` dice 3 su 9 e aspetta una sessione cloud, ma il ramo è già in `dev`; `daipam-cve-locali` è fermo a 2 su 6 dal 07/09 e i feed exploit fatti il 22/10 ne coprono una parte. S per riallineare. **Decide Riccardo** se il secondo serve ancora.
+- [ ] **C13. Da tenere d'occhio**: `@xmldom/xmldom` forzato a 0.8.15 per `kdbxweb`, da ricontrollare a ogni aggiornamento (290).
+
+### Non di DA-IPAM (coperte dalle sessioni degli altri repo)
+
+Edge e Deploy-Appliance: guardiano che ferma giri vivi e `openvas.log` da 2 GB (14, 15), `gvmd` «Credential could not be created» (19). DA-Vul-can: selezione per host nelle analisi periodiche (16).
+
+### Fatti e mai spuntati (43)
+
+- Profili e tassonomia: radice `ot`, PLC e HMI distinti, tab «Rilievi», `rdp-ntlm-info`, ordine dei profili, asse 2 coperto da `http-title` (93, 106, 107, 110, 111, 126).
+- WinRM e WMI automatici e diritti (163, 165). OT e 72729 su `main`, ricalcolo unknown→iot (1086, 1087).
+- VLAN Comware e HP, matrice, SSH+SNMP, LibreNMS in blocco e automatico (322-327). MikroTik VLAN, 6 su 6 (550).
+- «Esci» che chiude davvero, ADR 0033 (340). Tavola di Opzioni pubblicata (449).
+- Assegnatari da AD e omonimi in Abbinamenti, prima conferma di Riccardo (369, 370, 371, 373, 389, 399).
+- Collector in `dev`, S3, sessione cloud, AOS-CX, giro 5 (515, 798, 799, 800, 801, 1008). Infoblox collaudato (1057, 1058).
+- Promote, job di serie sull'hub, `arp_poll` col job 26, `unifi-sync` con IP conteso, native sull'hub (587, 588, 658, 662, 666). LibreNMS acceso sull'hub (616).
+- DA-Vul-can: A-Link e inventario, CIDR vero, 8b, 10 (685, 876, 878, 882).
+
+### Superati (21)
+
+- OpenBao e Keeper come archivio (265, 267, 268, 269, 276, 282-289, 294, 295): OpenBao tolto il 02/11, resta KeePass su DA-Link; `vault.domarc.it` ora risolve.
+- `/settings/opzioni` su 70151 e hub dopo l'aggiornamento (343, 586), «Reparto» è dato loro (390), coordinamento col piano DADude3 (772), titolo vuoto (715), `upsertSwitchPorts` non è più nella rotta `bulk-scan-devices` (836).
+
+### Doppioni (7)
+
+35 di 14-15, 108 di 103, 109 di 104, 129 di 1088, 636 di 664, 668 di 637, 720 di 663.
+
 ## 2026-11-04 — Pagina «Cosa serve» in Active Directory
 
 - [x] Riccardo: schema dei diritti, script e configurazione degli eventi visibili in pagina. Fatto in `/active-directory/cosa-serve`, guardata resa a 1920 e 1280 con dati finti.

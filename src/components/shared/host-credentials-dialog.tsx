@@ -318,7 +318,6 @@ export function HostCredentialsDialog({
                       <SelectItem value="ssh">SSH</SelectItem>
                       <SelectItem value="snmp">SNMP</SelectItem>
                       <SelectItem value="winrm">WinRM</SelectItem>
-                      <SelectItem value="wmi">WMI</SelectItem>
                       <SelectItem value="api">API</SelectItem>
                       <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                       <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>

@@ -6,7 +6,12 @@
  * dell'account. Qui si fa UNA domanda per voce in tutta l'esecuzione, con la strada che non lascia effetti:
  * - LDAP sul DC (sulla prima integrazione AD accesa), solo se l'utente è del dominio dell'integrazione: un account
  *   locale su LDAP sarebbe un logon errato inutile sul DC;
- * - se LDAP non sa rispondere, SMB sulla 445 del primo host (login, nessuna condivisione aperta).
+ * - se LDAP non sa rispondere, e solo per un account di dominio, SMB sulla 445 del primo host (login, nessuna
+ *   condivisione aperta).
+ *
+ * Un account senza dominio è sempre `non_so`, senza nessun login: vive su una macchina sola, e `valida` o `errata` lì
+ * non dicono nulla delle altre, dove la password può essere diversa. Esteso a tutta l'esecuzione, un rifiuto diventerebbe
+ * `diritti_mancanti` e non conterebbe sul limite di 3. Con `non_so` il limite resta.
  *
  * Tre esiti, `errata` SOLO con prova certa: LDAP `InvalidCredentialsError` con `data 52e`, SMB
  * `STATUS_LOGON_FAILURE`. Account disabilitato (533), scaduto (532, 773), bloccato (775), utente ignoto (525),
@@ -88,6 +93,25 @@ function accountDellaVoce(credId: number): AccountVoce | null {
   }
 }
 
+/** Il dominio scritto nel nome: `DOM\utente`, `utente@dom`. Vuoto se non c'è o se indica la macchina stessa (`.`, `localhost`). */
+function dominioDelNome(username: string): string {
+  let candidato = "";
+  const barra = username.indexOf("\\");
+  const chiocciola = username.lastIndexOf("@");
+  if (barra >= 0) candidato = username.slice(0, barra);
+  else if (chiocciola >= 0) candidato = username.slice(chiocciola + 1);
+  candidato = candidato.trim().toLowerCase();
+  return candidato === "." || candidato === "localhost" ? "" : candidato;
+}
+
+/**
+ * L'account porta un dominio? È tutto ciò che il nome dice: `PC-CONTAB\admin` è locale ma non si distingue da `DOM\admin`,
+ * e senza integrazione AD non c'è con cosa confrontarlo.
+ */
+export function accountDiDominio(username: string): boolean {
+  return dominioDelNome(username) !== "";
+}
+
 /**
  * L'utente è del dominio dell'integrazione? `DOM\utente` e `utente@dom` valgono se `dom` è il dominio intero o il
  * suo primo pezzo (NetBIOS). Utente nudo, `.\utente`, dominio vuoto, nome del PC, altro suffisso: account locale.
@@ -95,13 +119,8 @@ function accountDellaVoce(credId: number): AccountVoce | null {
 export function utenteDelDominio(username: string, dominioIntegrazione: string): boolean {
   const dominio = dominioIntegrazione.trim().toLowerCase();
   if (!dominio) return false;
-  let candidato = "";
-  const barra = username.indexOf("\\");
-  const chiocciola = username.lastIndexOf("@");
-  if (barra >= 0) candidato = username.slice(0, barra);
-  else if (chiocciola >= 0) candidato = username.slice(chiocciola + 1);
-  candidato = candidato.trim().toLowerCase();
-  if (!candidato || candidato === ".") return false;
+  const candidato = dominioDelNome(username);
+  if (!candidato) return false;
   return candidato === dominio || candidato === dominio.split(".")[0];
 }
 
@@ -207,13 +226,14 @@ function esitoDaOutputSmb(stdout: string): EsitoPassword {
 }
 
 /**
- * Login SMB con l'account della voce, senza aprire condivisioni (`smb-login.py`). Se la 445 non è aperta: `non_so`.
+ * Login SMB con l'account della voce, senza aprire condivisioni (`smb-login.py`). Solo per un account di dominio: uno
+ * locale è `non_so` senza alcun login (vedi in cima). Se la 445 non è aperta: `non_so`.
  * Password solo su stdin. `STATUS_LOGON_FAILURE` = `errata`, sessione vera = `valida`, il resto `non_so`.
  */
 export async function provaSmbDellaVoce(credId: number, ip: string, deps: Partial<DipendenzeSmb> = {}): Promise<EsitoPassword> {
   const d: DipendenzeSmb = { ...SMB_REALI, ...deps };
   const account = d.account(credId);
-  if (!account) return "non_so";
+  if (!account || !accountDiDominio(account.username)) return "non_so";
   const porta = await d.probeTcpPort(ip, 445, TIMEOUT_PORTA_445_MS);
   if (porta.state !== "open") return "non_so";
 

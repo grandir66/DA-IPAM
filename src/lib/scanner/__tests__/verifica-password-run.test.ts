@@ -24,6 +24,7 @@ import {
   VerificaPasswordRun,
   provaLdapDellaVoce,
   provaSmbDellaVoce,
+  accountDiDominio,
   utenteDelDominio,
   type DipendenzeLdap,
   type DipendenzeSmb,
@@ -361,6 +362,70 @@ describe("provaSmbDellaVoce: l'esito dal bridge", () => {
   });
 });
 
+/**
+ * Un account locale vale per una macchina sola: «valida» o «errata» sulla prima non dicono nulla delle altre, dove la
+ * password può essere diversa. Esteso a tutta l'esecuzione, un rifiuto diventerebbe «diritti mancanti» senza contare sul
+ * limite di 3. Quindi nessun login: `non_so`, e resta il limite.
+ */
+const SENZA_DOMINIO = ["scansioni", ".\\scansioni", "\\scansioni", "scansioni@", "localhost\\admin", "LOCALHOST\\admin"];
+
+describe("accountDiDominio", () => {
+  for (const utente of SENZA_DOMINIO) it(`«${utente}»: no`, () => assert.equal(accountDiDominio(utente), false));
+  for (const utente of ["CLIENTE\\scansioni", "cliente.local\\admin", "admin@cliente.local", "ALTRO\\admin"]) {
+    it(`«${utente}»: sì`, () => assert.equal(accountDiDominio(utente), true));
+  }
+});
+
+describe("un account senza dominio è sempre non_so", () => {
+  for (const utente of SENZA_DOMINIO) {
+    it(`«${utente}»: SMB non_so, nemmeno la porta si prova`, async () => {
+      const { deps, chiamate, porte } = depsSmb({ utente });
+      assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+      assert.equal(chiamate.length, 0);
+      assert.deepEqual(porte, []);
+    });
+
+    it(`«${utente}»: l'intera verifica non fa nessun login, né LDAP né SMB`, async () => {
+      const f = clienteFinto(async () => {});
+      const smb = depsSmb({ utente });
+      const run = new VerificaPasswordRun({
+        ldap: (id) => provaLdapDellaVoce(id, depsLdap({ utente }, f)),
+        smb: (id, ip) => provaSmbDellaVoce(id, ip, smb.deps),
+      });
+      assert.equal(await run.esito(1, "10.0.0.5"), "non_so");
+      assert.deepEqual(f.creati, []);
+      assert.deepEqual(f.eventi, []);
+      assert.equal(smb.chiamate.length, 0);
+      assert.deepEqual(smb.porte, []);
+    });
+  }
+
+  it("un account di dominio con LDAP che non sa: SMB parte e il suo esito vale", async () => {
+    const f = clienteFinto(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const smb = depsSmb({ risposta: (k) => k(null, JSON.stringify({ esito: "errata" }), "") });
+    const run = new VerificaPasswordRun({
+      ldap: (id) => provaLdapDellaVoce(id, depsLdap({}, f)),
+      smb: (id, ip) => provaSmbDellaVoce(id, ip, smb.deps),
+    });
+    assert.equal(await run.esito(1, "10.0.0.5"), "errata");
+    assert.equal(smb.chiamate.length, 1);
+  });
+
+  it("un account di un altro dominio, che LDAP salta: SMB parte", async () => {
+    const f = clienteFinto(async () => {});
+    const smb = depsSmb({ utente: "ALTRO\\scansioni" });
+    const run = new VerificaPasswordRun({
+      ldap: (id) => provaLdapDellaVoce(id, depsLdap({ utente: "ALTRO\\scansioni" }, f)),
+      smb: (id, ip) => provaSmbDellaVoce(id, ip, smb.deps),
+    });
+    assert.equal(await run.esito(1, "10.0.0.5"), "valida");
+    assert.deepEqual(f.creati, []);
+    assert.equal(smb.chiamate.length, 1);
+  });
+});
+
 /* ------------------------------------------- lo script vero, impacket finto */
 
 const PYTHON = (() => {
@@ -487,10 +552,11 @@ describe("smb-login.py: lo script vero contro un impacket finto", () => {
     await provaSmbDellaVoce(1, "10.0.0.5", deps);
     assert.match(fs.readFileSync(log, "utf-8"), /login:admin:cliente:445:/);
   });
-  it("utente locale (senza dominio): dominio vuoto", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
-    const { deps } = lancia("scansioni", "ok", finto);
-    await provaSmbDellaVoce(1, "10.0.0.5", deps);
-    assert.match(fs.readFileSync(log, "utf-8"), /login:scansioni::445:/);
+  it("utente locale (senza dominio): lo script non parte, nessun login", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
+    const { deps, visti } = lancia("scansioni", "ok", finto);
+    assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+    assert.deepEqual(visti, []);
+    assert.equal(fs.readFileSync(log, "utf-8"), "");
   });
   it("impacket assente: non_so, senza lanciare", { skip: PYTHON ? false : "python3 non disponibile" }, async () => {
     const { deps } = lancia("CLIENTE\\scansioni", "bad", vuoto);

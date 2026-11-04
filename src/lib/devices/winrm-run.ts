@@ -18,6 +18,8 @@ import { risolvi } from "../percorsi";
 
 const TIMEOUT_MS = 120_000;
 const TCP_PRECHECK_TIMEOUT_MS = 3000;
+/** Dopo il SIGTERM del tetto il bridge si chiude da solo entro 5 s: oltre questa tolleranza prende SIGKILL. */
+const TOLLERANZA_USCITA_MS = 8000;
 
 /**
  * Errore WinRM strutturato. Il chiamante può ispezionare `.code` per decidere
@@ -29,13 +31,27 @@ export class WinrmError extends Error {
   hint?: string;
   transport?: string;
   original?: string;
-  constructor(info: { code: WinrmErrorCode; message: string; hint?: string; transport?: string; original?: string }) {
+  /** Viene dal controllo TCP fatto prima del bridge: nessun logon è partito. Un timeout del bridge può seguire un rifiuto. */
+  primaDelBridge: boolean;
+  /** Il bridge dichiara che un trasporto ha rifiutato le credenziali, anche se `code` dice l'ultimo errore. */
+  rifiutato: boolean;
+  constructor(info: {
+    code: WinrmErrorCode;
+    message: string;
+    hint?: string;
+    transport?: string;
+    original?: string;
+    primaDelBridge?: boolean;
+    rifiutato?: boolean;
+  }) {
     super(formatWinrmError(info));
     this.name = "WinrmError";
     this.code = info.code;
     this.hint = info.hint;
     this.transport = info.transport;
     this.original = info.original;
+    this.primaDelBridge = info.primaDelBridge === true;
+    this.rifiutato = info.rifiutato === true;
   }
 }
 const BRIDGE_SCRIPT = risolvi(
@@ -48,6 +64,18 @@ export interface DipendenzeWinrm {
   execFile: DipendenzeWmi["execFile"];
   checkWinrmReachability: typeof checkWinrmReachability;
   trovaPython: () => string;
+  /** Solo per le prove: di serie `TOLLERANZA_USCITA_MS`. */
+  tolleranzaUscitaMs?: number;
+}
+
+export interface OpzioniWinrm {
+  /** Limite del bridge; di serie 120 s. */
+  timeoutMs?: number;
+  /**
+   * Un logon solo, NTLM, niente kinit: per chi prova una password non verificata. Il bridge di serie fa fino a quattro
+   * logon a chiamata, e il limite di 3 della scansione diventerebbe un limite sulle chiamate, non sui logon errati.
+   */
+  unSoloLogon?: boolean;
 }
 
 const DIPENDENZE_REALI: DipendenzeWinrm = {
@@ -69,12 +97,13 @@ export async function runWinrmCommand(
   usePowershell: boolean,
   realm?: string,
   /**
-   * Limite del bridge; di serie 120 s. La lettura dei registri di un DC carico ne chiede di più, la prova di identità della
-   * scansione di meno: una macchina non può fermarla. Superato: `BRIDGE_TIMEOUT`.
+   * Il limite del bridge, o le opzioni. Di serie 120 s. La lettura dei registri di un DC carico ne chiede di più, la prova di
+   * identità della scansione di meno: una macchina non può fermarla. Superato: `BRIDGE_TIMEOUT`.
    */
-  timeoutMs: number = TIMEOUT_MS,
+  opzioni: number | OpzioniWinrm = TIMEOUT_MS,
   deps: DipendenzeWinrm = DIPENDENZE_REALI,
 ): Promise<string> {
+  const { timeoutMs = TIMEOUT_MS, unSoloLogon = false } = typeof opzioni === "number" ? { timeoutMs: opzioni } : opzioni;
   // Pre-check TCP: se le porte WinRM non rispondono, evitiamo i 120s di pywinrm
   // e restituiamo subito una WinrmError classificata. Test entrambe le porte
   // (5985 HTTP e 5986 HTTPS) in parallelo, 3s di timeout: ~3s totali invece di 120s.
@@ -86,6 +115,7 @@ export async function runWinrmCommand(
         message: `Porte WinRM 5985/5986 chiuse su ${host} (RST).`,
         hint: "Sul target Windows (PowerShell admin): winrm quickconfig -force ; verifica regola firewall 'Windows Remote Management (HTTP-In)' su tutti i profili.",
         original: JSON.stringify(reach.results),
+        primaDelBridge: true,
       });
     }
     if (reach.summary === "timeout") {
@@ -94,12 +124,14 @@ export async function runWinrmCommand(
         message: `Nessuna risposta TCP da ${host} su 5985/5986 (firewall drop o host irraggiungibile).`,
         hint: "Conferma ping OK, regola firewall attiva anche su profilo Public, network profile non Public se policy lo blocca.",
         original: JSON.stringify(reach.results),
+        primaDelBridge: true,
       });
     }
     throw new WinrmError({
       code: "TCP_TIMEOUT",
       message: `Porte WinRM non disponibili su ${host} (stato misto: ${reach.results.map(r => `${r.port}=${r.state}`).join(", ")}).`,
       original: JSON.stringify(reach.results),
+      primaDelBridge: true,
     });
   }
 
@@ -116,13 +148,17 @@ export async function runWinrmCommand(
     const input = JSON.stringify({
       host, port, username: authUser, password, command, usePowershell,
       realm: realm || "",
+      ...(unSoloLogon ? { un_solo_logon: true } : {}),
     });
+
+    let uccisione: NodeJS.Timeout | undefined;
 
     const child = deps.execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
       { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
       (error, stdout, _stderr) => {
+        clearTimeout(uccisione);
         const tettoSuperato = (original: string) => new WinrmError({
           code: "BRIDGE_TIMEOUT",
           message: `Il bridge WinRM ha superato i ${Math.round(timeoutMs / 1000)}s — il target è raggiungibile in TCP ma non completa la sessione (auth lentissima o config WinRM rotta).`,
@@ -163,6 +199,7 @@ export async function runWinrmCommand(
               hint: fallback.hint,
               transport: typeof result.transport === "string" ? result.transport : fallback.transport,
               original: String(result.error),
+              rifiutato: result.rifiutato === true,
             }));
             return;
           }
@@ -200,6 +237,10 @@ export async function runWinrmCommand(
         }
       }
     );
+
+    // execFile allo scadere manda SIGTERM e aspetta: un processo che non esce terrebbe ferma la scansione.
+    uccisione = setTimeout(() => child.kill?.("SIGKILL"), timeoutMs + (deps.tolleranzaUscitaMs ?? TOLLERANZA_USCITA_MS));
+    uccisione.unref();
 
     child.stdin?.write(input);
     child.stdin?.end();

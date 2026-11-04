@@ -17,6 +17,8 @@ export type WinrmErrorCode =
   | "WSMAN_FAULT"             // 500 / WSManFault con payload strutturato
   | "PYWINRM_MISSING"         // venv senza pywinrm
   | "BRIDGE_TIMEOUT"          // bridge Python superato il timeout TS
+  | "IMPACKET_MISSING"        // venv senza impacket (bridge WMI): nessun logon
+  | "BRIDGE_INPUT"            // richiesta non valida al bridge WMI: nessun logon
   | "UNKNOWN";
 
 export interface WinrmErrorInfo {

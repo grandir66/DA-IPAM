@@ -211,7 +211,16 @@ async function controllaNome(dc: string, realm: string, risolvi: RisolviNome): P
 export const LIMITE_LETTURA_DC_MS = 270_000;
 
 /** Il comando WinRM (sostituibile nelle prove). */
-export type EseguiWinrm = typeof runWinrmCommand;
+export type EseguiWinrm = (
+  host: string,
+  port: number,
+  username: string,
+  password: string,
+  command: string,
+  usePowershell: boolean,
+  realm?: string,
+  timeoutMs?: number,
+) => Promise<string>;
 
 /** Legge un DC e salva; non lancia: l'errore resta nello stato del DC. */
 export async function leggiUnDc(

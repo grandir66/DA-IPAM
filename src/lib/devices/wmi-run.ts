@@ -24,12 +24,15 @@ export class WmiError extends Error {
   code: WinrmErrorCode;
   hint?: string;
   original?: string;
-  constructor(info: { code: WinrmErrorCode; message: string; hint?: string; original?: string }) {
+  /** Viene dal controllo della 135 fatto prima del bridge: nessun logon è partito. */
+  primaDelBridge: boolean;
+  constructor(info: { code: WinrmErrorCode; message: string; hint?: string; original?: string; primaDelBridge?: boolean }) {
     super(formatWinrmError(info));
     this.name = "WmiError";
     this.code = info.code;
     this.hint = info.hint;
     this.original = info.original;
+    this.primaDelBridge = info.primaDelBridge === true;
   }
 }
 
@@ -57,7 +60,7 @@ export interface DipendenzeWmi {
     args: readonly string[],
     opts: OpzioniExecFile,
     cb: (error: ExecFileException | null, stdout: string, stderr: string) => void,
-  ) => { stdin: { write(chunk: string): unknown; end(): unknown } | null };
+  ) => { stdin: { write(chunk: string): unknown; end(): unknown } | null; kill?: (segnale?: NodeJS.Signals) => boolean };
   probeTcpPort: (host: string, port: number, timeoutMs?: number) => Promise<TcpProbeResult>;
   trovaPython: () => string;
 }
@@ -85,6 +88,7 @@ async function controllaPorta135(host: string, deps: DipendenzeWmi): Promise<voi
       ? "Sul target: verifica che il servizio 'Remote Procedure Call (RPC)' sia avviato e che il firewall permetta in ingresso 'Windows Management Instrumentation (WMI-In)'."
       : "Firewall sta droppando i pacchetti RPC — verifica regole per il profilo di rete attivo.",
     original: JSON.stringify(probe),
+    primaDelBridge: true,
   });
 }
 

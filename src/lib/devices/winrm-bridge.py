@@ -9,9 +9,15 @@ Catena di trasporto automatica: Kerberos → NTLM → CredSSP → Basic
 - Basic: ultimo tentativo, richiede AllowUnencrypted=true sul target.
 
 Input JSON (stdin):
-  host, port, username, password, command, usePowershell, realm (opzionale)
+  host, port, username, password, command, usePowershell, realm (opzionale),
+  un_solo_logon (opzionale, solo true: un logon solo, NTLM, niente kinit e niente altri trasporti).
+  Serve a chi prova una password non verificata: ogni trasporto è un logon, e sui logon errati si blocca
+  l'account di dominio. Di serie resta la catena: la usano anche patch e sonde, con password già buone.
 
-Variabile env: WINRM_TRANSPORT=kerberos|ntlm|credssp|basic (default: auto)
+Output JSON in errore: error, errorCode, transport, tried, rifiutato (un trasporto ha rifiutato le credenziali,
+anche se l'ultimo errore è un altro, per esempio un timeout).
+
+Variabile env: WINRM_TRANSPORT=kerberos|ntlm|credssp|basic (default: auto; con un_solo_logon non vale)
 """
 import json
 import sys
@@ -28,7 +34,11 @@ import types
 # processo muore senza chiudere la shell remota, che resta aperta sul target fino a 2 ore:
 # su GAMODCOP01 di 70151 (03/11/2026) se ne erano accumulate 23 e WinRM rifiutava le nuove
 # (30 per utente). Con SystemExit i blocchi finally girano e la shell si chiude.
+# Quei finally però rifanno chiamate di rete con read_timeout di 120 s: su un target fermo il
+# processo sopravviverebbe a lungo al suo tetto. SIGALRM non ha gestore, quindi l'allarme lo
+# chiude comunque dopo 5 secondi, anche dentro una chiamata di sistema.
 def _termina(_signum, _frame):
+    signal.alarm(5)
     raise SystemExit(124)
 
 
@@ -310,6 +320,7 @@ def main():
     command = req.get("command", "")
     use_powershell = req.get("usePowershell", False)
     realm = req.get("realm", "")
+    un_solo_logon = req.get("un_solo_logon") is True
 
     protocol = "https" if port == 5986 else "http"
     endpoint = f"{protocol}://{host}:{port}/wsman"
@@ -368,9 +379,12 @@ def main():
             return run_large_ps(s, command)
         return s.run_cmd(command)
 
-    winrm_transport_env = os.environ.get("WINRM_TRANSPORT", "").strip().lower()
+    # Con un_solo_logon il trasporto è fisso: niente kinit (è un logon sul DC) e niente catena, nemmeno con
+    # WINRM_TRANSPORT impostato sul server. Vale anche per l'utente nudo col realm configurato.
+    winrm_transport_env = "ntlm" if un_solo_logon else os.environ.get("WINRM_TRANSPORT", "").strip().lower()
     last_error = ""
     tried = []
+    rifiutato = False
 
     # ── Kerberos pre-flight: setup krb5.conf e kinit ──
     kerberos_ready = False
@@ -409,6 +423,7 @@ def main():
                 except Exception as ke:
                     chain_error = str(ke)
                     last_error = chain_error
+                    rifiutato = rifiutato or _is_cred_rejection(chain_error)
                     # Kerberos fallito, continua con NTLM
 
             # 2. NTLM
@@ -420,6 +435,7 @@ def main():
                 except Exception as ne:
                     chain_error = str(ne)
                     last_error = chain_error
+                    rifiutato = rifiutato or _is_cred_rejection(chain_error)
 
                     # 3. CredSSP (se NTLM rifiutato)
                     if _is_cred_rejection(chain_error):
@@ -431,6 +447,7 @@ def main():
                             last_error = f"NTLM rifiutato; CredSSP non disponibile: {ie}"
                         except Exception as ce:
                             last_error = str(ce)
+                            rifiutato = rifiutato or _is_cred_rejection(last_error)
                             if _is_credssp_unavailable(last_error):
                                 # 4. Basic (ultimo tentativo)
                                 try:
@@ -439,6 +456,7 @@ def main():
                                     chain_error = None
                                 except Exception as be:
                                     last_error = str(be)
+                                    rifiutato = rifiutato or _is_cred_rejection(last_error)
                             else:
                                 chain_error = last_error
                     elif _is_credssp_unavailable(chain_error):
@@ -449,6 +467,7 @@ def main():
                             chain_error = None
                         except Exception as be:
                             last_error = str(be)
+                            rifiutato = rifiutato or _is_cred_rejection(last_error)
 
             if r is None:
                 raise Exception(last_error or "Tutti i metodi di autenticazione falliti")
@@ -466,6 +485,7 @@ def main():
     except Exception as e:
         error_msg = str(e)
         err_lower = error_msg.lower()
+        rifiutato = rifiutato or _is_cred_rejection(error_msg)
         tried_str = " → ".join(tried) if tried else "nessuno"
         error_code = "UNKNOWN"
 
@@ -531,6 +551,7 @@ def main():
             "errorCode": error_code,
             "transport": tried[-1] if tried else None,
             "tried": tried,
+            "rifiutato": rifiutato,
         }))
         sys.exit(1)
 

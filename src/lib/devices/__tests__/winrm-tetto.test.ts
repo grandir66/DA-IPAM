@@ -88,3 +88,30 @@ describe("runWinrmCommand: il tetto", () => {
     assert.equal(chiamate.length, 0);
   });
 });
+
+describe("runWinrmCommand: il processo che non esce", () => {
+  /** Ignora SIGTERM, come un bridge fermo dentro una chiamata di sistema che non si interrompe. */
+  const sordo = (tolleranzaUscitaMs: number): DipendenzeWinrm => ({ ...processoVero("trap '' TERM; exec sleep 30"), tolleranzaUscitaMs });
+
+  it("passata la tolleranza prende SIGKILL, e il tetto resta BRIDGE_TIMEOUT", { timeout: 10_000 }, async () => {
+    const inizio = Date.now();
+    await assert.rejects(prova(sordo(200), 300), codice("BRIDGE_TIMEOUT"));
+    assert.ok(Date.now() - inizio < 5_000, `durato ${Date.now() - inizio} ms`);
+  });
+
+  it("chi esce da solo non lascia il timer acceso: il colpo non parte", async () => {
+    const colpi: string[] = [];
+    const deps: DipendenzeWinrm = {
+      checkWinrmReachability: raggiungibile,
+      trovaPython: () => "/finto/python3",
+      tolleranzaUscitaMs: 1,
+      execFile(_file, _args, _opts, cb) {
+        setImmediate(() => cb(null, JSON.stringify({ stdout: "PC-PROVA" }), ""));
+        return { stdin: { write: () => true, end: () => {} }, kill: (s) => (colpi.push(String(s)), true) };
+      },
+    };
+    assert.equal(await prova(deps, 1), "PC-PROVA");
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(colpi, []);
+  });
+});

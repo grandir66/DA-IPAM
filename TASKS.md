@@ -14,6 +14,17 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-04 — Quattro domande di Riccardo: dove finiscono i dati
+
+Misurato sull'hub (VM 533, tenant `70791`, letture in sola lettura via ssh) e letto nel codice. **Il 72729 non è stato misurato**: la sua appliance (VM `192.168.40.9`, peer NetBird `72729-ipam`) risponde su HTTPS (0.9.967, salute ok, 9 credenziali, **35 ripieghi**) ma non accetta nessuna chiave ssh nostra, e la credenziale sta nel KeePass di DA-Link: chiesta a Riccardo.
+
+- [x] **I rilievi dell'Edge arrivano in IPAM** (hub, 04/11): 13.176 rilievi attuali — Greenbone 11.085 su 276 IP, **controlli dei moduli edge 1.974 su 131 IP**, Nuclei 117 su 49 IP; ultimo 03/11. 98 giri in `vuln_scan_runs`; sul giro 124 `finding_count` 2402 = righe in archivio 2402, quindi il disallineamento del conteggio è rientrato con la 0.9.966
+- [x] **I rilievi dei profili nmap**: `host_profilo_rilievi` (grezzo per script: `elems_json` + `output`), le colonne vuote di `hosts` (`hostname`, `os_info`, `model`, `serial_number`, `firmware`, `device_manufacturer`, solo se vuote) e le evidenze dell'attribuzione v2 (`ot_probe`, `rdp_ntlm`), che poi rifondono la classe. Leggibili nella tab «Rilievi». **Sull'hub ci sono 0 righe**: il profilo non è ancora girato lì
+- [x] **I dati escono verso DA-Vul-can** (hub): `vulcan_coda` 17 righe, **tutte `inviato`** — 16 inventari (dal 22/10 al 04/11 02:00:14) e 1 ad-health, 0 tentativi falliti, nessun errore. `VULCAN_URL=https://da-vulcan.domarc.it` e `VULCAN_TOKEN` valorizzati in `/etc/dalink/oggetto.env`
+- [x] **Diritti da configurare in AD**: scritti una volta sola in `src/lib/credentials/diritti.ts` (`DIRITTI`, `FAMIGLIE_DIRITTI`, `REGOLE_DIRITTI`, `REGOLA_ACCOUNT_SEPARATI`) e mostrati nella pagina Credenziali (`diritti-account.tsx`), nella guida AD, in quella WinRM e in quella dell'audit DC. Il **controllo** di cosa può l'account (`controllo-account.ts`) non salva nulla: è a richiesta. Di persistente ci sono gli esiti dei tentativi (`accesso_windows_esiti`: host, voce, strada, motivo, quando) e `host_credentials.motivo`
+- [ ] Da misurare sul 72729 appena c'è l'accesso: righe in `host_profilo_rilievi`, giri e rilievi `vuln_*`, stato di `vulcan_coda` e se il suo `oggetto.env` ha `VULCAN_TOKEN`
+- [ ] Da capire: 35 ripieghi dichiarati dalla salute del 72729 (l'hub ne ha 0)
+
 ## 2026-11-04 — Il conteggio dei rilievi della sonda conta solo Greenbone
 
 Riccardo (04/11) ha chiesto di guardare perché `finding_count` non torna. Misurato sull'hub, tenant 70791.

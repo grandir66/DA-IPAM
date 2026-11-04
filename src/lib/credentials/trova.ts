@@ -23,11 +23,12 @@ import { provaCredenzialeSnmpDb } from "./prova-snmp";
 import { tipiPerProtocollo } from "./tipi";
 import { accessoSshDb } from "./segreti";
 import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
-import { recordCredentialFailure, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
+import { getCurrentTenantCode, recordCredentialFailure, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { classifyWinrmError } from "@/lib/devices/winrm-errors";
 import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
-import { eUtenteDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
+import { attesaInParole, eUtenteDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
+import { contoLogonDelTenant, FINESTRA_LOGON_MS, MAX_LOGON_RIFIUTATI, type ContoLogonRicerca, type Prenotazione } from "./conto-logon-ricerca";
 import { chiaveAccount, utenteNormalizzato } from "@/lib/scanner/account-windows";
 import type { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
 
@@ -380,6 +381,11 @@ export interface OpzioniRicerca {
    * si ferma per il resto della ricerca, qualunque sia l'host. Solo per le voci Windows di dominio.
    */
   budget?: CredentialRunBudget;
+  /**
+   * Il conto dei logon rifiutati che vale fra una richiesta e l'altra (il client cerca un host per volta, e il budget nasce
+   * a ogni richiesta). Di serie quello del tenant, in memoria di processo; si sostituisce solo nelle prove.
+   */
+  conto?: ContoLogonRicerca;
 }
 
 export async function trovaCredenziale(
@@ -459,21 +465,38 @@ export async function trovaCredenziale(
 
     // Il limite di 3 logon errati è dell'account, non dell'host: il conto sta in `budget`, uno per tutta la ricerca.
     const budget = proto === "winrm" ? opzioni.budget : undefined;
-    if (budget) {
-      const account = accountWindows(dbh, c.credentialId);
-      if (account && eUtenteDiDominio(account.username)) {
-        budget.legaAccount(c.credentialId, utenteNormalizzato(account.username), chiaveAccount(account.username, account.password));
-        // L'identificativo dell'host, non l'indirizzo: il registro non porta indirizzi.
-        if (!budget.gate({ ip: `host ${hostId}`, credId: c.credentialId, credType: "windows", hasWindowsIndicator: true, backoffUntil: null })) {
-          tentativi.push({
-            credentialId: c.credentialId,
-            nome: c.nome,
-            esito: "fermata",
-            motivo: `Account già rifiutato ${TETTO_WINDOWS} volte in questa ricerca: non si riprova su altri host per non bloccarlo. Correggi la voce.`,
-            quando: ora(),
-          });
-          continue;
-        }
+    const account = proto === "winrm" ? accountWindows(dbh, c.credentialId) : null;
+    const diDominio = account !== null && eUtenteDiDominio(account.username);
+    if (budget && account && diDominio) {
+      budget.legaAccount(c.credentialId, utenteNormalizzato(account.username), chiaveAccount(account.username, account.password));
+      // L'identificativo dell'host, non l'indirizzo: il registro non porta indirizzi.
+      if (!budget.gate({ ip: `host ${hostId}`, credId: c.credentialId, credType: "windows", hasWindowsIndicator: true, backoffUntil: null })) {
+        tentativi.push({
+          credentialId: c.credentialId,
+          nome: c.nome,
+          esito: "fermata",
+          motivo: `Account già rifiutato ${TETTO_WINDOWS} volte in questa ricerca: non si riprova su altri host per non bloccarlo. Correggi la voce.`,
+          quando: ora(),
+        });
+        continue;
+      }
+    }
+
+    // Il budget non vede le richieste precedenti: il conto di processo sì. Il posto si prenota prima del logon.
+    let posto: Prenotazione | null = null;
+    if (account && diDominio) {
+      const conto = opzioni.conto ?? contoLogonDelTenant(getCurrentTenantCode() ?? "DEFAULT");
+      posto = conto.prenota(utenteNormalizzato(account.username));
+      if (!posto.ok) {
+        const riprova = posto.attesaMs > 0 ? `Riprova ${attesaInParole(posto.attesaMs)}.` : "Altre ricerche su questo account sono in corso: riprova fra un minuto.";
+        tentativi.push({
+          credentialId: c.credentialId,
+          nome: c.nome,
+          esito: "fermata",
+          motivo: `Troppi logon rifiutati su questo account: al massimo ${MAX_LOGON_RIFIUTATI} in ${FINESTRA_LOGON_MS / 60_000} minuti, per non bloccarlo. ${riprova} Correggi la voce.`,
+          quando: ora(),
+        });
+        continue;
       }
     }
 
@@ -482,6 +505,13 @@ export async function trovaCredenziale(
       esito = await prova(c.credentialId);
     } catch (e) {
       esito = { ok: false, errore: e instanceof Error ? e.message : "Errore nella prova" };
+    }
+    if (posto?.ok) {
+      // Rifiutato = logon partito e respinto con la password non verificata giusta; ogni altro esito libera il posto.
+      const partito = !esito.nonProvata && !esito.trasporto;
+      if (esito.ok && partito) posto.riuscito();
+      else if (partito && !esito.passwordValida && !esito.passwordErrata) posto.rifiutato();
+      else posto.nessunLogon();
     }
     if (budget && esito.passwordErrata) budget.recordWrongPassword(c.credentialId);
     if (esito.nonProvata && !esito.ok) {

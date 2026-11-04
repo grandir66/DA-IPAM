@@ -14,6 +14,18 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-04 — Perche' l'Edge del 72729 non carica niente in IPAM (causa trovata)
+
+Riccardo: «sì, indaga». Misurato dentro l'appliance (dal Proxmox, `qm guest exec 100`) e dentro il
+contenitore `appliance-edge` (0.8.234). **Non è un difetto di DA-IPAM**: la sincronizzazione è sana
+(ultimo giro 04/11 21:30, nessun errore). I dati non ci sono a monte, per due motivi indipendenti.
+
+- [x] **La sonda ha un solo giro e è fallito.** `scans` ha 1 riga: rete 1 (192.168.0.0/24), profilo `deep`, partita 04/11 12:15:40, chiusa 20:53:42, `status=error`, motivo «scansione ferma al 98% da 3 ore: fermata». Nel suo DB: `cve_findings` 0, `rilievi_controlli` 0, `assessment_runs` 0, tutti i moduli a 0 — `network_hosts` 110 e `arp_results` 118, quindi la rete l'ha vista, i rilievi no
+- [x] **Causa A (sonda): i risultati degli host finiti si buttano.** In `scan_runner.py` della versione installata ci sono tre `delete_task` e **nessun salvataggio parziale** (nessun riferimento a parziale/host finiti). Fermato il giro, il task GVM è cancellato e con lui i rilievi dei 94 host su 96 che erano già passati. Il fix è quello già scritto dall'altra sessione, **non ancora su questa appliance**
+- [x] **Causa B (sonda vecchia): IPAM non può nemmeno mostrare il giro fallito.** `GET /api/v1/scans` della 0.8.234 ha `where = ["status = 'done'"]` scritto fisso e **nessun parametro `stato`**. DA-IPAM 0.9.967 le chiede già le fallite (`listScans(scanner, undefined, "error")` in `sync-job.ts`), la sonda ignora il parametro e rimanda solo le riuscite, il filtro `s.status === "error"` svuota la lista e **non si inserisce niente**: ecco perché `vuln_scan_runs` è 0 invece di avere un giro fallito col motivo. Il lato IPAM è pronto e rilasciato; va aggiornata la sonda
+- [ ] Da fare (lato Edge, non qui): portare la sonda del 72729 alla versione col salvataggio parziale e col filtro `stato`. Finché resta alla 0.8.234, ogni giro fermato dal guardiano sparisce senza lasciare traccia in IPAM
+- [ ] Resta aperto dall'altra sessione: il guardiano ferma un giro che sta ancora lavorando (alle 20:53 erano in prova 2 host su 96) e `openvas.log` in DEBUG cresce di 2 GB a scansione
+
 ## 2026-11-04 — Quattro domande di Riccardo: dove finiscono i dati
 
 Misurato sull'hub (VM 533, tenant `70791`, letture in sola lettura via ssh) e letto nel codice. **Il 72729 non è stato misurato**: la sua appliance (VM `192.168.40.9`, peer NetBird `72729-ipam`) risponde su HTTPS (0.9.967, salute ok, 9 credenziali, **35 ripieghi**) ma non accetta nessuna chiave ssh nostra, e la credenziale sta nel KeePass di DA-Link: chiesta a Riccardo.

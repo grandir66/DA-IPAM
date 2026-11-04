@@ -95,6 +95,20 @@ describe("catalogo dei diritti: contenuto", () => {
     }
   });
 
+  it("nomi d'esempio separati: svc-ipam per le scansioni, svc-ipam-dc per la sicurezza del dominio", () => {
+    for (const d of DIRITTI) {
+      const cmd = d.comandoIt ?? "";
+      if (!cmd) continue;
+      if (d.famiglia === "utente_scansioni") {
+        assert.match(cmd, /svc-ipam(?!-dc)/, d.id);
+        assert.doesNotMatch(cmd, /svc-ipam-dc/, d.id);
+      } else {
+        assert.match(cmd, /svc-ipam-dc/, d.id);
+        assert.doesNotMatch(cmd, /svc-ipam(?!-dc)/, d.id);
+      }
+    }
+  });
+
   it("nessuna password d'esempio in chiaro: dove si crea l'account si legge da Read-Host", () => {
     for (const d of DIRITTI) {
       const cmd = d.comandoIt ?? "";

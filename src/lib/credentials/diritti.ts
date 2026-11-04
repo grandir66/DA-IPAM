@@ -9,6 +9,9 @@
  *  - «utente delle scansioni»: l'account che entra su PC e server (WMI, WinRM, software e patch);
  *  - «sicurezza del dominio»: ciò che serve sui domain controller (AD, eventi, audit, DHCP).
  *
+ * Nei comandi i nomi d'esempio sono due, come i due account della regola qui sotto: `svc-ipam` per le scansioni,
+ * `svc-ipam-dc` per la sicurezza del dominio.
+ *
  * Fonte dei diritti sui DC: docs/MANUALE-EVENTI-DC.md. Le guide (`ad-setup-guide-dialog`,
  * `winrm-setup-guide-dialog`, `guida-audit-dc`, la pagina Sicurezza del dominio) e i manuali leggono
  * di qui; la pagina dei diritti del Task 8 usa lo stesso elenco. Il modulo è puro: niente database,
@@ -62,11 +65,11 @@ export const REGOLE_DIRITTI: readonly string[] = [
 const CREA_ACCOUNT = `# Su un DC o da una macchina con gli strumenti di Active Directory.
 # La password si digita al momento: non sta scritta in nessun comando.
 Import-Module ActiveDirectory
-$password = Read-Host "Password di svc-ipam" -AsSecureString
+$password = Read-Host "Password di svc-ipam-dc" -AsSecureString
 New-ADUser \`
-  -Name "svc-ipam" \`
-  -SamAccountName "svc-ipam" \`
-  -UserPrincipalName "svc-ipam@dominio.fqdn" \`
+  -Name "svc-ipam-dc" \`
+  -SamAccountName "svc-ipam-dc" \`
+  -UserPrincipalName "svc-ipam-dc@dominio.fqdn" \`
   -AccountPassword $password \`
   -PasswordNeverExpires $true \`
   -Enabled $true \`
@@ -124,8 +127,8 @@ Enable-NetFirewallRule -Group "@FirewallAPI.dll,-34251"`,
     dove: "DC",
     obbligatorio: false,
     comandoIt: `# Sul DC, PowerShell come amministratore del dominio (lo fa l'IT, non l'account di DA-IPAM)
-Add-ADGroupMember -Identity "${GRUPPI.lettoriRegistri}" -Members "svc-ipam"
-Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam"`,
+Add-ADGroupMember -Identity "${GRUPPI.lettoriRegistri}" -Members "svc-ipam-dc"
+Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam-dc"`,
   },
   {
     id: "audit_gpo",
@@ -136,7 +139,7 @@ Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam"`,
     obbligatorio: false,
     comandoIt: `# Sul DC, PowerShell come amministratore del dominio
 .\\Configura-Audit-DC.ps1 -Prova                 # dice cosa farebbe
-.\\Configura-Audit-DC.ps1 -Account svc-ipam      # applica`,
+.\\Configura-Audit-DC.ps1 -Account svc-ipam-dc      # applica`,
   },
   {
     id: "dhcp",
@@ -149,8 +152,8 @@ Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam"`,
 # Crea i gruppi DHCP se il server è appena stato promosso
 Add-DhcpServerSecurityGroup
 Restart-Service DHCPServer
-Add-ADGroupMember -Identity "${GRUPPI.dhcpAdmin}" -Members "svc-ipam"
-Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam"`,
+Add-ADGroupMember -Identity "${GRUPPI.dhcpAdmin}" -Members "svc-ipam-dc"
+Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam-dc"`,
   },
 ];
 

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { KeyRound } from "lucide-react";
 import { AccessoWindowsPerHost } from "@/components/credentials/accesso-windows-per-host";
 import { Etichetta } from "@/components/shared/console";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -34,6 +35,7 @@ interface CoverageRow {
  * credenziali nuove (es. "12 telecamere, 0 con credenziale ONVIF validata").
  */
 export function CredentialCoverageTab() {
+  const eAdmin = useEAdmin();
   const [rows, setRows] = useState<CoverageRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -109,8 +111,8 @@ export function CredentialCoverageTab() {
           </Table>
         </CardContent>
       </Card>
-      {/* Accesso Windows per host (Task 9): l'esito migliore fra tutte le voci, una colonna per strada. */}
-      <AccessoWindowsPerHost />
+      {/* Accesso Windows per host (Task 9): l'esito migliore fra tutte le voci, una colonna per strada. La sua rotta è solo admin. */}
+      {eAdmin && <AccessoWindowsPerHost />}
     </div>
   );
 }

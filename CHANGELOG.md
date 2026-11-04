@@ -12,6 +12,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   in generale». Un cliente con una sola delle due strade aperte deve avere l'inventario senza interventi.
   Le password errate o non verificabili contano come prima verso il tetto di 3 insuccessi, quindi nessun
   account in più si blocca.
+- **Cambiato, cosa vede il cliente**: ogni prova di accesso ha un tetto di 20 secondi per strada, perché una macchina
+  muta non deve fermare la scansione: una prova WinRM lenta può risultare firewall. Con la password non verificata WinRM
+  usa solo NTLM, un logon solo: la catena completa ne farebbe fino a quattro, e su una macchina solo Kerberos in quel caso
+  l'accesso non riesce. A ogni giro c'è un bind LDAP sul DC per ogni voce di dominio, una volta sola per utente e password:
+  è la domanda che distingue una password errata da un diritto che manca. Con la password valida, dopo un rifiuto di
+  WinRM si prova WMI, perché i diritti delle due strade sono diversi. Un timeout non toglie la validazione a una voce, e
+  nemmeno un rifiuto col solo NTLM su una riga già validata: alza solo il fermo. Prima bastava una macchina spenta per
+  perdere ciò che funzionava.
+- **Cambiato**: la prova a mano di un legame WMI, o WinRM con una voce di dominio, ha gli stessi freni della scansione:
+  una password già nota errata non si prova, al massimo 3 prove in 15 minuti per utente, e prima si chiede al DC. Cinque
+  clic su una password sbagliata bloccavano l'account.
 - **Cambiato**: i diritti hanno una sola definizione, in due famiglie, «utente delle scansioni» e «sicurezza
   del dominio» (`src/lib/credentials/diritti.ts`); le guide dell'applicativo e i manuali la leggono.
   Riccardo (04/11): «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni».
@@ -20,20 +31,27 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   «necessario». Ora la regola è una: mai Domain Admins, e l'account delle scansioni (Administrators locale su
   PC e server) è separato da quello di sola lettura dei DC.
 - **Aggiunto**: nella pagina Credenziali, ogni voce Windows ha «Diritti»: il pulsante «Controlla account» dice se la
-  password vale e, per ogni diritto del catalogo, Sì, No o Non provato; sotto, quanti diritti mancano e «Copia
-  richiesta per l'IT» con i comandi del catalogo (mai password). I gruppi dei DC si leggono col filtro ricorsivo
-  (chi è in un gruppo tramite un altro gruppo è dentro), per SID dove esiste; con LDAP giù, senza integrazione AD o
-  con un account locale lo stato è «Non provato», mai «No». Sui PC non si prova niente al clic: lo stato viene dagli
-  esiti delle scansioni («2 su 3» conta gli host provati). Perché: Riccardo (04/11), «deve essere chiaro cosa abilitare
-  per l'utente e cosa per la sicurezza del dominio».
+  password vale e, per ogni diritto del catalogo, Sì, In parte, No o Non provato; sotto, quanti diritti mancano per
+  ciascuno dei due account e «Copia richiesta per l'IT», una richiesta sola con un blocco per account e i comandi del
+  catalogo (mai password). I gruppi dei DC si leggono da `tokenGroups` confrontando i SID: dentro ci sono i gruppi annidati
+  e il gruppo primario. Con LDAP giù, senza integrazione AD o con un account locale lo stato è «Non provato», mai «No». Se
+  l'account dell'integrazione è la voce stessa e la connessione non è cifrata non si fa il bind in chiaro; negli altri casi
+  si entra come la sincronizzazione AD, quindi con StartTLS fallito la password dell'integrazione resta in chiaro in LAN
+  come oggi. Sui PC non si prova niente al clic: lo stato viene dagli esiti delle scansioni, e «In parte» vuol dire che su
+  alcuni host si entra e su altri mancano i diritti. Perché: Riccardo (04/11), «deve essere chiaro cosa abilitare per
+  l'utente e cosa per la sicurezza del dominio».
 - **Aggiunto**: «Accesso Windows per host» nella pagina Credenziali e nella Copertura: una colonna per WinRM e una per
   WMI (la stessa voce può entrare da una strada e mancare dei diritti sull'altra), una parola per esito, una sola
-  azione dal catalogo, data dell'ultimo tentativo; paginata dal server, una query sola. La finestra delle credenziali
-  di un host dice il motivo di ogni riga WinRM e WMI.
+  azione dal catalogo, data dell'ultimo tentativo; paginata dal server, una query sola, solo per gli admin. La finestra
+  delle credenziali di un host dice il motivo di ogni riga WinRM e WMI. Gli esiti stanno in una tabella loro,
+  `accesso_windows_esiti`: anche un host che non ha righe fra le credenziali si vede, con le porte chiuse o la password
+  errata. Prima `.207` del 72729 non compariva e la voce diceva «Nessun host provato» dopo una scansione.
 - **Aggiunto**: i legami WMI si scelgono di nuovo nelle tendine e si provano a mano con la stessa query leggera
   della scansione (`runWmiIdentita`, solo lettura); un host che non risponde non fa passare il legame per fallito.
-- **Corretto**: la prova del legame WMI non risponde più «non disponibile» (una prova esistente dell'ADR dei legami è
-  stata invertita di proposito, col motivo nel commit).
+- **Corretto**: la prova del legame WMI non risponde più «non disponibile».
+- **Corretto**: un host Windows per classificazione ma senza porte note risultava «porte chiuse» senza provare: ora si
+  provano le due strade, e il controllo TCP prima del bridge chiude il caso senza logon. Un errore del database nel
+  leggere le credenziali di un host non ferma più tutto il giro: è un errore di quell'host, e il resto va avanti.
 - **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.

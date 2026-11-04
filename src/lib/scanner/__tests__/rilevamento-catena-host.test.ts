@@ -134,7 +134,8 @@ describe("rilevamento Windows: la validata che fallisce non ferma la catena (D2 
         throw new WinrmError({ code: "AUTH_REJECTED", message: "accesso negato" });
       },
       wmi: async () => ({ hostname: "" }),
-      ldap: async () => "non_so",
+      // Password verificata: la catena completa ha detto no. Con il solo NTLM una riga validata resta validata (revisione finale).
+      ldap: async () => "valida",
       smb: async () => "non_so",
     };
     (globalThis as Record<symbol, unknown>)[CHIAVE_PROVE_ACCESSO_WINDOWS] = rifiuto;

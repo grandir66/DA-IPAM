@@ -72,16 +72,24 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
  * Una riga in `host_credentials` mette la voce fra i candidati dell'host, e il motore non la crea per un esito che non è un
  * fallimento: un host con le porte chiuse restava invisibile (`.207` del 72729, «Nessun host provato» dopo una scansione).
  * Qui stanno tutti gli esiti, e la pagina e i conteggi leggono da qui. `tentato_il` è ISO-8601 UTC, come `last_attempt_at`.
+ *
+ * Verso `hosts` chiave esterna. Verso `credentials` un trigger, con lo stesso effetto: le figlie di `credentials` le conta
+ * `migraCredenzialiTipi`, che ricostruisce la tabella e rifiuta se ne trova una in meno, e un esito rifatto dalla prossima
+ * scansione non è una riga da difendere lì. Il trigger la ricostruzione lo ricrea (passo 5).
  */
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  credential_id INTEGER NOT NULL,
   strada TEXT NOT NULL,
   motivo TEXT NOT NULL,
   tentato_il TEXT NOT NULL,
   PRIMARY KEY (host_id, credential_id, strada)
 );
-CREATE INDEX IF NOT EXISTS idx_accesso_windows_esiti_voce ON accesso_windows_esiti(credential_id);`;
+CREATE INDEX IF NOT EXISTS idx_accesso_windows_esiti_voce ON accesso_windows_esiti(credential_id);
+CREATE TRIGGER IF NOT EXISTS trg_accesso_windows_esiti_voce AFTER DELETE ON credentials
+BEGIN
+  DELETE FROM accesso_windows_esiti WHERE credential_id = OLD.id;
+END;`;
 
 /** Aggiunge `host_credentials.motivo` se manca (esito della prova di accesso). Additiva e ripetibile. */
 export function assicuraColonnaMotivoCredenziali(db: Database.Database): boolean {

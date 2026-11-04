@@ -7453,6 +7453,7 @@ export {
   recordCredentialMotivo,
   recordCredentialProblema,
   recordCredentialPasswordErrata,
+  recordEsitiAccessoWindows,
   // Abbinamento Proxmox della scheda hypervisor: una sola copia
   getHostNotoPerIp,
   getHostNotoPerNomeNodo,

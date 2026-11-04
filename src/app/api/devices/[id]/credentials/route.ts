@@ -206,14 +206,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // fallimenti e backoff dell'host e riabilita una credenziale esclusa; un rifiuto la esclude.
       if (binding.credential_id) {
         try {
-          const { getHostByIp, setHostCredentialValidatedByKey, recordCredentialSuccess } = await import("@/lib/db");
+          const { getHostByIp, setHostCredentialValidatedByKey } = await import("@/lib/db");
           const h = getHostByIp(device.host);
           if (h?.id) {
-            if (proto === "ssh" || proto === "snmp" || proto === "winrm") {
+            if (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "wmi") {
               registraProva(h.id, binding.credential_id, proto, binding.port, { ok: testResult.success, errore: testResult.message });
-            } else if (testResult.success && proto === "wmi") {
-              // La pagina «Accesso Windows per host» legge il motivo: una prova riuscita a mano lo scrive come la scansione.
-              recordCredentialSuccess(h.id, binding.credential_id, "wmi", binding.port, "ok");
             } else if (testResult.success) {
               setHostCredentialValidatedByKey(h.id, binding.credential_id, proto, binding.port, { auto_detected: false });
             }

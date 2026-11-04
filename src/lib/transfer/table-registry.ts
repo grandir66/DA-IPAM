@@ -174,6 +174,9 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Rilievi di sicurezza della rete osservata (2026-10-25): giudizi su quanto vede il sensore di questa istanza,
   // si ricalcolano a ogni lettura; copiati altrove descriverebbero una rete che lì non si vede.
   "rete_rilievi",
+  // Esito dell'ultimo tentativo di accesso Windows (revisione del 04/11/2026): lo riscrive ogni scansione, e un'altra
+  // istanza prova dalla sua rete. Le credenziali viaggiano già in `host_credentials`.
+  "accesso_windows_esiti",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

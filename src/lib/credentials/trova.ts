@@ -23,7 +23,7 @@ import { provaCredenzialeSnmpDb } from "./prova-snmp";
 import { tipiPerProtocollo } from "./tipi";
 import { accessoSshDb } from "./segreti";
 import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
-import { recordCredentialFailure, recordCredentialSuccess } from "@/lib/db-tenant";
+import { recordCredentialFailure, recordCredentialSuccess, recordEsitiAccessoWindows } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { classifyWinrmError } from "@/lib/devices/winrm-errors";
 
@@ -92,6 +92,8 @@ function nonProvata(errore: string): EsitoProvaSuHost {
 // closed_by_remote (22/10): il dispositivo chiude prima di presentarsi, la credenziale non è nemmeno stata provata.
 const SSH_TRASPORTO = new Set(["connect_refused", "connect_timeout", "closed_by_remote", "unreachable"]);
 const WINRM_TRASPORTO = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT"]);
+// WMI: un bridge senza Python o senza impacket non ha provato niente, e `UNKNOWN` non dice un rifiuto: il bridge il rifiuto lo nomina.
+const WMI_TRASPORTO = new Set([...WINRM_TRASPORTO, "PYWINRM_MISSING", "IMPACKET_MISSING", "UNKNOWN"]);
 
 /**
  * L'errore dice che l'host non ha risposto, non che la credenziale è sbagliata? Un errore di trasporto non è
@@ -106,7 +108,7 @@ export function eErroreDiTrasporto(protocollo: CredProtocol, errore: string, kin
   if (protocollo === "ssh") return kind != null && SSH_TRASPORTO.has(kind);
   if (protocollo === "winrm") return WINRM_TRASPORTO.has(classifyWinrmError(testo).code);
   // WMI: il motore dà il codice (`WmiError.code`), che la prova del legame riporta in `kind`; il testo della 135 non lo dice.
-  if (protocollo === "wmi") return kind != null && WINRM_TRASPORTO.has(kind);
+  if (protocollo === "wmi") return kind != null && WMI_TRASPORTO.has(kind);
   return false;
 }
 
@@ -215,6 +217,9 @@ export async function provaCredenzialeSuHost(
 /**
  * Registra l'esito di una prova vera sull'host: successo azzera fallimenti e riabilita una esclusa,
  * fallimento la esclude (e fa partire il backoff). Va chiamata solo se `EsitoProvaSuHost.registra`.
+ *
+ * WinRM e WMI scrivono anche il motivo, che la pagina «Accesso Windows per host» legge. Un rifiuto a mano è `errore`:
+ * senza la verifica della scansione non si distingue una password sbagliata da un diritto che manca.
  */
 export function registraProva(
   hostId: number,
@@ -223,8 +228,11 @@ export function registraProva(
   porta: number,
   esito: { ok: boolean; errore?: string },
 ): void {
-  if (esito.ok) recordCredentialSuccess(hostId, credentialId, protocollo, porta);
-  else recordCredentialFailure(hostId, credentialId, protocollo, porta, esito.errore || "Autenticazione non riuscita");
+  const strada = protocollo === "winrm" || protocollo === "wmi" ? protocollo : null;
+  const motivo = strada ? (esito.ok ? "ok" : "errore") : null;
+  if (esito.ok) recordCredentialSuccess(hostId, credentialId, protocollo, porta, motivo);
+  else recordCredentialFailure(hostId, credentialId, protocollo, porta, esito.errore || "Autenticazione non riuscita", motivo);
+  if (strada && motivo) recordEsitiAccessoWindows([{ hostId, credentialId, strada, motivo }]);
 }
 
 // ---------------------------------------------------------------- candidati

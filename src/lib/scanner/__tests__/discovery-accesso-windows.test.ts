@@ -792,6 +792,45 @@ describe("credential_validate: evidenze e host non Windows", () => {
   });
 });
 
+describe("gli esiti senza riga in host_credentials", () => {
+  const esiti = (t: Tenant, ip: string): Array<{ strada: string; motivo: string }> =>
+    t.d.prepare("SELECT strada, motivo FROM accesso_windows_esiti WHERE host_id = ? ORDER BY strada").all(t.host.get(ip)) as Array<{ strada: string; motivo: string }>;
+
+  for (const tipo of TIPI) {
+    it(`${tipo}: porte chiuse su tutte e due le strade, nessuna riga fra le credenziali dell'host`, async () => {
+      const t = tenant(codice("ESITOCHIUSO"), hostUguali(1, [445]));
+      voce(t, "Scansioni");
+      await giro(t, tipo, banco({ password: "non_so" }));
+      assert.deepEqual(esiti(t, ipDi(1)), [{ strada: "winrm", motivo: "porte_chiuse" }, { strada: "wmi", motivo: "porte_chiuse" }]);
+      assert.deepEqual(righe(t, ipDi(1)), []);
+    });
+
+    it(`${tipo}: ogni strada provata ha il suo esito`, async () => {
+      const t = tenant(codice("ESITOSTRADE"), hostUguali(1, [5985, 135]));
+      voce(t, "Scansioni");
+      await giro(t, tipo, banco({ password: "valida", wmi: () => "PC-1" }));
+      assert.deepEqual(esiti(t, ipDi(1)), [{ strada: "winrm", motivo: "diritti_mancanti" }, { strada: "wmi", motivo: "ok" }]);
+    });
+
+    it(`${tipo}: password errata, una riga per host provato, anche senza righe in host_credentials`, async () => {
+      const t = tenant(codice("ESITOERRATA"), hostUguali(3, [5985, 135]));
+      voce(t, "Scansioni");
+      const b = banco({ password: "errata" });
+      await giro(t, tipo, b);
+      assert.equal(b.chiamate.ldap.length, 1);
+      for (const n of [1, 2, 3]) assert.deepEqual(esiti(t, ipDi(n)), [{ strada: "winrm", motivo: "password_errata" }], ipDi(n));
+    });
+  }
+
+  it("una voce in fermo non è stata provata: niente esito", async () => {
+    const t = tenant(codice("ESITOFERMO"), hostUguali(1, [5985]));
+    const id = voce(t, "Scansioni");
+    t.d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, backoff_until) VALUES (?, ?, 'winrm', 5985, ?)").run(t.host.get(ipDi(1)), id, FUTURO);
+    await giro(t, "credential_validate", banco({ password: "valida", winrm: () => "PC" }));
+    assert.deepEqual(esiti(t, ipDi(1)), []);
+  });
+});
+
 describe("credential_validate: il fermo si legge col motore rigoroso", () => {
   it("un guasto del database ferma il giro, non si traduce in «nessun fermo» e in un login", async () => {
     const t = tenant(codice("RIGOROSO"), hostUguali(1, [5985]));

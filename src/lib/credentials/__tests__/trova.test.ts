@@ -185,6 +185,40 @@ describe("trovaCredenziale", () => {
     assert.match(f[0].motivo!, /già rifiutato 3 volte in questo giro/);
   });
 
+  it("registraProva scrive il motivo di WinRM e WMI anche nella tabella degli esiti; a mano un rifiuto è `errore`, non si sa se è la password o un diritto", () => {
+    const esiti = () => q<{ strada: string; motivo: string }>(`SELECT strada, motivo FROM accesso_windows_esiti WHERE host_id = 1 AND credential_id = 12 ORDER BY strada`);
+    const motivo = (proto: string) => q<{ motivo: string | null; validated: number }>(`SELECT motivo, validated FROM host_credentials WHERE host_id = 1 AND credential_id = 12 AND protocol_type = ?`, proto)[0];
+    withTenant(T, () => {
+      registraProva(1, 12, "wmi", 135, { ok: true });
+      registraProva(1, 12, "winrm", 5985, { ok: true });
+    });
+    assert.deepEqual(motivo("wmi"), { motivo: "ok", validated: 1 });
+    assert.deepEqual(motivo("winrm"), { motivo: "ok", validated: 1 });
+    assert.deepEqual(esiti(), [{ strada: "winrm", motivo: "ok" }, { strada: "wmi", motivo: "ok" }]);
+
+    withTenant(T, () => {
+      registraProva(1, 12, "wmi", 135, { ok: false, errore: "accesso negato" });
+      registraProva(1, 12, "winrm", 5985, { ok: false, errore: "rifiutata" });
+    });
+    assert.deepEqual(motivo("wmi"), { motivo: "errore", validated: 0 });
+    assert.deepEqual(motivo("winrm"), { motivo: "errore", validated: 0 });
+    assert.deepEqual(esiti(), [{ strada: "winrm", motivo: "errore" }, { strada: "wmi", motivo: "errore" }]);
+  });
+
+  it("registraProva: SSH non è una strada Windows, niente motivo e niente esito", () => {
+    withTenant(T, () => registraProva(1, 1, "ssh", 22, { ok: true }));
+    assert.equal(q<{ motivo: string | null }>(`SELECT motivo FROM host_credentials WHERE credential_id = 1`)[0].motivo, null);
+    assert.equal(q(`SELECT 1 FROM accesso_windows_esiti WHERE credential_id = 1`).length, 0);
+  });
+
+  it("WMI: bridge o Python assenti e un errore ignoto non sono un rifiuto della credenziale", () => {
+    for (const kind of ["PYWINRM_MISSING", "IMPACKET_MISSING", "UNKNOWN", "TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT"]) {
+      assert.equal(eErroreDiTrasporto("wmi", "WMI: errore", kind), true, kind);
+    }
+    assert.equal(eErroreDiTrasporto("wmi", "WMI: accesso negato", "AUTH_REJECTED"), false);
+    assert.equal(eErroreDiTrasporto("wmi", "WMI: errore"), false, "senza codice non si sa");
+  });
+
   it("eErroreDiTrasporto: timeout/rifiuto/irraggiungibile sì, password sbagliata no; SNMP: il timeout è ambiguo", () => {
     assert.equal(eErroreDiTrasporto("ssh", "x", "connect_timeout"), true);
     assert.equal(eErroreDiTrasporto("ssh", "x", "connect_refused"), true);

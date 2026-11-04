@@ -67,6 +67,22 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
   },
 };
 
+/**
+ * L'esito dell'ultimo tentativo di accesso Windows per host, voce e strada (revisione finale del piano 2026-11-04).
+ * Una riga in `host_credentials` mette la voce fra i candidati dell'host, e il motore non la crea per un esito che non è un
+ * fallimento: un host con le porte chiuse restava invisibile (`.207` del 72729, «Nessun host provato» dopo una scansione).
+ * Qui stanno tutti gli esiti, e la pagina e i conteggi leggono da qui. `tentato_il` è ISO-8601 UTC, come `last_attempt_at`.
+ */
+export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  strada TEXT NOT NULL,
+  motivo TEXT NOT NULL,
+  tentato_il TEXT NOT NULL,
+  PRIMARY KEY (host_id, credential_id, strada)
+);
+CREATE INDEX IF NOT EXISTS idx_accesso_windows_esiti_voce ON accesso_windows_esiti(credential_id);`;
+
 /** Aggiunge `host_credentials.motivo` se manca (esito della prova di accesso). Additiva e ripetibile. */
 export function assicuraColonnaMotivoCredenziali(db: Database.Database): boolean {
   const colonne = new Set((db.prepare("PRAGMA table_info(host_credentials)").all() as Array<{ name: string }>).map((c) => c.name));
@@ -146,6 +162,12 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     if (assicuraColonnaMotivoCredenziali(db)) console.info(`${chi}: host_credentials.motivo aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione host_credentials.motivo fallita:`, e);
+  }
+  try {
+    // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.
+    db.exec(DDL_ACCESSO_WINDOWS_ESITI);
+  } catch (e) {
+    console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
   for (const tabella of ["host_credentials", "device_credential_bindings"] as const) {
     try {
@@ -1274,6 +1296,8 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   motivo TEXT,
   UNIQUE(host_id, credential_id, protocol_type, port)
 );
+
+${DDL_ACCESSO_WINDOWS_ESITI}
 
 -- Dispositivi multi-homed
 -- is_primary: per ogni group_id esattamente UN record ha is_primary=1; sugli altri

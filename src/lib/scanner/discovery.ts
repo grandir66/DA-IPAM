@@ -73,8 +73,10 @@ import {
   recordCredentialPasswordErrata,
   recordCredentialProblema,
   recordCredentialSuccess,
+  recordEsitiAccessoWindows,
   getCredentialById,
 } from "@/lib/db";
+import type { EsitoAccessoDaScrivere } from "@/lib/db-tenant";
 import { resolveCredentialsForDb } from "@/lib/credentials/resolve";
 import type { CredProtocol, ResolveTarget, ResolvedCredential } from "@/lib/credentials/resolve";
 import { normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
@@ -252,6 +254,7 @@ function proveAccessoDelGiro(): ProveAccessoWindows {
 }
 
 const NOME_STRADA: Record<StradaWindows, string> = { winrm: "WinRM", wmi: "WMI" };
+const STRADE_WINDOWS: readonly StradaWindows[] = ["winrm", "wmi"];
 
 /** Parole del log, della fase e del riepilogo: mai utenti né nomi di voci. */
 const TESTO_MOTIVO: Record<MotivoAccesso, string> = {
@@ -338,6 +341,9 @@ type EsitoVoceWindows = EsitoAccesso & { porta: number; fase: string };
  * che la voce non vale più. Si scrivono tutte le strade provate: un rifiuto su WinRM con WMI riuscito passa il login
  * dell'apparato al legame `wmi`, e il giro dopo non riprova WinRM. La password errata certa si scrive una volta sola, su
  * tutta la voce.
+ *
+ * Ogni esito con una strada nota, e le porte chiuse, va anche in `accesso_windows_esiti`, con o senza riga fra le credenziali
+ * dell'host. La password errata si raccoglie e si scrive a fine giro, in una transazione sola: una riga per host provato.
  */
 function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) => void) {
   const prove = proveAccessoDelGiro();
@@ -346,6 +352,7 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
   const dominioAd = getAdRealm()?.realm || "";
   const motivoDiHost = new Map<number, MotivoAccesso>();
   const vociErrateScritte = new Set<number>();
+  const esitiPasswordErrata: EsitoAccessoDaScrivere[] = [];
   const guastiDelTenant = new Set<string>();
   // L'evidenza vuole il codice dell'errore WinRM, che l'esito del motore non porta: dettaglio è un testo per chi legge.
   let codiceWinrm: string | null = null;
@@ -385,6 +392,8 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
         avvisaGuasto("Database del cliente non aggiornato: host_credentials non accetta il protocollo wmi. Gli esiti WMI di questo giro non vengono salvati.");
       } else if (code === "SQLITE_ERROR" && typeof message === "string" && /\bmotivo\b/.test(message)) {
         avvisaGuasto("Database del cliente non aggiornato: host_credentials non ha la colonna motivo. Gli esiti Windows di questo giro non vengono salvati.");
+      } else if (code === "SQLITE_ERROR" && typeof message === "string" && message.includes("accesso_windows_esiti")) {
+        avvisaGuasto("Database del cliente non aggiornato: manca la tabella accesso_windows_esiti. La pagina degli accessi di questo giro resta com'era.");
       } else {
         throw e;
       }
@@ -416,6 +425,7 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
   const scriviEsito = (p: ProvaVoceWindows, esito: EsitoAccesso): void => {
     const { strada, motivo } = esito;
     if (motivo === "password_errata") {
+      esitiPasswordErrata.push({ hostId: p.host.id, credentialId: p.credId, strada: stradeDaProvare(p.porteAperte)[0] ?? "winrm", motivo });
       if (vociErrateScritte.has(p.credId)) return;
       vociErrateScritte.add(p.credId);
       salva(null, () => recordCredentialPasswordErrata(p.credId));
@@ -426,9 +436,15 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
       if (motivo === "errore") return;
       const riga = stradeDaProvare(p.porteAperte)[0] ?? "winrm";
       salva(riga, () => recordCredentialMotivo(p.host.id, p.credId, riga, portaDellaStrada(riga, p.porteAperte), motivo));
+      if (motivo === "porte_chiuse") {
+        const chiuse = STRADE_WINDOWS.map((s): EsitoAccessoDaScrivere => ({ hostId: p.host.id, credentialId: p.credId, strada: s, motivo }));
+        salva(null, () => recordEsitiAccessoWindows(chiuse));
+      }
       return;
     }
     for (const s of esito.strade) scriviStrada(p, s);
+    const provate = esito.strade.map((s): EsitoAccessoDaScrivere => ({ hostId: p.host.id, credentialId: p.credId, strada: s.strada, motivo: s.motivo }));
+    salva(null, () => recordEsitiAccessoWindows(provate));
     // Le evidenze hanno una sola fonte per l'accesso a Windows: `winrm`. Un accesso via WMI dice lo stesso.
     if (motivo === "ok") p.evidenza?.({ protocol: "winrm", ok: true, banner: esito.nomeHost });
     else if (strada === "winrm" && motivo !== "porte_chiuse") {
@@ -486,8 +502,9 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
       conta(hostId, "nessuna_voce");
     },
 
-    /** Quanti host per ogni motivo. Solo conti: né utenti né voci. */
+    /** Fine giro: gli esiti raccolti, e quanti host per ogni motivo. Solo conti: né utenti né voci. */
     riepilogo(): void {
+      salva(null, () => recordEsitiAccessoWindows(esitiPasswordErrata));
       if (motivoDiHost.size === 0) return;
       const conti = new Map<MotivoAccesso, number>();
       for (const motivo of motivoDiHost.values()) conti.set(motivo, (conti.get(motivo) ?? 0) + 1);

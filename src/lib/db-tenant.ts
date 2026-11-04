@@ -5751,6 +5751,32 @@ export function recordCredentialPasswordErrata(credentialId: number): void {
     d.prepare(
       `UPDATE device_credential_bindings SET test_status = 'failed', test_message = ?, tested_at = datetime('now') WHERE credential_id = ?`
     ).run(messaggio, credentialId);
+    d.prepare(`UPDATE accesso_windows_esiti SET motivo = 'password_errata', tentato_il = ? WHERE credential_id = ?`).run(nowIso, credentialId);
+  })();
+}
+
+/** Un esito dell'accesso Windows da scrivere (vedi `DDL_ACCESSO_WINDOWS_ESITI`). */
+export interface EsitoAccessoDaScrivere {
+  hostId: number;
+  credentialId: number;
+  strada: StradaAccesso;
+  motivo: MotivoAccesso;
+}
+
+/**
+ * Scrive gli esiti in una transazione sola: anche una voce con la password errata su cento host è una scrittura, mai una per
+ * host. Non tocca `host_credentials`: una riga lì metterebbe la voce fra i candidati dell'host. Una sola copia: db.ts la riesporta.
+ */
+export function recordEsitiAccessoWindows(esiti: readonly EsitoAccessoDaScrivere[]): void {
+  if (esiti.length === 0) return;
+  const d = db();
+  const nowIso = new Date().toISOString();
+  const scrivi = d.prepare(
+    `INSERT INTO accesso_windows_esiti (host_id, credential_id, strada, motivo, tentato_il) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(host_id, credential_id, strada) DO UPDATE SET motivo = excluded.motivo, tentato_il = excluded.tentato_il`
+  );
+  d.transaction(() => {
+    for (const e of esiti) scrivi.run(e.hostId, e.credentialId, e.strada, e.motivo, nowIso);
   })();
 }
 
@@ -5762,21 +5788,42 @@ export interface EsitoAccessoVoce {
 }
 
 /**
+ * Tutti gli esiti Windows, come `WITH esiti AS (…)`: la tabella `accesso_windows_esiti` e, dove lì non c'è niente per quell'host,
+ * voce e strada, le righe di `host_credentials` scritte prima che la tabella ci fosse. Con `voce` il filtro sta dentro le
+ * due parti: i parametri sono due. Colonne: host_id, credential_id, strada, motivo, tentato_il.
+ */
+function cteEsitiAccesso(voce: boolean): string {
+  return `WITH esiti AS (
+    SELECT e.host_id, e.credential_id, e.strada, e.motivo, e.tentato_il
+    FROM accesso_windows_esiti e
+    WHERE e.strada IN ('winrm', 'wmi') ${voce ? "AND e.credential_id = ?" : ""}
+    UNION ALL
+    SELECT hc.host_id, hc.credential_id, hc.protocol_type, hc.motivo, hc.last_attempt_at
+    FROM host_credentials hc
+    WHERE hc.protocol_type IN ('winrm', 'wmi') ${voce ? "AND hc.credential_id = ?" : ""}
+      AND NOT EXISTS (
+        SELECT 1 FROM accesso_windows_esiti n
+        WHERE n.host_id = hc.host_id AND n.credential_id = hc.credential_id AND n.strada = hc.protocol_type
+      )
+  )`;
+}
+
+/**
  * Gli esiti dell'ultima scansione per una voce Windows, una riga per strada. È «provato» un host in cui il login è partito:
- * porte chiuse e budget esaurito non lo sono, e nemmeno una riga senza motivo (mai provata dal motore nuovo). Una query sola,
- * nessun login: sono i fatti già scritti da `host_credentials`.
+ * porte chiuse e budget esaurito non lo sono, e nemmeno una riga senza motivo (mai provata dal motore nuovo). Si contano gli
+ * host, non le righe: un host con la 5985 e la 5986 vale uno. Una query sola, nessun login: sono i fatti già scritti.
  */
 export function getEsitiAccessoPerVoce(credentialId: number): EsitoAccessoVoce[] {
   const rows = db()
     .prepare(
-      `SELECT protocol_type AS strada, COUNT(*) AS provati, SUM(CASE WHEN motivo = 'ok' THEN 1 ELSE 0 END) AS riusciti
-       FROM host_credentials
-       WHERE credential_id = ? AND protocol_type IN ('winrm', 'wmi')
-         AND motivo IN ('ok', 'password_errata', 'diritti_mancanti', 'firewall', 'errore')
-       GROUP BY protocol_type
-       ORDER BY protocol_type DESC`
+      `${cteEsitiAccesso(true)}
+       SELECT strada, COUNT(DISTINCT host_id) AS provati, COUNT(DISTINCT CASE WHEN motivo = 'ok' THEN host_id END) AS riusciti
+       FROM esiti
+       WHERE motivo IN ('ok', 'password_errata', 'diritti_mancanti', 'firewall', 'errore')
+       GROUP BY strada
+       ORDER BY strada DESC`
     )
-    .all(credentialId) as Array<{ strada: StradaAccesso; provati: number; riusciti: number }>;
+    .all(credentialId, credentialId) as Array<{ strada: StradaAccesso; provati: number; riusciti: number }>;
   return rows.map((r) => ({ strada: r.strada, provati: r.provati, riusciti: r.riusciti }));
 }
 
@@ -5795,7 +5842,7 @@ export interface RigaAccessoWindows {
 }
 
 /** Posizione SQL del motivo (vedi `MOTIVI`): il più utile ha la posizione più bassa. */
-const POSIZIONE_MOTIVO_SQL = `CASE hc.motivo ${MOTIVI.map((m, i) => `WHEN '${m}' THEN ${i}`).join(" ")} END`;
+const POSIZIONE_MOTIVO_SQL = `CASE e.motivo ${MOTIVI.map((m, i) => `WHEN '${m}' THEN ${i}`).join(" ")} END`;
 
 function cella(posizione: number | null, ultimo: string | null): CellaAccesso {
   return { motivo: motivoDaPosizione(posizione), ultimoTentativo: ultimo };
@@ -5812,28 +5859,25 @@ export function getAccessoWindowsPaginated(opts: {
   offset: number;
   credentialId?: number;
 }): { righe: RigaAccessoWindows[]; totale: number } {
-  const filtroVoce = opts.credentialId != null ? "AND hc.credential_id = ?" : "";
-  const parametriFiltro = opts.credentialId != null ? [opts.credentialId] : [];
+  const conVoce = opts.credentialId != null;
+  const cte = cteEsitiAccesso(conVoce);
+  const parametriFiltro = opts.credentialId != null ? [opts.credentialId, opts.credentialId] : [];
   const d = db();
   const totale = (
     d
-      .prepare(
-        `SELECT COUNT(DISTINCT hc.host_id) AS n FROM host_credentials hc
-         JOIN hosts h ON h.id = hc.host_id
-         WHERE hc.protocol_type IN ('winrm', 'wmi') ${filtroVoce}`
-      )
+      .prepare(`${cte} SELECT COUNT(DISTINCT e.host_id) AS n FROM esiti e JOIN hosts h ON h.id = e.host_id`)
       .get(...parametriFiltro) as { n: number }
   ).n;
   const rows = d
     .prepare(
-      `SELECT h.id AS host_id, h.ip AS ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, '')) AS nome,
-         MIN(CASE WHEN hc.protocol_type = 'winrm' THEN ${POSIZIONE_MOTIVO_SQL} END) AS winrm_pos,
-         MAX(CASE WHEN hc.protocol_type = 'winrm' THEN hc.last_attempt_at END) AS winrm_at,
-         MIN(CASE WHEN hc.protocol_type = 'wmi' THEN ${POSIZIONE_MOTIVO_SQL} END) AS wmi_pos,
-         MAX(CASE WHEN hc.protocol_type = 'wmi' THEN hc.last_attempt_at END) AS wmi_at
-       FROM host_credentials hc
-       JOIN hosts h ON h.id = hc.host_id
-       WHERE hc.protocol_type IN ('winrm', 'wmi') ${filtroVoce}
+      `${cte}
+       SELECT h.id AS host_id, h.ip AS ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, '')) AS nome,
+         MIN(CASE WHEN e.strada = 'winrm' THEN ${POSIZIONE_MOTIVO_SQL} END) AS winrm_pos,
+         MAX(CASE WHEN e.strada = 'winrm' THEN e.tentato_il END) AS winrm_at,
+         MIN(CASE WHEN e.strada = 'wmi' THEN ${POSIZIONE_MOTIVO_SQL} END) AS wmi_pos,
+         MAX(CASE WHEN e.strada = 'wmi' THEN e.tentato_il END) AS wmi_at
+       FROM esiti e
+       JOIN hosts h ON h.id = e.host_id
        GROUP BY h.id
        ORDER BY ip_sort_key(h.ip), h.id
        LIMIT ? OFFSET ?`

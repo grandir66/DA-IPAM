@@ -481,6 +481,24 @@ un secondo era irraggiungibile). Dal giro 3, **non ancora provato su un apparato
 `-enum ALL`: quale vale è da verificare), **software** da tutti gli `INFO` di `/var/packages` senza limiti, modello e
 seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 
+## Switch senza collector: Zyxel GS1900 (04/11/2026)
+
+Nessun collector: il GS1900 parla le MIB standard, quindi lo legge l'acquisizione SNMP di sempre. Piattaforma «Altro», profilo
+prodotto `generic_switch` (Switch), profilo SNMP `zyxel_gs1900`, prefisso sysObjectID `1.3.6.1.4.1.890.1.15`. Collaudato solo su
+GS1900-48HP, firmware V2.70(AAHO.5); walk di 11.517 righe, dati di prova anonimizzati in `devices/__tests__/fixtures/zyxel-gs1900-48hp.json`.
+
+| Dato | Fonte |
+| --- | --- |
+| Modello, seriale, firmware | `…890.1.15.3.1.11.0`, `.12.0`, `.6.0` (ENTITY-MIB: telaio all'indice 67108992) |
+| Porte, stato, velocità | IF-MIB, IF-MIB estesa: 50 fisiche + 8 LAG (ifIndex 1000-1007), elencati anche se vuoti |
+| Duplex | EtherLike-MIB `dot3StatsDuplexStatus`: la MAU-MIB non c'è |
+| VLAN, PVID | Q-BRIDGE-MIB, come gli altri switch |
+| MAC, vicini | BRIDGE-MIB, LLDP-MIB (`lldpRemSysName` vuoto se il vicino non lo annuncia: resta il MAC dello chassis) |
+
+**Non si leggono.** PoE: nessuna POWER-ETHERNET-MIB, pur essendo il modello 48HP. Root STP: testo «0/00:00:00:00:00:00» invece di un
+BridgeId, quindi root e porta radice restano vuoti. CPU e temperatura: il ramo `…890.1.15.3.2` ha solo numeri senza significato
+documentato. Ripiego SSH: dalla scansione risultano aperte solo 80 e 443.
+
 ## Stato di collaudo dei collector
 
 | Collector | Famiglia | Porte nell'app | Stato | Agganciato al pulsante |

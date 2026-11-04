@@ -38,6 +38,37 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.
 
+## [Non rilasciato] — 2026-11-04 · Dati stampanti via SNMP (Printer-MIB)
+
+- **Aggiunto**: lettura stampanti via Printer-MIB (RFC 3805) + Host Resources — modello, seriale, contatore pagine, materiali di consumo (toner/inchiostro/tamburo) coi livelli %, vassoi, stato ed errori. Prima una stampante classificata mostrava solo i dati SNMP generici (sysDescr/modello/seriale). Collector `src/lib/devices/printer-acquisition.ts`, agganciato a `getDeviceInfo` quando l'apparato è una stampante; snapshot in `device_info.printer_inventory`.
+- **Aggiunto**: tipo scheda «stampante» (`/objects/[id]`) con Panoramica (pagine, stato, materiali coi livelli, errori) e tab **Materiali e contatori** (barre colorate per colorante, vassoi, modello/seriale). Prima le stampanti cadevano nella scheda generica.
+- La lettura parte con una scansione SNMP/Nmap/«Aggiorna» dell'apparato (non con la scoperta host). La Printer-MIB è standard: niente vincolo di vendor.
+
+## [Non rilasciato] — 2026-11-04 · Detect dei vendor OT non classificati
+
+- **Aggiunto**: riconoscimento di apparati OT che restavano `unknown` alla 72729. Dall'OUI: **Weintek** → HMI, **CREVIS** → PLC (remote I/O di campo), **Kronotech** (Zucchetti, terminali presenze/accessi) → IoT. Dalle porte, vendor-neutro: **Modbus TCP 502** e **EtherNet/IP 44818** → PLC. Regole builtin in `device_fingerprint_rules` (seed idempotente per gli hub esistenti) e nel classifier di fallback.
+- **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
+- **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
+
+## [Non rilasciato] — 2026-11-04 · Stampanti: seriale e part number veri; regole OT sulle appliance
+
+- **Corretto**: seriale delle stampanti. Il profilo `hp_printer` leggeva la stringa IEEE 1284 («MFG:HP;CMD:…»), `epson` e `printer_generic` il nome della stampante. Alla 72729 il seriale vero rispondeva su 9 stampanti su 10, ma il finto non era vuoto e bloccava ogni ripiego; due ET-5805 avevano lo stesso «seriale», che è la chiave degli apparati fisici. Le righe di serie degli hub già installati si correggono all'avvio, le modifiche dell'utente restano.
+- **Aggiunto**: part number delle HP (`…11.2.4.3.1.10.0`, es. W1A29A), mostrato in Gestione e nei Materiali; modello preciso da `hrDeviceDescr`; firmware HP; profilo `kyocera`. Epson e Kyocera il part number via SNMP non lo espongono.
+- **Corretto**: un seriale finto già salvato non blocca più la scansione: il seriale vero lo sostituisce.
+- **Corretto**: le regole OT (Weintek, CREVIS, Kronotech, Modbus, EtherNet/IP) della 0.9.959 stavano solo nel seed di `db.ts`: le appliance seminano da `db-hub.ts` e non le avevano. Una prova confronta i due seed.
+
+## [Non rilasciato] — 2026-11-04 · Marca rilevata degli apparati sotto «Altro»
+
+- **Aggiunto**: nella tab Gestione la riga «Marca» per gli apparati sotto «Altro», ricavata da ciò che la scansione sa già. Riccardo (04/11): il GS1900 è uno Zyxel. La piattaforma dice come si legge un apparato, non chi lo produce: la marca si mostra senza toccare il CHECK di `network_devices.vendor`, così una marca nuova non chiede una ricostruzione della tabella su ogni appliance.
+- **Corretto**: il campo Piattaforma stampava lo slug grezzo (`other`, `hp`), ora il nome («Altro», «HPE»). L'intestazione della scheda mostra la marca senza ragione sociale.
+
+## [Non rilasciato] — 2026-11-04 · Zyxel GS1900 e switch di marche fuori elenco
+
+- **Aggiunto**: profilo SNMP `zyxel_gs1900` (modello, seriale e firmware dagli OID Zyxel) e riconoscimento come switch dal sysObjectID. Alla 72729 il GS1900-48HP rispondeva, ma nessun profilo lo conosceva e l'ENTITY-MIB ha il telaio all'indice 67108992, non 1: modello e firmware restavano vuoti.
+- **Aggiunto**: profilo prodotto `generic_switch` sotto la piattaforma «Altro». Prima «Altro» non offriva nessuno switch: il GS1900 era stato creato come HP ProCurve, classificato server, e la scheda non aveva le tab Porte, VLAN e Vicini pur con i dati già letti. Uno switch sotto «Altro» si interroga come switch, non come Linux.
+- **Corretto**: il duplex si legge da EtherLike-MIB quando la MAU-MIB manca; sul GS1900 era nullo su tutte le porte.
+- **Corretto**: un root STP che non è un BridgeId di 8 ottetti resta sconosciuto, con la sua porta. Il GS1900 lo scrive come testo e usciva un id senza senso, con la porta radice 52 su uno switch a 50 porte.
+
 ## [Non rilasciato] — 2026-11-03 · Contesto integrazione Infoblox
 
 ### Documentazione

@@ -3,7 +3,7 @@
  * `objects/[id]/page.tsx`, 21/10): serve alla pagina che li carica e a tutti i componenti di `scheda/`.
  */
 import type { UsataAdesso } from "@/lib/devices/usata-adesso";
-import type { NasInventorySnapshot } from "@/lib/devices/device-info";
+import type { NasInventorySnapshot, PrinterInventorySnapshot } from "@/lib/devices/device-info";
 import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
@@ -166,6 +166,8 @@ export interface DeviceInfoJson {
   packages_count?: number;
   // Snapshot NAS Synology/QNAP (scan SNMP/SSH): il tipo è quello che lo scrive l'acquisizione
   nas_inventory?: NasInventorySnapshot;
+  // Snapshot stampante (Printer-MIB SNMP): toner/materiali, contatori, vassoi, stato
+  printer_inventory?: PrinterInventorySnapshot;
   // Metadata
   scanned_at?: string;
 }

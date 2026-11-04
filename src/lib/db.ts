@@ -16,8 +16,9 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
-import { correggiOidProfiloQnap } from "./db-hub";
+import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
@@ -1570,6 +1571,7 @@ export function getDb(): Database.Database {
 
   try {
     correggiOidProfiloQnap(_db);
+    correggiOidProfiliStampanti(_db);
   } catch {
     /* ignore */
   }
@@ -1908,6 +1910,9 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision (porte)", label: "Hikvision", cls: "telecamera", pri: 10, keyPorts: [554, 8000], optPorts: [80, 8001, 443] },
     { name: "Dahua / NVR (porte)", label: "Dahua / NVR", cls: "telecamera", pri: 10, keyPorts: [554, 37777], optPorts: [80, 443] },
     { name: "Telecam XMEye/clone (porte)", label: "Telecam XMEye/clone", cls: "telecamera", pri: 10, keyPorts: [34567, 554], optPorts: [80] },
+    // OT: firme di porta di campo, vendor-neutre (prendono anche i device su OUI generici come Microchip)
+    { name: "PLC Modbus (porte)", label: "PLC Modbus", cls: "plc", pri: 40, keyPorts: [502], optPorts: [80, 443, 161], note: "Modbus TCP 502: firma OT specifica; sotto le firme con OID/vendor" },
+    { name: "PLC EtherNet/IP (porte)", label: "PLC EtherNet/IP", cls: "plc", pri: 40, keyPorts: [44818], optPorts: [80, 443, 2222], note: "EtherNet/IP 44818 (CIP)" },
     {
       name: "Windows Server (porte)",
       label: "Windows Server",
@@ -1939,6 +1944,7 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Fortinet (OID)", label: "Fortinet FortiGate", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12356" },
     { name: "pfSense (OID)", label: "pfSense", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12325" },
     { name: "Netgear (OID)", label: "Netgear", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.4526" },
+    { name: "Zyxel (OID)", label: "Zyxel", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.890.1.15" },
     { name: "Cisco switch (OID)", label: "Cisco", cls: "switch", pri: 6, oid: "1.3.6.1.4.1.9.1" },
     { name: "net-snmp Linux (OID)", label: "Linux/net-snmp", cls: "server_linux", pri: 50, oid: "1.3.6.1.4.1.8072.3.2", note: "Generico Linux; Proxmox override se porta 8006 o sysDescr" },
     // ── sysDescr / testo ──
@@ -1964,6 +1970,11 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision MAC", label: "Hikvision", cls: "telecamera", pri: 70, macVendor: "hikvision|hangzhou" },
     { name: "VM MAC", label: "VM", cls: "vm", pri: 70, macVendor: "vmware|proxmox\\s*server|microsoft\\s*virtual|hyper-v|qemu|xensource|oracle\\s*vm|red\\s*hat.*kvm" },
     { name: "Apple MAC", label: "Client Apple", cls: "workstation", pri: 75, macVendor: "apple" },
+    // OT: vendor dall'OUI. Weintek = HMI; CREVIS = remote I/O di campo; Kronotech (Zucchetti) = terminali
+    // presenze/accessi. Microchip NON è qui: OUI di chip montato da terzi, ambiguo → solo firme di porta.
+    { name: "Weintek HMI (MAC)", label: "Weintek HMI", cls: "hmi", pri: 68, macVendor: "weintek" },
+    { name: "CREVIS I/O (MAC)", label: "CREVIS Remote I/O", cls: "plc", pri: 68, macVendor: "crevis" },
+    { name: "Kronotech (MAC)", label: "Kronotech", cls: "iot", pri: 72, macVendor: "kronotech" },
     // ── Banner HTTP ──
     { name: "Proxmox banner", label: "Proxmox VE", cls: "hypervisor", pri: 25, banner: "proxmox|pve-manager" },
     { name: "Synology banner", label: "Synology DSM", cls: "storage", pri: 25, banner: "synology|diskstation" },
@@ -2058,6 +2069,8 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     { id: "netgear", name: "Netgear Switch", cat: "switch", oids: ["1.3.6.1.4.1.4526"], conf: 0.95,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "zyxel_gs1900", name: "Zyxel GS1900", cat: "switch", oids: ["1.3.6.1.4.1.890.1.15"], conf: 0.95,
+      fields: { model: "1.3.6.1.4.1.890.1.15.3.1.11.0", serial: "1.3.6.1.4.1.890.1.15.3.1.12.0", firmware: "1.3.6.1.4.1.890.1.15.3.1.6.0" } },
     { id: "dlink", name: "D-Link Switch", cat: "switch", oids: ["1.3.6.1.4.1.171"], conf: 0.94,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     { id: "tplink_omada", name: "TP-Link Omada", cat: "switch", oids: ["1.3.6.1.4.1.11863"], conf: 0.95,
@@ -2132,11 +2145,13 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.33.1.1.2.0", firmware: "1.3.6.1.2.1.33.1.1.3.0" } },
     // STAMPANTI
     { id: "hp_printer", name: "HP JetDirect (LaserJet)", cat: "stampante", oids: ["1.3.6.1.4.1.11.2.3.9"], conf: 0.97,
-      fields: { serial: "1.3.6.1.4.1.11.2.3.9.1.1.7.0", model: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.1.1.20.1" } },
+      fields: { serial: "1.3.6.1.2.1.43.5.1.1.17.1", model: "1.3.6.1.2.1.25.3.2.1.3.1", firmware: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.3.6.0", partNumber: "1.3.6.1.4.1.11.2.4.3.1.10.0" } },
     { id: "epson", name: "Epson Printer", cat: "stampante", oids: ["1.3.6.1.4.1.1248"], conf: 0.96,
-      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: ["1.3.6.1.2.1.25.3.2.1.3.1", "1.3.6.1.2.1.47.1.1.1.1.13.1"], serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
+    { id: "kyocera", name: "Kyocera", cat: "stampante", oids: ["1.3.6.1.4.1.1347"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
     { id: "printer_generic", name: "Printer (RFC 3805)", cat: "stampante", oids: [], sysDescr: "printer|laserjet|deskjet|officejet|multifunction|mfp", conf: 0.88,
-      fields: { serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
   ];
 
   // Se la tabella è vuota, inserisci tutti; altrimenti inserisci solo i profili builtin mancanti
@@ -2996,7 +3011,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
-      if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
+      if (!preserve || !existingRow?.serial_number || eSerialeFinto(existingRow.serial_number)) { fields.push("serial_number = ?"); values.push(input.serial_number); }
     }
     if (input.firmware !== undefined) {
       if (!preserve || !existingRow?.firmware) { fields.push("firmware = ?"); values.push(input.firmware); }

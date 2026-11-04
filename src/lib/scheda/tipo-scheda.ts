@@ -7,13 +7,13 @@ import { canonicalizza } from "@/lib/classification/canonico";
 
 export type TipoScheda =
   | "switch" | "router" | "firewall" | "storage" | "hypervisor"
-  | "server_windows" | "server_linux" | "generico" | "host";
+  | "server_windows" | "server_linux" | "stampante" | "generico" | "host";
 
 export type TabId =
   | "panoramica" | "porte" | "vlan" | "vicini" | "interfacce" | "routing" | "dhcp"
   | "configurazione" | "dischi" | "volumi" | "servizi_nas" | "vm" | "nodi" | "storage_px"
   | "rete_px" | "sistema" | "servizi" | "aggiornamenti" | "software" | "utenti" | "ad"
-  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori";
+  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori" | "materiali";
 
 export interface InputTipoScheda {
   gestito: boolean;
@@ -49,6 +49,7 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
       case "firewall": return "firewall";
       case "nas": return "storage";
       case "hypervisor": return "hypervisor";
+      case "stampante": case "multifunzione": return "stampante";
       case "server": case "vm": return daServer(vendor, scanTarget);
       // Slug «di sistema» non canonici (DA-VEEAM: classificazione `windows`): è un server, non una stampante.
       // Una postazione (`workstation`) col vendor windows resta generico: non passa di qui.
@@ -124,6 +125,7 @@ function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
     return ["panoramica", "interfacce", ...(o.mikrotik.haBridge ? (["vlan", "bridge"] as TabId[]) : []), "routing", "dhcp", "dispositivi", "configurazione", ...TAB_COMUNI];
   }
   if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
+  if (t === "stampante") return ["panoramica", "materiali", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
   if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];
   if (t === "server_windows") {
@@ -154,6 +156,7 @@ export function bloccoReteGestione(t: TipoScheda): { snmp: boolean; ipMappa: boo
     case "switch": return { snmp: true, ipMappa: false };
     case "router": case "firewall": case "generico": return { snmp: false, ipMappa: false };
     case "hypervisor": return { snmp: true, ipMappa: false };
+    case "stampante": return { snmp: true, ipMappa: true };
     case "server_windows": case "server_linux": return { snmp: false, ipMappa: true };
     default: return { snmp: true, ipMappa: true }; // storage, host
   }

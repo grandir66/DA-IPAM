@@ -10,6 +10,7 @@
  */
 
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
@@ -3955,7 +3956,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
-      if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
+      if (!preserve || !existingRow?.serial_number || eSerialeFinto(existingRow.serial_number)) { fields.push("serial_number = ?"); values.push(input.serial_number); }
     }
     if (input.firmware !== undefined) {
       if (!preserve || !existingRow?.firmware) { fields.push("firmware = ?"); values.push(input.firmware); }

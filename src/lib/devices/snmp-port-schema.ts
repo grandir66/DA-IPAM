@@ -55,6 +55,16 @@ export async function getSnmpPortSchema(snmpWalk: SnmpWalkFn): Promise<PortInfo[
     }
   } catch { /* optional */ }
 
+  // EtherLike-MIB, per chi non ha la MAU-MIB (Zyxel GS1900, 04/11/2026). 1 = sconosciuto, il valore delle porte spente.
+  try {
+    const dot3Results = await snmpWalk("1.3.6.1.2.1.10.7.2.1.19");
+    for (const r of dot3Results) {
+      const ifIndex = parseInt(r.oid.split(".").pop()!);
+      const val = Number(r.value);
+      if (!duplexMap.has(ifIndex) && (val === 2 || val === 3)) duplexMap.set(ifIndex, val === 3 ? "full" : "half");
+    }
+  } catch { /* optional */ }
+
   const poeStatusMap = new Map<string, string>();
   try {
     const poeResults = await snmpWalk("1.3.6.1.2.1.105.1.1.1.6");

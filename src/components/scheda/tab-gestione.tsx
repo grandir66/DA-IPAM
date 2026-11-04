@@ -23,6 +23,8 @@ import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { getClassificationLabel } from "@/lib/device-classifications";
+import { marcaRilevata } from "@/lib/devices/marca-rilevata";
+import { NETWORK_DEVICE_VENDOR_BASE_LABELS } from "@/lib/network-device-vendor-options";
 import { ruoliDaJson } from "@/lib/classification/canonico";
 import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { BadgeNeutro } from "@/components/devices/rendi-apparato-esito";
@@ -247,6 +249,7 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
 
   if (!device) return null;
 
+  const marca = device.vendor === "other" ? marcaRilevata(host) : null;
   const scelte = [
     { slug: "unknown", label: "— Sconosciuta —" },
     ...slugsClassificazione
@@ -273,7 +276,8 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
               onCambiata={() => void ricarica()}
             />
             <dl className="space-y-2">
-              <Campo label="Piattaforma" value={device.vendor} />
+              <Campo label="Piattaforma" value={NETWORK_DEVICE_VENDOR_BASE_LABELS[device.vendor] ?? device.vendor} />
+              {marca && <Campo label="Marca" value={marca} />}
               {automatica && <Campo label="Riconoscimento">automatico · {Math.round(host.inferred_confidence ?? 0)}%</Campo>}
             </dl>
             <ClassificationEvidencePanel
@@ -291,6 +295,7 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
             <Campo label="Hostname · DNS" value={dns.length > 0 ? dns.join(" · ") : null} />
             <Campo label="Modello" value={device.model ?? host.model} />
             <Campo label="Firmware" value={device.firmware ?? host.firmware} />
+            {device.part_number && <Campo label="Part number" value={device.part_number} />}
           </dl>
           <div className="mt-3 space-y-3">
             <div className="space-y-1">

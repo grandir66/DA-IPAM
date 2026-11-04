@@ -83,7 +83,9 @@ export const HOST_RESOURCES_OIDS = {
  * Printer-MIB (RFC 3805) — universale per stampanti
  */
 export const PRINTER_MIB_OIDS = {
-  prtGeneralSerialNumber: "1.3.6.1.2.1.43.5.1.1.16.1",
+  prtGeneralSerialNumber: "1.3.6.1.2.1.43.5.1.1.17.1",
+  /** hrDeviceDescr: il modello preciso («HP LaserJet Pro MFP M428fdn»), dove la stringa IEEE 1284 dice la famiglia. */
+  hrDeviceDescr: "1.3.6.1.2.1.25.3.2.1.3.1",
   prtMarkerSuppliesLevel: "1.3.6.1.2.1.43.11.1.1.9.1.1",
   prtMarkerSuppliesMaxCapacity: "1.3.6.1.2.1.43.11.1.1.8.1.1",
   prtMarkerLifeCount: "1.3.6.1.2.1.43.10.2.1.4.1.1",
@@ -289,6 +291,22 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     fields: {
       model: ENTITY_MIB_OIDS.entPhysicalModelName,
       serial: ENTITY_MIB_OIDS.entPhysicalSerialNum,
+    },
+  },
+
+  // OID misurati su un GS1900-48HP V2.70 (72729, 04/11/2026). L'ENTITY-MIB ha il telaio all'indice 67108992, non 1: gli OID
+  // `.1` degli altri switch qui non rispondono. CPU, temperatura e PoE non si leggono: il ramo `.3.2` non ha un significato
+  // documentato e la POWER-ETHERNET-MIB non c'è.
+  {
+    id: "zyxel_gs1900",
+    name: "Zyxel GS1900",
+    category: "switch",
+    enterpriseOidPrefixes: ["1.3.6.1.4.1.890.1.15"],
+    confidence: 0.95,
+    fields: {
+      model: "1.3.6.1.4.1.890.1.15.3.1.11.0",
+      serial: "1.3.6.1.4.1.890.1.15.3.1.12.0",
+      firmware: "1.3.6.1.4.1.890.1.15.3.1.6.0",
     },
   },
 
@@ -736,8 +754,10 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     enterpriseOidPrefixes: ["1.3.6.1.4.1.11.2.3.9"],
     confidence: 0.97,
     fields: {
-      serial: "1.3.6.1.4.1.11.2.3.9.1.1.7.0",
-      model: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.1.1.20.1",
+      serial: PRINTER_MIB_OIDS.prtGeneralSerialNumber,
+      model: PRINTER_MIB_OIDS.hrDeviceDescr,
+      firmware: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.3.6.0",
+      partNumber: "1.3.6.1.4.1.11.2.4.3.1.10.0",
       tonerLevel: PRINTER_MIB_OIDS.prtMarkerSuppliesLevel,
       pageCount: PRINTER_MIB_OIDS.prtMarkerLifeCount,
     },
@@ -750,9 +770,24 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     enterpriseOidPrefixes: ["1.3.6.1.4.1.1248"],
     confidence: 0.96,
     fields: {
-      model: ENTITY_MIB_OIDS.entPhysicalModelName,
+      model: [PRINTER_MIB_OIDS.hrDeviceDescr, ENTITY_MIB_OIDS.entPhysicalModelName],
       serial: PRINTER_MIB_OIDS.prtGeneralSerialNumber,
       inkLevel: PRINTER_MIB_OIDS.prtMarkerSuppliesLevel,
+      pageCount: PRINTER_MIB_OIDS.prtMarkerLifeCount,
+    },
+  },
+
+  // Il sysDescr «KYOCERA Document Solutions Printing System» non prende il profilo generico (72729, 04/11/2026).
+  {
+    id: "kyocera",
+    name: "Kyocera",
+    category: "stampante",
+    enterpriseOidPrefixes: ["1.3.6.1.4.1.1347"],
+    confidence: 0.96,
+    fields: {
+      model: PRINTER_MIB_OIDS.hrDeviceDescr,
+      serial: PRINTER_MIB_OIDS.prtGeneralSerialNumber,
+      tonerLevel: PRINTER_MIB_OIDS.prtMarkerSuppliesLevel,
       pageCount: PRINTER_MIB_OIDS.prtMarkerLifeCount,
     },
   },
@@ -791,6 +826,7 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     identifyBySysDescr: /printer|laserjet|deskjet|officejet|multifunction|mfp/i,
     confidence: 0.88,
     fields: {
+      model: PRINTER_MIB_OIDS.hrDeviceDescr,
       serial: PRINTER_MIB_OIDS.prtGeneralSerialNumber,
       tonerLevel: PRINTER_MIB_OIDS.prtMarkerSuppliesLevel,
       pageCount: PRINTER_MIB_OIDS.prtMarkerLifeCount,
@@ -811,7 +847,9 @@ export const ENTERPRISE_VENDOR_MAP: Record<number, string> = {
   674: "Dell (iDRAC)",
   705: "Eaton",
   789: "NetApp",
+  890: "Zyxel",
   1248: "Epson",
+  1347: "Kyocera",
   1526: "Snom",
   1981: "EMC",
   2604: "Sophos",

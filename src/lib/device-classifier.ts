@@ -215,6 +215,10 @@ const PORT_RULES: Array<{
 }> = [
   { ports: [9100, 515, 631], services: ["ipp", "cups", "lpd", "printer"], classification: "stampante" },
   { ports: [554, 8554], services: ["rtsp", "streaming"], classification: "telecamera" },
+  // OT: Modbus TCP (502) ed EtherNet/IP (44818) sono porte di campo molto specifiche. Prendono i
+  // device OT anche quando il vendor non è discriminante (es. OUI Microchip su un modulo di terzi).
+  { ports: [502], services: ["modbus", "modbus-tcp"], classification: "plc" },
+  { ports: [44818], services: ["ethernet-ip", "enip", "cip"], classification: "plc" },
   { ports: [5060, 5061], services: ["sip", "sip-tls"], classification: "voip" },
   { ports: [389, 636], services: ["ldap", "ldaps"], classification: "server" },
   { ports: [445, 139], services: ["microsoft-ds", "netbios-ssn"], classification: "workstation" },
@@ -250,6 +254,12 @@ const VENDOR_RULES: Array<{ pattern: RegExp; classification: DeviceClassificatio
   { pattern: /apple|dell|lenovo|hp\s*inc|hewlett|asus|acer|msi|microsoft\s*surface/i, classification: "workstation" },
   { pattern: /epson|canon|brother|lexmark|ricoh|konica|sharp|samsung.*print|xerox/i, classification: "stampante" },
   { pattern: /synology|qnap|netapp|western\s*digital|seagate/i, classification: "storage" },
+  // OT / industriale — vendor specifici. Weintek = pannelli HMI; CREVIS = remote I/O di campo (Modbus);
+  // Kronotech (Zucchetti) = terminali presenze/controllo accessi. NB: "microchip" NON è qui: è un OUI di
+  // chip (LAN8xxx, moduli WiFi) montato da device di terzi, non discriminante → si classifica dalle porte.
+  { pattern: /weintek/i, classification: "hmi" },
+  { pattern: /crevis/i, classification: "plc" },
+  { pattern: /kronotech/i, classification: "iot" },
   { pattern: /vmware|microsoft\s*virtual|hyper-v\s*virtual|red\s*hat\s*kvm|qemu|proxmox\s*server|oracle\s*vm|xensource/i, classification: "vm" },
   { pattern: /apc|eaton|tripp.?lite|cyberpower|schneider/i, classification: "ups" },
 ];

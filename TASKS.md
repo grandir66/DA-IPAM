@@ -1,5 +1,40 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — Stampanti: seriale e part number; regole OT mai arrivate alle appliance
+
+Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto e anche il part number delle stampanti, inoltre il detect dei device che ti avevo chiesto». Il detect è la sezione «Arricchire il detect» più sotto, chiesta nella sessione «Device classification da-ipam 72279».
+
+- [x] Misura sulla 72729, 10 stampanti: `prtGeneralSerialNumber` risponde su 9 (non sulla WF-6590 192.168.0.131). In archivio c'era la stringa IEEE 1284 o «ET-5805 Series»: OID sbagliati nei profili
+- [x] Part number: HP sì (`…11.2.4.3.1.10.0`, W1A29A), Epson e Kyocera no: nessun campo nei rami vendor letti. HP espone anche il codice del toner (`…9.4.2.1.4.1.10.1.1.1.1.0`, CF259A): non letto, proposta
+- [x] Regole OT: 0 righe nell'hub.db della 72729. Stavano solo in `db.ts`, le appliance seminano da `db-hub.ts`. Portate, con prova che confronta i due seed
+- [x] Nessuna bonifica: «Aggiorna» riscrive il seriale, la scansione sostituisce un finto. Restano in `physical_devices` le righe vecchie dove la risoluzione non trova il MAC
+- [x] Rilascio 0.9.962 (af2aae7b): cancello verde (6.394 prove passate, 0 fallite), hub 533 alle 14:35 UTC con 5 regole OT e profili corretti da soli su un database esistente, `main` col sì di Riccardo, 72729 ripartita alle 14:54 UTC, health 200. Snapshot `pre-stampanti-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Il primo push su `main` è stato rifiutato senza motivo letto, il secondo è passato (ramo non protetto, prova a vuoto pulita)
+- [x] Il `fast_scan` delle 15:00 non riclassifica: è un giro di ping (0 porte), non passa dal fingerprint. Al 15:09 UTC gli OT restano `unknown` e i seriali finti restano: nessuna scansione con porte, nessun «Aggiorna»
+- [ ] Riccardo lancia dalla pagina della rete «Porte e servizi» (`scan_nmap_base`) e dalla Discovery «Aggiorna selezionati» sulle stampanti. Poi rileggere classi e seriali sulla 72729 e togliere lo snapshot
+- [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
+
+## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (rilasciato, 0.9.958)
+
+Riccardo (04/11): lo switch GS1900 risponde in SNMP ma non si vedono porte, VLAN e altre informazioni, «aggiungere un parser». Numero del cliente scritto 72279 in chat: è 72729. Rilievo in sola lettura, walk completo di 11.517 righe, `GS1900-48HP`, sysObjectID `1.3.6.1.4.1.890.1.15`, firmware V2.70(AAHO.5).
+
+- [x] Causa di ciò che non si vede: i dati ci sono. Apparato 18: 58 porte, 73 MAC, 1 VLAN, 58 PVID, 1 vicino LLDP. Ma `classification=server` con `vendor=hp`: `tipoScheda` dà `generico`, che non ha le tab Porte, VLAN, Vicini. La scansione ha poi portato l'host a `switch`, l'apparato no
+- [x] Causa del `vendor=hp`/ProCurve: creato in blocco alle 11:28 da «Rendi apparato» insieme ai due HP. Non è dimostrato chi l'abbia scelto; di certo `other` non offre nessun profilo switch, quindi uno switch di altra marca non ha una voce giusta
+- [x] Lettori attuali provati sul walk vero: 58 porte (50 + 8 LAG), VLAN `letto`, STP letto. Le MIB sono standard: non serve un parser nuovo per porte e VLAN
+- [x] Profilo SNMP `zyxel_gs1900`: modello `…890.1.15.3.1.11.0`, seriale `.12.0`, firmware `.6.0`, nel catalogo e nel seed dell'hub, idempotente per gli hub esistenti. ENTITY-MIB non basta: il telaio ha indice 67108992, non 1
+- [x] Profilo prodotto `generic_switch` sotto `other`, nessuna ricostruzione di `network_devices`; proposta di «Rendi apparato» per Zyxel: switch, mai ProCurve
+- [x] Duplex da EtherLike (`dot3StatsDuplexStatus`) quando la MAU-MIB manca: oggi è nullo su tutte le porte
+- [x] STP: root illeggibile. Il GS1900 dà `dot1dStpDesignatedRoot` come testo «0/00:00:00:00:00:00» e oggi esce un id senza senso (`12335.30:30:3a…`), con porta radice 52 su uno switch a 50 porte: root e porta radice a null
+- [x] Prove con fixture anonimizzata dal walk (repo pubblico: niente IP e MAC veri), CHANGELOG, limiti nel manuale `docs/modules/acquisition.md`
+- [x] Trovato strada facendo: `tipoLetturaApparato` manda ogni `vendor=other` sul ramo Linux/SSH: uno switch sotto «Altro» non si sarebbe letto come switch. `eSwitchGenerico` lo esclude anche in `getDeviceInfo`
+- [x] Rilascio 0.9.958 (73ce44fb): cancello verde (lint 0 errori, tsc, 6.347 prove passate e 0 fallite, build), hub 533 ripartita alle 12:48 UTC con health 200 e profilo nel suo hub.db, `main` in fast-forward col sì di Riccardo, 72729 ripartita alle 12:59 UTC, 70151 a 0.9.958 con health 200. Snapshot `pre-zyxel-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Greenbone ha continuato durante l'update: 65 processi openvas alle 13:00, `appliance-edge` mai riavviato
+- [x] Apparato 18: Riccardo l'aveva già portato a `other`, `switch` a mano; restava `generic_ups`, unico profilo che «Altro» offriva. Corretto con UPDATE a `generic_switch` alle 13:00 UTC. Gli OID del profilo letti sullo switch vero danno modello e firmware; la prova con `querySnmpInfoMultiCommunity` dalla VM non è riuscita per un problema di import dello script, non rifatta (REGOLA #0)
+- [x] Riccardo ha premuto «Aggiorna» (13:09 UTC): `POST /api/devices/18/query` 200, modello GS1900-48HP, firmware V2.70(AAHO.5), seriale, `last_info_update` valorizzato anche sull'host; 58 porte con duplex (9 full, 4 half), 86 MAC, root STP vuoto. Verifica dal database: la resa delle tab non l'ho vista. Snapshot `pre-zyxel-20261104` tolto
+- [x] Riccardo (04/11): «il GS1900 credo sia uno switch zyxel, è possibile aggiungere i vendor rilevati». Scelta: marca accanto ad «Altro», nessuna modifica al database (`lib/devices/marca-rilevata.ts`). Scartato il vendor `zyxel` vero: ricostruzione di `network_devices` su ogni appliance, da ripetere per ogni marca nuova. Scheda resa in locale a 1440: Piattaforma «Altro», Marca «Zyxel», per un HP niente riga Marca. Su `main` con la 0.9.961 (promossa dalla sessione stampanti, contiene la 0.9.960); 72729 ripartita alle 14:10 UTC, health 200. Marche calcolate sui dati veri: Zyxel, Epson, Kyocera, Epson, APC. La pagina vera non l'ho vista (nessun accesso web della sessione). Snapshot `pre-marca-20261104` su `pve` tolto
+- [ ] Sul posto: porte 26, 29, 40, 45 a 10 Mbps half duplex, da guardare (apparato vecchio, cavo o negoziazione)
+- [ ] Da verificare su un apparato con la MAU-MIB: `snmp-port-schema.ts` prende l'ultimo componente dell'OID come ifIndex, ma quella tabella ha due indici (ifIndex.mauIndex). Non toccato: nessun apparato qui per provarlo
+- [ ] Riccardo (04/11): switch «pese» in 192.168.2.24x, «non so esattamente cosa, collegato, ma per qualche ragione non raggiungibile». Misura dalla VM 100 (192.168.0.190, solo letture): non è solo quello switch, tutta la rete 3 «parma» 192.168.2.0/24 tace. 0 host nel database, anche nelle scansioni delle 11:45; sweep ping + TCP 80/443 0 host su 256, gateway dichiarato .254 compreso; traceroute senza risposta già dal primo salto, via 192.168.0.50 (Fortinet). 192.168.1.0/24 invece dà 10 host online. Causa non dimostrata (ICMP filtrato non basta a spiegare lo zero su 80/443): serve guardare criteri e rotte sul Fortinet per la sorgente .190, o se «parma» è una sede remota in VPN. Il nome «pese» non compare in nessun host né vicino LLDP
+- Limiti misurati, non risolvibili via SNMP su questo firmware: PoE assente (nessuna POWER-ETHERNET-MIB, 0 righe, pur essendo un 48HP); porta 22 chiusa nella scansione, solo 80 e 443; i valori numerici `…890.1.15.3.2.x` non hanno un significato documentato e non si leggono
+
 ## 2026-11-04 — WMI nelle reti senza WinRM (72729, da decidere)
 
 Riccardo (04/11): «ho una rete vecchia e mi aspettavo che in assenza di winrm wmi funzionasse». Su 72729-ipam: 20 macchine con 135/445, 16 senza WinRM; nessun tentativo WMI o WinRM nei log.
@@ -908,3 +943,46 @@ Riccardo: approvato livello Leggero e collector in sola lettura; target e utente
 - [x] Infoblox, ricollaudo 03/11 su richiesta di Riccardo: raccolta completa in 37 s, 23 tabelle/6.853 record; DNS e 3.953 lease completati senza timeout. Superati i blocchi di accesso precedenti. Resta `partial` per firmware NIOS non letto e `options` di ipv6range non esposto. Snapshot privato aggiornato; nessuna modifica a DB/apparato o push. Fonte corrente: CONTEXT/TASKS del worktree da-ipam-infoblox.
 
 - [x] Riccardo (03/11): «scrivi il contesto per l’integrazione dentro DA-IPAM». Aggiornata la consegna esistente `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`, sezione Infoblox: sorgenti locali/commit, contratto DDI, collaudo completo, limiti, vincoli reali reti/lease, mapping e prove da sviluppare. Solo documentazione; nessuna integrazione o pubblicazione eseguita.
+
+## 2026-11-04 — Arricchire il detect (vendor OT non classificati, GET pagina, password di default)
+
+Riccardo (04/11, sonda 72729-ipam): apparati di vendor sconosciuti non classificati — **CREVIS Co LTD**, **Weintek**, **Microchip Technology**, **Kronotech srl** — «per molti device c'è un profilo di porte che rispondono». Tre richieste collegate: (1) arricchire il detect per questi vendor; (2) il detect deve fare un **GET della pagina web** più approfondito (Riccardo non può farlo a mano da qui); (3) verificare se la **password degli switch rilevati è quella di default**.
+
+Stato del codice (letto, non modificato):
+- Catena del detect: `scanner/device-fingerprint.ts` (regole da DB `device_fingerprint_rules`, seed builtin in `db.ts:seedBuiltinFingerprintRules` ~1879) → `classification/normalize.ts` → `classification/engine.ts`; regole hardcoded di fallback in `device-classifier.ts`; mappa etichetta→slug in `device-fingerprint-classification.ts`.
+- **Perché restano unknown**: `classifyDeviceDetailed` NON mette il `vendor` nel corpus testuale (solo sysDescr/osInfo/hostname/snmpContext); `VENDOR_RULES` non copre i 4 vendor; nessun OID/porta OT (502 Modbus, 44818 EtherNet/IP, 5900 VNC) nelle regole. → classificazione `unknown`.
+- GET HTTP attuale (`device-fingerprint-probes.ts`): solo `http://ip` e `https://ip`, body troncato a 2000 byte, estrae `<title>`, header `Server`, e una lista fissa di ~30 keyword (nessun vendor OT). Non legge `WWW-Authenticate` (realm/basic auth), né meta/favicon, né path noti.
+- Password di default: esistono `device-connection-test.ts`, binding credenziali, catena SNMP (la rete 1 ha solo community `public`). Nessun controllo "credenziale di default". Candidato naturale: in parte DA-Vul-can (scanner vulnerabilità), in parte qui (community SNMP di default è già osservabile a costo zero).
+
+Firme reali raccolte (web, da verificare sul campo):
+- **Weintek** (HMI cMT/MT): web su 80, VNC 5900 (+5800 web-VNC); pagina `/admin` (EasyWeb 2.0); **default pwd 111111** o `m1111111`; VNC default 111111. Vari CVE 2024-2026.
+- **CREVIS** (G-series / GN-9xxx remote I/O): Modbus TCP 502, SNMP, MQTT, web server HTTP; alcuni modelli EtherNet/IP (44818) + switch integrato 2xRJ45.
+- **Kronotech** (divisione Zucchetti): terminali rilevazione presenze/controllo accessi italiani; nessuna scheda tecnica di rete pubblica trovata → fingerprint da ricavare dal campo (GET pagina + OUI).
+- **Microchip Technology**: è un **OUI di chip** (LAN8xxx, ATWINC WiFi) usato da device embedded di terzi → il vendor da solo NON è discriminante; serve pagina/porte per capire cos'è davvero.
+
+Proposta: piano a 3 assi, livello completo (tocca detect + credenziali + sistemi cliente). Vedi proposta in chat del 04/11.
+
+- [x] **Asse 1 fatto** (04/11, Riccardo «parti dall'asse 1»): regole vendor OT (Weintek→hmi, CREVIS→plc, Kronotech→iot) e porte OT (Modbus 502, EtherNet/IP 44818→plc) in `device_fingerprint_rules` (seed idempotente), mappa etichetta→slug, VENDOR_RULES/PORT_RULES nel fallback. Microchip non classificato per vendor (OUI di chip). 7 prove nuove; cancello verde (lint 0, tsc, 6354 test, build). **Rilasciato su dev 0.9.959** (8b3815b1 + f3b4befa, push f3b4befa). Nota albero condiviso: il mio append precedente era già finito nel commit GS1900 0045e531 di un'altra sessione.
+- [ ] **72729 segue `main`**: per vedere il detect OT lì serve la promozione dev→main (col sì di Riccardo). Hub 533 e appliance A (dev) prendono le regole al prossimo riavvio/seed.
+- [ ] Gli apparati già `unknown` si riclassificano solo a una nuova scansione/fingerprint (unknown→noto è un upgrade permesso): dopo il rilascio su main, rileggere i device OT della 72729.
+- [ ] Asse 2 (GET pagina web più profondo) e Asse 3 (password di default degli switch) non fatti: erano scelte separate.
+
+## 2026-11-04 — Arricchire i dati dei device già classificati: stampanti via Printer-MIB (da decidere)
+
+Riccardo (04/11): «migliorano il detect di quello che c'è. Anche le stampanti che ho classificato come stampanti e che rispondono in SNMP non ottengono info sulle stampanti, ma solo dati generici.»
+
+Causa (codice letto, non modificato):
+- **Nessun tipo scheda `stampante`**: `tipoScheda` (`lib/scheda/tipo-scheda.ts`) non ha il caso stampante → cade in `generico` (solo Panoramica + Dettagli). Per questo si vedono solo dati generici.
+- **Nessun collector stampante**: `lib/acquisition/` non ha un adapter stampante; l'SNMP generico legge solo sysDescr/modello/seriale/firmware. I profili prodotto `hp_stampante`/`generic_stampante` (`device-product-profiles.ts`) *dichiarano* `specificFields: counters/supplies/alerts` ma è solo metadato d'intento, niente li legge.
+- Nel seed SNMP il seriale stampante è mappato a `1.3.6.1.2.1.43.5.1.1.16.1` (è prtGeneralPrinterName = nome/modello; il seriale standard è `.17.1`): da verificare/correggere.
+
+Proposta (livello leggero: SNMP in sola lettura + UI + una tabella):
+1. Collector `printer-snmp` (RFC 3805 Printer-MIB + Host Resources): modello (prtGeneralPrinterName 43.5.1.1.16.1), seriale (43.5.1.1.17.1), pagine totali (prtMarkerLifeCount 43.10.2.1.4.1.1), toner/materiali (prtMarkerSuppliesDescription/Level/MaxCapacity 43.11.1.1.6/9/8), vassoi (prtInput 43.8.2.1), stato (hrPrinterStatus 25.3.5.1.1, prtAlertDescription 43.18.1.1.8). Tabella inventario dedicata.
+2. Tipo scheda `stampante`: `tipoScheda` caso stampante→"stampante"; componenti in `components/scheda/tipi/stampante/` (Panoramica + tab Materiali/Contatori: barre toner, contatore pagine, vassoi, stato, modello/seriale); registro in `tab-scheda.tsx`, `tabDelTipo`.
+3. Aggancio all'acquisizione (giri, apparati-scelti, «Aggiorna») come gli altri collector.
+
+Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con soli dati generici (UPS, telecamere, VoIP già hanno profili d'intento ma non collector).
+
+- [x] **Fatto** (04/11, Riccardo «Sì, stampanti leggero», livello leggero): collector `printer-acquisition.ts` (Printer-MIB RFC 3805 + Host Resources), `printer_inventory` in `DeviceInfo`/`DeviceInfoJson`, `resolvePrinterKind`, aggancio in `getDeviceInfo`. Tipo scheda `stampante` (`tipo-scheda.ts`) + tab Materiali/Contatori (`components/scheda/tipi/stampante/`), helper `lib/scheda/stampante.ts`, registro in `tab-scheda.tsx`. 9 prove (parsing con walk sintetici), lint 0/tsc verdi.
+- [ ] **Verifica resa non fatta**: niente stampante nel DB locale per renderla; la scheda si vede sulla 72729 dopo deploy su main + scansione SNMP di una stampante (Riccardo ci sta lavorando). JSX comunque type-checked.
+- [ ] HP sul solo vendor NON attiva il collector (ambiguo coi PC): una stampante HP si legge quando è classificata `stampante` (OID/porte lo fanno). Gli OID Printer-MIB sono standard; il seriale usa `43.5.1.1.17.1` (corretto vs il `.16.1` del segnalato seed SNMP, che è il nome).

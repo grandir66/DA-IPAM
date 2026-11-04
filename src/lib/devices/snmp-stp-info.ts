@@ -83,16 +83,19 @@ export async function getSnmpStpInfo(snmpWalk: SnmpWalkFn): Promise<StpInfo | nu
     }
 
     let rootBridgeId: string | null = null;
-    if (Buffer.isBuffer(designatedRoot) && designatedRoot.length >= 8) {
+    if (Buffer.isBuffer(designatedRoot) && designatedRoot.length === 8) {
       rootBridgeId = formatBridgeId(designatedRoot);
     }
+    // Un BridgeId è di 8 ottetti. Il GS1900 scrive «0/00:00:00:00:00:00» come testo, e come porta radice 52 su 50 porte
+    // (04/11/2026): il root è sconosciuto, e con lui la porta verso il root.
+    const rootIlleggibile = designatedRoot != null && rootBridgeId === null;
 
     const maxAgeVal = maxAge != null ? Number(maxAge) : null;
     const helloTimeVal = helloTime != null ? Number(helloTime) : null;
     const forwardDelayVal = forwardDelay != null ? Number(forwardDelay) : null;
 
     const isRootBridge = rootPortNum === 0;
-    const rootPortStr = rootPortNum != null && rootPortNum > 0 ? String(rootPortNum) : "none";
+    const rootPortStr = rootIlleggibile ? null : rootPortNum != null && rootPortNum > 0 ? String(rootPortNum) : "none";
 
     const protocol = protocolSpec != null ? (Number(protocolSpec) === 3 ? "rstp" : "stp") : null;
 

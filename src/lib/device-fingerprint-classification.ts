@@ -73,6 +73,12 @@ const FINAL_DEVICE_TO_CLASSIFICATION: Record<string, DeviceClassification> = {
   "Juniper Networks": "router",
   "Aruba Networks (HPE)": "switch",
   "NetApp ONTAP": "storage",
+  // OT / industriale (vendor OUI + firme di porta di campo)
+  "Weintek HMI": "hmi",
+  "CREVIS Remote I/O": "plc",
+  Kronotech: "iot",
+  "PLC Modbus": "plc",
+  "PLC EtherNet/IP": "plc",
 };
 
 /** Regole da DB (Impostazioni) — ordine applicazione: priority ASC, poi mappa integrata. */

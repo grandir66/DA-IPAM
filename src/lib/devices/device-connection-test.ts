@@ -3,8 +3,8 @@ import { scegliSegretoHostDb, type CredProtocol } from "@/lib/credentials/resolv
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
-import type { OpzioniWinrm, runWinrmCommand } from "@/lib/devices/winrm-run";
-import { eAccountDiDominio, freniDelLogon, type DipendenzeFreno } from "@/lib/credentials/freno-logon-windows";
+import { runWinrmCommand, type OpzioniWinrm } from "@/lib/devices/winrm-run";
+import { eAccountDiDominio, freniDelLogon, logonRifiutato, type DipendenzeFreno } from "@/lib/credentials/freno-logon-windows";
 import { sshExec, SshError } from "@/lib/devices/ssh-helper";
 import { haSegretoSsh, segretoSsh } from "@/lib/devices/ssh-transport";
 import { opzioniSsh, type AccessoSsh } from "@/lib/credentials/segreti";
@@ -267,17 +267,36 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
     }
 
     if (isWindowsDevice(device)) {
-      const client = await createWinrmClient(device, deps.winrm);
+      // `testConnection` inghiotte l'errore: lo si legge qui, per sapere se il logon è stato un rifiuto.
+      const esegui = deps.winrm ?? runWinrmCommand;
+      let ultimoErrore: unknown = null;
+      const client = await createWinrmClient(device, async (...args: Parameters<typeof runWinrmCommand>) => {
+        try {
+          return await esegui(...args);
+        } catch (e) {
+          ultimoErrore = e;
+          throw e;
+        }
+      });
       // Un clic è un logon vero: gli stessi freni della prova del legame. Con la password non verificata un trasporto solo.
       const creds = getDeviceCredentials(device);
       const realm = getAdRealm()?.realm ?? null;
       let opzioni: OpzioniWinrm | undefined;
+      let passwordValida = false;
+      let chiudiLogon: (rifiutato: boolean) => void = () => undefined;
       if (creds?.username && creds.password && eAccountDiDominio(creds.username, realm)) {
         const freno = await freniDelLogon(creds.username, creds.password, deps, { realm });
         if ("fermata" in freno) return { success: false, device_type: "windows", error: freno.fermata.messaggio };
         if (freno.password !== "valida") opzioni = { unSoloLogon: true };
+        passwordValida = freno.password === "valida";
+        chiudiLogon = freno.chiudi;
       }
-      const ok = await client.testConnection(opzioni);
+      let ok = false;
+      try {
+        ok = await client.testConnection(opzioni);
+      } finally {
+        chiudiLogon(!ok && logonRifiutato(ultimoErrore, passwordValida));
+      }
       return { success: ok, device_type: "windows", message: ok ? "Connessione WinRM OK" : undefined };
     }
 

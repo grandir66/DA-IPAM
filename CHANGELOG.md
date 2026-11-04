@@ -21,17 +21,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   nemmeno un rifiuto col solo NTLM su una riga già validata: alza solo il fermo. Prima bastava una macchina spenta per
   perdere ciò che funzionava.
 - **Cambiato**: la prova a mano di un legame WMI, o WinRM con una voce di dominio, ha gli stessi freni della scansione:
-  una password già nota errata non si prova, al massimo 3 prove in 15 minuti per utente, e prima si chiede al DC. Cinque
+  una password già nota errata non si prova, al massimo 3 logon rifiutati in 15 minuti per utente, e prima si chiede al DC. Cinque
   clic su una password sbagliata bloccavano l'account.
   Lo stesso freno vale ora per il pulsante «Test» di una voce Windows di dominio, per «Cerca la credenziale» e per il «Test»
-  di un apparato Windows, salvato o ancora da salvare: il Test ferma alla terza prova in 15 minuti e dice fra quanto riprovare;
+  di un apparato Windows, salvato o ancora da salvare: il Test ferma al terzo rifiuto in 15 minuti e dice fra quanto riprovare;
   la ricerca conta i logon errati per utente su tutti gli host, non per host, e se il DC dice che la password è errata non fa
   nessun logon sugli host. Resta fuori `/api/ad/kerberos`, la diagnostica dell'integrazione AD, con l'account
   dell'integrazione. SSH, SNMP e API come prima.
 - **Cambiato, cosa vede il cliente**: con un'integrazione AD accesa ogni utente Windows conta come account di dominio, anche
   `mario` e `.\mario`: il bridge fa `kinit mario@REALM`, un logon vero sul DC, e prima passavano senza limite. Il limite di 3
-  prove in 15 minuti conta ogni prova per utente, anche quelle riuscite: un «Test» su più di 3 apparati Windows con lo stesso
-  account si ferma alla terza. Il «Test» di un apparato Windows ora è solo per gli amministratori: è un logon vero, e un
+  logon rifiutati in 15 minuti conta per utente solo i rifiuti: una prova riuscita, una porta chiusa o un errore senza logon
+  non consumano posti, e un successo non azzera i rifiuti di un'altra password. Il «Test» di un apparato Windows ora è solo per gli amministratori: è un logon vero, e un
   account in sola lettura riceve un rifiuto. Un account locale senza integrazione AD non ha limiti, nemmeno sul legame WMI.
 - **Cambiato**: la ricerca e il pulsante «Test» leggono l'errore di WinRM come la scansione. Una porta chiusa, pywinrm assente
   o un errore del servizio dopo l'autenticazione non contano e non escludono la voce; un timeout dopo l'avvio del bridge può

@@ -10,7 +10,8 @@ import { apriSessioneCommunity, etichettaVersioneSnmp, type VersioneSnmp } from 
 import { leggiSegretoDb, type AccessoSsh } from "@/lib/credentials/segreti";
 import { provaV3 } from "@/lib/protocols/snmpv3";
 import { safeDecrypt } from "@/lib/crypto";
-import { eAccountDiDominio, freniDelLogon as freniCondivisi } from "@/lib/credentials/freno-logon-windows";
+import { eAccountDiDominio, freniDelLogon as freniCondivisi, logonRifiutato } from "@/lib/credentials/freno-logon-windows";
+import { fallitaWinrm } from "@/lib/credentials/trova";
 import type { RicordoErrate } from "@/lib/scanner/account-windows";
 import type { EsitoPassword } from "@/lib/scanner/verifica-password-run";
 import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
@@ -56,7 +57,7 @@ function nonPartita(message: string): EsitoProvaBinding {
 }
 
 /** I freni sono quelli condivisi con il pulsante Test e la ricerca: `src/lib/credentials/freno-logon-windows.ts`. */
-async function freniDelLogon(username: string, password: string, realm: string | null, deps: DipendenzeProvaBinding): Promise<{ fermata: EsitoProvaBinding } | { password: EsitoPassword }> {
+async function freniDelLogon(username: string, password: string, realm: string | null, deps: DipendenzeProvaBinding): Promise<{ fermata: EsitoProvaBinding } | { password: EsitoPassword; chiudi: (rifiutato: boolean) => void }> {
   const freno = await freniCondivisi(username, password, deps, { realm });
   if ("fermata" in freno) return { fermata: nonPartita(freno.fermata.messaggio) };
   return freno;
@@ -184,12 +185,14 @@ export async function provaBinding(
       const realm = await realmAd();
       let opzioni: OpzioniWinrm | undefined;
       let esitoPassword: EsitoPassword | null = null;
+      let chiudiLogon: (rifiutato: boolean) => void = () => undefined;
       if (eAccountDiDominio(username, realm)) {
         // Una password vuota sarebbe un logon errato per niente, e sul DC un bind anonimo che riesce.
         if (!password) return { success: false, message: "Password mancante" };
         const freno = await freniDelLogon(username, password, realm, deps);
         if ("fermata" in freno) return freno.fermata;
         esitoPassword = freno.password;
+        chiudiLogon = freno.chiudi;
         if (freno.password !== "valida") opzioni = { unSoloLogon: true };
       }
       try {
@@ -204,12 +207,23 @@ export async function provaBinding(
           realm ?? "",
           opzioni
         );
+        // Il logon è riuscito, anche se la risposta è inattesa: non è un rifiuto.
+        chiudiLogon(false);
         return String(out).includes("DA-IPAM-TEST")
           ? { success: true, message: "WinRM funzionante" }
           : { success: false, message: "WinRM: risposta inattesa" };
       } catch (err: unknown) {
-        const message = `WinRM: ${err instanceof Error ? err.message : "errore"}`;
-        return { success: false, message, ...((await negatoConPasswordGiusta(err, esitoPassword)) ? { motivo: "diritti_mancanti" as const } : {}) };
+        const passwordValida = esitoPassword === "valida";
+        chiudiLogon(logonRifiutato(err, passwordValida));
+        // Come la ricerca: una porta chiusa, il bridge che non parte o un errore del servizio non marcano il legame fallito.
+        const letta = fallitaWinrm(binding.port ?? 5985, err, passwordValida);
+        const nonMarcare = !letta.registra || letta.trasporto;
+        return {
+          success: false,
+          message: `WinRM: ${letta.trasporto ? String(letta.risposta.error) : (letta.errore ?? "errore")}`,
+          ...(nonMarcare ? { nonDisponibile: true as const } : {}),
+          ...(letta.motivo === "diritti_mancanti" ? { motivo: "diritti_mancanti" as const } : {}),
+        };
       }
     }
 
@@ -235,8 +249,10 @@ export async function provaBinding(
       try {
         const prova = deps.wmiIdentita ?? (await import("@/lib/devices/wmi-run")).runWmiIdentita;
         await prova(host, username, password);
+        freno.chiudi(false);
         return { success: true, message: "WMI funzionante" };
       } catch (err: unknown) {
+        freno.chiudi(logonRifiutato(err, freno.password === "valida"));
         // Il rifiuto del bridge può citare utente e password: si maschera prima di restituire il messaggio.
         const { maschera } = await import("@/lib/scanner/accesso-windows");
         const { WmiError } = await import("@/lib/devices/wmi-run");

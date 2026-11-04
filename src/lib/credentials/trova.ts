@@ -29,7 +29,7 @@ import { classifyWinrmError } from "@/lib/devices/winrm-errors";
 // Statico, non `await import`: sotto tsx sarebbe un'altra istanza, e `instanceof WinrmError` nel motore non la riconoscerebbe.
 import { runWinrmCommand, WinrmError, type OpzioniWinrm } from "@/lib/devices/winrm-run";
 import { CODICI_TIMEOUT, leggiErrore, puoNascondereUnRifiuto } from "@/lib/scanner/accesso-windows";
-import { attesaInParole, eAccountDiDominio, freniDelLogon, type DipendenzeFreno } from "./freno-logon-windows";
+import { attesaInParole, eAccountDiDominio, freniDelLogon, logonRifiutato, type DipendenzeFreno } from "./freno-logon-windows";
 import { contoLogonDelTenant, FINESTRA_LOGON_MS, MAX_LOGON_RIFIUTATI, type ContoLogonRicerca, type Prenotazione } from "./conto-logon-ricerca";
 import { chiaveAccount, utenteNormalizzato } from "@/lib/scanner/account-windows";
 import type { CredentialRunBudget } from "@/lib/scanner/credential-run-budget";
@@ -183,7 +183,7 @@ function fallita(protocollo: CredProtocol, porta: number | null, errore: string,
  * - rifiuto dichiarato: con la password verificata giusta sono i diritti, altrimenti è un rifiuto pieno;
  * - tutto il resto, timeout compreso: un rifiuto possibile. Con la password giusta un timeout o una porta chiusa restano trasporto.
  */
-function fallitaWinrm(porta: number, err: unknown, passwordValida: boolean): EsitoProvaSuHost {
+export function fallitaWinrm(porta: number, err: unknown, passwordValida: boolean): EsitoProvaSuHost {
   const letto = leggiErrore(err);
   const { codice, messaggio: errore } = letto;
   const base = { ok: false, errore, protocollo: "winrm" as const, porta, ...(passwordValida ? { passwordValida } : {}) };
@@ -285,6 +285,7 @@ export async function provaCredenzialeSuHost(
     // Solo un account di dominio può bloccarsi per tutti: gli stessi freni della prova del legame. Con la password non
     // verificata un trasporto solo, la catena del bridge farebbe fino a quattro logon errati per clic.
     let opzioniWinrm: OpzioniWinrm | undefined;
+    let chiudiLogon: (rifiutato: boolean) => void = () => undefined;
     if (eAccountDiDominio(username, realm)) {
       const freno = await freniDelLogon(username, password, opzioniProva, { realm, limitePerUtente: !opzioniProva.ricerca });
       if ("fermata" in freno) {
@@ -293,6 +294,7 @@ export async function provaCredenzialeSuHost(
       }
       if (freno.password !== "valida") opzioniWinrm = { unSoloLogon: true };
       passwordValida = freno.password === "valida";
+      chiudiLogon = freno.chiudi;
     }
     try {
       const runWinrm = opzioniProva.winrm ?? runWinrmCommand;
@@ -302,8 +304,10 @@ export async function provaCredenzialeSuHost(
         opzioniProva.tettoMs ?? TEST_TIMEOUT_MS,
         (message) => new WinrmError({ code: "BRIDGE_TIMEOUT", message }),
       );
+      chiudiLogon(false);
       return { ok: true, protocollo: "winrm", porta: port, registra: true, trasporto: false, risposta: { success: true, message: "Connessione WinRM riuscita" } };
     } catch (e) {
+      chiudiLogon(logonRifiutato(e, passwordValida));
       return fallitaWinrm(port, e, passwordValida);
     }
   }

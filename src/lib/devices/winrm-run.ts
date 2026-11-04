@@ -11,6 +11,7 @@
 import { execFile } from "child_process";
 
 import { checkWinrmReachability } from "./tcp-precheck";
+import type { DipendenzeWmi } from "./wmi-run";
 import { classifyWinrmError, formatWinrmError, type WinrmErrorCode } from "./winrm-errors";
 import { findBridgePython } from "./find-bridge-python";
 import { risolvi } from "../percorsi";
@@ -42,6 +43,19 @@ const BRIDGE_SCRIPT = risolvi(
   "src/lib/devices/winrm-bridge.py"
 );
 
+/** Punti di ingresso sostituibili dalle prove, come in `wmi-run.ts`. In produzione valgono sempre `DIPENDENZE_REALI`. */
+export interface DipendenzeWinrm {
+  execFile: DipendenzeWmi["execFile"];
+  checkWinrmReachability: typeof checkWinrmReachability;
+  trovaPython: () => string;
+}
+
+const DIPENDENZE_REALI: DipendenzeWinrm = {
+  execFile: (file, args, opts, cb) => execFile(file, [...args], opts, cb),
+  checkWinrmReachability,
+  trovaPython: findBridgePython,
+};
+
 /**
  * Esegue un comando su un host Windows tramite WinRM.
  * @param realm - Dominio AD (es. "azienda.local") per Kerberos auto-kinit. Opzionale.
@@ -54,13 +68,17 @@ export async function runWinrmCommand(
   command: string,
   usePowershell: boolean,
   realm?: string,
-  /** Limite del bridge; di serie 120 s. La lettura dei registri di un DC carico ne chiede di più. */
+  /**
+   * Limite del bridge; di serie 120 s. La lettura dei registri di un DC carico ne chiede di più, la prova di identità della
+   * scansione di meno: una macchina non può fermarla. Superato: `BRIDGE_TIMEOUT`.
+   */
   timeoutMs: number = TIMEOUT_MS,
+  deps: DipendenzeWinrm = DIPENDENZE_REALI,
 ): Promise<string> {
   // Pre-check TCP: se le porte WinRM non rispondono, evitiamo i 120s di pywinrm
   // e restituiamo subito una WinrmError classificata. Test entrambe le porte
   // (5985 HTTP e 5986 HTTPS) in parallelo, 3s di timeout: ~3s totali invece di 120s.
-  const reach = await checkWinrmReachability(host, TCP_PRECHECK_TIMEOUT_MS);
+  const reach = await deps.checkWinrmReachability(host, TCP_PRECHECK_TIMEOUT_MS);
   if (!reach.reachable) {
     if (reach.summary === "closed") {
       throw new WinrmError({
@@ -86,7 +104,7 @@ export async function runWinrmCommand(
   }
 
   return new Promise((resolve, reject) => {
-    const pythonBin = findBridgePython();
+    const pythonBin = deps.trovaPython();
     // R1 2026-06-23: WinRM con local-admin NON-builtin richiede il prefisso '.\'
     // (LocalAccountTokenFilterPolicy) per ottenere un token elevato; senza, 401
     // → l'host Windows contribuiva VUOTO ma lo scan risultava "ok". Prefissiamo
@@ -100,11 +118,18 @@ export async function runWinrmCommand(
       realm: realm || "",
     });
 
-    const child = execFile(
+    const child = deps.execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
       { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
       (error, stdout, _stderr) => {
+        const tettoSuperato = (original: string) => new WinrmError({
+          code: "BRIDGE_TIMEOUT",
+          message: `Il bridge WinRM ha superato i ${Math.round(timeoutMs / 1000)}s — il target è raggiungibile in TCP ma non completa la sessione (auth lentissima o config WinRM rotta).`,
+          hint: "Sul target: winrm enumerate winrm/config/Listener ; verifica che il servizio WinRM non sia bloccato in MaxConcurrentOperations.",
+          original,
+        });
+
         if (error && !stdout) {
           const msg = error.message || "Errore esecuzione WinRM bridge";
           if (msg.includes("ENOENT")) {
@@ -115,12 +140,7 @@ export async function runWinrmCommand(
               original: msg,
             }));
           } else if (msg.includes("ETIMEDOUT") || msg.includes("timeout") || error.killed) {
-            reject(new WinrmError({
-              code: "BRIDGE_TIMEOUT",
-              message: `Il bridge WinRM ha superato i ${Math.round(timeoutMs / 1000)}s — il target è raggiungibile in TCP ma non completa la sessione (auth lentissima o config WinRM rotta).`,
-              hint: "Sul target: winrm enumerate winrm/config/Listener ; verifica che il servizio WinRM non sia bloccato in MaxConcurrentOperations.",
-              original: msg,
-            }));
+            reject(tettoSuperato(msg));
           } else {
             reject(new WinrmError({ ...classifyWinrmError(msg), original: msg }));
           }
@@ -167,6 +187,11 @@ export async function runWinrmCommand(
 
           resolve(bridgeStdout);
         } catch {
+          // Ucciso a metà scrittura: è il tetto, non un errore del bridge.
+          if (error?.killed) {
+            reject(tettoSuperato(error.message));
+            return;
+          }
           reject(new WinrmError({
             code: "UNKNOWN",
             message: `Output non valido dal bridge WinRM: ${stdout.substring(0, 200)}`,

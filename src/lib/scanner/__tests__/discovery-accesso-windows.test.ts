@@ -64,6 +64,7 @@ interface RigaCredenziale {
   backoff_until: string | null;
   motivo: string | null;
   last_error: string | null;
+  last_attempt_at: string | null;
 }
 
 const creati = new Set<string>();
@@ -96,7 +97,7 @@ function voce(t: Tenant, nome: string, tipo = "windows", utente = UTENTE, passwo
 function righe(t: Tenant, ip: string): RigaCredenziale[] {
   return t.d
     .prepare(
-      `SELECT credential_id, protocol_type, port, validated, fail_count, backoff_until, motivo, last_error
+      `SELECT credential_id, protocol_type, port, validated, fail_count, backoff_until, motivo, last_error, last_attempt_at
        FROM host_credentials WHERE host_id = ? ORDER BY credential_id, protocol_type`,
     )
     .all(t.host.get(ip)) as RigaCredenziale[];
@@ -106,8 +107,10 @@ const ipDi = (n: number): string => `10.77.0.${n}`;
 const hostUguali = (quanti: number, porte: number[]): Host[] =>
   Array.from({ length: quanti }, (_, i) => ({ ip: ipDi(i + 1), porte }));
 
-const rifiutoWinrm = (code: WinrmErrorCode = "AUTH_REJECTED") => new WinrmError({ code, message: `rifiuto ${code}` });
-const rifiutoWmi = (code: WinrmErrorCode = "AUTH_REJECTED") => new WmiError({ code, message: `rifiuto ${code}` });
+/** Forma vera: `TCP_CLOSED` e `TCP_TIMEOUT` qui sono del controllo fatto prima del bridge. */
+const dalControllo = (code: WinrmErrorCode): boolean => code === "TCP_CLOSED" || code === "TCP_TIMEOUT";
+const rifiutoWinrm = (code: WinrmErrorCode = "AUTH_REJECTED") => new WinrmError({ code, message: `rifiuto ${code}`, primaDelBridge: dalControllo(code) });
+const rifiutoWmi = (code: WinrmErrorCode = "AUTH_REJECTED") => new WmiError({ code, message: `rifiuto ${code}`, primaDelBridge: dalControllo(code) });
 
 interface ScenaProve {
   password?: EsitoPassword;
@@ -185,6 +188,30 @@ async function giro(t: Tenant, tipo: TipoGiro, b: Banco): Promise<string> {
   return log;
 }
 
+/** Una riga già esistente su `host_credentials`. */
+function riga(t: Tenant, ip: string, id: number, protocollo: string, porta: number, campi: { validated?: number; fail_count?: number } = {}): void {
+  t.d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, fail_count) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(t.host.get(ip), id, protocollo, porta, campi.validated ?? 0, campi.fail_count ?? 0);
+}
+
+function apparato(t: Tenant, ip: string): number {
+  return Number(
+    t.d.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port) VALUES ('pc', ?, 'server', 'windows', 'winrm', 5985)").run(ip).lastInsertRowid,
+  );
+}
+
+function legame(t: Tenant, apparatoId: number, id: number, protocollo: string, porta: number): void {
+  t.d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, test_status) VALUES (?, ?, ?, ?, 'success')")
+    .run(apparatoId, id, protocollo, porta);
+}
+
+function statoLegame(t: Tenant, apparatoId: number, id: number, protocollo = "winrm"): string | undefined {
+  const r = t.d.prepare("SELECT test_status FROM device_credential_bindings WHERE device_id = ? AND credential_id = ? AND protocol_type = ?").get(apparatoId, id, protocollo) as
+    | { test_status: string }
+    | undefined;
+  return r?.test_status;
+}
+
 const riepilogo = (log: string): string => log.split("\n").find((r) => r.includes("Accesso Windows:")) ?? "";
 
 let progressivo = 0;
@@ -215,7 +242,7 @@ for (const tipo of TIPI) {
       );
     });
 
-    it("password errata: zero chiamate sulle macchine, nessun fallimento né fermo, il motivo sulla riga", async () => {
+    it("password errata: zero chiamate sulle macchine, nessun fallimento né fermo, nessuna riga nuova", async () => {
       const t = tenant(codice("ERRATA"), hostUguali(5, [135, 5985]));
       voce(t, "Scansioni");
       const b = banco({ password: "errata" });
@@ -224,11 +251,55 @@ for (const tipo of TIPI) {
 
       assert.deepEqual([b.chiamate.winrm, b.chiamate.wmi], [[], []]);
       assert.equal(b.chiamate.ldap.length, 1);
-      for (const ip of t.ips) {
-        const [r] = righe(t, ip);
-        assert.deepEqual([r.fail_count, r.backoff_until, r.motivo], [0, null, "password_errata"], ip);
-      }
+      for (const ip of t.ips) assert.deepEqual(righe(t, ip), [], ip);
       assert.match(riepilogo(log), /5 password errata/);
+    });
+
+    it("password errata certa: tutte le righe e i legami della voce perdono la validazione, in una scrittura sola", async () => {
+      const t = tenant(codice("ERRATARIGHE"), hostUguali(3, [5985]));
+      const id = voce(t, "Scansioni");
+      const altra = voce(t, "Altra", "windows", "CLIENTE\\altro");
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1, fail_count: 2 });
+      riga(t, ipDi(2), id, "wmi", 135, { validated: 1 });
+      riga(t, ipDi(1), altra, "winrm", 5985, { validated: 1 });
+      const pc = apparato(t, ipDi(1));
+      legame(t, pc, id, "winrm", 5985);
+      legame(t, pc, altra, "winrm", 5985);
+      t.d.exec(`
+        CREATE TABLE scritture_prova (n INTEGER);
+        CREATE TRIGGER conta_scritture AFTER UPDATE ON host_credentials WHEN NEW.credential_id = ${id}
+        BEGIN INSERT INTO scritture_prova VALUES (1); END;
+      `);
+      const b = banco({ winrm: () => "PC" });
+      b.prove.ldap = async (credId) => (credId === id ? "errata" : "valida");
+
+      await giro(t, tipo, b);
+
+      const stato = (ip: string, voceId: number) => righe(t, ip).filter((r) => r.credential_id === voceId).map((r) => [r.protocol_type, r.validated, r.fail_count, r.backoff_until, r.motivo]);
+      assert.deepEqual(stato(ipDi(1), id), [["winrm", 0, 2, null, "password_errata"]]);
+      assert.deepEqual(stato(ipDi(2), id), [["wmi", 0, 0, null, "password_errata"]]);
+      assert.equal(statoLegame(t, pc, id), "failed");
+      assert.equal(statoLegame(t, pc, altra), "success");
+      assert.equal(righe(t, ipDi(1)).find((r) => r.credential_id === altra)?.validated, 1, "l'altra voce non c'entra");
+      const scritture = t.d.prepare("SELECT COUNT(*) AS n FROM scritture_prova").get() as { n: number };
+      assert.equal(scritture.n, 2, "due righe della voce, una scrittura: non una per host");
+    });
+
+    it("errata: il giro dopo non rifà il bind, e con una password nuova sì", async () => {
+      const t = tenant(codice("ERRATADOPO"), hostUguali(2, [5985]));
+      const id = voce(t, "Scansioni");
+      const primo = banco({ password: "errata" });
+      await giro(t, tipo, primo);
+      assert.equal(primo.chiamate.ldap.length, 1);
+
+      const secondo = banco({ password: "valida", winrm: () => "PC" });
+      await giro(t, tipo, secondo);
+      assert.deepEqual([secondo.chiamate.ldap, secondo.chiamate.winrm], [[], []], "la risposta certa vale fra i giri");
+
+      t.d.prepare("UPDATE credentials SET encrypted_password = ? WHERE id = ?").run(encrypt("Password-nuova!1"), id);
+      const terzo = banco({ password: "valida", winrm: () => "PC" });
+      await giro(t, tipo, terzo);
+      assert.equal(terzo.chiamate.ldap.length, 1, "un'altra password è un'altra domanda");
     });
 
     it("5985 e 135 chiuse: zero chiamate e budget intatto, l'host dopo si prova ancora", async () => {
@@ -242,10 +313,7 @@ for (const tipo of TIPI) {
       assert.deepEqual(b.chiamate.wmi, []);
       assert.deepEqual(b.chiamate.ldap.length, 1, "la verifica è partita solo per l'host aperto");
       assert.ok(!log.includes("esclusa"), log);
-      for (const ip of t.ips.slice(0, 5)) {
-        const [r] = righe(t, ip);
-        assert.deepEqual([r.fail_count, r.backoff_until, r.validated, r.motivo], [0, null, 0, "porte_chiuse"], ip);
-      }
+      for (const ip of t.ips.slice(0, 5)) assert.deepEqual(righe(t, ip), [], `${ip}: un motivo non crea righe`);
       assert.match(riepilogo(log), /5 porte chiuse/);
     });
 
@@ -277,10 +345,7 @@ for (const tipo of TIPI) {
         assert.ok(r.backoff_until, ip);
         assert.equal(r.motivo, "errore", ip);
       }
-      for (const ip of t.ips.slice(3)) {
-        const [r] = righe(t, ip);
-        assert.deepEqual([r.fail_count, r.backoff_until, r.motivo], [0, null, "budget_esaurito"], ip);
-      }
+      for (const ip of t.ips.slice(3)) assert.deepEqual(righe(t, ip), [], `${ip}: un motivo non crea righe`);
       assert.match(riepilogo(log), /2 budget esaurito/);
     });
 
@@ -303,7 +368,7 @@ for (const tipo of TIPI) {
       assert.match(log, /WMI/);
     });
 
-    it("WMI rifiutato dopo WinRM rifiutato, password valida: due tentativi, un fallimento sulla strada del motivo", async () => {
+    it("WMI rifiutato dopo WinRM rifiutato, password valida: due tentativi, un fallimento per strada", async () => {
       const t = tenant(codice("DUE"), hostUguali(1, [135, 5985]));
       voce(t, "Scansioni");
       const b = banco({ password: "valida" });
@@ -312,9 +377,128 @@ for (const tipo of TIPI) {
 
       assert.equal(b.chiamate.winrm.length, 1);
       assert.equal(b.chiamate.wmi.length, 1);
-      const r = righe(t, ipDi(1));
-      assert.equal(r.length, 1);
-      assert.deepEqual([r[0].protocol_type, r[0].port, r[0].fail_count, r[0].motivo], ["winrm", 5985, 1, "diritti_mancanti"]);
+      assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.protocol_type, r.port, r.fail_count, r.motivo]), [
+        ["winrm", 5985, 1, "diritti_mancanti"],
+        ["wmi", 135, 1, "diritti_mancanti"],
+      ]);
+    });
+
+    it("WinRM rifiutato e WMI riuscito: fallimento sulla riga e sul legame winrm, il login passa a wmi, il giro dopo non riprova WinRM", async () => {
+      const t = tenant(codice("PASSAGGIO"), hostUguali(1, [135, 5985]));
+      const id = voce(t, "Scansioni");
+      const pc = apparato(t, ipDi(1));
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      legame(t, pc, id, "winrm", 5985);
+      const b = banco({ password: "valida", wmi: () => "PC-WMI" });
+
+      await giro(t, tipo, b);
+
+      assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.protocol_type, r.validated, r.fail_count, r.motivo]), [
+        ["winrm", 0, 1, "diritti_mancanti"],
+        ["wmi", 1, 0, "ok"],
+      ]);
+      assert.equal(statoLegame(t, pc, id, "winrm"), "failed");
+      assert.equal(statoLegame(t, pc, id, "wmi"), "success");
+      const device = withTenant(t.code, () => getNetworkDeviceById(pc));
+      assert.ok(device);
+      assert.equal(withTenant(t.code, () => facade.getDeviceCredentials(device))?.protocollo, "wmi");
+
+      const dopo = banco({ password: "valida", wmi: () => "PC-WMI" });
+      await giro(t, tipo, dopo);
+      assert.deepEqual([dopo.chiamate.winrm.length, dopo.chiamate.wmi.length], [0, 1]);
+    });
+
+    it("la strada già validata si prova per prima: con WMI validata WinRM non parte", async () => {
+      const t = tenant(codice("PRIMAWMI"), hostUguali(1, [135, 5985]));
+      const id = voce(t, "Scansioni");
+      riga(t, ipDi(1), id, "wmi", 135, { validated: 1 });
+      const b = banco({ password: "valida", wmi: () => "PC-WMI", winrm: () => "PC-WINRM" });
+
+      await giro(t, tipo, b);
+
+      assert.deepEqual([b.chiamate.winrm.length, b.chiamate.wmi.length], [0, 1]);
+    });
+
+    it("firewall: validated e legame restano, solo ultimo errore e motivo, nessun fallimento, le altre voci non si provano", async () => {
+      const t = tenant(codice("FIREWALL"), hostUguali(1, [135, 5985]));
+      const id = voce(t, "Prima");
+      const seconda = voce(t, "Seconda", "windows", "CLIENTE\\altro");
+      const pc = apparato(t, ipDi(1));
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      riga(t, ipDi(1), id, "wmi", 135, { validated: 1 });
+      legame(t, pc, id, "winrm", 5985);
+      const b = banco({ password: "valida", winrm: () => rifiutoWinrm("TCP_TIMEOUT"), wmi: () => rifiutoWmi("TCP_TIMEOUT") });
+
+      const log = await giro(t, tipo, b);
+
+      assert.deepEqual([b.chiamate.winrm.length, b.chiamate.wmi.length], [1, 1], "un host muto non si riprova con la voce dopo");
+      assert.deepEqual(righe(t, ipDi(1)).filter((r) => r.credential_id === seconda), []);
+      for (const r of righe(t, ipDi(1))) {
+        assert.deepEqual([r.validated, r.fail_count, r.backoff_until, r.motivo], [1, 0, null, "firewall"], r.protocol_type);
+        assert.match(r.last_error ?? "", /firewall/);
+        assert.ok(r.last_attempt_at);
+      }
+      assert.equal(statoLegame(t, pc, id), "success");
+      assert.ok(!log.includes("esclusa"), log);
+    });
+
+    it("errore non di autenticazione: validated e legame restano, e c'è il fermo", async () => {
+      const t = tenant(codice("GUASTO"), hostUguali(1, [5985]));
+      const id = voce(t, "Scansioni");
+      const pc = apparato(t, ipDi(1));
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      legame(t, pc, id, "winrm", 5985);
+
+      await giro(t, tipo, banco({ password: "valida", winrm: () => rifiutoWinrm("UNKNOWN") }));
+
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [1, 1, "errore"]);
+      assert.ok(r.backoff_until);
+      assert.match(r.last_error ?? "", /rifiuto UNKNOWN/);
+      assert.equal(statoLegame(t, pc, id), "success");
+    });
+
+    it("BRIDGE_TIMEOUT con la password non verificata: conta sul limite, ma non è un rifiuto vero", async () => {
+      const t = tenant(codice("BRIDGE"), hostUguali(5, [5985]));
+      const id = voce(t, "Scansioni");
+      const pc = apparato(t, ipDi(1));
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      legame(t, pc, id, "winrm", 5985);
+      const b = banco({ winrm: () => rifiutoWinrm("BRIDGE_TIMEOUT") });
+
+      const log = await giro(t, tipo, b);
+
+      assert.equal(b.chiamate.winrm.length, 3);
+      assert.match(log, /esclusa/);
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [1, 1, "errore"]);
+      assert.equal(statoLegame(t, pc, id), "success");
+    });
+
+    it("rifiuto vero: la riga e il legame perdono la validazione", async () => {
+      const t = tenant(codice("VERO"), hostUguali(1, [5985]));
+      const id = voce(t, "Scansioni");
+      const pc = apparato(t, ipDi(1));
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      legame(t, pc, id, "winrm", 5985);
+
+      await giro(t, tipo, banco());
+
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "errore"]);
+      assert.equal(statoLegame(t, pc, id), "failed");
+    });
+
+    it("due voci con lo stesso account: una verifica, tre logon in tutto il giro", async () => {
+      const t = tenant(codice("STESSO"), hostUguali(6, [5985]));
+      voce(t, "Una");
+      voce(t, "Due");
+      const b = banco();
+
+      await giro(t, tipo, b);
+
+      assert.equal(b.chiamate.ldap.length, 1);
+      assert.equal(b.chiamate.winrm.length, 3);
     });
 
     it("rifiuto registrato sulla porta vera: la 135, con solo WMI", async () => {
@@ -369,6 +553,21 @@ for (const tipo of TIPI) {
       assert.deepEqual([b.chiamate.winrm, b.chiamate.wmi], [[], []]);
       for (const r of righe(t, ipDi(1))) assert.deepEqual([r.fail_count, r.motivo], [2, "diritti_mancanti"]);
       assert.match(log, /backoff/);
+      assert.deepEqual(b.chiamate.ldap, [], "con tutte le strade in fermo niente bind");
+      assert.ok(!riepilogo(log).includes("errore"), `una voce in fermo non è un errore: ${riepilogo(log)}`);
+    });
+
+    it("colonna motivo assente: un errore solo nel log, la scansione finisce", async () => {
+      const t = tenant(codice("NOMOTIVO"), hostUguali(3, [5985]));
+      const id = voce(t, "Scansioni");
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      t.d.exec("ALTER TABLE host_credentials DROP COLUMN motivo");
+      const b = banco({ password: "valida", winrm: (ip) => (ip === ipDi(2) ? rifiutoWinrm() : "PC") });
+
+      const log = await giro(t, tipo, b);
+
+      assert.equal(b.chiamate.winrm.length, 3, "un tenant guasto non ferma le prove");
+      assert.equal(log.split("\n").filter((r) => r.includes("colonna motivo")).length, 1, log);
     });
 
     it("nel log né utente né password, anche se l'errore li riporta", async () => {
@@ -460,17 +659,35 @@ describe("windows: il nome host e la catena", () => {
     assert.ok(porte.includes(135) && porte.includes(445), `porte perse: ${porte.join(",")}`);
   });
 
-  it("un output che non è un nome (stderr nello stdout) non è un accesso: fallimento, niente nome, niente riga validata", async () => {
+  it("un output che non è un nome (stderr nello stdout) non è un accesso: niente nome, ma il logon è passato", async () => {
     const t = tenant(codice("NONOME"), hostUguali(1, [5985]));
     voce(t, "Scansioni");
 
     const log = await giro(t, "windows", banco({ password: "valida", winrm: () => "bad command name hostname (line 1 column 1)" }));
 
     const [r] = righe(t, ipDi(1));
-    assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "errore"]);
+    assert.deepEqual([r.validated, r.fail_count, r.backoff_until, r.motivo], [0, 0, null, "errore"]);
+    assert.match(r.last_error ?? "", /non è un nome host/);
     const h = t.d.prepare("SELECT hostname FROM hosts WHERE ip = ?").get(ipDi(1)) as { hostname: string | null };
     assert.equal(h.hostname, null);
     assert.match(riepilogo(log), /1 errore/);
+  });
+
+  it("nome non valido su una riga validata: validated e legame restano, niente budget", async () => {
+    const t = tenant(codice("NONOMEV"), hostUguali(4, [5985]));
+    const id = voce(t, "Scansioni");
+    const pc = apparato(t, ipDi(1));
+    riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+    legame(t, pc, id, "winrm", 5985);
+    const b = banco({ winrm: () => "bad command name" });
+
+    const log = await giro(t, "windows", b);
+
+    const [r] = righe(t, ipDi(1));
+    assert.deepEqual([r.validated, r.fail_count, r.backoff_until, r.motivo], [1, 0, null, "errore"]);
+    assert.equal(statoLegame(t, pc, id), "success");
+    assert.equal(b.chiamate.winrm.length, 4, "non è un logon errato: non consuma il limite");
+    assert.ok(!log.includes("esclusa"), log);
   });
 
   it("la voce validata via WMI si prova per prima, prima di quella che su quell'host non è mai entrata", async () => {
@@ -561,7 +778,7 @@ describe("credential_validate: evidenze e host non Windows", () => {
     const log = await giro(t, "credential_validate", b);
 
     assert.deepEqual([b.chiamate.winrm, b.chiamate.wmi, b.chiamate.ldap], [[], [], []]);
-    assert.equal(righe(t, ipDi(1))[0].motivo, "porte_chiuse");
+    assert.deepEqual(righe(t, ipDi(1)), []);
     assert.match(riepilogo(log), /1 porte chiuse/);
   });
 
@@ -572,6 +789,23 @@ describe("credential_validate: evidenze e host non Windows", () => {
     const log = await giro(t, "credential_validate", banco());
 
     assert.match(riepilogo(log), /1 nessuna voce/);
+  });
+});
+
+describe("credential_validate: il fermo si legge col motore rigoroso", () => {
+  it("un guasto del database ferma il giro, non si traduce in «nessun fermo» e in un login", async () => {
+    const t = tenant(codice("RIGOROSO"), hostUguali(1, [5985]));
+    voce(t, "Scansioni");
+    t.d.exec("DROP TABLE host_credentials");
+    const b = banco({ password: "valida", winrm: () => "PC" });
+    installaProve(b);
+    installaEsecutoreFinto(creaEsecutoreFinto({ vivi: t.ips }).override);
+
+    const avvio = await withTenant(t.code, () => discoverNetwork(t.rete, "credential_validate", undefined, null, { targetIps: t.ips }));
+    const esito = await avvio.done;
+
+    assert.deepEqual(b.chiamate.winrm, [], "con il fermo illeggibile non si fa nessun logon");
+    assert.equal(esito.status, "failed");
   });
 });
 
@@ -625,11 +859,10 @@ for (const [nome, m] of [["db-tenant", tenantDb], ["facade db", facade]] as cons
       assert.deepEqual([righe(t, ipDi(1))[0].fail_count, righe(t, ipDi(1))[0].motivo], [1, "firewall"]);
     });
 
-    it("il solo motivo su una riga nuova: nessun fallimento, nessun fermo, non validata", () => {
+    it("il solo motivo senza una riga: non ne crea", () => {
       const { t, id, hostId } = preparato();
-      withTenant(t.code, () => m.recordCredentialMotivo(hostId, id, "wmi", 135, "password_errata"));
-      const [r] = righe(t, ipDi(1));
-      assert.deepEqual([r.protocol_type, r.port, r.validated, r.fail_count, r.backoff_until, r.last_error, r.motivo], ["wmi", 135, 0, 0, null, null, "password_errata"]);
+      withTenant(t.code, () => m.recordCredentialMotivo(hostId, id, "wmi", 135, "porte_chiuse"));
+      assert.deepEqual(righe(t, ipDi(1)), []);
     });
 
     it("il solo motivo su una riga esistente non tocca validated, fail_count, backoff e ultimo errore", () => {
@@ -640,6 +873,60 @@ for (const [nome, m] of [["db-tenant", tenantDb], ["facade db", facade]] as cons
       withTenant(t.code, () => m.recordCredentialMotivo(hostId, id, "winrm", 5985, "porte_chiuse"));
       const [r] = righe(t, ipDi(1));
       assert.deepEqual([r.validated, r.fail_count, r.backoff_until, r.last_error, r.motivo], [1, 3, FUTURO, "vecchio", "porte_chiuse"]);
+      assert.ok(r.last_attempt_at, "l'ora dell'ultima prova si aggiorna");
+    });
+
+    it("problema senza fermo: motivo, ultimo errore e ora; validated, conti e backoff restano", () => {
+      const { t, id, hostId } = preparato();
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1, fail_count: 2 });
+      withTenant(t.code, () => m.recordCredentialProblema(hostId, id, "winrm", 5985, "muto", "firewall", false));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.backoff_until, r.last_error, r.motivo], [1, 2, null, "muto", "firewall"]);
+      assert.ok(r.last_attempt_at);
+    });
+
+    it("problema col fermo: fail_count e backoff salgono, validated resta", () => {
+      const { t, id, hostId } = preparato();
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1, fail_count: 2 });
+      withTenant(t.code, () => m.recordCredentialProblema(hostId, id, "winrm", 5985, "guasto", "errore", true));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.last_error, r.motivo], [1, 3, "guasto", "errore"]);
+      assert.ok(r.backoff_until);
+    });
+
+    it("problema su una riga nuova: nasce non validata", () => {
+      const { t, id, hostId } = preparato();
+      withTenant(t.code, () => m.recordCredentialProblema(hostId, id, "wmi", 135, "muto", "firewall", false));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.protocol_type, r.port, r.validated, r.fail_count, r.backoff_until, r.last_error, r.motivo], ["wmi", 135, 0, 0, null, "muto", "firewall"]);
+    });
+
+    it("problema col fermo su una riga nuova: fail_count 1", () => {
+      const { t, id, hostId } = preparato();
+      withTenant(t.code, () => m.recordCredentialProblema(hostId, id, "wmi", 135, "guasto", "errore", true));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "errore"]);
+      assert.ok(r.backoff_until);
+    });
+
+    it("password errata: ogni riga e ogni legame della voce, senza toccare i conti né le altre voci", () => {
+      const { t, id, hostId } = preparato();
+      const altra = voce(t, "Altra");
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1, fail_count: 2 });
+      riga(t, ipDi(1), id, "wmi", 135, { validated: 1 });
+      riga(t, ipDi(1), altra, "winrm", 5985, { validated: 1 });
+      const pc = apparato(t, ipDi(1));
+      legame(t, pc, id, "winrm", 5985);
+      legame(t, pc, altra, "winrm", 5985);
+      withTenant(t.code, () => m.recordCredentialPasswordErrata(id));
+      assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.credential_id, r.protocol_type, r.validated, r.fail_count, r.backoff_until, r.motivo]), [
+        [id, "winrm", 0, 2, null, "password_errata"],
+        [id, "wmi", 0, 0, null, "password_errata"],
+        [altra, "winrm", 1, 0, null, null],
+      ]);
+      assert.equal(hostId, t.host.get(ipDi(1)));
+      assert.equal(statoLegame(t, pc, id), "failed");
+      assert.equal(statoLegame(t, pc, altra), "success");
     });
   });
 }

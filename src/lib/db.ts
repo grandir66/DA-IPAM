@@ -7434,8 +7434,10 @@ export {
   registraVersioneSnmpRilevata,
   // Token API dell'apparato dall'archivio (credenziali 2e, T20): una sola copia
   tokenApiApparato,
-  // Motivo dell'accesso Windows senza login rifiutato (piano 2026-11-04): una sola copia
+  // Esiti dell'accesso Windows che non sono un rifiuto (piano 2026-11-04): una sola copia
   recordCredentialMotivo,
+  recordCredentialProblema,
+  recordCredentialPasswordErrata,
   // Abbinamento Proxmox della scheda hypervisor: una sola copia
   getHostNotoPerIp,
   getHostNotoPerNomeNodo,

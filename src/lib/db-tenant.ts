@@ -5668,9 +5668,10 @@ export function recordCredentialSuccess(
 
 /**
  * Scrive il solo motivo dell'esito di una prova di accesso Windows in cui non c'è stato un login rifiutato (porte chiuse,
- * password errata già nota, budget esaurito): lo legge la pagina della copertura. Non conta come fallimento: `fail_count`,
- * `backoff_until`, `validated` e `last_error` restano come sono, altrimenti una voce mai provata allungherebbe il proprio
- * fermo. Upsert: la riga può non esistere ancora. Una sola copia: db.ts la riesporta.
+ * budget esaurito): lo legge la pagina della copertura. Non conta come fallimento: `fail_count`, `backoff_until`,
+ * `validated` e `last_error` restano come sono, altrimenti una voce mai provata allungherebbe il proprio fermo.
+ * Aggiorna solo una riga che esiste: un host che non ha mai visto questa voce non deve guadagnare una riga, che la
+ * metterebbe fra i suoi candidati. Una sola copia: db.ts la riesporta.
  */
 export function recordCredentialMotivo(
   hostId: number,
@@ -5679,15 +5680,76 @@ export function recordCredentialMotivo(
   port: number,
   motivo: MotivoAccesso
 ): void {
+  db().prepare(
+    `UPDATE host_credentials SET motivo = ?, last_attempt_at = ?
+     WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
+  ).run(motivo, new Date().toISOString(), hostId, credentialId, protocol, port);
+}
+
+/**
+ * Registra un esito che non è un rifiuto: timeout, firewall, errori del bridge, logon passato con una risposta inutile.
+ * `validated` e il legame dell'apparato restano come sono: una macchina muta non dice che la voce non vale più. Il
+ * fallimento pieno, con l'invalidazione, è `recordCredentialFailure`, e vale solo per un rifiuto vero. Con `fermo` sale
+ * anche il backoff, come per un fallimento. Upsert: la prova c'è stata, e l'esito non deve andare perso.
+ * Una sola copia: db.ts la riesporta.
+ */
+export function recordCredentialProblema(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number,
+  error: string,
+  motivo: MotivoAccesso,
+  fermo: boolean
+): void {
   const d = db();
+  const existing = d
+    .prepare(
+      `SELECT id, fail_count, backoff_until FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
+    )
+    .get(hostId, credentialId, protocol, port) as { id: number; fail_count: number; backoff_until: string | null } | undefined;
+
+  const failCount = (existing?.fail_count ?? 0) + (fermo ? 1 : 0);
+  const backoffUntil = fermo
+    ? new Date(Date.now() + Math.min(2 ** failCount * 5 * 60 * 1000, 24 * 60 * 60 * 1000)).toISOString()
+    : (existing?.backoff_until ?? null);
+  const nowIso = new Date().toISOString();
+
+  if (existing) {
+    d.prepare(
+      `UPDATE host_credentials SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?, motivo = ? WHERE id = ?`
+    ).run(failCount, error, nowIso, backoffUntil, motivo, existing.id);
+    return;
+  }
   const max = d.prepare(
     `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
   ).get(hostId) as { m: number };
   d.prepare(
-    `INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, sort_order, auto_detected, motivo)
-     VALUES (?, ?, ?, ?, 0, ?, 0, ?)
-     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET motivo = excluded.motivo`
-  ).run(hostId, credentialId, protocol, port, max.m + 1, motivo);
+    `INSERT INTO host_credentials
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until, motivo)
+     VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?, ?)`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, failCount, error, nowIso, backoffUntil, motivo);
+}
+
+/**
+ * La verifica ha la prova certa che la password della voce è sbagliata: non è un fatto di un host. Tutte le righe e tutti
+ * i legami della voce perdono la validazione in una scrittura sola, così la scansione e le letture degli apparati non
+ * ripartono con quella password. `fail_count` e il backoff non si toccano: nessun host è stato provato.
+ * Una sola copia: db.ts la riesporta.
+ */
+export function recordCredentialPasswordErrata(credentialId: number): void {
+  const d = db();
+  const nowIso = new Date().toISOString();
+  const messaggio = "Password errata";
+  d.transaction(() => {
+    d.prepare(
+      `UPDATE host_credentials SET validated = 0, validated_at = NULL, motivo = 'password_errata', last_error = ?, last_attempt_at = ?
+       WHERE credential_id = ?`
+    ).run(messaggio, nowIso, credentialId);
+    d.prepare(
+      `UPDATE device_credential_bindings SET test_status = 'failed', test_message = ?, tested_at = datetime('now') WHERE credential_id = ?`
+    ).run(messaggio, credentialId);
+  })();
 }
 
 export function getCredentialCommunityString(credentialId: number): string | null {

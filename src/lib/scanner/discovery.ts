@@ -70,19 +70,23 @@ import {
   getMultihomedStatus,
   recordCredentialFailure,
   recordCredentialMotivo,
+  recordCredentialPasswordErrata,
+  recordCredentialProblema,
   recordCredentialSuccess,
   getCredentialById,
 } from "@/lib/db";
-import { resolveCredentialsFor, resolveCredentialsForDb } from "@/lib/credentials/resolve";
+import { resolveCredentialsForDb } from "@/lib/credentials/resolve";
 import type { CredProtocol, ResolveTarget, ResolvedCredential } from "@/lib/credentials/resolve";
 import { normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { CredentialRunBudget } from "./credential-run-budget";
+import { ricordoDelTenant } from "./account-windows";
 import {
   ORDINE_MOTIVI,
   portaDellaStrada,
   provaAccessoWindows,
   stradeDaProvare,
   type EsitoAccesso,
+  type EsitoDiStrada,
   type MotivoAccesso,
   type ProvaWinrm,
   type ProvaWmi,
@@ -221,8 +225,8 @@ const TETTO_PROVA_WINRM_MS = 20_000;
 
 /** `runWinrmCommand` col tetto, nella forma che chiede il motore. */
 export function provaWinrmConTetto(deps?: DipendenzeWinrm): ProvaWinrm {
-  return (host, port, username, password, command, usePowershell, realm) =>
-    runWinrmCommand(host, port, username, password, command, usePowershell, realm, TETTO_PROVA_WINRM_MS, deps);
+  return (host, port, username, password, command, usePowershell, realm, opzioni) =>
+    runWinrmCommand(host, port, username, password, command, usePowershell, realm, { ...opzioni, timeoutMs: TETTO_PROVA_WINRM_MS }, deps);
 }
 
 /** Tutte le uscite della prova di accesso Windows verso le macchine e verso il DC. */
@@ -295,12 +299,20 @@ function backoffDaCandidati(
     candidati(strada).find((r) => r.credential_id === credId && r.protocol === strada && r.port === porta)?.backoff_until ?? null;
 }
 
+/** La strada su cui questa voce è già entrata su questo host: WinRM se lo è su tutte e due, come l'ordine di serie. */
+function stradaValidataDaCandidati(candidati: (protocollo: StradaWindows) => readonly ResolvedCredential[], credId: number): StradaWindows | null {
+  const validata = (strada: StradaWindows): boolean => candidati(strada).some((r) => r.credential_id === credId && r.protocol === strada && r.validated);
+  if (validata("winrm")) return "winrm";
+  return validata("wmi") ? "wmi" : null;
+}
+
 interface ProvaVoceWindows {
   host: { id: number; ip: string };
   credId: number;
   porteAperte: readonly number[];
   nowIso: string;
   backoffDi: (strada: StradaWindows, porta: number) => string | null;
+  stradaValidata: StradaWindows | null;
   /** Tipo `windows`: la riga dell'host nasce come rilevata da sola. */
   rilevata?: boolean;
   /** Tipo `windows`: un accesso senza un nome valido non vale come accesso. */
@@ -316,17 +328,25 @@ type EsitoVoceWindows = EsitoAccesso & { porta: number; fase: string };
  * passano da qui, e qui si scrive l'esito (riuscita, fallimento, evidenze, log), una volta sola. Il gate sta nel motore:
  * un `gateCredential` prima di questa chiamata conterebbe due volte i tentativi risparmiati.
  *
- * La verifica della password è una per voce in tutto il giro: si crea qui, nel contesto del tenant.
+ * La verifica della password è una per account in tutto il giro: si crea qui, nel contesto del tenant, e legge il ricordo
+ * delle password errate del tenant.
  *
  * `strada: null` vuol dire nessun login, e `porte_chiuse` nemmeno: niente fallimento, niente `fail_count`, niente fermo,
- * si scrive solo il motivo per la pagina della copertura. Incidente 72729, 04/11/2026.
+ * si aggiorna solo il motivo per la pagina della copertura. Incidente 72729, 04/11/2026.
+ *
+ * Il fallimento pieno, che toglie la validazione alla riga e al legame, vale solo per un rifiuto vero: un timeout non dice
+ * che la voce non vale più. Si scrivono tutte le strade provate: un rifiuto su WinRM con WMI riuscito passa il login
+ * dell'apparato al legame `wmi`, e il giro dopo non riprova WinRM. La password errata certa si scrive una volta sola, su
+ * tutta la voce.
  */
 function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) => void) {
   const prove = proveAccessoDelGiro();
-  const verifica = new VerificaPasswordRun({ ldap: prove.ldap, smb: prove.smb });
+  const tenant = getCurrentTenantCode();
+  const verifica = new VerificaPasswordRun({ ldap: prove.ldap, smb: prove.smb }, tenant ? ricordoDelTenant(tenant) : undefined);
   const dominioAd = getAdRealm()?.realm || "";
   const motivoDiHost = new Map<number, MotivoAccesso>();
-  let protocolloWmiRifiutato = false;
+  const vociErrateScritte = new Set<number>();
+  const guastiDelTenant = new Set<string>();
   // L'evidenza vuole il codice dell'errore WinRM, che l'esito del motore non porta: dettaglio è un testo per chi legge.
   let codiceWinrm: string | null = null;
 
@@ -344,44 +364,74 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
     if (!prima || ORDINE_RIEPILOGO.indexOf(motivo) < ORDINE_RIEPILOGO.indexOf(prima)) motivoDiHost.set(hostId, motivo);
   };
 
+  const avvisaGuasto = (avviso: string): void => {
+    if (guastiDelTenant.has(avviso)) return;
+    guastiDelTenant.add(avviso);
+    log(`⛔ ${avviso}`);
+    console.error(`[Discovery] ${avviso}`);
+  };
+
   /**
-   * Un tenant non migrato rifiuta `wmi` col CHECK: è un guasto del tenant, non di questa voce. Lo si dice una volta sola e
-   * il giro prosegue: gli altri protocolli hanno il loro esito, e nessuna riga vuol dire nessun fermo sull'host.
+   * Un tenant non migrato rifiuta `wmi` col CHECK, o non ha la colonna `motivo`: è un guasto del tenant, non di questa voce.
+   * Lo si dice una volta sola e il giro prosegue: gli altri protocolli hanno il loro esito, e nessuna riga vuol dire nessun
+   * fermo sull'host. `strada` è null per le scritture che non riguardano una strada sola.
    */
-  const salva = (strada: StradaWindows, scrittura: () => void): void => {
+  const salva = (strada: StradaWindows | null, scrittura: () => void): void => {
     try {
       scrittura();
     } catch (e) {
-      if (strada !== "wmi" || (e as { code?: unknown }).code !== "SQLITE_CONSTRAINT_CHECK") throw e;
-      if (protocolloWmiRifiutato) return;
-      protocolloWmiRifiutato = true;
-      const avviso = "Database del cliente non aggiornato: host_credentials non accetta il protocollo wmi. Gli esiti WMI di questo giro non vengono salvati.";
-      log(`⛔ ${avviso}`);
-      console.error(`[Discovery] ${avviso}`);
+      const { code, message } = e as { code?: unknown; message?: unknown };
+      if (strada === "wmi" && code === "SQLITE_CONSTRAINT_CHECK") {
+        avvisaGuasto("Database del cliente non aggiornato: host_credentials non accetta il protocollo wmi. Gli esiti WMI di questo giro non vengono salvati.");
+      } else if (code === "SQLITE_ERROR" && typeof message === "string" && /\bmotivo\b/.test(message)) {
+        avvisaGuasto("Database del cliente non aggiornato: host_credentials non ha la colonna motivo. Gli esiti Windows di questo giro non vengono salvati.");
+      } else {
+        throw e;
+      }
     }
   };
 
-  const scriviEsito = (p: ProvaVoceWindows, esito: EsitoAccesso, porta: number, riga: StradaWindows): void => {
+  /** Una strada provata, secondo quello che si sa del suo logon. */
+  const scriviStrada = (p: ProvaVoceWindows, s: EsitoDiStrada): void => {
     const { id: hostId, ip } = p.host;
-    const { strada, motivo } = esito;
-    if (motivo === "ok" && strada) {
+    const { strada, porta, motivo, logon } = s;
+    const errore = s.dettaglio.slice(0, 500);
+    if (motivo === "ok") {
       salva(strada, () => {
         if (p.rilevata) addHostCredential(hostId, p.credId, strada, porta, { validated: true, auto_detected: true });
         recordCredentialSuccess(hostId, p.credId, strada, porta, motivo);
       });
       autoBindCredentialToDevice(ip, p.credId, strada, porta, hostId);
-      // Le evidenze hanno una sola fonte per l'accesso a Windows: `winrm`. Un accesso via WMI dice lo stesso.
-      p.evidenza?.({ protocol: "winrm", ok: true, banner: esito.nomeHost });
+    } else if (logon === "rifiutato") {
+      salva(strada, () => recordCredentialFailure(hostId, p.credId, strada, porta, errore, motivo));
+    } else if (motivo === "porte_chiuse") {
+      salva(strada, () => recordCredentialMotivo(hostId, p.credId, strada, porta, motivo));
+    } else {
+      // Firewall: la voce non c'entra. Logon passato con una risposta inutile: nemmeno. Il fermo è per gli altri errori.
+      const fermo = motivo !== "firewall" && logon !== "riuscito";
+      salva(strada, () => recordCredentialProblema(hostId, p.credId, strada, porta, errore, motivo, fermo));
+    }
+  };
+
+  const scriviEsito = (p: ProvaVoceWindows, esito: EsitoAccesso): void => {
+    const { strada, motivo } = esito;
+    if (motivo === "password_errata") {
+      if (vociErrateScritte.has(p.credId)) return;
+      vociErrateScritte.add(p.credId);
+      salva(null, () => recordCredentialPasswordErrata(p.credId));
       return;
     }
-    if (strada === null || motivo === "porte_chiuse") {
+    if (strada === null) {
       // Un `errore` senza strada è la voce in fermo: non è stata provata, e l'ultimo motivo vero resta il più utile.
-      if (strada === null && motivo === "errore") return;
-      salva(riga, () => recordCredentialMotivo(hostId, p.credId, riga, porta, motivo));
+      if (motivo === "errore") return;
+      const riga = stradeDaProvare(p.porteAperte)[0] ?? "winrm";
+      salva(riga, () => recordCredentialMotivo(p.host.id, p.credId, riga, portaDellaStrada(riga, p.porteAperte), motivo));
       return;
     }
-    salva(strada, () => recordCredentialFailure(hostId, p.credId, strada, porta, esito.dettaglio.slice(0, 500), motivo));
-    if (strada === "winrm") {
+    for (const s of esito.strade) scriviStrada(p, s);
+    // Le evidenze hanno una sola fonte per l'accesso a Windows: `winrm`. Un accesso via WMI dice lo stesso.
+    if (motivo === "ok") p.evidenza?.({ protocol: "winrm", ok: true, banner: esito.nomeHost });
+    else if (strada === "winrm" && motivo !== "porte_chiuse") {
       p.evidenza?.({ protocol: "winrm", ok: false, banner: codiceWinrm && WINRM_SERVICE_PRESENT_CODES.has(codiceWinrm) ? codiceWinrm : null });
     }
   };
@@ -409,16 +459,20 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
         budget,
         backoffDi: p.backoffDi,
         nowIso: p.nowIso,
+        stradaValidata: p.stradaValidata,
         prova: { winrm, wmi: prove.wmi },
       });
       if (p.soloNomeValido && esito.motivo === "ok" && !nomeHostValido(esito.nomeHost ?? "")) {
         // Il motore ha visto una risposta, non un nome: niente accesso. Il logon però è passato, e il budget resta azzerato.
-        esito = { ...esito, motivo: "errore", dettaglio: "Risposta che non è un nome host.", nomeHost: null };
+        const dettaglio = "Risposta che non è un nome host.";
+        const strade = esito.strade.map((s): EsitoDiStrada => (s.motivo === "ok" ? { ...s, motivo: "errore", dettaglio } : s));
+        esito = { ...esito, motivo: "errore", dettaglio, nomeHost: null, strade };
       }
       const riga = esito.strada ?? stradeDaProvare(p.porteAperte)[0] ?? "winrm";
       const porta = portaDellaStrada(riga, p.porteAperte);
-      scriviEsito(p, esito, porta, riga);
-      conta(hostId, esito.motivo);
+      scriviEsito(p, esito);
+      // Una voce in fermo non è stata provata: non è un errore, e il riepilogo non la conta.
+      if (esito.strada !== null || esito.motivo !== "errore") conta(hostId, esito.motivo);
       const nome = esito.strada ? `${NOME_STRADA[esito.strada]}: ` : "";
       log(
         esito.motivo === "ok"
@@ -1734,6 +1788,7 @@ async function runDiscovery(
       const porteAperte = porteDiHost(host.open_ports);
       const nowIso = new Date().toISOString();
       let ok = false;
+      let muto = false;
       let fase = "";
       for (const credId of chain) {
         const esito = await accessoWindows.prova({
@@ -1742,11 +1797,17 @@ async function runDiscovery(
           porteAperte,
           nowIso,
           backoffDi: backoffDaCandidati(candidati, credId),
+          stradaValidata: stradaValidataDaCandidati(candidati, credId),
           rilevata: true,
           soloNomeValido: true,
         });
         if (!esito) continue;
         fase = esito.fase;
+        // Un host muto non risponde nemmeno alla voce dopo: sarebbero altri 20 secondi per strada, e la voce non c'entra.
+        if (esito.motivo === "firewall") {
+          muto = true;
+          break;
+        }
         if (esito.motivo === "ok") {
           nmapResults.set(ip, {
             ports: [{
@@ -1763,7 +1824,8 @@ async function runDiscovery(
           break;
         }
       }
-      if (!ok) log(`✗ ${ip} — nessuna credenziale valida`);
+      if (muto) log(`✗ ${ip} — nessuna risposta: le altre voci non si provano`);
+      else if (!ok) log(`✗ ${ip} — nessuna credenziale valida`);
       progress.scanned = i + 1;
       progress.found = nmapResults.size;
       progress.phase = `Scansione Windows — ${i + 1}/${onlineIps.length}${fase ? ` (${ip}, ${fase})` : ""}`;
@@ -2622,11 +2684,12 @@ async function runDiscovery(
       if (hasWindowsIndicator && !haVoceWindows) accessoWindows.nessunaVoce(host.id);
 
       const nowIso = new Date().toISOString();
-      const resolvedBackoffCache = new Map<CredProtocol, ReturnType<typeof resolveCredentialsFor>>();
-      const getResolvedForProtocol = (protocol: CredProtocol): ReturnType<typeof resolveCredentialsFor> => {
+      // Il motore rigoroso, come nel tipo `windows`: un errore del DB ferma il giro, non si traduce in «nessun fermo» e in un login.
+      const resolvedBackoffCache = new Map<CredProtocol, ResolvedCredential[]>();
+      const getResolvedForProtocol = (protocol: CredProtocol): ResolvedCredential[] => {
         let r = resolvedBackoffCache.get(protocol);
         if (!r) {
-          r = resolveCredentialsFor({ hostId: host.id, ip, networkId }, protocol, { includeBackoff: true });
+          r = resolveCredentialsForDb(getDb(), { hostId: host.id, ip, networkId }, protocol, { includeBackoff: true });
           resolvedBackoffCache.set(protocol, r);
         }
         return r;
@@ -2660,6 +2723,7 @@ async function runDiscovery(
       // per un protocollo, NON provare le altre (fix C2 2026-06-23: senza, ogni
       // credenziale sbagliata era un logon fallito reale su ogni host → lockout AD).
       const validatedProtos = new Set<string>();
+      let windowsMuto = false;
       for (const nc of netCreds) {
         const credType = nc.credential_type.toLowerCase();
         const credId = nc.credential_id;
@@ -2783,7 +2847,7 @@ async function runDiscovery(
         }
 
         // Le due strade Windows contano come una: una voce riuscita via WinRM o WMI ferma le voci seguenti (fix C2).
-        if (credType === "windows" && !validatedProtos.has("windows")) {
+        if (credType === "windows" && !validatedProtos.has("windows") && !windowsMuto) {
           // hasWindowsIndicator NON è più solo una condizione di ramo (§Task3): se falsa, gateCredential nega con motivo
           // loggato invece di saltare il blocco in silenzio. Con l'indicatore il gate è dentro il motore.
           if (!hasWindowsIndicator && !gateCredential("winrm", credId, credType, 5985)) continue;
@@ -2793,6 +2857,7 @@ async function runDiscovery(
             porteAperte: openPorts.map((p) => p.port),
             nowIso,
             backoffDi: backoffDaCandidati(getResolvedForProtocol, credId),
+            stradaValidata: stradaValidataDaCandidati(getResolvedForProtocol, credId),
             evidenza: (outcome) => applyAuthEvidence(host.id, outcome),
           });
           if (esito) ultimoWindows = ` · ${ip}, ${esito.fase}`;
@@ -2800,6 +2865,8 @@ async function runDiscovery(
             validated++;
             validatedProtos.add("windows");
           }
+          // Un host muto non risponde nemmeno alla voce dopo: sarebbero altri 20 secondi per strada, e la voce non c'entra.
+          if (esito?.motivo === "firewall") windowsMuto = true;
         }
 
         // API: nessun test di autenticazione generico in questa fase (§7.4 fuori

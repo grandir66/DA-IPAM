@@ -163,6 +163,17 @@ Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam-dc"`,
   },
 ];
 
+/** Sola lettura, sul DC, per l'IT del cliente: gli accessi falliti delle ultime 24 ore. Gli stessi eventi di «Sicurezza del dominio». */
+export const COMANDO_LEGGI_FALLIMENTI = `# Sul DC, PowerShell come amministratore. Sola lettura: non cambia niente.
+Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4625, 4771, 4776, 4740; StartTime = (Get-Date).AddDays(-1) } -MaxEvents 200 |
+  Select-Object TimeCreated, Id, @{ n = 'Evento'; e = { ($_.Message -split [Environment]::NewLine)[0] } } |
+  Format-Table -AutoSize -Wrap`;
+
+/** Sola lettura, su ogni DC: dice se le voci di audit degli accessi sono accese. */
+export const COMANDO_VERIFICA_AUDIT = `# Sul DC, PowerShell come amministratore. Sola lettura.
+auditpol /get /category:*
+wevtutil gl Security`;
+
 export function dirittiDi(famiglia: FamigliaDiritti): readonly DirittoRichiesto[] {
   return DIRITTI.filter((d) => d.famiglia === famiglia);
 }

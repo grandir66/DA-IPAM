@@ -26,7 +26,7 @@ const ASPETTO_DEL_DIRITTO: Record<StatoDiritto, AspettoSegno> = {
 const PAROLA_DEL_DIRITTO: Record<StatoDiritto, string> = { si: "Sì", in_parte: "In parte", no: "No", non_verificato: "Non provato" };
 
 /** Copia negli appunti; fuori da un contesto sicuro (http) `navigator.clipboard` non c'è e si ripiega su `execCommand`. */
-async function copiaTesto(testo: string): Promise<boolean> {
+export async function copiaTesto(testo: string): Promise<boolean> {
   try {
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(testo);

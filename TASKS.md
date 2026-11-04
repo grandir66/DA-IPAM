@@ -1,6 +1,10 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-04 — Pagina «Cosa serve» in Active Directory
+
+- [x] Riccardo: schema dei diritti, script e configurazione degli eventi visibili in pagina. Fatto in `/active-directory/cosa-serve`, guardata resa a 1920 e 1280 con dati finti.
+
 ## 2026-11-04 — Edge: analisi del 72729 fermata e risultati persi
 
 Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep, partita 13:15, fermata alle 21:53 ora italiana dal guardiano (`scansione ferma al 98% da 3 ore`). Greenbone: 0 rapporti, 0 risultati; `cve_findings` 0. Non era bloccata: alle 21:53 era ancora in prova su 192.168.0.218 (stampante Kyocera) e 192.168.0.246 (D-Link), con test web in corso; 94 host su 96 finiti. Il guardiano guarda solo la percentuale. Il log c'è: `/var/log/openvas/openvas.log`, 2 GB in DEBUG.

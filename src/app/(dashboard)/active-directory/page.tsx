@@ -11,6 +11,7 @@ import {
   RefreshCw,
   BookOpen,
   ShieldCheck,
+  ListChecks,
   Plus,
   Trash2,
   TestTube,
@@ -29,6 +30,7 @@ import {
   ChevronRight,
   AlertTriangle,
 } from "lucide-react";
+import NextLink from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -825,6 +827,11 @@ function PaginaActiveDirectory() {
           Active Directory
         </h1>
         <div className="flex items-center gap-2">
+          {/* 04/11/2026: tutto ciò che serve in una pagina sola, diritti, script e configurazione degli eventi */}
+          <Button render={<NextLink href="/active-directory/cosa-serve" />} nativeButton={false}>
+            <ListChecks className="w-4 h-4 mr-2" />
+            Cosa serve
+          </Button>
           {/* v0.2.657: guida configurazione DC (LDAPS, WinRM, DHCP, svc account) */}
           <Button
             variant="outline"

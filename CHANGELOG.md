@@ -6,6 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: pagina «Cosa serve», dal pulsante nella pagina Active Directory: diritti degli account per WinRM, WMI e AD, script `Configura-Audit-DC.ps1`, comandi di sola lettura per i fallimenti e la configurazione degli eventi. Prima stavano in due finestre di guida. L'esempio dello script ora usa `svc-ipam-dc`, come la regola dei due account.
 - **Cambiato**: le analisi di Edge fallite arrivano in DA-IPAM col motivo, in Impostazioni e nel pannello della rete. Prima passavano solo le riuscite: il 04/11 sul 72729 un'analisi fermata al 98% non lasciava traccia. Una fallita con rilievi diventa `parziale` e aggiorna solo gli host finiti, gli altri tengono i loro.
 - **Cambiato**: la scansione prova da sola WinRM e WMI su ogni host e si ferma alla prima strada che riesce,
   con un motivo preciso per ogni esito (porte chiuse, firewall, password rifiutata, diritti mancanti).

@@ -23,7 +23,7 @@
   Con -Prova dice cosa farebbe senza cambiare niente.
 
 .PARAMETER Account
-  sAMAccountName dell'account usato da DA-IPAM per WinRM (es. svc-ipam). Facoltativo.
+  sAMAccountName dell'account usato da DA-IPAM per WinRM (es. svc-ipam-dc). Facoltativo.
 
 .PARAMETER DimensioneRegistroMB
   Dimensione massima del registro Security in MB (di serie 1024; con centinaia di utenti 2048-4096).
@@ -32,7 +32,7 @@
   Non cambia niente: elenca le operazioni.
 
 .EXAMPLE
-  .\Configura-Audit-DC.ps1 -Account svc-ipam
+  .\Configura-Audit-DC.ps1 -Account svc-ipam-dc
   .\Configura-Audit-DC.ps1 -Prova
 #>
 [CmdletBinding()]

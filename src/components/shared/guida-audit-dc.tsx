@@ -77,7 +77,7 @@ export function GuidaAuditDc() {
         <div className="min-w-[220px] flex-1">
           <p className="font-semibold">Script che fa tutto (punti 1-5)</p>
           <p className="text-[13px] text-muted-foreground">
-            Su un DC, PowerShell come Domain Admin: <code className="font-mono">.\Configura-Audit-DC.ps1 -Account svc-ipam</code>.
+            Su un DC, PowerShell come Domain Admin: <code className="font-mono">.\Configura-Audit-DC.ps1 -Account svc-ipam-dc</code>.
             Crea la GPO «DA-IPAM - Audit DC» sull&apos;OU Domain Controllers (la Default Domain Controllers Policy non si
             tocca), aggiunge il controllo per DCSync e mette l&apos;account nei gruppi. Con <code className="font-mono">-Prova</code>{" "}
             dice cosa farebbe senza cambiare niente.

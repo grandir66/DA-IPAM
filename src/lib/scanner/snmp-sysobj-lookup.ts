@@ -81,6 +81,9 @@ export const LOOKUP_TABLE: Array<{ oid: string; match: SysObjMatch }> = [
   { oid: "1.3.6.1.4.1.4526.100.4.1", match: { vendor: "Netgear", product: "M4100 serie", category: "networking", enterpriseId: 4526 } },
   { oid: "1.3.6.1.4.1.4526.100.1", match: { vendor: "Netgear", product: "Managed Switch generico", category: "networking", enterpriseId: 4526 } },
 
+  // ── Zyxel (890) ──
+  { oid: "1.3.6.1.4.1.890.1.15", match: { vendor: "Zyxel", product: "GS1900 serie", category: "switch", enterpriseId: 890 } },
+
   // ── Fortinet (12356) ──
   { oid: "1.3.6.1.4.1.12356.112.1", match: { vendor: "Fortinet", product: "FortiSwitch serie", category: "networking", enterpriseId: 12356 } },
   { oid: "1.3.6.1.4.1.12356.111.1", match: { vendor: "Fortinet", product: "FortiAP (access point)", category: "wireless", enterpriseId: 12356 } },

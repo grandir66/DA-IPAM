@@ -292,6 +292,22 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
     },
   },
 
+  // OID misurati su un GS1900-48HP V2.70 (72729, 04/11/2026). L'ENTITY-MIB ha il telaio all'indice 67108992, non 1: gli OID
+  // `.1` degli altri switch qui non rispondono. CPU, temperatura e PoE non si leggono: il ramo `.3.2` non ha un significato
+  // documentato e la POWER-ETHERNET-MIB non c'è.
+  {
+    id: "zyxel_gs1900",
+    name: "Zyxel GS1900",
+    category: "switch",
+    enterpriseOidPrefixes: ["1.3.6.1.4.1.890.1.15"],
+    confidence: 0.95,
+    fields: {
+      model: "1.3.6.1.4.1.890.1.15.3.1.11.0",
+      serial: "1.3.6.1.4.1.890.1.15.3.1.12.0",
+      firmware: "1.3.6.1.4.1.890.1.15.3.1.6.0",
+    },
+  },
+
   {
     id: "dlink",
     name: "D-Link Switch",
@@ -811,6 +827,7 @@ export const ENTERPRISE_VENDOR_MAP: Record<number, string> = {
   674: "Dell (iDRAC)",
   705: "Eaton",
   789: "NetApp",
+  890: "Zyxel",
   1248: "Epson",
   1526: "Snom",
   1981: "EMC",

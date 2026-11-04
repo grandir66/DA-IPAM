@@ -7,12 +7,15 @@ Riccardo (04/11): lo switch GS1900 risponde in SNMP ma non si vedono porte, VLAN
 - [x] Causa di ciò che non si vede: i dati ci sono. Apparato 18: 58 porte, 73 MAC, 1 VLAN, 58 PVID, 1 vicino LLDP. Ma `classification=server` con `vendor=hp`: `tipoScheda` dà `generico`, che non ha le tab Porte, VLAN, Vicini. La scansione ha poi portato l'host a `switch`, l'apparato no
 - [x] Causa del `vendor=hp`/ProCurve: creato in blocco alle 11:28 da «Rendi apparato» insieme ai due HP. Non è dimostrato chi l'abbia scelto; di certo `other` non offre nessun profilo switch, quindi uno switch di altra marca non ha una voce giusta
 - [x] Lettori attuali provati sul walk vero: 58 porte (50 + 8 LAG), VLAN `letto`, STP letto. Le MIB sono standard: non serve un parser nuovo per porte e VLAN
-- [ ] Profilo SNMP `zyxel_gs1900`: modello `…890.1.15.3.1.11.0`, seriale `.12.0`, firmware `.6.0`, nel catalogo e nel seed dell'hub, idempotente per gli hub esistenti. ENTITY-MIB non basta: il telaio ha indice 67108992, non 1
-- [ ] Profilo prodotto `generic_switch` sotto `other`, nessuna ricostruzione di `network_devices`; proposta di «Rendi apparato» per Zyxel: switch, mai ProCurve
-- [ ] Duplex da EtherLike (`dot3StatsDuplexStatus`) quando la MAU-MIB manca: oggi è nullo su tutte le porte
-- [ ] STP: root illeggibile. Il GS1900 dà `dot1dStpDesignatedRoot` come testo «0/00:00:00:00:00:00» e oggi esce un id senza senso (`12335.30:30:3a…`), con porta radice 52 su uno switch a 50 porte: root e porta radice a null
-- [ ] Prove con fixture anonimizzata dal walk (repo pubblico: niente IP e MAC veri), CHANGELOG, limiti nel manuale `docs/modules/acquisition.md`
-- [ ] Rilascio: dev, poi `main` col sì di Riccardo (72729 segue `main`), poi correggere l'apparato 18 e rileggerlo
+- [x] Profilo SNMP `zyxel_gs1900`: modello `…890.1.15.3.1.11.0`, seriale `.12.0`, firmware `.6.0`, nel catalogo e nel seed dell'hub, idempotente per gli hub esistenti. ENTITY-MIB non basta: il telaio ha indice 67108992, non 1
+- [x] Profilo prodotto `generic_switch` sotto `other`, nessuna ricostruzione di `network_devices`; proposta di «Rendi apparato» per Zyxel: switch, mai ProCurve
+- [x] Duplex da EtherLike (`dot3StatsDuplexStatus`) quando la MAU-MIB manca: oggi è nullo su tutte le porte
+- [x] STP: root illeggibile. Il GS1900 dà `dot1dStpDesignatedRoot` come testo «0/00:00:00:00:00:00» e oggi esce un id senza senso (`12335.30:30:3a…`), con porta radice 52 su uno switch a 50 porte: root e porta radice a null
+- [x] Prove con fixture anonimizzata dal walk (repo pubblico: niente IP e MAC veri), CHANGELOG, limiti nel manuale `docs/modules/acquisition.md`
+- [x] Trovato strada facendo: `tipoLetturaApparato` manda ogni `vendor=other` sul ramo Linux/SSH: uno switch sotto «Altro» non si sarebbe letto come switch. `eSwitchGenerico` lo esclude anche in `getDeviceInfo`
+- [ ] Rilascio: dev, poi `main` col sì di Riccardo del 04/11 (72729 segue `main`), poi correggere l'apparato 18 e rileggerlo
+- [ ] Da verificare su un apparato con la MAU-MIB: `snmp-port-schema.ts` prende l'ultimo componente dell'OID come ifIndex, ma quella tabella ha due indici (ifIndex.mauIndex). Non toccato: nessun apparato qui per provarlo
+- [ ] Riccardo (04/11): switch «pese» in 192.168.2.24x, «non so esattamente cosa, collegato, ma per qualche ragione non raggiungibile». Misura dalla VM 100 (192.168.0.190, solo letture): non è solo quello switch, tutta la rete 3 «parma» 192.168.2.0/24 tace. 0 host nel database, anche nelle scansioni delle 11:45; sweep ping + TCP 80/443 0 host su 256, gateway dichiarato .254 compreso; traceroute senza risposta già dal primo salto, via 192.168.0.50 (Fortinet). 192.168.1.0/24 invece dà 10 host online. Causa non dimostrata (ICMP filtrato non basta a spiegare lo zero su 80/443): serve guardare criteri e rotte sul Fortinet per la sorgente .190, o se «parma» è una sede remota in VPN. Il nome «pese» non compare in nessun host né vicino LLDP
 - Limiti misurati, non risolvibili via SNMP su questo firmware: PoE assente (nessuna POWER-ETHERNET-MIB, 0 righe, pur essendo un 48HP); porta 22 chiusa nella scansione, solo 80 e 443; i valori numerici `…890.1.15.3.2.x` non hanno un significato documentato e non si leggono
 
 ## 2026-11-04 — WMI nelle reti senza WinRM (72729, da decidere)

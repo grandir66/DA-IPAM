@@ -46,6 +46,7 @@ export const PRODUCT_PROFILE_IDS = [
   "generic_cam",
   "generic_stampante",
   "generic_iot",
+  "generic_switch",
 ] as const;
 
 export type ProductProfileId = (typeof PRODUCT_PROFILE_IDS)[number];
@@ -90,6 +91,7 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   generic_cam: "Telecamera",
   generic_stampante: "Stampante",
   generic_iot: "IoT",
+  generic_switch: "Switch",
 };
 
 /** Vendor DB → elenco profili ammessi */
@@ -107,7 +109,7 @@ export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonl
   cisco: ["cisco_switch", "cisco_router", "cisco_telefono"],
   vmware: ["vmware_vsphere"],
   apple: ["macos_notebook", "macos_desktop", "macos_server"],
-  other: ["generic_ups", "generic_voip", "generic_cam", "generic_stampante", "generic_iot"],
+  other: ["generic_ups", "generic_voip", "generic_cam", "generic_stampante", "generic_iot", "generic_switch"],
 };
 
 const PERIPHERAL_ONLY_PROFILES = new Set<ProductProfileId>([
@@ -115,6 +117,7 @@ const PERIPHERAL_ONLY_PROFILES = new Set<ProductProfileId>([
   "generic_voip",
   "generic_cam",
   "generic_stampante",
+  "generic_switch",
 ]);
 
 const ENDPOINT_CLASSIFICATIONS = new Set([
@@ -124,6 +127,14 @@ const ENDPOINT_CLASSIFICATIONS = new Set([
   "smartphone",
   "vm",
 ]);
+
+/**
+ * Switch sotto la piattaforma «Altro». `other` di suo vuol dire «Linux/SSH» nella lettura: uno switch finirebbe lì, senza
+ * porte né VLAN (GS1900 alla 72729, 04/11/2026).
+ */
+export function eSwitchGenerico(device: { product_profile?: string | null }): boolean {
+  return device.product_profile === "generic_switch";
+}
 
 export function getProductProfilesForVendor(
   vendor: string | null | undefined,
@@ -137,8 +148,9 @@ export function getProductProfilesForVendor(
       ids = ids.filter((id) => id === "generic_ups");
     } else if (ENDPOINT_CLASSIFICATIONS.has(classification)) {
       ids = ids.filter((id) => !PERIPHERAL_ONLY_PROFILES.has(id));
-    } else if (["stampante", "telecamera", "voip", "iot"].includes(classification)) {
+    } else if (["stampante", "telecamera", "voip", "iot", "switch"].includes(classification)) {
       const map: Partial<Record<string, ProductProfileId>> = {
+        switch: "generic_switch",
         stampante: "generic_stampante",
         telecamera: "generic_cam",
         voip: "generic_voip",
@@ -613,6 +625,12 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     credentialHint: "Molto variabile: MQTT/API REST custom, SNMP minimale, SSH su gateway.",
     notes: "Profilo catch‑all: spesso serve integrazione dedicata per protocollo verticale.",
   },
+  generic_switch: {
+    intent: "Switch di una marca senza piattaforma propria (Zyxel, Netgear, D-Link…): porte, VLAN, MAC, LLDP dalle MIB standard.",
+    acquisitionPriority: ["snmp"],
+    credentialHint: "SNMP v2c o v3 in sola lettura.",
+    notes: "Nessun comando SSH: legge IF-MIB, BRIDGE-MIB, Q-BRIDGE-MIB e LLDP-MIB. PoE solo se la POWER-ETHERNET-MIB risponde.",
+  },
 };
 
 /** Per inventario: chiavi JSON / sezioni UI consigliate (estendibile). */
@@ -719,6 +737,7 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
   generic_cam: { summary: "Risoluzione, stream, motion, firmware, rete", specificFields: ["stream", "motion", "firmware", "network"] },
   generic_stampante: { summary: "Contatori, supply, modello, errori", specificFields: ["counters", "supplies", "alerts"] },
   generic_iot: { summary: "Telemetry, stato, firmware, connettività", specificFields: ["telemetry", "state", "firmware", "connectivity"] },
+  generic_switch: { summary: "Porte, VLAN, MAC, LLDP", specificFields: ["ports", "vlan", "mac", "lldp"] },
 };
 
 /** Restituisce metadati operativi per un profilo (o null se sconosciuto). */
@@ -801,6 +820,7 @@ const CLASSIFICAZIONI_DEL_PROFILO: Partial<Record<ProductProfileId, readonly str
   generic_cam: ["telecamera"],
   generic_stampante: ["stampante", "multifunzione", "scanner"],
   generic_iot: ["iot", "sensore", "domotica"],
+  generic_switch: ["switch"],
 };
 
 /**

@@ -1932,6 +1932,7 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Fortinet (OID)", label: "Fortinet FortiGate", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12356" },
     { name: "pfSense (OID)", label: "pfSense", cls: "firewall", pri: 5, oid: "1.3.6.1.4.1.12325" },
     { name: "Netgear (OID)", label: "Netgear", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.4526" },
+    { name: "Zyxel (OID)", label: "Zyxel", cls: "switch", pri: 5, oid: "1.3.6.1.4.1.890.1.15" },
     { name: "Cisco switch (OID)", label: "Cisco", cls: "switch", pri: 6, oid: "1.3.6.1.4.1.9.1" },
     { name: "net-snmp Linux (OID)", label: "Linux/net-snmp", cls: "server_linux", pri: 50, oid: "1.3.6.1.4.1.8072.3.2", note: "Generico Linux; Proxmox override se porta 8006 o sysDescr" },
     // ── sysDescr / testo ──
@@ -2051,6 +2052,8 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     { id: "netgear", name: "Netgear Switch", cat: "switch", oids: ["1.3.6.1.4.1.4526"], conf: 0.95,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
+    { id: "zyxel_gs1900", name: "Zyxel GS1900", cat: "switch", oids: ["1.3.6.1.4.1.890.1.15"], conf: 0.95,
+      fields: { model: "1.3.6.1.4.1.890.1.15.3.1.11.0", serial: "1.3.6.1.4.1.890.1.15.3.1.12.0", firmware: "1.3.6.1.4.1.890.1.15.3.1.6.0" } },
     { id: "dlink", name: "D-Link Switch", cat: "switch", oids: ["1.3.6.1.4.1.171"], conf: 0.94,
       fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.47.1.1.1.1.11.1" } },
     { id: "tplink_omada", name: "TP-Link Omada", cat: "switch", oids: ["1.3.6.1.4.1.11863"], conf: 0.95,

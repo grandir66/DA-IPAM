@@ -18,7 +18,7 @@ import {
   updateInventoryAsset,
   updateNetworkDevice,
 } from "@/lib/db";
-import { profiloHpDaSysDescr, vendorSubtypeFromProductProfile } from "@/lib/device-product-profiles";
+import { eSwitchGenerico, profiloHpDaSysDescr, vendorSubtypeFromProductProfile } from "@/lib/device-product-profiles";
 import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
 import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { probeDeviceInterfaces } from "@/lib/devices/interface-probe";
@@ -52,7 +52,7 @@ export function tipoLetturaApparato(device: NetworkDevice): { tipo: TipoLettura;
   const scanTarget = (device as { scan_target?: string | null }).scan_target;
   const nasKind = resolveNasKind(device);
   const isWindows = device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
-  const isLinuxVendor = scanTarget === "linux" || device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap";
+  const isLinuxVendor = scanTarget === "linux" || device.vendor === "linux" || (device.vendor === "other" && !eSwitchGenerico(device)) || device.vendor === "synology" || device.vendor === "qnap";
   const isSshScannable = isLinuxVendor || nasKind != null;
   if (isWindows) return { tipo: "windows", etichetta: "WinRM" };
   if (isSshScannable) return { tipo: "ssh", etichetta: nasKind != null ? "Storage" : "Linux/SSH" };

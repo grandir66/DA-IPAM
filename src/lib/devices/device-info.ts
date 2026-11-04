@@ -5,6 +5,7 @@
  */
 
 import type { NetworkDevice } from "@/types";
+import { eSwitchGenerico } from "@/lib/device-product-profiles";
 import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { haSegretoSsh, segretoSsh } from "./ssh-transport";
@@ -1472,7 +1473,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   const isLinuxVendorInfo =
     scanTarget === "linux" ||
     device.vendor === "linux" ||
-    device.vendor === "other" ||
+    (device.vendor === "other" && !eSwitchGenerico(device)) ||
     device.vendor === "synology" ||
     device.vendor === "qnap" ||
     nasKind != null;

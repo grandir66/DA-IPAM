@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-04 · Zyxel GS1900 e switch di marche fuori elenco
+
+- **Aggiunto**: profilo SNMP `zyxel_gs1900` (modello, seriale e firmware dagli OID Zyxel) e riconoscimento come switch dal sysObjectID. Alla 72729 il GS1900-48HP rispondeva, ma nessun profilo lo conosceva e l'ENTITY-MIB ha il telaio all'indice 67108992, non 1: modello e firmware restavano vuoti.
+- **Aggiunto**: profilo prodotto `generic_switch` sotto la piattaforma «Altro». Prima «Altro» non offriva nessuno switch: il GS1900 era stato creato come HP ProCurve, classificato server, e la scheda non aveva le tab Porte, VLAN e Vicini pur con i dati già letti. Uno switch sotto «Altro» si interroga come switch, non come Linux.
+- **Corretto**: il duplex si legge da EtherLike-MIB quando la MAU-MIB manca; sul GS1900 era nullo su tutte le porte.
+- **Corretto**: un root STP che non è un BridgeId di 8 ottetti resta sconosciuto, con la sua porta. Il GS1900 lo scrive come testo e usciva un id senza senso, con la porta radice 52 su uno switch a 50 porte.
+
 ## [Non rilasciato] — 2026-11-03 · Contesto integrazione Infoblox
 
 ### Documentazione

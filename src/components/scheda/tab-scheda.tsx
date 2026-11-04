@@ -22,6 +22,7 @@ import { TabGestione } from "./tab-gestione";
 import { TabSicurezza } from "./tab-sicurezza";
 import { TabStorico } from "./tab-storico";
 import { TabSensori } from "./tab-sensori";
+import { TabRilievi } from "./tab-rilievi";
 import { PanoramicaSwitch } from "./tipi/switch/panoramica";
 import { PorteSwitch } from "./tipi/switch/porte";
 import { VlanSwitch } from "./tipi/switch/vlan";
@@ -135,6 +136,7 @@ const TAB_BASE: Partial<Record<TabId, VoceTab>> = {
   gestione: { render: (c) => <TabGestione ctx={c} /> },
   storico: { render: (c) => <TabStorico ctx={c} /> },
   sensori: { render: (c) => <TabSensori ctx={c} /> },
+  rilievi: { render: (c) => <TabRilievi ctx={c} /> },
 };
 
 export const ETICHETTE_TAB: Record<TabId, string> = {
@@ -168,6 +170,7 @@ export const ETICHETTE_TAB: Record<TabId, string> = {
   dispositivi: "Dispositivi",
   sensori: "Sensori",
   materiali: "Materiali e contatori",
+  rilievi: "Rilievi",
 };
 
 function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {
@@ -176,7 +179,7 @@ function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {
 
 /** Il numero accanto al nome (`conteggioTab`): solo per le tab proprie del tipo, e solo se i dati della pagina lo danno. */
 const conteggio = (ctx: ContestoScheda, t: TabId): string | null =>
-  TAB_COMUNI.includes(t) ? null : conteggioTab(ctx.tipo, t, { device: ctx.device, dipendenze: ctx.dipendenze });
+  TAB_COMUNI.includes(t) ? null : conteggioTab(ctx.tipo, t, { device: ctx.device, dipendenze: ctx.dipendenze, rilievi: ctx.rilieviProfilo?.campi.length });
 
 const COMUNI: ReadonlySet<TabId> = new Set(TAB_COMUNI);
 

@@ -13,6 +13,8 @@ import { alloggiamenti, riepilogoDischi, volumiNas } from "./nas";
 export interface DatiConteggio {
   device: DeviceFull | null;
   dipendenze: RispostaDipendenze | null;
+  /** Campi significativi letti dai profili di scansione (tab «Rilievi»). */
+  rilievi?: number;
 }
 
 const num = (n: number): string | null => (n > 0 ? String(n) : null);
@@ -33,8 +35,10 @@ function contaVicini(device: DeviceFull): number {
   return visti.size;
 }
 
-export function conteggioTab(tipo: TipoScheda, tab: TabId, { device, dipendenze }: DatiConteggio): string | null {
+export function conteggioTab(tipo: TipoScheda, tab: TabId, { device, dipendenze, rilievi }: DatiConteggio): string | null {
   if (tab === "dipendenze") return num(dipendenze?.servizi?.length ?? 0);
+  // «Rilievi» vale per ogni tipo e non viene da `device`: un host non gestito non ne ha uno.
+  if (tab === "rilievi") return num(rilievi ?? 0);
   if (!device) return null;
   switch (tipo) {
     case "switch":

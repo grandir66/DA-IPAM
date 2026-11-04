@@ -11,6 +11,18 @@ Riccardo (04/11) ha chiesto di guardare perché `finding_count` non torna. Misur
 - [ ] Da decidere: la colonna morta o la si ricalcola dopo lo scarico (una UPDATE idempotente a fine `sync-job`) o la si smette di scrivere. Com'è adesso è una trappola per chi la leggerà domani credendola un totale
 - [ ] Da decidere: l'etichetta «N CVE» del pannello è nostra e sovrastima — sul giro 124, 2135 rilievi su 2402 sono di livello Log, cioè informativi, non CVE. «rilievi» sarebbe onesto
 
+## 2026-11-04 — Tab «Rilievi»: i campi significativi in tabella
+
+Riccardo (04/11), dopo «dove vedo i dati aggiuntivi acquisiti dal profilo»: «devono essere riportati
+in tabella i rilievi / i campi significativi».
+
+- [x] `src/lib/scanner/profili/campi-scheda.ts` (puro): da `host_profilo_rilievi` alle righe della tabella, riusando `fattiDaScript` — la vista non ha una sua copia della lettura, quindi non può divergere dalla scrittura
+- [x] Rotta `GET /api/hosts/[id]/profilo-rilievi`; tab «Rilievi» in `tabDelTipo` (compare solo con dati, come «Sensori»), componente `components/scheda/tab-rilievi.tsx`, conteggio dei campi accanto al nome
+- [x] 8 prove in `profili/__tests__/campi-scheda.test.ts`, viste fallire (rotto il dedup: 7/8)
+- [ ] Da verificare su apparati veri: con zero PLC raggiungibili la tabella è provata solo su fixture. Al primo giro su un apparato di campo si guarda se i campi letti sono quelli attesi
+- [x] Trappola trovata nel cancello: due prove (`cron/scansione-attesa.test.ts`, `scanner/__tests__/esecutore-finto.test.ts`) asseriscono `data/ipam.db` **assente** («niente ripiego sul DB legacy») senza crearlo né rimetterlo com'era. Alle 20:07 del 04/11 il file c'era — vuoto, 0 host e 0 reti, ignorato da git — e le due prove sono diventate rosse senza che il codice avesse colpa. Spostato in `scratchpad/ipam-vuoto-20261104.db` (non cancellato) e le prove tornano verdi. **Chi lo ha creato non è dimostrato**: in quel momento girava il nostro `npm test`/`npm run build` insieme al `next dev` di Riccardo sulla 3001, vivo dal 21/10, che condivide `.next/` col build. Da sistemare nelle prove, non nell'ambiente: chi asserisce quello stato deve prepararlo (lezione #8)
+- [ ] Rimandato: il rilievo **grezzo** (`elems_json`, `output`) non ha nessuna pagina. La tab mostra solo i campi significativi, come chiesto; se servirà il grezzo, un dettaglio espandibile per riga
+
 ## 2026-11-04 — Profili di scansione: detect approfondito e profilo IoT/OT
 
 Riccardo (04/11): «dovrei arricchire la scansione dei device con un profilo dedicato ad IoT OT […]

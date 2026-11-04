@@ -190,7 +190,8 @@ const ORDINE_AFFIDABILITA: readonly string[] = [
   "mqtt-subscribe",
 ];
 
-function pesoScript(id: string): number {
+/** Peso dello script nell'ordine di affidabilita': piu' basso = piu' affidabile. */
+export function pesoScript(id: string): number {
   const i = ORDINE_AFFIDABILITA.indexOf(id);
   return i === -1 ? ORDINE_AFFIDABILITA.length : i;
 }

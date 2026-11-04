@@ -6,6 +6,7 @@ import type { HostDetail, InventoryAsset } from "@/types";
 import type { TipoScheda, TabId } from "@/lib/scheda/tipo-scheda";
 import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
 import type { DatiLibrenmsScheda } from "@/lib/scheda/librenms-vista";
+import type { RispostaRilieviProfilo } from "@/lib/scanner/profili/campi-scheda";
 import type { DeviceFull } from "./dati";
 import type { VmSu } from "./intestazione-scheda";
 
@@ -76,6 +77,8 @@ export interface ContestoScheda {
   ad: RispostaAd | null;
   /** Server: i servizi NIS2 che poggiano su questo host. null = non letto o non è un server. */
   dipendenze: RispostaDipendenze | null;
+  /** Rilievi dei profili di scansione (tab «Rilievi»). null = non letti o nessuno. */
+  rilieviProfilo: RispostaRilieviProfilo | null;
   unlinkingHostId: number | null;
   /** Cambia quando la tabella dei binding è stata modificata: «Credenziali assegnate» rilegge le prove. */
   versioneBinding: number;

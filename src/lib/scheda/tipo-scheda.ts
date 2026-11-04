@@ -13,7 +13,8 @@ export type TabId =
   | "panoramica" | "porte" | "vlan" | "vicini" | "interfacce" | "routing" | "dhcp"
   | "configurazione" | "dischi" | "volumi" | "servizi_nas" | "vm" | "nodi" | "storage_px"
   | "rete_px" | "sistema" | "servizi" | "aggiornamenti" | "software" | "utenti" | "ad"
-  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori" | "materiali";
+  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori" | "materiali"
+  | "rilievi";
 
 export interface InputTipoScheda {
   gestito: boolean;
@@ -89,6 +90,8 @@ export interface OpzioniTab {
   mikrotik: { haBridge: boolean } | null;
   /** LibreNMS ha almeno un sensore dell'oggetto e la sua lettura è accesa (piano 2026-10-22 LibreNMS, task 7). */
   haSensori?: boolean;
+  /** Almeno un rilievo dei profili di scansione su questo host (`host_profilo_rilievi`, 04/11/2026). */
+  haRilievi?: boolean;
 }
 
 /**
@@ -109,11 +112,17 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
  * solo se qualche servizio poggia sull'host (`haDipendenze`). Solo il tipo `generico` tiene «Dettagli» (non ha tab sue).
  */
 export function tabDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
-  const tab = tabBaseDelTipo(t, o);
-  if (!o.haSensori) return tab;
-  // «Sensori» prima delle tab comuni, per ogni tipo (come VLAN e Bridge compare solo con i dati).
+  let tab = tabBaseDelTipo(t, o);
+  // «Sensori» e «Rilievi» prima delle tab comuni, per ogni tipo: come VLAN e Bridge compaiono solo con i dati.
+  if (o.haSensori) tab = primaDelleComuni(tab, "sensori");
+  if (o.haRilievi) tab = primaDelleComuni(tab, "rilievi");
+  return tab;
+}
+
+/** Inserisce una tab subito prima della prima tab comune (in fondo, se non ce ne sono). */
+function primaDelleComuni(tab: TabId[], nuova: TabId): TabId[] {
   const i = tab.findIndex((x) => TAB_COMUNI.includes(x));
-  return i < 0 ? [...tab, "sensori"] : [...tab.slice(0, i), "sensori", ...tab.slice(i)];
+  return i < 0 ? [...tab, nuova] : [...tab.slice(0, i), nuova, ...tab.slice(i)];
 }
 
 function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {

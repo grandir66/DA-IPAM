@@ -26,6 +26,7 @@ import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { porteDaJson, tabDaQuery } from "@/lib/scheda/panoramica";
 import { datiAttivi, type DatiLibrenmsScheda } from "@/lib/scheda/librenms-vista";
 import { mikrotikPerTab, tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda/tipo-scheda";
+import type { RispostaRilieviProfilo } from "@/lib/scanner/profili/campi-scheda";
 import { AzioniScheda } from "@/components/scheda/azioni-scheda";
 import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/scheda/contesto";
 import type { DeviceFull } from "@/components/scheda/dati";
@@ -217,6 +218,20 @@ export default function ObjectDetailPage() {
     if (device?.vendor === "windows") void leggi<RispostaAd>(`/api/hosts/${hostId}/ad`, setAd);
     return () => { vivo = false; };
   }, [hostId, eServer, device?.vendor]);
+
+  // Rilievi dei profili di scansione: decidono se compare la tab «Rilievi», per ogni tipo di scheda.
+  // Una GET leggera; un errore non è un «no», la tab semplicemente non compare.
+  const [rilieviProfilo, setRilieviProfilo] = useState<RispostaRilieviProfilo | null>(null);
+  useEffect(() => {
+    setRilieviProfilo(null);
+    if (!Number.isFinite(hostId) || hostId <= 0) return;
+    let vivo = true;
+    fetch(`/api/hosts/${hostId}/profilo-rilievi`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<RispostaRilieviProfilo>) : null))
+      .then((d) => { if (vivo) setRilieviProfilo(d); })
+      .catch(() => { if (vivo) setRilieviProfilo(null); });
+    return () => { vivo = false; };
+  }, [hostId]);
 
   // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
   // return (loading / !host) per non violare le rules of hooks (React #310).
@@ -470,7 +485,8 @@ export default function ObjectDetailPage() {
   // Stessa condizione di `eMikrotikSsh` (scheda); VLAN e Bridge con la lettura della topologia accesa e almeno un bridge.
   const mikrotik = mikrotikPerTab(device);
   const haSensori = (datiAttivi(librenmsDati)?.sensori.length ?? 0) > 0;
-  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik, haSensori });
+  const haRilievi = (rilieviProfilo?.totale ?? 0) > 0;
+  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik, haSensori, haRilievi });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;
 
@@ -498,6 +514,7 @@ export default function ObjectDetailPage() {
     vmSu,
     ad,
     dipendenze,
+    rilieviProfilo,
     unlinkingHostId,
     versioneBinding,
     alCambioBinding,

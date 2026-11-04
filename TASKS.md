@@ -952,3 +952,19 @@ Proposta: piano a 3 assi, livello completo (tocca detect + credenziali + sistemi
 - [ ] **72729 segue `main`**: per vedere il detect OT lì serve la promozione dev→main (col sì di Riccardo). Hub 533 e appliance A (dev) prendono le regole al prossimo riavvio/seed.
 - [ ] Gli apparati già `unknown` si riclassificano solo a una nuova scansione/fingerprint (unknown→noto è un upgrade permesso): dopo il rilascio su main, rileggere i device OT della 72729.
 - [ ] Asse 2 (GET pagina web più profondo) e Asse 3 (password di default degli switch) non fatti: erano scelte separate.
+
+## 2026-11-04 — Arricchire i dati dei device già classificati: stampanti via Printer-MIB (da decidere)
+
+Riccardo (04/11): «migliorano il detect di quello che c'è. Anche le stampanti che ho classificato come stampanti e che rispondono in SNMP non ottengono info sulle stampanti, ma solo dati generici.»
+
+Causa (codice letto, non modificato):
+- **Nessun tipo scheda `stampante`**: `tipoScheda` (`lib/scheda/tipo-scheda.ts`) non ha il caso stampante → cade in `generico` (solo Panoramica + Dettagli). Per questo si vedono solo dati generici.
+- **Nessun collector stampante**: `lib/acquisition/` non ha un adapter stampante; l'SNMP generico legge solo sysDescr/modello/seriale/firmware. I profili prodotto `hp_stampante`/`generic_stampante` (`device-product-profiles.ts`) *dichiarano* `specificFields: counters/supplies/alerts` ma è solo metadato d'intento, niente li legge.
+- Nel seed SNMP il seriale stampante è mappato a `1.3.6.1.2.1.43.5.1.1.16.1` (è prtGeneralPrinterName = nome/modello; il seriale standard è `.17.1`): da verificare/correggere.
+
+Proposta (livello leggero: SNMP in sola lettura + UI + una tabella):
+1. Collector `printer-snmp` (RFC 3805 Printer-MIB + Host Resources): modello (prtGeneralPrinterName 43.5.1.1.16.1), seriale (43.5.1.1.17.1), pagine totali (prtMarkerLifeCount 43.10.2.1.4.1.1), toner/materiali (prtMarkerSuppliesDescription/Level/MaxCapacity 43.11.1.1.6/9/8), vassoi (prtInput 43.8.2.1), stato (hrPrinterStatus 25.3.5.1.1, prtAlertDescription 43.18.1.1.8). Tabella inventario dedicata.
+2. Tipo scheda `stampante`: `tipoScheda` caso stampante→"stampante"; componenti in `components/scheda/tipi/stampante/` (Panoramica + tab Materiali/Contatori: barre toner, contatore pagine, vassoi, stato, modello/seriale); registro in `tab-scheda.tsx`, `tabDelTipo`.
+3. Aggancio all'acquisizione (giri, apparati-scelti, «Aggiorna») come gli altri collector.
+
+Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con soli dati generici (UPS, telecamere, VoIP già hanno profili d'intento ma non collector). **In attesa del sì di Riccardo + livello.**

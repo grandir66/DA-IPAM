@@ -32,10 +32,10 @@ import {
   assicuraColonnaMotivoCredenziali,
   migraProtocolloWmi,
 } from "@/lib/db-tenant-schema";
-import { nuovaVoceEBindingDb, usataAdessoDb } from "@/lib/credentials/apparato-archivio";
+import { nuovaVoceEBindingDb, portaBinding, usataAdessoDb } from "@/lib/credentials/apparato-archivio";
 import { convertiCredenzialiApparati } from "@/lib/credentials/converti-apparati";
 import { DEFAULT_PORTS } from "@/lib/credentials/porte";
-import { FONTI_ACQUISIZIONE, loginApparatoDb, scegliSegretoApparatoDb, sceltaLoginApparatoDb } from "@/lib/credentials/resolve";
+import { FONTI_ACQUISIZIONE, loginApparatoDb, resolveCredentialsForDb, scegliSegretoApparatoDb, sceltaLoginApparatoDb } from "@/lib/credentials/resolve";
 import { leggiSegretoInline } from "@/lib/credentials/segreti";
 import { erroreVocePerProtocollo, etichettaProtocollo, portaVoceValePer, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { provaBinding } from "@/lib/devices/prova-binding";
@@ -494,7 +494,7 @@ describe("regola tipo ↔ protocollo", () => {
     assert.equal(DEFAULT_PORTS.wmi, 135);
     assert.deepEqual(tipiPerProtocollo("wmi"), ["windows"]);
     assert.equal(etichettaProtocollo("wmi"), "WMI");
-    assert.equal(portaVoceValePer("windows", "wmi"), true);
+    assert.equal(portaVoceValePer("windows", "wmi"), false);
   });
 
   it("una voce non Windows non si lega a wmi; una Windows sì", () => {
@@ -582,6 +582,18 @@ describe("motore delle credenziali", () => {
     const s = scegliSegretoApparatoDb(d, deviceId, "wmi", { registra: false });
     assert.equal(s.ok, true, s.ok ? "" : s.motivo);
     assert.equal(s.ok && s.candidato.port, 135);
+  });
+
+  it("una voce Windows sulla 5986 resta sulla 135 per WMI: la riga dell'host e il suo backoff sono sulla 135", () => {
+    const { d, voce } = tenantConApparato("TESTWMIPORTA", "winrm");
+    d.prepare("UPDATE credentials SET port = 5986 WHERE id = ?").run(voce);
+    d.prepare("INSERT INTO networks (id, cidr, name) VALUES (1, '10.72.0.0/24', 'rete-porta')").run();
+    d.prepare("INSERT INTO hosts (id, network_id, ip) VALUES (1, 1, '10.72.0.9')").run();
+    d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (1, ?, 0)").run(voce);
+
+    assert.deepEqual(resolveCredentialsForDb(d, { hostId: 1, networkId: 1 }, "wmi").map((c) => c.port), [135]);
+    assert.deepEqual(resolveCredentialsForDb(d, { hostId: 1, networkId: 1 }, "winrm").map((c) => c.port), [5986]);
+    assert.equal(portaBinding({ protocol: "winrm", port: 5985 }, "wmi", { credential_type: "windows", port: 5986 }), 135);
   });
 
   it("una voce nata da un binding wmi è Windows, non API", () => {

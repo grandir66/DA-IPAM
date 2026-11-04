@@ -113,11 +113,14 @@ export function tipiPerRuoloVecchio(ruolo: keyof typeof PROTOCOLLO_DEL_RUOLO): s
   return tipiPerProtocollo(PROTOCOLLO_DEL_RUOLO[ruolo]);
 }
 
-/** Tipi «propri» di ogni protocollo: quelli la cui porta è una porta di quel protocollo. */
+/**
+ * Tipi «propri» di ogni protocollo: quelli la cui porta è una porta di quel protocollo.
+ * `wmi` non c'è apposta: la porta di una voce `windows` è quella di WinRM (5985, 5986), WMI sta sempre sulla 135.
+ * Ereditandola, la chiave `voce:porta` non combacerebbe più con la riga scritta sulla 135 e il backoff non si vedrebbe.
+ */
 const TIPI_PROPRI: Readonly<Record<string, readonly TipoCredenziale[]>> = {
   ssh: ["ssh"],
   winrm: ["windows"],
-  wmi: ["windows"],
   snmp: ["snmp", "snmp_v3"],
   snmp_v2: ["snmp", "snmp_v3"],
   snmp_v3: ["snmp", "snmp_v3"],

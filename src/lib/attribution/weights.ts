@@ -7,6 +7,10 @@ export const ATTR_SOURCE_WEIGHTS: Record<AttributionSource, number> = {
   wsd: 0.9, mdns: 0.8, ssdp: 0.75, smb: 0.75, ssh: 0.6, redfish: 0.95, onvif: 0.95,
   fingerbank: 0.6, netbios: 0.5, nmap_os: 0.5, nmap_service: 0.5,
   hostname: 0.35, ports: 0.3, dhcp: 0.3, ttl: 0.25, ai: 0.5,
+  /* rdp_ntlm: come smb/http_banner, parla col sistema operativo e da' il nome
+   * vero. ot_probe: una risposta s7-info/enip-info/bacnet-info identifica il
+   * protocollo di campo, non lo suggerisce. */
+  rdp_ntlm: 0.9, ot_probe: 0.95,
 };
 
 /**
@@ -22,6 +26,9 @@ export const AUTHORITATIVE_SOURCES: Record<AttributionDimension, readonly Attrib
   // davvero la somma pesata come wsd (vedi commento AUTHORITY_MIN_CONFIDENCE sopra).
   // onvif: stessa logica — GetDeviceInformation risolto è la definizione stessa
   // del servizio ONVIF (Fase 4b Task 3, spec §7.4), a 0.95 dichiarativa su av.camera.
-  category: ["manual", "wsd", "redfish", "onvif"],
+  // ot_probe: stessa logica di redfish/onvif — uno script di campo che risolve
+  // (s7-info, enip-info, bacnet-info, omron-info) E' la definizione del
+  // protocollo industriale; a 0.95 supera AUTHORITY_MIN_CONFIDENCE (0.9).
+  category: ["manual", "wsd", "redfish", "onvif", "ot_probe"],
   os: ["manual", "ad", "wazuh", "inv_agent", "winrm"],
 };

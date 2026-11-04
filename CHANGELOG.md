@@ -75,6 +75,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.
+## [Non rilasciato] — 2026-11-04 · Profili di scansione: Approfondito e IoT/OT
+
+- **Aggiunto**: due **profili di scansione** sugli host scelti nella lista della rete (pulsante «Profilo», attivo solo con una selezione, come «Accesso agli host»). **Approfondito**: riconoscimento del sistema operativo (`-O`), probe di versione piene e 30 script NSE di sola lettura — nome DNS, nome NetBIOS, dominio e build di Windows dalla 3389 (`rdp-ntlm-info`), certificato dalla 443 (`ssl-cert`), nome NetBIOS dalla UDP 137 (`nbstat`), impronta della chiave SSH, titolo e favicon delle pagine web, sysDescr SNMP, BMC dalla UDP 623. Niente credenziali. **IoT/OT**: porte di campo (Modbus 502, Siemens S7 102, EtherNet/IP 44818, BACnet UDP 47808, OPC UA 4840, DNP3, FINS, GE SRTP, MQTT 1883/8883, CoAP) con gli script che danno modello, firmware e **numero di serie** degli apparati di campo.
+- **Aggiunto**: `parseNmapXml` raccoglie l'output di **tutti** gli script NSE, porta per porta e a livello host, appiattendo le table annidate. Prima leggeva solo `snmp-info` e buttava il resto: chiedere `--script=…` non produceva nulla.
+- **Aggiunto**: tassonomia dell'attribuzione — radice **`ot`** (`plc`, `hmi`, `drive`, `rtu`, `io_remoto`, `gateway`) separata da `iot`. Prima un PLC e una lampadina smart finivano entrambi nella classe `iot`: ora Weintek dà `hmi`, CREVIS `plc`, gli azionamenti `rete_ot`. Sorgenti nuove `ot_probe` (dichiarativa per la categoria: una risposta S7 o CIP È il protocollo che si dichiara) e `rdp_ntlm`, fase `scan_profilo`.
+- **Aggiunto**: tabella `host_profilo_rilievi` (un rilievo per script che ha risposto) e riempimento dei campi vuoti dell'host — modello, seriale, firmware, produttore, nome, sistema operativo. **Si riempie, non si sovrascrive**: un valore già presente non viene toccato, il rilievo grezzo si salva comunque.
+- **Corretto**: i valori degli script non vengono più convertiti in numeri. Un numero di serie esadecimale come `0x60c12345`, che `enip-info` riporta sui PLC Allen-Bradley, diventava `1623270213`.
+- **Corretto**: il testo libero degli script NSE non veniva mai letto (sta nell'attributo `output`, non in un nodo figlio): i lettori che ci si appoggiano — `nbstat`, `upnp-info` — restavano vuoti.
+- **Nota**: nessuno script di categoria `intrusive` o `exploit`, in nessun profilo, e una prova lo verifica. Restano fuori `modbus-discover` (enumera gli unit ID) e `iec-identify`: su apparati di campo vecchi possono fare danno. Sulla 502 e sulla 2404 si vede la porta aperta, non si interroga.
+- **Nota**: `-O` e la fase UDP vogliono i privilegi per i raw socket. Senza, il profilo **degrada e lo scrive nel registro del giro** invece di fallire in silenzio. Gli script che non sono presenti sulla macchina si filtrano e si dichiarano: con un nome di script inesistente nmap aborta l'intera scansione.
+- **Nota**: `mqtt-subscribe` è incluso per scelta di Riccardo (04/11) e salva anche i messaggi del broker, cioè dati di processo del cliente, con un tetto di 2 KB per rilievo.
 
 ## [Non rilasciato] — 2026-11-04 · Dati stampanti via SNMP (Printer-MIB)
 
@@ -87,6 +98,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Aggiunto**: riconoscimento di apparati OT che restavano `unknown` alla 72729. Dall'OUI: **Weintek** → HMI, **CREVIS** → PLC (remote I/O di campo), **Kronotech** (Zucchetti, terminali presenze/accessi) → IoT. Dalle porte, vendor-neutro: **Modbus TCP 502** e **EtherNet/IP 44818** → PLC. Regole builtin in `device_fingerprint_rules` (seed idempotente per gli hub esistenti) e nel classifier di fallback.
 - **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
 - **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
+
+## [Non rilasciato] — 2026-11-04 · Detect OT: la categoria arriva dall'OUI
+
+- **Corretto**: Weintek, CREVIS, Kronotech, Control Techniques e Vacon ora prendono una categoria dall'OUI. L'attribuzione v2 è l'unico motore che scrive `hosts.classification`, e dall'OUI prendeva solo il produttore: alla 72729 restavano 30 apparati `unknown` anche con le regole di fingerprint attive, perché quel percorso vede «Weintek HMI» ma non scrive la classe. Microchip resta fuori: è un chip montato da terzi.
 
 ## [Non rilasciato] — 2026-11-04 · Stampanti: seriale e part number veri; regole OT sulle appliance
 

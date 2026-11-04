@@ -62,6 +62,9 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "classification_feedback", scope: "tenant", tier: "history" },
   { table: "host_classification_history", scope: "tenant", tier: "history" },
   { table: "attribution_evidence", scope: "tenant", tier: "history" },
+  // Rilievi dei profili di scansione (04/11/2026): l'output grezzo degli script NSE,
+  // stesso livello delle evidenze — si rifà con una scansione, non serve trasferirlo.
+  { table: "host_profilo_rilievi", scope: "tenant", tier: "history" },
   { table: "arp_entries", scope: "tenant", tier: "history" },
   // Indice unico (device_id, mac, port_name) dalla fase 2 della topologia: una sorgente più vecchia ha i doppi.
   { table: "mac_port_entries", scope: "tenant", tier: "history", dedupe: { key: ["device_id", "mac", "port_name"], latest: "timestamp" } },

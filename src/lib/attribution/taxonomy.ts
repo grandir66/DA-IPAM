@@ -9,6 +9,14 @@ export const CATEGORY_TAXONOMY = {
   voip: ["phone", "pbx", "gateway"],
   power: ["ups", "pdu"],
   iot: ["sensor", "thermostat", "plug", "other"],
+  /**
+   * OT: apparati di campo, radice separata da `iot` per scelta di Riccardo
+   * (04/11/2026). Un PLC e una lampadina smart non sono la stessa cosa, e
+   * finche' stavano entrambi sotto `iot` in Discovery erano indistinguibili.
+   * `drive` = inverter e azionamenti (Vacon, Control Techniques); `rtu` =
+   * unita' remote delle utility; `io_remoto` = moduli di I/O di campo (CREVIS).
+   */
+  ot: ["plc", "hmi", "drive", "rtu", "io_remoto", "gateway"],
   mobile: ["phone", "tablet", "wearable"],
 } as const;
 
@@ -103,9 +111,11 @@ const LEGACY_MAP: Record<string, { category: CategorySlug; os_family?: "windows"
   iot: { category: "iot.other" },
   domotica: { category: "iot.other" },
   console: { category: "iot.other" },
-  rete_ot: { category: "iot" },
-  plc: { category: "iot.sensor" },
-  hmi: { category: "iot.sensor" },
+  /* 04/11/2026: gli slug di campo passano sotto la radice `ot`. `sensore` resta
+   * in `iot.sensor`: un sensore di temperatura in ufficio non e' OT. */
+  rete_ot: { category: "ot" },
+  plc: { category: "ot.plc" },
+  hmi: { category: "ot.hmi" },
   sensore: { category: "iot.sensor" },
   tablet: { category: "mobile.tablet" },
   smartphone: { category: "mobile.phone" },

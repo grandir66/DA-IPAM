@@ -82,6 +82,15 @@ function projectClassification(category: string | null, osFamily: string | null)
   // plug/other): regola esplicita del brief "iot.* → iot", un solo slug
   // legacy generico copre tutta la sotto-tassonomia IoT/OT.
   if (category === "iot" || category.startsWith("iot.")) return "iot";
+  /* Radice `ot` (04/11/2026): a differenza di `iot.*` NON collassa, perche' gli
+   * slug legacy di campo esistono (`plc`, `hmi`, `rete_ot`) ed e' proprio la
+   * distinzione che Riccardo ha chiesto. Le foglie senza uno slug legacy
+   * dedicato (drive, rtu, io_remoto, gateway) vanno su `rete_ot`, che e' il
+   * generico della famiglia, non su `iot`. */
+  if (category === "ot") return "rete_ot";
+  if (category === "ot.plc") return "plc";
+  if (category === "ot.hmi") return "hmi";
+  if (category.startsWith("ot.")) return "rete_ot";
   return CATEGORY_TO_LEGACY[category] ?? null;
 }
 
@@ -114,6 +123,9 @@ const DEVICE_TYPE_MAP: Record<string, string> = {
 function projectDeviceType(category: string | null): string | null {
   if (category == null) return null;
   if (category === "iot" || category.startsWith("iot.")) return "iot";
+  /* `InferredDeviceType` e' un vocabolario ristretto che non ha voci di campo:
+   * "iot" e' la resa piu' vicina per tutta la radice `ot`. */
+  if (category === "ot" || category.startsWith("ot.")) return "iot";
   return DEVICE_TYPE_MAP[category] ?? null;
 }
 

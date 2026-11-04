@@ -7,7 +7,7 @@
 **Architettura:** tre pezzi. Un motore unico sceglie la strada per ogni host e dà a ogni esito un motivo preciso. Un catalogo unico dei diritti sostituisce il testo sparso nelle guide. Un controllo dell'account confronta quel catalogo con ciò che l'account può fare davvero.
 **Spec:** nessun documento separato. Requisiti di Riccardo del 04/11/2026 in `TASKS.md`: «testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma in generale»; «deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni»; «nell'applicativo deve essere chiaro cosa abilitare per l'utente e cosa abilitare per la sicurezza del dominio».
 **Livello di controllo:** completo (deciso da Riccardo il 2026-11-04).
-**Stato:** in corso · **Ultimo aggiornamento:** 2026-11-04
+**Stato:** completato su `dev`, collaudo da fare · **Ultimo aggiornamento:** 2026-11-04
 
 ## Vincoli globali
 
@@ -34,8 +34,8 @@
 | S5 | [x] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
 | S6 | [x] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
 | S7 | [x] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
-| S8 | [ ] | Controllo dell'account e pagina | implementer | S3 S6 S7 | pagina resa a 1280 e 1920 | verifica resa |
-| S9 | [ ] | Stato per host e copertura | implementer | S5 S7 | motivo visibile per host | verifica resa |
+| S8 | [x] | Controllo dell'account e pagina | implementer | S3 S6 S7 | pagina resa a 1280 e 1920 | verifica resa |
+| S9 | [x] | Stato per host e copertura | implementer | S5 S7 | motivo visibile per host | verifica resa |
 | S10 | [ ] | Collaudo sul 72729 | orchestratore | tutti, promozione approvata | esito confrontato con S0 | tabella nel Registro |
 
 ## Casi da non dimenticare
@@ -241,7 +241,7 @@ Verifica: `npm test` → 6674 pass, 0 fail; 18 prove nuove viste rosse prima dei
 
 Si propone a Riccardo la tavola grafica degli oggetti del Task 8 e del Task 9, oggetto per oggetto. Nessun codice di interfaccia prima del sì. Il sì si scrive nel Registro.
 
-### [ ] Task 8 — Controllo dell'account e pagina (S8)
+### [x] Task 8 — Controllo dell'account e pagina (S8)
 
 **File**
 - Crea: `src/lib/credentials/controllo-account.ts`, `src/app/api/credentials/[id]/controllo/route.ts`, `src/components/credentials/diritti-account.tsx`, e le prove.
@@ -265,7 +265,7 @@ export async function controllaAccount(credId: number): Promise<RigaControllo[]>
 
 **Commit:** `Credenziali: controllo di cosa può fare un account`.
 
-### [ ] Task 9 — Stato per host e copertura (S9)
+### [x] Task 9 — Stato per host e copertura (S9)
 
 **File**
 - Modifica: `src/components/settings/credential-coverage-tab.tsx`, `src/components/shared/host-credentials-dialog.tsx`, e la funzione di lettura paginata in `db-tenant.ts`, con JOIN e senza N+1.
@@ -275,6 +275,8 @@ export async function controllaAccount(credId: number): Promise<RigaControllo[]>
 **Verifica:** pagina resa a 1280 e 1920 con tutti i motivi.
 
 **Commit:** `Copertura: motivo dell'accesso Windows per host`.
+
+Verifica: pagina resa a 1280 e 1920 con dati finti, nessuno scorrimento orizzontale; `npm test` → 7102 pass, 0 fail.
 
 ### [ ] Task 10 — Collaudo sul 72729 (S10)
 
@@ -308,8 +310,16 @@ export async function controllaAccount(credId: number): Promise<RigaControllo[]>
 
 ### Fatto
 
+Motore WinRM e WMI con motivo per host, verifica della password una volta per giro, limite di 3 logon rifiutati per utente in scansione, Test, legame e ricerca, tetto di 20 secondi, catalogo unico dei diritti, «Controlla account», pannello per host, richiesta per l'IT.
+
 ### Mancante
+
+Task 10, collaudo sul 72729: promozione dalla UI, account dedicato dell'IT. Mai visti su sistemi veri: `tokenGroups` e filtro dei gruppi su un DC, `smb-login.py` con `getServerDomain` su un DC, regola firewall WMI. `/api/ad/kerberos` resta fuori dai freni. `mario` e `DOM\mario` hanno conti separati. Il ramo `windows` con porte vuote resta `porte_chiuse`.
 
 ### Scostamenti dal piano
 
+Quattro giri di revisione e correzione, non uno: il limite contava le voci invece dei logon. Tabella nuova `accesso_windows_esiti`. Stato `in_parte` in più. Con StartTLS fallito la voce non fa bind in chiaro e si verifica via SMB. La scelta del dominio per gli utenti nudi con realm comprende `.\\utente`.
+
 ### Consigli di sviluppo
+
+Provare presto il controllo dei gruppi su un DC vero. Se la password dell'integrazione deve smettere di passare in chiaro quando StartTLS manca, serve LDAPS sui DC del cliente.

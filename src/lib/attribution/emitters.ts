@@ -79,6 +79,18 @@ export function vendorSlug(name: string): string {
 // dell'hypervisor, non un "produttore" fisico. Match per sostringa (spec: "contiene").
 const HYPERVISOR_VENDOR_RE = /proxmox|vmware|qemu|xensource|virtualbox|oracle virtualbox|hyper-v|parallels|nutanix/i;
 
+/**
+ * Produttori che fanno solo apparati di campo: qui l'OUI dice anche il tipo (72729, 04/11/2026: 30 apparati senza categoria).
+ * Microchip NON è qui: è un chip montato da terzi, l'OUI non dice cosa sia l'apparato.
+ */
+const OUI_SOLO_OT: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bweintek\b/i, "hmi"],
+  [/\bcrevis\b/i, "plc"],
+  [/\bkronotech\b/i, "iot"],
+  [/\bcontrol techniques\b/i, "rete_ot"],
+  [/\bvacon\b/i, "rete_ot"],
+];
+
 // Lacuna 2: voci placeholder del registro IEEE (nessun produttore reale dietro il
 // MAC, es. locally-administered/random) — match esatto (dopo trim), non sostringa.
 // Estesa (caso reale 192.168.40.23, Synology): il lookup sysObjectID net-snmp
@@ -184,6 +196,14 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
       out.push({
         source: "oui", phase: "scan_icmp", dimension: "vendor",
         claim: vendorSlug(host.vendor), confidence: 0.9, raw_value: host.vendor,
+      });
+    }
+    const ot = OUI_SOLO_OT.find(([re]) => re.test(host.vendor ?? ""));
+    const categoriaOt = ot ? mapLegacyClassification(ot[1]).category : null;
+    if (categoriaOt) {
+      out.push({
+        source: "oui", phase: "scan_icmp", dimension: "category",
+        claim: categoriaOt, confidence: 0.85, raw_value: host.vendor,
       });
     }
   }

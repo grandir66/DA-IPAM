@@ -123,6 +123,25 @@ export function getScanProgress(id: string): ScanProgress | undefined {
   return getProgressMap().get(id);
 }
 
+/**
+ * Registra un giro nel registro dei progressi, per chi non passa da
+ * `discoverNetwork`: i profili di scansione (`scanner/profili/`), che girano in
+ * sottofondo su host scelti a mano. Esportata qui e non reimplementata altrove
+ * perche' la mappa e' su `globalThis` con una chiave sola: due mappe diverse e
+ * `/api/scans/progress/[jobId]` vedrebbe la meta' dei giri.
+ */
+export function registraProgresso(p: ScanProgress): void {
+  getProgressMap().set(p.id, p);
+}
+
+/** Aggiorna un giro gia' registrato. Silenzioso se l'id non c'e' piu'. */
+export function aggiornaProgresso(id: string, patch: Partial<ScanProgress>): void {
+  const mappa = getProgressMap();
+  const attuale = mappa.get(id);
+  if (!attuale) return;
+  mappa.set(id, { ...attuale, ...patch });
+}
+
 let scanIdCounter = Date.now();
 
 export type DiscoveryScanType =

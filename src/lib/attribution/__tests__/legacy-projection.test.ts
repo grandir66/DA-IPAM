@@ -168,8 +168,12 @@ describe("projectLegacy", () => {
     media_player: "av.display senza canonico dichiarato dal brief → null",
     domotica: "collassa su iot.other, tutte le foglie iot.* proiettano 'iot' → canonico 'iot'",
     console: "collassa su iot.other, tutte le foglie iot.* proiettano 'iot' → canonico 'iot'",
-    plc: "collassa su iot.sensor, tutte le foglie iot.* proiettano 'iot' → canonico 'iot'",
-    hmi: "collassa su iot.sensor, tutte le foglie iot.* proiettano 'iot' → canonico 'iot'",
+    /* 04/11/2026: `plc` e `hmi` NON sono più eccezioni. Con la radice `ot`
+     * (scelta di Riccardo: PLC e HMI distinti da IoT) il round-trip torna —
+     * plc → ot.plc → plc, hmi → ot.hmi → hmi — ed è proprio ciò che si voleva:
+     * prima un PLC e una lampadina smart finivano entrambi su `iot`. Le foglie
+     * `ot.*` senza slug legacy dedicato (drive, rtu, io_remoto, gateway) vanno
+     * su `rete_ot`, che resta un'eccezione qui sotto. */
     sensore: "collassa su iot.sensor, tutte le foglie iot.* proiettano 'iot' → canonico 'iot'",
   };
 

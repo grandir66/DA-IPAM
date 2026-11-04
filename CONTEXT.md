@@ -13,9 +13,27 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## Accesso Windows e diritti — 04/11/2026
+
+La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`), con un motivo per host. Trappole:
+- Il limite conta i logon rifiutati per utente, non le voci: una prova WinRM può fare più logon (kinit, NTLM, CredSSP), quindi con password non verificata si usa `un_solo_logon`.
+- `rpc_s_access_denied` da WMI non distingue password e diritti: lo fa la verifica una volta per giro. Con StartTLS fallito la voce non fa bind in chiaro: si verifica via SMB.
+- I diritti stanno solo in `src/lib/credentials/diritti.ts`. `next dev` scrive un blocco in `AGENTS.md`: non va committato.
+- Collaudo su DC vero ancora da fare: `tokenGroups`, `getServerDomain`. Piano: `docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`.
+
 ## Lavoro aperto del 03/11/2026
 
 PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni) e **promosso col sì di Riccardo: dal 03/11 15:46 UTC `main` = `dev` = 0.9.957**; 70151 aggiornata alle 15:52 e sana (controllo via HTTPS: la sua chiave SSH è cambiata e non è stata accettata). VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.
+
+## Detect e seriali — trappole del 04/11/2026
+
+**Chi scrive la classe**: `hosts.classification` lo scrive solo l'attribuzione v2 (`lib/attribution/`). La cascata di `discovery.ts` e le regole di fingerprint non lo scrivono: una regola nuova lì non classifica niente, serve un'evidenza di categoria. **Due seed**: le appliance seminano da `db-hub.ts`, non da `db.ts`; una prova li confronta. **Seriale**: è la chiave degli apparati fisici, `devices/seriale-valido.ts` scarta stringhe IEEE 1284 e nomi di serie. Un `fast_scan` è solo ping: non applica regole.
+
+## Profili di scansione — 04/11/2026
+
+Due profili sugli host **scelti nella lista** (`src/lib/scanner/profili/`, rotta `POST /api/scans/profilo`, pulsante «Profilo» nella pagina della rete): **Approfondito** (`-O`, `--version-intensity 7`, 30 script NSE di sola lettura) e **IoT/OT** (porte di campo + `s7-info`, `enip-info`, `bacnet-info`, `omron-info`, `mqtt-subscribe`). **Trappole**: modulo a parte e non un `DiscoveryScanType` nuovo, apposta — `scanType` è sparso in ~30 condizioni di `discovery.ts`; un nome di script inesistente fa **abortire tutta** la scansione (`bacnet-discover` non esiste, è `bacnet-info`), quindi gli script si filtrano su quelli presenti; niente script `intrusive` in nessun profilo (fuori `modbus-discover` e `iec-identify`), e una prova lo fissa; `-O` e `-sU` vogliono root, senza degradano e lo scrivono nel registro; la scrittura **riempie e non sovrascrive** (model/seriale/firmware solo se vuoti), il rilievo grezzo va sempre in `host_profilo_rilievi`; `--version-intensity 7` vive **solo** dentro il profilo, il globale resta 0. Nel parser di nmap: `parseTagValue: false` (un seriale `0x60c12345` diventava `1623270213`) e l'output degli script sta in `@_output`, non in un nodo figlio.
+
+**Tassonomia**: radice **`ot`** (`plc`, `hmi`, `drive`, `rtu`, `io_remoto`, `gateway`) separata da `iot`, scelta di Riccardo. `legacy-projection` **non** collassa `ot.*` come fa con `iot.*`: plc → `plc`, hmi → `hmi`, le altre foglie → `rete_ot`. Sorgenti nuove `ot_probe` (dichiarativa per la categoria) e `rdp_ntlm`, fase `scan_profilo`; nessuna delle due sta in `RECOMPUTED_SOURCES`, quindi le loro evidenze sopravvivono ai ricalcoli. Non ancora provato su apparati veri: aperto in TASKS.
 
 ## Zyxel GS1900 e switch fuori elenco — 04/11/2026
 

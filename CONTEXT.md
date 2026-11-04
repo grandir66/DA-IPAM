@@ -21,6 +21,10 @@ La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`),
 - I diritti stanno solo in `src/lib/credentials/diritti.ts`. `next dev` scrive un blocco in `AGENTS.md`: non va committato.
 - Collaudo su DC vero ancora da fare: `tokenGroups`, `getServerDomain`. Piano: `docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`.
 
+## Rilascio del 04/11/2026
+
+`main` = `dev` = `e27a4309` = **0.9.967**, promossa col sì di Riccardo (fast-forward `git push origin origin/dev:main`, verificato con `git ls-remote`). Porta la tab «Rilievi», l'accesso Windows automatico (WinRM/WMI) e il conteggio dei rilievi riallineato. **L'appliance 70151 è il peer NetBird `70151-ipam-2` (`100.107.145.24`), non `70151-ipam`**: col nome sbagliato il controllo sembra irraggiungibile.
+
 ## Lavoro aperto del 03/11/2026
 
 PR #59 (Wazuh, verifica TLS indexer separata da quella della Manager API) unita in dev; la salute del modulo usava ancora la verifica della Manager API, corretta. PR #49 (rete dell'appliance nel segnale) non era superata: DA-Link aveva già il modello `Rete`, DA-IPAM non lo mandava; rifatta su dev e chiusa. `main` unito in `dev` (solo versioni) e **promosso col sì di Riccardo: dal 03/11 15:46 UTC `main` = `dev` = 0.9.957**; 70151 aggiornata alle 15:52 e sana (controllo via HTTPS: la sua chiave SSH è cambiata e non è stata accettata). VM 533: tolti `pre-edge-20261029` e `pre-aggiorna-0942-20261103`. Dettaglio in TASKS.

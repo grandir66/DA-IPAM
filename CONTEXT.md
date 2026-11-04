@@ -51,7 +51,7 @@ Riccardo ha autorizzato la pubblicazione su dev del collector locale del 27/10. 
 - «Aggiorna ora» e `scripts/update.sh` a mano si rompono a vicenda (niente lucchetto): prima `ps -eo pid,args | grep -E "[u]pdate\.sh|[n]ext build"` in una chiamata ssh a parte.
 - `scripts/update.sh` a mano va lanciato **con `--restart`**: senza, scambia la build e non riavvia (22/10: «completato» nel log, servizio ancora sul codice vecchio). L'app sull'hub ascolta solo su 443: `curl -sk https://localhost/api/health`.
 - **Togliere una rotta API**: un `update.sh` < v0.9.805 legge i tipi della build attiva che la citano e la build nuova cade: prima si verifica la versione di tutte le installazioni (lasciarla ferma a 410 per un giro).
-- `/api/version` cambia col pull, prima del riavvio: «gira davvero» = `ActiveEnterTimestamp` o riga d'avvio nel journal. «Non vedo le modifiche» = prima l'hub (`DA_COMMIT`, grep nei chunk), poi Cmd+Shift+R.
+- `/api/version` cambia col pull, prima del riavvio: «gira davvero» = `ActiveEnterTimestamp` o riga d'avvio nel journal. «Non vedo le modifiche» = prima l'hub (`DA_COMMIT`, grep nei chunk), poi Cmd+Shift+R. **Il grep nei chunk si fa su una stringa ASCII**: il minificatore sfugge i caratteri non ASCII (04/11, cercare `Profilo ·` dava 0 occorrenze su una build che il pulsante ce l'aveva — il `·` era diventato `\u00b7`). Si cerca una parola del testo, non il simbolo.
 - `scheduler-defaults` spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti ≥1024 indirizzi: riaccesi a mano, non reggono al riavvio.
 
 ## 5. Tooling

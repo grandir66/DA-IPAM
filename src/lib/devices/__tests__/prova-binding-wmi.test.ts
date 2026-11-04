@@ -107,12 +107,13 @@ describe("legame WMI: una macchina muta non è una password rifiutata", () => {
   it("porta 135 chiusa, firewall che scarta, bridge che non risponde: errore di trasporto; un rifiuto no", async () => {
     const { eErroreDiTrasporto } = await import("@/lib/credentials/trova");
     for (const code of ["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT"] as const) {
-      const r = await provaBinding("10.0.0.5", { ...INLINE, protocol_type: "wmi", port: 135 }, "1", {
+      // Un utente per prova: il limite di 3 prove per utente vale anche qui, ed è provato in prova-binding-freni.test.ts.
+      const r = await provaBinding("10.0.0.5", { ...INLINE, inline_username: `CLIENTE\\muta-${code}`, protocol_type: "wmi", port: 135 }, "1", {
         wmiIdentita: prova(new WmiError({ code, message: "nessuna risposta", primaDelBridge: code !== "BRIDGE_TIMEOUT" })).wmiIdentita,
       });
       assert.equal(eErroreDiTrasporto("wmi", r.message, r.kind), true, code);
     }
-    const rifiuto = await provaBinding("10.0.0.5", { ...INLINE, protocol_type: "wmi", port: 135 }, "1", {
+    const rifiuto = await provaBinding("10.0.0.5", { ...INLINE, inline_username: "CLIENTE\\muta-rifiuto", protocol_type: "wmi", port: 135 }, "1", {
       wmiIdentita: prova(new WmiError({ code: "AUTH_REJECTED", message: "accesso negato" })).wmiIdentita,
     });
     assert.equal(eErroreDiTrasporto("wmi", rifiuto.message, rifiuto.kind), false);

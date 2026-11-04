@@ -16,8 +16,9 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
-import { correggiOidProfiloQnap } from "./db-hub";
+import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
@@ -1568,6 +1569,7 @@ export function getDb(): Database.Database {
 
   try {
     correggiOidProfiloQnap(_db);
+    correggiOidProfiliStampanti(_db);
   } catch {
     /* ignore */
   }
@@ -2136,11 +2138,13 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.33.1.1.2.0", firmware: "1.3.6.1.2.1.33.1.1.3.0" } },
     // STAMPANTI
     { id: "hp_printer", name: "HP JetDirect (LaserJet)", cat: "stampante", oids: ["1.3.6.1.4.1.11.2.3.9"], conf: 0.97,
-      fields: { serial: "1.3.6.1.4.1.11.2.3.9.1.1.7.0", model: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.1.1.20.1" } },
+      fields: { serial: "1.3.6.1.2.1.43.5.1.1.17.1", model: "1.3.6.1.2.1.25.3.2.1.3.1", firmware: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.3.6.0", partNumber: "1.3.6.1.4.1.11.2.4.3.1.10.0" } },
     { id: "epson", name: "Epson Printer", cat: "stampante", oids: ["1.3.6.1.4.1.1248"], conf: 0.96,
-      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: ["1.3.6.1.2.1.25.3.2.1.3.1", "1.3.6.1.2.1.47.1.1.1.1.13.1"], serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
+    { id: "kyocera", name: "Kyocera", cat: "stampante", oids: ["1.3.6.1.4.1.1347"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
     { id: "printer_generic", name: "Printer (RFC 3805)", cat: "stampante", oids: [], sysDescr: "printer|laserjet|deskjet|officejet|multifunction|mfp", conf: 0.88,
-      fields: { serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
   ];
 
   // Se la tabella è vuota, inserisci tutti; altrimenti inserisci solo i profili builtin mancanti
@@ -3000,7 +3004,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
-      if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
+      if (!preserve || !existingRow?.serial_number || eSerialeFinto(existingRow.serial_number)) { fields.push("serial_number = ?"); values.push(input.serial_number); }
     }
     if (input.firmware !== undefined) {
       if (!preserve || !existingRow?.firmware) { fields.push("firmware = ?"); values.push(input.firmware); }

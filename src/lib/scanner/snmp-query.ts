@@ -7,6 +7,7 @@
  * (system, ifTable, ARP, MikroTik, UniFi, HOST-RESOURCES).
  */
 import { eUnaMisura } from "./qnap-oid";
+import { eSerialeFinto, eStringaIeee1284 } from "@/lib/devices/seriale-valido";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { NetworkDevice } from "@/types";
@@ -728,9 +729,10 @@ async function testFingerprintOids(
   return matches;
 }
 
-/** Per model/serial/firmware un valore che è una misura («15979.0 MB», «12 %») non è un'identità: resta assente. */
+/** Per model/serial/firmware un valore che è una misura («15979.0 MB», «12 %») o una stringa IEEE 1284 non è un'identità: resta assente. */
 export function valoreCampoProfilo(chiave: string, valore: string): string | null {
-  if ((chiave === "model" || chiave === "serial" || chiave === "firmware") && eUnaMisura(valore)) return null;
+  if ((chiave === "model" || chiave === "serial" || chiave === "firmware") && (eUnaMisura(valore) || eStringaIeee1284(valore))) return null;
+  if (chiave === "serial" && eSerialeFinto(valore)) return null;
   return valore;
 }
 

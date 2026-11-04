@@ -16,6 +16,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
 - **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
 
+## [Non rilasciato] — 2026-11-04 · Stampanti: seriale e part number veri; regole OT sulle appliance
+
+- **Corretto**: seriale delle stampanti. Il profilo `hp_printer` leggeva la stringa IEEE 1284 («MFG:HP;CMD:…»), `epson` e `printer_generic` il nome della stampante. Alla 72729 il seriale vero rispondeva su 9 stampanti su 10, ma il finto non era vuoto e bloccava ogni ripiego; due ET-5805 avevano lo stesso «seriale», che è la chiave degli apparati fisici. Le righe di serie degli hub già installati si correggono all'avvio, le modifiche dell'utente restano.
+- **Aggiunto**: part number delle HP (`…11.2.4.3.1.10.0`, es. W1A29A), mostrato in Gestione e nei Materiali; modello preciso da `hrDeviceDescr`; firmware HP; profilo `kyocera`. Epson e Kyocera il part number via SNMP non lo espongono.
+- **Corretto**: un seriale finto già salvato non blocca più la scansione: il seriale vero lo sostituisce.
+- **Corretto**: le regole OT (Weintek, CREVIS, Kronotech, Modbus, EtherNet/IP) della 0.9.959 stavano solo nel seed di `db.ts`: le appliance seminano da `db-hub.ts` e non le avevano. Una prova confronta i due seed.
+
 ## [Non rilasciato] — 2026-11-04 · Marca rilevata degli apparati sotto «Altro»
 
 - **Aggiunto**: nella tab Gestione la riga «Marca» per gli apparati sotto «Altro», ricavata da ciò che la scansione sa già. Riccardo (04/11): il GS1900 è uno Zyxel. La piattaforma dice come si legge un apparato, non chi lo produce: la marca si mostra senza toccare il CHECK di `network_devices.vendor`, così una marca nuova non chiede una ricostruzione della tabella su ogni appliance.

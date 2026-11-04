@@ -53,6 +53,9 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision (porte)", label: "Hikvision", cls: "telecamera", pri: 10, keyPorts: [554, 8000], optPorts: [80, 8001, 443] },
     { name: "Dahua / NVR (porte)", label: "Dahua / NVR", cls: "telecamera", pri: 10, keyPorts: [554, 37777], optPorts: [80, 443] },
     { name: "Telecam XMEye/clone (porte)", label: "Telecam XMEye/clone", cls: "telecamera", pri: 10, keyPorts: [34567, 554], optPorts: [80] },
+    // OT: firme di porta di campo, vendor-neutre (prendono anche i device su OUI generici come Microchip)
+    { name: "PLC Modbus (porte)", label: "PLC Modbus", cls: "plc", pri: 40, keyPorts: [502], optPorts: [80, 443, 161], note: "Modbus TCP 502: firma OT specifica; sotto le firme con OID/vendor" },
+    { name: "PLC EtherNet/IP (porte)", label: "PLC EtherNet/IP", cls: "plc", pri: 40, keyPorts: [44818], optPorts: [80, 443, 2222], note: "EtherNet/IP 44818 (CIP)" },
     {
       name: "Windows Server (porte)",
       label: "Windows Server",
@@ -110,6 +113,11 @@ function seedBuiltinFingerprintRules(db: Database.Database): void {
     { name: "Hikvision MAC", label: "Hikvision", cls: "telecamera", pri: 70, macVendor: "hikvision|hangzhou" },
     { name: "VM MAC", label: "VM", cls: "vm", pri: 70, macVendor: "vmware|proxmox\\s*server|microsoft\\s*virtual|hyper-v|qemu|xensource|oracle\\s*vm|red\\s*hat.*kvm" },
     { name: "Apple MAC", label: "Client Apple", cls: "workstation", pri: 75, macVendor: "apple" },
+    // OT: vendor dall'OUI. Weintek = HMI; CREVIS = remote I/O di campo; Kronotech (Zucchetti) = terminali
+    // presenze/accessi. Microchip NON è qui: OUI di chip montato da terzi, ambiguo → solo firme di porta.
+    { name: "Weintek HMI (MAC)", label: "Weintek HMI", cls: "hmi", pri: 68, macVendor: "weintek" },
+    { name: "CREVIS I/O (MAC)", label: "CREVIS Remote I/O", cls: "plc", pri: 68, macVendor: "crevis" },
+    { name: "Kronotech (MAC)", label: "Kronotech", cls: "iot", pri: 72, macVendor: "kronotech" },
     // ── Banner HTTP ──
     { name: "Proxmox banner", label: "Proxmox VE", cls: "hypervisor", pri: 25, banner: "proxmox|pve-manager" },
     { name: "Synology banner", label: "Synology DSM", cls: "storage", pri: 25, banner: "synology|diskstation" },
@@ -280,11 +288,13 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       fields: { model: "1.3.6.1.2.1.33.1.1.2.0", firmware: "1.3.6.1.2.1.33.1.1.3.0" } },
     // STAMPANTI
     { id: "hp_printer", name: "HP JetDirect (LaserJet)", cat: "stampante", oids: ["1.3.6.1.4.1.11.2.3.9"], conf: 0.97,
-      fields: { serial: "1.3.6.1.4.1.11.2.3.9.1.1.7.0", model: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.1.1.20.1" } },
+      fields: { serial: "1.3.6.1.2.1.43.5.1.1.17.1", model: "1.3.6.1.2.1.25.3.2.1.3.1", firmware: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.3.6.0", partNumber: "1.3.6.1.4.1.11.2.4.3.1.10.0" } },
     { id: "epson", name: "Epson Printer", cat: "stampante", oids: ["1.3.6.1.4.1.1248"], conf: 0.96,
-      fields: { model: "1.3.6.1.2.1.47.1.1.1.1.13.1", serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: ["1.3.6.1.2.1.25.3.2.1.3.1", "1.3.6.1.2.1.47.1.1.1.1.13.1"], serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
+    { id: "kyocera", name: "Kyocera", cat: "stampante", oids: ["1.3.6.1.4.1.1347"], conf: 0.96,
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
     { id: "printer_generic", name: "Printer (RFC 3805)", cat: "stampante", oids: [] as string[], sysDescr: "printer|laserjet|deskjet|officejet|multifunction|mfp", conf: 0.88,
-      fields: { serial: "1.3.6.1.2.1.43.5.1.1.16.1" } },
+      fields: { model: "1.3.6.1.2.1.25.3.2.1.3.1", serial: "1.3.6.1.2.1.43.5.1.1.17.1" } },
   ];
 
   // Se la tabella è vuota, inserisci tutti; altrimenti inserisci solo i profili builtin mancanti
@@ -339,6 +349,28 @@ export function correggiOidProfiloQnap(db: Database.Database): void {
     temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
   });
   db.prepare("UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'qnap' AND builtin = 1").run(fields);
+}
+
+/**
+ * Profili SNMP delle stampanti (builtin): `hp_printer` leggeva come seriale la stringa IEEE 1284, `epson` e `printer_generic`
+ * il nome (`prtGeneralPrinterName`, 72729 04/11/2026). Riscrive solo le righe builtin che hanno ancora quegli OID; le modifiche
+ * dell'utente non si toccano. Idempotente.
+ */
+export function correggiOidProfiliStampanti(db: Database.Database): void {
+  const correggi = (id: string, vecchio: RegExp, campi: Record<string, string | string[]>): void => {
+    const riga = db.prepare("SELECT fields FROM snmp_vendor_profiles WHERE profile_id = ? AND builtin = 1").get(id) as { fields: string } | undefined;
+    if (!riga || !vecchio.test(riga.fields)) return;
+    db.prepare("UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = ? AND builtin = 1").run(JSON.stringify(campi), id);
+  };
+  const seriale = "1.3.6.1.2.1.43.5.1.1.17.1", modello = "1.3.6.1.2.1.25.3.2.1.3.1";
+  correggi("hp_printer", /11\.2\.3\.9\.1\.1\.7\.0/, {
+    serial: seriale,
+    model: modello,
+    firmware: "1.3.6.1.4.1.11.2.3.9.4.2.1.1.3.6.0",
+    partNumber: "1.3.6.1.4.1.11.2.4.3.1.10.0",
+  });
+  correggi("epson", /43\.5\.1\.1\.16\.1/, { model: [modello, "1.3.6.1.2.1.47.1.1.1.1.13.1"], serial: seriale });
+  correggi("printer_generic", /43\.5\.1\.1\.16\.1/, { model: modello, serial: seriale });
 }
 
 function seedBuiltinSysObjLookup(db: Database.Database): void {
@@ -498,6 +530,7 @@ function initializeHubDb(db: Database.Database): void {
   } catch { /* ignore */ }
   seedHubDefaults(db);
   correggiOidProfiloQnap(db);
+  correggiOidProfiliStampanti(db);
   try {
     backfillAllIntegrationUiUrls();
   } catch (e) {

@@ -295,6 +295,7 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
             <Campo label="Hostname · DNS" value={dns.length > 0 ? dns.join(" · ") : null} />
             <Campo label="Modello" value={device.model ?? host.model} />
             <Campo label="Firmware" value={device.firmware ?? host.firmware} />
+            {device.part_number && <Campo label="Part number" value={device.part_number} />}
           </dl>
           <div className="mt-3 space-y-3">
             <div className="space-y-1">

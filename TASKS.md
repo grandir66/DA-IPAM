@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — Stampanti: seriale e part number; regole OT mai arrivate alle appliance
+
+Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto e anche il part number delle stampanti, inoltre il detect dei device che ti avevo chiesto». Il detect è la sezione «Arricchire il detect» più sotto, chiesta nella sessione «Device classification da-ipam 72279».
+
+- [x] Misura sulla 72729, 10 stampanti: `prtGeneralSerialNumber` risponde su 9 (non sulla WF-6590 192.168.0.131). In archivio c'era la stringa IEEE 1284 o «ET-5805 Series»: OID sbagliati nei profili
+- [x] Part number: HP sì (`…11.2.4.3.1.10.0`, W1A29A), Epson e Kyocera no: nessun campo nei rami vendor letti. HP espone anche il codice del toner (`…9.4.2.1.4.1.10.1.1.1.1.0`, CF259A): non letto, proposta
+- [x] Regole OT: 0 righe nell'hub.db della 72729. Stavano solo in `db.ts`, le appliance seminano da `db-hub.ts`. Portate, con prova che confronta i due seed
+- [x] Nessuna bonifica: «Aggiorna» riscrive il seriale, la scansione sostituisce un finto. Restano in `physical_devices` le righe vecchie dove la risoluzione non trova il MAC
+- [ ] Dopo `main`: una scansione della rete riclassifica gli OT, «Aggiorna» scrive seriale e part number. Rileggere la 72729
+- [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
+
 ## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (rilasciato, 0.9.958)
 
 Riccardo (04/11): lo switch GS1900 risponde in SNMP ma non si vedono porte, VLAN e altre informazioni, «aggiungere un parser». Numero del cliente scritto 72279 in chat: è 72729. Rilievo in sola lettura, walk completo di 11.517 righe, `GS1900-48HP`, sysObjectID `1.3.6.1.4.1.890.1.15`, firmware V2.70(AAHO.5).

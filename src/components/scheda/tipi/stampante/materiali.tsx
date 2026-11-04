@@ -20,6 +20,7 @@ export function MaterialiStampante({ ctx }: { ctx: ContestoScheda }) {
   const righeInfo: Array<[string, string]> = [];
   if (s.model) righeInfo.push(["Modello", s.model]);
   if (s.serial) righeInfo.push(["Seriale", s.serial]);
+  if (ctx.device?.part_number) righeInfo.push(["Part number", ctx.device.part_number]);
   if (typeof s.total_pages === "number" && s.total_pages >= 0) righeInfo.push(["Pagine totali", s.total_pages.toLocaleString("it-IT")]);
   if (s.status) righeInfo.push(["Stato", s.status]);
 

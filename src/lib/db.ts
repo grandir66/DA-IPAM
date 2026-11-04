@@ -42,6 +42,7 @@ import {
   type SceltaSnmpApparato,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
+import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
@@ -4103,7 +4104,8 @@ export function recordCredentialFailure(
   credentialId: number,
   protocol: CredProtocol,
   port: number,
-  error: string
+  error: string,
+  motivo: MotivoAccesso | null = null
 ): void {
   const db = getDb();
   const existing = db
@@ -4120,19 +4122,19 @@ export function recordCredentialFailure(
   if (existing) {
     db.prepare(
       `UPDATE host_credentials
-       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
+       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?, motivo = ?,
            validated = 0, validated_at = NULL
        WHERE id = ?`
-    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
+    ).run(newFailCount, error, nowIso, backoffUntil, motivo, existing.id);
   } else {
     const max = db.prepare(
       `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
     ).get(hostId) as { m: number };
     db.prepare(
       `INSERT INTO host_credentials
-         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
-    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
+         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until, motivo)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?, ?)`
+    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil, motivo);
   }
 
   const deviceId = findDeviceIdForHostCred(hostId);
@@ -4152,7 +4154,8 @@ export function recordCredentialSuccess(
   hostId: number,
   credentialId: number,
   protocol: CredProtocol,
-  port: number
+  port: number,
+  motivo: MotivoAccesso | null = null
 ): void {
   const db = getDb();
   const nowIso = new Date().toISOString();
@@ -4161,16 +4164,17 @@ export function recordCredentialSuccess(
   ).get(hostId) as { m: number };
   db.prepare(
     `INSERT INTO host_credentials
-       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until, motivo)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL, ?)
      ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
        validated = 1,
        validated_at = datetime('now'),
        fail_count = 0,
        last_error = NULL,
        last_attempt_at = excluded.last_attempt_at,
-       backoff_until = NULL`
-  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
+       backoff_until = NULL,
+       motivo = excluded.motivo`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso, motivo);
 
   const deviceId = findDeviceIdForHostCred(hostId);
   if (deviceId != null) {
@@ -7430,6 +7434,8 @@ export {
   registraVersioneSnmpRilevata,
   // Token API dell'apparato dall'archivio (credenziali 2e, T20): una sola copia
   tokenApiApparato,
+  // Motivo dell'accesso Windows senza login rifiutato (piano 2026-11-04): una sola copia
+  recordCredentialMotivo,
   // Abbinamento Proxmox della scheda hypervisor: una sola copia
   getHostNotoPerIp,
   getHostNotoPerNomeNodo,

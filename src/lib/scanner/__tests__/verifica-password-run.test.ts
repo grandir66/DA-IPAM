@@ -24,7 +24,6 @@ import {
   VerificaPasswordRun,
   provaLdapDellaVoce,
   provaSmbDellaVoce,
-  accountDiDominio,
   utenteDelDominio,
   type DipendenzeLdap,
   type DipendenzeSmb,
@@ -300,11 +299,13 @@ function depsSmb(opts: {
   risposta?: (cb: (e: Error | null, out: string, err: string) => void) => void;
   utente?: string;
   account?: DipendenzeSmb["account"];
+  integrazione?: AdIntegration | null;
 }) {
   const chiamate: Chiamata[] = [];
   const porte: Array<[string, number]> = [];
   const deps: Partial<DipendenzeSmb> = {
     account: opts.account ?? (() => ({ username: opts.utente ?? "CLIENTE\\scansioni", password: PASSWORD })),
+    integrazione: () => (opts.integrazione === null ? undefined : (opts.integrazione ?? INTEGRAZIONE)),
     execFile(file, args, o, cb) {
       const c: Chiamata = { file, args, opts: o, stdin: [] };
       chiamate.push(c);
@@ -369,11 +370,41 @@ describe("provaSmbDellaVoce: l'esito dal bridge", () => {
  */
 const SENZA_DOMINIO = ["scansioni", ".\\scansioni", "\\scansioni", "scansioni@", "localhost\\admin", "LOCALHOST\\admin"];
 
-describe("accountDiDominio", () => {
-  for (const utente of SENZA_DOMINIO) it(`«${utente}»: no`, () => assert.equal(accountDiDominio(utente), false));
-  for (const utente of ["CLIENTE\\scansioni", "cliente.local\\admin", "admin@cliente.local", "ALTRO\\admin"]) {
-    it(`«${utente}»: sì`, () => assert.equal(accountDiDominio(utente), true));
+/**
+ * Decisione del 04/11/2026: `PC-CONTAB\\admin` non si distingue da `DOM\\admin`. Se SMB partisse, una password valida su
+ * quel PC varrebbe per tutta l'esecuzione e i rifiuti degli altri PC non conterebbero sul limite di 3. Quindi SMB solo per
+ * il dominio dell'integrazione AD accesa; tutto il resto è `non_so`, e il limite resta.
+ */
+describe("SMB solo per un utente del dominio dell'integrazione AD accesa", () => {
+  for (const utente of ["DOM\\admin", "PC-CONTAB\\admin", "ALTRO\\scansioni", "admin@altro.local", "cliente.altro\\admin"]) {
+    it(`«${utente}» con dominio ignoto: non_so, nemmeno la porta si prova`, async () => {
+      const { deps, chiamate, porte } = depsSmb({ utente });
+      assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+      assert.equal(chiamate.length, 0);
+      assert.deepEqual(porte, []);
+    });
   }
+
+  for (const utente of ["CLIENTE\\scansioni", "cliente\\scansioni", "CLIENTE.LOCAL\\scansioni", "scansioni@cliente.local", "scansioni@CLIENTE.Local"]) {
+    it(`«${utente}»: è del dominio (nome DNS o primo pezzo, senza maiuscole/minuscole), SMB parte`, async () => {
+      const { deps, chiamate } = depsSmb({ utente });
+      assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "valida");
+      assert.equal(chiamate.length, 1);
+    });
+  }
+
+  it("nessuna integrazione accesa: ogni utente è non_so, senza SMB, nemmeno quello che sembra di dominio", async () => {
+    const { deps, chiamate, porte } = depsSmb({ integrazione: null });
+    assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+    assert.equal(chiamate.length, 0);
+    assert.deepEqual(porte, []);
+  });
+
+  it("integrazione col dominio vuoto: non riconosce nessuno", async () => {
+    const { deps, chiamate } = depsSmb({ integrazione: { ...INTEGRAZIONE, domain: "" } });
+    assert.equal(await provaSmbDellaVoce(1, "10.0.0.5", deps), "non_so");
+    assert.equal(chiamate.length, 0);
+  });
 });
 
 describe("un account senza dominio è sempre non_so", () => {
@@ -413,16 +444,17 @@ describe("un account senza dominio è sempre non_so", () => {
     assert.equal(smb.chiamate.length, 1);
   });
 
-  it("un account di un altro dominio, che LDAP salta: SMB parte", async () => {
+  it("un account di un altro dominio: nessun login, né LDAP né SMB (il dominio non è quello noto)", async () => {
     const f = clienteFinto(async () => {});
     const smb = depsSmb({ utente: "ALTRO\\scansioni" });
     const run = new VerificaPasswordRun({
       ldap: (id) => provaLdapDellaVoce(id, depsLdap({ utente: "ALTRO\\scansioni" }, f)),
       smb: (id, ip) => provaSmbDellaVoce(id, ip, smb.deps),
     });
-    assert.equal(await run.esito(1, "10.0.0.5"), "valida");
+    assert.equal(await run.esito(1, "10.0.0.5"), "non_so");
     assert.deepEqual(f.creati, []);
-    assert.equal(smb.chiamate.length, 1);
+    assert.equal(smb.chiamate.length, 0);
+    assert.deepEqual(smb.porte, []);
   });
 });
 
@@ -504,6 +536,7 @@ describe("smb-login.py: lo script vero contro un impacket finto", () => {
     const visti: Array<{ args: readonly string[]; stdin: string }> = [];
     const deps: Partial<DipendenzeSmb> = {
       account: () => ({ username: utente, password }),
+      integrazione: () => INTEGRAZIONE,
       execFile(file, args, opts, cb) {
         const figlio = execFile(file, [...args], opts, cb);
         const scritto: string[] = [];
@@ -627,14 +660,25 @@ describe("le prove vere leggono la voce Windows dall'archivio", () => {
   it("SMB: utente e password della voce arrivano su stdin; voce non Windows → non_so senza processo", async () => {
     const id = voce("Scansioni", "windows", "CLIENTE\\scansioni", PASSWORD);
     const snmp = voce("Community", "snmp", "x", "y");
+    integrazione("Accesa", 1, "cliente.local", "10.1.1.1");
     const { deps, chiamate } = depsSmb({});
     delete deps.account;
+    delete deps.integrazione;
     assert.equal(await withTenant(T, () => provaSmbDellaVoce(id, "10.0.0.5", deps)), "valida");
     const input = JSON.parse(chiamate[0].stdin.join("")) as Record<string, string>;
     assert.equal(input.username, "CLIENTE\\scansioni");
     assert.equal(input.password, PASSWORD);
     assert.equal(await withTenant(T, () => provaSmbDellaVoce(snmp, "10.0.0.5", deps)), "non_so");
     assert.equal(chiamate.length, 1);
+  });
+  it("SMB: con l'unica integrazione spenta la voce di dominio non fa nessun login", async () => {
+    const id = voce("Scansioni", "windows", "CLIENTE\\scansioni", PASSWORD);
+    integrazione("Spenta", 0, "cliente.local", "10.9.9.9");
+    const { deps, chiamate } = depsSmb({});
+    delete deps.account;
+    delete deps.integrazione;
+    assert.equal(await withTenant(T, () => provaSmbDellaVoce(id, "10.0.0.5", deps)), "non_so");
+    assert.equal(chiamate.length, 0);
   });
 });
 

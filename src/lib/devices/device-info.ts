@@ -5,7 +5,8 @@
  */
 
 import type { NetworkDevice } from "@/types";
-import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
+import { credenzialeSnmpApparato, getDb, getDeviceCredentialBindings, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
+import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
@@ -1294,10 +1295,14 @@ export function mapWindowsRawToDeviceInfo(raw: Record<string, unknown>): Partial
  * last_logged_on_user, key_software), niente DirectorySearcher (AD enrichment
  * dei user_profiles), niente PowerShell. Per quei dati serve WinRM.
  */
-export async function getDeviceInfoFromWmi(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
+export async function getDeviceInfoFromWmi(
+  device: NetworkDevice,
+  /** L'account del legame `wmi`, quando non è quello del login dell'apparato. */
+  accesso?: { username: string; password: string },
+): Promise<Partial<DeviceInfo>> {
   const { getDeviceCredentials } = await import("@/lib/db");
   const { runWmiProbe } = await import("./wmi-run");
-  const creds = getDeviceCredentials(device);
+  const creds = accesso ?? getDeviceCredentials(device);
   const username = creds?.username ?? "";
   const password = creds?.password ?? "";
   if (!username || !password) {
@@ -1305,6 +1310,22 @@ export async function getDeviceInfoFromWmi(device: NetworkDevice): Promise<Parti
   }
   const raw = await runWmiProbe(device.host, username, password);
   return mapWindowsRawToDeviceInfo(raw);
+}
+
+/**
+ * L'account del legame `wmi` validato dell'apparato, o null. Serve col rifiuto di WinRM: `getDeviceCredentials` darebbe
+ * l'account del legame `winrm`, quello appena rifiutato, e il login su WMI sarebbe un altro logon rifiutato.
+ */
+export function accountLegameWmiValidato(device: Pick<NetworkDevice, "id">): { username: string; password: string } | null {
+  const legame = getDeviceCredentialBindings(device.id).find((b) => b.protocol_type === "wmi" && b.test_status === "success");
+  if (legame?.credential_id == null) return null;
+  try {
+    const e = leggiSegretoDb(getDb(), legame.credential_id, "winrm");
+    return e.ok && e.segreto.forma === "utente" ? { username: e.segreto.username, password: e.segreto.password } : null;
+  } catch (err) {
+    console.warn(`[device-info] voce #${legame.credential_id} del legame wmi non leggibile: ${err instanceof Error ? err.name : "errore"}`);
+    return null;
+  }
 }
 
 /**
@@ -1484,8 +1505,9 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
 
   // Prima WinRM se configurato. Se WinRM è raggiungibile ma il servizio non è
   // attivo (TCP_CLOSED/TCP_TIMEOUT), tenta automaticamente WMI/DCOM su 135 come
-  // fallback. NON facciamo fallback su AUTH_REJECTED/KERBEROS_*/BASIC_DISABLED:
-  // le stesse credenziali falliranno anche su WMI.
+  // fallback. I diritti delle due strade sono diversi: un account rifiutato da WinRM può
+  // entrare via WMI, e con AUTH_REJECTED si prova WMI se esiste un legame `wmi` validato, col suo account.
+  // Senza quel legame, e su KERBEROS_*/BASIC_DISABLED, niente fallback: sarebbe un logon in più a caso, sull'account di dominio.
   // Un accesso venuto dal legame wmi non fa nessun login WinRM: `createWinrmClient` lo rifiuta e si va direttamente a WMI.
   if (hasWinrm) {
     try {
@@ -1498,10 +1520,13 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       const { isAccessoSoloWmi } = await import("./winrm-client");
       const soloWmi = isAccessoSoloWmi(originalWinrmError);
       const fallbackCodes = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT", "UNKNOWN"]);
-      const shouldFallback = soloWmi || (originalWinrmError instanceof WinrmError && fallbackCodes.has(originalWinrmError.code));
+      const legameWmi = originalWinrmError instanceof WinrmError && originalWinrmError.code === "AUTH_REJECTED"
+        ? accountLegameWmiValidato(device)
+        : null;
+      const shouldFallback = soloWmi || legameWmi != null || (originalWinrmError instanceof WinrmError && fallbackCodes.has(originalWinrmError.code));
       if (shouldFallback) {
         try {
-          const wmiInfo = await getDeviceInfoFromWmi(device);
+          const wmiInfo = await getDeviceInfoFromWmi(device, legameWmi ?? undefined);
           if (deviceInfoHasAnyData(wmiInfo)) {
             result = { ...result, ...wmiInfo };
             // Successo via fallback: non rilanciare l'errore WinRM a fine funzione.

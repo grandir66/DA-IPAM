@@ -15,8 +15,9 @@
  * - `ipam_full` saltava la fase SSH di tutta la rete quando la lista della
  *   rete era vuota, anche per gli host che hanno una credenziale propria.
  *
- * WinRM su 127.0.0.1 (5985/5986 chiuse: ogni prova fallisce subito, senza
- * bridge Python); SSH su un server ssh2 in memoria su 127.0.0.1; ping e nmap
+ * WinRM dalla porta delle prove del motore di accesso: un rifiuto vero, perché
+ * una porta chiusa dal 04/11/2026 non conta più come fallimento (piano accesso
+ * Windows, Task 5); SSH su un server ssh2 in memoria su 127.0.0.1; ping e nmap
  * di `ipam_full` dall'esecutore finto. La fase SNMP di `ipam_full` interroga
  * 127.0.0.1:161 (nessun agente: nessuna risposta), senza la CLI snmpwalk.
  *
@@ -30,7 +31,8 @@ import type Database from "better-sqlite3";
 import { encrypt } from "@/lib/crypto";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
-import { discoverNetwork } from "@/lib/scanner/discovery";
+import { WinrmError } from "@/lib/devices/winrm-run";
+import { CHIAVE_PROVE_ACCESSO_WINDOWS, discoverNetwork, type ProveAccessoWindows } from "@/lib/scanner/discovery";
 import { serverSshProva, type ServerSshProva } from "@/lib/devices/__tests__/support/server-ssh-chiave";
 import { creaEsecutoreFinto, installaEsecutoreFinto, togliEsecutoreFinto } from "./support/esecutore-finto";
 import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
@@ -127,8 +129,18 @@ describe("rilevamento Windows: la validata che fallisce non ferma la catena (D2 
     lista(t, [A, B]);
     rigaValidata(t, A, "winrm", 5985);
     pin(t, "windows", A);
+    const rifiuto: ProveAccessoWindows = {
+      winrm: async () => {
+        throw new WinrmError({ code: "AUTH_REJECTED", message: "accesso negato" });
+      },
+      wmi: async () => ({ hostname: "" }),
+      ldap: async () => "non_so",
+      smb: async () => "non_so",
+    };
+    (globalThis as Record<symbol, unknown>)[CHIAVE_PROVE_ACCESSO_WINDOWS] = rifiuto;
 
     const log = await giro(t, "windows");
+    delete (globalThis as Record<symbol, unknown>)[CHIAVE_PROVE_ACCESSO_WINDOWS];
 
     const provaA = log.indexOf(`cred#${A}`);
     const provaB = log.indexOf(`cred#${B}`);

@@ -6,12 +6,14 @@
  * dell'account. Qui si fa UNA domanda per voce in tutta l'esecuzione, con la strada che non lascia effetti:
  * - LDAP sul DC (sulla prima integrazione AD accesa), solo se l'utente è del dominio dell'integrazione: un account
  *   locale su LDAP sarebbe un logon errato inutile sul DC;
- * - se LDAP non sa rispondere, e solo per un account di dominio, SMB sulla 445 del primo host (login, nessuna
- *   condivisione aperta).
+ * - se LDAP non sa rispondere, e solo per lo stesso utente del dominio dell'integrazione, SMB sulla 445 del primo host
+ *   (login, nessuna condivisione aperta).
  *
- * Un account senza dominio è sempre `non_so`, senza nessun login: vive su una macchina sola, e `valida` o `errata` lì
- * non dicono nulla delle altre, dove la password può essere diversa. Esteso a tutta l'esecuzione, un rifiuto diventerebbe
- * `diritti_mancanti` e non conterebbe sul limite di 3. Con `non_so` il limite resta.
+ * Ogni altro account è sempre `non_so`, senza nessun login: utente senza dominio, `DOM\admin` con dominio ignoto, e ogni
+ * utente quando non c'è un'integrazione AD accesa. `PC-CONTAB\admin` è locale ma non si distingue da `DOM\admin`: vive su
+ * una macchina sola, e `valida` o `errata` lì non dicono nulla delle altre, dove la password può essere diversa. Esteso a
+ * tutta l'esecuzione, un rifiuto diventerebbe `diritti_mancanti` e non conterebbe sul limite di 3. Con `non_so` il limite
+ * resta (decisione del 04/11/2026).
  *
  * Tre esiti, `errata` SOLO con prova certa: LDAP `InvalidCredentialsError` con `data 52e`, SMB
  * `STATUS_LOGON_FAILURE`. Account disabilitato (533), scaduto (532, 773), bloccato (775), utente ignoto (525),
@@ -105,16 +107,9 @@ function dominioDelNome(username: string): string {
 }
 
 /**
- * L'account porta un dominio? È tutto ciò che il nome dice: `PC-CONTAB\admin` è locale ma non si distingue da `DOM\admin`,
- * e senza integrazione AD non c'è con cosa confrontarlo.
- */
-export function accountDiDominio(username: string): boolean {
-  return dominioDelNome(username) !== "";
-}
-
-/**
  * L'utente è del dominio dell'integrazione? `DOM\utente` e `utente@dom` valgono se `dom` è il dominio intero o il
- * suo primo pezzo (NetBIOS). Utente nudo, `.\utente`, dominio vuoto, nome del PC, altro suffisso: account locale.
+ * suo primo pezzo (NetBIOS), senza maiuscole/minuscole. Utente nudo, `.\utente`, dominio vuoto, nome del PC, altro
+ * suffisso: no. È l'unica domanda che regge: il nome da solo non dice se il prefisso è un dominio o un PC.
  */
 export function utenteDelDominio(username: string, dominioIntegrazione: string): boolean {
   const dominio = dominioIntegrazione.trim().toLowerCase();
@@ -133,9 +128,14 @@ export interface DipendenzeLdap {
   tettoMs: number;
 }
 
+/** La prima integrazione AD accesa: la stessa per LDAP e per SMB. */
+function primaIntegrazioneAccesa(): AdIntegration | undefined {
+  return getAdIntegrations().filter((i) => i.enabled === 1).sort((a, b) => a.id - b.id)[0];
+}
+
 const LDAP_REALI: DipendenzeLdap = {
   account: accountDellaVoce,
-  integrazione: () => getAdIntegrations().filter((i) => i.enabled === 1).sort((a, b) => a.id - b.id)[0],
+  integrazione: primaIntegrazioneAccesa,
   nuovoClient: (opzioni) => new Client(opzioni),
   tettoMs: TETTO_VERIFICA_MS,
 };
@@ -200,10 +200,14 @@ export async function provaLdapDellaVoce(credId: number, deps: Partial<Dipendenz
 
 /* ------------------------------------------------------------------------- SMB */
 
-export type DipendenzeSmb = DipendenzeWmi & { account: (credId: number) => AccountVoce | null };
+export type DipendenzeSmb = DipendenzeWmi & {
+  account: (credId: number) => AccountVoce | null;
+  integrazione: () => AdIntegration | undefined;
+};
 
 const SMB_REALI: DipendenzeSmb = {
   account: accountDellaVoce,
+  integrazione: primaIntegrazioneAccesa,
   execFile: (file, args, opts, cb) => execFile(file, [...args], opts, cb),
   probeTcpPort,
   trovaPython: findBridgePython,
@@ -226,14 +230,16 @@ function esitoDaOutputSmb(stdout: string): EsitoPassword {
 }
 
 /**
- * Login SMB con l'account della voce, senza aprire condivisioni (`smb-login.py`). Solo per un account di dominio: uno
- * locale è `non_so` senza alcun login (vedi in cima). Se la 445 non è aperta: `non_so`.
+ * Login SMB con l'account della voce, senza aprire condivisioni (`smb-login.py`). Solo per un utente del dominio
+ * dell'integrazione AD accesa: ogni altro account è `non_so` senza alcun login (vedi in cima). Se la 445 non è aperta: `non_so`.
  * Password solo su stdin. `STATUS_LOGON_FAILURE` = `errata`, sessione vera = `valida`, il resto `non_so`.
  */
 export async function provaSmbDellaVoce(credId: number, ip: string, deps: Partial<DipendenzeSmb> = {}): Promise<EsitoPassword> {
   const d: DipendenzeSmb = { ...SMB_REALI, ...deps };
   const account = d.account(credId);
-  if (!account || !accountDiDominio(account.username)) return "non_so";
+  if (!account) return "non_so";
+  const integrazione = d.integrazione();
+  if (!integrazione || !utenteDelDominio(account.username, integrazione.domain)) return "non_so";
   const porta = await d.probeTcpPort(ip, 445, TIMEOUT_PORTA_445_MS);
   if (porta.state !== "open") return "non_so";
 

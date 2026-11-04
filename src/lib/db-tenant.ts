@@ -19,6 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
+import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
@@ -5586,7 +5587,8 @@ export function recordCredentialFailure(
   credentialId: number,
   protocol: CredProtocol,
   port: number,
-  error: string
+  error: string,
+  motivo: MotivoAccesso | null = null
 ): void {
   const d = db();
   const existing = d
@@ -5603,19 +5605,19 @@ export function recordCredentialFailure(
   if (existing) {
     d.prepare(
       `UPDATE host_credentials
-       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
+       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?, motivo = ?,
            validated = 0, validated_at = NULL
        WHERE id = ?`
-    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
+    ).run(newFailCount, error, nowIso, backoffUntil, motivo, existing.id);
   } else {
     const max = d.prepare(
       `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
     ).get(hostId) as { m: number };
     d.prepare(
       `INSERT INTO host_credentials
-         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
-    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
+         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until, motivo)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?, ?)`
+    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil, motivo);
   }
 
   const deviceId = findDeviceIdForHostCred(hostId);
@@ -5635,7 +5637,8 @@ export function recordCredentialSuccess(
   hostId: number,
   credentialId: number,
   protocol: CredProtocol,
-  port: number
+  port: number,
+  motivo: MotivoAccesso | null = null
 ): void {
   const d = db();
   const nowIso = new Date().toISOString();
@@ -5644,22 +5647,47 @@ export function recordCredentialSuccess(
   ).get(hostId) as { m: number };
   d.prepare(
     `INSERT INTO host_credentials
-       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
-     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until, motivo)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL, ?)
      ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
        validated = 1,
        validated_at = datetime('now'),
        fail_count = 0,
        last_error = NULL,
        last_attempt_at = excluded.last_attempt_at,
-       backoff_until = NULL`
-  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
+       backoff_until = NULL,
+       motivo = excluded.motivo`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso, motivo);
 
   const deviceId = findDeviceIdForHostCred(hostId);
   if (deviceId != null) {
     const binding = findExistingBinding(deviceId, credentialId, protocol, port);
     if (binding) updateBindingTestStatus(binding.id, "success", "Autenticazione riuscita");
   }
+}
+
+/**
+ * Scrive il solo motivo dell'esito di una prova di accesso Windows in cui non c'è stato un login rifiutato (porte chiuse,
+ * password errata già nota, budget esaurito): lo legge la pagina della copertura. Non conta come fallimento: `fail_count`,
+ * `backoff_until`, `validated` e `last_error` restano come sono, altrimenti una voce mai provata allungherebbe il proprio
+ * fermo. Upsert: la riga può non esistere ancora. Una sola copia: db.ts la riesporta.
+ */
+export function recordCredentialMotivo(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number,
+  motivo: MotivoAccesso
+): void {
+  const d = db();
+  const max = d.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  d.prepare(
+    `INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, sort_order, auto_detected, motivo)
+     VALUES (?, ?, ?, ?, 0, ?, 0, ?)
+     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET motivo = excluded.motivo`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, motivo);
 }
 
 export function getCredentialCommunityString(credentialId: number): string | null {

@@ -26,7 +26,6 @@
  * `strade` riporta ogni strada provata, perché un rifiuto su WinRM resta vero anche se poi WMI entra.
  */
 import { chiaveAccount } from "./account-windows";
-import { MAX_CONSECUTIVE_FAILURES_PER_RUN } from "./credential-anti-lockout";
 import type { CredentialRunBudget } from "./credential-run-budget";
 import type { EsitoPassword, VerificaPasswordRun } from "./verifica-password-run";
 import type { WinrmErrorCode } from "@/lib/devices/winrm-errors";

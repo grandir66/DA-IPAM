@@ -151,8 +151,6 @@ export async function runWinrmCommand(
       ...(unSoloLogon ? { un_solo_logon: true } : {}),
     });
 
-    let uccisione: NodeJS.Timeout | undefined;
-
     const child = deps.execFile(
       pythonBin,
       [BRIDGE_SCRIPT],
@@ -239,7 +237,7 @@ export async function runWinrmCommand(
     );
 
     // execFile allo scadere manda SIGTERM e aspetta: un processo che non esce terrebbe ferma la scansione.
-    uccisione = setTimeout(() => child.kill?.("SIGKILL"), timeoutMs + (deps.tolleranzaUscitaMs ?? TOLLERANZA_USCITA_MS));
+    const uccisione = setTimeout(() => child.kill?.("SIGKILL"), timeoutMs + (deps.tolleranzaUscitaMs ?? TOLLERANZA_USCITA_MS));
     uccisione.unref();
 
     child.stdin?.write(input);

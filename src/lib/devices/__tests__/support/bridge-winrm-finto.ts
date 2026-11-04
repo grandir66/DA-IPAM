@@ -8,7 +8,9 @@ import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { TcpProbeResult } from "@/lib/devices/tcp-precheck";
 import type { DipendenzeWinrm } from "@/lib/devices/winrm-run";
+import type { DipendenzeWmi } from "@/lib/devices/wmi-run";
 
 export const SCRIPT_BRIDGE = path.resolve(process.cwd(), "src/lib/devices/winrm-bridge.py");
 
@@ -80,6 +82,15 @@ class Session:
         raise NotImplementedError
 `;
 
+/** Il connect DCOM di impacket è un logon NTLM: fa il suo rifiuto vero e va nel registro. */
+const DCOMRT_FINTO = `import os
+class DCOMConnection:
+    def __init__(self, target, username, password, domain, *args, **kwargs):
+        with open(os.environ["WINRM_FINTO_LOG"], "a") as f:
+            f.write("logon:wmi:%s\\%s\\n" % (domain, username))
+        raise Exception("DCERPC Runtime Error: code: 0x5 - rpc_s_access_denied")
+`;
+
 /** `kinit` è un logon sul DC come gli altri: va nel registro. */
 const KINIT_FINTO = `#!/bin/sh
 cat > /dev/null
@@ -96,6 +107,8 @@ export interface BridgeFinto {
   registro(): string[];
   /** Le dipendenze di `runWinrmCommand` col processo vero: porte aperte, nessuna rete. */
   dipendenze(condotte: Partial<Record<string, CondottaTrasporto>>, extra?: Record<string, string>): DipendenzeWinrm;
+  /** Le dipendenze di `runWmiIdentita` col processo vero: la 135 aperta, impacket finto. */
+  dipendenzeWmi(): DipendenzeWmi;
   /** Lancia lo script con questa richiesta e ne legge il JSON. */
   lancia(richiesta: Record<string, unknown>, condotte: Partial<Record<string, CondottaTrasporto>>, extra?: Record<string, string>): Record<string, unknown>;
   togli(): void;
@@ -110,6 +123,13 @@ export function creaBridgeFinto(): BridgeFinto {
   fs.mkdirSync(path.join(moduli, "winrm"), { recursive: true });
   fs.mkdirSync(bin);
   fs.writeFileSync(path.join(moduli, "winrm", "__init__.py"), WINRM_FINTO);
+  fs.mkdirSync(path.join(moduli, "impacket", "dcerpc", "v5", "dcom"), { recursive: true });
+  for (const f of ["impacket/__init__.py", "impacket/dcerpc/__init__.py", "impacket/dcerpc/v5/__init__.py", "impacket/dcerpc/v5/dcom/__init__.py"]) {
+    fs.writeFileSync(path.join(moduli, f), "");
+  }
+  fs.writeFileSync(path.join(moduli, "impacket/dcerpc/v5/dtypes.py"), "NULL = None\n");
+  fs.writeFileSync(path.join(moduli, "impacket/dcerpc/v5/dcom/wmi.py"), "CLSID_WbemLevel1Login = 1\nIID_IWbemLevel1Login = 2\n");
+  fs.writeFileSync(path.join(moduli, "impacket/dcerpc/v5/dcomrt.py"), DCOMRT_FINTO);
   fs.writeFileSync(path.join(bin, "kinit"), KINIT_FINTO, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, "klist"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
   // Col segno del bridge il file è già «nostro»: niente scritture in /etc/krb5.conf o nella cartella di casa.
@@ -141,6 +161,14 @@ export function creaBridgeFinto(): BridgeFinto {
       const env = ambiente(condotte, extra);
       return {
         checkWinrmReachability: async () => ({ reachable: true, summary: "open", results: [] }),
+        trovaPython: () => PYTHON as string,
+        execFile: (file, args, opts, cb) => execFile(file, [...args], { ...opts, env }, cb),
+      };
+    },
+    dipendenzeWmi() {
+      const env = ambiente({});
+      return {
+        probeTcpPort: async (_host, port) => ({ port, state: "open", rttMs: 1 }) as TcpProbeResult,
         trovaPython: () => PYTHON as string,
         execFile: (file, args, opts, cb) => execFile(file, [...args], { ...opts, env }, cb),
       };

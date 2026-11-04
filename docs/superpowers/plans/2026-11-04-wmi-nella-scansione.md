@@ -30,8 +30,8 @@
 | S1 | [x] | Prova leggera WMI, tetto ai tempi | implementer | — | `runWmiIdentita` provata | prova del task |
 | S2 | [x] | Protocollo `wmi` e colonna `motivo` | implementer | — | migrazione provata su database vero | `npx tsc --noEmit` e prova |
 | S3 | [x] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
-| S4 | [~] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
-| S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
+| S4 | [x] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
+| S5 | [x] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
 | S6 | [x] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
 | S7 | [x] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
 | S8 | [ ] | Controllo dell'account e pagina | implementer | S3 S6 S7 | pagina resa a 1280 e 1920 | verifica resa |
@@ -133,7 +133,7 @@ export class VerificaPasswordRun {
 
 Verifica: `node --import tsx --test src/lib/scanner/__tests__/verifica-password-run.test.ts` → 48 verdi. `smb-login.py` provato con un finto impacket: la prova vera sta nel collaudo.
 
-### [~] Task 4 — Motore: strada e motivo per host (S4)
+### [x] Task 4 — Motore: strada e motivo per host (S4)
 
 **File**
 - Crea: `src/lib/scanner/accesso-windows.ts`, `src/lib/scanner/__tests__/accesso-windows.test.ts`.
@@ -174,7 +174,7 @@ export async function provaAccessoWindows(input: {
 
 **Commit:** `Scansione: motore di accesso Windows con motivo per host`.
 
-### [ ] Task 5 — Discovery usa il motore nei due punti (S5)
+### [x] Task 5 — Discovery usa il motore nei due punti (S5)
 
 **File**
 - Modifica: `src/lib/scanner/discovery.ts:1442-1553` (tipo `windows`) e `:2574-2604` (`credential_validate`).
@@ -191,6 +191,8 @@ export async function provaAccessoWindows(input: {
 **Verifica:** 20 host finti con password valida, 17 rifiuti, 3 riusciti: nessuna esclusione. Con `errata`: zero chiamate. Con 5985 chiusa e 135 chiusa: zero chiamate e budget intatto. Poi il cancello completo.
 
 **Commit:** `Scansione: WinRM e WMI in automatico`.
+
+Verifica: revisione con 16 rilievi corretti; `npm test` → 6827 pass, 0 fail; prova d'insieme su 50 host, massimo 3 logon errati per utente in un giro; un solo tentativo con pywinrm vero su server NTLM locale.
 
 ### [x] Task 6 — Catalogo unico dei diritti (S6)
 

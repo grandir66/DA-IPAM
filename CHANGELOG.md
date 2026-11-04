@@ -16,6 +16,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Corretto**: il `mac_vendor` ora concorre alla classificazione anche quando il device non ha SNMP né banner — prima un apparato riconosciuto solo dall'OUI di un vendor fuori elenco non veniva toccato dalle regole testuali.
 - **Nota**: l'OUI **Microchip Technology** non classifica da solo (è un OUI di chip — LAN8xxx, moduli WiFi — montato da device di terzi): questi apparati si classificano solo dalle porte (es. Modbus 502 → PLC), non dal vendor.
 
+## [Non rilasciato] — 2026-11-04 · Detect OT: la categoria arriva dall'OUI
+
+- **Corretto**: Weintek, CREVIS, Kronotech, Control Techniques e Vacon ora prendono una categoria dall'OUI. L'attribuzione v2 è l'unico motore che scrive `hosts.classification`, e dall'OUI prendeva solo il produttore: alla 72729 restavano 30 apparati `unknown` anche con le regole di fingerprint attive, perché quel percorso vede «Weintek HMI» ma non scrive la classe. Microchip resta fuori: è un chip montato da terzi.
+
 ## [Non rilasciato] — 2026-11-04 · Stampanti: seriale e part number veri; regole OT sulle appliance
 
 - **Corretto**: seriale delle stampanti. Il profilo `hp_printer` leggeva la stringa IEEE 1284 («MFG:HP;CMD:…»), `epson` e `printer_generic` il nome della stampante. Alla 72729 il seriale vero rispondeva su 9 stampanti su 10, ma il finto non era vuoto e bloccava ogni ripiego; due ET-5805 avevano lo stesso «seriale», che è la chiave degli apparati fisici. Le righe di serie degli hub già installati si correggono all'avvio, le modifiche dell'utente restano.

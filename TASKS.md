@@ -10,7 +10,11 @@ Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto 
 - [x] Nessuna bonifica: «Aggiorna» riscrive il seriale, la scansione sostituisce un finto. Restano in `physical_devices` le righe vecchie dove la risoluzione non trova il MAC
 - [x] Rilascio 0.9.962 (af2aae7b): cancello verde (6.394 prove passate, 0 fallite), hub 533 alle 14:35 UTC con 5 regole OT e profili corretti da soli su un database esistente, `main` col sì di Riccardo, 72729 ripartita alle 14:54 UTC, health 200. Snapshot `pre-stampanti-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Il primo push su `main` è stato rifiutato senza motivo letto, il secondo è passato (ramo non protetto, prova a vuoto pulita)
 - [x] Il `fast_scan` delle 15:00 non riclassifica: è un giro di ping (0 porte), non passa dal fingerprint. Al 15:09 UTC gli OT restano `unknown` e i seriali finti restano: nessuna scansione con porte, nessun «Aggiorna»
-- [ ] Riccardo lancia dalla pagina della rete «Porte e servizi» (`scan_nmap_base`) e dalla Discovery «Aggiorna selezionati» sulle stampanti. Poi rileggere classi e seriali sulla 72729 e togliere lo snapshot
+- [x] Riccardo (04/11): scansione Nmap completa 15:14-15:29 UTC, 95 host, 273 porte. Stampante 192.168.0.201 letta: modello, seriale, part number W1A29A, firmware. Le altre 9 non risultano lette
+- [x] Trovato: le regole OT funzionano (`final_device: "Weintek HMI"`, `rule:mac_vendor`) ma non scrivono la classe. Dal Fix C1 l'unico motore che scrive `hosts.classification` è l'attribuzione v2, e dall'OUI prendeva solo il vendor. Prima avevo indicato la soglia 0,56 del fingerprint: sbagliato, quel percorso non scrive
+- [x] Evidenza categoria dall'OUI per i produttori solo OT (`OUI_SOLO_OT` in `attribution/emitters.ts`). Weintek e CREVIS finiscono `iot`, non `hmi`/`plc`: `legacy-projection.ts` collassa le foglie `iot.*` per regola esplicita e le prove esistenti la fissano
+- [ ] Da decidere con Riccardo: PLC e HMI distinti da IoT nella classificazione (nuove foglie della tassonomia e prove da rivedere)
+- [ ] Dopo `main`: rileggere classi e seriali sulla 72729, leggere le altre 9 stampanti, togliere lo snapshot `pre-stampanti-20261104`
 - [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
 
 ## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (rilasciato, 0.9.958)

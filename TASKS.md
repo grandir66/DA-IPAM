@@ -8,7 +8,9 @@ Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto 
 - [x] Part number: HP sì (`…11.2.4.3.1.10.0`, W1A29A), Epson e Kyocera no: nessun campo nei rami vendor letti. HP espone anche il codice del toner (`…9.4.2.1.4.1.10.1.1.1.1.0`, CF259A): non letto, proposta
 - [x] Regole OT: 0 righe nell'hub.db della 72729. Stavano solo in `db.ts`, le appliance seminano da `db-hub.ts`. Portate, con prova che confronta i due seed
 - [x] Nessuna bonifica: «Aggiorna» riscrive il seriale, la scansione sostituisce un finto. Restano in `physical_devices` le righe vecchie dove la risoluzione non trova il MAC
-- [ ] Dopo `main`: una scansione della rete riclassifica gli OT, «Aggiorna» scrive seriale e part number. Rileggere la 72729
+- [x] Rilascio 0.9.962 (af2aae7b): cancello verde (6.394 prove passate, 0 fallite), hub 533 alle 14:35 UTC con 5 regole OT e profili corretti da soli su un database esistente, `main` col sì di Riccardo, 72729 ripartita alle 14:54 UTC, health 200. Snapshot `pre-stampanti-20261104` della VM 100 su `pve`, da togliere dopo il controllo. Il primo push su `main` è stato rifiutato senza motivo letto, il secondo è passato (ramo non protetto, prova a vuoto pulita)
+- [x] Il `fast_scan` delle 15:00 non riclassifica: è un giro di ping (0 porte), non passa dal fingerprint. Al 15:09 UTC gli OT restano `unknown` e i seriali finti restano: nessuna scansione con porte, nessun «Aggiorna»
+- [ ] Riccardo lancia dalla pagina della rete «Porte e servizi» (`scan_nmap_base`) e dalla Discovery «Aggiorna selezionati» sulle stampanti. Poi rileggere classi e seriali sulla 72729 e togliere lo snapshot
 - [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
 
 ## 2026-11-04 — Zyxel GS1900 sulla sonda 72729-ipam (rilasciato, 0.9.958)

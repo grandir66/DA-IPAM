@@ -42,6 +42,8 @@ export class CredentialRunBudget {
   private readonly failStreak = new Map<number, number>();
   private readonly excludedAt = new Map<number, number>();
   private readonly skippedAfterExclusion = new Map<number, number>();
+  private readonly denied = new Map<number, number>();
+  private readonly wrongPassword = new Set<number>();
 
   constructor(private readonly log: CredentialRunBudgetLogger) {}
 
@@ -92,6 +94,28 @@ export class CredentialRunBudget {
   }
 
   /**
+   * Accesso negato con password verificata giusta: non è un logon errato, non consuma il budget e non tocca lo
+   * streak (né lo azzera: non è un accesso riuscito). Alimenta solo `logSummary`.
+   *
+   * Incidente: 72729, 04/11/2026. 12 PC rifiutano un account di dominio con password giusta, perché mancano i
+   * diritti e non la password. Contati come fallimenti, il budget avrebbe fermato la scansione dopo 3 macchine.
+   */
+  recordDenied(credId: number): void {
+    this.denied.set(credId, (this.denied.get(credId) ?? 0) + 1);
+  }
+
+  /**
+   * La verifica ha trovato la password errata: quel logon sbagliato è reale e va contato, una volta sola per voce
+   * perché la verifica è una sola per esecuzione, per quanti host la leggano. Così il limite resta sui logon errati
+   * veri anche se la stessa voce passa da un percorso che non usa la verifica.
+   */
+  recordWrongPassword(credId: number): void {
+    if (this.wrongPassword.has(credId)) return;
+    this.wrongPassword.add(credId);
+    this.recordFailure(credId);
+  }
+
+  /**
    * Riepilogo finale a fine run: quante credenziali sono state escluse e
    * quanti tentativi risparmiati — mai un'esclusione silenziosa (§Task3).
    * Idempotente: non azzera lo stato, può essere chiamato una sola volta a
@@ -102,6 +126,11 @@ export class CredentialRunBudget {
       const skipped = this.skippedAfterExclusion.get(credId) ?? 0;
       this.log(
         `⛔ Riepilogo budget: credenziale #${credId} esclusa dopo ${failCountAtExclusion} fallimenti consecutivi — ${skipped} tentativi successivi risparmiati in questo run.`
+      );
+    }
+    for (const [credId, quanti] of this.denied) {
+      this.log(
+        `ℹ Riepilogo budget: credenziale #${credId} con password giusta, accesso negato da ${quanti} tentativi (diritti mancanti): non contano sul budget.`
       );
     }
   }

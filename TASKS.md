@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-04 — Il conteggio dei rilievi della sonda conta solo Greenbone
+
+Riccardo (04/11) ha chiesto di guardare perché `finding_count` non torna. Misurato sull'hub, tenant 70791.
+
+- [x] È un difetto **della sonda**, non nostro: il numero arriva da lei (`s.finding_count` in `lib/vuln/sync-job.ts`) e conta **solo i rilievi Greenbone**. Sistematico, non casuale: sui 4 giri con fonti miste (121-124) il dichiarato è esattamente il totale Greenbone, sui giri più vecchi con sola Greenbone (117-120) coincide col totale. Giro 124: dichiara 1832, in archivio 2402 (Greenbone 1832, controlli 530, Nuclei 40)
+- [x] `controllo:` e `nuclei:` **arrivano dalla sonda**, non li fabbrichiamo noi: `normalizzaRilievoControllo` ripulisce righe che arrivano già con quel prefisso
+- [x] Dove si vede (`subnet-edge-scan-panel.tsx:518`, «Ultimo scan: done · N CVE») il numero è chiesto **alla sonda al volo** (`/api/v1/networks/lookup` in `edge-subnet-bridge.ts`), non letto dal nostro archivio: nessuna correzione in DA-IPAM lo cambierebbe. Il fix sta in DA-Vul-can, vedi il suo TASKS
+- [x] La nostra colonna `vuln_scan_runs.finding_count` è **scritta e mai letta**: nessun SELECT in tutto `src/`. Gli altri due punti che mostrano totali li calcolano (`COUNT(*)` in `api/integrations/scanner-edge`, `findingsSorted.length` in `api/hosts/[id]/vulnerabilities`), quindi oggi nessuna pagina mostra un totale sbagliato
+- [ ] Da decidere: la colonna morta o la si ricalcola dopo lo scarico (una UPDATE idempotente a fine `sync-job`) o la si smette di scrivere. Com'è adesso è una trappola per chi la leggerà domani credendola un totale
+- [ ] Da decidere: l'etichetta «N CVE» del pannello è nostra e sovrastima — sul giro 124, 2135 rilievi su 2402 sono di livello Log, cioè informativi, non CVE. «rilievi» sarebbe onesto
+
 ## 2026-11-04 — Profili di scansione: detect approfondito e profilo IoT/OT
 
 Riccardo (04/11): «dovrei arricchire la scansione dei device con un profilo dedicato ad IoT OT […]

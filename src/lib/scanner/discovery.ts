@@ -213,13 +213,30 @@ function autoBindCredentialToDevice(
  *
  * Il motore puro sull'handle del giro, non `resolveCredentialsFor`: quello su
  * un errore del DB restituisce una lista vuota, e qui diventerebbe «nessuna
- * credenziale» per ogni host invece di un giro fallito che dice perché.
+ * credenziale» per ogni host invece di un errore che dice perché. Un errore
+ * vale per l'host: chi chiama lo scrive e passa al prossimo.
  */
-function catenaHost(target: ResolveTarget, protocol: CredProtocol): { candidati: ResolvedCredential[]; ids: number[] } {
-  const candidati = resolveCredentialsForDb(getDb(), target, protocol, { includeBackoff: true });
+function catenaHost(
+  target: ResolveTarget,
+  protocol: CredProtocol,
+  leggi: LetturaCandidati = (t, p) => resolveCredentialsForDb(getDb(), t, p, { includeBackoff: true }),
+): { candidati: ResolvedCredential[]; ids: number[] } {
+  const candidati = leggi(target, protocol);
   const ids: number[] = [];
   for (const c of candidati) if (c.credential_id != null && !ids.includes(c.credential_id)) ids.push(c.credential_id);
   return { candidati, ids };
+}
+
+type LetturaCandidati = (target: ResolveTarget, protocol: CredProtocol) => ResolvedCredential[];
+
+/**
+ * I candidati di un host non si leggono: niente fermo vuol dire niente login, e l'errore è di quell'host. Una riga per host,
+ * poi il giro va avanti: SSH, SNMP e gli altri host hanno i loro esiti. Il messaggio è di SQLite: né utenti né voci.
+ */
+function scriviCandidatiIlleggibili(ip: string, e: unknown, log: (msg: string) => void): void {
+  const messaggio = e instanceof Error ? e.message : String(e);
+  log(`⛔ ${ip}: credenziali dell'host non leggibili, nessun tentativo con quel protocollo: ${messaggio}`);
+  console.error(`[Discovery] ${ip}: credenziali dell'host non leggibili:`, messaggio);
 }
 
 /** Tetto della prova di identità su WinRM: una macchina non può fermare la scansione. WMI ha il suo, uguale, in `runWmiIdentita`. */
@@ -237,6 +254,8 @@ export interface ProveAccessoWindows {
   wmi: ProvaWmi;
   ldap: (credId: number) => Promise<EsitoPassword>;
   smb: (credId: number, ip: string) => Promise<EsitoPassword>;
+  /** La lettura dei candidati, solo per le prove: di serie il motore delle credenziali. */
+  candidati?: typeof resolveCredentialsForDb;
 }
 
 /** Porta per le prove, come quella di `getScanIoOverride`: in produzione è vuota, nessun codice dell'applicazione la scrive. */
@@ -255,6 +274,7 @@ function proveAccessoDelGiro(): ProveAccessoWindows {
 
 const NOME_STRADA: Record<StradaWindows, string> = { winrm: "WinRM", wmi: "WMI" };
 const STRADE_WINDOWS: readonly StradaWindows[] = ["winrm", "wmi"];
+const PORTE_SENZA_SCANSIONE: readonly number[] = [5985, 135];
 
 /** Parole del log, della fase e del riepilogo: mai utenti né nomi di voci. */
 const TESTO_MOTIVO: Record<MotivoAccesso, string> = {
@@ -347,6 +367,7 @@ type EsitoVoceWindows = EsitoAccesso & { porta: number; fase: string };
  */
 function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) => void) {
   const prove = proveAccessoDelGiro();
+  const leggiCandidati = prove.candidati ?? resolveCredentialsForDb;
   const tenant = getCurrentTenantCode();
   const verifica = new VerificaPasswordRun({ ldap: prove.ldap, smb: prove.smb }, tenant ? ricordoDelTenant(tenant) : undefined);
   const dominioAd = getAdRealm()?.realm || "";
@@ -411,6 +432,9 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
         recordCredentialSuccess(hostId, p.credId, strada, porta, motivo);
       });
       autoBindCredentialToDevice(ip, p.credId, strada, porta, hostId);
+    } else if (logon === "rifiutato" && s.unSoloLogon && p.stradaValidata === strada) {
+      // Il solo NTLM non smentisce una riga già validata: su una macchina solo Kerberos si perderebbe ciò che funziona.
+      salva(strada, () => recordCredentialProblema(hostId, p.credId, strada, porta, errore, motivo, true));
     } else if (logon === "rifiutato") {
       salva(strada, () => recordCredentialFailure(hostId, p.credId, strada, porta, errore, motivo));
     } else if (motivo === "porte_chiuse") {
@@ -453,6 +477,9 @@ function accessoWindowsDelGiro(budget: CredentialRunBudget, log: (msg: string) =
   };
 
   return {
+    /** I candidati di un host col fermo, dal motore. Lancia su un errore del DB: chi chiama lo tratta come un errore di quell'host. */
+    candidati: ((target, protocol) => leggiCandidati(getDb(), target, protocol, { includeBackoff: true })) satisfies LetturaCandidati,
+
     /** Prova una voce su un host e ne scrive l'esito. `null`: la voce non ha i dati per provare. */
     async prova(p: ProvaVoceWindows): Promise<EsitoVoceWindows | null> {
       const { id: hostId, ip } = p.host;
@@ -1788,8 +1815,16 @@ async function runDiscovery(
       const host = windowsHosts[i];
       const ip = host.ip;
       const target = { hostId: host.id, ip, networkId };
-      const catenaWinrm = catenaHost(target, "winrm");
-      const catenaWmi = catenaHost(target, "wmi");
+      let catenaWinrm: ReturnType<typeof catenaHost>;
+      let catenaWmi: ReturnType<typeof catenaHost>;
+      try {
+        catenaWinrm = catenaHost(target, "winrm", accessoWindows.candidati);
+        catenaWmi = catenaHost(target, "wmi", accessoWindows.candidati);
+      } catch (e) {
+        scriviCandidatiIlleggibili(ip, e, log);
+        progress.scanned = i + 1;
+        continue;
+      }
       // La voce che entra via WMI va prima, come quella validata via WinRM: le altre sarebbero logon rifiutati per niente.
       const validateWmi = catenaWmi.candidati.filter((c) => c.validated && c.credential_id != null).map((c) => c.credential_id as number);
       const chain = [...new Set([...validateWmi, ...catenaWinrm.ids, ...catenaWmi.ids])];
@@ -2701,15 +2736,28 @@ async function runDiscovery(
       if (hasWindowsIndicator && !haVoceWindows) accessoWindows.nessunaVoce(host.id);
 
       const nowIso = new Date().toISOString();
-      // Il motore rigoroso, come nel tipo `windows`: un errore del DB ferma il giro, non si traduce in «nessun fermo» e in un login.
+      // Il motore rigoroso, come nel tipo `windows`: un errore del DB non si traduce in «nessun fermo» e in un login. Quel
+      // protocollo su questo host non si prova, una riga sola nel registro, e il giro va avanti.
       const resolvedBackoffCache = new Map<CredProtocol, ResolvedCredential[]>();
       const getResolvedForProtocol = (protocol: CredProtocol): ResolvedCredential[] => {
         let r = resolvedBackoffCache.get(protocol);
         if (!r) {
-          r = resolveCredentialsForDb(getDb(), { hostId: host.id, ip, networkId }, protocol, { includeBackoff: true });
+          r = accessoWindows.candidati({ hostId: host.id, ip, networkId }, protocol);
           resolvedBackoffCache.set(protocol, r);
         }
         return r;
+      };
+      let candidatiIlleggibili = false;
+      /** Legge i candidati: false se non si può, una riga nel registro per host. */
+      const candidatiLeggibili = (...protocolli: CredProtocol[]): boolean => {
+        try {
+          for (const protocollo of protocolli) getResolvedForProtocol(protocollo);
+          return true;
+        } catch (e) {
+          if (!candidatiIlleggibili) scriviCandidatiIlleggibili(ip, e, log);
+          candidatiIlleggibili = true;
+          return false;
+        }
       };
 
       /** Gate anti-lockout unico (Task 3, via `CredentialRunBudget`): backoff
@@ -2723,6 +2771,7 @@ async function runDiscovery(
        * backoff su una porta diversa (es. stessa credenziale provata su 5985 e
        * 5986) non deve essere scambiata per quella della porta corrente. */
       const gateCredential = (protocol: CredProtocol, credId: number, credType: string, port: number): boolean => {
+        if (!candidatiLeggibili(protocol)) return false;
         const resolved = getResolvedForProtocol(protocol).find(
           (r) => r.credential_id === credId && r.protocol === protocol && r.port === port
         );
@@ -2868,10 +2917,13 @@ async function runDiscovery(
           // hasWindowsIndicator NON è più solo una condizione di ramo (§Task3): se falsa, gateCredential nega con motivo
           // loggato invece di saltare il blocco in silenzio. Con l'indicatore il gate è dentro il motore.
           if (!hasWindowsIndicator && !gateCredential("winrm", credId, credType, 5985)) continue;
+          if (!candidatiLeggibili("winrm", "wmi")) continue;
           const esito = await accessoWindows.prova({
             host,
             credId,
-            porteAperte: openPorts.map((p) => p.port),
+            // Windows dalla classificazione, ma nessuna porta nota: si provano le due strade. Prima del bridge c'è il controllo
+            // TCP, che chiude il caso senza logon su una macchina spenta.
+            porteAperte: openPorts.length > 0 ? openPorts.map((p) => p.port) : PORTE_SENZA_SCANSIONE,
             nowIso,
             backoffDi: backoffDaCandidati(getResolvedForProtocol, credId),
             stradaValidata: stradaValidataDaCandidati(getResolvedForProtocol, credId),

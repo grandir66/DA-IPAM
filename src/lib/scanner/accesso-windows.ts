@@ -68,6 +68,11 @@ export interface EsitoDiStrada {
   /** Per chi legge, mai utente né password. */
   dettaglio: string;
   logon: EsitoLogon;
+  /**
+   * WinRM con la password non verificata: si è provato un trasporto solo. Un rifiuto qui non dice che la voce non vale, una
+   * macchina solo Kerberos rifiuta NTLM, e chi persiste non deve togliere la validazione a una riga già validata.
+   */
+  unSoloLogon?: true;
 }
 
 export interface EsitoAccesso {
@@ -279,7 +284,7 @@ export async function provaAccessoWindows(input: InputAccessoWindows): Promise<E
     } catch (err) {
       const { ferma, ...esito } = classifica(strada, err, esitoPassword, input);
       note.push(esito.dettaglio);
-      provate.push({ strada, porta, ...esito });
+      provate.push({ strada, porta, ...esito, ...(strada === "winrm" && opzioniWinrm.length > 0 ? { unSoloLogon: true as const } : {}) });
       if (ferma) {
         // Il rifiuto chiude la valutazione: la strada del rifiuto è quella su cui il chiamante registra il fallimento.
         budget.recordFailure(credId);

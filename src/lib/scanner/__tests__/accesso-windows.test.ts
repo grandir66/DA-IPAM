@@ -256,6 +256,26 @@ describe("tabella del piano", () => {
   }
 });
 
+describe("la strada dice se il rifiuto viene da un logon solo", () => {
+  it("WinRM con la password non verificata: un solo trasporto, e un rifiuto non prova che la voce non valga", async () => {
+    const c = contatore();
+    const e = await prova({ password: "non_so", winrm: c.winrmKo(errWinrm("AUTH_REJECTED")) });
+    assert.equal(e.strade[0].unSoloLogon, true);
+  });
+
+  it("WinRM con la password valida: la catena completa", async () => {
+    const c = contatore();
+    const e = await prova({ password: "valida", winrm: c.winrmKo(errWinrm("AUTH_REJECTED")), wmi: c.wmiOk });
+    assert.equal(e.strade[0].unSoloLogon, undefined);
+  });
+
+  it("WMI non ha una catena: il campo non c'è", async () => {
+    const c = contatore();
+    const e = await prova({ password: "non_so", porte: [135], wmi: c.wmiKo(errWmi("AUTH_REJECTED")) });
+    assert.equal(e.strade[0].unSoloLogon, undefined);
+  });
+});
+
 describe("password non verificabile: ogni errore che può nascondere un logon rifiutato conta", () => {
   const dubbi: Array<[string, unknown]> = [
     ["KERBEROS_FAILED", errWinrm("KERBEROS_FAILED")],

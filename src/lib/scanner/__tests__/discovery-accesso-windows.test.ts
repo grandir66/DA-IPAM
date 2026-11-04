@@ -32,6 +32,7 @@ import { WmiError } from "@/lib/devices/wmi-run";
 import { CHIAVE_PROVE_ACCESSO_WINDOWS, discoverNetwork, provaWinrmConTetto, type ProveAccessoWindows } from "@/lib/scanner/discovery";
 import type { EsitoPassword } from "@/lib/scanner/verifica-password-run";
 import type { NetworkDevice } from "@/types";
+import { resolveCredentialsForDb } from "@/lib/credentials/resolve";
 import { creaEsecutoreFinto, installaEsecutoreFinto, togliEsecutoreFinto } from "./support/esecutore-finto";
 
 const UTENTE = "CLIENTE\\scansioni";
@@ -475,17 +476,17 @@ for (const tipo of TIPI) {
       assert.equal(statoLegame(t, pc, id), "success");
     });
 
-    it("rifiuto vero: la riga e il legame perdono la validazione", async () => {
+    it("rifiuto con la catena completa: la riga e il legame perdono la validazione", async () => {
       const t = tenant(codice("VERO"), hostUguali(1, [5985]));
       const id = voce(t, "Scansioni");
       const pc = apparato(t, ipDi(1));
       riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
       legame(t, pc, id, "winrm", 5985);
 
-      await giro(t, tipo, banco());
+      await giro(t, tipo, banco({ password: "valida" }));
 
       const [r] = righe(t, ipDi(1));
-      assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "errore"]);
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "diritti_mancanti"]);
       assert.equal(statoLegame(t, pc, id), "failed");
     });
 
@@ -770,14 +771,13 @@ describe("credential_validate: evidenze e host non Windows", () => {
     assert.equal(riepilogo(log), "");
   });
 
-  it("host Windows senza porte note: porte chiuse, nessuna chiamata", async () => {
+  it("host Windows senza porte note e macchina spenta: porte chiuse nel riepilogo, nessuna riga fra le credenziali", async () => {
     const t = tenant(codice("CLASSE"), [{ ip: ipDi(1), porte: [], classification: "workstation" }]);
     voce(t, "Scansioni");
-    const b = banco();
+    const b = banco({ winrm: () => rifiutoWinrm("TCP_CLOSED"), wmi: () => rifiutoWmi("TCP_CLOSED") });
 
     const log = await giro(t, "credential_validate", b);
 
-    assert.deepEqual([b.chiamate.winrm, b.chiamate.wmi, b.chiamate.ldap], [[], [], []]);
     assert.deepEqual(righe(t, ipDi(1)), []);
     assert.match(riepilogo(log), /1 porte chiuse/);
   });
@@ -831,21 +831,114 @@ describe("gli esiti senza riga in host_credentials", () => {
   });
 });
 
-describe("credential_validate: il fermo si legge col motore rigoroso", () => {
-  it("un guasto del database ferma il giro, non si traduce in «nessun fermo» e in un login", async () => {
-    const t = tenant(codice("RIGOROSO"), hostUguali(1, [5985]));
+describe("il fermo illeggibile: nessun logon, e il giro va avanti", () => {
+  const guastoSu = (ip: string, protocollo: string): NonNullable<ProveAccessoWindows["candidati"]> => (dbh, target, proto, opzioni) => {
+    if (target.ip === ip && proto === protocollo) throw new Error("database guasto");
+    return resolveCredentialsForDb(dbh, target, proto, opzioni);
+  };
+
+  it("credential_validate: un guasto del database su tutto: un errore per host, nessun logon, il giro finisce", async () => {
+    const t = tenant(codice("RIGOROSO"), hostUguali(2, [5985]));
     voce(t, "Scansioni");
     t.d.exec("DROP TABLE host_credentials");
     const b = banco({ password: "valida", winrm: () => "PC" });
-    installaProve(b);
-    installaEsecutoreFinto(creaEsecutoreFinto({ vivi: t.ips }).override);
-
-    const avvio = await withTenant(t.code, () => discoverNetwork(t.rete, "credential_validate", undefined, null, { targetIps: t.ips }));
-    const esito = await avvio.done;
-
+    const log = await giro(t, "credential_validate", b);
     assert.deepEqual(b.chiamate.winrm, [], "con il fermo illeggibile non si fa nessun logon");
-    assert.equal(esito.status, "failed");
+    assert.equal(log.split("\n").filter((r) => r.includes("credenziali dell'host non leggibili")).length, 2, log);
   });
+
+  it("credential_validate: il guasto su un host non ferma gli altri", async () => {
+    const t = tenant(codice("GUASTOHOST"), hostUguali(2, [5985]));
+    const id = voce(t, "Scansioni");
+    const b = banco({ password: "valida", winrm: () => "PC" });
+    b.prove = { ...b.prove, candidati: guastoSu(ipDi(1), "wmi") };
+    const log = await giro(t, "credential_validate", b);
+    assert.deepEqual(b.chiamate.winrm, [ipDi(2)]);
+    assert.deepEqual(righe(t, ipDi(2)).map((r) => [r.credential_id, r.motivo]), [[id, "ok"]]);
+    assert.match(log, new RegExp(`${ipDi(1).replaceAll(".", "\\.")}.*credenziali dell'host non leggibili`));
+  });
+
+  it("credential_validate: il guasto sui candidati Windows non ferma SSH sullo stesso host", async () => {
+    const t = tenant(codice("GUASTOSSH"), [{ ip: "127.0.0.1", porte: [22, 5985] }]);
+    t.d.prepare("UPDATE networks SET cidr = '127.0.0.0/24'").run();
+    voce(t, "Scansioni");
+    const ssh = voce(t, "Accesso SSH", "ssh", "utente-prova", "password-finta-di-prova");
+    const b = banco({ password: "valida", winrm: () => "PC" });
+    b.prove = { ...b.prove, candidati: guastoSu("127.0.0.1", "winrm") };
+    await giro(t, "credential_validate", b);
+    assert.deepEqual(b.chiamate.winrm, []);
+    assert.deepEqual(righe(t, "127.0.0.1").map((r) => [r.credential_id, r.protocol_type]), [[ssh, "ssh"]], "la prova SSH è partita");
+  });
+
+  it("windows: il guasto su un host non ferma gli altri", async () => {
+    const t = tenant(codice("GUASTOWIN"), hostUguali(2, [5985]));
+    voce(t, "Scansioni");
+    const b = banco({ password: "valida", winrm: () => "PC" });
+    b.prove = { ...b.prove, candidati: guastoSu(ipDi(1), "wmi") };
+    const log = await giro(t, "windows", b);
+    assert.deepEqual(b.chiamate.winrm, [ipDi(2)]);
+    assert.match(log, /credenziali dell'host non leggibili/);
+  });
+});
+
+describe("un host Windows senza porte note", () => {
+  const scena = (): Tenant => tenant(codice("SENZAPORTE"), [{ ip: ipDi(1), porte: [], classification: "windows_server" }]);
+
+  it("la verifica TCP chiude il caso: nessun logon, e l'esito è «porte chiuse» su tutte e due le strade", async () => {
+    const t = scena();
+    voce(t, "Scansioni");
+    const b = banco({ password: "non_so", winrm: () => rifiutoWinrm("TCP_CLOSED"), wmi: () => rifiutoWmi("TCP_CLOSED") });
+    await giro(t, "credential_validate", b);
+    assert.deepEqual(b.chiamate.winrm, [ipDi(1)], "si arriva al controllo TCP, che sta prima del bridge");
+    assert.deepEqual(b.chiamate.wmi, [ipDi(1)]);
+    const esiti = t.d.prepare("SELECT strada, motivo FROM accesso_windows_esiti ORDER BY strada").all();
+    assert.deepEqual(esiti, [{ strada: "winrm", motivo: "porte_chiuse" }, { strada: "wmi", motivo: "porte_chiuse" }]);
+    assert.deepEqual(righe(t, ipDi(1)), []);
+  });
+
+  it("se la macchina risponde si entra: prima diceva «porte chiuse» senza provare", async () => {
+    const t = scena();
+    const id = voce(t, "Scansioni");
+    await giro(t, "credential_validate", banco({ password: "valida", winrm: () => "PC-1" }));
+    assert.deepEqual(righe(t, ipDi(1)).map((r) => [r.credential_id, r.motivo, r.validated]), [[id, "ok", 1]]);
+  });
+});
+
+describe("un rifiuto con il solo NTLM", () => {
+  for (const tipo of TIPI) {
+    it(`${tipo}: password non verificata, riga già validata: la validazione resta, sale solo il fermo`, async () => {
+      const t = tenant(codice("NTLMVALID"), hostUguali(1, [5985]));
+      const id = voce(t, "Scansioni");
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      const pc = apparato(t, ipDi(1));
+      legame(t, pc, id, "winrm", 5985);
+      await giro(t, tipo, banco({ password: "non_so" }));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [1, 1, "errore"]);
+      assert.ok(r.backoff_until, "il fermo c'è");
+      assert.equal(statoLegame(t, pc, id), "success", "una macchina solo Kerberos non perde il legame");
+    });
+
+    it(`${tipo}: password non verificata, riga non validata: fallimento pieno`, async () => {
+      const t = tenant(codice("NTLMNUOVA"), hostUguali(1, [5985]));
+      const id = voce(t, "Scansioni");
+      const pc = apparato(t, ipDi(1));
+      legame(t, pc, id, "winrm", 5985);
+      await giro(t, tipo, banco({ password: "non_so" }));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count], [0, 1]);
+      assert.equal(statoLegame(t, pc, id), "failed");
+    });
+
+    it(`${tipo}: password valida, riga validata: fallimento pieno, la catena completa ha detto no`, async () => {
+      const t = tenant(codice("VALIDAPIENO"), hostUguali(1, [5985]));
+      const id = voce(t, "Scansioni");
+      riga(t, ipDi(1), id, "winrm", 5985, { validated: 1 });
+      await giro(t, tipo, banco({ password: "valida" }));
+      const [r] = righe(t, ipDi(1));
+      assert.deepEqual([r.validated, r.fail_count, r.motivo], [0, 1, "diritti_mancanti"]);
+    });
+  }
 });
 
 describe("il tetto della prova WinRM", () => {

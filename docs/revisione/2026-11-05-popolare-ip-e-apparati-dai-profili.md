@@ -111,3 +111,39 @@ o dall'impronta. Un apparato con l'host già rilevato resta con le sue colonne v
    **proposta** (si vede nella scheda e si accetta), come per l'assegnatario?
 3. I tre script nuovi: li leggiamo tutti e tre, o si parte da `snmp-info`, che è quello che tocca
    più apparati (NAS, stampanti, switch)?
+
+## 7. Decisioni di Riccardo — 05/11/2026
+
+Chieste una alla volta, risposte sue:
+
+1. **Giro di profilo: prima un campione.** Cinque host scelti fra HMI e `unknown`, per misurare il
+   tempo per host con `--version-intensity 7` e vedere cosa riempie davvero. Il giro largo sui ~64
+   si decide con quel numero in mano.
+2. **Apparati: si popola quanto è vuoto**, senza chiedere, e serve **un modo di vedere i dati senza
+   passare dalla scheda** — parole sue: «popolare quanto è vuoto e trovare un sistema per
+   visualizzare i dati senza passare dalla scheda, anche solo un campo in tabella che dice che è
+   richiesta una revisione». Quindi: scrittura automatica sulle colonne vuote **più** un segno di
+   revisione in tabella. Niente conferma preventiva per campo.
+3. **Il segno «da rivedere» va in Discovery**: una colonna nella lista degli IP con un filtro, e la
+   conferma in blocco sulle righe scelte. Si lavora dalla tabella, non dalla scheda.
+4. **Si leggono tutti e tre gli script** oggi buttati: `snmp-info`, `vmware-version`, `ldap-rootdse`.
+
+## 8. Piano che ne esce (livello di controllo proposto: leggero)
+
+| # | passo | dove | fatto quando |
+| --- | --- | --- | --- |
+| 1 | Campione: profilo su 5 host (HMI + `unknown`) del 72729 | **lo lancia Riccardo** dall'interfaccia: in sola lettura e senza accesso non posso | misuro tempo per host, righe scritte, colonne riempite |
+| 2 | `fattiDaScript`: casi `snmp-info`, `vmware-version`, `ldap-rootdse` | `lib/scanner/profili/lettura.ts` | prove con fixture vere, viste fallire |
+| 3 | Colonna «da rivedere» | `hosts` e `network_devices`: segno per campo scritto dal profilo e non ancora confermato | migrazione additiva, nessun dato toccato |
+| 4 | Propagazione all'apparato delle colonne vuote (`model`, `serial_number`, `firmware`) | `lib/scanner/profili/salva.ts` | il seriale passa da `serialeValido`; prima una **prova a vuoto** che dice quante righe cambierebbero |
+| 5 | Discovery: colonna, filtro «da rivedere», conferma in blocco | lista degli IP | resa guardata a 1280 e 1920 |
+| 6 | Cancello e rilascio su `dev` | | lint, tsc, prove, build verdi |
+
+**Perché leggero e non completo:** si scrive su colonne **vuote** di dati in esercizio e ogni
+scrittura resta marcata «da rivedere», quindi è reversibile e visibile. L'unico passo con un rischio
+vero è il 4 — il seriale è la chiave degli apparati fisici — e lì metto la prova a vuoto e la
+validazione, che sono le cautele del livello completo applicate a quel solo passo.
+
+**Non in questo giro:** i banner web (`http-server-header`, `http-headers`, `banner`), che danno
+prodotto e versione dei servizi ma con stringhe da normalizzare; il giro largo sui 64 host, che si
+decide dopo il campione.

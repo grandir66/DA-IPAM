@@ -113,7 +113,9 @@ devices». Valutazione scritta, niente codice: [`docs/revisione/2026-11-05-popol
 - [x] **Causa principale trovata**: fra `unknown`, `iot`, `workstation`, `hmi` e `rete_ot` i rilievi sono **zero** — il profilo è girato solo sui 13 host scelti a mano (10 server, hypervisor, NAS, VoIP), mentre 17 dei 45 `unknown` e **11 HMI su 11** hanno porte aperte e nessuno li ha interrogati. Nessuna lettura migliore riempie le colonne finché il giro non punta lì
 - [x] Secondo buco: la lettura lascia fuori `snmp-info`, `vmware-version`, `ldap-rootdse` (e 12 altri tipi) — sono quelli che porterebbero modello e firmware di NAS, ESXi/vCenter e DC
 - [x] Terzo buco: in `src/lib/scanner/profili/` **non c'è un riferimento a `network_devices`**: ciò che il profilo legge non arriva mai all'apparato
-- [ ] Tre interventi proposti nel documento, in ordine di resa (giro sugli indecisi senza codice · tre script in più nella lettura · propagazione all'apparato con `serialeValido` e prova a vuoto) e tre domande aperte: giro largo subito o prima la misura del costo per host; propagazione automatica o proposta; tutti e tre gli script o solo `snmp-info`. **Aspetta il sì di Riccardo**
+- [x] **Decisioni di Riccardo (05/11, chieste una alla volta)**: (1) prima un **campione** di 5 host fra HMI e `unknown`, il giro largo dopo con la misura in mano; (2) sugli apparati **si popola quanto è vuoto** senza chiedere, più un modo di vedere i dati **senza passare dalla scheda** («anche solo un campo in tabella che dice che è richiesta una revisione»); (3) il segno «da rivedere» va **in Discovery**, colonna + filtro + conferma in blocco; (4) si leggono **tutti e tre** gli script: `snmp-info`, `vmware-version`, `ldap-rootdse`
+- [ ] Piano in 6 passi nel documento (§8), livello proposto **leggero**, con prova a vuoto sul passo del seriale. **Aspetta il via**
+- [ ] Il campione **lo deve lanciare Riccardo** dall'interfaccia del 72729: lì sono in sola lettura e non ho un accesso all'app
 
 ## 2026-11-05 — I dati dei profili: riconosciuti, memorizzati, mostrati, usati?
 

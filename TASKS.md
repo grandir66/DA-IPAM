@@ -103,6 +103,19 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-05 — I dati dei profili: riconosciuti, memorizzati, mostrati, usati?
+
+Riccardo: «non ho capito se i dati rilevati dalle scansioni di nmap più specifiche vengono
+riconosciute memorizzate, visualizzate e utilizzate per determinare le categorie». Misurato sui
+dati veri del 72729 (profilo girato il 04/11: approfondito 17:07, IoT/OT 16:51), non sul codice.
+
+- [x] **Memorizzati: sì.** 105 righe in `host_profilo_rilievi` su 13 host, più le colonne vuote degli host riempite: 12 `hostname`, 12 `os_info`, 13 `device_manufacturer`. Zero `model`, `serial_number`, `firmware` — perché nessuno degli script che li porterebbero è letto (vedi sotto)
+- [x] **Mostrati: sì, verificato facendo girare la lettura vera sui dati veri** (`campiDaRilievi` su un export delle 105 righe, `scratchpad/prova-tabella.ts`): **13 host su 13** hanno almeno un campo. Esempi: `Windows build 10.0.20348` + FQDN + dominio `sanfrancesco.local` + NetBIOS da `rdp-ntlm-info`; produttore `VMware` e nome `vcenter01…` da `ssl-cert`; `Hewlett Packard Enterprise` + `ILOCZJ2291NHC` (iLO) e due impronte SSH; `TS-231K` (QNAP) da `nbstat`. La resa a schermo resta non vista, ma il contenuto della tabella è questo
+- [x] **Riconosciuti: solo in parte, ed è il buco vero.** `fattiDaScript` conosce **15 script**; nel giro del 72729 hanno risposto 18 tipi diversi e **15 tipi non danno nessun campo**: `http-headers` (15 host), `http-server-header` (10), `fingerprint-strings` (7), `banner` (6), `smb2-security-mode` e `smb2-time` (5), `ldap-rootdse` e `ntp-info` (3), `http-favicon` e **`snmp-info`** (2), `rpcinfo`, **`vmware-version`** (1). Il grezzo è salvato, nessuno lo legge: la lettura ha il caso `snmp-sysdescr`, non `snmp-info`
+- [x] **Usati per la categoria: sì, dimostrato su due host.** `host_classification_history` dei host 46 e 49 (`192.168.0.106` e `.105`): alle 09:40 niente, alle 11:17 solo vendor `microchip-technology` dall'OUI con **categoria vuota e confidenza 0**, alle **16:51:22 categoria `ot` con confidenza 66** grazie all'evidenza `ot_probe` (porta 502 aperta, nessuno script di campo che risponda). È il caso dell'OUI ambiguo scritto in CONTEXT: il vendor non classifica, le porte sì
+- [x] Però **solo `ot_probe` porta una categoria**: delle 19 evidenze della fase `scan_profilo`, `rdp_ntlm` (5) e `netbios` (6) sono di dimensione `os` (windows, confidenza 0.9 e 0.45) e `tls_cert` (6) di dimensione `vendor` (vmware ×5, hpe ×1). Utili, ma non decidono una categoria: i 13 host coi rilievi restano classificati server (10), hypervisor, nas e voip da altre fonti
+- [ ] Proposta (non fatta, serve il sì): leggere in `fattiDaScript` anche `snmp-info`, `vmware-version` e `ldap-rootdse`. Sono i tre che oggi buttiamo e che porterebbero modello, firmware e sistema operativo del NAS, dell'ESXi/vCenter e dei domain controller — le tre colonne che sui 13 host sono rimaste vuote
+
 ## 2026-11-04 — Perche' l'Edge del 72729 non carica niente in IPAM (causa trovata)
 
 Riccardo: «sì, indaga». Misurato dentro l'appliance (dal Proxmox, `qm guest exec 100`) e dentro il

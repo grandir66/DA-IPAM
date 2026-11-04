@@ -515,7 +515,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
               <p>
                 <span className="text-muted-foreground">Ultimo scan:</span>{" "}
                 <strong>{last.status}</strong>
-                {last.finding_count > 0 && ` · ${last.finding_count} CVE`}
+                {last.finding_count > 0 && ` · ${last.finding_count} rilievi`}
               </p>
               <p className="text-muted-foreground">
                 {last.started_at && <>Inizio {formatRelative(last.started_at)}</>}

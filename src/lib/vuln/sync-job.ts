@@ -15,6 +15,7 @@
  */
 
 import { normalizzaRilievoControllo, ripulisciRilieviControlli } from "@/lib/vuln/rilievi-controlli";
+import { riallineaConteggioRilievi } from "@/lib/vuln/conteggio-rilievi";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getNetworks } from "@/lib/db";
 import {
@@ -258,6 +259,13 @@ export async function runVulnSync(): Promise<{
 
     ripulisciRilieviControlli(db);
     riagganciaHost(db);
+    /* Il `finding_count` della sonda conta solo i rilievi Greenbone (04/11/2026):
+     * qui si riallinea a quello che abbiamo davvero scaricato. La misura che
+     * l'ha mostrato sta in `conteggio-rilievi.ts`. */
+    const contiCorretti = riallineaConteggioRilievi(db, scanner.id);
+    if (contiCorretti > 0) {
+      console.info(`[vuln-sync] finding_count riallineato su ${contiCorretti} giri dello scanner ${scanner.id}`);
+    }
 
     // Push-hosts periodico: aggiorna inventario sull'edge per le reti con
     // targeting_mode dinamico (found_ips / populated_24). Le reti full_subnet

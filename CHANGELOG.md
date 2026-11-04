@@ -75,6 +75,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.
+## [Non rilasciato] — 2026-11-04 · Conteggio dei rilievi della sonda
+
+- **Corretto**: `vuln_scan_runs.finding_count` si riallinea ai rilievi davvero scaricati a fine sincronizzazione (`lib/vuln/conteggio-rilievi.ts`). Il numero arrivava dalla sonda e veniva scritto così com'è, ma il suo conteggio comprende **solo i rilievi Greenbone**: esclude `nuclei:` e `controllo:`, che pure la sonda restituisce dentro lo stesso scan. Misurato sull'hub: il giro 124 dichiarava 1832 e ne aveva 2402 (Greenbone 1832, controlli 530, Nuclei 40); stesso scarto su 123, 122 e 121. Un giro di cui non abbiamo ancora scaricato i rilievi conserva il numero della sonda, invece di azzerarsi.
+- **Corretto**: nel pannello della subnet l'ultimo scan diceva «N CVE». Sul giro 124, 2135 rilievi su 2402 sono di livello Log, cioè informativi: ora dice «N rilievi».
+- **Nota**: il difetto a monte resta della sonda ed è annotato nel TASKS di DA-Vul-can. Dove quel numero si vede, DA-IPAM lo chiede alla sonda al volo (`/api/v1/networks/lookup`), quindi finché non è corretto di là resta sottostimato; la colonna in archivio invece ora è vera.
+
 ## [Non rilasciato] — 2026-11-04 · Profili di scansione: Approfondito e IoT/OT
 
 - **Aggiunto**: due **profili di scansione** sugli host scelti nella lista della rete (pulsante «Profilo», attivo solo con una selezione, come «Accesso agli host»). **Approfondito**: riconoscimento del sistema operativo (`-O`), probe di versione piene e 30 script NSE di sola lettura — nome DNS, nome NetBIOS, dominio e build di Windows dalla 3389 (`rdp-ntlm-info`), certificato dalla 443 (`ssl-cert`), nome NetBIOS dalla UDP 137 (`nbstat`), impronta della chiave SSH, titolo e favicon delle pagine web, sysDescr SNMP, BMC dalla UDP 623. Niente credenziali. **IoT/OT**: porte di campo (Modbus 502, Siemens S7 102, EtherNet/IP 44818, BACnet UDP 47808, OPC UA 4840, DNP3, FINS, GE SRTP, MQTT 1883/8883, CoAP) con gli script che danno modello, firmware e **numero di serie** degli apparati di campo.

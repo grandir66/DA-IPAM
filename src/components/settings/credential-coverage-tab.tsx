@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { KeyRound } from "lucide-react";
+import { AccessoWindowsPerHost } from "@/components/credentials/accesso-windows-per-host";
+import { Etichetta } from "@/components/shared/console";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -47,64 +49,68 @@ export function CredentialCoverageTab() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-5 w-5 text-primary" />
-          <CardTitle className="text-base">Copertura credenziali per categoria</CardTitle>
-        </div>
-        <CardDescription>
-          Per ogni categoria di dispositivo attribuita, quanti host hanno già una credenziale
-          validata sul protocollo pertinente (es. SNMP per gli apparati di rete, ONVIF per le
-          telecamere). Aiuta a capire dove mancano credenziali per completare l&apos;inventario.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Categoria</TableHead>
-              <TableHead>Protocollo pertinente</TableHead>
-              <TableHead className="text-right">Host</TableHead>
-              <TableHead className="text-right">Con credenziale validata</TableHead>
-              <TableHead className="text-right">Copertura</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">Copertura credenziali per categoria</CardTitle>
+          </div>
+          <CardDescription>
+            Per ogni categoria di dispositivo attribuita, quanti host hanno già una credenziale
+            validata sul protocollo pertinente (es. SNMP per gli apparati di rete, ONVIF per le
+            telecamere). Aiuta a capire dove mancano credenziali per completare l&apos;inventario.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  Caricamento…
-                </TableCell>
+                <TableHead>Categoria</TableHead>
+                <TableHead>Protocollo pertinente</TableHead>
+                <TableHead className="text-right">Host</TableHead>
+                <TableHead className="text-right">Con credenziale validata</TableHead>
+                <TableHead className="text-right">Copertura</TableHead>
               </TableRow>
-            ) : rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  Nessuna categoria attribuita con un protocollo di credenziali pertinente.
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((r) => {
-                const pct = r.hosts > 0 ? Math.round((r.withValidCredential / r.hosts) * 100) : 0;
-                const variant = pct === 100 ? "default" : pct === 0 ? "destructive" : "secondary";
-                return (
-                  <TableRow key={r.category}>
-                    <TableCell className="font-medium text-sm">{r.category}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono text-[11px]">{r.expectedProtocol}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{r.hosts}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{r.withValidCredential}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant={variant}>{pct}%</Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Caricamento…
+                  </TableCell>
+                </TableRow>
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Nessuna categoria attribuita con un protocollo di credenziali pertinente.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((r) => {
+                  const pct = r.hosts > 0 ? Math.round((r.withValidCredential / r.hosts) * 100) : 0;
+                  const variant = pct === 100 ? "default" : pct === 0 ? "destructive" : "secondary";
+                  return (
+                    <TableRow key={r.category}>
+                      <TableCell className="font-medium text-sm">{r.category}</TableCell>
+                      <TableCell>
+                        <Etichetta>{r.expectedProtocol}</Etichetta>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">{r.hosts}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{r.withValidCredential}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={variant}>{pct}%</Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      {/* Accesso Windows per host (Task 9): l'esito migliore fra tutte le voci, una colonna per strada. */}
+      <AccessoWindowsPerHost />
+    </div>
   );
 }

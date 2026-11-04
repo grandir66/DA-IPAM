@@ -19,6 +19,21 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   gli eventi bastano Event Log Readers e Remote Management Users, e il manuale WinRM dava Domain Admins come
   «necessario». Ora la regola è una: mai Domain Admins, e l'account delle scansioni (Administrators locale su
   PC e server) è separato da quello di sola lettura dei DC.
+- **Aggiunto**: nella pagina Credenziali, ogni voce Windows ha «Diritti»: il pulsante «Controlla account» dice se la
+  password vale e, per ogni diritto del catalogo, Sì, No o Non provato; sotto, quanti diritti mancano e «Copia
+  richiesta per l'IT» con i comandi del catalogo (mai password). I gruppi dei DC si leggono col filtro ricorsivo
+  (chi è in un gruppo tramite un altro gruppo è dentro), per SID dove esiste; con LDAP giù, senza integrazione AD o
+  con un account locale lo stato è «Non provato», mai «No». Sui PC non si prova niente al clic: lo stato viene dagli
+  esiti delle scansioni («2 su 3» conta gli host provati). Perché: Riccardo (04/11), «deve essere chiaro cosa abilitare
+  per l'utente e cosa per la sicurezza del dominio».
+- **Aggiunto**: «Accesso Windows per host» nella pagina Credenziali e nella Copertura: una colonna per WinRM e una per
+  WMI (la stessa voce può entrare da una strada e mancare dei diritti sull'altra), una parola per esito, una sola
+  azione dal catalogo, data dell'ultimo tentativo; paginata dal server, una query sola. La finestra delle credenziali
+  di un host dice il motivo di ogni riga WinRM e WMI.
+- **Aggiunto**: i legami WMI si scelgono di nuovo nelle tendine e si provano a mano con la stessa query leggera
+  della scansione (`runWmiIdentita`, solo lettura); un host che non risponde non fa passare il legame per fallito.
+- **Corretto**: la prova del legame WMI non risponde più «non disponibile» (una prova esistente dell'ADR dei legami è
+  stata invertita di proposito, col motivo nel commit).
 - **Corretto**: due guide scrivevano una password d'esempio in chiaro nel comando che crea `svc-ipam`; ora la
   password si legge con `Read-Host -AsSecureString`. Il messaggio d'aiuto del test di connessione non dice più
   che DA-IPAM usa solo WinRM.

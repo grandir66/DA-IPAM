@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -26,10 +25,13 @@ import {
   DialogTitle,
   DIALOG_PANEL_COMPACT_CLASS,
 } from "@/components/ui/dialog";
-import { Key, Plus, Trash2, CheckCircle2, XCircle, Archive, ArrowUp, ArrowDown } from "lucide-react";
+import { Key, Plus, Trash2, Archive, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { vociPerProtocollo } from "@/lib/credential-protocol-map";
 import { etichettaTipo } from "@/lib/credentials/tipi";
+import { Etichetta } from "@/components/shared/console";
+import { Segno } from "@/components/credentials/segno-stato";
+import { azioneDelMotivo, comeMotivo, parolaDelMotivo, segnoDelMotivo } from "@/lib/credentials/motivi-accesso";
 
 const PROTOCOL_LABELS: Record<string, string> = {
   ssh: "SSH",
@@ -39,16 +41,6 @@ const PROTOCOL_LABELS: Record<string, string> = {
   redfish: "Redfish",
   onvif: "ONVIF",
   wmi: "WMI",
-};
-
-const PROTOCOL_COLORS: Record<string, string> = {
-  ssh: "bg-emerald-500/15 text-emerald-600 border-emerald-300 dark:text-emerald-400",
-  snmp: "bg-purple-500/15 text-purple-600 border-purple-300 dark:text-purple-400",
-  winrm: "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400",
-  api: "bg-amber-500/15 text-amber-600 border-amber-300 dark:text-amber-400",
-  redfish: "bg-rose-500/15 text-rose-600 border-rose-300 dark:text-rose-400",
-  onvif: "bg-cyan-500/15 text-cyan-600 border-cyan-300 dark:text-cyan-400",
-  wmi: "bg-blue-500/15 text-blue-600 border-blue-300 dark:text-blue-400",
 };
 
 const PROTOCOL_PORTS: Record<string, number> = {
@@ -70,6 +62,8 @@ interface HostCredential {
   validated: number;
   validated_at: string | null;
   auto_detected: number;
+  /** Esito dell'ultima prova di accesso Windows (WinRM e WMI), o null. */
+  motivo: string | null;
   credential_name: string;
   credential_type: string;
 }
@@ -87,6 +81,26 @@ interface HostCredentialsDialogProps {
   onOpenChange: (open: boolean) => void;
   availableCredentials: CredentialOption[];
   onCredentialsChanged?: () => void;
+}
+
+/**
+ * L'esito di una riga. Le righe WinRM e WMI dicono il motivo della scansione, con una parola e la sola azione del catalogo
+ * (Task 9); le altre dicono se la credenziale è validata. Una riga Windows senza motivo (scritta prima del Task 2) ricade su
+ * «validata», non su un motivo inventato.
+ */
+function EsitoRiga({ riga }: { riga: HostCredential }) {
+  const strada = riga.protocol_type === "winrm" || riga.protocol_type === "wmi" ? riga.protocol_type : null;
+  const motivo = strada ? comeMotivo(riga.motivo) : null;
+  if (strada && motivo) {
+    const azione = azioneDelMotivo(motivo, strada);
+    return (
+      <div className="space-y-1">
+        <Segno segno={segnoDelMotivo(motivo)}>{parolaDelMotivo(motivo)}</Segno>
+        {azione && <p className="text-[13px] leading-snug text-muted-foreground">{azione}</p>}
+      </div>
+    );
+  }
+  return riga.validated ? <Segno segno="si">Validata</Segno> : <Segno segno="non_provato">Non validata</Segno>;
 }
 
 export function HostCredentialsDialog({
@@ -226,7 +240,7 @@ export function HostCredentialsDialog({
                   <TableHead className="w-16">Tipo</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead className="w-14">Porta</TableHead>
-                  <TableHead className="w-16">Stato</TableHead>
+                  <TableHead className="w-40">Esito</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -260,9 +274,7 @@ export function HostCredentialsDialog({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] ${PROTOCOL_COLORS[c.protocol_type] || ""}`}>
-                        {PROTOCOL_LABELS[c.protocol_type] || c.protocol_type}
-                      </Badge>
+                      <Etichetta mono={false}>{PROTOCOL_LABELS[c.protocol_type] || c.protocol_type}</Etichetta>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
@@ -270,20 +282,16 @@ export function HostCredentialsDialog({
                         <span className="text-sm">{c.credential_name}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{c.port}</TableCell>
+                    <TableCell className="font-mono text-[13px]">{c.port}</TableCell>
                     <TableCell>
-                      {c.validated ? (
-                        <span title="Validata"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
-                      ) : (
-                        <span title="Non validata"><XCircle className="h-4 w-4 text-muted-foreground" /></span>
-                      )}
+                      <EsitoRiga riga={c} />
                     </TableCell>
                     <TableCell>
                       <Button
                         type="button"
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7 text-red-500 hover:text-red-700"
+                        className="h-7 w-7 text-destructive"
                         onClick={() => void handleRemove(c.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -304,7 +312,7 @@ export function HostCredentialsDialog({
             <div className="space-y-3 border border-border/60 rounded-lg p-3 bg-muted/30">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <Label className="text-xs">Protocollo</Label>
+                  <Label className="text-[13px]">Protocollo</Label>
                   <Select value={addProtocol} onValueChange={(v) => {
                     if (v) {
                       setAddProtocol(v);
@@ -318,6 +326,7 @@ export function HostCredentialsDialog({
                       <SelectItem value="ssh">SSH</SelectItem>
                       <SelectItem value="snmp">SNMP</SelectItem>
                       <SelectItem value="winrm">WinRM</SelectItem>
+                      <SelectItem value="wmi">WMI</SelectItem>
                       <SelectItem value="api">API</SelectItem>
                       <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                       <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>
@@ -325,7 +334,7 @@ export function HostCredentialsDialog({
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Porta</Label>
+                  <Label className="text-[13px]">Porta</Label>
                   <input
                     type="number"
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono"
@@ -335,7 +344,7 @@ export function HostCredentialsDialog({
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Credenziale</Label>
+                <Label className="text-[13px]">Credenziale</Label>
                 <Select value={addCredId} onValueChange={(v) => setAddCredId(v ?? "")}>
                   <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
@@ -347,7 +356,7 @@ export function HostCredentialsDialog({
                   </SelectContent>
                 </Select>
                 {availableForAdd.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nessuna credenziale dell&apos;archivio vale per questo protocollo.</p>
+                  <p className="text-[13px] text-muted-foreground">Nessuna credenziale dell&apos;archivio vale per questo protocollo.</p>
                 )}
               </div>
               <div className="flex gap-2 justify-end">

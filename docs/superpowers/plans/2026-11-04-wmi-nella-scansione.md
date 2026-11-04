@@ -32,7 +32,7 @@
 | S3 | [x] | Verifica della password per esecuzione | implementer | — | LDAP, SMB e «non so» provati | prova del task |
 | S4 | [~] | Motore: strada e motivo per host | implementer | S1 S2 S3 | tabella delle decisioni provata | prova del task |
 | S5 | [ ] | Discovery usa il motore nei due punti | implementer | S4 | 20 host finti senza blocchi | prova + cancello |
-| S6 | [ ] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
+| S6 | [x] | Catalogo unico dei diritti | implementer | — | guide allineate, una sola fonte | prova del task |
 | S7 | [x] | Tavola degli oggetti approvata | orchestratore | S6 | sì di Riccardo | nota nel Registro |
 | S8 | [ ] | Controllo dell'account e pagina | implementer | S3 S6 S7 | pagina resa a 1280 e 1920 | verifica resa |
 | S9 | [ ] | Stato per host e copertura | implementer | S5 S7 | motivo visibile per host | verifica resa |
@@ -192,7 +192,7 @@ export async function provaAccessoWindows(input: {
 
 **Commit:** `Scansione: WinRM e WMI in automatico`.
 
-### [ ] Task 6 — Catalogo unico dei diritti (S6)
+### [x] Task 6 — Catalogo unico dei diritti (S6)
 
 **File**
 - Crea: `src/lib/credentials/diritti.ts`, `src/lib/credentials/__tests__/diritti.test.ts`.
@@ -232,6 +232,8 @@ export const DIRITTI: readonly DirittoRichiesto[];
 **Verifica:** prova che ogni voce abbia i campi pieni, e una `rg` che non trovi più i nomi dei gruppi fuori da `diritti.ts` nei componenti toccati.
 
 **Commit:** `Diritti: una sola definizione per guide e pagine`.
+
+Verifica: `npm test` → 6674 pass, 0 fail; 18 prove nuove viste rosse prima dei componenti.
 
 ### [x] Task 7 — Tavola degli oggetti approvata (S7)
 

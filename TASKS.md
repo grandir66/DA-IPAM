@@ -968,4 +968,8 @@ Proposta (livello leggero: SNMP in sola lettura + UI + una tabella):
 2. Tipo scheda `stampante`: `tipoScheda` caso stampante→"stampante"; componenti in `components/scheda/tipi/stampante/` (Panoramica + tab Materiali/Contatori: barre toner, contatore pagine, vassoi, stato, modello/seriale); registro in `tab-scheda.tsx`, `tabDelTipo`.
 3. Aggancio all'acquisizione (giri, apparati-scelti, «Aggiorna») come gli altri collector.
 
-Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con soli dati generici (UPS, telecamere, VoIP già hanno profili d'intento ma non collector). **In attesa del sì di Riccardo + livello.**
+Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con soli dati generici (UPS, telecamere, VoIP già hanno profili d'intento ma non collector).
+
+- [x] **Fatto** (04/11, Riccardo «Sì, stampanti leggero», livello leggero): collector `printer-acquisition.ts` (Printer-MIB RFC 3805 + Host Resources), `printer_inventory` in `DeviceInfo`/`DeviceInfoJson`, `resolvePrinterKind`, aggancio in `getDeviceInfo`. Tipo scheda `stampante` (`tipo-scheda.ts`) + tab Materiali/Contatori (`components/scheda/tipi/stampante/`), helper `lib/scheda/stampante.ts`, registro in `tab-scheda.tsx`. 9 prove (parsing con walk sintetici), lint 0/tsc verdi.
+- [ ] **Verifica resa non fatta**: niente stampante nel DB locale per renderla; la scheda si vede sulla 72729 dopo deploy su main + scansione SNMP di una stampante (Riccardo ci sta lavorando). JSX comunque type-checked.
+- [ ] HP sul solo vendor NON attiva il collector (ambiguo coi PC): una stampante HP si legge quando è classificata `stampante` (OID/porte lo fanno). Gli OID Printer-MIB sono standard; il seriale usa `43.5.1.1.17.1` (corretto vs il `.16.1` del segnalato seed SNMP, che è il nome).

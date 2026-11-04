@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-04 · Dati stampanti via SNMP (Printer-MIB)
+
+- **Aggiunto**: lettura stampanti via Printer-MIB (RFC 3805) + Host Resources — modello, seriale, contatore pagine, materiali di consumo (toner/inchiostro/tamburo) coi livelli %, vassoi, stato ed errori. Prima una stampante classificata mostrava solo i dati SNMP generici (sysDescr/modello/seriale). Collector `src/lib/devices/printer-acquisition.ts`, agganciato a `getDeviceInfo` quando l'apparato è una stampante; snapshot in `device_info.printer_inventory`.
+- **Aggiunto**: tipo scheda «stampante» (`/objects/[id]`) con Panoramica (pagine, stato, materiali coi livelli, errori) e tab **Materiali e contatori** (barre colorate per colorante, vassoi, modello/seriale). Prima le stampanti cadevano nella scheda generica.
+- La lettura parte con una scansione SNMP/Nmap/«Aggiorna» dell'apparato (non con la scoperta host). La Printer-MIB è standard: niente vincolo di vendor.
+
 ## [Non rilasciato] — 2026-11-04 · Detect dei vendor OT non classificati
 
 - **Aggiunto**: riconoscimento di apparati OT che restavano `unknown` alla 72729. Dall'OUI: **Weintek** → HMI, **CREVIS** → PLC (remote I/O di campo), **Kronotech** (Zucchetti, terminali presenze/accessi) → IoT. Dalle porte, vendor-neutro: **Modbus TCP 502** e **EtherNet/IP 44818** → PLC. Regole builtin in `device_fingerprint_rules` (seed idempotente per gli hub esistenti) e nel classifier di fallback.

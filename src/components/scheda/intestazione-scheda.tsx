@@ -29,6 +29,7 @@ export const ETICHETTA_TIPO: Record<TipoScheda, string> = {
   hypervisor: "Hypervisor",
   server_windows: "Server Windows",
   server_linux: "Server Linux",
+  stampante: "Stampante",
   generico: "Apparato",
   host: "Host",
 };

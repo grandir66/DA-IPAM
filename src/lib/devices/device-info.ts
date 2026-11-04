@@ -107,6 +107,8 @@ export interface DeviceInfo {
   }>;
   /** Inventario NAS Synology/QNAP (SNMP + SSH) */
   nas_inventory?: NasInventorySnapshot;
+  /** Inventario stampante (Printer-MIB SNMP): toner/materiali, contatori, vassoi, stato */
+  printer_inventory?: PrinterInventorySnapshot;
   /** Linux: porte TCP/UDP in ascolto (da ss -tlnp / ss -ulnp) */
   listening_ports?: Array<{
     port: number;
@@ -128,6 +130,40 @@ export interface DeviceInfo {
   mikrotik_risorse?: RisorseMikrotik;
   /** MikroTik: hardware e firmware da `/system routerboard print` */
   mikrotik_hardware?: HardwareMikrotik;
+}
+
+/** Snapshot strutturato per stampanti (Printer-MIB SNMP, serializzato in last_device_info_json) */
+export interface PrinterInventorySnapshot {
+  sources: ("snmp")[];
+  snmp?: {
+    model?: string | null;
+    serial?: string | null;
+    /** hrPrinterStatus (pronta/in stampa/…) */
+    status?: string | null;
+    /** errori attivi (hrPrinterDetectedErrorState + prtAlertDescription) */
+    errors?: string[];
+    /** prtMarkerLifeCount: pagine stampate nella vita */
+    total_pages?: number | null;
+    /** materiali di consumo (toner/inchiostro/tamburo/…) con livelli */
+    supplies?: Array<{
+      description?: string;
+      type?: string | null;
+      colorant?: string | null;
+      level_pct?: number | null;
+      level_raw?: number | null;
+      max_raw?: number | null;
+      /** livello ≤ 10% (o prtMarkerSuppliesLevel a valori «quasi esaurito») */
+      quasi_esaurito?: boolean;
+    }>;
+    /** vassoi di alimentazione */
+    trays?: Array<{
+      name?: string;
+      media?: string | null;
+      level_pct?: number | null;
+      level_raw?: number | null;
+      max_raw?: number | null;
+    }>;
+  };
 }
 
 /** Snapshot strutturato per Synology / QNAP (serializzato in last_device_info_json) */
@@ -201,6 +237,17 @@ export function resolveNasKind(device: NetworkDevice): "synology" | "qnap" | nul
   const c = device.classification ?? "";
   if (c === "nas_synology") return "synology";
   if (c === "nas_qnap") return "qnap";
+  return null;
+}
+
+/**
+ * Riconosce una stampante dalla classificazione (lo slug, non il vendor: `device.vendor` è un'unione
+ * normalizzata — hp/other/… — che non porta la marca della stampante). Serve ad attivare la lettura
+ * Printer-MIB (SNMP). La classificazione la mette lo scan (OID/porte) o la persona.
+ */
+export function resolvePrinterKind(device: NetworkDevice): "printer" | null {
+  const c = (device.classification ?? "").toLowerCase();
+  if (/stampante|printer|multifunzione|fotocopiatrice/.test(c)) return "printer";
   return null;
 }
 
@@ -1465,6 +1512,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   let result: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
   let winrmFailure: Error | null = null;
   const nasKind = resolveNasKind(device);
+  const printerKind = resolvePrinterKind(device);
 
   // «Ha SNMP?»: protocollo SNMP o una fonte SNMP dell'apparato (binding non falliti, colonne, community_string),
   // dal motore unico (tappa 2 credenziali, T8). Mai la catena della rete.
@@ -1537,8 +1585,8 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       };
       // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH (tranne NAS: serve SSH per volumi/utenti/rete)
       const snmpComplete = result.model && result.firmware && result.serial_number;
-      // MikroTik: le risorse si leggono solo in SSH
-      if (snmpComplete && hasSsh && !nasKind && device.vendor !== "mikrotik") {
+      // MikroTik: le risorse si leggono solo in SSH. Stampante: serve il walk Printer-MIB qui sotto.
+      if (snmpComplete && hasSsh && !nasKind && !printerKind && device.vendor !== "mikrotik") {
         return result;
       }
     } else {
@@ -1552,6 +1600,15 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       const { getNasSnmpInventory } = await import("./nas-acquisition");
       const nasSnmp = await getNasSnmpInventory(device, nasKind);
       result = { ...result, ...nasSnmp };
+    }
+
+    // Stampante: walk Printer-MIB (RFC 3805) — toner/materiali, contatori, vassoi, stato.
+    if (printerKind) {
+      const { getPrinterSnmpInventory } = await import("./printer-acquisition");
+      const printerSnmp = await getPrinterSnmpInventory(device);
+      result = { ...result, ...printerSnmp };
+      if (result.printer_inventory?.snmp?.model && !result.model) result.model = result.printer_inventory.snmp.model;
+      if (result.printer_inventory?.snmp?.serial && !result.serial_number) result.serial_number = result.printer_inventory.snmp.serial;
     }
 
     // Ultimo tentativo SNMP v2c: walk ENTITY-MIB seriali (molti switch/router espongono il seriale solo su indici >2)

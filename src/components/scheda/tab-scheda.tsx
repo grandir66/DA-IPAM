@@ -41,6 +41,8 @@ import { PanoramicaStorage } from "./tipi/storage/panoramica";
 import { DischiNas } from "./tipi/storage/dischi";
 import { VolumiNas } from "./tipi/storage/volumi";
 import { ServiziNas } from "./tipi/storage/servizi";
+import { PanoramicaStampante } from "./tipi/stampante/panoramica";
+import { MaterialiStampante } from "./tipi/stampante/materiali";
 import { PanoramicaHypervisor } from "./tipi/hypervisor/panoramica";
 import { VmHypervisor } from "./tipi/hypervisor/vm";
 import { NodiHypervisor } from "./tipi/hypervisor/nodi";
@@ -99,6 +101,10 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
     dischi: { render: (c) => <DischiNas ctx={c} /> },
     volumi: { render: (c) => <VolumiNas ctx={c} /> },
     servizi_nas: { render: (c) => <ServiziNas ctx={c} /> },
+  },
+  stampante: {
+    panoramica: { render: (c) => <PanoramicaStampante ctx={c} /> },
+    materiali: { render: (c) => <MaterialiStampante ctx={c} /> },
   },
   hypervisor: {
     panoramica: { render: (c) => <PanoramicaHypervisor ctx={c} /> },
@@ -161,6 +167,7 @@ export const ETICHETTE_TAB: Record<TabId, string> = {
   bridge: "Bridge",
   dispositivi: "Dispositivi",
   sensori: "Sensori",
+  materiali: "Materiali e contatori",
 };
 
 function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {

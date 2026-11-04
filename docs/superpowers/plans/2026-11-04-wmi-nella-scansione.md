@@ -18,8 +18,10 @@
 - Le prove esistenti non si toccano per farle passare.
 - Niente WMI se 5985 o 5986 è aperta: lì vale WinRM.
 - Il dato resta in sola lettura verso le macchine: WQL su `Win32_ComputerSystem`, nessun metodo WMI.
-- Cancello di DA-IPAM (non esiste `scripts/controlla.sh`): `npm run lint`, `npx tsc --noEmit`, `npm test`.
-- Ogni commit di codice su `dev` chiude con `npm run version:release` e push (`CLAUDE.md`). Il push su `main` è un rilascio alle appliance: resta da confermare da Riccardo.
+- Cancello di DA-IPAM (non esiste `scripts/controlla.sh`): `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
+- Ogni commit di codice su `dev` chiude con `npm run version:release` e push (`CLAUDE.md`, regola 1). Mai push su `main`: avanza solo con la promozione `dev`→`main` dalla UI, ed è un rilascio alle appliance, da confermare da Riccardo.
+- `db-tenant` si importa solo staticamente (`CLAUDE.md`, regola 14), anche nei file nuovi: niente `await import()` di quel modulo.
+- Niente `any` (regola 13): in `wmi-run.ts` e nelle prove i tipi sono dichiarati.
 
 ## Passi
 
@@ -204,7 +206,7 @@ export async function provaWmiHost(input: {
 
 ### [ ] Task 7 — Collaudo sul 72729 (S7)
 
-- Rilascio su `main` solo col sì di Riccardo, poi «Aggiorna» dell'appliance da DA-Link, con snapshot della VM 100 su `pve`.
+- Promozione `dev`→`main` dalla UI solo col sì di Riccardo, poi «Aggiorna» dell'appliance da DA-Link, con snapshot della VM 100 su `pve`.
 - Sì di Riccardo anche per lanciare la scansione sul cliente.
 - **Fatto quando:** i PC che hanno accettato in S0 risultano con credenziale `wmi`, nessun account bloccato, il riepilogo conta i rifiuti per diritti.
 

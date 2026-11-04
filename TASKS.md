@@ -946,4 +946,9 @@ Firme reali raccolte (web, da verificare sul campo):
 - **Kronotech** (divisione Zucchetti): terminali rilevazione presenze/controllo accessi italiani; nessuna scheda tecnica di rete pubblica trovata → fingerprint da ricavare dal campo (GET pagina + OUI).
 - **Microchip Technology**: è un **OUI di chip** (LAN8xxx, ATWINC WiFi) usato da device embedded di terzi → il vendor da solo NON è discriminante; serve pagina/porte per capire cos'è davvero.
 
-Proposta: piano a 3 assi, livello completo (tocca detect + credenziali + sistemi cliente). **In attesa del sì di Riccardo.** Vedi proposta in chat del 04/11.
+Proposta: piano a 3 assi, livello completo (tocca detect + credenziali + sistemi cliente). Vedi proposta in chat del 04/11.
+
+- [x] **Asse 1 fatto** (04/11, Riccardo «parti dall'asse 1»): regole vendor OT (Weintek→hmi, CREVIS→plc, Kronotech→iot) e porte OT (Modbus 502, EtherNet/IP 44818→plc) in `device_fingerprint_rules` (seed idempotente), mappa etichetta→slug, VENDOR_RULES/PORT_RULES nel fallback. Microchip non classificato per vendor (OUI di chip). 7 prove nuove; cancello verde (lint 0, tsc, 6354 test, build). **Rilasciato su dev 0.9.959** (8b3815b1 + f3b4befa, push f3b4befa). Nota albero condiviso: il mio append precedente era già finito nel commit GS1900 0045e531 di un'altra sessione.
+- [ ] **72729 segue `main`**: per vedere il detect OT lì serve la promozione dev→main (col sì di Riccardo). Hub 533 e appliance A (dev) prendono le regole al prossimo riavvio/seed.
+- [ ] Gli apparati già `unknown` si riclassificano solo a una nuova scansione/fingerprint (unknown→noto è un upgrade permesso): dopo il rilascio su main, rileggere i device OT della 72729.
+- [ ] Asse 2 (GET pagina web più profondo) e Asse 3 (password di default degli switch) non fatti: erano scelte separate.

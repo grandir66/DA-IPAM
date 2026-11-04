@@ -942,6 +942,27 @@ export interface NmapResult {
   snmpHostname?: string | null;
   snmpSysDescr?: string | null;
   snmpSysObjectID?: string | null;
+  /** Script NSE agganciati all'host, non a una porta (`<hostscript>`). Presente
+   *  solo quando la scansione li ha chiesti: i profili di `scanner/profili/`. */
+  hostScripts?: NmapScriptOutput[];
+}
+
+/**
+ * Output di uno script NSE, come lo scrive nmap in `-oX`.
+ *
+ * Perche' esiste: fino al 2026-11-04 `parseNmapXml` leggeva **solo** `snmp-info`
+ * e buttava tutto il resto, quindi chiedere `--script=...` non serviva a niente.
+ * I profili di scansione (`scanner/profili/`) hanno bisogno dei campi strutturati
+ * (`elem`), non del testo: `rdp-ntlm-info` da' il nome DNS e la build di Windows,
+ * `ssl-cert` il CN, `s7-info` modello, firmware e numero di serie.
+ */
+export interface NmapScriptOutput {
+  /** `@_id` dello script: "ssl-cert", "rdp-ntlm-info", "s7-info", ... */
+  id: string;
+  /** Testo libero che nmap stampa; tagliato al tetto del profilo. */
+  output: string | null;
+  /** Coppie `<elem key="...">valore</elem>`. E' la parte affidabile. */
+  elems: Record<string, string>;
 }
 
 export interface NmapPort {
@@ -962,6 +983,9 @@ export interface NmapPort {
    *  `cpe:/a:openbsd:openssh:9.6p1` si confronta con i cpeMatch dell'NVD, la
    *  stringa libera no. Fino al 2026-09-07 venivano scartati dal parser. */
   cpes?: string[];
+  /** Script NSE girati su questa porta. Presente solo quando la scansione li ha
+   *  chiesti (profili di `scanner/profili/`): le scansioni di sempre non cambiano. */
+  scripts?: NmapScriptOutput[];
 }
 
 export interface ScanProgress {

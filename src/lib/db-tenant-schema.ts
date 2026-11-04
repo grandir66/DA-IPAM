@@ -766,6 +766,23 @@ CREATE TABLE IF NOT EXISTS scan_history (
   timestamp TEXT DEFAULT (datetime('now'))
 );
 
+-- Profili di scansione (04/11/2026): un rilievo per script NSE che ha risposto.
+-- Tabella a parte e non una colonna di hosts: un host puo' avere decine di
+-- script su porte diverse, e l'output va tenuto separato dai campi che la UI legge.
+-- La colonna output e' tagliata dal motore al tetto in byte del profilo.
+CREATE TABLE IF NOT EXISTS host_profilo_rilievi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  profilo TEXT NOT NULL CHECK(profilo IN ('approfondito', 'iot_ot')),
+  porta INTEGER,
+  protocollo TEXT CHECK(protocollo IS NULL OR protocollo IN ('tcp', 'udp')),
+  script TEXT NOT NULL,
+  elems_json TEXT,
+  output TEXT,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(host_id, profilo, porta, protocollo, script)
+);
+
 CREATE TABLE IF NOT EXISTS status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
@@ -2425,6 +2442,10 @@ CREATE INDEX IF NOT EXISTS idx_mobile_devices_host ON mobile_devices(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_host ON mc_node(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_mesh ON mc_node(mesh_id);
 CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(host_id, created_at DESC);
+
+-- Profili di scansione
+CREATE INDEX IF NOT EXISTS idx_profilo_rilievi_host ON host_profilo_rilievi(host_id, profilo);
+CREATE INDEX IF NOT EXISTS idx_profilo_rilievi_script ON host_profilo_rilievi(script);
 
 -- Attribution v2 (spec §4.2)
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);

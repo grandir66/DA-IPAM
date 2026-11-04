@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { XMLParser } from "fast-xml-parser";
-import type { NmapResult, NmapPort } from "@/types";
+import type { NmapResult, NmapPort, NmapScriptOutput } from "@/types";
 import { stripUdpFromArgs, buildUdpScanArgs, buildTcpScanArgs } from "./ports";
 
 /** Argomenti profilo utente: la fase TCP non deve mai includere -sU (UDP è una seconda invocazione). */
@@ -196,12 +196,83 @@ function extractCpes(raw: unknown): string[] {
   return out;
 }
 
+/**
+ * Tetto di serie in byte per l'output di un singolo script NSE.
+ *
+ * Perche' c'e': `mqtt-subscribe` stampa i messaggi che il broker pubblica, e un
+ * broker di impianto chiacchierone riempirebbe la riga dell'host. I profili
+ * passano il proprio tetto (`ProfiloScansione.tettoByteOutput`).
+ */
+export const TETTO_OUTPUT_SCRIPT_BYTE = 4096;
+
+/**
+ * Un nodo `<script>` di nmap -> forma utilizzabile.
+ *
+ * Fino al 2026-11-04 l'unico script letto era `snmp-info` e tutto il resto
+ * veniva buttato qui dentro: chiedere `--script=...` non produceva niente. I
+ * profili di `scanner/profili/` hanno bisogno degli `<elem key="...">`, non del
+ * testo: `rdp-ntlm-info` da' il nome DNS e la build di Windows, `ssl-cert` il
+ * CN, `s7-info` modello, firmware e numero di serie.
+ */
+function leggiScript(
+  script: { "@_id"?: string; "@_output"?: string; elem?: unknown; output?: string; table?: unknown },
+  tettoByte: number
+): NmapScriptOutput | null {
+  const id = (script["@_id"] ?? "").trim();
+  if (!id) return null;
+  const elems: Record<string, string> = {};
+  /* Le `<table>` annidate si appiattiscono in chiavi con il punto
+   * ("subject.commonName") e, quando la tabella non ha `key`, con l'indice
+   * ("0.fingerprint"). Senza questo `ssl-cert` e `ssh-hostkey` darebbero zero
+   * campi: i loro dati stanno tutti dentro tabelle, non in `<elem>` di primo
+   * livello. Tetto di 200 chiavi: nmap non ne produce tante, ma un output
+   * malformato non deve far crescere la riga senza limite. */
+  const raccogli = (nodo: unknown, prefisso: string, profondita: number): void => {
+    if (profondita > 4 || Object.keys(elems).length >= 200) return;
+    if (typeof nodo !== "object" || nodo === null) return;
+    const n = nodo as { elem?: unknown; table?: unknown };
+    const listaElem = Array.isArray(n.elem) ? n.elem : n.elem ? [n.elem] : [];
+    for (const e of listaElem) {
+      if (Object.keys(elems).length >= 200) return;
+      const chiaveGrezza =
+        typeof e === "object" && e !== null ? String((e as { "@_key"?: string })["@_key"] ?? "").trim() : "";
+      const grezzo = typeof e === "object" && e !== null ? (e as { "#text"?: unknown })["#text"] : e;
+      const valore = grezzo === undefined || grezzo === null ? "" : String(grezzo).trim();
+      if (!valore) continue;
+      /* Senza `key` (liste come gli algoritmi di ssl-cert) la chiave e' l'indice. */
+      const chiave = chiaveGrezza || String(listaElem.indexOf(e));
+      elems[prefisso ? `${prefisso}.${chiave}` : chiave] = valore;
+    }
+    const listaTable = Array.isArray(n.table) ? n.table : n.table ? [n.table] : [];
+    for (const [i, t] of listaTable.entries()) {
+      const chiaveTab =
+        typeof t === "object" && t !== null ? String((t as { "@_key"?: string })["@_key"] ?? "").trim() : "";
+      const nome = chiaveTab || String(i);
+      raccogli(t, prefisso ? `${prefisso}.${nome}` : nome, profondita + 1);
+    }
+  };
+  raccogli(script, "", 0);
+  /* Il testo libero sta nell'ATTRIBUTO `output`, quindi `@_output` col prefisso
+   * configurato: letto come `script.output` era sempre vuoto, e con lui i
+   * lettori di nbstat e upnp-info che ci si appoggiano. */
+  const grezzoOut = script["@_output"] ?? script.output;
+  const output = typeof grezzoOut === "string" && grezzoOut.trim() ? grezzoOut.slice(0, tettoByte) : null;
+  return { id, output, elems };
+}
+
 /** Esportata per i test: e' il punto dove i CPE si perdevano in silenzio. */
-export function parseNmapXml(xml: string): NmapResult[] {
+export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): NmapResult[] {
+  const tettoByte = opts?.tettoByteOutput ?? TETTO_OUTPUT_SCRIPT_BYTE;
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    isArray: (name) => ["host", "port", "hostname", "script", "elem", "cpe"].includes(name),
+    /* I valori restano stringhe. Di serie fast-xml-parser converte cio' che
+     * sembra un numero, esadecimali compresi: il numero di serie `0x60c12345`
+     * che enip-info riporta su un PLC Allen-Bradley diventava `1623270213`.
+     * Qui nessun `#text` e' un numero da calcolare (CPE, sysDescr, campi degli
+     * script): sono tutti identificativi, e vanno tenuti come sono scritti. */
+    parseTagValue: false,
+    isArray: (name) => ["host", "port", "hostname", "script", "elem", "cpe", "table"].includes(name),
   });
 
   const parsed = parser.parse(xml);
@@ -285,17 +356,32 @@ export function parseNmapXml(xml: string): NmapResult[] {
             product_version: versione,
             cpes: extractCpes(svc?.cpe),
           });
-          if (port["@_portid"] === "161" && port.script) {
+          if (port.script) {
             const scripts = Array.isArray(port.script) ? port.script : [port.script];
-            for (const s of scripts) extractSnmp(s);
+            /* snmp-info resta trattato come sempre, solo sulla 161: la lettura
+             * SNMP di `discovery.ts` dipende da questi tre campi. */
+            if (port["@_portid"] === "161") {
+              for (const s of scripts) extractSnmp(s);
+            }
+            const letti: NmapScriptOutput[] = [];
+            for (const s of scripts) {
+              const letto = leggiScript(s, tettoByte);
+              if (letto) letti.push(letto);
+            }
+            if (letti.length > 0) ports[ports.length - 1].scripts = letti;
           }
         }
       }
     }
 
+    const hostScripts: NmapScriptOutput[] = [];
     if (host.hostscript?.script) {
       const scripts = Array.isArray(host.hostscript.script) ? host.hostscript.script : [host.hostscript.script];
       for (const s of scripts) extractSnmp(s);
+      for (const s of scripts) {
+        const letto = leggiScript(s, tettoByte);
+        if (letto) hostScripts.push(letto);
+      }
     }
 
     let os: string | null = null;
@@ -306,6 +392,7 @@ export function parseNmapXml(xml: string): NmapResult[] {
 
     results.push({
       ip, alive, ports, os, mac,
+      ...(hostScripts.length > 0 ? { hostScripts } : {}),
       snmpHostname: snmpHostname || undefined,
       snmpSysDescr: snmpSysDescr || undefined,
       snmpSysObjectID: snmpSysObjectID || undefined,

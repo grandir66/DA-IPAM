@@ -23,6 +23,10 @@ export const PHASE_ORDER = [
   "scan_naabu",
   "scan_nmap_base",
   "scan_snmp_verify",
+  /* Profili di scansione (04/11/2026): girano a mano, dopo le fasi automatiche,
+   * su host scelti nella lista. Fase propria e non `scan_nmap_base` perche'
+   * l'evidenza di un profilo non deve essere scavalcata dal giro di routine. */
+  "scan_profilo",
   "credential_validate",
   "integration", // AD / Wazuh / agent GLPI / LLDP: presenti solo se il modulo è attivo
   "manual",
@@ -40,7 +44,13 @@ export type AttributionSource =
   | "http_banner" | "tls_cert" | "snmp_sysobj" | "snmp_sysdescr"
   | "lldp" | "cdp" | "mdns" | "ssdp" | "wsd" | "netbios" | "smb"
   | "nmap_os" | "nmap_service" | "ad" | "wazuh" | "inv_agent"
-  | "ssh" | "winrm" | "fingerbank" | "ai" | "manual" | "redfish" | "onvif";
+  | "ssh" | "winrm" | "fingerbank" | "ai" | "manual" | "redfish" | "onvif"
+  /* `rdp-ntlm-info`: parla con il servizio RDP e restituisce nome DNS, nome
+   * NetBIOS, dominio e build di Windows, senza credenziali.
+   * `ot_probe`: gli script di campo di sola lettura (s7-info, enip-info,
+   * bacnet-info, omron-info). Una risposta S7 o CIP non e' un indizio: e' il
+   * protocollo stesso che si dichiara. */
+  | "rdp_ntlm" | "ot_probe";
 
 export interface AttributionEvidenceRow {
   id: number;

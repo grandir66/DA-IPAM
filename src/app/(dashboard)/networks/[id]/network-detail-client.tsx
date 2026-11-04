@@ -49,7 +49,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown, Microscope } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -715,8 +715,20 @@ export function NetworkDetailClient({
     }
     setScanning(data.progress);
 
-    if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
+    return await seguiGiro(data.id, refreshOnComplete);
+  }
 
+  /**
+   * Segue un giro già avviato sul server fino a «completed» o «failed».
+   *
+   * Estratta da `runScanJob` (04/11/2026) perché la usa anche `runProfilo`:
+   * duplicare il poller significherebbe correggere due volte il caso dei 404.
+   */
+  async function seguiGiro(
+    jobId: string,
+    refreshOnComplete: boolean
+  ): Promise<{ ok: boolean; lastProgress: ScanProgressType | null }> {
+    if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
     return await new Promise((resolve) => {
       // R4 2026-06-23: il progress vive in una mappa in-memory persa al restart
       // del processo → dopo un restart la GET dà 404 e il poller girava all'INFINITO
@@ -726,7 +738,7 @@ export function NetworkDetailClient({
       const interval = setInterval(() => {
         void (async () => {
           try {
-            const progressRes = await fetch(`/api/scans/progress/${data.id}`);
+            const progressRes = await fetch(`/api/scans/progress/${jobId}`);
             if (progressRes.ok) {
               notFoundCount = 0;
               const progress = (await progressRes.json()) as ScanProgressType;
@@ -850,6 +862,52 @@ export function NetworkDetailClient({
     const snmp = await runScanJob("snmp", { showStartToast: false });
     if (snmp.ok) toast.success(`Avanzata completata su ${selectedHostIds.size} host (porte e servizi + SNMP)`);
     setScanning(null);
+  }
+
+  /**
+   * «Profilo» (04/11/2026): esegue un profilo di scansione sugli host SELEZIONATI.
+   *
+   * Solo selezione, come «Accesso agli host»: sono scansioni lunghe (OS
+   * detection, probe di versione piene, una trentina di script NSE) e, col
+   * profilo IoT/OT, pacchetti verso apparati di campo. Si scelgono nella lista.
+   */
+  async function runProfilo(profilo: "approfondito" | "iot_ot") {
+    if (!hostScope) {
+      toast.error("Seleziona gli host nella vista lista: un profilo gira solo sugli host scelti");
+      return;
+    }
+    const nome = profilo === "approfondito" ? "Approfondito" : "IoT / OT";
+    try {
+      const res = await fetch("/api/scans/profilo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          network_id: network.id,
+          profilo,
+          host_ids: Array.from(selectedHostIds),
+        }),
+      });
+      if (!res.ok) {
+        const errore = await res
+          .json()
+          .then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : null))
+          .catch(() => null);
+        toast.error(errore ?? `Errore nell'avvio del profilo ${nome}`);
+        return;
+      }
+      const data = (await res.json()) as { id: string; progress: ScanProgressType };
+      toast.info(`Profilo ${nome} avviato su ${selectedHostIds.size} host`);
+      setScanning(data.progress);
+      const esito = await seguiGiro(data.id, true);
+      /* La fase finale del server riassume rilievi, campi riempiti ed eventuali
+       * avvisi (script mancanti, privilegi): si mostra quella, non un testo nostro. */
+      if (esito.ok) toast.success(esito.lastProgress?.phase ?? `Profilo ${nome} completato`);
+      else toast.error(esito.lastProgress?.error ?? `Profilo ${nome} terminato con errori`);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setScanning(null);
+    }
   }
 
   /**
@@ -1098,6 +1156,45 @@ export function NetworkDetailClient({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    size="default"
+                    variant="outline"
+                    className={cn(ACTION_BTN, "bg-background/90")}
+                    disabled={busy || !hostScope}
+                    title={
+                      hostScope
+                        ? `Profilo di scansione sui ${selectedHostIds.size} host selezionati: riconoscimento del sistema operativo, probe di versione piene e script NSE di sola lettura`
+                        : "Seleziona gli host nella vista lista: un profilo gira solo sugli host scelti"
+                    }
+                  >
+                    <Microscope className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    {hostScope ? `Profilo · ${selectedHostIds.size} host` : "Profilo"}
+                    <ChevronDown className="h-3.5 w-3.5 ml-1 shrink-0" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="start" className="w-auto min-w-80">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Sui {selectedHostIds.size} host selezionati</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => void runProfilo("approfondito")}>
+                    Approfondito
+                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                      sistema operativo, certificati, NetBIOS, chiavi SSH
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void runProfilo("iot_ot")}>
+                    IoT / OT
+                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                      Modbus, S7, EtherNet/IP, BACnet, MQTT
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               size="default"

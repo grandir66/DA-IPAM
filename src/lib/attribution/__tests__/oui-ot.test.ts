@@ -31,13 +31,28 @@ function classe(s: AttributionSignals): string | null {
 
 const PORTE_WEINTEK = JSON.stringify([21, 80, 5900, 8000, 8001].map((port) => ({ port, protocol: "tcp" })));
 
+/*
+ * 04/11/2026, scelta di Riccardo: PLC e HMI sono foglie distinte da IoT
+ * (radice `ot` in `taxonomy.ts`). Prima di quella scelta queste prove
+ * attendevano `iot` per tutti, perche' `legacy-projection` collassava ogni
+ * foglia `iot.*` su un solo slug: un pannello HMI e una lampadina smart
+ * finivano nella stessa classe. Ora ogni produttore arriva alla sua:
+ * Weintek -> hmi, CREVIS -> plc, i produttori di azionamenti -> rete_ot.
+ * L'esito e' cambiato perche' e' cambiato l'intento, non per far passare la prova.
+ */
 describe("produttori che fanno solo apparati OT", () => {
-  it("il Weintek del 72729: la VNC non lo fa workstation", () => {
-    assert.equal(classe(segnali("Weintek Labs. Inc.", PORTE_WEINTEK)), "iot");
+  it("il Weintek del 72729: la VNC non lo fa workstation, ed e' un HMI", () => {
+    assert.equal(classe(segnali("Weintek Labs. Inc.", PORTE_WEINTEK)), "hmi");
   });
 
-  it("gli altri produttori, anche senza porte aperte", () => {
-    for (const v of ["CREVIS Co., LTD", "Kronotech Srl", "Control Techniques", "Vacon Plc"]) assert.equal(classe(segnali(v)), "iot", v);
+  it("gli altri produttori, anche senza porte aperte, ognuno alla sua classe", () => {
+    const attese: Record<string, string> = {
+      "CREVIS Co., LTD": "plc",
+      "Kronotech Srl": "iot",
+      "Control Techniques": "rete_ot",
+      "Vacon Plc": "rete_ot",
+    };
+    for (const [v, attesa] of Object.entries(attese)) assert.equal(classe(segnali(v)), attesa, v);
   });
 
   it("il produttore resta emesso", () => {

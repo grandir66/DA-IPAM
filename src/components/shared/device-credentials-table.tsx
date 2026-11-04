@@ -415,8 +415,8 @@ export function DeviceCredentialsTable({
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(b)}>
                         <Edit3 className="h-3.5 w-3.5" />
                       </Button>
-                      {/* Per API, Redfish, ONVIF e WMI una prova non c'è (tappa 1). */}
-                      {!["api", "redfish", "onvif", "wmi"].includes(b.protocol_type) && (
+                      {/* Per API, Redfish e ONVIF una prova non c'è (tappa 1); un legame WMI si prova con la query di identità (Task 8). */}
+                      {!["api", "redfish", "onvif"].includes(b.protocol_type) && (
                         <Button
                           size="icon" variant="ghost" className="h-7 w-7"
                           disabled={testing === b.id}
@@ -460,6 +460,7 @@ export function DeviceCredentialsTable({
                     <SelectItem value="ssh">SSH</SelectItem>
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
+                    <SelectItem value="wmi">WMI</SelectItem>
                     <SelectItem value="api">API</SelectItem>
                     <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                     <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>
@@ -529,6 +530,7 @@ export function DeviceCredentialsTable({
                     <SelectItem value="ssh">SSH</SelectItem>
                     <SelectItem value="snmp">SNMP</SelectItem>
                     <SelectItem value="winrm">WinRM</SelectItem>
+                    <SelectItem value="wmi">WMI</SelectItem>
                     <SelectItem value="api">API</SelectItem>
                     <SelectItem value="redfish">Redfish (BMC)</SelectItem>
                     <SelectItem value="onvif">ONVIF (telecamera)</SelectItem>

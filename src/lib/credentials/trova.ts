@@ -105,6 +105,8 @@ export function eErroreDiTrasporto(protocollo: CredProtocol, errore: string, kin
   if (/^Timeout: nessuna risposta/i.test(testo) || /ECONNREFUSED|ETIMEDOUT/i.test(testo)) return true;
   if (protocollo === "ssh") return kind != null && SSH_TRASPORTO.has(kind);
   if (protocollo === "winrm") return WINRM_TRASPORTO.has(classifyWinrmError(testo).code);
+  // WMI: il motore dà il codice (`WmiError.code`), che la prova del legame riporta in `kind`; il testo della 135 non lo dice.
+  if (protocollo === "wmi") return kind != null && WINRM_TRASPORTO.has(kind);
   return false;
 }
 

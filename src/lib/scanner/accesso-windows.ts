@@ -161,7 +161,7 @@ function comeInJson(testo: string): string {
 }
 
 /** Nasconde utente e password in ogni forma nota: intera, nuda (`DOM\u`, `u@dom`, `.\u`), dentro un JSON, in ogni caso. */
-function maschera(testo: string, username: string, password: string): string {
+export function maschera(testo: string, username: string, password: string): string {
   const nudo = (username.split("\\").pop() ?? "").split("@")[0];
   const varianti = [password, comeInJson(password), username, comeInJson(username), nudo]
     .filter((v) => v.length > 0)

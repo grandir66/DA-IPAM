@@ -664,14 +664,19 @@ describe("motore delle credenziali", () => {
     assert.deepEqual(r, { credential_type: "windows" });
   });
 
-  it("la prova del binding wmi non è disponibile", async () => {
+  // Task 8 del piano accesso Windows (04/11/2026): la prova del legame WMI ora esiste (query di identità, come la scansione).
+  // Prima rispondeva «non disponibile»; la prova di quel comportamento è invertita di proposito, con una prova finta: niente rete.
+  it("la prova del binding wmi è disponibile: usa la query di identità, non risponde «non disponibile»", async () => {
+    const chiamate: string[] = [];
     const esito = await provaBinding(
       "10.72.0.5",
       { protocol_type: "wmi", port: 135, credential_id: null, inline_username: "scansioni", inline_encrypted_password: encrypt("segreto-di-prova") },
       "2c",
+      { wmiIdentita: async (host) => { chiamate.push(host); return { hostname: "PC", dominio: null }; } },
     );
-    assert.equal(esito.success, false);
-    assert.equal(esito.nonDisponibile, true);
+    assert.equal(esito.success, true);
+    assert.equal(esito.nonDisponibile, undefined);
+    assert.deepEqual(chiamate, ["10.72.0.5"]);
   });
 });
 

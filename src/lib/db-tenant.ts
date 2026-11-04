@@ -20,6 +20,7 @@ import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
 import type { MotivoAccesso } from "./scanner/accesso-windows";
+import { MOTIVI, motivoDaPosizione, type StradaAccesso } from "./credentials/motivi-accesso";
 import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
@@ -5750,6 +5751,111 @@ export function recordCredentialPasswordErrata(credentialId: number): void {
       `UPDATE device_credential_bindings SET test_status = 'failed', test_message = ?, tested_at = datetime('now') WHERE credential_id = ?`
     ).run(messaggio, credentialId);
   })();
+}
+
+/** Quanti host ha provato una voce su una strada, e su quanti è entrata (piano 2026-11-04, Task 8). */
+export interface EsitoAccessoVoce {
+  strada: StradaAccesso;
+  provati: number;
+  riusciti: number;
+}
+
+/**
+ * Gli esiti dell'ultima scansione per una voce Windows, una riga per strada. È «provato» un host in cui il login è partito:
+ * porte chiuse e budget esaurito non lo sono, e nemmeno una riga senza motivo (mai provata dal motore nuovo). Una query sola,
+ * nessun login: sono i fatti già scritti da `host_credentials`.
+ */
+export function getEsitiAccessoPerVoce(credentialId: number): EsitoAccessoVoce[] {
+  const rows = db()
+    .prepare(
+      `SELECT protocol_type AS strada, COUNT(*) AS provati, SUM(CASE WHEN motivo = 'ok' THEN 1 ELSE 0 END) AS riusciti
+       FROM host_credentials
+       WHERE credential_id = ? AND protocol_type IN ('winrm', 'wmi')
+         AND motivo IN ('ok', 'password_errata', 'diritti_mancanti', 'firewall', 'errore')
+       GROUP BY protocol_type
+       ORDER BY protocol_type DESC`
+    )
+    .all(credentialId) as Array<{ strada: StradaAccesso; provati: number; riusciti: number }>;
+  return rows.map((r) => ({ strada: r.strada, provati: r.provati, riusciti: r.riusciti }));
+}
+
+/** L'esito di una strada su un host: `motivo` null = nessun esito (nessuna riga, o riga senza motivo). */
+export interface CellaAccesso {
+  motivo: MotivoAccesso | null;
+  ultimoTentativo: string | null;
+}
+
+export interface RigaAccessoWindows {
+  hostId: number;
+  ip: string;
+  nome: string | null;
+  winrm: CellaAccesso;
+  wmi: CellaAccesso;
+}
+
+/** Posizione SQL del motivo (vedi `MOTIVI`): il più utile ha la posizione più bassa. */
+const POSIZIONE_MOTIVO_SQL = `CASE hc.motivo ${MOTIVI.map((m, i) => `WHEN '${m}' THEN ${i}`).join(" ")} END`;
+
+function cella(posizione: number | null, ultimo: string | null): CellaAccesso {
+  return { motivo: motivoDaPosizione(posizione), ultimoTentativo: ultimo };
+}
+
+/**
+ * La pagina «Accesso Windows per host»: una riga per host, una colonna per strada (WinRM e WMI), paginata dal server.
+ * Una query con JOIN e raggruppamento, nessuna lettura per host. Con `credentialId` conta solo quella voce; senza,
+ * vince fra tutte le voci il motivo più utile (se una voce entra, l'host è coperto). Un testo che non è un motivo vale
+ * «nessun esito». Si leggono solo le righe `winrm` e `wmi`: SSH e SNMP non c'entrano.
+ */
+export function getAccessoWindowsPaginated(opts: {
+  limit: number;
+  offset: number;
+  credentialId?: number;
+}): { righe: RigaAccessoWindows[]; totale: number } {
+  const filtroVoce = opts.credentialId != null ? "AND hc.credential_id = ?" : "";
+  const parametriFiltro = opts.credentialId != null ? [opts.credentialId] : [];
+  const d = db();
+  const totale = (
+    d
+      .prepare(
+        `SELECT COUNT(DISTINCT hc.host_id) AS n FROM host_credentials hc
+         JOIN hosts h ON h.id = hc.host_id
+         WHERE hc.protocol_type IN ('winrm', 'wmi') ${filtroVoce}`
+      )
+      .get(...parametriFiltro) as { n: number }
+  ).n;
+  const rows = d
+    .prepare(
+      `SELECT h.id AS host_id, h.ip AS ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, '')) AS nome,
+         MIN(CASE WHEN hc.protocol_type = 'winrm' THEN ${POSIZIONE_MOTIVO_SQL} END) AS winrm_pos,
+         MAX(CASE WHEN hc.protocol_type = 'winrm' THEN hc.last_attempt_at END) AS winrm_at,
+         MIN(CASE WHEN hc.protocol_type = 'wmi' THEN ${POSIZIONE_MOTIVO_SQL} END) AS wmi_pos,
+         MAX(CASE WHEN hc.protocol_type = 'wmi' THEN hc.last_attempt_at END) AS wmi_at
+       FROM host_credentials hc
+       JOIN hosts h ON h.id = hc.host_id
+       WHERE hc.protocol_type IN ('winrm', 'wmi') ${filtroVoce}
+       GROUP BY h.id
+       ORDER BY ip_sort_key(h.ip), h.id
+       LIMIT ? OFFSET ?`
+    )
+    .all(...parametriFiltro, opts.limit, opts.offset) as Array<{
+    host_id: number;
+    ip: string;
+    nome: string | null;
+    winrm_pos: number | null;
+    winrm_at: string | null;
+    wmi_pos: number | null;
+    wmi_at: string | null;
+  }>;
+  return {
+    totale,
+    righe: rows.map((r) => ({
+      hostId: r.host_id,
+      ip: r.ip,
+      nome: r.nome,
+      winrm: cella(r.winrm_pos, r.winrm_at),
+      wmi: cella(r.wmi_pos, r.wmi_at),
+    })),
+  };
 }
 
 export function getCredentialCommunityString(credentialId: number): string | null {

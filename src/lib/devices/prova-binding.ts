@@ -31,7 +31,9 @@ export interface EsitoProvaBinding {
 export async function provaBinding(
   host: string,
   binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null },
-  versioneSnmp: VersioneSnmp
+  versioneSnmp: VersioneSnmp,
+  /** Le prove si possono sostituire (niente rete). Di serie la prova vera. */
+  deps: { wmiIdentita?: (host: string, username: string, password: string) => Promise<unknown> } = {}
 ): Promise<EsitoProvaBinding> {
   try {
     if (binding.protocol_type === "ssh") {
@@ -148,6 +150,36 @@ export async function provaBinding(
           : { success: false, message: "WinRM: risposta inattesa" };
       } catch (err: unknown) {
         return { success: false, message: `WinRM: ${err instanceof Error ? err.message : "errore"}` };
+      }
+    }
+
+    if (binding.protocol_type === "wmi") {
+      // Un legame WMI si prova come la scansione: una query leggera di identità (Task 8, piano accesso Windows).
+      let username: string | undefined;
+      let password: string | undefined;
+      if (binding.credential_id) {
+        const { getCredentialLoginPair } = await import("@/lib/db");
+        const pair = getCredentialLoginPair(binding.credential_id, "windows");
+        username = pair?.username;
+        password = pair?.password;
+      } else {
+        username = binding.inline_username ?? undefined;
+        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
+      }
+      if (!username) return { success: false, message: "Username mancante" };
+      // Una password vuota sarebbe un logon errato per niente.
+      if (!password) return { success: false, message: "Password mancante" };
+      try {
+        const prova = deps.wmiIdentita ?? (await import("@/lib/devices/wmi-run")).runWmiIdentita;
+        await prova(host, username, password);
+        return { success: true, message: "WMI funzionante" };
+      } catch (err: unknown) {
+        // Il rifiuto del bridge può citare utente e password: si maschera prima di restituire il messaggio.
+        const { maschera } = await import("@/lib/scanner/accesso-windows");
+        const { WmiError } = await import("@/lib/devices/wmi-run");
+        const testo = err instanceof Error ? err.message : "errore";
+        // `kind` è il codice del motore: serve a chi decide se è un rifiuto o una macchina muta (`eErroreDiTrasporto`).
+        return { success: false, message: `WMI: ${maschera(testo, username, password)}`, ...(err instanceof WmiError ? { kind: err.code } : {}) };
       }
     }
 

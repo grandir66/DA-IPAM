@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import { DEFAULT_PORTS } from "@/lib/credentials/porte";
 import type { UsiCredenziale } from "@/lib/credentials/usi";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
+import { IntestazionePagina } from "@/components/shared/console";
+import { DirittiAccount } from "@/components/credentials/diritti-account";
 import {
   Table,
   TableBody,
@@ -27,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
 import { MostraPassword, useMostraPasswordAttiva } from "@/components/vault/mostra-password";
@@ -57,7 +59,8 @@ type FinestraUsi =
 
 export default function CredentialsPage() {
   // da-vault: «Mostra password» solo per gli admin e solo con un interruttore del vault acceso.
-  const mostraPassword = useMostraPasswordAttiva(useEAdmin());
+  const eAdmin = useEAdmin();
+  const mostraPassword = useMostraPasswordAttiva(eAdmin);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [caricamento, setCaricamento] = useState<Caricamento>({ fase: "caricamento" });
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -71,6 +74,9 @@ export default function CredentialsPage() {
   const [testPort, setTestPort] = useState("");
   const [finestraUsi, setFinestraUsi] = useState<FinestraUsi>({ stato: "chiusa" });
   const [eliminando, setEliminando] = useState(false);
+  // Voce Windows di cui si guardano i diritti: il dettaglio sta sotto l'elenco, non in una finestra.
+  const [voceDiritti, setVoceDiritti] = useState<Credential | null>(null);
+  const dettaglioDiritti = useRef<HTMLDivElement>(null);
 
   // no-store: la GET ha una cache di 60 s, e dopo una modifica o
   // un'eliminazione l'elenco (e la colonna «Usata da») tornerebbe com'era.
@@ -133,6 +139,12 @@ export default function CredentialsPage() {
     setDialogOpen(true);
   };
 
+  const apriDiritti = (c: Credential) => {
+    setVoceDiritti(c);
+    // Il dettaglio compare sotto l'elenco: si porta in vista dopo il disegno.
+    requestAnimationFrame(() => dettaglioDiritti.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const openCreate = () => {
     setStatoModulo(statoNuovo());
     setDialogOpen(true);
@@ -192,12 +204,10 @@ export default function CredentialsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Credenziali riutilizzabili</h1>
-        <p className="text-muted-foreground mt-1">
-          L&apos;archivio delle credenziali: accesso agli apparati (SSH, SNMP, Windows, API), controller UniFi e Omada, Active Directory.
-        </p>
-      </div>
+      <IntestazionePagina
+        titolo="Credenziali riutilizzabili"
+        sottotitolo="L'archivio delle credenziali: accesso agli apparati (SSH, SNMP, Windows, API), controller UniFi e Omada, Active Directory."
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -298,6 +308,17 @@ export default function CredentialsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
+                        {eAdmin && c.credential_type === "windows" && (
+                          <Button
+                            variant={voceDiritti?.id === c.id ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => apriDiritti(c)}
+                            title="Cosa può fare questo account e cosa va abilitato"
+                          >
+                            <ShieldCheck className="h-4 w-4 mr-1" />
+                            Diritti
+                          </Button>
+                        )}
                         {TIPI_CON_PROVA.has(c.credential_type) && (
                           <Button
                             variant="ghost"
@@ -330,6 +351,16 @@ export default function CredentialsPage() {
           )}
         </CardContent>
       </Card>
+
+      {voceDiritti && (
+        <div ref={dettaglioDiritti} className="scroll-mt-4">
+          <DirittiAccount
+            key={voceDiritti.id}
+            voce={{ id: voceDiritti.id, name: voceDiritti.name, etichetta: voceDiritti.etichetta }}
+            onChiudi={() => setVoceDiritti(null)}
+          />
+        </div>
+      )}
 
       <Dialog open={finestraUsi.stato !== "chiusa"} onOpenChange={(open) => { if (!open) setFinestraUsi({ stato: "chiusa" }); }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">

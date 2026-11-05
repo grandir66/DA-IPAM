@@ -53,6 +53,8 @@ export interface FinestraInput {
   dalle: string; // "HH:MM", ora italiana
   alle: string; // "HH:MM"; se non viene dopo «dalle» la fascia passa la mezzanotte
   ripeti: "mese" | "settimana";
+  /** Assente: la sonda tiene la scelta che ha. */
+  invio?: "passaggio" | "fascia" | "gruppo";
   ipPerGruppo: number; // 1..20
   tentativi: number; // 1..10
   profile: EdgeScanProfile;

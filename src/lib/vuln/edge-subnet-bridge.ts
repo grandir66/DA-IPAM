@@ -790,6 +790,8 @@ export async function saveEdgeSubnetFinestra(
           ip_per_gruppo: f.ipPerGruppo,
           tentativi: f.tentativi,
           ripeti: f.ripeti,
+          // Senza scelta la sonda tiene quella che ha.
+          ...(f.invio ? { invio: f.invio } : {}),
           profile: f.profile,
           targeting_mode: f.targetingMode,
         },

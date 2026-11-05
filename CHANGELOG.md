@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: nella scansione a finestra si sceglie quando i rilievi arrivano a Vulcan: a fine passaggio, a fine fascia o a ogni gruppo. Serve Scanner-Edge 0.8.240; le sonde più vecchie inviano a ogni gruppo e la scelta resta spenta.
+
 - **Nuovo**: le scansioni non bloccano più la pagina. Il modale a tutto schermo è diventato un pannello in basso a destra, chiudibile in ogni momento, e il giro continua sul server. La nuova pagina **In esecuzione** (menu Sistema, col contatore) elenca scansioni e job in corso e gli esiti degli ultimi 5 minuti, e da lì si riapre l'avanzamento anche dopo aver cambiato pagina. Elenco in memoria: un riavvio del servizio lo azzera.
 
 - **Nuovo**: una scansione si può fermare, dal pannello o dalla bacheca. I processi vengono uccisi, quello che è già stato scritto resta e **nessun host va offline** per un giro fermato. Vale anche per le scansioni dello scheduler; le interrogazioni di un apparato non si fermano.

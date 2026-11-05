@@ -41,6 +41,8 @@ import {
   testoDistanzaRitento,
   type DatiFinestra,
   type EsitoElencoIp,
+  MAX_GIORNI_SENZA_INVIO,
+  type InvioFinestra,
   type IpFinestra,
   type PassaggioSonda,
   type RigaStato,
@@ -53,6 +55,11 @@ const INTERVALLO_LETTURA_MS = 30_000;
 const RIGHE_PER_PAGINA = 50;
 
 const PROFILI: Record<EdgeScanProfile, string> = { fast: "Veloce", balanced: "Bilanciato", deep: "Approfondito" };
+const INVII: Array<{ id: InvioFinestra; nome: string; nota: string }> = [
+  { id: "passaggio", nome: "A fine passaggio", nota: "Un solo rapporto quando la rete è finita: fino ad allora Vulcan non vede questi rilievi." },
+  { id: "fascia", nome: "A fine fascia", nota: "Un rapporto alla chiusura di ogni fascia, con i gruppi di quella fascia." },
+  { id: "gruppo", nome: "A ogni gruppo", nota: "Un rapporto per ogni gruppo finito: Vulcan è sempre aggiornato, ma i rapporti sono molti." },
+];
 const GIORNI: Array<{ n: number; nome: string }> = [
   { n: 1, nome: "Lun" },
   { n: 2, nome: "Mar" },
@@ -229,6 +236,7 @@ interface Modulo {
   dalle: string;
   alle: string;
   ripeti: "mese" | "settimana";
+  invio: InvioFinestra;
   ipPerGruppo: string;
   tentativi: string;
   profile: EdgeScanProfile;
@@ -239,6 +247,7 @@ const MODULO_INIZIALE: Modulo = {
   dalle: "08:00",
   alle: "20:00",
   ripeti: "mese",
+  invio: "passaggio",
   ipPerGruppo: "10",
   tentativi: "3",
   profile: "balanced",
@@ -276,7 +285,7 @@ export function FinestraImpostazioni({
   const [avvisoSalvataggio, setAvvisoSalvataggio] = useState<string | null>(null);
 
   // Il modulo parte da ciò che la sonda ha salvato, finché nessuno lo ha toccato.
-  const chiaveSalvata = salvata ? `${salvata.aggiornata_at}|${salvata.dalle}|${salvata.alle}|${salvata.giorni.join(",")}` : null;
+  const chiaveSalvata = salvata ? `${salvata.aggiornata_at}|${salvata.invio}|${salvata.dalle}|${salvata.alle}|${salvata.giorni.join(",")}` : null;
   useEffect(() => {
     if (toccato || !salvata) return;
     setM({
@@ -284,6 +293,7 @@ export function FinestraImpostazioni({
       dalle: salvata.dalle,
       alle: salvata.alle,
       ripeti: salvata.ripeti,
+      invio: salvata.invio ?? "gruppo",
       ipPerGruppo: String(salvata.ip_per_gruppo),
       tentativi: String(salvata.tentativi),
       profile: profiloDi(salvata.profile),
@@ -300,6 +310,10 @@ export function FinestraImpostazioni({
 
   const ipPerGruppo = intero(m.ipPerGruppo, 1, 20);
   const tentativi = intero(m.tentativi, 1, 10);
+  const sondaSenzaInvio = !!salvata && salvata.invio === null;
+  const notaInvio = sondaSenzaInvio
+    ? "Questa sonda invia a ogni gruppo: la scelta si accende dopo l'aggiornamento."
+    : `${INVII.find((i) => i.id === m.invio)?.nota} Oltre ${MAX_GIORNI_SENZA_INVIO} giorni senza invii parte comunque quello che c'è.`;
   const ore = oreDellaFascia(m.dalle, m.alle);
 
   // Gli IP della stima. Con «solo IP che rispondono» e nessun host noto la sonda scansiona tutta la rete.
@@ -340,6 +354,7 @@ export function FinestraImpostazioni({
             dalle: m.dalle,
             alle: m.alle,
             ripeti: m.ripeti,
+            invio: m.invio,
             ip_per_gruppo: ipPerGruppo,
             tentativi,
             profile: m.profile,
@@ -478,6 +493,16 @@ export function FinestraImpostazioni({
           <Scelta scelta={m.ripeti === "settimana"} onClick={() => cambia({ ripeti: "settimana" })} disabled={salvando || disabled}>
             {m.ripeti === "settimana" ? "✓ " : ""}Ogni settimana
           </Scelta>
+        </div>
+      </Campo>
+
+      <Campo titolo="Invio a Vulcan" nota={notaInvio}>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Invio a Vulcan">
+          {INVII.map((i) => (
+            <Scelta key={i.id} scelta={m.invio === i.id} onClick={() => cambia({ invio: i.id })} disabled={salvando || disabled || sondaSenzaInvio}>
+              {m.invio === i.id ? "✓ " : ""}{i.nome}
+            </Scelta>
+          ))}
         </div>
       </Campo>
 

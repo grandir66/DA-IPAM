@@ -13,6 +13,7 @@ import {
   saveEdgeSubnetFinestra,
 } from "@/lib/vuln/edge-subnet-bridge";
 import { assessmentProfileIdSchema } from "@/lib/vuln/edge-profiles";
+import { INVII_FINESTRA } from "@/lib/vuln/finestra";
 import { STATI_IP, type StatoIp } from "@/lib/vuln/finestra";
 
 export interface RispostaRotta {
@@ -28,6 +29,7 @@ export const finestraSchema = z.object({
   dalle: orario,
   alle: orario,
   ripeti: z.enum(["mese", "settimana"]),
+  invio: z.enum(INVII_FINESTRA).optional(),
   ip_per_gruppo: z.number().int().min(1).max(20),
   tentativi: z.number().int().min(1).max(10),
   profile: z.enum(["fast", "balanced", "deep"]),
@@ -65,6 +67,7 @@ export async function salvaFinestraRotta(networkId: number, corpo: unknown): Pro
     dalle: body.dalle,
     alle: body.alle,
     ripeti: body.ripeti,
+    invio: body.invio,
     ipPerGruppo: body.ip_per_gruppo,
     tentativi: body.tentativi,
     profile: body.profile,

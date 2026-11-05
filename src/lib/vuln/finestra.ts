@@ -83,6 +83,12 @@ export function testoDistanzaRitento(dalle: string, alle: string): string | null
 
 export type RipetiFinestra = "mese" | "settimana";
 
+/** Quando la sonda manda i rilievi a Vulcan: i valori di `INVII_AMMESSI` di Scanner-Edge. */
+export const INVII_FINESTRA = ["passaggio", "fascia", "gruppo"] as const;
+export type InvioFinestra = (typeof INVII_FINESTRA)[number];
+/** Oltre questi giorni senza invii la sonda manda quello che c'è: `MAX_GIORNI_SENZA_INVIO` di Scanner-Edge. */
+export const MAX_GIORNI_SENZA_INVIO = 31;
+
 export interface FinestraSonda {
   enabled: number;
   giorni: number[];
@@ -91,6 +97,8 @@ export interface FinestraSonda {
   ip_per_gruppo: number;
   tentativi: number;
   ripeti: RipetiFinestra;
+  /** `null`: la sonda è precedente alla 0.8.240, non conosce la scelta e invia a ogni gruppo. */
+  invio: InvioFinestra | null;
   profile: string;
   targeting_mode: string | null;
   aggiornata_at: string | null;
@@ -177,6 +185,7 @@ export function leggiRispostaFinestra(raw: unknown): { ok: true; dati: DatiFines
       ip_per_gruppo: finestra.ip_per_gruppo,
       tentativi: finestra.tentativi,
       ripeti: finestra.ripeti,
+      invio: INVII_FINESTRA.find((i) => i === finestra.invio) ?? null,
       profile: typeof finestra.profile === "string" ? finestra.profile : "balanced",
       targeting_mode: typeof finestra.targeting_mode === "string" ? finestra.targeting_mode : null,
       aggiornata_at: typeof finestra.aggiornata_at === "string" ? finestra.aggiornata_at : null,

@@ -220,6 +220,19 @@ const GET_SENZA = {
   ok: true, finestra: null, passaggio: null, gruppo: null, dentro_fascia: null, prossima_apertura: null, sftp_escluso: false,
 };
 
+test("leggiRispostaFinestra: invio letto dalla sonda; assente o sconosciuto è null, non un valore inventato", () => {
+  const con = (invio: unknown) => {
+    const r = leggiRispostaFinestra({ ...GET_VERA, finestra: { ...GET_VERA.finestra, invio } });
+    assert.ok(r.ok);
+    return r.dati.finestra?.invio;
+  };
+  assert.equal(con("fascia"), "fascia");
+  assert.equal(con("passaggio"), "passaggio");
+  assert.equal(con("gruppo"), "gruppo");
+  assert.equal(con(undefined), null);
+  assert.equal(con("domani"), null);
+});
+
 test("leggiRispostaFinestra: la risposta vera si legge, e «senza finestra» è finestra null", () => {
   const r = leggiRispostaFinestra(GET_VERA);
   assert.ok(r.ok);
@@ -438,6 +451,12 @@ test("saveEdgeSubnetFinestra: ensure, poi la PUT con i campi della sonda; la fin
   assert.equal(riga?.ripeti, "mese");
   assert.equal(riga?.fascia_attiva, true);
   assert.equal(riga?.enabled, false, "enabled è dell'orario: spento, come sulla sonda");
+});
+
+test("saveEdgeSubnetFinestra: la scelta dell'invio arriva alla sonda", async () => {
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: json(GET_VERA) });
+  await dentro(() => saveEdgeSubnetFinestra(rete, { ...FINESTRA, invio: "fascia" }));
+  assert.equal(JSON.parse(seen[1].body).invio, "fascia");
 });
 
 test("saveEdgeSubnetFinestra: con un modo che usa gli host manda anche l'inventario, con full_subnet no", async () => {
@@ -768,6 +787,16 @@ test("rotta PUT: corpo non valido 400 (JSON illeggibile, giorni vuoti, fascia sc
     assert.equal(typeof corpoDi(r).error, "string");
   }
   assert.deepEqual(chiamate(), []);
+});
+
+test("rotta PUT: un modo di invio sconosciuto è 400, uno valido arriva alla sonda", async () => {
+  const r = await dentro(() => salvaFinestraRotta(rete, { ...CORPO, invio: "domani" }));
+  assert.equal(r.status, 400);
+  assert.deepEqual(chiamate(), []);
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: json(GET_VERA), [`GET ${BASE}/finestra`]: json(GET_VERA) });
+  const ok = await dentro(() => salvaFinestraRotta(rete, { ...CORPO, invio: "passaggio" }));
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(seen[1].body).invio, "passaggio");
 });
 
 test("rotta PUT: un 400 della sonda resta 400 col motivo, un 409 resta 409, un guasto è 502, sonda vecchia 409 con daAggiornare", async () => {

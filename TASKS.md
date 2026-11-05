@@ -32,11 +32,7 @@ autenticate**, per due motivi distinti.
   un elemento GMP valido**: la specifica vuole `<auth_algorithm>` con valore `sha1`/`md5`, **obbligatorio** per
   il tipo snmp (confermato su python-gvm / forum Greenbone). gvmd ignora l'elemento ignoto, non trova auth
   valido, rifiuta. Per questo `snmp_credential_id` resta null sulla sonda
-- [ ] **Fix**: in `create_credential` (ramo snmp) mandare `<auth_algorithm>sha1</auth_algorithm>` invece di
-  `<snmp_algorithm>none</snmp_algorithm>`; valutare se serve anche `<login>` (alcune versioni lo pretendono per
-  v1/v2c). Va **provato a gvmd sveglio** (risponde solo durante una scansione: a riposo il socket dà
-  «Connection refused»): riprodurre il rifiuto, applicare, riprodurre il successo. È un fix in DA-Vul-can, da
-  rilasciare alla sonda — attenzione al treno di rilasci dell'altra sessione sul 72729
+- [-] Fix `auth_algorithm` annullato il 05/11: `<snmp_algorithm>` è ignorato, ma SNMP si crea lo stesso su gvmd vero (79993-ipam-2). Il rifiuto era `Credential name exists already`: causa e correzione in `DA-Vul-can/TASKS.md`, «Credenziali registrate usate dalle scansioni»
 - [ ] Finché (bug) e (config) non sono risolti, il «quadro completo» resta la fotografia **non autenticata**:
   già utile (11 Critical, 35 High, ESXi EOL su 192.168.0.6, FTP, TLS deboli, default-cred trovate da Greenbone)
   ma senza patch mancanti né share Windows con permessi

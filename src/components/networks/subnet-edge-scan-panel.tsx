@@ -862,6 +862,16 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                           .join(" · ") || "nessuna assegnata"}
                       </p>
                     )}
+                    {(edgeCreds?.falliti ?? []).length > 0 && (
+                      <div className="mt-2 rounded border border-destructive bg-destructive/10 px-2 py-1.5 text-[13px]" role="alert">
+                        <p className="font-semibold">Credenziali non arrivate allo scanner</p>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {edgeCreds?.falliti?.map((f, i) => (
+                            <li key={i}>{f.name || "Tutte"}: {f.motivo}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

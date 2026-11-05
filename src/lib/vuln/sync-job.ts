@@ -27,7 +27,7 @@ import {
   type EdgeScan,
   type VulnScannerRow,
 } from "./scanner-edge-client";
-import { pushHostsToEdge } from "./edge-subnet-bridge";
+import { pushHostsToEdge, rimandaCredenzialiEdge } from "./edge-subnet-bridge";
 
 interface HostMatchRow {
   id: number;
@@ -296,6 +296,19 @@ export async function runVulnSync(): Promise<{
               ? pushErr.message
               : "errore sconosciuto";
         console.warn(`[vuln-sync] push-hosts rete #${net.id} (${mode}) fallito: ${msg}`);
+      }
+    }
+
+    // Un legame di credenziali perso non torna da solo: i giri pianificati partono dalla sonda
+    // (72729, 05/11/2026). Stesso trattamento degli errori qui sopra: mai il corpo della risposta.
+    for (const net of allNetworks) {
+      try {
+        if (await rimandaCredenzialiEdge(net.id)) {
+          console.log(`[vuln-sync] credenziali rimandate alla sonda per la rete #${net.id}`);
+        }
+      } catch (credErr) {
+        const msg = credErr instanceof EdgeClientError ? `edge HTTP ${credErr.status}` : "errore sconosciuto";
+        console.warn(`[vuln-sync] credenziali rete #${net.id} non rimandate: ${msg}`);
       }
     }
 

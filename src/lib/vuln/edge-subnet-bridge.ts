@@ -21,6 +21,7 @@ import {
   edgeApiDelete,
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
+import { serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import {
   dimenticaEdgeFinestra,
@@ -91,11 +92,7 @@ export interface EdgeSubnetStatus {
     host_count: number;
     last_scan: EdgeSubnetLastScan | null;
     schedule: EdgeVulnSchedule | null;
-    credentials?: {
-      ssh: { id: string; name: string } | null;
-      smb: { id: string; name: string } | null;
-      snmp: { id: string; name: string } | null;
-    };
+    credentials?: EdgeCredenzialiSonda;
   } | null;
 }
 
@@ -186,11 +183,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       host_count?: number;
       last_scan?: EdgeSubnetLastScan | null;
       schedule?: EdgeVulnSchedule | null;
-      credentials?: {
-        ssh: { id: string; name: string } | null;
-        smb: { id: string; name: string } | null;
-        snmp: { id: string; name: string } | null;
-      };
+      credentials?: EdgeCredenzialiSonda;
       assessment_enabled?: boolean;
       assessment_profile_id?: string | null;
     }>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`);
@@ -365,6 +358,37 @@ export function hostsForEdgeSync(networkId: number) {
         os_info: h.os_info || null,
       };
     });
+}
+
+/**
+ * Rimanda le credenziali a una rete della sonda se un legame manca (freno: `serveRimandare`). I giri
+ * pianificati partono dalla sonda e non passano da `/ensure`. true = mandate.
+ */
+export async function rimandaCredenzialiEdge(networkId: number, adesso = Date.now()): Promise<boolean> {
+  const scanner = getActiveEdgeScanner();
+  const network = getNetworkById(networkId);
+  if (!scanner || scanner.enabled !== 1 || !network) return false;
+
+  const slot = collectEdgeCredentialsForNetwork(networkId, { registra: false }).transfer.map((c) => c.slot);
+  if (slot.length === 0) return false;
+
+  const lookup = await edgeApiGet<{ found: boolean; credentials?: EdgeCredenzialiSonda }>(
+    scanner,
+    `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
+  );
+  if (!lookup.found || !serveRimandare(slot, lookup.credentials, adesso)) return false;
+
+  await edgeApiPost<{ ok: boolean }>(
+    scanner,
+    "/api/v1/networks/ensure",
+    buildEdgeEnsureBody(networkId, {
+      syncHosts: false,
+      syncCredentials: true,
+      targetingMode: (network.targeting_mode as EdgeTargetingMode | null) ?? "full_subnet",
+    }),
+    { timeoutMs: 120000 },
+  );
+  return true;
 }
 
 /**

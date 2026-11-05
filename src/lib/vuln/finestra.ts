@@ -11,10 +11,10 @@ import type { EdgeScanProfile } from "@/lib/vuln/edge-subnet-bridge";
 
 /**
  * Minuti per gruppo di IP, per profilo. Stessi valori di `STIMA_GRUPPO_MIN` della sonda
- * (`services/finestra_runner.py`): sono un'ipotesi non misurata, e la sonda li sostituisce con la
- * media dei gruppi già finiti del passaggio.
+ * (`services/finestra_runner.py`): `fast` è misurato, gli altri sono in proporzione, e la sonda li
+ * sostituisce con la media dei gruppi già finiti del passaggio.
  */
-export const MINUTI_GRUPPO: Record<EdgeScanProfile, number> = { fast: 20, balanced: 60, deep: 120 };
+export const MINUTI_GRUPPO: Record<EdgeScanProfile, number> = { fast: 120, balanced: 180, deep: 300 };
 
 export interface StimaFinestra {
   gruppi: number;

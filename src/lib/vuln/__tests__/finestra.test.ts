@@ -53,15 +53,15 @@ import { censisci, consentitiDaAuthConfig, gestoriDellAlbero } from "@/lib/perme
 // ── stimaFinestra ───────────────────────────────────────────────────────────────────────────────
 
 test("stimaFinestra: basta, quando i gruppi entrano in una apertura della fascia", () => {
-  // 96 IP a gruppi di 10 = 10 gruppi da 60 minuti = 10 ore, in una fascia da 12.
-  const s = stimaFinestra({ ip: 96, ipPerGruppo: 10, minutiGruppo: MINUTI_GRUPPO.balanced, oreCiclo: 12 });
-  assert.deepEqual(s, { gruppi: 10, ore: 10, cicli: 1, basta: true });
+  // 40 IP a gruppi di 10 = 4 gruppi da 180 minuti = 12 ore, in una fascia da 12.
+  const s = stimaFinestra({ ip: 40, ipPerGruppo: 10, minutiGruppo: MINUTI_GRUPPO.balanced, oreCiclo: 12 });
+  assert.deepEqual(s, { gruppi: 4, ore: 12, cicli: 1, basta: true });
 });
 
 test("stimaFinestra: non basta, e dice quante aperture servono", () => {
-  // 254 IP in Approfondito: 26 gruppi da 120 minuti = 52 ore, fascia da 12 → 5 aperture.
+  // 254 IP in Approfondito: 26 gruppi da 300 minuti = 130 ore, fascia da 12 → 11 aperture.
   const s = stimaFinestra({ ip: 254, ipPerGruppo: 10, minutiGruppo: MINUTI_GRUPPO.deep, oreCiclo: 12 });
-  assert.deepEqual(s, { gruppi: 26, ore: 52, cicli: 5, basta: false });
+  assert.deepEqual(s, { gruppi: 26, ore: 130, cicli: 11, basta: false });
 });
 
 test("stimaFinestra: gli IP per gruppo contano (stessi IP, gruppi diversi)", () => {
@@ -100,7 +100,7 @@ test("stimaFinestra: valori che non permettono il conto sono un errore, non una 
 });
 
 test("MINUTI_GRUPPO: gli stessi valori di STIMA_GRUPPO_MIN della sonda", (t) => {
-  assert.deepEqual(MINUTI_GRUPPO, { fast: 20, balanced: 60, deep: 120 });
+  assert.deepEqual(MINUTI_GRUPPO, { fast: 120, balanced: 180, deep: 300 });
   // Il confronto col sorgente della sonda (repo DA-Vul-can accanto a questo) si fa dove c'è.
   const percorso = join(process.cwd(), "..", "DA-Vul-can", "infra", "scanner-edge", "app", "scanner_edge", "services", "finestra_runner.py");
   if (!existsSync(percorso)) {

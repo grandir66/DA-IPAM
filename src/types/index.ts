@@ -1007,6 +1007,21 @@ export interface ScanProgress {
   error?: string;
   /** Log live delle operazioni in corso (ultime N righe) */
   logs?: string[];
+  /** Cliente del giro: la mappa è una sola per tutti i tenant, `network_id` da solo non li separa. */
+  tenant_code?: string;
+  /** Su cosa gira, per la bacheca: nome della rete o dell'apparato. */
+  etichetta?: string;
+  /** Pagina dell'oggetto su cui gira. */
+  link?: string;
+}
+
+/** Un giro nell'elenco di `/api/scans/progress`: senza i log, che si leggono aprendolo. */
+export type GiroInElenco = Omit<ScanProgress, "logs" | "tenant_code">;
+
+/** Un job dello scheduler in esecuzione: non ha avanzamento, solo il nome. */
+export interface JobInElenco {
+  id: number;
+  nome: string;
 }
 
 export interface DiscoveryResult {

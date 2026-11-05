@@ -3,8 +3,7 @@ import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ScanProgress } from "@/components/shared/scan-progress";
-import type { ScanProgress as ScanProgressType } from "@/types";
+import { useGiri } from "@/components/shared/giri-context";
 import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
@@ -539,7 +538,7 @@ function DeviceDetailPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [querying, setQuerying] = useState(false);
-  const [queryProgress, setQueryProgress] = useState<ScanProgressType | null>(null);
+  const { apri: apriGiro } = useGiri();
   const queryPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup polling on unmount
@@ -708,9 +707,14 @@ function DeviceDetailPage() {
     if (!device) return false;
 
     setQuerying(true);
+    let giroAperto = false;
     try {
       const result = await runDeviceAcquisitionScan(Number(params.id), device, {
-        onProgress: (p) => setQueryProgress(p as ScanProgressType),
+        onProgress: (p) => {
+          if (giroAperto) return;
+          giroAperto = true;
+          apriGiro(p.id);
+        },
       });
       if (!result.ok) {
         toast.error(result.error ?? "Errore scan");
@@ -2617,13 +2621,6 @@ function DeviceDetailPage() {
         <DeviceSoftwareCard deviceId={device.id} osHint={device.vendor} />
       )}
 
-      {/* Modale progresso scansione device */}
-      {queryProgress && (
-        <ScanProgress
-          progress={queryProgress}
-          onClose={() => setQueryProgress(null)}
-        />
-      )}
     </div>
   );
 }

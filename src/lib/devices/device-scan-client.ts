@@ -5,6 +5,7 @@ import {
 } from "@/lib/devices/device-acquisition-resolve";
 
 type ScanProgress = {
+  id: string;
   status: string;
   phase?: string;
 };

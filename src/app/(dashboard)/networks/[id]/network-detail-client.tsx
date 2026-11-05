@@ -37,7 +37,7 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IpGrid } from "@/components/shared/ip-grid";
-import { ScanProgress } from "@/components/shared/scan-progress";
+import { useGiri } from "@/components/shared/giri-context";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
@@ -173,6 +173,12 @@ export function NetworkDetailClient({
   const [hosts, setHosts] = useState<HostWithDevice[]>(initialHosts);
   const [scanning, setScanning] = useState<ScanProgressType | null>(null);
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { giri, apri: apriGiro } = useGiri();
+  // Ultimo giro di una sequenza a più fasi: chi chiude il pannello non se lo vede riaprire alla fase dopo.
+  const ultimoGiroRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scanning) ultimoGiroRef.current = null;
+  }, [scanning]);
 
   // Cleanup interval on unmount per evitare memory leak
   useEffect(() => {
@@ -714,8 +720,14 @@ export function NetworkDetailClient({
       toast.success(`Scansione ${SCAN_LABELS[scanType]} avviata`);
     }
     setScanning(data.progress);
+    apriPannello(data.id);
 
     return await seguiGiro(data.id, refreshOnComplete);
+  }
+
+  function apriPannello(jobId: string) {
+    apriGiro(jobId, { dopo: ultimoGiroRef.current });
+    ultimoGiroRef.current = jobId;
   }
 
   /**
@@ -777,6 +789,7 @@ export function NetworkDetailClient({
 
   async function triggerScan(scanType: ScanJobType) {
     await runScanJob(scanType);
+    setScanning(null);
   }
 
   /**
@@ -809,10 +822,12 @@ export function NetworkDetailClient({
       if (ok) toast.success("Percorso: ICMP + Naabu");
     } else {
       const first = await runScanJob("scan_icmp");
-      if (!first.ok) return;
-      const second = await runScanJob("scan_nmap_base");
-      if (second.ok) toast.success("Percorso: ICMP + Nmap quick");
+      if (first.ok) {
+        const second = await runScanJob("scan_nmap_base");
+        if (second.ok) toast.success("Percorso: ICMP + Nmap quick");
+      }
     }
+    setScanning(null);
   }
 
   // scan_enrich non passa per discoverNetwork: chiama l'endpoint dedicato che
@@ -851,6 +866,7 @@ export function NetworkDetailClient({
   async function runAdvanced() {
     if (!hostScope) {
       await runScanJob("scan_full");
+      setScanning(null);
       return;
     }
     const nmap = await runScanJob("nmap", { showStartToast: false });
@@ -898,6 +914,7 @@ export function NetworkDetailClient({
       const data = (await res.json()) as { id: string; progress: ScanProgressType };
       toast.info(`Profilo ${nome} avviato su ${selectedHostIds.size} host`);
       setScanning(data.progress);
+      apriPannello(data.id);
       const esito = await seguiGiro(data.id, true);
       /* La fase finale del server riassume rilievi, campi riempiti ed eventuali
        * avvisi (script mancanti, privilegi): si mostra quella, non un testo nostro. */
@@ -945,7 +962,20 @@ export function NetworkDetailClient({
 
   // Portata dei comandi: host selezionati nella lista, altrimenti tutta la subnet.
   const hostScope = view === "list" && selectedHostIds.size > 0;
-  const busy = !!scanning || enriching;
+  // Il giro sulla rete può averlo avviato un'altra pagina o lo scheduler: i comandi si fermano lo stesso.
+  const giroSullaRete = giri.some((g) => g.network_id === network.id && g.status === "running");
+  const busy = !!scanning || enriching || giroSullaRete;
+
+  // Giro non seguito da questa pagina (riaperta a metà, o dello scheduler): a fine giro i dati si rileggono qui.
+  const reteOccupataRef = useRef(false);
+  useEffect(() => {
+    const finito = reteOccupataRef.current && !giroSullaRete && !scanning;
+    reteOccupataRef.current = giroSullaRete;
+    if (!finito) return;
+    void refreshHosts();
+    router.refresh();
+    setScanPhasesRefreshKey((k) => k + 1);
+  }, [giroSullaRete, scanning, refreshHosts, router]);
 
   // Stato delle fasi successive alla "Scansione iniziale" (§6.2 Blocco A)
   const phaseInitial = scanPhases?.phases.find((p) => p.key === "initial") ?? null;
@@ -1094,7 +1124,7 @@ export function NetworkDetailClient({
               disabled={busy}
               title={`Trova gli host attivi su tutta la subnet: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. ${phaseWhen(phaseInitial)}`}
             >
-              {scanning ? (
+              {scanning || giroSullaRete ? (
                 <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
               ) : (
                 <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
@@ -1427,7 +1457,6 @@ export function NetworkDetailClient({
       </div>
 
       {/* Scan Progress */}
-      {scanning && <ScanProgress progress={scanning} onClose={() => setScanning(null)} />}
 
       {/* Grid view */}
       {view === "grid" && (

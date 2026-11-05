@@ -453,6 +453,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/reset` | POST | `admin` | `admin` |  |
 | `/api/scan-config` | GET | `auth` | `auth` |  |
 | `/api/scans/history` | GET | `sessione` | `auth` |  |
+| `/api/scans/progress` | GET | `auth` | `auth` |  |
 | `/api/scans/progress/[jobId]` | GET | `auth` | `auth` |  |
 | `/api/scans/trigger` | POST | `admin` | `admin` |  |
 | `/api/search` | GET | `auth` | `auth` |  |

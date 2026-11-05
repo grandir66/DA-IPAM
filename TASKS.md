@@ -1,5 +1,22 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Proposta: le scansioni non bloccano la pagina, bacheca dei giri
+
+Riccardo (05/11): a ogni scansione si apre un modale di avanzamento e non si può fare altro; «i job dovrebbero
+girare in background ed eventualmente avere una bacheca che mi indica cosa sta girando e poter recuperare il suo
+stato di avanzamento». Riccardo (05/11): sì ai passi 1 e 2, livello leggero; 3 e 4 restano da decidere.
+
+- [x] Causa: non è configurazione né necessità. Il giro gira già sul server (`discoverNetwork`, la rotta risponde
+  subito); il blocco è solo interfaccia: `components/shared/scan-progress.tsx` è un overlay a tutto schermo con la
+  X visibile solo a giro finito. Usato in `networks/[id]/network-detail-client.tsx:1430` e `devices/[id]/page.tsx:2622`
+- [x] Passo 1: pannello chiudibile e non bloccante al posto del modale (`scan-progress.tsx`, montato una volta in `giri-context.tsx`). Verificato in locale a 1280 con scansioni vere: nessuna copertura, chiusura a giro in corso, sequenza ICMP → Nmap che non riapre un pannello chiuso, pulsante sbloccato a fine sequenza
+- [x] Passo 2: elenco dei giri (`GET /api/scans/progress`), pagina `/in-esecuzione` e voce di menu col contatore, con riaggancio dopo un cambio pagina (riaperto al 39% e avanzato). Cancello verde: lint, tsc, build, 7286 prove
+- [x] Scoperto strada facendo: `/api/scans/progress/[jobId]` rispondeva a qualunque cliente; ora un giro di un altro cliente dà 404 come un id sconosciuto. Prova in `scanner/__tests__/giri.test.ts`, vista fallire togliendo il filtro; il 404 fra due clienti veri non è stato provato in locale
+- [x] Scoperto strada facendo: `busy` restava acceso finché non si chiudeva il modale; ora si spegne a fine giro o sequenza, e i comandi si fermano anche per un giro avviato altrove o dallo scheduler
+- [ ] Passo 3 (a parte, da decidere): sequenze sul server. «Avanzata» con selezione, «Accesso agli host» e «Scansione iniziale» senza naabu sono guidate dal browser: chiudendo la pagina si fermano le fasi successive
+- [ ] Passo 4 (da decidere): pulsante per fermare un giro, oggi non esiste
+- Trappole: `ScanProgress` non ha il tenant (sull'hub `network_id` non basta a separare i clienti); la mappa è in memoria (persa al riavvio, i giri finiti spariscono dopo 5 min); i job senza `discoverNetwork` stanno solo in `runningJobs`
+
 ## 2026-11-05 — Idea: pagina Security per definire le scansioni
 
 - [ ] Riccardo (05/11): sotto Security un menù che fa il contrario del pannello VA Scan: una pagina in cui si definisce la scansione e si scelgono le reti fra le subnet disponibili, impostando la tipologia di scansione e se farla su tutta la subnet o solo sugli IP rilevati. Oggi si parte dalla rete. Si appoggia a orario fisso e finestra (piano `2026-11-05-scansione-a-finestra.md` in DA-Vul-can) e alle rotte `edge-scan`; da fare dopo il collaudo della finestra.

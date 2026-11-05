@@ -6,6 +6,7 @@ import { Sidebar } from "./sidebar";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
 import { PageTransition } from "./page-transition";
 import { UpdateChecker } from "./update-checker";
+import { GiriProvider } from "./giri-context";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -59,7 +60,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
-      <AppShellInner>{children}</AppShellInner>
+      <GiriProvider>
+        <AppShellInner>{children}</AppShellInner>
+      </GiriProvider>
     </SidebarProvider>
   );
 }

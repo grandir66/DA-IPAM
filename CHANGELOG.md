@@ -6,6 +6,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: le scansioni non bloccano più la pagina. Il modale a tutto schermo è diventato un pannello in basso a destra, chiudibile in ogni momento, e il giro continua sul server. La nuova pagina **In esecuzione** (menu Sistema, col contatore) elenca scansioni e job in corso e gli esiti degli ultimi 5 minuti, e da lì si riapre l'avanzamento anche dopo aver cambiato pagina. Elenco in memoria: un riavvio del servizio lo azzera. Le sequenze a più fasi guidate dal browser si fermano ancora se si lascia la pagina.
+
+- **Corretto**: l'avanzamento di una scansione si legge solo dal cliente che l'ha avviata.
+
 - **Nuovo**: il pannello dice se il profilo assessment è **fuori sincrono**. Le copie sono due — una qui, una sulla sonda — e a eseguire è quella della sonda; finché si passa dalla pagina restano allineate, ma una modifica fatta fuori (a mano, o dall'interfaccia della sonda) le separava senza che nessuno lo notasse, e alla prima scansione veniva riscritta in silenzio. Il 05/11 sul 72729 le due dicevano cose diverse. Ora il `lookup` della sonda riporta il profilo che esegue davvero e il pannello, quando non combacia, lo scrive dicendo quale dei due vince. Con una sonda più vecchia, che quel campo non lo manda, non si dice niente invece di inventare un disallineamento.
 
 - **Nuovo**: i profili assessment si capiscono dalla pagina. Nella tendina del pannello VA Scan c'erano quattro nomi muti — «Smoke interno», «Completo interno», «Safe esterno», «Validation plus» — e il catalogo dell'edge non porta nessuna spiegazione. Ora ogni voce dice quanti moduli esegue, e sotto la tendina compare la scheda del profilo scelto: a cosa serve, quando sceglierlo e l'elenco dei moduli con una riga ciascuno su cosa fanno davvero (impronta dei servizi, postura, SMB e LDAP anonimi, SNMP con le community di serie, posta, TLS, DNS, nomi pubblici). Un profilo o un modulo che l'edge aggiunge e DA-IPAM non conosce resta scegliibile e si descrive dai suoi moduli, dicendo che non è ancora descritto.

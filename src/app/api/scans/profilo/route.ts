@@ -112,6 +112,9 @@ export async function POST(request: Request) {
       phase: `${profilo.nome}: avvio su ${ips.length} host`,
       started_at: new Date().toISOString(),
       logs: [],
+      tenant_code: tenantCode,
+      etichetta: network.name,
+      link: `/networks/${networkId}`,
     };
     registraProgresso(progress);
 

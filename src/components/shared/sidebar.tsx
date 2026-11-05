@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { IstanzaCorrente } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
+import { useGiri } from "./giri-context";
 import {
   Activity,
   Cable,
@@ -366,6 +367,7 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { collapsed, toggle } = useSidebar();
+  const { inCorso } = useGiri();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = userRole === "superadmin";
   const isAdmin = isSuperadmin || userRole === "admin";
@@ -579,6 +581,9 @@ export function Sidebar() {
             </p>
           </div>
         </div>
+
+        {/* In esecuzione (05/11): la bacheca di quello che sta girando, col numero accanto */}
+        <NavItem href="/in-esecuzione" icon={Activity} label="In esecuzione" active={isActive("/in-esecuzione")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={inCorso} />
 
         {/* Impostazioni (globale) */}
         <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce") && !pathname.startsWith("/settings/opzioni") && !pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />

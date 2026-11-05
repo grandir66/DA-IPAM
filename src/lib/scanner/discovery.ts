@@ -123,6 +123,11 @@ export function getScanProgress(id: string): ScanProgress | undefined {
   return getProgressMap().get(id);
 }
 
+/** Tutti i giri ancora in mappa, di ogni cliente: chi li mostra filtra con `giriDelCliente`. */
+export function elencaGiri(): ScanProgress[] {
+  return [...getProgressMap().values()];
+}
+
 /**
  * Registra un giro nel registro dei progressi, per chi non passa da
  * `discoverNetwork`: i profili di scansione (`scanner/profili/`), che girano in
@@ -692,6 +697,9 @@ export async function discoverNetwork(
       phase: "Inizializzazione",
       started_at: new Date().toISOString(),
       logs: [],
+      tenant_code: tenantCode,
+      etichetta: network.name,
+      link: `/networks/${networkId}`,
     };
 
     getProgressMap().set(id, progress);

@@ -33,7 +33,7 @@ function getProgressMap(): Map<string, ScanProgress> {
 
 let _deviceQueryCounter = 0;
 
-function createDeviceQueryProgress(deviceName: string, scanType: string): ScanProgress {
+function createDeviceQueryProgress(deviceId: number, deviceName: string, scanType: string): ScanProgress {
   const id = `devquery-${++_deviceQueryCounter}-${Date.now()}`;
   const progress: ScanProgress = {
     id,
@@ -46,6 +46,9 @@ function createDeviceQueryProgress(deviceName: string, scanType: string): ScanPr
     phase: `Connessione a ${deviceName}...`,
     started_at: new Date().toISOString(),
     logs: [],
+    tenant_code: getCurrentTenantCode() ?? undefined,
+    etichetta: deviceName,
+    link: `/devices/${deviceId}`,
   };
   getProgressMap().set(id, progress);
   return progress;
@@ -381,7 +384,7 @@ function avviaAcquisizioneModulare(
   if (!prendiLucchetto(deviceId)) {
     return NextResponse.json({ error: "Un'acquisizione con collector di questo apparato è già in corso" }, { status: 409 });
   }
-  const progress = createDeviceQueryProgress(device.name, `Collector ${fonte.collector} — ${device.name}`);
+  const progress = createDeviceQueryProgress(deviceId, device.name, `Collector ${fonte.collector} — ${device.name}`);
   const tenantCode = getCurrentTenantCode();
   const runTask = async () => {
     try {
@@ -477,7 +480,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       }
 
       if (tipo === "proxmox") {
-        const progress = createDeviceQueryProgress(device.name, `Proxmox VE — ${device.name}`);
+        const progress = createDeviceQueryProgress(deviceId, device.name, `Proxmox VE — ${device.name}`);
 
         const runTask = async () => {
           try {
@@ -503,7 +506,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       }
 
       // Crea progress e lancia task in background
-      const progress = createDeviceQueryProgress(device.name, `${scanLabel} — ${device.name}`);
+      const progress = createDeviceQueryProgress(deviceId, device.name, `${scanLabel} — ${device.name}`);
 
       const runTask = async () => {
         try {

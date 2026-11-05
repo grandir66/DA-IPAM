@@ -147,7 +147,10 @@ const PRODOTTI_DA_VERSIONE: ReadonlyArray<{
   { re: /vmware authentication daemon/i, vendor: "vmware", category: "compute.hypervisor", nome: "VMware authd" },
   { re: /\bsynology\b|diskstation/i, vendor: "synology", category: "storage.nas", nome: "Synology DSM" },
   { re: /\bqnap\b|qts\b/i, vendor: "qnap", category: "storage.nas", nome: "QNAP QTS" },
-  { re: /mikrotik|routeros/i, vendor: "mikrotik", category: "network.router", nome: "MikroTik RouterOS" },
+  /* RouterOS è un sistema operativo di rete, e lo dice il prodotto: senza questo `os` si
+   * cadeva sul banner di un'altra porta — i quattro MikroTik dell'hub hanno «Linux telnetd»
+   * sulla 23 e prendevano `linux` (scelta di Riccardo, 05/11/2026). */
+  { re: /mikrotik|routeros/i, vendor: "mikrotik", category: "network.router", os: "network-os", nome: "MikroTik RouterOS" },
   { re: /jetdirect|hp ethernet multi-environment/i, vendor: "hp", category: "peripheral.printer", nome: "HP JetDirect" },
   { re: /\bilo\b|integrated lights-out/i, vendor: "hpe", nome: "HPE iLO" },
   { re: /\bidrac\b/i, vendor: "dell", nome: "Dell iDRAC" },

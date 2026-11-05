@@ -55,6 +55,35 @@ stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTT
 - [ ] **Da decidere, stessa famiglia di problema**: anche `nmap -sV` tocca la 9100 (è in `ports.ts` e in
   `ALWAYS_USEFUL_TCP_PORTS`) e alcune sue sonde possono far stampare. Il foglio in mano a Riccardo è il nostro
   probe, non nmap, ma va guardato
+- [x] **Fatto col sì di Riccardo** (05/11): la 192.168.1.0/24 del 72729 è su **`completo-interno`**. Snapshot
+  `pre-profilo-20261105` della VM 100 sul nodo `pve` prima di toccare, tolto dopo la verifica. Fatto per la
+  strada dell'app (`resolveAssessmentForNetwork` + `/api/v1/networks/ensure` senza host, senza credenziali e
+  senza `targeting_mode`, poi `setNetworkAssessmentConfig`), non con una UPDATE a mano. Verificato su tutte e
+  due le parti: `networks.assessment_profile_id` = `completo-interno` nel database della sonda **e** in quello
+  di DA-IPAM; label, pianificazione e `host_count` invariati
+- [x] **Non era un difetto: l'aveva cambiato Riccardo a mano** (05/11), fuori dall'app. Per questo alle 10:40
+  DA-IPAM diceva `validation-plus` e la sonda eseguiva `smoke-interno`. Nel codice la copia locale si scrive in
+  **un punto solo** — `rememberAssessmentAcceptedByEdge` (`edge-subnet-bridge.ts:251`) — e **solo dopo** che
+  `/api/v1/networks/ensure` ha accettato: dalla pagina le due parti non possono separarsi
+- [x] **Fatto col sì di Riccardo** (05/11): il pannello dice quando le due copie non combaciano.
+  - Sonda (**ramo `claude/lookup-assessment-20261105` di DA-Vul-can, non su `main`**): `GET /api/v1/networks/lookup`
+    riporta `assessment_enabled` e `assessment_profile_id`. Prima quel valore usciva solo da un `PATCH`, che
+    scrive: non va bene per una lettura a ogni apertura del pannello. Additivo, un DA-IPAM vecchio lo ignora.
+    3 prove nuove, 2 viste fallire (`KeyError`); 513 prove della sonda verdi
+  - DA-IPAM: `confrontaAssessment` in `edge-profiles.ts` (puro), `assessment_sonda` in `EdgeSubnetStatus`, e
+    l'avviso nel pannello. Il confronto si fa su quello **salvato**, non su quello che si sta scegliendo, se no
+    lampeggia a ogni clic. Sonda che non lo dice = «non noto», nessun falso allarme. 6 prove, 2 guasti
+    introdotti apposta per vederle fallire. Cancello: lint 0, tsc 0, **7.216 prove, 0 fallite**, build 0
+  - Tolta dal lucchetto la voce per il file di prova delle descrizioni: era inutile, `sourceFiles` non entra
+    nei `__tests__`. Ce l'avevo messa io stamattina
+- [ ] **Resta da decidere**: il rilascio della sonda. Finché quel ramo non va su `main` di DA-Vul-can l'avviso
+  non può comparire (DA-IPAM non ha il dato). È un rilascio alle appliance e tocca un file che un'altra
+  sessione sta riscrivendo (`api_v1_ipam.py`, +169 righe sul ramo `claude/scansione-a-finestra-20261105`):
+  va coordinato con quella. **Decide Riccardo**
+- [x] Da sapere: alle 09:32 era partita una scansione (`scans.id` 4, profilo `fast`, `pending`): l'assessment
+  in coda a quella userà già `completo-interno`. E fra le 09:05 e le 10:40 il `targeting_mode` di **tutte e
+  due** le reti è passato da `full_subnet` a `found_ips` e la rete 1 ha cambiato label: non è stato questo
+  lavoro (la rete 1 non l'ho toccata), è lavoro fatto dalla pagina
 - [ ] **Da decidere**: la rete 192.168.1.0/24 del 72729 ha il profilo di assessment `smoke-interno`, che esegue
   solo `service-fp`. È il motivo per cui mancano tls-deep, snmp-enum, dns-enum e gli altri, non un guasto
 
@@ -185,7 +214,7 @@ installazione lo censisce (chiesto a Riccardo).
 - [x] Da sapere: su quei nodi `attr_vendor` resta il **produttore dell'hardware** letto dall'OUI (`shenzhen-meigao…`), non «proxmox» — l'OUI pesa 0.9 e batte `nmap_service` 0.85. È difendibile (la scatola è quella, Proxmox è il software) e la **categoria**, che è quello che conta per la classificazione, arriva giusta
 - [x] **Riccardo ha applicato «Attribuzione» su 79993-ipam-2 (05/11) e ha funzionato**: **PX-NAS `192.168.99.1` da `unknown` a `hypervisor`** / `compute.hypervisor` con produttore `proxmox` fra le evidenze, e **`192.168.99.71` RGSERVER ha preso `attr_os_family = windows`** (prima vuoto). Evidenze `nmap_service` in tutto 14: 5 router MikroTik (produttore + categoria), 1 hypervisor Proxmox, 1 windows, 1 network-os. Totali di quell'installazione: 69 host, 8 con famiglia OS, 16 con categoria, 52 `unknown`
 - [x] **Limite trovato proprio da questa verifica**: PX-NAS ha la categoria ma **non** la famiglia OS, e la colpa è di come ho scritto la regola — si fermo alla **prima** porta che nomina un prodotto noto (`break`), quindi legge la 3128 «Proxmox Virtual Environment» e non torna sulla 22, dove c'è «OpenSSH 10.0p2 Debian» che darebbe `linux`. Il sistema operativo va ricavato da **tutte** le versioni, indipendentemente dal prodotto riconosciuto: poche righe, ma va fatto e provato — **fatto 05/11**: produttore e categoria dalla prima porta con un prodotto, famiglia da tutte (prima l'OS dichiarato da un prodotto, poi il banner a confidenza 0.7). Verifica: `node --import tsx --test src/lib/attribution/__tests__/prodotto-da-versione.test.ts` → 16/16, con la prova di PX-NAS vista fallire prima del fix; `npm test` 7194/7198 (le tre note).
-- [ ] **Da decidere, piccola**: un MikroTik col banner «Linux telnetd» ora prende `linux`, non `network-os` (la voce `mikrotik` della tabella dei prodotti non dichiara un OS, quindi si cade sul banner). È letteralmente ciò che l'apparato dice e vale più di una cella vuota, ma se si preferisce `network-os` basta aggiungere `os: "network-os"` alla voce `mikrotik` in `emitters.ts`. Riguarda `192.168.40.165/167/168` e `192.168.4.171` dell'hub
+- [x] **Deciso da Riccardo (05/11): `network-os`.** Un MikroTik col banner «Linux telnetd» prendeva `linux` (la voce `mikrotik` della tabella dei prodotti non dichiara un OS, quindi si cade sul banner). È letteralmente ciò che l'apparato dice e vale più di una cella vuota, ma se si preferisce `network-os` basta aggiungere `os: "network-os"` alla voce `mikrotik` in `emitters.ts`. Riguarda `192.168.40.165/167/168` e `192.168.4.171` dell'hub — **fatto**: `os: "network-os"` nella voce `mikrotik` di `emitters.ts`. I quattro router dicono «MikroTik router ftpd 7.22» sulla 21, quindi il ramo del prodotto dichiarato vince sul banner della 23. Verifica: prova vista fallire prima del fix; cancello nel worktree pulito con esito 0 (tsc 0, lint 0 errori, 7215 prove, **0 rosse** — le due che pretendono `data/ipam.db` assente erano ambientali). Un router Linux che non nomina MikroTik resta `linux`, con la sua prova.
 - [ ] Da misurare quando Riccardo dice dove gira l'IPAM di `192.168.99.x`: quali script hanno risposto su `.2`, se `-O` ha avuto i privilegi (senza root degrada e lo scrive nel registro) e cosa è finito in `host_profilo_rilievi`
 
 ## 2026-11-05 — L'OS trovato da nmap non arriva alle tabelle (difetto, causa misurata)

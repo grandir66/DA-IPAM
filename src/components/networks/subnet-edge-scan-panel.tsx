@@ -33,7 +33,7 @@ import type {
   EdgeSubnetStatus,
   EdgeTargetingMode,
 } from "@/lib/vuln/edge-subnet-bridge";
-import { findEdgeProfile, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
+import { confrontaAssessment, findEdgeProfile, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
 import { contaModuli, descriviProfilo } from "@/lib/vuln/profili-assessment-testi";
 import { fetchJson } from "@/lib/fetch-json";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
@@ -281,11 +281,29 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const selectedProfileMissing = !!edgeProfileList && !!assessmentProfileId && !selectedProfile;
   /** Cosa fa il profilo scelto, in italiano: il catalogo dell'edge dà solo un'etichetta. */
   const descrizioneProfilo = selectedProfile ? descriviProfilo(selectedProfile) : null;
+  /**
+   * Il confronto si fa su quello SALVATO, non su quello che si sta scegliendo adesso:
+   * altrimenti l'avviso lampeggerebbe a ogni clic nella tendina.
+   */
+  const confrontoSonda = status
+    ? confrontaAssessment(
+        {
+          enabled: Boolean(status.assessment_enabled),
+          profileId: status.assessment_profile_id ?? null,
+        },
+        status.assessment_sonda,
+      )
+    : ({ stato: "non-noto" } as const);
   // Profilo salvato sulla rete che l'edge non ha (più): l'assessment dopo ogni
   // scansione, anche pianificata, fallirebbe sull'edge senza che qui si veda.
   const savedProfileId = status?.assessment_enabled ? status.assessment_profile_id : null;
   const savedProfileMissing =
     !!edgeProfileList && !!savedProfileId && !findEdgeProfile(edgeProfileList, savedProfileId);
+
+  /** «Completo interno» se acceso, «assessment spento» se no. */
+  function descriviLatoAssessment(c: { enabled: boolean; profileId: string | null }): string {
+    return c.enabled ? `«${profileLabel(c.profileId)}»` : "«assessment spento»";
+  }
 
   function profileLabel(id: string | null): string {
     if (!id) return "";
@@ -660,6 +678,18 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                         Trasferisci credenziali subnet allo scanner (SSH / WinRM / SNMP / AD)
                       </Label>
                     </div>
+                    {confrontoSonda.stato === "diversi" && (
+                      <p
+                        role="alert"
+                        className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs leading-snug text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-300"
+                      >
+                        <span className="font-medium">Profilo assessment fuori sincrono.</span> La
+                        sonda esegue {descriviLatoAssessment(confrontoSonda.sonda)}, qui risulta{" "}
+                        {descriviLatoAssessment(confrontoSonda.qui)}. A eseguire è quello della
+                        sonda; salvando o lanciando una scansione da qui, il suo viene riscritto con
+                        questo.
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <Switch
                         id={`edge-assessment-${networkId}`}

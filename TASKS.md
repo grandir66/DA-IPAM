@@ -121,6 +121,7 @@ devices». Valutazione scritta, niente codice: [`docs/revisione/2026-11-05-popol
   - Discovery: colonna «Da rivedere» (visibile di serie, in fondo alle 19 di prima), chip col conteggio vero, conferma in blocco; rotta `POST /api/hosts/conferma-rivisti`
 - [x] **Prova a vuoto sul 72729** (sola lettura, prima di scrivere niente): su 22 apparati con host, si riempirebbero **3 modelli e 1 seriale**, 0 firmware
 - [x] Cancello: lint 0, tsc 0, build 0, prove 7148/7153. Le 2 rosse sono **la coppia fragile già nota** (`data/ipam.db` che `npm test` ricrea): spostato il file, le due prove da sole fanno 14/14
+- [x] **Promossa su `main` col sì di Riccardo** (05/11): fast-forward `git push origin origin/dev:main`, `origin/main` = `origin/dev` = `a0234549` = **0.9.970**, verificato con `git ls-remote`. Il delta su main era un solo commit di codice (il mio) più i documenti; le appliance 70151 e 72729 erano sulla 0.9.969 e la prendono col loro timer entro ~15 min. Watcher in sottofondo che guarda `/api/health` (versione **e** uptime: `/api/version` cambia col pull, non col riavvio)
 - [ ] **Resa non vista a schermo**: la colonna e la chip sono verificate da tsc e dal build, non da un browser — in locale non ho un accesso all'app e sul 72729 sto in sola lettura. Da guardare al primo accesso di Riccardo
 
 - [ ] Il campione **lo deve lanciare Riccardo** dall'interfaccia del 72729: lì sono in sola lettura e non ho un accesso all'app

@@ -21,6 +21,10 @@ La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`),
 - I diritti stanno solo in `src/lib/credentials/diritti.ts`. `next dev` scrive un blocco in `AGENTS.md`: non va committato.
 - Collaudo su DC vero ancora da fare: `tokenGroups`, `getServerDomain`. Piano: `docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`.
 
+## Rilascio del 05/11/2026
+
+`main` = `dev` = `a0234549` = **0.9.970**, promossa col sì di Riccardo. Porta i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato), i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`), la decodifica delle entità XML nell'output degli script e la colonna «Da rivedere» in Discovery con chip e conferma in blocco. **Resa a schermo non vista** (nessun accesso all'app in locale, sola lettura sul 72729).
+
 ## Rilascio del 04/11/2026
 
 **Aggiornamento**: dalla sera del 04/11 `main` = `dev` = `5de093d5` = **0.9.969** (analisi di Edge fallite col motivo, pagina «Cosa serve»), col sì di Riccardo; 70151 verificata. Prima: `main` = `e27a4309` = **0.9.967**, promossa col sì di Riccardo (fast-forward `git push origin origin/dev:main`, verificato con `git ls-remote`), che porta la tab «Rilievi», l'accesso Windows automatico (WinRM/WMI) e il conteggio dei rilievi riallineato. **L'appliance 70151 è il peer NetBird `70151-ipam-2` (`100.107.145.24`), non `70151-ipam`**: col nome sbagliato il controllo sembra irraggiungibile.

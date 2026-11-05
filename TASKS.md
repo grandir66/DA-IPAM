@@ -1,5 +1,19 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Base richiesta per le scansioni (Riccardo)
+
+Riccardo (05/11), dopo il changelog del giorno. Sei parti; vale per DA-IPAM e per Edge in DA-Vul-can, la stessa voce sta nei due `TASKS.md`. Piano ancora da scrivere.
+
+1. **Gestione delle scansioni.** Tre modi: immediata, schedulata, a finestra. Immediate e schedulate escono verso IPAM e Vulcan appena finite; quelle a finestra quando è impostato. Ripartenze con lo stato di quanto fatto, per recuperare le scansioni parziali. Pagina dedicata che parte dalla scansione e sceglie le reti, non il contrario.
+2. **Motori.** nmap con più profili che producono indicazioni per assegnare i device e riconoscere OS e tutto il possibile. SNMP con le community di default sempre presenti. nuclei con profili efficaci e controlli per altri parametri.
+3. **Invii** efficaci verso IPAM e Vulcan.
+4. **Identificazione:** la via migliore per identificare i device e le loro vulnerabilità intrecciando i dati.
+5. **Credenziali note:** usare l'archivio delle credenziali note degli apparati per verificare la configurazione troppo fragile, via ssh, snmp, http, api.
+6. **Motori specifici (NUOVO):** verifica di vulnerabilità gravi, «ad esempio php2shell».
+
+- [ ] Da chiarire con Riccardo: cosa intende con «php2shell» e cosa vuol dire il punto 5
+- [ ] Scrivere il piano, una tappa per punto
+
 ## 2026-11-05 — Proposta: le scansioni non bloccano la pagina, bacheca dei giri
 
 Riccardo (05/11): a ogni scansione si apre un modale di avanzamento e non si può fare altro; «i job dovrebbero

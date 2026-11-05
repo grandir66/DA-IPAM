@@ -225,12 +225,35 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/**
+ * Il lucchetto vale per chi decide QUALI profili si possono scegliere: quelli si
+ * leggono dall'edge, non da una lista scritta qui. Le descrizioni in italiano sono
+ * un'altra cosa e per forza indicizzate per id: non costruiscono nessun elenco, e
+ * un id che non conoscono resta scegliibile e si descrive dai suoi moduli (prove in
+ * `profili-assessment-testi.test.ts`). Quei due file sono ammessi, e sotto si
+ * controlla che non si siano messi a fare da catalogo.
+ */
+const DESCRIZIONI_AMMESSE = [
+  "src/lib/vuln/profili-assessment-testi.ts",
+  "src/lib/vuln/__tests__/profili-assessment-testi.test.ts",
+];
+
 test("lucchetto: nessuna lista fissa di profili assessment nel codice (si leggono dall'edge)", () => {
   const vecchi = /["'`](smoke-interno|safe-interno|validation-plus|interno-approfondito)["'`]/;
   const colpevoli = sourceFiles(SRC)
-    .filter((f) => vecchi.test(readFileSync(f, "utf8")))
-    .map((f) => relative(process.cwd(), f));
+    .map((f) => relative(process.cwd(), f))
+    .filter((f) => !DESCRIZIONI_AMMESSE.includes(f))
+    .filter((f) => vecchi.test(readFileSync(f, "utf8")));
   assert.deepEqual(colpevoli, [], "id di profili scritti a mano: vanno letti da GET /api/v1/profiles dell'edge");
+});
+
+test("lucchetto: il file delle descrizioni non si mette a fare da catalogo", () => {
+  const testi = readFileSync(join(SRC, "lib/vuln/profili-assessment-testi.ts"), "utf8");
+  assert.doesNotMatch(
+    testi,
+    /\bprofiles\s*[:=]\s*\[/,
+    "le descrizioni non devono esporre un elenco di profili: la lista viene dall'edge"
+  );
 });
 
 test("lucchetto: la rotta dei profili chiede l'autenticazione per prima e lavora nel tenant della sessione", () => {

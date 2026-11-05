@@ -34,6 +34,7 @@ import type {
   EdgeTargetingMode,
 } from "@/lib/vuln/edge-subnet-bridge";
 import { findEdgeProfile, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
+import { contaModuli, descriviProfilo } from "@/lib/vuln/profili-assessment-testi";
 import { fetchJson } from "@/lib/fetch-json";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
@@ -252,6 +253,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const edgeProfileList = edgeProfiles.status === "ok" ? edgeProfiles.profiles : null;
   const selectedProfile = edgeProfileList ? findEdgeProfile(edgeProfileList, assessmentProfileId) : null;
   const selectedProfileMissing = !!edgeProfileList && !!assessmentProfileId && !selectedProfile;
+  /** Cosa fa il profilo scelto, in italiano: il catalogo dell'edge dà solo un'etichetta. */
+  const descrizioneProfilo = selectedProfile ? descriviProfilo(selectedProfile) : null;
   // Profilo salvato sulla rete che l'edge non ha (più): l'assessment dopo ogni
   // scansione, anche pianificata, fallirebbe sull'edge senza che qui si veda.
   const savedProfileId = status?.assessment_enabled ? status.assessment_profile_id : null;
@@ -658,6 +661,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                                   {edgeProfiles.profiles.map((p) => (
                                     <SelectItem key={p.id} value={p.id}>
                                       {p.label}
+                                      <span className="text-muted-foreground">· {contaModuli(p)}</span>
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -667,6 +671,27 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                                   Il profilo «{assessmentProfileId}» non esiste sull&apos;edge: scegline uno
                                   dell&apos;elenco, oppure disattiva l&apos;assessment.
                                 </p>
+                              )}
+                              {descrizioneProfilo && !selectedProfileMissing && (
+                                <div className="space-y-2 rounded-md border bg-muted/40 p-2.5">
+                                  <p className="text-xs leading-snug">{descrizioneProfilo.aCosaServe}</p>
+                                  {descrizioneProfilo.quando && (
+                                    <p className="text-xs leading-snug text-muted-foreground">
+                                      <span className="font-medium text-foreground">Quando:</span>{" "}
+                                      {descrizioneProfilo.quando}
+                                    </p>
+                                  )}
+                                  {descrizioneProfilo.moduli.length > 0 && (
+                                    <ul className="space-y-1 border-t pt-2">
+                                      {descrizioneProfilo.moduli.map((m, i) => (
+                                        <li key={`${m.nome}-${i}`} className="text-xs leading-snug">
+                                          <span className="font-medium">{m.nome}</span>
+                                          <span className="text-muted-foreground"> — {m.cosaFa}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
                               )}
                               {selectedProfile?.requires_authorization && (
                                 <p className="text-xs text-amber-700 dark:text-amber-400">

@@ -1,5 +1,27 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — I profili assessment vanno spiegati in pagina
+
+Riccardo (05/11): «oltre che spiegarli dovresti descriverli nella UI molto meglio». La tendina del pannello
+VA Scan mostrava solo le quattro etichette del catalogo dell'edge.
+
+- [x] Verificato che l'edge non ha niente da dare: `GET /api/v1/profiles` restituisce solo `id`, `label`,
+  `image`, `requires_authorization` e i **nomi** dei moduli (`services/profile_runner.py:50`). Nessuna
+  descrizione, nessun timeout, nessun «facoltativo». Quindi i testi stanno in DA-IPAM e si correggono con un
+  suo rilascio, senza toccare le appliance
+- [x] `src/lib/vuln/profili-assessment-testi.ts`: una riga per ogni profilo (a cosa serve + quando) e una per
+  ogni modulo, scritte leggendo il codice dei moduli della sonda, non inventate
+- [x] Pannello: ogni voce della tendina dice quanti moduli esegue; sotto, la scheda del profilo scelto con
+  l'elenco dei moduli e cosa fa ciascuno
+- [x] Ripiego non muto: profilo o modulo sconosciuto resta visibile col suo id e si dice che non è descritto
+- [x] Ristretto il lucchetto «nessuna lista fissa di profili» (`edge-profiles.test.ts`): vietava gli id scritti
+  a mano ovunque, ora ammette i due file delle descrizioni e in cambio controlla che lì non nasca un catalogo.
+  Prova nuova vista fallire aggiungendo un finto `profiles: [...]`
+- [x] Cancello verde: lint 0, tsc 0, **7.210 prove, 0 fallite**, build 0
+- [ ] **Resa a schermo non vista**: in questo repo non c'è un modo stabilito per guardare la pagina in locale
+  (niente Playwright, il pannello vuole accesso, tenant, rete ed edge configurato). Da guardare insieme sul
+  72729 dopo il rilascio
+
 ## 2026-11-05 — Le stampanti del 72729 stampano la richiesta del probe
 
 Riccardo (05/11), con la foto del foglio uscito dalle stampanti: «una qualche funzione eseguita ieri ha fatto

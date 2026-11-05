@@ -122,6 +122,10 @@ function osFamilyFromText(text: string): string | null {
   if (t.includes("mac os") || t.includes("macos") || t.includes("os x")) return "macos";
   if (t.includes("linux") || t.includes("ubuntu") || t.includes("debian") || t.includes("centos")) return "linux";
   if (t.includes("routeros") || t.includes("ios") || t.includes("junos") || t.includes("edgeos") || t.includes("vyos")) return "network-os";
+  /* ESXi e' una famiglia a se': lo dice `vmware-version` ("VMware ESXi 7.0.3")
+   * e anche l'impronta di nmap su un host 443. Prima cadeva in `null` e l'host
+   * restava senza famiglia pur avendo il nome giusto in `os_info`. */
+  if (t.includes("esxi") || t.includes("vmware esx")) return "esxi";
   return null;
 }
 

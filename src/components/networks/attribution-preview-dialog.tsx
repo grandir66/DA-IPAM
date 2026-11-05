@@ -180,6 +180,14 @@ export function AttributionPreviewDialog({ open, onOpenChange, networkId, onAppl
                 Nessun cambiamento: l&apos;attribuzione è già coerente con le evidenze raccolte
                 {total > 0 ? ` (${total} host valutati)` : ""}.
               </p>
+              {/* 05/11/2026: senza questa riga il messaggio si legge come «il pulsante non fa
+                  nulla». Un'evidenza debole da sola non cambia niente per scelta del motore,
+                  e il dato grezzo resta visibile nella colonna OS della lista. */}
+              <p className="text-xs">
+                Le scansioni aggiungono evidenze, ma una sola evidenza debole non basta a
+                cambiare una classificazione: il valore letto resta nella colonna «OS» della
+                lista, dove si vede anche quando la famiglia non è decisa.
+              </p>
             </div>
           ) : (
             <>

@@ -32,6 +32,10 @@ tempo per host, campi riempiti e classi, e si decide il giro largo; è anche la 
 per **guardare a schermo** la tab «Rilievi» e la colonna «Da rivedere», che nessuno ha ancora
 visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`.
 
+## Attribuzione: la soglia è aritmetica — 05/11/2026
+
+**Trappola da ricordare**: in `attribution/fuse.ts` un claim vince solo se `peso × confidenza ≥ MIN_CLAIM_SCORE` (0.56, in `types.ts`). Quindi una sorgente con peso < 0.56 **non può vincere da sola**, qualunque confidenza abbia: `nmap_os` a 0.5 lasciava senza sistema operativo ogni host che solo nmap conosceva (9 sul 72729, 31 su 378 sull'hub) pur avendo l'evidenza giusta in archivio. Portato a **0.85** (0.595), sotto smb (0.675), rdp_ntlm (0.81) e ad (0.95). Chi aggiunge una sorgente faccia il conto prima: e **0.8 × 0.7 in virgola mobile fa 0.5599999999999999**, cioè sotto soglia. Dove la famiglia non si decide, la lista della subnet e la colonna «OS» di Discovery (visibile di serie dal 05/11) mostrano il valore **grezzo**: «HP iLO 4 or iLO 5» non è una famiglia ma vale più di una cella vuota.
+
 ## Rilascio del 05/11/2026
 
 `main` = `dev` = `a0234549` = **0.9.970**, promossa col sì di Riccardo. Porta i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato), i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`), la decodifica delle entità XML nell'output degli script e la colonna «Da rivedere» in Discovery con chip e conferma in blocco. **Resa a schermo non vista** (nessun accesso all'app in locale, sola lettura sul 72729).

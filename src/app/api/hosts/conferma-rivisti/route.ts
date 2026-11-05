@@ -11,7 +11,7 @@
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { togliDaRivedere } from "@/lib/scanner/profili/propaga-apparato";
@@ -25,7 +25,10 @@ const Corpo = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await requireAuth();
+  /* Admin: conferma in blocco che tocca host e apparati di tutta la subnet. La prova
+   * del censimento delle rotte (`permessi/rotte-censite.test.ts`) lo chiede per ogni
+   * POST che scrive, e qui e' giusto: curare l'inventario non e' una lettura. */
+  const session = await requireAdmin();
   if (isAuthError(session)) return session;
 
   return withTenantFromSession(async () => {

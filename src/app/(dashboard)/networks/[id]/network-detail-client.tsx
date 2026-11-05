@@ -1662,11 +1662,28 @@ export function NetworkDetailClient({
                               <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
                             )}
                           </span>
-                          {(host.attr_vendor_name || host.attr_vendor || host.attr_os_family) ? (
-                            <span className="text-muted-foreground truncate max-w-[160px] block">
-                              {[host.attr_vendor_name || host.attr_vendor, host.attr_os_family].filter(Boolean).join(" · ")}
-                            </span>
-                          ) : null}
+                          {(() => {
+                            /* L'OS: la famiglia dell'attribuzione se c'è, altrimenti il nome
+                             * grezzo — quello che nmap o SNMP hanno letto (05/11/2026,
+                             * Riccardo: «non riporta alcun dato alle tabelle delle subnet»).
+                             * «HP iLO 4 or iLO 5» non è una famiglia, ma vale più di una cella
+                             * vuota: si mostra in corsivo per dire che non è normalizzato. */
+                            const vendor = host.attr_vendor_name || host.attr_vendor;
+                            const famiglia = host.attr_os_family;
+                            const grezzo = famiglia ? null : (host.attr_os_name || host.os_info);
+                            if (!vendor && !famiglia && !grezzo) return null;
+                            return (
+                              <span className="text-muted-foreground truncate max-w-[200px] block" title={[vendor, famiglia ?? grezzo].filter(Boolean).join(" · ")}>
+                                {[vendor, famiglia].filter(Boolean).join(" · ")}
+                                {grezzo && (
+                                  <>
+                                    {vendor ? " · " : ""}
+                                    <em className="not-italic opacity-80">{grezzo}</em>
+                                  </>
+                                )}
+                              </span>
+                            );
+                          })()}
                         </div>
                       ) : host.classification ? (
                         <Badge variant="outline">{getClassificationLabel(host.classification)}</Badge>

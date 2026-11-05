@@ -5,7 +5,20 @@ export const ATTR_SOURCE_WEIGHTS: Record<AttributionSource, number> = {
   snmp_sysobj: 0.95, snmp_sysdescr: 0.85, lldp: 0.9, cdp: 0.9,
   oui: 0.9, mac_product: 0.85, http_banner: 0.9, tls_cert: 0.85,
   wsd: 0.9, mdns: 0.8, ssdp: 0.75, smb: 0.75, ssh: 0.6, redfish: 0.95, onvif: 0.95,
-  fingerbank: 0.6, netbios: 0.5, nmap_os: 0.5, nmap_service: 0.5,
+  fingerbank: 0.6, netbios: 0.5, nmap_service: 0.5,
+  /* nmap_os 0.5 -> 0.8 (05/11/2026, difetto misurato sul 72729 e sull'hub).
+   * L'emettitore manda l'impronta di `-O` con confidenza 0.7: con peso 0.5 il
+   * punteggio era 0.5x0.7 = 0.35, sotto MIN_CLAIM_SCORE (0.56). Quindi un host
+   * di cui nmap conosce il sistema operativo — e solo nmap, come ogni Linux
+   * senza SMB — **non poteva mai** avere una famiglia OS: nemmeno con confidenza
+   * 1 (0.5 < 0.56). Sul 72729 nove host avevano l'evidenza `linux` e la colonna
+   * vuota; sull'hub sono 31 su 378.
+   * 0.8 NON basta: `0.8 * 0.7` in virgola mobile fa 0.5599999999999999, cioe'
+   * **sotto** la soglia — una prova scritta prima del codice l'ha preso. Quindi
+   * 0.85: punteggio 0.595, con margine. Resta **sotto** chi parla col sistema
+   * operativo: smb 0.75x0.9 = 0.675, rdp_ntlm 0.9x0.9 = 0.81, ad 1x0.95 = 0.95.
+   * Se nmap dice «linux» e SMB dice «windows», vince windows. */
+  nmap_os: 0.85,
   hostname: 0.35, ports: 0.3, dhcp: 0.3, ttl: 0.25, ai: 0.5,
   /* rdp_ntlm: come smb/http_banner, parla col sistema operativo e da' il nome
    * vero. ot_probe: una risposta s7-info/enip-info/bacnet-info identifica il

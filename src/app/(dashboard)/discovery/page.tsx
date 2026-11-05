@@ -221,7 +221,10 @@ const COLUMNS: ColumnDef[] = [
   { id: "ad_dns",          label: "AD DNS",          defaultVisible: false, group: "rete" },
   { id: "multihomed",      label: "MH",              defaultVisible: false, group: "rete" },
   { id: "detected",        label: "Rilevato",        defaultVisible: false, group: "rilevamento" },
-  { id: "os_info",         label: "OS",              defaultVisible: false, group: "rilevamento" },
+  /* Visibile di serie dal 05/11: l'OS letto da nmap/SNMP c'era in archivio e non si
+   * vedeva da nessuna parte (Riccardo). Chi ha già salvato le sue colonne non la vede
+   * comparire: le preferenze salvate vincono, si aggiunge da «Gestisci colonne». */
+  { id: "os_info",         label: "OS",              defaultVisible: true,  group: "rilevamento" },
   { id: "open_ports",      label: "Porte aperte",    defaultVisible: false, group: "rilevamento" },
   { id: "response_time",   label: "RTT (ms)",        defaultVisible: false, group: "rilevamento" },
   { id: "model",           label: "Modello",         defaultVisible: false, group: "dettaglio" },
@@ -2579,7 +2582,7 @@ export default function DiscoveryPage() {
                   ↻ {selectedIds.size > 50 ? `Scansione automatica… (50 su ${selectedIds.size})` : "Scansione automatica…"}
                 </Button>
               )}
-              {hosts.some((h) => selectedIds.has(h.id) && (h.campi_da_rivedere ?? "").trim() !== "") && (
+              {admin && hosts.some((h) => selectedIds.has(h.id) && (h.campi_da_rivedere ?? "").trim() !== "") && (
                 <Button
                   size="sm"
                   variant="outline"

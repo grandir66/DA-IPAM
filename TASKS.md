@@ -1,5 +1,32 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Le stampanti del 72729 stampano la richiesta del probe
+
+Riccardo (05/11), con la foto del foglio uscito dalle stampanti: «una qualche funzione eseguita ieri ha fatto
+stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTTP/1.1`, `Host: 192.168.0.134`,
+`User-Agent: DA-INVENT-probe/1.0`.
+
+- [x] **Causa**: in `src/lib/scanner/probes/http-tls.ts` la **9100** era fra le `CANDIDATE_PORTS` (e in
+  `run-probes.ts` fra le `WEB_PORTS`). Il probe apre la connessione in chiaro su ogni porta candidata aperta e
+  ci scrive la GET; la 9100 è JetDirect raw, quindi quei byte vengono stampati. I probe partono da
+  `discovery.ts:3606` per `scan_naabu`, `scan_nmap_base` e `network_discovery`
+- [x] **Misurato sul 72729** (sola lettura, dal Proxmox del cliente): `192.168.0.134` è `HP87CBC7`,
+  `inferred_device_type=printer`, con `9100/tcp jetdirect` aperta; sulla 192.168.0.0/24 sono **8 gli host con la
+  9100 aperta, tutte stampanti**. In `scan_history` c'è lo scan `nmap` del 04/11 alle 15 UTC e un
+  `network_discovery` del 05/11 alle 00 UTC
+- [x] **Non si perde niente togliendola**: la 9100 non è fra le `HTTPS_PORTS`, quindi va in chiaro; JetDirect
+  non risponde HTTP e senza certificato `probeOnePort` esce con `null`. Su quella porta il probe non ha mai
+  potuto produrre un finding
+- [x] **Corretto** su `claude/probe-9100-20261105`: 9100 tolta dalle due liste. Prove nuove viste fallire col
+  difetto presente — `http-tls.test.ts` misura i byte su un socket vero in ascolto sulla 9100 (**100 byte
+  scritti** prima, 0 dopo) e controlla che sulla 7080 la GET parta ancora; una prova in `run-probes.test.ts`
+  sulle porte passate al probe. Cancello verde: lint 0, tsc 0, **7.200 prove, 0 fallite**
+- [ ] **Da decidere, stessa famiglia di problema**: anche `nmap -sV` tocca la 9100 (è in `ports.ts` e in
+  `ALWAYS_USEFUL_TCP_PORTS`) e alcune sue sonde possono far stampare. Il foglio in mano a Riccardo è il nostro
+  probe, non nmap, ma va guardato
+- [ ] **Da decidere**: la rete 192.168.1.0/24 del 72729 ha il profilo di assessment `smoke-interno`, che esegue
+  solo `service-fp`. È il motivo per cui mancano tls-deep, snmp-enum, dns-enum e gli altri, non un guasto
+
 
 
 ## 2026-11-05 — Idea: scansione a finestra con IP casuali e nuovi tentativi

@@ -58,8 +58,11 @@ export interface ProbeHostInput {
   openPorts: number[];
 }
 
-/** Porte web note su cui ha senso tentare HTTP/TLS (spec §4.5 Task 1, stesso elenco di http-tls.ts). */
-const WEB_PORTS = new Set([80, 443, 8080, 8443, 9443, 7080, 8006, 5000, 5001, 631, 9100, 8000, 8081]);
+/**
+ * Porte web note su cui ha senso tentare HTTP/TLS (spec §4.5 Task 1, stesso elenco
+ * di http-tls.ts, 9100 esclusa: lì sopra c'è il perché).
+ */
+const WEB_PORTS = new Set([80, 443, 8080, 8443, 9443, 7080, 8006, 5000, 5001, 631, 8000, 8081]);
 const SMB_PORT = 445;
 /** Porte Redfish note (spec Fase 4b Task 1): 443 standard, 8443 fallback comune sui BMC. */
 const REDFISH_PORTS = [443, 8443] as const;

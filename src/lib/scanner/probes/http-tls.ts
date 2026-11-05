@@ -20,8 +20,15 @@ export interface HttpTlsFinding {
   tlsIssuer: string | null;
 }
 
-/** Porte web note su cui provare una GET (spec §4.5 Task 1). */
-const CANDIDATE_PORTS = [80, 443, 8080, 8443, 9443, 7080, 8006, 5000, 5001, 631, 9100, 8000, 8081] as const;
+/**
+ * Porte web note su cui provare una GET (spec §4.5 Task 1). **Mai la 9100**: è
+ * JetDirect raw, non parla HTTP e stampa su carta tutto ciò che le arriva — il
+ * 04/11/2026 le otto stampanti del 72729 hanno stampato la riga di richiesta del
+ * probe. Toglierla non costa niente: non essendo fra le `HTTPS_PORTS` non c'è
+ * nemmeno un certificato da leggere, quindi su quella porta il probe non ha mai
+ * potuto produrre un finding.
+ */
+const CANDIDATE_PORTS = [80, 443, 8080, 8443, 9443, 7080, 8006, 5000, 5001, 631, 8000, 8081] as const;
 
 /**
  * Porte convenzionalmente TLS per le famiglie di dispositivi target: Proxmox (8006),
@@ -201,8 +208,8 @@ async function probeOnePort(ip: string, port: number, timeoutMs: number): Promis
     const resp = await requestOverSocket(socket, ip, timeoutMs);
     if (!resp) {
       // Connessione riuscita ma nessuna risposta HTTP valida entro il timeout (es.
-      // porta non-HTTP come 9100/JetDirect raw): se comunque abbiamo il certificato
-      // TLS, e' gia' un'evidenza utile.
+      // una porta web nota occupata da un servizio che HTTP non lo parla): se
+      // comunque abbiamo il certificato TLS, e' gia' un'evidenza utile.
       if (tlsSubjectCn || tlsIssuer || tlsSan.length > 0) {
         return { port, scheme, server: null, title: null, realm: null, location: null, tlsSubjectCn, tlsSan, tlsIssuer };
       }

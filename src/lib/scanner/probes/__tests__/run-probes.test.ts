@@ -64,6 +64,19 @@ describe("runAttributionProbes — gating", () => {
     assert.equal(httpCalls, 0);
   });
 
+  it("la 9100 non arriva mai al probe HTTP: è JetDirect raw e stampa su carta (stampanti del 72729, 04/11/2026)", async () => {
+    let porteViste: number[] | null = null;
+    const deps = baseDeps({
+      httpTls: async (_ip, porte) => {
+        porteViste = porte;
+        return [];
+      },
+    });
+    const r = await runAttributionProbes(1, [host(1, [80, 631, 9100, 8080])], { deps });
+    assert.equal(r.hostsProbed, 1);
+    assert.deepEqual(porteViste, [80, 631, 8080]);
+  });
+
   it("host senza porte aperte non viene probato (gate 3)", async () => {
     const deps = baseDeps();
     const r = await runAttributionProbes(1, [host(1, []), host(2, [80])], { deps });

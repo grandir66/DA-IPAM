@@ -44,7 +44,7 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 `192.168.40.165/167/168` e `192.168.4.171` passano da `linux` a `network-os` (dalla 21, «MikroTik router ftpd 7.22»),
 i nodi Proxmox della `192.168.16.x` restano `linux`. Cancello nel worktree pulito con esito **0** e **0 prove rosse**:
 le due che pretendono `data/ipam.db` assente erano ambientali, nell'albero principale è la corsa stessa a ricrearlo.
-**Non ancora su `main`.**
+**Promossa su `main` col sì di Riccardo il 05/11: `main` = `dev` = `f103bf34` = 0.9.976**, fast-forward verificato con `git ls-remote` su entrambi i rami (dentro va anche il pannello che dice se il profilo assessment è fuori sincrono, di un'altra sessione: la promozione porta la punta di `dev`).
 
 **0.9.974 su `dev`** (`30926e2f`, hub 533 aggiornata e sana): il sistema operativo si ricava da **tutte** le
 stringhe di versione delle porte, non solo dalla prima che nomina un prodotto noto. Produttore e categoria

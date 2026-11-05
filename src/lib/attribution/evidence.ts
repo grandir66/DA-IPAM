@@ -46,9 +46,16 @@ export function recordEvidence(
     `SELECT id, claim, raw_value FROM attribution_evidence
      WHERE host_id = ? AND source = ? AND dimension = ? AND superseded_by IS NULL`
   );
+  /* Il peso si riscrive a ogni refresh (05/11/2026). E' una proprieta' della
+   * SORGENTE, non dell'osservazione: sta in `ATTR_SOURCE_WEIGHTS` e la riga ne e'
+   * solo una copia. Prima il refresh lasciava il peso vecchio, quindi cambiare la
+   * tabella dei pesi non aveva effetto sulle righe gia' in archivio: il 05/11
+   * `nmap_os` e' passato da 0.5 a 0.85 e le evidenze esistenti — identiche, quindi
+   * sempre refreshate — avrebbero tenuto 0.5 per sempre, lasciando il difetto in
+   * piedi («il detect dell'OS non arriva in tabella»). */
   const refresh = dbh.prepare(
     `UPDATE attribution_evidence
-     SET observed_at = datetime('now'), confidence = ?, expires_at = ? WHERE id = ?`
+     SET observed_at = datetime('now'), confidence = ?, weight = ?, expires_at = ? WHERE id = ?`
   );
   const insert = dbh.prepare(
     `INSERT INTO attribution_evidence
@@ -93,7 +100,7 @@ export function recordEvidence(
         const identical =
           existing !== undefined && (existing.raw_value ?? null) === (input.raw_value ?? null);
         if (identical) {
-          refresh.run(input.confidence, normalizeExpiresAt(input.expires_at), existing.id);
+          refresh.run(input.confidence, weight, normalizeExpiresAt(input.expires_at), existing.id);
           result.refreshed += 1;
           winnerIdByClaim.set(input.claim, existing.id);
           lastWinnerId = existing.id;

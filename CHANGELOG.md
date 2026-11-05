@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Corretto**: il peso di un'evidenza si riscrive quando la scansione la rivede. È una proprietà della sorgente, non della singola osservazione: prima restava quello del giorno in cui la riga era nata, quindi cambiare i pesi del motore non aveva effetto su ciò che era già in archivio — e la correzione dell'OS qui sopra sarebbe rimasta inerte su tutti gli host già scansionati.
+
 - **Corretto, cosa vede il cliente**: il sistema operativo che nmap riconosce ora arriva in tabella. Il dato c'era in archivio e l'evidenza anche, ma il motore della classificazione le dava un peso tale che **da sola non poteva mai** decidere una famiglia (0,5 × 0,7 = 0,35 contro una soglia di 0,56): così ogni Linux senza SMB restava senza sistema operativo. Sul 72729 erano 9 host, sull'hub 31 su 378. Il peso dell'impronta nmap passa a 0,85 — sopra la soglia, ma sotto chi parla davvero col sistema operativo: se SMB o RDP dicono Windows e nmap dice Linux, vince Windows.
 - **Nuovo**: nella lista di una subnet, dove la famiglia non è decisa si legge l'OS **grezzo** («HP iLO 4 or iLO 5», «Crestron XPanel control system»): vale più di una cella vuota. In Discovery la colonna «OS» è visibile di serie (chi ha già salvato le sue colonne la aggiunge da «Gestisci colonne»).
 - **Nuovo**: VMware ESXi è riconosciuto come famiglia a sé dal testo del sistema operativo.

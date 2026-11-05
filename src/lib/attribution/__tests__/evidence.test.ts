@@ -3,6 +3,7 @@ import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
 import { recordEvidence, getActiveEvidence, retireStaleEvidence, normalizeExpiresAt } from "../evidence";
+import { ATTR_SOURCE_WEIGHTS } from "../weights";
 
 let db: Database.Database;
 beforeEach(() => {
@@ -23,6 +24,24 @@ describe("recordEvidence", () => {
     const rows = getActiveEvidence(db, 1);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].weight, 0.9); // ATTR_SOURCE_WEIGHTS.oui
+  });
+  it("il refresh riscrive il peso dalla tabella delle sorgenti", () => {
+    /* 05/11/2026: il peso e' della sorgente, non dell'osservazione. Prima il refresh
+     * lo lasciava com'era, quindi alzare `nmap_os` da 0.5 a 0.85 non avrebbe toccato
+     * nessuna delle righe gia' in archivio e il difetto dell'OS mancante sarebbe
+     * rimasto in piedi dopo il rilascio. */
+    const input = {
+      source: "nmap_os" as const, phase: "scan_nmap_base" as const, dimension: "os" as const,
+      claim: "linux", confidence: 0.7, raw_value: "Linux 3.2 - 3.8",
+    };
+    recordEvidence(db, 1, [input]);
+    // la riga nasce col peso di oggi, poi la invecchio a mano come se fosse di ieri
+    db.prepare("UPDATE attribution_evidence SET weight = 0.5 WHERE host_id = 1").run();
+    const r = recordEvidence(db, 1, [input]);
+    assert.equal(r.refreshed, 1);
+    const rows = getActiveEvidence(db, 1);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].weight, ATTR_SOURCE_WEIGHTS.nmap_os);
   });
   it("ri-emissione identica → refresh, non duplicato", () => {
     const input = { source: "oui" as const, phase: "scan_icmp" as const, dimension: "vendor" as const, claim: "ubiquiti", confidence: 0.9, raw_value: "Ubiquiti Inc" };

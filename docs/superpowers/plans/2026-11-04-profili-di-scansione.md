@@ -15,7 +15,7 @@ abilitabile solo su determinati device selezionati dentro a subnet».
 leggero, vorrei avere la funzione disponibile al più presto»). Prove a fine tappa, cancello
 una volta sola alla fine. La checklist viva sta in `TASKS.md`, non qui.
 
-**Stato:** tappa 1 fatta · **Ultimo aggiornamento:** 2026-11-04
+**Stato:** completato (tappa 1 e tappa 2) · **Ultimo aggiornamento:** 2026-11-05
 
 ## Cosa c'era prima (misurato, non supposto)
 
@@ -85,3 +85,74 @@ sono più eccezioni: il giro torna, ed è il punto).
 **Consigli per la tappa 2**: tab dei rilievi nella scheda; misura del costo su una rete vera;
 collaudo sulla rete di impianto del 72729 quando torna raggiungibile (oggi 192.168.2.0/24
 tace, aperto in TASKS); valutare `http-favicon` come impronta per riconoscere i modelli.
+
+## Consuntivo della tappa 2 — 05/11/2026
+
+**Stato:** completato. Due rilasci: **0.9.967** (i rilievi si vedono) e **0.9.970** (si leggono
+tre script in più e riempiono anche l'apparato), entrambi su `dev` e promossi su `main` col sì
+di Riccardo; le appliance 70151 e 72729 verificate dal riavvio (`/api/health`, versione e uptime).
+
+**Fatto**
+
+- Tab **«Rilievi»** nella scheda (`components/scheda/tab-rilievi.tsx`, rotta
+  `GET /api/hosts/[id]/profilo-rilievi`, `profili/campi-scheda.ts`): tabella dei campi
+  significativi — campo, valore, script e porta, quando — che riusa `fattiDaScript`, la stessa
+  lettura della scrittura, quindi non può divergere. Compare solo con almeno un rilievo.
+  Commit `1d9d2855`, rilascio `4b7ed120`.
+- **Tre script che prima si buttavano** (`lettura.ts`): `snmp-info` (produttore e, solo con
+  `engineIDFormat: text`, il seriale), `vmware-version` (versione e build di ESXi),
+  `ldap-rootdse` (dominio e nome del DC). Fixture dai dati **veri** del 72729.
+- **Difetto trovato leggendo i dati veri**: l'output degli script arriva con le entità XML non
+  decodificate (`&#xa;` invece di una riga nuova), perché sta in un attributo. `snmp-sysdescr`
+  restituiva tutto l'output come una riga sola e `upnp-info` non trovava niente dopo la prima
+  riga: era un difetto vivo della tappa 1, non una regressione. Ora c'è `testo()` e vale anche
+  per i rilievi già in archivio.
+- **Propagazione all'apparato** (`profili/propaga-apparato.ts`): `model`, `serial_number`,
+  `firmware` sull'apparato dell'host, **solo dove è vuoto**, seriale validato con
+  `eSerialeFinto` perché è la chiave degli apparati fisici; `soloProva` per la prova a vuoto.
+- **Colonna «Da rivedere»** in Discovery con chip e conferma in blocco
+  (`POST /api/hosts/conferma-rivisti`), colonne `campi_da_rivedere` su `hosts` e
+  `network_devices` (`assicuraColonneDaRivedere`, additiva). Commit `d0c82308`, rilascio
+  `aed13e3a`.
+- **23 prove nuove** (13 sui tre script, 10 sulla propagazione), viste fallire prima di passare.
+  Cancello: lint 0, tsc 0, build 0, 7148/7153 prove.
+
+**Misure sul campo (72729, sola lettura, entrando dal Proxmox del cliente)**
+
+- 105 rilievi su 13 host; 12 nomi, 12 sistemi operativi, 13 produttori riempiti.
+- Il profilo IoT/OT **ha determinato una categoria**: host 46 e 49 (`192.168.0.106` e `.105`)
+  da «nessuna categoria, confidenza 0» a **`ot` con confidenza 66** alle 16:51 del 04/11, per
+  l'evidenza `ot_probe` (porta 502 aperta). L'OUI Microchip da solo non classificava.
+- Prova a vuoto della propagazione: su 22 apparati con host, 3 modelli e 1 seriale.
+- Migrazione verificata sull'appliance dopo il rilascio: le due colonne ci sono, 0 righe segnate.
+
+**Mancante / non verificato**
+
+- **Resa a schermo mai vista**, né la tab né la colonna: in locale non c'è un accesso all'app e
+  sul 72729 vale la sola lettura. Verificate da tsc, build e prove.
+- Il profilo non è ancora girato dove serve: sui 45 `unknown`, 18 `iot`, 11 `hmi` e 8 `rete_ot`
+  del 72729 i rilievi sono **zero** (valutazione in `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`).
+  Riccardo ha deciso: prima un **campione di 5 host**, che lancia lui.
+- Costo per host con `--version-intensity 7` ancora non misurato; forma dell'output degli script
+  di campo (`s7-info`, `enip-info`, `bacnet-info`, `omron-info`) ancora solo su fixture.
+- I rilievi **grezzi** (`elems_json`, `output`) non hanno nessuna pagina: rimandato.
+
+**Scostamenti dal piano**
+
+- La revisione dei dati scritti dai profili doveva essere una **proposta per campo** nella
+  scheda, come per l'assegnatario. Riccardo (05/11) ha deciso diversamente: si riempie quanto è
+  vuoto e si guarda **dalla tabella** di Discovery con un segno «da rivedere». Meno clic e
+  niente 64 schede da aprire.
+- Degli script da aggiungere si parte da tutti e tre, non dal solo `snmp-info`: sono funzioni
+  pure, il costo stava nelle prove e non nel rischio.
+
+**Consigli di sviluppo**
+
+- Leggere anche i banner web (`http-server-header`, `http-headers`, `banner`): 15 host su 13
+  del giro del 72729 li hanno dati e oggi finiscono fra gli script senza campi. Stringhe da
+  normalizzare, quindi una tappa a sé.
+- Sistemare le due prove che pretendono `data/ipam.db` assente senza prepararselo: oggi il
+  cancello pieno ha due rosse che non dipendono dal codice (lezione #8).
+- Valutare un bersaglio «almeno questa versione» per l'aggiornatore delle sonde: con
+  `SOLO_SU_COMANDO=1` e un numero esatto, due rilasci ravvicinati fanno mancare il treno (è
+  successo due volte il 04/11 col 72729).

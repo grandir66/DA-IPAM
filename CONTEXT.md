@@ -21,6 +21,17 @@ La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`),
 - I diritti stanno solo in `src/lib/credentials/diritti.ts`. `next dev` scrive un blocco in `AGENTS.md`: non va committato.
 - Collaudo su DC vero ancora da fare: `tokenGroups`, `getServerDomain`. Piano: `docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`.
 
+## Ripartenza (05/11/2026)
+
+Il lavoro sui profili è **chiuso e rilasciato** (piano `plans/2026-11-04-profili-di-scansione.md`,
+«Consuntivo della tappa 2»): `main` = `dev` = 0.9.970, appliance 70151 e 72729 verificate.
+Resta **un passo che tocca a Riccardo**: lanciare dall'interfaccia del 72729 un profilo
+(Approfondito + IoT/OT) su un **campione di 5 host** fra `hmi` e `unknown` con porte aperte —
+sua decisione del 05/11, prima del giro largo sui ~64 indecisi. Appena è girato si misurano
+tempo per host, campi riempiti e classi, e si decide il giro largo; è anche la prima occasione
+per **guardare a schermo** la tab «Rilievi» e la colonna «Da rivedere», che nessuno ha ancora
+visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`.
+
 ## Rilascio del 05/11/2026
 
 `main` = `dev` = `a0234549` = **0.9.970**, promossa col sì di Riccardo. Porta i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato), i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`), la decodifica delle entità XML nell'output degli script e la colonna «Da rivedere» in Discovery con chip e conferma in blocco. **Resa a schermo non vista** (nessun accesso all'app in locale, sola lettura sul 72729).

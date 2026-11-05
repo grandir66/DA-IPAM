@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "Accesso Windows automatico: collaudo sul 72729 con l'account dedicato, provare i gruppi su un DC vero; assegnatari da AD e VLAN switch restano aperti"
+prossimo: "Profili di scansione: Riccardo lancia il campione di 5 host sul 72729, poi si decide il giro sui ~64 indecisi; accesso Windows automatico: collaudo sul 72729 con l'account dedicato e gruppi su un DC vero; assegnatari da AD e VLAN switch restano aperti"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

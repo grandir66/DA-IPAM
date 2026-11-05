@@ -104,6 +104,23 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-05 — Chiusura della sessione «profili di scansione»
+
+Consuntivo nel piano [`plans/2026-11-04-profili-di-scansione.md`](docs/superpowers/plans/2026-11-04-profili-di-scansione.md),
+sezione «Consuntivo della tappa 2»; **Stato: completato**. `main` = `dev` = **0.9.970**, appliance
+70151 e 72729 verificate dal riavvio. «Ripartenza» in `CONTEXT.md`, `prossimo` nella scheda-mappa.
+
+Resta aperto, in ordine di chi lo deve fare:
+
+- [ ] **Riccardo**: lanciare dall'interfaccia del 72729 il profilo (Approfondito + IoT/OT) su un **campione di 5 host** fra `hmi` e `unknown` con porte aperte. Poi si misura e si decide il giro sui ~64 indecisi
+- [ ] **Da guardare a schermo**: tab «Rilievi» e colonna «Da rivedere» (nessuno le ha ancora viste rese; verificate da tsc, build e prove)
+- [ ] Banner web (`http-server-header`, `http-headers`, `banner`) come tappa a sé: stringhe da normalizzare
+- [ ] Le due prove che pretendono `data/ipam.db` assente senza prepararselo (lezione #8): il cancello pieno ha due rosse che non dipendono dal codice
+- [ ] Costo per host del profilo con `--version-intensity 7`: mai misurato
+- [ ] Script di campo (`s7-info`, `enip-info`, `bacnet-info`, `omron-info`) provati solo su fixture: nessun PLC raggiungibile, la rete di impianto del 72729 (192.168.2.0/24) ha 0 host
+- [ ] Rilievi **grezzi** senza pagina: rimandato
+- [ ] Lato DA-Vul-can (non qui): il guardiano ferma scansioni ancora attive; `openvas.log` in DEBUG cresce di 2 GB a scansione; valutare un bersaglio «almeno questa versione» per l'aggiornatore delle sonde
+
 ## 2026-11-05 — Valutazione: popolare la tabella degli IP e quella degli apparati
 
 Riccardo: «andrebbe valutato come usare i dati acquisiti per popolare la tabella degli ip e dei

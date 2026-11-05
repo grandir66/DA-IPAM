@@ -50,7 +50,8 @@ Riccardo (05/11): per i clienti con DA-IPAM e scansione attiva, le credenziali r
 
 - [x] Misurato sul 72729, 05/11 18:57: qui 1 voce `ad`, 2 `snmp`, 1 `windows` e 3 legami con le reti; su Edge tutti gli slot vuoti. Conferma la voce «le credenziali della subnet non arrivano alla sonda»
 - [ ] Da controllare qui: quali voci stanno nei 3 legami e se `collectEdgeCredentialsForNetwork` produce davvero righe `smb` e `ad`. Una voce di tipo `ad` non è detto che entri nella catena `windows`
-- [x] Pannello della rete: l'esito si vede, un legame mancante si rimanda col job di sincronia, una volta al giorno al massimo (`edge-credenziali-esito.ts`, 7 prove). Su `dev` (`9ffaf63c`), **non su `main`**: al 72729 non è arrivato. Riquadro del pannello non guardato a schermo
+- [x] Pannello della rete: l'esito si vede, un legame mancante si rimanda col job di sincronia, una volta al giorno al massimo (`edge-credenziali-esito.ts`, 7 prove). `main` = `dev` = `7af846ef` = 0.9.981, promossa col sì di Riccardo il 06/11 dopo tipi, lint, 7311 prove e build verdi; 72729 e 70151 verificate da `/api/health`. Riquadro del pannello non guardato a schermo
+- [ ] Da guardare: al primo giro del job di sincronia le reti con un legame mancante accendono Greenbone per scriverlo (72729 compreso, nessuna scansione). Vedere sul 72729 che lo slot `snmp` si riempia e che `credentials.falliti` resti vuoto
 
 ## 2026-11-05 — OWASP Top 10 (Riccardo)
 

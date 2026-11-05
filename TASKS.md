@@ -25,13 +25,7 @@ autenticate**, per due motivi distinti.
   (`network_credentials`: reti 1,2,3 → cred 1). Le credenziali `ad` e `WinRM` esistono (`credentials` id 2 e 3)
   ma **non sono legate** a nessuna rete, quindi non partono. Per Windows/share e Linux servono SSH e Windows
   legate alle reti — sono le credenziali «ridotte al minimo» che decide Riccardo
-- [x] **Bug (sonda, DA-Vul-can)**: anche la sola SNMP che parte **fallisce** su Greenbone
-  (`Credential could not be created by admin`, gvmd, 05/11 09:35 e 09:49). Causa trovata nel codice:
-  `infra/scanner-edge/app/scanner_edge/services/greenbone.py:531` manda
-  `<type>snmp</type><community>…</community><snmp_algorithm>none</snmp_algorithm>`. **`<snmp_algorithm>` non è
-  un elemento GMP valido**: la specifica vuole `<auth_algorithm>` con valore `sha1`/`md5`, **obbligatorio** per
-  il tipo snmp (confermato su python-gvm / forum Greenbone). gvmd ignora l'elemento ignoto, non trova auth
-  valido, rifiuta. Per questo `snmp_credential_id` resta null sulla sonda
+- [x] **Bug (sonda, DA-Vul-can)**: la sola SNMP che parte veniva persa da Greenbone a ogni invio. Corretto in Edge 0.8.249, su tutte le sonde tranne DOMARC. La causa non era `auth_algorithm`
 - [-] Fix `auth_algorithm` annullato il 05/11: `<snmp_algorithm>` è ignorato, ma SNMP si crea lo stesso su gvmd vero (79993-ipam-2). Il rifiuto era `Credential name exists already`: causa e correzione in `DA-Vul-can/TASKS.md`, «Credenziali registrate usate dalle scansioni»
 - [ ] Finché (bug) e (config) non sono risolti, il «quadro completo» resta la fotografia **non autenticata**:
   già utile (11 Critical, 35 High, ESXi EOL su 192.168.0.6, FTP, TLS deboli, default-cred trovate da Greenbone)
@@ -52,7 +46,7 @@ Riccardo (05/11): per i clienti con DA-IPAM e scansione attiva, le credenziali r
 
 - [x] Misurato sul 72729, 05/11 18:57: qui 1 voce `ad`, 2 `snmp`, 1 `windows` e 3 legami con le reti; su Edge tutti gli slot vuoti. Conferma la voce «le credenziali della subnet non arrivano alla sonda»
 - [ ] Da controllare qui: quali voci stanno nei 3 legami e se `collectEdgeCredentialsForNetwork` produce davvero righe `smb` e `ad`. Una voce di tipo `ad` non è detto che entri nella catena `windows`
-- [ ] `edge-subnet-bridge.ts`: l'esito della sincronia va mostrato nel pannello della rete. Oggi `credentials_pending` non torna mai con un risultato
+- [x] Pannello della rete: l'esito si vede, un legame mancante si rimanda col job di sincronia, una volta al giorno al massimo (`edge-credenziali-esito.ts`, 7 prove). Su `dev` (`9ffaf63c`), **non su `main`**: al 72729 non è arrivato. Riquadro del pannello non guardato a schermo
 
 ## 2026-11-05 — OWASP Top 10 (Riccardo)
 

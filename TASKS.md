@@ -1,5 +1,20 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Le stampanti del 72729 stampano ancora: template nuclei sulla 9100
+
+Riccardo (05/11, ~18:55): «in questo momento 72729 ha stampato ancora cose». La correzione del probe (voce «Le stampanti del 72729 stampano la richiesta del probe») non basta: c'era una seconda fonte. Non è in DA-IPAM: dettaglio e passi in `DA-Vul-can/TASKS.md`, stesso titolo.
+
+- [x] Fonte quasi certa: il template nuclei `CVE-2022-24706` scrive sulla 9100 a ogni giro. Tolto a mano dalla sonda 72729 il 05/11 alle 18:57, spostato in `nuclei-templates/sospesi-20261105/`
+- [ ] Correzione vera e rilascio alle sonde: in DA-Vul-can
+
+## 2026-11-05 — Credenziali registrate usate dalle scansioni (Riccardo)
+
+Riccardo (05/11): per i clienti con DA-IPAM e scansione attiva, le credenziali registrate si potranno usare per la scansione. Esempio: il 72729 ha credenziali SNMP e AD, da usare con Greenbone e nuclei. Analisi completa in `DA-Vul-can/TASKS.md`, stesso titolo.
+
+- [x] Misurato sul 72729, 05/11 18:57: qui 1 voce `ad`, 2 `snmp`, 1 `windows` e 3 legami con le reti; su Edge tutti gli slot vuoti. Conferma la voce «le credenziali della subnet non arrivano alla sonda»
+- [ ] Da controllare qui: quali voci stanno nei 3 legami e se `collectEdgeCredentialsForNetwork` produce davvero righe `smb` e `ad`. Una voce di tipo `ad` non è detto che entri nella catena `windows`
+- [ ] `edge-subnet-bridge.ts`: l'esito della sincronia va mostrato nel pannello della rete. Oggi `credentials_pending` non torna mai con un risultato
+
 ## 2026-11-05 — OWASP Top 10 (Riccardo)
 
 - [ ] Riccardo (05/11): implementare, per quanto possibile, la logica OWASP Top 10. Task 13 del piano `2026-11-05-base-scansioni.md` in DA-Vul-can

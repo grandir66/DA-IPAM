@@ -5,7 +5,8 @@
 Riccardo (05/11, ~18:55): «in questo momento 72729 ha stampato ancora cose». La correzione del probe (voce «Le stampanti del 72729 stampano la richiesta del probe») non basta: c'era una seconda fonte. Non è in DA-IPAM: dettaglio e passi in `DA-Vul-can/TASKS.md`, stesso titolo.
 
 - [x] Fonte quasi certa: il template nuclei `CVE-2022-24706` scrive sulla 9100 a ogni giro. Tolto a mano dalla sonda 72729 il 05/11 alle 18:57, spostato in `nuclei-templates/sospesi-20261105/`
-- [ ] Correzione vera e rilascio alle sonde: in DA-Vul-can
+- [x] Causa confermata dalla foto del foglio. Correzione in DA-Vul-can 0.8.244, sonde aggiornate il 05/11
+- [ ] 72729 resta a 0.8.239 finché non finisce il giro in corso: lo protegge il template spostato. Dopo si chiede la versione da DA-Link
 
 ## 2026-11-05 — Credenziali registrate usate dalle scansioni (Riccardo)
 

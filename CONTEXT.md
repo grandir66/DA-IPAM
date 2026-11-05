@@ -38,6 +38,8 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Rilascio del 05/11/2026
 
+`main` = `dev` = `77854eb7` = **0.9.972**, promossa col sì di Riccardo (la 0.9.970 e la 0.9.971 sono dentro). Porta: i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato) e la colonna «Da rivedere» in Discovery; i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`) e la decodifica delle entità XML; **l'OS visto da nmap che arriva in tabella** (peso `nmap_os` 0.5 → 0.85, vedi la trappola della soglia qui sopra) con l'OS grezzo mostrato dove la famiglia non si decide; il peso dell'evidenza che si riscrive al refresh, senza cui la correzione sarebbe stata inerte sugli host già scansionati. Nella 0.9.970 `POST /api/hosts/conferma-rivisti` era uscita con la sola autenticazione invece di admin: corretta nella 0.9.971. **Resa a schermo non vista.**
+
 `main` = `dev` = `a0234549` = **0.9.970**, promossa col sì di Riccardo. Porta i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato), i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`), la decodifica delle entità XML nell'output degli script e la colonna «Da rivedere» in Discovery con chip e conferma in blocco. **Resa a schermo non vista** (nessun accesso all'app in locale, sola lettura sul 72729).
 
 ## Rilascio del 04/11/2026

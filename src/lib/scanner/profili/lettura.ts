@@ -48,6 +48,36 @@ function pulito(v: string | undefined): string | undefined {
   return t;
 }
 
+/**
+ * Il testo di uno script arriva dall'attributo XML `@_output`, e là fast-xml-parser
+ * lascia le entita' numeriche come sono: una riga nuova e' `&#xa;`, non "\n"
+ * (misurato il 05/11/2026 sui rilievi veri del 72729). Senza decodificarle
+ * `split("\n")[0]` restituisce tutto l'output come una riga sola e un `([^\n]+)`
+ * si mangia il resto del testo: per questo ogni caso che legge l'output passa da qui.
+ */
+function testo(output: string | null | undefined): string {
+  if (!output) return "";
+  return output
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** `DC=sanfrancesco,DC=local` -> `sanfrancesco.local`; qualunque altra forma, niente. */
+function dnADominio(dn: string | undefined): string | undefined {
+  const t = pulito(dn);
+  if (!t) return undefined;
+  const pezzi = t
+    .split(",")
+    .map((p) => p.trim().match(/^dc=([a-z0-9][a-z0-9-]*)$/i)?.[1])
+    .filter((p): p is string => Boolean(p));
+  return pezzi.length > 0 ? pezzi.join(".").toLowerCase() : undefined;
+}
+
 /** Un CN di certificato vale come nome host solo se ne ha la forma (no wildcard, no spazi). */
 function cnComeHostname(cn: string | undefined): string | undefined {
   const t = pulito(cn);
@@ -102,7 +132,7 @@ export function fattiDaScript(s: NmapScriptOutput): FattiProfilo {
       /* nbstat mette il nome negli elem quando puo', altrimenti resta solo
        * nell'output ("NetBIOS name: PC01, NetBIOS user: <unknown>, ..."). */
       const dagliElem = pulito(prendi(e, "server_name", "server name"));
-      const dalTesto = s.output?.match(/NetBIOS name:\s*([^,\n]+)/i)?.[1];
+      const dalTesto = testo(s.output).match(/NetBIOS name:\s*([^,\n]+)/i)?.[1];
       return { netbios: dagliElem ?? pulito(dalTesto) };
     }
     case "ssl-cert":
@@ -117,12 +147,51 @@ export function fattiDaScript(s: NmapScriptOutput): FattiProfilo {
     case "http-generator":
       return { titoloWeb: undefined, produttore: pulito(prendi(e, "0", "generator")) };
     case "snmp-sysdescr":
-      return { osInfo: pulito(s.output?.split("\n")[0]) };
+      return { osInfo: pulito(testo(s.output).split("\n").find((r) => r.trim())) };
     case "upnp-info":
       return {
-        modello: pulito(s.output?.match(/Model(?:\s*(?:Name|Number))?:\s*([^\n]+)/i)?.[1]),
-        produttore: pulito(s.output?.match(/Manufacturer:\s*([^\n]+)/i)?.[1]),
+        modello: pulito(testo(s.output).match(/Model(?:\s*(?:Name|Number))?:\s*([^\n]+)/i)?.[1]),
+        produttore: pulito(testo(s.output).match(/Manufacturer:\s*([^\n]+)/i)?.[1]),
       };
+    case "vmware-version": {
+      /* Misurato sul 72729 (ESXi 7.0.3): elems «Server version», «Build»,
+       * «OS type», «Product Line ID». La versione col build e' il sistema
+       * operativo dell'host; `Product Line ID` ("embeddedEsx") non e' un modello. */
+      const ver = pulito(prendi(e, "Server version", "ServerVersion"));
+      const build = pulito(prendi(e, "Build"));
+      return {
+        produttore: "VMware",
+        osInfo: ver ? (build ? `${ver} build ${build}` : ver) : undefined,
+      };
+    }
+    case "snmp-info": {
+      /* `enterprise` e' il venditore dell'engine SNMP ("Compaq" su un iLO di
+       * HPE): vale come produttore, ma arriva dopo `ssl-cert`, che dice il nome
+       * di oggi. `engineIDData` e' il seriale SOLO quando `engineIDFormat` dice
+       * "text" (iLO: CZJ2291NHC); con "unknown" e' l'engine ID in esadecimale
+       * (000000a1c0a80014), che non e' un seriale e non si scrive. */
+      const formato = (prendi(e, "engineIDFormat") ?? "").trim().toLowerCase();
+      const dati = pulito(prendi(e, "engineIDData"));
+      const pareSeriale = formato === "text" && !!dati && /^[A-Za-z0-9][A-Za-z0-9._-]{3,}$/.test(dati);
+      return {
+        produttore: pulito(prendi(e, "enterprise")),
+        seriale: pareSeriale ? dati : undefined,
+      };
+    }
+    case "ldap-rootdse": {
+      /* Gli elems sono vuoti: tutto sta nell'output (misurato sui tre host del
+       * 72729, due DC e il vCenter). `ldapServiceName` porta il nome del server
+       * davanti al `$`; `rootDomainNamingContext` il dominio in forma DN. */
+      const t = testo(s.output);
+      const dominio = dnADominio(
+        t.match(/rootDomainNamingContext:\s*([^\n]+)/i)?.[1] ?? t.match(/defaultNamingContext:\s*([^\n]+)/i)?.[1]
+      );
+      const server = pulito(t.match(/ldapServiceName:\s*[^:\n]+:\s*([^$\n]+)\$/i)?.[1]);
+      return {
+        dominio,
+        hostname: server ? (dominio ? `${server}.${dominio}` : server) : undefined,
+      };
+    }
     case "ipmi-version":
       return { protocolloOt: undefined, osInfo: undefined, produttore: undefined };
 
@@ -180,13 +249,21 @@ const ORDINE_AFFIDABILITA: readonly string[] = [
   "omron-info",
   "rdp-ntlm-info",
   "smb-os-discovery",
+  /* Per un ESXi la versione la dice lui, non il certificato ne' SNMP. */
+  "vmware-version",
   "nbstat",
+  /* Il dominio dal rootDSE e' quello vero del dominio, ma il nome host lo dicono
+   * meglio RDP e SMB: sta sotto di loro. */
+  "ldap-rootdse",
   "snmp-sysdescr",
   "upnp-info",
   "ssh-hostkey",
   "http-title",
   "http-generator",
   "ssl-cert",
+  /* `enterprise` di SNMP e' spesso il nome storico del venditore ("Compaq"):
+   * dopo `ssl-cert`, che porta il nome di oggi. */
+  "snmp-info",
   "mqtt-subscribe",
 ];
 

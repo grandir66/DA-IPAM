@@ -161,6 +161,36 @@ export function migraProtocolloWmi(db: Database.Database, tabella: TabellaProtoc
 }
 
 /**
+ * Campi scritti dai profili e non ancora confermati (Riccardo, 05/11/2026: «popolare quanto e' vuoto
+ * e trovare un sistema per visualizzare i dati senza passare dalla scheda, anche solo un campo in
+ * tabella che dice che e' richiesta una revisione»).
+ *
+ * Una colonna sola per tabella, l'elenco dei nomi dei campi separati da virgola e in ordine
+ * (`firmware,model,serial_number`): vuota o NULL = niente da rivedere, e il filtro di Discovery e'
+ * un `<> ''`. Non si tiene il valore vecchio: il profilo scrive **solo dove era vuoto**, quindi
+ * «rifiuta» vuol dire svuotare il campo, non ripristinare qualcosa.
+ */
+export const COLONNE_DA_RIVEDERE: ReadonlyArray<readonly [tabella: string, ddl: string]> = [
+  ["hosts", "ALTER TABLE hosts ADD COLUMN campi_da_rivedere TEXT"],
+  ["network_devices", "ALTER TABLE network_devices ADD COLUMN campi_da_rivedere TEXT"],
+];
+
+/** Aggiunge le due colonne `campi_da_rivedere` dove mancano. Additiva e ripetibile. */
+export function assicuraColonneDaRivedere(db: Database.Database): string[] {
+  const aggiunte: string[] = [];
+  for (const [tabella, ddl] of COLONNE_DA_RIVEDERE) {
+    const colonne = new Set(
+      (db.prepare(`PRAGMA table_info(${tabella})`).all() as Array<{ name: string }>).map((c) => c.name),
+    );
+    // Tabella assente (DB molto vecchio): la crea lo schema all'apertura, non questa funzione.
+    if (colonne.size === 0 || colonne.has("campi_da_rivedere")) continue;
+    db.exec(ddl);
+    aggiunte.push(`${tabella}.campi_da_rivedere`);
+  }
+  return aggiunte;
+}
+
+/**
  * Protocollo `wmi` e `motivo` sui DB esistenti: la chiamano `getTenantDb` e il path legacy di `getDb`, dopo le ricostruzioni
  * `redfish` (quelle copiano un elenco fisso di colonne: `motivo` deve nascere dopo). Ogni passo per conto suo: un guasto
  * si registra, il DB si apre lo stesso e al prossimo avvio si riprova. Chi chiede `wmi` nel frattempo riceve l'errore del CHECK.
@@ -170,6 +200,12 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     if (assicuraColonnaMotivoCredenziali(db)) console.info(`${chi}: host_credentials.motivo aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione host_credentials.motivo fallita:`, e);
+  }
+  try {
+    const aggiunte = assicuraColonneDaRivedere(db);
+    if (aggiunte.length > 0) console.info(`${chi}: ${aggiunte.join(", ")} aggiunto`);
+  } catch (e) {
+    console.error(`${chi}: migrazione campi_da_rivedere fallita:`, e);
   }
   try {
     // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.

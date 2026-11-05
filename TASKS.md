@@ -114,7 +114,15 @@ devices». Valutazione scritta, niente codice: [`docs/revisione/2026-11-05-popol
 - [x] Secondo buco: la lettura lascia fuori `snmp-info`, `vmware-version`, `ldap-rootdse` (e 12 altri tipi) — sono quelli che porterebbero modello e firmware di NAS, ESXi/vCenter e DC
 - [x] Terzo buco: in `src/lib/scanner/profili/` **non c'è un riferimento a `network_devices`**: ciò che il profilo legge non arriva mai all'apparato
 - [x] **Decisioni di Riccardo (05/11, chieste una alla volta)**: (1) prima un **campione** di 5 host fra HMI e `unknown`, il giro largo dopo con la misura in mano; (2) sugli apparati **si popola quanto è vuoto** senza chiedere, più un modo di vedere i dati **senza passare dalla scheda** («anche solo un campo in tabella che dice che è richiesta una revisione»); (3) il segno «da rivedere» va **in Discovery**, colonna + filtro + conferma in blocco; (4) si leggono **tutti e tre** gli script: `snmp-info`, `vmware-version`, `ldap-rootdse`
-- [ ] Piano in 6 passi nel documento (§8), livello proposto **leggero**, con prova a vuoto sul passo del seriale. **Aspetta il via**
+- [x] Riccardo: «sì, parti». **Passi 2-5 fatti** (livello leggero):
+  - `lettura.ts`: casi `snmp-info`, `vmware-version`, `ldap-rootdse` + `testo()` che decodifica le entità XML (`&#xa;`), che sistema anche `snmp-sysdescr` e `upnp-info`; ordine di affidabilità aggiornato (`ssl-cert` prima di `snmp-info`, `vmware-version` prima del certificato). 13 prove su fixture **vere** del 72729, viste fallire (5 rosse rompendo la decodifica e il freno sul seriale)
+  - `propaga-apparato.ts` (nuovo): propagazione all'apparato delle sole colonne vuote, `serialePropagabile`, `segnaDaRivedere`, `togliDaRivedere`, `soloProva` per la prova a vuoto. 10 prove su DB in memoria, viste fallire (2 rosse togliendo i due freni)
+  - `db-tenant-schema.ts`: `campi_da_rivedere` su `hosts` e `network_devices`, additiva e ripetibile, chiamata dove gira già la migrazione delle credenziali
+  - Discovery: colonna «Da rivedere» (visibile di serie, in fondo alle 19 di prima), chip col conteggio vero, conferma in blocco; rotta `POST /api/hosts/conferma-rivisti`
+- [x] **Prova a vuoto sul 72729** (sola lettura, prima di scrivere niente): su 22 apparati con host, si riempirebbero **3 modelli e 1 seriale**, 0 firmware
+- [x] Cancello: lint 0, tsc 0, build 0, prove 7148/7153. Le 2 rosse sono **la coppia fragile già nota** (`data/ipam.db` che `npm test` ricrea): spostato il file, le due prove da sole fanno 14/14
+- [ ] **Resa non vista a schermo**: la colonna e la chip sono verificate da tsc e dal build, non da un browser — in locale non ho un accesso all'app e sul 72729 sto in sola lettura. Da guardare al primo accesso di Riccardo
+
 - [ ] Il campione **lo deve lanciare Riccardo** dall'interfaccia del 72729: lì sono in sola lettura e non ho un accesso all'app
 
 ## 2026-11-05 — I dati dei profili: riconosciuti, memorizzati, mostrati, usati?

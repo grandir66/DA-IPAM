@@ -62,6 +62,7 @@ import {
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
   BatteryCharging, Network, ArrowUp, ArrowDown, Merge, Split, Filter, EyeOff, Copy,
+  Check,
 } from "lucide-react";
 
 /**
@@ -205,6 +206,10 @@ const COLUMNS: ColumnDef[] = [
   { id: "open_ports_tcp",      label: "Porte TCP",       defaultVisible: true,  group: "rilevamento" },
   { id: "open_ports_udp",      label: "Porte UDP",       defaultVisible: true,  group: "rilevamento" },
   { id: "last_seen",           label: "Ultimo visto",    defaultVisible: true,  group: "base" },
+  /* Riccardo, 05/11/2026: vedere il lavoro dei profili dalla tabella, senza aprire
+   * la scheda. Visibile di serie e in fondo alle 19 di prima, che restano nell'ordine
+   * concordato; da «Gestisci colonne» si sposta dove si vuole. */
+  { id: "da_rivedere",         label: "Da rivedere",     defaultVisible: true,  group: "rilevamento" },
 
   // Extra disponibili nel column picker, nascoste di default
   { id: "vendor",          label: "Vendor",          defaultVisible: false, group: "base" },
@@ -230,6 +235,16 @@ const COLUMNS: ColumnDef[] = [
   // non sortable. Resa come menu kebab (tre puntini) per ospitare l'elenco
   // crescente di azioni per riga (Tier 1, integrazione LibreNMS, Wazuh, ecc.).
 ];
+
+/** Nomi leggibili dei campi che un profilo puo' aver scritto (colonna «Da rivedere»). */
+const ETICHETTE_DA_RIVEDERE: Record<string, string> = {
+  hostname: "nome",
+  os_info: "sistema operativo",
+  model: "modello",
+  serial_number: "seriale",
+  firmware: "firmware",
+  device_manufacturer: "produttore",
+};
 
 const GROUP_LABELS: Record<string, string> = {
   base: "Base",
@@ -487,6 +502,7 @@ function testoCella(h: EnrichedHost, colId: string): string {
     case "device_manufacturer": return getManufacturer(h).text;
     case "model": return h.model ?? "";
     case "serial_number": return h.serial_number ?? "";
+    case "da_rivedere": return h.campi_da_rivedere ?? "";
     case "firmware": return h.firmware ?? "";
     case "last_seen": return formatDate(h.last_seen);
     case "first_seen": return formatDate(h.first_seen);
@@ -515,6 +531,10 @@ export default function DiscoveryPage() {
   const [meshMap, setMeshMap] = useState<Map<number, MeshPresence>>(new Map());
   // RDP/VNC senza agente disponibili su questa appliance (modulo Mesh + flag), dal batch host-status.
   const [senzaAgenteOn, setSenzaAgenteOn] = useState(false);
+  /* Colonna «Da rivedere» (05/11): chip per vedere solo le righe che aspettano una
+   * conferma, e conferma in blocco sulle selezionate. */
+  const [soloDaRivedere, setSoloDaRivedere] = useState(false);
+  const [confermaRivisti, setConfermaRivisti] = useState(false);
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -1028,6 +1048,7 @@ export default function DiscoveryPage() {
     if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
     if (acqFilter) criteri.push((id) => prendi(id, (h) => passaFiltroAcquisizione(acqFilter, h)));
     if (filtriValore.length > 0) criteri.push((id) => prendi(id, (h) => passaFiltriValore(filtriValore, (c) => testoCella(h, c))));
+    if (soloDaRivedere) criteri.push((id) => prendi(id, (h) => (h.campi_da_rivedere ?? "").trim() !== ""));
     if (lower) {
       criteri.push((id) => prendi(id, (h) =>
         [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer]
@@ -1041,7 +1062,7 @@ export default function DiscoveryPage() {
       return true;
     });
     return { filtered: righe, comeSecondario: trovati };
-  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore, presets]);
+  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore, presets, soloDaRivedere]);
 
   // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
   const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
@@ -1160,6 +1181,30 @@ export default function DiscoveryPage() {
       [key]: { ...prev[key], ...patch },
     }));
   }
+
+  /** Conferma i campi scritti dai profili sugli host selezionati: toglie il segno, non tocca i valori. */
+  const handleConfermaRivisti = async () => {
+    const ids = hosts.filter((h) => selectedIds.has(h.id) && (h.campi_da_rivedere ?? "").trim() !== "").map((h) => h.id);
+    if (ids.length === 0) return;
+    setConfermaRivisti(true);
+    try {
+      const res = await fetch("/api/hosts/conferma-rivisti", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hostIds: ids }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const esito = (await res.json()) as { host: number; apparati: number };
+      toast.success(
+        `Confermati: ${esito.host} ${esito.host === 1 ? "host" : "host"}${esito.apparati > 0 ? ` e ${esito.apparati} ${esito.apparati === 1 ? "apparato" : "apparati"}` : ""}`,
+      );
+      fetchData();
+    } catch (e) {
+      toast.error(`Conferma non riuscita: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setConfermaRivisti(false);
+    }
+  };
 
   /**
    * Bulk "Aggiorna selezionati": cicla sui device promossi e per ciascuno esegue
@@ -1653,6 +1698,18 @@ export default function DiscoveryPage() {
         return <span className="text-xs font-mono truncate max-w-[160px] block" title={h.serial_number ?? ""}>{h.serial_number ?? "—"}</span>;
       case "firmware":
         return <span className="text-xs truncate max-w-[160px] block" title={h.firmware ?? ""}>{h.firmware ?? "—"}</span>;
+      case "da_rivedere": {
+        const campi = (h.campi_da_rivedere ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+        if (campi.length === 0) return <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+            title={`Scritto da un profilo di scansione e non ancora confermato: ${campi.map((c) => ETICHETTE_DA_RIVEDERE[c] ?? c).join(", ")}`}
+          >
+            {campi.map((c) => ETICHETTE_DA_RIVEDERE[c] ?? c).join(" · ")}
+          </span>
+        );
+      }
       case "last_seen":
         return <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(h.last_seen)}</span>;
       case "first_seen":
@@ -2366,6 +2423,23 @@ export default function DiscoveryPage() {
               Tutti
             </Button>
             {(() => {
+              /* Il conteggio esce dai dati già caricati: se nessuno aspetta una revisione
+               * la chip non c'è, invece di mostrare uno zero inventato. */
+              const quanti = hostVisibili.filter((h) => (h.campi_da_rivedere ?? "").trim() !== "").length;
+              if (quanti === 0 && !soloDaRivedere) return null;
+              return (
+                <Button
+                  variant={soloDaRivedere ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setSoloDaRivedere((v) => !v)}
+                  title="Solo gli host con campi scritti da un profilo e non ancora confermati"
+                >
+                  Da rivedere {quanti}
+                </Button>
+              );
+            })()}
+            {(() => {
               const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hostVisibili, presets) }));
               const piene = conConteggio.filter(({ preset, count }) => count > 0 || classFilter === preset.filter);
               const vuote = conConteggio.filter(({ preset, count }) => count === 0 && classFilter !== preset.filter);
@@ -2503,6 +2577,19 @@ export default function DiscoveryPage() {
                   title="Crea un job che rilegge da solo gli apparati scelti, con le credenziali memorizzate"
                 >
                   ↻ {selectedIds.size > 50 ? `Scansione automatica… (50 su ${selectedIds.size})` : "Scansione automatica…"}
+                </Button>
+              )}
+              {hosts.some((h) => selectedIds.has(h.id) && (h.campi_da_rivedere ?? "").trim() !== "") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={confermaRivisti}
+                  onClick={handleConfermaRivisti}
+                  title="Toglie il segno «da rivedere» dagli host selezionati e dai loro apparati. Non cambia nessun valore."
+                >
+                  {confermaRivisti ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Conferma i campi letti
                 </Button>
               )}
               <Button

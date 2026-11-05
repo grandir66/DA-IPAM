@@ -16,6 +16,7 @@ import { recordEvidence } from "@/lib/attribution/evidence";
 import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
 import { evidenzeDaScript, evidenzaDaPortaOt } from "@/lib/attribution/profilo-evidence";
 import type { EvidenceInput } from "@/lib/attribution/types";
+import { propagaAllApparato, segnaDaRivedere } from "./propaga-apparato";
 import type { EsitoHost, EsitoProfilo } from "./motore";
 
 export interface EsitoSalvataggio {
@@ -23,6 +24,9 @@ export interface EsitoSalvataggio {
   rilieviScritti: number;
   evidenzeScritte: number;
   campiRiempiti: number;
+  /** Apparati dell'host toccati dalla propagazione e colonne scritte su di loro. */
+  apparatiToccati: number;
+  campiApparato: number;
   /** IP che non corrispondono a nessun host della rete: si contano, non si inventano. */
   ipSenzaHost: string[];
 }
@@ -54,6 +58,8 @@ export function salvaEsitoProfilo(esito: EsitoProfilo, hostPerIp: ReadonlyMap<st
     rilieviScritti: 0,
     evidenzeScritte: 0,
     campiRiempiti: 0,
+    apparatiToccati: 0,
+    campiApparato: 0,
     ipSenzaHost: [],
   };
 
@@ -71,6 +77,10 @@ export function salvaEsitoProfilo(esito: EsitoProfilo, hostPerIp: ReadonlyMap<st
       continue;
     }
     out.hostToccati++;
+
+    /* I nomi delle colonne riempite su questo host: vanno nel segno «da rivedere»,
+     * che e' come Riccardo guarda il lavoro del profilo dalla tabella di Discovery. */
+    const riempiteSuHost: string[] = [];
 
     const scrivi = db.transaction(() => {
       for (const r of h.rilievi) {
@@ -97,6 +107,7 @@ export function salvaEsitoProfilo(esito: EsitoProfilo, hostPerIp: ReadonlyMap<st
           .run(valore, hostId);
         if (res.changes > 0) {
           out.campiRiempiti++;
+          riempiteSuHost.push(colonna);
           /* Chi ha messo il nome va detto, altrimenti un enrich successivo non
            * sa se puo' correggerlo. */
           if (colonna === "hostname") {
@@ -106,6 +117,25 @@ export function salvaEsitoProfilo(esito: EsitoProfilo, hostPerIp: ReadonlyMap<st
       }
     });
     scrivi();
+
+    /* Segno e propagazione fuori dalla transazione dei rilievi: se l'apparato non
+     * c'e' o un suo campo e' gia' pieno non deve succedere niente al resto. */
+    if (riempiteSuHost.length > 0) {
+      try {
+        segnaDaRivedere(db, "hosts", hostId, riempiteSuHost);
+      } catch (e) {
+        console.error(`[profilo] segno «da rivedere» sull'host ${hostId} non scritto:`, e);
+      }
+    }
+    try {
+      const prop = propagaAllApparato(db, hostId, h.fatti);
+      if (prop.scritte.length > 0) {
+        out.apparatiToccati++;
+        out.campiApparato += prop.scritte.length;
+      }
+    } catch (e) {
+      console.error(`[profilo] propagazione all'apparato dell'host ${hostId} non riuscita:`, e);
+    }
 
     // --- evidenze per l'attribuzione v2 ---
     const evidenze: EvidenceInput[] = [];

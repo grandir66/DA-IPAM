@@ -56,6 +56,12 @@ export interface Host {
   firmware: string | null;
   /** Produttore dedotto da SNMP (sysDescr / OID enterprise) */
   device_manufacturer: string | null;
+  /**
+   * Campi scritti da un profilo di scansione e non ancora confermati, separati da virgola
+   * (`firmware,model,serial_number`). Vuoto o null = niente da rivedere. Si guarda e si
+   * conferma dalla colonna «Da rivedere» di Discovery, senza aprire la scheda.
+   */
+  campi_da_rivedere?: string | null;
   /** JSON: risultato device fingerprinting (TTL, firme porte, banner, SNMP) */
   detection_json: string | null;
   /** JSON: dati SNMP completi raccolti durante scan (sysDescr, sysObjectID, model, serial, firmware, manufacturer, ecc.) */

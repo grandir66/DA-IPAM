@@ -13,8 +13,13 @@ stato di avanzamento». Riccardo (05/11): sì ai passi 1 e 2, livello leggero; 3
 - [x] Passo 2: elenco dei giri (`GET /api/scans/progress`), pagina `/in-esecuzione` e voce di menu col contatore, con riaggancio dopo un cambio pagina (riaperto al 39% e avanzato). Cancello verde: lint, tsc, build, 7286 prove
 - [x] Scoperto strada facendo: `/api/scans/progress/[jobId]` rispondeva a qualunque cliente; ora un giro di un altro cliente dà 404 come un id sconosciuto. Prova in `scanner/__tests__/giri.test.ts`, vista fallire togliendo il filtro; il 404 fra due clienti veri non è stato provato in locale
 - [x] Scoperto strada facendo: `busy` restava acceso finché non si chiudeva il modale; ora si spegne a fine giro o sequenza, e i comandi si fermano anche per un giro avviato altrove o dallo scheduler
-- [ ] Passo 3 (a parte, da decidere): sequenze sul server. «Avanzata» con selezione, «Accesso agli host» e «Scansione iniziale» senza naabu sono guidate dal browser: chiudendo la pagina si fermano le fasi successive
-- [ ] Passo 4 (da decidere): pulsante per fermare un giro, oggi non esiste
+- [x] Passo 3: sequenze sul server (Riccardo, 05/11: «Sì, passi 3 e 4»; piano `docs/superpowers/plans/2026-11-05-sequenze-e-stop-dei-giri.md`). «Scoperta host» senza naabu, «Avanzata» con selezione e «Accesso agli host» girano in `scanner/sequenze.ts`. Verificato: pagina abbandonata a metà fase 1, la fase 2 è partita ed è arrivata a «Completata»
+- [x] Passo 4: «Ferma» in pannello e bacheca, rotta `POST /api/scans/progress/[jobId]/ferma`. Verificato su `next start` con `ping` e `nmap` veri: zero processi rimasti, `fast` chiuso in 119 ms, sequenza in 1,2 s e fase 2 non partita, secondo stop 409
+- [x] Scoperto strada facendo: un `nmap` ucciso dallo stop faceva partire il ripiego col ping su tutta la rete (15 s su una /20). Corretto con prova vista fallire
+- [x] Scoperto strada facendo: un ping ucciso dallo stop valeva «nessuna risposta» (`killed`): ora è «sconosciuto»
+- [x] Scoperto strada facendo: i giri dei profili non uscivano mai dalla mappa: ora restano 5 minuti come gli altri
+- [x] Revisione a freddo: un giro fermato scriveva in `scan_history` e la pagina rete l'avrebbe letto come fase eseguita (anche «credenziali verificate»). Tolta la riga, corretti anche i rilievi minori
+- [ ] Da decidere (Riccardo): fermare a mano una rete in un job su tutte le reti lascia proseguire il job con la rete dopo e aggiorna `last_run`. Oggi è così: si ferma quel giro, non il job
 - Trappole: `ScanProgress` non ha il tenant (sull'hub `network_id` non basta a separare i clienti); la mappa è in memoria (persa al riavvio, i giri finiti spariscono dopo 5 min); i job senza `discoverNetwork` stanno solo in `runningJobs`
 
 ## 2026-11-05 — Idea: pagina Security per definire le scansioni

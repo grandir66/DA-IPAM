@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
+import { getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { corpoScanInCorso, isScanInCorso } from "@/lib/scanner/network-scan-lock";
-import { buildCustomScanArgs } from "@/lib/scanner/ports";
+import { ARGOMENTI_VUOTI, argomentiNmap } from "@/lib/scanner/argomenti-nmap";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
@@ -161,31 +161,9 @@ export async function POST(request: Request) {
         });
       }
 
-      let nmapArgs: string | undefined;
-      let snmpCommunity: string | null | undefined;
-      let tcpPorts: string | null = null;
-      let udpPorts: string | null = null;
-
-      if (parsed.data.scan_type === "nmap") {
-        const profile = parsed.data.nmap_profile_id
-          ? getNmapProfileById(parsed.data.nmap_profile_id)
-          : getActiveNmapProfile();
-        if (profile) {
-          tcpPorts = profile.tcp_ports ?? null;
-          udpPorts = profile.udp_ports ?? null;
-          if (!tcpPorts) {
-            nmapArgs =
-              profile.custom_ports !== null && profile.custom_ports !== undefined
-                ? buildCustomScanArgs(profile.custom_ports)
-                : profile.args;
-          }
-          if (!snmpCommunity && profile.snmp_community) {
-            snmpCommunity = profile.snmp_community;
-          }
-        } else {
-          nmapArgs = buildCustomScanArgs(null);
-        }
-      }
+      const { nmapArgs, snmpCommunity, tcpPorts, udpPorts } = parsed.data.scan_type === "nmap"
+        ? argomentiNmap(parsed.data.nmap_profile_id)
+        : ARGOMENTI_VUOTI;
 
       const discoverOpts: import("@/lib/scanner/discovery").DiscoverNetworkOptions = {
         ...(targetIps ? { targetIps } : {}),

@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { segnaleGiro } from "./ferma-giro";
 import { promisify } from "util";
 import type { PingResult } from "@/types";
 
@@ -13,6 +14,7 @@ export type EsitoPing = "vivo" | "nessuna_risposta" | "sconosciuto";
  *
  * - nessun errore → vivo;
  * - processo terminato per timeout (`killed`/segnale) → nessuna risposta;
+ * - giro fermato dall'utente (`ABORT_ERR`) → sconosciuto;
  * - Linux (iputils): exit 1 = nessuna risposta, exit 2 = errore → sconosciuto;
  * - macOS: exit 2 = nessuna risposta, altri codici (sysexits) → sconosciuto;
  * - spawn fallito (ENOENT, EACCES, …) o forma non riconosciuta → sconosciuto.
@@ -27,6 +29,8 @@ export function classifyPingError(
   if (err == null) return { esito: "vivo" };
   if (typeof err !== "object") return { esito: "sconosciuto", errore: "ping: errore non riconosciuto" };
   const e = err as { code?: unknown; killed?: unknown; signal?: unknown };
+  // Stop dell'utente: anche qui `killed` è vero, ma il ping è stato interrotto, l'host non ha detto niente.
+  if (e.code === "ABORT_ERR") return { esito: "sconosciuto", errore: "ping interrotto" };
   // Solo il timeout di execFile (killed) vale «nessuna risposta»: un segnale
   // arrivato da fuori (OOM killer, SIGTERM al gruppo) non dice niente dell'host.
   if (e.killed === true) return { esito: "nessuna_risposta" };
@@ -45,6 +49,8 @@ export function classifyPingError(
 }
 
 export async function pingHost(ip: string, timeoutMs: number = 2000): Promise<PingResult> {
+  // Giro fermato: gli indirizzi rimasti in coda non lanciano un processo a testa, solo per vederlo ucciso.
+  if (segnaleGiro()?.aborted) return { ip, alive: false, latency_ms: null, ttl: null, error: "ping interrotto" };
   const timeoutSec = Math.ceil(timeoutMs / 1000);
   const startTime = Date.now();
 
@@ -58,6 +64,7 @@ export async function pingHost(ip: string, timeoutMs: number = 2000): Promise<Pi
     const { stdout, stderr } = await execFileAsync("ping", args, {
       timeout: timeoutMs + 1000,
       encoding: "utf8",
+      signal: segnaleGiro(),
     });
     const latency = Date.now() - startTime;
     const combined = `${stdout}\n${stderr}`;

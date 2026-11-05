@@ -14,7 +14,8 @@ import { getHostById, getNetworkById } from "@/lib/db";
 import { getCurrentTenantCode, getTenantSetting, withTenant } from "@/lib/db-tenant";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
-import { registraProgresso, aggiornaProgresso } from "@/lib/scanner/discovery";
+import { registraProgresso, aggiornaProgresso, dimenticaGiro } from "@/lib/scanner/discovery";
+import { conSegnaleGiro, controllaFermo, registraGiroFermabile, TESTO_GIRO_FERMATO } from "@/lib/scanner/ferma-giro";
 import {
   prendiRete,
   isScanInCorso,
@@ -115,8 +116,10 @@ export async function POST(request: Request) {
       tenant_code: tenantCode,
       etichetta: network.name,
       link: `/networks/${networkId}`,
+      fermabile: true,
     };
     registraProgresso(progress);
+    const { segnale, libera: liberaFermo } = registraGiroFermabile(id);
 
     const righe: string[] = [];
     const giro = async () => {
@@ -128,6 +131,7 @@ export async function POST(request: Request) {
             aggiornaProgresso(id, { logs: [...righe] });
           },
         });
+        controllaFermo();
         aggiornaProgresso(id, { scanned: esito.host.length, phase: `${profilo.nome}: salvataggio` });
         const salvato = salvaEsitoProfilo(esito, hostPerIp);
         const avvisi: string[] = [];
@@ -149,6 +153,11 @@ export async function POST(request: Request) {
           logs: [...righe],
         });
       } catch (e) {
+        // Un nmap ucciso dallo stop arriva qui come errore qualsiasi.
+        if (segnale.aborted) {
+          aggiornaProgresso(id, { status: "failed", fermato: true, phase: TESTO_GIRO_FERMATO, error: TESTO_GIRO_FERMATO, logs: [...righe] });
+          return;
+        }
         aggiornaProgresso(id, {
           status: "failed",
           phase: `${profilo.nome} fallito`,
@@ -156,13 +165,15 @@ export async function POST(request: Request) {
           logs: [...righe],
         });
       } finally {
+        liberaFermo();
+        dimenticaGiro(id);
         rilasciaRete();
       }
     };
 
     /* Come `discoverNetwork`: il giro riparte dentro il contesto del tenant e
      * NON si attende, cosi' la rotta risponde subito. */
-    void withTenant(tenantCode, giro);
+    void withTenant(tenantCode, () => conSegnaleGiro(segnale, giro));
 
     return NextResponse.json({ id, progress });
   });

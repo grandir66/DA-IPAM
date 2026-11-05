@@ -627,6 +627,8 @@ async function giroCompleto(
         "il job smette di aspettarla, la rete resta occupata finché il giro non si chiude",
     );
   }
+  // Fermata a mano: il job non è guasto, e un job su tutte le reti prosegue con la rete dopo.
+  if (esito.fermato) return { esito: "eseguito", motivo: `scansione della rete ${networkId} fermata dall'utente` };
   if (esito.status === "failed") {
     throw new Error(`Scansione ${id} della rete ${networkId} fallita: ${esito.error ?? "errore sconosciuto"}`);
   }

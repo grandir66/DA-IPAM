@@ -106,6 +106,7 @@ import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
 import { redfishDetect, redfishValidate, redfishFetchInfo, redfishEvidence } from "@/lib/protocols/redfish";
 import { snmpValidateV3 } from "@/lib/protocols/snmpv3";
 import { onvifGetDeviceInformation, onvifEvidence } from "@/lib/protocols/onvif";
+import { conSegnaleGiro, controllaFermo, GiroFermatoError, isGiroFermato, registraGiroFermabile, TESTO_GIRO_FERMATO } from "./ferma-giro";
 import type { ScanProgress, DiscoveryResult, DeviceFingerprintSnapshot } from "@/types";
 import type { DnsResolution } from "./dns";
 
@@ -137,6 +138,20 @@ export function elencaGiri(): ScanProgress[] {
  */
 export function registraProgresso(p: ScanProgress): void {
   getProgressMap().set(p.id, p);
+}
+
+/** Un giro chiuso resta in bacheca 5 minuti, poi esce dalla mappa. */
+export function dimenticaGiro(id: string): void {
+  setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
+}
+
+/**
+ * Chiesto lo stop: si scrive sull'oggetto in mappa e non con `aggiornaProgresso`, che lo sostituisce
+ * con una copia. `discoverNetwork` tiene il riferimento all'originale e la copia resterebbe ferma.
+ */
+export function segnaGiroInArresto(id: string): void {
+  const giro = getProgressMap().get(id);
+  if (giro) giro.fermando = true;
 }
 
 /** Aggiorna un giro gia' registrato. Silenzioso se l'id non c'e' piu'. */
@@ -173,6 +188,8 @@ export type DiscoverNetworkOptions = {
   tcpPorts?: string | null;
   /** Elenco porte UDP esplicito (sovrascrive default se presente). */
   udpPorts?: string | null;
+  /** Il giro è una fase di questa sequenza: in bacheca si vede la sequenza, non la fase. */
+  sequenzaId?: string;
 };
 
 /**
@@ -632,7 +649,7 @@ function registraVersioneSnmpApparato(
  * rifiuta mai: lo stato si legge da `progress.status` a giro finito, così anche
  * i rami che segnano `failed` e ritornano senza lanciare risultano falliti.
  */
-export type EsitoGiro = { status: "completed" | "failed"; error?: string };
+export type EsitoGiro = { status: "completed" | "failed"; error?: string; fermato?: boolean };
 
 export type AvvioDiscovery = {
   id: string;
@@ -681,6 +698,7 @@ export async function discoverNetwork(
     sogliaAllarmeMinuti = undefined; // impostazione illeggibile: soglia predefinita
   }
   const rilasciaRete = prendiRete(tenantCode, networkId, { scanId: id, scanType }, { sogliaAllarmeMinuti });
+  let rilasciaFermo: (() => void) | undefined;
 
   try {
     // Inizio del giro dall'orologio del DB, nella forma di `last_seen` (T3-20):
@@ -700,12 +718,29 @@ export async function discoverNetwork(
       tenant_code: tenantCode,
       etichetta: network.name,
       link: `/networks/${networkId}`,
+      fermabile: true,
+      sequenza_id: options?.sequenzaId,
     };
 
     getProgressMap().set(id, progress);
+    const { segnale, libera: liberaFermo } = registraGiroFermabile(id);
+    rilasciaFermo = liberaFermo;
 
     const runInBackground = () =>
-      runDiscovery(id, network.id, network.cidr, ips, scanType, inizioGiro, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+      conSegnaleGiro(segnale, async () => {
+        try {
+          return await runDiscovery(id, network.id, network.cidr, ips, scanType, inizioGiro, nmapArgs, snmpCommunity, network.dns_server ?? null, options);
+        } catch (error) {
+          // Un processo ucciso dallo stop arriva qui come errore qualsiasi: il motivo vero è lo stop.
+          // Niente riga in `scan_history`: lo stato delle fasi prende l'ultima per tipo, senza guardare
+          // l'esito, e una scansione fermata risulterebbe eseguita adesso.
+          if (!isGiroFermato(error) && !segnale.aborted) throw error;
+          if (!isGiroFermato(error)) {
+            console.error(`[Discovery] Errore durante l'arresto (tenant: ${tenantCode}, network: ${networkId}):`, error);
+          }
+          throw new GiroFermatoError();
+        }
+      });
 
     const done: Promise<EsitoGiro> = withTenant(tenantCode, runInBackground).then(
       (): EsitoGiro => {
@@ -722,6 +757,15 @@ export async function discoverNetwork(
           : { status: "completed" };
       },
       (error): EsitoGiro => {
+        if (isGiroFermato(error)) {
+          progress.status = "failed";
+          progress.error = TESTO_GIRO_FERMATO;
+          progress.fermato = true;
+          progress.phase = TESTO_GIRO_FERMATO;
+          progress.logs = [...(progress.logs ?? []), `[STOP] ${TESTO_GIRO_FERMATO}`];
+          dimenticaGiro(id);
+          return { status: "failed", error: TESTO_GIRO_FERMATO, fermato: true };
+        }
         const msg = error instanceof Error ? error.message : "Errore sconosciuto";
         const stack = error instanceof Error ? error.stack : "";
         console.error(`[Discovery] Fatal error (tenant: ${tenantCode}, network: ${networkId}):`, msg, stack);
@@ -734,11 +778,15 @@ export async function discoverNetwork(
         setTimeout(() => getProgressMap().delete(id), 300_000).unref?.();
         return { status: "failed", error: msg };
       },
-    ).finally(rilasciaRete);
+    ).finally(() => {
+      liberaFermo();
+      rilasciaRete();
+    });
 
     return { id, progress, done };
   } catch (error) {
     // Partenza fallita prima del giro in background: la rete non resta occupata.
+    rilasciaFermo?.();
     rilasciaRete();
     throw error;
   }
@@ -893,6 +941,7 @@ async function runDiscovery(
     onProgress?: (scanned: number, found: number) => void,
   ) => {
     const results = await rawPingSweep(sweepIps, concurrency, onProgress);
+    controllaFermo();
     let sconosciuti = 0;
     let primoErrore: string | undefined;
     for (const r of results) {
@@ -1017,6 +1066,7 @@ async function runDiscovery(
       log(`[naabu] ${byIp.size} host con porte aperte (${hits} hit)`);
       return { enabled: true, byIp, basePorts };
     } catch {
+      controllaFermo();
       log(
         require
           ? "[naabu] errore esecuzione — scan Naabu annullato"
@@ -1100,6 +1150,7 @@ async function runDiscovery(
       let recovered = 0;
       let scanned = 0;
       for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        controllaFermo();
         const batch = tcpCandidates.slice(i, i + TCP_BATCH);
         const probed = await Promise.all(
           batch.map(async (ip) => {
@@ -1158,6 +1209,7 @@ async function runDiscovery(
         progress.scanned = 0;
         log(`Naabu ok; Nmap -sV mirato su ${onlineIps.length} host (batch ${quickBatch})`);
         for (let i = 0; i < onlineIps.length; i += quickBatch) {
+          controllaFermo();
           const batch = onlineIps.slice(i, i + quickBatch);
           const batchResults = await Promise.all(
             batch.map((ip) =>
@@ -1223,6 +1275,7 @@ async function runDiscovery(
       let recovered = 0;
       let scanned = 0;
       for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        controllaFermo();
         const batch = tcpCandidates.slice(i, i + TCP_BATCH);
         const probed = await Promise.all(
           batch.map(async (ip) => {
@@ -1257,6 +1310,7 @@ async function runDiscovery(
       } catch { /* upsert singolo host non blocca lo sweep */ }
     }
 
+    controllaFermo();
     progress.status = "completed";
     progress.phase = `ICMP completato (${onlineIps.length} online)`;
     progress.scanned = ips.length;
@@ -1309,6 +1363,7 @@ async function runDiscovery(
       );
 
       for (let i = 0; i < targetIps.length; i += quickBatch) {
+        controllaFermo();
         const batch = targetIps.slice(i, i + quickBatch);
         const batchResults = await Promise.all(
           batch.map((ip) =>
@@ -1366,6 +1421,7 @@ async function runDiscovery(
       progress.total = onlineDbIps.length;
       const SNMP_BATCH = 24;
       for (let si = 0; si < onlineDbIps.length; si += SNMP_BATCH) {
+        controllaFermo();
         const batch = onlineDbIps.slice(si, si + SNMP_BATCH);
         const batchResults = await Promise.all(
           batch.map(async (ip) => {
@@ -1412,6 +1468,7 @@ async function runDiscovery(
       let discovered = 0;
       const SNMP_PROBE_BATCH = 32;
       for (let si = 0; si < offlineDbIps.length; si += SNMP_PROBE_BATCH) {
+        controllaFermo();
         const batch = offlineDbIps.slice(si, si + SNMP_PROBE_BATCH);
         const batchResults = await Promise.all(
           batch.map(async (ip) => {
@@ -1512,6 +1569,8 @@ async function runDiscovery(
         log(`nmap -sn: ${onlineIps.length} host vivi su ${ips.length} IP del CIDR`);
       }
     } catch (e) {
+      // Un nmap ucciso dallo stop non è un nmap guasto: niente ripiego su tutta la rete.
+      controllaFermo();
       log(`nmap -sn fallito (${e instanceof Error ? e.message : "errore"}): fallback ping sweep…`);
     }
     if (!nmapOk) {
@@ -1540,6 +1599,7 @@ async function runDiscovery(
         let recovered = 0;
         let scanned = 0;
         for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+          controllaFermo();
           const batch = tcpCandidates.slice(i, i + TCP_BATCH);
           const probed = await Promise.all(
             batch.map(async (ip) => {
@@ -1575,6 +1635,7 @@ async function runDiscovery(
         log(`ARP/DHCP router: ${arpResult.phase ?? "completato"}`);
       }
     } catch (arpErr) {
+      controllaFermo();
       log(`ARP/DHCP router: ${arpErr instanceof Error ? arpErr.message : "errore"}`);
     }
   }
@@ -1606,6 +1667,7 @@ async function runDiscovery(
       let recovered = 0;
       let scanned = 0;
       for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
+        controllaFermo();
         const batch = tcpCandidates.slice(i, i + TCP_BATCH);
         const probed = await Promise.all(
           batch.map(async (ip) => {
@@ -1650,6 +1712,7 @@ async function runDiscovery(
           : `ICMP: ${onlineIps.length} host rispondenti; Nmap TCP (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
       );
       for (let i = 0; i < onlineIps.length; i += quickBatch) {
+        controllaFermo();
         const batch = onlineIps.slice(i, i + quickBatch);
         const batchResults = await Promise.all(
           batch.map((ip) =>
@@ -1699,6 +1762,7 @@ async function runDiscovery(
         log(`SNMP sysObjectID probe: ${onlineIps.length} host, community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
 
         for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
+          controllaFermo();
           const batch = onlineIps.slice(si, si + SNMP_BATCH);
           // v0.2.644 audit perf SC1: probe leggero (solo sysGroup GET, no walk).
           // Prima `querySnmpInfoMultiCommunity` faceva FASE 1 + FASE 2 ENTITY-MIB
@@ -1748,6 +1812,7 @@ async function runDiscovery(
         }
         log(`SNMP sysObjectID: ${identified} device identificati su ${onlineIps.length} host`);
       } catch (snmpErr) {
+        controllaFermo();
         log(`SNMP sysObjectID probe fallito: ${snmpErr instanceof Error ? snmpErr.message : "errore"}`);
       }
     }
@@ -1766,6 +1831,7 @@ async function runDiscovery(
         const SNMP_PROBE_BATCH = 32;
         let snmpDiscovered = 0;
         for (let si = 0; si < offlineIps.length; si += SNMP_PROBE_BATCH) {
+          controllaFermo();
           const batch = offlineIps.slice(si, si + SNMP_PROBE_BATCH);
           const batchResults = await Promise.all(
             batch.map(async (ip) => {
@@ -1865,6 +1931,7 @@ async function runDiscovery(
     const runBudget = new CredentialRunBudget(log);
     const accessoWindows = accessoWindowsDelGiro(runBudget, log);
     for (let i = 0; i < windowsHosts.length; i++) {
+      controllaFermo();
       const host = windowsHosts[i];
       const ip = host.ip;
       const target = { hostId: host.id, ip, networkId };
@@ -1896,6 +1963,7 @@ async function runDiscovery(
       let muto = false;
       let fase = "";
       for (const credId of chain) {
+        controllaFermo();
         const esito = await accessoWindows.prova({
           host,
           credId,
@@ -1975,6 +2043,7 @@ async function runDiscovery(
     // Windows sopra — riusa `CredentialRunBudget`, non duplica la logica.
     const runBudget = new CredentialRunBudget(log);
     for (let i = 0; i < sshHosts.length; i++) {
+      controllaFermo();
       const host = sshHosts[i];
       const ip = host.ip;
       const { candidati: resolved, ids: chain } = catenaHost({ hostId: host.id, ip, networkId }, "ssh");
@@ -1988,6 +2057,7 @@ async function runDiscovery(
       const nowIso = new Date().toISOString();
       let ok = false;
       for (const credId of chain) {
+        controllaFermo();
         // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
         // Tappa 2 (T14): utente con password o con chiave; il rifiuto dice perché.
         const creds = accessoSshCredenziale(credId);
@@ -2098,6 +2168,7 @@ async function runDiscovery(
           : `Fase 2: Nmap TCP quick (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
       );
       for (let i = 0; i < onlineIps.length; i += quickBatch) {
+        controllaFermo();
         const batch = onlineIps.slice(i, i + quickBatch);
         const batchResults = await Promise.all(
           batch.map((ip) =>
@@ -2144,6 +2215,7 @@ async function runDiscovery(
     progress.scanned = 0;
     log(`Fase 3: SNMP discovery (batch ${SNMP_BATCH})`);
     for (let i = 0; i < onlineIps.length; i += SNMP_BATCH) {
+      controllaFermo();
       const batch = onlineIps.slice(i, i + SNMP_BATCH);
       const results = await Promise.all(
         batch.map(async (ip) => {
@@ -2202,6 +2274,7 @@ async function runDiscovery(
         const SNMP_PROBE_BATCH = 32;
         let snmpDiscovered = 0;
         for (let si = 0; si < offlineIps.length; si += SNMP_PROBE_BATCH) {
+          controllaFermo();
           const batch = offlineIps.slice(si, si + SNMP_PROBE_BATCH);
           const batchResults = await Promise.all(
             batch.map(async (ip) => {
@@ -2283,6 +2356,7 @@ async function runDiscovery(
       // Host senza nessuna credenziale SSH: contati e detti una volta a fine fase, non uno per riga.
       let senzaCredenziali = 0;
       for (let i = 0; i < sshHosts.length; i++) {
+        controllaFermo();
         const ip = sshHosts[i];
         const hostRow = existingHosts.find((h) => h.ip === ip);
         const hostId = hostRow?.id;
@@ -2299,6 +2373,7 @@ async function runDiscovery(
         const nowIso = new Date().toISOString();
         let ok = false;
         for (const credId of chain) {
+          controllaFermo();
           // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
           // Tappa 2 (T14): utente con password o con chiave.
           const creds = accessoSshCredenziale(credId);
@@ -2402,6 +2477,7 @@ async function runDiscovery(
     );
     const BATCH = 16;
     for (let i = 0; i < targetIps.length; i += BATCH) {
+      controllaFermo();
       const batch = targetIps.slice(i, i + BATCH);
       log(`SNMP batch ${Math.floor(i / BATCH) + 1}: ${batch.join(", ")}`);
       const results = await Promise.all(
@@ -2570,6 +2646,7 @@ async function runDiscovery(
       );
       if (BATCH_SIZE < 4) log(`Nmap port scan: concorrenza ${BATCH_SIZE} host (consigliato per reti con hypervisor / TLS)`);
       for (let i = 0; i < onlineIps.length; i += BATCH_SIZE) {
+        controllaFermo();
         const batch = onlineIps.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(
           batch.map((ip) =>
@@ -2633,6 +2710,7 @@ async function runDiscovery(
     );
     const SNMP_BATCH = 16;
     for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
+      controllaFermo();
       const batch = onlineIps.slice(si, si + SNMP_BATCH);
       const snmpRows = await Promise.all(
         batch.map((ip) => {
@@ -2760,6 +2838,7 @@ async function runDiscovery(
     }
 
     for (let i = 0; i < targetHosts.length; i++) {
+      controllaFermo();
       const host = targetHosts[i];
       const ip = host.ip;
       let openPorts: Array<{ port: number; service?: string }> = [];
@@ -2844,6 +2923,7 @@ async function runDiscovery(
       const validatedProtos = new Set<string>();
       let windowsMuto = false;
       for (const nc of netCreds) {
+        controllaFermo();
         const credType = nc.credential_type.toLowerCase();
         const credId = nc.credential_id;
 
@@ -3119,6 +3199,7 @@ async function runDiscovery(
     accessoWindows.riepilogo();
 
     log(`Validazione completata: ${validated} credenziali validate su ${targetHosts.length} host`);
+    controllaFermo();
     progress.status = "completed";
     progress.phase = "Completata";
     progress.found = validated;
@@ -3167,6 +3248,7 @@ async function runDiscovery(
       : (await import("./ping")).pingHost;
     const TTL_BATCH = 8;
     for (let t = 0; t < onlineIps.length; t += TTL_BATCH) {
+      controllaFermo();
       const chunk = onlineIps.slice(t, t + TTL_BATCH);
       const pings = await Promise.all(chunk.map((aip) => pingHost(aip, 2000)));
       for (let u = 0; u < chunk.length; u++) {
@@ -3185,6 +3267,7 @@ async function runDiscovery(
   const dnsByIp = new Map<string, DnsResolution>();
   const ipsNeedingNetworkDns: string[] = [];
   for (const ip of onlineIps) {
+    controllaFermo();
     const row = hostRowByIp.get(ip);
     if (!forceDnsRefresh && row?.dns_reverse) {
       dnsByIp.set(ip, { reverse: row.dns_reverse, forward: row.dns_forward ?? null });
@@ -3232,6 +3315,7 @@ async function runDiscovery(
   const probeHosts: Array<{ id: number; ip: string; openPorts: number[] }> = [];
 
   for (let i = 0; i < onlineIps.length; i++) {
+    controllaFermo();
     const ip = onlineIps[i];
     progress.scanned = i;
     progress.phase = `Elaborazione host — ${i + 1}/${onlineIps.length} (${ip})`;
@@ -3611,6 +3695,7 @@ async function runDiscovery(
   // della fase porte, sugli host con open_ports appena persistito. Gating (setting
   // globale + override per rete + porta aperta) e budget/concorrenza sono interamente
   // responsabilità dell'orchestratore; qui basta non propagare mai un suo errore.
+  controllaFermo();
   if (probeEligibleScan && probeHosts.length > 0) {
     try {
       const { runAttributionProbes } = await import("@/lib/scanner/probes/run-probes");
@@ -3640,6 +3725,7 @@ async function runDiscovery(
         log("ARP router completato");
       }
     } catch (arpErr) {
+      controllaFermo();
       log(`ARP router: ${arpErr instanceof Error ? arpErr.message : "errore"}`);
     }
   }
@@ -3657,6 +3743,8 @@ async function runDiscovery(
   // offline e non visti dopo `inizioGiro` (T3-20), con la soglia sugli
   // spegnimenti in massa (T3-21). Le scelte sono in docs/adr/0006.
   // ═══════════════════════════════════════════════════════════════
+  // Un giro fermato non ha visto tutti: chi manca non è spento.
+  controllaFermo();
   // T3-19: gli IP col ping «sconosciuto» restano fuori, né offline né annotati.
   const ipsDecisi = pingSconosciuti.size > 0 ? ips.filter((ip) => !pingSconosciuti.has(ip)) : ips;
   let codaStoriaSoglia = "";

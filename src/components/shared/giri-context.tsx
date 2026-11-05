@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import { etichettaGiro } from "@/lib/scanner/giri";
@@ -29,6 +30,7 @@ interface GiriCtx {
   errore: string | null;
   ricarica: () => void;
   apri: (id: string, opzioni?: OpzioniApri) => void;
+  ferma: (id: string) => void;
 }
 
 const GiriContext = createContext<GiriCtx | null>(null);
@@ -66,7 +68,8 @@ export function GiriProvider({ children }: { children: React.ReactNode }) {
       for (const g of elenco) {
         if (g.status === "running" || !seguitiRef.current.delete(g.id) || g.id === apertoRef.current) continue;
         const nome = `${etichettaGiro(g.scan_type)}${g.etichetta ? ` · ${g.etichetta}` : ""}`;
-        if (g.status === "completed") toast.success(`${nome}: completata`);
+        if (g.fermato) toast.info(`${nome}: fermata`);
+        else if (g.status === "completed") toast.success(`${nome}: completata`);
         else toast.error(`${nome}: ${g.error ?? "fallita"}`);
       }
     } catch {
@@ -136,6 +139,21 @@ export function GiriProvider({ children }: { children: React.ReactNode }) {
     setApertoId(id);
   }, []);
 
+  const ferma = useCallback((id: string) => {
+    void (async () => {
+      try {
+        const res = await fetch(`/api/scans/progress/${id}/ferma`, { method: "POST" });
+        if (!res.ok) {
+          const dati = (await res.json().catch(() => null)) as { error?: string } | null;
+          toast.error(dati?.error ?? "Non sono riuscito a fermarla");
+        }
+      } catch {
+        toast.error("Errore di rete");
+      }
+      void leggi();
+    })();
+  }, [leggi]);
+
   const valore = useMemo<GiriCtx>(() => ({
     giri,
     job,
@@ -144,12 +162,13 @@ export function GiriProvider({ children }: { children: React.ReactNode }) {
     errore,
     ricarica: () => void leggi(),
     apri,
-  }), [giri, job, caricato, errore, leggi, apri]);
+    ferma,
+  }), [giri, job, caricato, errore, leggi, apri, ferma]);
 
   return (
     <GiriContext.Provider value={valore}>
       {children}
-      {dettaglio && dettaglio.id === apertoId && <ScanProgress progress={dettaglio} onClose={chiudi} />}
+      {dettaglio && dettaglio.id === apertoId && <ScanProgress progress={dettaglio} onClose={chiudi} onFerma={() => ferma(dettaglio.id)} />}
     </GiriContext.Provider>
   );
 }
@@ -158,4 +177,11 @@ export function useGiri(): GiriCtx {
   const ctx = useContext(GiriContext);
   if (!ctx) throw new Error("useGiri fuori da GiriProvider");
   return ctx;
+}
+
+/** Fermare un giro è da amministratore, come avviarlo: la rotta lo controlla, qui si toglie il pulsante. */
+export function usePuoFermare(): boolean {
+  const { data } = useSession();
+  const ruolo = (data?.user as { role?: string } | undefined)?.role;
+  return ruolo === "admin" || ruolo === "superadmin";
 }

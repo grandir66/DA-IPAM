@@ -18,6 +18,9 @@ const ETICHETTE_GIRO: Record<string, string> = {
   scan_full: "Scansione completa",
   profilo_approfondito: "Profilo Approfondito",
   profilo_iot_ot: "Profilo IoT / OT",
+  sequenza_scoperta: "Scoperta host",
+  sequenza_avanzata: "Avanzata",
+  sequenza_accesso: "Accesso agli host",
 };
 
 export function etichettaGiro(scanType: string): string {
@@ -35,15 +38,16 @@ export function giroDelCliente(giro: ScanProgress, tenantCode: string | null): b
 /** Elenco per la bacheca: prima quelli in corso, poi i più recenti. I log si leggono aprendo il giro. */
 export function giriDelCliente(giri: ScanProgress[], tenantCode: string | null): GiroInElenco[] {
   return giri
-    .filter((g) => giroDelCliente(g, tenantCode))
+    .filter((g) => giroDelCliente(g, tenantCode) && !g.sequenza_id)
     .sort((a, b) => {
       const inCorso = Number(b.status === "running") - Number(a.status === "running");
       return inCorso !== 0 ? inCorso : b.started_at.localeCompare(a.started_at);
     })
     .map((g) => {
-      const giro: GiroInElenco & Partial<Pick<ScanProgress, "logs" | "tenant_code">> = { ...g };
+      const giro: GiroInElenco & Partial<Pick<ScanProgress, "logs" | "tenant_code" | "sequenza_id">> = { ...g };
       delete giro.logs;
       delete giro.tenant_code;
+      delete giro.sequenza_id;
       return giro;
     });
 }

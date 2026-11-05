@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { IntestazionePagina, Pannello, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
-import { useGiri } from "@/components/shared/giri-context";
+import { useGiri, usePuoFermare } from "@/components/shared/giri-context";
 import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseDbDate } from "@/lib/db-date";
@@ -29,17 +29,19 @@ function Avanzamento({ giro }: { giro: GiroInElenco }) {
   );
 }
 
-function StatoGiro({ status }: { status: GiroInElenco["status"] }) {
+function StatoGiro({ status, fermato }: { status: GiroInElenco["status"]; fermato?: boolean }) {
   if (status === "completed") return <PastigliaStato tono="ok">Completata</PastigliaStato>;
+  if (fermato) return <PastigliaStato tono="da_verificare">Fermata</PastigliaStato>;
   if (status === "failed") return <PastigliaStato tono="guasto">Fallita</PastigliaStato>;
   return <PastigliaStato tono="attenzione">In corso</PastigliaStato>;
 }
 
 /** Cosa sta girando adesso per questo cliente: scansioni con l'avanzamento e job dello scheduler. */
 export function PaginaInEsecuzione() {
-  const { giri, job, inCorso, caricato, errore, ricarica, apri } = useGiri();
+  const { giri, job, inCorso, caricato, errore, ricarica, apri, ferma } = useGiri();
+  const puoFermare = usePuoFermare();
   const finite = giri.filter((g) => g.status === "completed").length;
-  const fallite = giri.filter((g) => g.status === "failed").length;
+  const fallite = giri.filter((g) => g.status === "failed" && !g.fermato).length;
   const righe = giri.length + job.length;
 
   return (
@@ -78,7 +80,7 @@ export function PaginaInEsecuzione() {
                     <TableHead>Avanzamento</TableHead>
                     <TableHead>Stato</TableHead>
                     <TableHead>Partita</TableHead>
-                    <TableHead className="text-right">Dettaglio</TableHead>
+                    <TableHead className="text-right">Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -90,9 +92,14 @@ export function PaginaInEsecuzione() {
                       </TableCell>
                       <TableCell className="max-w-72 truncate text-muted-foreground" title={g.error ?? g.phase}>{g.error ?? g.phase}</TableCell>
                       <TableCell><Avanzamento giro={g} /></TableCell>
-                      <TableCell><StatoGiro status={g.status} /></TableCell>
+                      <TableCell><StatoGiro status={g.status} fermato={g.fermato} /></TableCell>
                       <TableCell className="font-mono text-[13px]">{oraDi(g.started_at)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="space-x-2 whitespace-nowrap text-right">
+                        {g.status === "running" && g.fermabile && puoFermare && (
+                          <Button variant="outline" size="sm" disabled={g.fermando} onClick={() => ferma(g.id)}>
+                            {g.fermando ? "Arresto…" : "Ferma"}
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm" onClick={() => apri(g.id, { forza: true })}>Apri</Button>
                       </TableCell>
                     </TableRow>

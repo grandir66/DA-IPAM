@@ -1013,10 +1013,18 @@ export interface ScanProgress {
   etichetta?: string;
   /** Pagina dell'oggetto su cui gira. */
   link?: string;
+  /** Si può fermare dalla bacheca (scansioni e sequenze, non le interrogazioni di un apparato). */
+  fermabile?: boolean;
+  /** Stop chiesto, il giro si sta chiudendo. */
+  fermando?: boolean;
+  /** Chiuso dallo stop dell'utente: `status` è «failed», così chi lo segue si ferma come per un errore. */
+  fermato?: boolean;
+  /** Fase di una sequenza: in bacheca si vede la sequenza. */
+  sequenza_id?: string;
 }
 
 /** Un giro nell'elenco di `/api/scans/progress`: senza i log, che si leggono aprendolo. */
-export type GiroInElenco = Omit<ScanProgress, "logs" | "tenant_code">;
+export type GiroInElenco = Omit<ScanProgress, "logs" | "tenant_code" | "sequenza_id">;
 
 /** Un job dello scheduler in esecuzione: non ha avanzamento, solo il nome. */
 export interface JobInElenco {

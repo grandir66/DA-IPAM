@@ -6,7 +6,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
-- **Nuovo**: le scansioni non bloccano più la pagina. Il modale a tutto schermo è diventato un pannello in basso a destra, chiudibile in ogni momento, e il giro continua sul server. La nuova pagina **In esecuzione** (menu Sistema, col contatore) elenca scansioni e job in corso e gli esiti degli ultimi 5 minuti, e da lì si riapre l'avanzamento anche dopo aver cambiato pagina. Elenco in memoria: un riavvio del servizio lo azzera. Le sequenze a più fasi guidate dal browser si fermano ancora se si lascia la pagina.
+- **Nuovo**: le scansioni non bloccano più la pagina. Il modale a tutto schermo è diventato un pannello in basso a destra, chiudibile in ogni momento, e il giro continua sul server. La nuova pagina **In esecuzione** (menu Sistema, col contatore) elenca scansioni e job in corso e gli esiti degli ultimi 5 minuti, e da lì si riapre l'avanzamento anche dopo aver cambiato pagina. Elenco in memoria: un riavvio del servizio lo azzera.
+
+- **Nuovo**: una scansione si può fermare, dal pannello o dalla bacheca. I processi vengono uccisi, quello che è già stato scritto resta e **nessun host va offline** per un giro fermato. Vale anche per le scansioni dello scheduler; le interrogazioni di un apparato non si fermano.
+
+- **Nuovo**: «Scoperta host», «Avanzata» e «Accesso agli host» girano sul server: chiudendo la pagina le fasi successive partono lo stesso. In bacheca sono una riga sola, con la fase in corso.
+
+- **Corretto**: i giri dei profili di scansione ora escono dall'elenco dopo 5 minuti come gli altri.
 
 - **Corretto**: l'avanzamento di una scansione si legge solo dal cliente che l'ha avviata.
 

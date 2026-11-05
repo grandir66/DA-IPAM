@@ -3,6 +3,7 @@
  * Fail-soft: missing binary / spawn errors → empty Map / false (never throw).
  */
 import { execFile } from "child_process";
+import { segnaleGiro } from "./ferma-giro";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
@@ -98,6 +99,7 @@ export async function runNaabuTcpPorts(
 
   try {
     const { stdout } = await execFileAsync(bin, args, {
+      signal: segnaleGiro(),
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
     });

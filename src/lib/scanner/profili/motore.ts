@@ -7,6 +7,7 @@
  * codice.
  */
 import { execFile } from "child_process";
+import { segnaleGiro } from "../ferma-giro";
 import { promisify } from "util";
 import type { NmapResult } from "@/types";
 import { parseNmapXml } from "../nmap";
@@ -149,7 +150,7 @@ async function unaFase(
   const completi = [...args, "-oX", "-", ip];
   log(`nmap ${completi.join(" ")}`);
   try {
-    const { stdout } = await execFileAsync("nmap", completi, { timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
+    const { stdout } = await execFileAsync("nmap", completi, { signal: segnaleGiro(), timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 });
     const risultati = parseNmapXml(stdout, { tettoByteOutput });
     return { risultato: risultati.length > 0 ? risultati[0] : null, errore: null };
   } catch (e) {

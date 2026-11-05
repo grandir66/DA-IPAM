@@ -223,6 +223,13 @@ export const ScanTriggerSchema = z.object({
   fresh_sync: z.boolean().optional(),
 });
 
+/** Sequenze a più fasi della pagina rete: si sceglie il nome, le fasi le decide il server. */
+export const ScanSequenzaSchema = z.object({
+  network_id: z.coerce.number().int().positive(),
+  sequenza: z.enum(["scoperta", "avanzata", "accesso"]),
+  host_ids: z.array(z.coerce.number().int().positive()).optional(),
+});
+
 const inventoryCategoria = z.enum(["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"]).optional().nullable();
 const inventoryStato = z.enum(["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"]).optional().nullable();
 const inventoryStorageTipo = z.enum(["SSD", "HDD", "NVMe"]).optional().nullable();

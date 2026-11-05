@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { segnaleGiro } from "./ferma-giro";
 import { promisify } from "util";
 import { XMLParser } from "fast-xml-parser";
 import type { NmapResult, NmapPort, NmapScriptOutput } from "@/types";
@@ -32,6 +33,7 @@ export async function nmapDiscoverHosts(
   const args = ["-sn", "-T4", "--min-rate", "200", "--max-retries", "1", "-oX", "-", target];
   try {
     const { stdout } = await execFileAsync("nmap", args, {
+      signal: segnaleGiro(),
       timeout,
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -74,6 +76,7 @@ export async function nmapPortScan(
     const cmdLine = `nmap ${args.join(" ")}`;
     emitLog(`TCP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
+      signal: segnaleGiro(),
       timeout,
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -107,6 +110,7 @@ export async function nmapPortScan(
     const cmdLine = `nmap ${args.join(" ")}`;
     emitLog(`UDP ${ip}: ${cmdLine}`);
     const { stdout } = await execFileAsync("nmap", args, {
+      signal: segnaleGiro(),
       timeout,
       maxBuffer: 10 * 1024 * 1024,
     });

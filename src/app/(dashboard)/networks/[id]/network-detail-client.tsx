@@ -821,11 +821,7 @@ export function NetworkDetailClient({
       const { ok } = await runScanJob("scan_naabu");
       if (ok) toast.success("Percorso: ICMP + Naabu");
     } else {
-      const first = await runScanJob("scan_icmp");
-      if (first.ok) {
-        const second = await runScanJob("scan_nmap_base");
-        if (second.ok) toast.success("Percorso: ICMP + Nmap quick");
-      }
+      await runSequenza("scoperta");
     }
     setScanning(null);
   }
@@ -869,15 +865,44 @@ export function NetworkDetailClient({
       setScanning(null);
       return;
     }
-    const nmap = await runScanJob("nmap", { showStartToast: false });
-    if (!nmap.ok) {
-      toast.error("Porte e servizi terminata con errori: SNMP non avviato");
+    await runSequenza("avanzata");
+  }
+
+  /**
+   * Sequenza a più fasi sul server (05/11): gira anche a pagina chiusa, qui si segue e basta. L'esito
+   * lo scrive il server; un giro fermato a mano non è un errore.
+   */
+  async function runSequenza(sequenza: "scoperta" | "avanzata" | "accesso") {
+    try {
+      const res = await fetch("/api/scans/sequenza", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          network_id: network.id,
+          sequenza,
+          // La scoperta guarda tutta la subnet: una selezione nella lista non la restringe.
+          ...(sequenza !== "scoperta" ? { host_ids: Array.from(selectedHostIds) } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const errore = await res
+          .json()
+          .then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : null))
+          .catch(() => null);
+        toast.error(errore ?? "Errore nell'avvio della sequenza");
+        return;
+      }
+      const data = (await res.json()) as { id: string; progress: ScanProgressType };
+      setScanning(data.progress);
+      apriPannello(data.id);
+      const esito = await seguiGiro(data.id, true);
+      if (esito.ok) toast.success(esito.lastProgress?.phase ?? "Sequenza completata");
+      else if (esito.lastProgress?.error && !esito.lastProgress.fermato) toast.error(esito.lastProgress.error);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
       setScanning(null);
-      return;
     }
-    const snmp = await runScanJob("snmp", { showStartToast: false });
-    if (snmp.ok) toast.success(`Avanzata completata su ${selectedHostIds.size} host (porte e servizi + SNMP)`);
-    setScanning(null);
   }
 
   /**
@@ -939,22 +964,7 @@ export function NetworkDetailClient({
       toast.error("Seleziona gli host nella vista lista: l'accesso fa tentativi di login reali");
       return;
     }
-    const steps: Array<{ type: ScanJobType; label: string }> = [
-      ...(networkCredentialIds.length > 0 ? [{ type: "credential_validate" as const, label: "verifica credenziali" }] : []),
-      { type: "windows", label: "WinRM (Windows)" },
-      { type: "ssh", label: "SSH (Linux)" },
-    ];
-    for (const [i, step] of steps.entries()) {
-      toast.info(`Accesso agli host — fase ${i + 1}/${steps.length}: ${step.label}…`);
-      const r = await runScanJob(step.type, { showStartToast: false });
-      if (!r.ok) {
-        toast.error(`Accesso agli host: fase ${step.label} terminata con errori, le successive non sono partite`);
-        setScanning(null);
-        return;
-      }
-    }
-    toast.success(`Accesso agli host completato (${steps.map((s) => s.label).join(" + ")})`);
-    setScanning(null);
+    await runSequenza("accesso");
   }
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;

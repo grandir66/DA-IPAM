@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { InCorso } from "@/components/shared/console";
+import { usePuoFermare } from "@/components/shared/giri-context";
 import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
 import { etichettaGiro } from "@/lib/scanner/giri";
 import { X } from "lucide-react";
@@ -13,13 +14,15 @@ import type { ScanProgress as ScanProgressType } from "@/types";
 interface ScanProgressProps {
   progress: ScanProgressType;
   onClose: () => void;
+  onFerma: () => void;
 }
 
 /**
  * Avanzamento di un giro, in un pannello in basso a destra. Non blocca la pagina e si chiude quando si
  * vuole (Riccardo, 05/11): il giro gira sul server e si ritrova da «In esecuzione» nel menu.
  */
-export function ScanProgress({ progress, onClose }: ScanProgressProps) {
+export function ScanProgress({ progress, onClose, onFerma }: ScanProgressProps) {
+  const puoFermare = usePuoFermare();
   const pct = progress.total > 0 ? Math.round((progress.scanned / progress.total) * 100) : 0;
   const [elapsed, setElapsed] = useState(0);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -68,6 +71,11 @@ export function ScanProgress({ progress, onClose }: ScanProgressProps) {
             </p>
           )}
         </div>
+        {!isFinished && puoFermare && progress.fermabile && (
+          <Button variant="outline" size="sm" onClick={onFerma} disabled={progress.fermando} className="shrink-0">
+            {progress.fermando ? "Arresto…" : "Ferma"}
+          </Button>
+        )}
         <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 shrink-0" aria-label="Chiudi il pannello" title="Chiudi: il giro continua">
           <X className="h-4 w-4" />
         </Button>
@@ -76,13 +84,13 @@ export function ScanProgress({ progress, onClose }: ScanProgressProps) {
       <div className="border-b p-3">
         {isFinished ? (
           <div className="flex flex-wrap items-center gap-2 text-[13px]">
-            <PastigliaStato tono={progress.status === "completed" ? "ok" : "guasto"}>
-              {progress.status === "completed" ? "Completata" : "Fallita"}
+            <PastigliaStato tono={progress.status === "completed" ? "ok" : progress.fermato ? "da_verificare" : "guasto"}>
+              {progress.status === "completed" ? "Completata" : progress.fermato ? "Fermata" : "Fallita"}
             </PastigliaStato>
-            <span className="min-w-0 text-muted-foreground">{progress.error ?? progress.phase}</span>
+            {!progress.fermato && <span className="min-w-0 text-muted-foreground">{progress.error ?? progress.phase}</span>}
           </div>
         ) : (
-          <InCorso titolo={progress.phase} percentuale={pct > 0 ? pct : undefined} dettaglio={dettaglio || undefined} />
+          <InCorso titolo={progress.fermando ? "Arresto in corso…" : progress.phase} percentuale={pct > 0 ? pct : undefined} dettaglio={dettaglio || undefined} />
         )}
       </div>
 

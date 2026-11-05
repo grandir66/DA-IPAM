@@ -38,6 +38,14 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Rilascio del 05/11/2026
 
+**0.9.976 su `dev`** (`102fdb1a`, hub 533 aggiornata e sana): un MikroTik ha come sistema operativo
+`network-os` e non `linux` — la voce `mikrotik` della tabella dei prodotti dichiara l'OS, quindi vince sul banner
+«Linux telnetd» di un'altra porta (scelta di Riccardo). Verificato in sola lettura sull'hub: i quattro router
+`192.168.40.165/167/168` e `192.168.4.171` passano da `linux` a `network-os` (dalla 21, «MikroTik router ftpd 7.22»),
+i nodi Proxmox della `192.168.16.x` restano `linux`. Cancello nel worktree pulito con esito **0** e **0 prove rosse**:
+le due che pretendono `data/ipam.db` assente erano ambientali, nell'albero principale è la corsa stessa a ricrearlo.
+**Non ancora su `main`.**
+
 **0.9.974 su `dev`** (`30926e2f`, hub 533 aggiornata e sana): il sistema operativo si ricava da **tutte** le
 stringhe di versione delle porte, non solo dalla prima che nomina un prodotto noto. Produttore e categoria
 restano dalla prima porta con un prodotto (l'apparato è uno); la famiglia prende prima l'OS **dichiarato** da un

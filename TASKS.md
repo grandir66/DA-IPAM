@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Base scansioni: decisioni di Riccardo e template fermi
+
+Piano: `docs/superpowers/plans/2026-11-05-base-scansioni.md` in DA-Vul-can, bozza da approvare.
+
+- [x] Riccardo (05/11): PHP2Shell è proprio quella (CVE-2026-109618 e CVE-2026-109619), sfruttata attivamente
+- [x] Riccardo (05/11): credenziali salvate si usano; se mancano si provano le deboli
+- [x] Riccardo (05/11): `public` e `private` si inseriscono di default
+- [x] Riccardo (05/11): dopo la prima scansione di una rete, le credenziali non funzionanti si disabilitano; inutile riprovarle sugli stessi device
+- [ ] Trovato il 05/11: i template nuclei di Vulcan, 533 e DTS sono del 27/05/2026. Il pacchetto si costruisce solo a mano e la sincronia dice «a posto». PHP2Shell oggi non si rileva con nuclei
+- [ ] Attenzione: il template pubblico CVE-2026-109618 forza l'esaurimento di memoria e fa cadere i processi PHP. Va escluso PRIMA di aggiornare il pacchetto
+
 ## 2026-11-05 — Base richiesta per le scansioni (Riccardo)
 
 Riccardo (05/11), dopo il changelog del giorno. Sei parti; vale per DA-IPAM e per Edge in DA-Vul-can, la stessa voce sta nei due `TASKS.md`. Piano ancora da scrivere.

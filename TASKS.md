@@ -43,6 +43,15 @@ stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTT
   difetto presente — `http-tls.test.ts` misura i byte su un socket vero in ascolto sulla 9100 (**100 byte
   scritti** prima, 0 dopo) e controlla che sulla 7080 la GET parta ancora; una prova in `run-probes.test.ts`
   sulle porte passate al probe. Cancello verde: lint 0, tsc 0, **7.200 prove, 0 fallite**
+- [x] **Rilasciata la 0.9.975** col sì di Riccardo (05/11): `origin/main` = `origin/dev` = `7a65ec66`,
+  fast-forward verificato con `git ls-remote`. Cancello rifatto sulla versione rilasciata: lint 0, tsc 0,
+  7.210 prove e 0 fallite, build 0
+- [x] **Verificata dove succede, non nel repo**: sull'hub 533 e poi sull'appliance **72729** (0.9.975 servita,
+  commit `7a65ec66` su `main`) ho messo due socket in ascolto sulla macchina stessa e le ho puntato addosso il
+  probe installato: **0 byte sulla 9100, 100 sulla 7080**. Prima erano 100 sulla 9100 — il foglio stampato.
+  Nessuna appliance è stata forzata: le ha prese `da-ipam-update.timer` da solo
+- [ ] **70151 non letta**: `Host key verification failed` dal MacBook. È la chiave cambiata della voce A11, non
+  una conseguenza del rilascio
 - [ ] **Da decidere, stessa famiglia di problema**: anche `nmap -sV` tocca la 9100 (è in `ports.ts` e in
   `ALWAYS_USEFUL_TCP_PORTS`) e alcune sue sonde possono far stampare. Il foglio in mano a Riccardo è il nostro
   probe, non nmap, ma va guardato

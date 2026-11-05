@@ -1,5 +1,13 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Motore nuclei e falle MikroTik (Riccardo)
+
+Piano: `docs/superpowers/plans/2026-11-05-base-scansioni.md` in DA-Vul-can, Task 1 e 2 estesi.
+
+- [ ] Riccardo (05/11): prevedere anche l'aggiornamento del motore nuclei sui sistemi. Oggi `NUCLEI_VERSION` è fissato a 3.8.0, l'ultima su GitHub è v3.11.1
+- [ ] Riccardo (05/11): grave falla MikroTik in ssh. È «MikroTrick» (CVE-2026-67279 e altre), sfruttata da settembre; in più CVE-2026-84411 su WebFig e CVE-2026-98432 del 03/11. Versioni sicure: 7.25.1, 7.24.6, 6.49.23
+- [ ] Da controllare, inventario Domarc sul 533, versioni lette da banner e campo firmware, da confermare: 192.168.4.175 (7.15.3), 192.168.40.165, .167, .168 (7.22), 192.168.4.171 (7.22.2), 192.168.40.254 (7.20.8), 192.168.15.121 (7.21.4), 192.168.4.254 e 192.168.15.254 (7.24.5)
+
 ## 2026-11-05 — Base scansioni: decisioni di Riccardo e template fermi
 
 Piano: `docs/superpowers/plans/2026-11-05-base-scansioni.md` in DA-Vul-can, bozza da approvare.

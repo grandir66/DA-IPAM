@@ -153,3 +153,30 @@ describe("il sistema operativo si ricava da TUTTE le porte", () => {
     assert.equal(os[0].claim, "windows");
   });
 });
+
+describe("un MikroTik è network-os, non linux", () => {
+  /* Riccardo, 05/11/2026: la famiglia di un RouterOS deve essere `network-os`. I quattro
+   * router dell'hub (`192.168.40.165/167/168` e `192.168.4.171`) dicono «MikroTik router
+   * ftpd 7.22» sulla 21 e «Linux telnetd» sulla 23: col banner da solo prendevano `linux`. */
+  const PORTE_MIKROTIK: Porta[] = [
+    { port: 21, protocol: "tcp", service: "ftp", version: "MikroTik router ftpd 7.22" },
+    { port: 23, protocol: "tcp", service: "telnet", version: "Linux telnetd" },
+    { port: 8291, protocol: "tcp", service: "unknown", version: null },
+  ];
+
+  it("il prodotto dichiara network-os e vince sul «Linux telnetd» della 23", () => {
+    const e = evidenze(PORTE_MIKROTIK);
+    const os = e.filter((x) => x.dimension === "os");
+    assert.equal(os.length, 1);
+    assert.equal(os[0].claim, "network-os");
+    assert.ok((os[0].raw_value ?? "").startsWith("21/"), "viene dalla porta del prodotto, non dal banner");
+    assert.equal(e.find((x) => x.dimension === "vendor")?.claim, "mikrotik");
+    assert.equal(e.find((x) => x.dimension === "category")?.claim, "network.router");
+  });
+
+  it("un router Linux che non nomina MikroTik resta linux", () => {
+    const os = evidenze([{ port: 23, protocol: "tcp", service: "telnet", version: "Linux telnetd" }])
+      .filter((x) => x.dimension === "os");
+    assert.equal(os[0]?.claim, "linux");
+  });
+});

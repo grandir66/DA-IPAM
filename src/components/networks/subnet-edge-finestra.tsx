@@ -38,6 +38,7 @@ import {
   passaLaMezzanotte,
   righeStato,
   stimaFinestra,
+  testoDistanzaRitento,
   type DatiFinestra,
   type EsitoElencoIp,
   type IpFinestra,
@@ -217,6 +218,8 @@ interface ImpostazioniProps {
   /** Errore di scelta dell'assessment (profilo mancante): se c'è, non si salva. */
   assessmentError: string | null;
   disabled?: boolean;
+  /** La rete ha un orario fisso acceso: salvare la finestra lo spegne, e prima si chiede. */
+  orarioAttivo: boolean;
   /** Dopo «Torna a orario fisso»: il pannello cambia modo. */
   onTornatoAOrario: () => void;
 }
@@ -260,6 +263,7 @@ export function FinestraImpostazioni({
   assessmentProfileId,
   assessmentError,
   disabled,
+  orarioAttivo,
   onTornatoAOrario,
 }: ImpostazioniProps) {
   const dati = lettura.dati?.stato === "ok" ? lettura.dati : null;
@@ -268,6 +272,8 @@ export function FinestraImpostazioni({
   const [toccato, setToccato] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [rifiuto, setRifiuto] = useState<string | null>(null);
+  /** Avviso della sonda o di IPAM dopo un salvataggio riuscito: resta a schermo finché non si cambia qualcosa. */
+  const [avvisoSalvataggio, setAvvisoSalvataggio] = useState<string | null>(null);
 
   // Il modulo parte da ciò che la sonda ha salvato, finché nessuno lo ha toccato.
   const chiaveSalvata = salvata ? `${salvata.aggiornata_at}|${salvata.dalle}|${salvata.alle}|${salvata.giorni.join(",")}` : null;
@@ -288,6 +294,7 @@ export function FinestraImpostazioni({
   const cambia = (parte: Partial<Modulo>) => {
     setToccato(true);
     setRifiuto(null);
+    setAvvisoSalvataggio(null);
     setM((v) => ({ ...v, ...parte }));
   };
 
@@ -307,6 +314,7 @@ export function FinestraImpostazioni({
   const erroriModulo: string[] = [];
   if (m.giorni.length === 0) erroriModulo.push("Scegli almeno un giorno.");
   if (ore === null) erroriModulo.push("Scrivi gli orari come HH:MM.");
+  else if (ore < 1) erroriModulo.push("La fascia deve durare almeno 1 ora.");
   if (ipPerGruppo === null) erroriModulo.push("Gli IP per gruppo vanno da 1 a 20.");
   if (tentativi === null) erroriModulo.push("I tentativi vanno da 1 a 10.");
   const eventualeErrore = assessmentError ?? erroriModulo[0] ?? null;
@@ -316,8 +324,10 @@ export function FinestraImpostazioni({
       toast.error(eventualeErrore ?? "Controlla i campi della finestra");
       return;
     }
+    if (orarioAttivo && !confirm("Spegne l'orario fisso di questa rete: da qui in poi la scansione segue solo la finestra. Continuare?")) return;
     setSalvando(true);
     setRifiuto(null);
+    setAvvisoSalvataggio(null);
     try {
       const res = await fetchJson<{ ok: boolean; avviso: string | null; finestra: StatoFinestra }>(
         `/api/networks/${networkId}/edge-scan/finestra`,
@@ -351,7 +361,10 @@ export function FinestraImpostazioni({
       setToccato(false);
       lettura.imposta(res.data.finestra);
       toast.success("Finestra salvata: la pianificazione a orario fisso di questa rete è spenta");
-      if (res.data.avviso) toast.warning(res.data.avviso);
+      if (res.data.avviso) {
+        setAvvisoSalvataggio(res.data.avviso);
+        toast.warning(res.data.avviso);
+      }
     } finally {
       setSalvando(false);
     }
@@ -477,7 +490,10 @@ export function FinestraImpostazioni({
             className="h-9 w-20 font-mono text-sm" disabled={salvando || disabled} aria-label="IP per gruppo"
           />
         </Campo>
-        <Campo titolo="Tentativi" nota="Da 1 a 10. Almeno 4 ore fra un tentativo e l'altro.">
+        <Campo
+          titolo="Tentativi"
+          nota={`Da 1 a 10.${testoDistanzaRitento(m.dalle, m.alle) ? ` Almeno ${testoDistanzaRitento(m.dalle, m.alle)} fra un tentativo e l'altro.` : ""}`}
+        >
           <Input
             type="number" min={1} max={10} inputMode="numeric" value={m.tentativi}
             onChange={(e) => cambia({ tentativi: e.target.value })}
@@ -515,6 +531,7 @@ export function FinestraImpostazioni({
         )}
       </Campo>
 
+      {avvisoSalvataggio && <RigaMessaggio riga={{ tono: "attenzione", testo: `▲ ${avvisoSalvataggio}` }} />}
       {(eventualeErrore || rifiuto) && <RigaMessaggio riga={{ tono: "guasto", testo: `✕ ${rifiuto ?? eventualeErrore}` }} />}
 
       <div className="flex flex-wrap gap-2">

@@ -499,14 +499,6 @@ export async function saveEdgeSubnetSchedule(
     return { ok: false, error: "Rete non trovata" };
   }
 
-  // Una rete con la finestra accesa rifiuta la pianificazione a orario (409 della sonda): tornare a
-  // «Orario fisso» è prima la `DELETE /finestra`, poi questo salvataggio. Se la cancellazione non
-  // riesce (un gruppo che non si ferma) l'orario non si salva e si dice il motivo.
-  if (await haUnaFinestra(networkId)) {
-    const tolta = await cancellaFinestraDellaSonda(scanner, network);
-    if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
-  }
-
   try {
     const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
       scanner,
@@ -522,6 +514,15 @@ export async function saveEdgeSubnetSchedule(
       { timeoutMs: 120000 },
     );
     rememberAssessmentAcceptedByEdge(networkId, opts);
+
+    // Una rete con la finestra accesa rifiuta la pianificazione a orario (409 della sonda): tornare a
+    // «Orario fisso» è `ensure`, poi `DELETE /finestra`, poi la `PUT /schedule`. La `DELETE` sta subito
+    // prima della `PUT` perché un `ensure` rifiutato non cancelli niente. Se non riesce (un gruppo che
+    // non si ferma) l'orario non si salva e si dice il motivo; se riesce, IPAM lo scrive subito.
+    if (await haUnaFinestra(networkId)) {
+      const tolta = await cancellaFinestraDellaSonda(scanner, network);
+      if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
+    }
 
     let degraded = false;
     let warning: string | undefined;
@@ -738,10 +739,10 @@ export async function saveEdgeSubnetFinestra(
   f: FinestraInput,
 ): Promise<{ ok: boolean; error?: string; status?: number; daAggiornare?: boolean; avviso?: string | null }> {
   const pronta = sondaPronta();
-  if (!pronta.ok) return { ok: false, error: pronta.error };
+  if (!pronta.ok) return { ok: false, error: pronta.error, status: 409 };
   const { scanner } = pronta;
   const network = getNetworkById(networkId);
-  if (!network) return { ok: false, error: "Rete non trovata" };
+  if (!network) return { ok: false, error: "Rete non trovata", status: 404 };
 
   try {
     const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
@@ -781,21 +782,27 @@ export async function saveEdgeSubnetFinestra(
       return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
     }
 
-    setNetworkTargetingMode(networkId, f.targetingMode);
-    saveEdgeFinestra({
-      network_id: networkId,
-      job_name: null,
-      days_of_week: [...f.giorni].sort((a, b) => a - b).join(","),
-      fascia_dalle: f.dalle,
-      fascia_alle: f.alle,
-      ip_per_gruppo: f.ipPerGruppo,
-      tentativi: f.tentativi,
-      ripeti: f.ripeti,
-      profile: f.profile,
-      targeting_mode: f.targetingMode,
-      enabled: f.enabled,
-    });
-    return { ok: true, avviso: typeof risposta?.avviso === "string" && risposta.avviso.trim() ? risposta.avviso : null };
+    const dellaSonda = typeof risposta?.avviso === "string" && risposta.avviso.trim() ? risposta.avviso : null;
+    // La sonda ha accettato: da qui un guasto di IPAM non è più «salvataggio fallito». Solo le due
+    // scritture locali sono protette, e se saltano lo si dice (la verità sta sulla sonda).
+    try {
+      setNetworkTargetingMode(networkId, f.targetingMode);
+      saveEdgeFinestra({
+        network_id: networkId,
+        fascia_giorni: [...f.giorni].sort((a, b) => a - b).join(","),
+        fascia_dalle: f.dalle,
+        fascia_alle: f.alle,
+        ip_per_gruppo: f.ipPerGruppo,
+        tentativi: f.tentativi,
+        ripeti: f.ripeti,
+        targeting_mode: f.targetingMode,
+        enabled: f.enabled,
+      });
+    } catch (e) {
+      const locale = `Finestra salvata sulla sonda, memoria locale non aggiornata: ${e instanceof Error ? e.message : "errore sconosciuto"}.`;
+      return { ok: true, avviso: dellaSonda ? `${dellaSonda} ${locale}` : locale };
+    }
+    return { ok: true, avviso: dellaSonda };
   } catch (e) {
     return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
   }
@@ -812,19 +819,29 @@ type EsitoCancellazione =
  * la finestra resta spenta e si può ripetere. Un 404 «Not Found» (sonda senza la rotta) o «La rete
  * non ha una finestra» vuol dire che non c'è niente da togliere.
  */
-async function cancellaFinestraDellaSonda(scanner: ScannerAttivo, network: { cidr: string }): Promise<EsitoCancellazione> {
+async function cancellaFinestraDellaSonda(
+  scanner: ScannerAttivo,
+  network: { id: number; cidr: string },
+): Promise<EsitoCancellazione> {
   try {
     const edgeId = await idReteSullaSonda(scanner, network.cidr);
-    if (edgeId === null) return { esito: "non_c_era" };
+    if (edgeId === null) {
+      dimenticaEdgeFinestra(network.id);
+      return { esito: "non_c_era" };
+    }
     try {
       await edgeApiDelete(scanner, `/api/v1/networks/${edgeId}/finestra`, { timeoutMs: 120000 });
     } catch (e) {
-      if (eSondaSenzaFinestra(e)) return { esito: "non_c_era" };
-      if (e instanceof EdgeClientError && e.status === 404 && /non ha una finestra/i.test(e.detail ?? "")) {
-        return { esito: "non_c_era" };
-      }
-      return { esito: "errore", error: motivoEdge(e), status: statoRifiuto(e) };
+      const nonCeraGia =
+        eSondaSenzaFinestra(e) ||
+        (e instanceof EdgeClientError && e.status === 404 && /non ha una finestra/i.test(e.detail ?? ""));
+      if (!nonCeraGia) return { esito: "errore", error: motivoEdge(e), status: statoRifiuto(e) };
+      dimenticaEdgeFinestra(network.id);
+      return { esito: "non_c_era" };
     }
+    // Sulla sonda la finestra non c'è più: IPAM lo scrive subito, qualunque cosa succeda dopo
+    // (un orario che non si salva non deve lasciare «finestra» nella riga).
+    dimenticaEdgeFinestra(network.id);
     return { esito: "cancellata" };
   } catch (e) {
     return { esito: "errore", error: motivoEdge(e), status: statoRifiuto(e) };
@@ -834,11 +851,10 @@ async function cancellaFinestraDellaSonda(scanner: ScannerAttivo, network: { cid
 /** Cancella la finestra: la sonda ferma i gruppi e annulla il passaggio. Non riaccende nessuna pianificazione. */
 export async function removeEdgeSubnetFinestra(networkId: number): Promise<{ ok: boolean; error?: string; status?: number }> {
   const pronta = sondaPronta();
-  if (!pronta.ok) return { ok: false, error: pronta.error };
+  if (!pronta.ok) return { ok: false, error: pronta.error, status: 409 };
   const network = getNetworkById(networkId);
-  if (!network) return { ok: false, error: "Rete non trovata" };
+  if (!network) return { ok: false, error: "Rete non trovata", status: 404 };
   const tolta = await cancellaFinestraDellaSonda(pronta.scanner, network);
   if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
-  dimenticaEdgeFinestra(networkId);
   return { ok: true };
 }

@@ -2555,6 +2555,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
         ["ip_per_gruppo", "INTEGER"],
         ["tentativi", "INTEGER"],
         ["ripeti", "TEXT"],
+        ["fascia_giorni", "TEXT"],
+        ["fascia_attiva", "INTEGER"],
       ];
       for (const [nome, tipo] of nuove) {
         if (!cols.has(nome)) {

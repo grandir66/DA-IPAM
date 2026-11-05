@@ -18,11 +18,14 @@ export interface EdgeScheduleConfig {
   ip_per_gruppo: number | null;
   tentativi: number | null;
   ripeti: string | null;
+  /** Giorni della finestra (CSV 0=dom…6=sab) e se è accesa sulla sonda; propri della finestra, non toccano l'orario. */
+  fascia_giorni: string | null;
+  fascia_attiva: boolean | null;
 }
 
 export type ModoEdge = "orario" | "finestra";
 
-type CampiFinestra = "modo" | "fascia_dalle" | "fascia_alle" | "ip_per_gruppo" | "tentativi" | "ripeti";
+type CampiFinestra = "modo" | "fascia_dalle" | "fascia_alle" | "ip_per_gruppo" | "tentativi" | "ripeti" | "fascia_giorni" | "fascia_attiva";
 
 /** Chi salva un orario fisso non è tenuto a nominare la finestra: `modo` torna `orario`. */
 export type EdgeScheduleInput = Omit<EdgeScheduleConfig, CampiFinestra> & Partial<Pick<EdgeScheduleConfig, CampiFinestra>>;
@@ -64,6 +67,8 @@ function daRiga(r: Record<string, unknown>): EdgeScheduleConfig {
     ip_per_gruppo: (r.ip_per_gruppo as number) ?? null,
     tentativi: (r.tentativi as number) ?? null,
     ripeti: (r.ripeti as string) ?? null,
+    fascia_giorni: (r.fascia_giorni as string) ?? null,
+    fascia_attiva: r.fascia_attiva == null ? null : !!r.fascia_attiva,
   };
 }
 
@@ -97,35 +102,34 @@ export function saveEdgeSchedule(c: EdgeScheduleInput): void {
 }
 
 /**
- * Ricorda la finestra che la sonda ha accettato. L'orario fisso (cron, frequenza, ora) resta nella
- * riga com'era: `days_of_week` è condiviso e qui prende i giorni della finestra.
+ * Ricorda la finestra che la sonda ha accettato, nelle colonne sue (`fascia_*`, `ip_per_gruppo`,
+ * `tentativi`, `ripeti`). L'orario fisso (`days_of_week`, `cron_expr`, `frequency`, `at_time`,
+ * `profile`, `job_name`) non si tocca. `enabled` va a 0: salvare la finestra spegne l'orario sulla
+ * sonda, e la riga deve dirlo; che la finestra sia accesa lo dice `fascia_attiva`.
  */
 export function saveEdgeFinestra(c: {
   network_id: number;
-  job_name: string | null;
-  days_of_week: string;
+  fascia_giorni: string;
   fascia_dalle: string;
   fascia_alle: string;
   ip_per_gruppo: number;
   tentativi: number;
   ripeti: string;
-  profile: string;
   targeting_mode: string | null;
   enabled: boolean;
 }): void {
   db()
     .prepare(
       `INSERT INTO edge_scan_schedules
-         (network_id, job_name, days_of_week, profile, targeting_mode, enabled, modo, fascia_dalle, fascia_alle,
+         (network_id, targeting_mode, enabled, modo, fascia_giorni, fascia_attiva, fascia_dalle, fascia_alle,
           ip_per_gruppo, tentativi, ripeti, updated_at)
-       VALUES (@network_id,@job_name,@days_of_week,@profile,@targeting_mode,@enabled,'finestra',@fascia_dalle,@fascia_alle,
+       VALUES (@network_id,@targeting_mode,0,'finestra',@fascia_giorni,@fascia_attiva,@fascia_dalle,@fascia_alle,
           @ip_per_gruppo,@tentativi,@ripeti, datetime('now'))
-       ON CONFLICT(network_id) DO UPDATE SET job_name=COALESCE(@job_name, job_name), days_of_week=@days_of_week,
-         profile=@profile, targeting_mode=@targeting_mode, enabled=@enabled, modo='finestra',
-         fascia_dalle=@fascia_dalle, fascia_alle=@fascia_alle, ip_per_gruppo=@ip_per_gruppo,
-         tentativi=@tentativi, ripeti=@ripeti, updated_at=datetime('now')`,
+       ON CONFLICT(network_id) DO UPDATE SET enabled=0, modo='finestra', fascia_giorni=@fascia_giorni,
+         fascia_attiva=@fascia_attiva, fascia_dalle=@fascia_dalle, fascia_alle=@fascia_alle,
+         ip_per_gruppo=@ip_per_gruppo, tentativi=@tentativi, ripeti=@ripeti, updated_at=datetime('now')`,
     )
-    .run({ ...c, enabled: c.enabled ? 1 : 0 });
+    .run({ ...c, fascia_attiva: c.enabled ? 1 : 0 });
 }
 
 /**
@@ -142,7 +146,7 @@ export function dimenticaEdgeFinestra(networkId: number): void {
     if (r.frequency == null) {
       d.prepare(`DELETE FROM edge_scan_schedules WHERE network_id=?`).run(networkId);
     } else {
-      d.prepare(`UPDATE edge_scan_schedules SET modo='orario', enabled=0, updated_at=datetime('now') WHERE network_id=?`).run(networkId);
+      d.prepare(`UPDATE edge_scan_schedules SET modo='orario', enabled=0, fascia_attiva=0, updated_at=datetime('now') WHERE network_id=?`).run(networkId);
     }
   })();
 }

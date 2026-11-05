@@ -2239,7 +2239,10 @@ CREATE TABLE IF NOT EXISTS edge_scan_schedules (
   fascia_alle TEXT,
   ip_per_gruppo INTEGER,
   tentativi INTEGER,
-  ripeti TEXT
+  ripeti TEXT,
+  -- Giorni della finestra e se è accesa sulla sonda: propri, così l'orario fisso (days_of_week, enabled) resta com'è.
+  fascia_giorni TEXT,
+  fascia_attiva INTEGER
 );
 
 -- ============================================================================

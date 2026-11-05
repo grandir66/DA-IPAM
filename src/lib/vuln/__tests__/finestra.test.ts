@@ -9,6 +9,7 @@
  *   DA_INVENT_DATA_DIR=$(mktemp -d) node --import tsx --test src/lib/vuln/__tests__/finestra.test.ts
  */
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-finestra";
+import "./support/dati-isolati"; // per primo: la cartella dati di prova, mai quella di chi lancia
 
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -33,6 +34,7 @@ import {
   passaLaMezzanotte,
   righeStato,
   stimaFinestra,
+  testoDistanzaRitento,
   type DatiFinestra,
 } from "@/lib/vuln/finestra";
 import {
@@ -45,6 +47,7 @@ import {
 } from "@/lib/vuln/edge-subnet-bridge";
 import { getEdgeSchedule, saveEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
 import { elencoSchedulazioni } from "@/lib/schedulazioni/elenco";
+import { cancellaFinestraRotta, elencoIpRotta, salvaFinestraRotta } from "@/lib/vuln/finestra-rotte";
 import { censisci, consentitiDaAuthConfig, gestoriDellAlbero } from "@/lib/permessi/rotte";
 
 // ── stimaFinestra ───────────────────────────────────────────────────────────────────────────────
@@ -96,13 +99,23 @@ test("stimaFinestra: valori che non permettono il conto sono un errore, non una 
   assert.throws(() => stimaFinestra({ ...base, oreCiclo: 0 }), RangeError);
 });
 
-test("MINUTI_GRUPPO: gli stessi valori di STIMA_GRUPPO_MIN della sonda", () => {
+test("MINUTI_GRUPPO: gli stessi valori di STIMA_GRUPPO_MIN della sonda", (t) => {
   assert.deepEqual(MINUTI_GRUPPO, { fast: 20, balanced: 60, deep: 120 });
-  // Il confronto con il sorgente della sonda (repo DA-Vul-can accanto a questo) si fa dove c'è: la prova non dipende dalla macchina.
+  // Il confronto col sorgente della sonda (repo DA-Vul-can accanto a questo) si fa dove c'è.
   const percorso = join(process.cwd(), "..", "DA-Vul-can", "infra", "scanner-edge", "app", "scanner_edge", "services", "finestra_runner.py");
-  if (existsSync(percorso)) {
-    assert.equal(readFileSync(percorso, "utf8").match(/STIMA_GRUPPO_MIN = \{[^}]*\}/)?.[0], 'STIMA_GRUPPO_MIN = {"fast": 20, "balanced": 60, "deep": 120}');
+  if (!existsSync(percorso)) {
+    t.skip("sorgente della sonda non presente: confronto con STIMA_GRUPPO_MIN saltato");
+    return;
   }
+  assert.equal(readFileSync(percorso, "utf8").match(/STIMA_GRUPPO_MIN = \{[^}]*\}/)?.[0], 'STIMA_GRUPPO_MIN = {"fast": 20, "balanced": 60, "deep": 120}');
+});
+
+test("testoDistanzaRitento: un terzo della fascia, come distanza_ritento della sonda (anche oltre la mezzanotte e a 24 ore)", () => {
+  assert.equal(testoDistanzaRitento("08:00", "20:00"), "circa 4 h");
+  assert.equal(testoDistanzaRitento("22:00", "06:00"), "circa 2,7 h");
+  assert.equal(testoDistanzaRitento("08:00", "08:00"), "circa 8 h");
+  assert.equal(testoDistanzaRitento("09:00", "10:00"), "circa 20 min");
+  assert.equal(testoDistanzaRitento("08:00", "boh"), null);
 });
 
 test("oreDellaFascia e passaLaMezzanotte: 08-20 dura 12 ore, 22-06 ne dura 8, uguali 24", () => {
@@ -418,11 +431,13 @@ test("saveEdgeSubnetFinestra: ensure, poi la PUT con i campi della sonda; la fin
   assert.equal(riga?.modo, "finestra");
   assert.equal(riga?.fascia_dalle, "08:00");
   assert.equal(riga?.fascia_alle, "20:00");
-  assert.equal(riga?.days_of_week, "1,2,3");
+  assert.equal(riga?.fascia_giorni, "1,2,3");
+  assert.equal(riga?.days_of_week, null, "i giorni dell'orario non si toccano");
   assert.equal(riga?.ip_per_gruppo, 10);
   assert.equal(riga?.tentativi, 3);
   assert.equal(riga?.ripeti, "mese");
-  assert.equal(riga?.enabled, true);
+  assert.equal(riga?.fascia_attiva, true);
+  assert.equal(riga?.enabled, false, "enabled è dell'orario: spento, come sulla sonda");
 });
 
 test("saveEdgeSubnetFinestra: con un modo che usa gli host manda anche l'inventario, con full_subnet no", async () => {
@@ -536,7 +551,7 @@ async function conFinestraSalvata(): Promise<void> {
   seen = [];
 }
 
-test("tornare a «Orario fisso»: prima DELETE /finestra, poi ensure e PUT /schedule, nell'ordine", async () => {
+test("tornare a «Orario fisso»: ensure, poi DELETE /finestra, poi PUT /schedule, nell'ordine", async () => {
   await conFinestraSalvata();
   edgeRisponde({
     [`DELETE ${BASE}/finestra`]: json({ ok: true, annullati: [1] }),
@@ -545,9 +560,9 @@ test("tornare a «Orario fisso»: prima DELETE /finestra, poi ensure e PUT /sche
   const r = await dentro(() => saveEdgeSubnetSchedule(rete, ORARIO));
   assert.equal(r.ok, true);
   assert.deepEqual(chiamate(), [
+    "POST /api/v1/networks/ensure",
     "GET /api/v1/networks/lookup",
     `DELETE ${BASE}/finestra`,
-    "POST /api/v1/networks/ensure",
     `PUT ${BASE}/schedule`,
   ]);
   const riga = await dentro(async () => getEdgeSchedule(rete));
@@ -563,10 +578,78 @@ test("tornare a «Orario fisso» con la DELETE a 409: si mostra il motivo e l'or
   assert.equal(r.ok, false);
   assert.equal(r.error, motivo);
   assert.equal(r.status, 409);
-  assert.deepEqual(chiamate(), ["GET /api/v1/networks/lookup", `DELETE ${BASE}/finestra`], "né ensure né PUT /schedule");
+  assert.deepEqual(chiamate(), ["POST /api/v1/networks/ensure", "GET /api/v1/networks/lookup", `DELETE ${BASE}/finestra`], "la PUT /schedule non parte");
   const riga = await dentro(async () => getEdgeSchedule(rete));
   assert.equal(riga?.modo, "finestra", "in IPAM la finestra resta com'era");
   assert.equal(riga?.cron_expr, null, "l'orario non è stato scritto");
+});
+
+test("ensure rifiutato: la finestra della sonda non si cancella", async () => {
+  await conFinestraSalvata();
+  edgeRisponde({ "POST /api/v1/networks/ensure": testo("token senza scope admin", 403), [`DELETE ${BASE}/finestra`]: json({ ok: true, annullati: [] }) });
+  const r = await dentro(() => saveEdgeSubnetSchedule(rete, ORARIO));
+  assert.equal(r.ok, false);
+  assert.deepEqual(chiamate(), ["POST /api/v1/networks/ensure"]);
+  assert.equal((await dentro(async () => getEdgeSchedule(rete)))?.modo, "finestra");
+});
+
+test("DELETE riuscita e PUT /schedule fallita: IPAM non ricorda più la finestra (la sonda non ce l'ha)", async () => {
+  await conFinestraSalvata();
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: json({ ok: true, annullati: [1] }), [`PUT ${BASE}/schedule`]: testo("database locked", 500) });
+  const r = await dentro(() => saveEdgeSubnetSchedule(rete, ORARIO));
+  assert.equal(r.ok, false);
+  assert.deepEqual(chiamate(), ["POST /api/v1/networks/ensure", "GET /api/v1/networks/lookup", `DELETE ${BASE}/finestra`, `PUT ${BASE}/schedule`]);
+  assert.equal(await dentro(async () => getEdgeSchedule(rete)), null, "riga solo-finestra: sparita, non resta «finestra»");
+});
+
+test("DELETE «non c'era» (sonda senza finestra): IPAM la dimentica anche se l'orario poi non si salva", async () => {
+  await conFinestraSalvata();
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: testo("La rete non ha una finestra", 404), [`PUT ${BASE}/schedule`]: testo("database locked", 500) });
+  assert.equal((await dentro(() => saveEdgeSubnetSchedule(rete, ORARIO))).ok, false);
+  assert.equal(await dentro(async () => getEdgeSchedule(rete)), null);
+});
+
+test("l'orario fisso sopravvive a finestra e ritorno: giorni, cron, frequenza e ora restano quelli di prima", async () => {
+  const orario = { network_id: rete, job_name: "j", frequency: "weekly", at_time: "22:00", days_of_week: "0,6", day_of_month: null, cron_expr: "0 22 * * 0,6", profile: "balanced", targeting_mode: null, enabled: true };
+  await dentro(async () => saveEdgeSchedule(orario));
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: json(GET_VERA) });
+  await dentro(() => saveEdgeSubnetFinestra(rete, FINESTRA)); // giorni 1,2,3
+  const dopoFinestra = (await dentro(async () => getEdgeSchedule(rete)))!;
+  assert.equal(dopoFinestra.modo, "finestra");
+  assert.equal(dopoFinestra.fascia_giorni, "1,2,3");
+  assert.equal(dopoFinestra.fascia_attiva, true);
+  assert.equal(dopoFinestra.enabled, false, "salvare la finestra spegne l'orario sulla sonda, e la riga lo dice");
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: json({ ok: true, annullati: [] }) });
+  assert.equal((await dentro(() => removeEdgeSubnetFinestra(rete))).ok, true);
+  const dopoRitorno = (await dentro(async () => getEdgeSchedule(rete)))!;
+  assert.equal(dopoRitorno.modo, "orario");
+  assert.equal(dopoRitorno.days_of_week, "0,6", "i giorni dell'orario non sono quelli della finestra");
+  assert.equal(dopoRitorno.cron_expr, "0 22 * * 0,6");
+  assert.equal(dopoRitorno.frequency, "weekly");
+  assert.equal(dopoRitorno.at_time, "22:00");
+  assert.equal(dopoRitorno.enabled, false, "il DELETE della sonda non riaccende l'orario");
+});
+
+test("saveEdgeSubnetFinestra: la sonda accetta ma IPAM non riesce a scrivere → ok con l'avviso, non «fallito»", async () => {
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: json({ ...GET_VERA, avviso: null }) });
+  const db = getTenantDb(T);
+  db.exec("ALTER TABLE edge_scan_schedules RENAME TO edge_scan_schedules_x");
+  try {
+    const r = await dentro(() => saveEdgeSubnetFinestra(rete, FINESTRA));
+    assert.equal(r.ok, true);
+    assert.match(r.avviso ?? "", /Finestra salvata sulla sonda, memoria locale non aggiornata/);
+  } finally {
+    db.exec("ALTER TABLE edge_scan_schedules_x RENAME TO edge_scan_schedules");
+  }
+});
+
+test("saveEdgeSubnetFinestra: scanner spento 409, rete sconosciuta 404", async () => {
+  getTenantDb(T).prepare("UPDATE vuln_scanners SET enabled = 0").run();
+  const spento = await dentro(() => saveEdgeSubnetFinestra(rete, FINESTRA));
+  assert.deepEqual([spento.ok, spento.status], [false, 409]);
+  getTenantDb(T).prepare("UPDATE vuln_scanners SET enabled = 1").run();
+  const ignota = await dentro(() => saveEdgeSubnetFinestra(99999, FINESTRA));
+  assert.deepEqual([ignota.ok, ignota.status], [false, 404]);
 });
 
 test("una rete a orario fisso si salva come oggi: nessuna DELETE (sonda vecchia, senza finestra, con riga a orario)", async () => {
@@ -600,7 +683,7 @@ test("la sonda ha una finestra ma IPAM non la ricorda (riga persa): prima DELETE
   const r = await dentro(() => saveEdgeSubnetSchedule(rete, ORARIO));
   assert.equal(r.ok, true);
   const seq = chiamate().filter((c) => /^(DELETE|PUT|POST)/.test(c));
-  assert.deepEqual(seq, [`DELETE ${BASE}/finestra`, "POST /api/v1/networks/ensure", `PUT ${BASE}/schedule`]);
+  assert.deepEqual(seq, ["POST /api/v1/networks/ensure", `DELETE ${BASE}/finestra`, `PUT ${BASE}/schedule`]);
 });
 
 test("la sonda non risponde alla lettura della finestra: l'orario si prova a salvare, il 409 della sonda dice il perché", async () => {
@@ -668,6 +751,72 @@ test("EdgeClientError.detail: il corpo intero, senza prefisso; il messaggio rest
   assert.ok(e2 instanceof EdgeClientError);
   assert.equal(e2.detail, "Profilo sconosciuto: x");
   assert.equal(e2.message, "edge 422: Profilo sconosciuto: x");
+});
+
+// ── Le rotte: validazione e stati HTTP (il lavoro sta in finestra-rotte.ts, guardia e tenant nelle rotte) ──
+
+const CORPO = {
+  enabled: true, giorni: [1, 2, 3], dalle: "08:00", alle: "20:00", ripeti: "mese", ip_per_gruppo: 10, tentativi: 3,
+  profile: "balanced", targeting_mode: "full_subnet",
+};
+const corpoDi = (r: { body: unknown }) => r.body as Record<string, unknown>;
+
+test("rotta PUT: corpo non valido 400 (JSON illeggibile, giorni vuoti, fascia scritta male), la sonda non è chiamata", async () => {
+  for (const corpo of [undefined, { ...CORPO, giorni: [] }, { ...CORPO, dalle: "25:00" }, { ...CORPO, ip_per_gruppo: 21 }]) {
+    const r = await dentro(() => salvaFinestraRotta(rete, corpo));
+    assert.equal(r.status, 400, JSON.stringify(corpo));
+    assert.equal(typeof corpoDi(r).error, "string");
+  }
+  assert.deepEqual(chiamate(), []);
+});
+
+test("rotta PUT: un 400 della sonda resta 400 col motivo, un 409 resta 409, un guasto è 502, sonda vecchia 409 con daAggiornare", async () => {
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: testo("La fascia deve durare almeno 1 ora.", 400) });
+  let r = await dentro(() => salvaFinestraRotta(rete, CORPO));
+  assert.deepEqual([r.status, corpoDi(r).error, corpoDi(r).daAggiornare], [400, "La fascia deve durare almeno 1 ora.", false]);
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: testo("Un altro passaggio è aperto", 409) });
+  r = await dentro(() => salvaFinestraRotta(rete, CORPO));
+  assert.deepEqual([r.status, corpoDi(r).error], [409, "Un altro passaggio è aperto"]);
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: testo("database locked", 500) });
+  r = await dentro(() => salvaFinestraRotta(rete, CORPO));
+  assert.equal(r.status, 502);
+  edgeRisponde({});
+  r = await dentro(() => salvaFinestraRotta(rete, CORPO));
+  assert.deepEqual([r.status, corpoDi(r).daAggiornare, corpoDi(r).error], [409, true, SONDA_DA_AGGIORNARE]);
+});
+
+test("rotta PUT: salvataggio riuscito 200 con l'avviso e lo stato nuovo letto dalla sonda", async () => {
+  edgeRisponde({ [`PUT ${BASE}/finestra`]: json({ ...GET_VERA, avviso: "L'inventario della rete è vuoto: si scansiona tutta la rete." }), [`GET ${BASE}/finestra`]: json(GET_VERA) });
+  const r = await dentro(() => salvaFinestraRotta(rete, CORPO));
+  assert.equal(r.status, 200);
+  assert.equal(corpoDi(r).avviso, "L'inventario della rete è vuoto: si scansiona tutta la rete.");
+  assert.equal((corpoDi(r).finestra as { stato: string }).stato, "ok");
+});
+
+test("rotta DELETE: 409 della sonda resta 409 col motivo, guasto 502, rete sconosciuta 404, riuscita 200", async () => {
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: testo("Il gruppo 9 non si è fermato", 409) });
+  let r = await dentro(() => cancellaFinestraRotta(rete));
+  assert.deepEqual([r.status, corpoDi(r).error], [409, "Il gruppo 9 non si è fermato"]);
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: testo("database locked", 500) });
+  assert.equal((await dentro(() => cancellaFinestraRotta(rete))).status, 502);
+  assert.equal((await dentro(() => cancellaFinestraRotta(99999))).status, 404);
+  edgeRisponde({ [`DELETE ${BASE}/finestra`]: json({ ok: true, annullati: [] }), [`GET ${BASE}/finestra`]: json(GET_SENZA) });
+  r = await dentro(() => cancellaFinestraRotta(rete));
+  assert.equal(r.status, 200);
+});
+
+test("rotta /ip: stato, limit e offset sbagliati 400; validi arrivano alla sonda; sonda vecchia 200 col suo stato", async () => {
+  for (const q of ["stato=boh", "limit=0", "limit=1001", "limit=abc", "offset=-1"]) {
+    assert.equal((await dentro(() => elencoIpRotta(rete, new URLSearchParams(q)))).status, 400, q);
+  }
+  assert.deepEqual(chiamate(), []);
+  edgeRisponde({ [`GET ${BASE}/finestra/ip`]: json({ ok: true, totale: 0, ip: [] }) });
+  const ok = await dentro(() => elencoIpRotta(rete, new URLSearchParams("stato=assente&limit=5&offset=10")));
+  assert.equal(ok.status, 200);
+  assert.equal(seen.at(-1)?.url, `${BASE}/finestra/ip?stato=assente&limit=5&offset=10`);
+  edgeRisponde({});
+  const vecchia = await dentro(() => elencoIpRotta(rete, new URLSearchParams()));
+  assert.deepEqual([vecchia.status, corpoDi(vecchia).stato], [200, "da_aggiornare"]);
 });
 
 // ── Schedulazioni, colonne nuove, permessi ──────────────────────────────────────────────────────

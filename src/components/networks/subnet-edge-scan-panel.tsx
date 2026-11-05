@@ -180,6 +180,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   // primo clic decide la persona. La finestra si rilegge dalla sonda solo a pannello aperto.
   const [modo, setModo] = useState<"orario" | "finestra">("orario");
   const modoScelto = useRef(false);
+  // Dopo «Torna a orario fisso» l'orario è spento sulla sonda: lo si dice finché non si salva.
+  const [dopoFinestra, setDopoFinestra] = useState(false);
   const fin = useFinestra(networkId, open);
   const sondaDaAggiornare = fin.dati?.stato === "da_aggiornare";
   const modoEffettivo = sondaDaAggiornare ? "orario" : modo;
@@ -239,7 +241,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         }
         // Solo verso «finestra»: la lettura dalla sonda può arrivare prima di questa e non va annullata.
         if (!modoScelto.current && saved?.modo === "finestra") setModo("finestra");
-        if (saved) {
+        // Una riga che è solo finestra (senza frequenza) non è un orario fisso salvato.
+        if (saved && saved.frequency) {
           setHasSchedule(true);
           setScheduleEnabled(saved.enabled);
           setScheduleProfile(saved.profile ?? "balanced");
@@ -359,6 +362,14 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
       toast.error(choiceError);
       return;
     }
+    // La rete è pianificata a finestra: salvare l'orario fisso la cancella e annulla il passaggio in corso.
+    if (
+      fin.dati?.stato === "ok" &&
+      fin.dati.finestra !== null &&
+      !confirm("Questa rete è pianificata a finestra: salvare l'orario fisso cancella la finestra e annulla il passaggio in corso. Continuare?")
+    ) {
+      return;
+    }
     setSavingSchedule(true);
     try {
       const r = await fetch(`/api/networks/${networkId}/edge-scan`, {
@@ -393,6 +404,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
           toast.warning(d.warning);
         }
         setHasSchedule(true);
+        setDopoFinestra(false);
         setStatus(d);
         void fin.rileggi(); // se c'era una finestra, la sonda l'ha cancellata prima di salvare l'orario
       } else {
@@ -867,7 +879,13 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                   assessmentProfileId={assessmentProfileId}
                   assessmentError={assessmentChoiceError()}
                   disabled={!status.edgeEnabled}
-                  onTornatoAOrario={() => scegliModo("orario")}
+                  orarioAttivo={scheduleActive || (hasSchedule && scheduleEnabled)}
+                  onTornatoAOrario={() => {
+                    scegliModo("orario");
+                    setDopoFinestra(true);
+                    // La riga di IPAM è cambiata: il modulo dell'orario si rilegge, e si propone acceso.
+                    void refresh().then(() => setScheduleEnabled(true));
+                  }}
                 />
               ) : (
               <div>
@@ -907,6 +925,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                     </Select>
                   </div>
 
+                  {dopoFinestra && <RigaMessaggio riga={{ tono: "attenzione", testo: "▲ Orario spento: salva per riattivarlo." }} />}
+
                   <ScheduleBuilder value={sched} onChange={setSched} />
 
                   <div className="space-y-1.5">
@@ -940,7 +960,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                     <Button
                       size="sm"
                       onClick={() => void handleSaveSchedule()}
-                      disabled={savingSchedule || !status.edgeEnabled}
+                      disabled={savingSchedule || !status.edgeEnabled || (fin.dati === null && !fin.errore)}
+                      title={fin.dati === null && !fin.errore ? "Lettura della finestra dalla sonda in corso" : undefined}
                       className="bg-amber-500 hover:bg-amber-600 text-white"
                     >
                       {savingSchedule ? (

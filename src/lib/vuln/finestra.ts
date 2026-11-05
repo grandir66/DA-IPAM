@@ -62,6 +62,23 @@ export function oreDellaFascia(dalle: string, alle: string): number | null {
   return minuti / 60;
 }
 
+/**
+ * Distanza minima fra due tentativi sullo stesso IP: un terzo della fascia (`distanza_ritento` della
+ * sonda: lunghezza nominale a orologio a muro, 24 ore se «alle» = «dalle»), in minuti.
+ */
+export function distanzaRitentoMinuti(dalle: string, alle: string): number | null {
+  const ore = oreDellaFascia(dalle, alle);
+  return ore === null ? null : (ore * 60) / 3;
+}
+
+/** «circa 4 h», «circa 2,7 h», «circa 20 min»; `null` se gli orari non sono leggibili. */
+export function testoDistanzaRitento(dalle: string, alle: string): string | null {
+  const min = distanzaRitentoMinuti(dalle, alle);
+  if (min === null) return null;
+  if (min < 60) return `circa ${Math.round(min)} min`;
+  return `circa ${String(Math.round((min / 60) * 10) / 10).replace(".", ",")} h`;
+}
+
 // ── Lettura della risposta della sonda ──────────────────────────────────────────────────────────
 
 export type RipetiFinestra = "mese" | "settimana";

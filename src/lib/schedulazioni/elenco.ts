@@ -247,7 +247,7 @@ function righeEdge(reti: Map<number, string>): RigaSchedulazione[] {
       // Finestra (05/11): fascia in ora italiana, non un cron. Una riga illeggibile si dice, non si nasconde.
       try {
         quando = describeFinestra({
-          giorni: (e.days_of_week ?? "").match(/\d/g)?.map(Number) ?? [],
+          giorni: (e.fascia_giorni ?? "").match(/\d/g)?.map(Number) ?? [],
           dalle: e.fascia_dalle ?? "",
           alle: e.fascia_alle ?? "",
           ripeti: e.ripeti === "settimana" ? "settimana" : "mese",
@@ -275,7 +275,7 @@ function righeEdge(reti: Map<number, string>): RigaSchedulazione[] {
       su: reti.get(e.network_id) ?? `rete n. ${e.network_id}`,
       quando,
       prossimo: null,
-      stato: e.enabled ? "acceso" : "spento",
+      stato: (e.modo === "finestra" ? e.fascia_attiva : e.enabled) ? "acceso" : "spento",
       fisso: false,
       esito: esito("neutro", "l'esito è nella pagina della rete"),
       dove: { href: `/networks/${e.network_id}`, etichetta: "Rete ›" },

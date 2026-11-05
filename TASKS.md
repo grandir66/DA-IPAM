@@ -1,5 +1,31 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Perché le scansioni restano in superficie: credenziali non autenticate
+
+Riccardo vuole una scansione completa per il quadro al cliente. Misurato sul 72729: le scansioni girano **non
+autenticate**, per due motivi distinti.
+
+- [ ] **Config (dati di Riccardo)**: in DA-IPAM alle reti è legata **solo** la community SNMP `public`
+  (`network_credentials`: reti 1,2,3 → cred 1). Le credenziali `ad` e `WinRM` esistono (`credentials` id 2 e 3)
+  ma **non sono legate** a nessuna rete, quindi non partono. Per Windows/share e Linux servono SSH e Windows
+  legate alle reti — sono le credenziali «ridotte al minimo» che decide Riccardo
+- [x] **Bug (sonda, DA-Vul-can)**: anche la sola SNMP che parte **fallisce** su Greenbone
+  (`Credential could not be created by admin`, gvmd, 05/11 09:35 e 09:49). Causa trovata nel codice:
+  `infra/scanner-edge/app/scanner_edge/services/greenbone.py:531` manda
+  `<type>snmp</type><community>…</community><snmp_algorithm>none</snmp_algorithm>`. **`<snmp_algorithm>` non è
+  un elemento GMP valido**: la specifica vuole `<auth_algorithm>` con valore `sha1`/`md5`, **obbligatorio** per
+  il tipo snmp (confermato su python-gvm / forum Greenbone). gvmd ignora l'elemento ignoto, non trova auth
+  valido, rifiuta. Per questo `snmp_credential_id` resta null sulla sonda
+- [ ] **Fix**: in `create_credential` (ramo snmp) mandare `<auth_algorithm>sha1</auth_algorithm>` invece di
+  `<snmp_algorithm>none</snmp_algorithm>`; valutare se serve anche `<login>` (alcune versioni lo pretendono per
+  v1/v2c). Va **provato a gvmd sveglio** (risponde solo durante una scansione: a riposo il socket dà
+  «Connection refused»): riprodurre il rifiuto, applicare, riprodurre il successo. È un fix in DA-Vul-can, da
+  rilasciare alla sonda — attenzione al treno di rilasci dell'altra sessione sul 72729
+- [ ] Finché (bug) e (config) non sono risolti, il «quadro completo» resta la fotografia **non autenticata**:
+  già utile (11 Critical, 35 High, ESXi EOL su 192.168.0.6, FTP, TLS deboli, default-cred trovate da Greenbone)
+  ma senza patch mancanti né share Windows con permessi
+- [ ] Si lega a: «Credenziali di serie» (default-login), «share/guest come rischio più alto», e al difetto B1
+
 ## 2026-11-05 — Le stampanti del 72729 stampano ancora: template nuclei sulla 9100
 
 Riccardo (05/11, ~18:55): «in questo momento 72729 ha stampato ancora cose». La correzione del probe (voce «Le stampanti del 72729 stampano la richiesta del probe») non basta: c'era una seconda fonte. Non è in DA-IPAM: dettaglio e passi in `DA-Vul-can/TASKS.md`, stesso titolo.

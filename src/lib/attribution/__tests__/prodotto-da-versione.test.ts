@@ -52,7 +52,9 @@ describe("prodotto dalla versione del servizio", () => {
     assert.equal(e.find((x) => x.dimension === "vendor")?.claim, "proxmox");
     assert.equal(e.find((x) => x.dimension === "category")?.claim, "compute.hypervisor");
     assert.ok(
-      e.every((x) => (x.raw_value ?? "").startsWith("3128/")),
+      /* Produttore e categoria vengono dalla 3128; la famiglia ha la sua porta e la
+       * controlla la suite «il sistema operativo si ricava da TUTTE le porte». */
+      e.filter((x) => x.dimension !== "os").every((x) => (x.raw_value ?? "").startsWith("3128/")),
       "il grezzo dice da quale porta viene: senza, domani non si sa perché",
     );
   });
@@ -109,5 +111,45 @@ describe("il peso deve bastare, o la regola nasce inerte", () => {
     const r = fuseAttribution(righe, "2026-11-05T03:00:00Z");
     assert.equal(r.category.claim, "compute.hypervisor");
     assert.equal(r.vendor.claim, "proxmox");
+  });
+});
+
+describe("il sistema operativo si ricava da TUTTE le porte", () => {
+  /* Trovato misurando il 192.168.99.1 (PX-NAS) dopo l'«Attribuzione» del 05/11: aveva
+   * la categoria `compute.hypervisor` dalla 3128 e la famiglia VUOTA, perche' la
+   * lettura si fermava alla prima porta con un prodotto noto e non tornava sulla 22,
+   * dove «OpenSSH 10.0p2 Debian» dice `linux`. */
+  const osEmesso = (porte: Porta[]) =>
+    evidenze(porte).filter((e) => e.dimension === "os");
+
+  it("PX-NAS: categoria dalla 3128 e famiglia linux dalla 22", () => {
+    const e = evidenze(PORTE_PROXMOX);
+    assert.equal(e.find((x) => x.dimension === "category")?.claim, "compute.hypervisor");
+    const os = e.filter((x) => x.dimension === "os");
+    assert.equal(os.length, 1, "una sola famiglia, non una per porta");
+    assert.equal(os[0].claim, "linux");
+    assert.ok((os[0].raw_value ?? "").startsWith("22/"), "il grezzo dice da quale porta viene la famiglia");
+  });
+
+  it("il sistema operativo dichiarato dal prodotto batte il banner di un'altra porta", () => {
+    const os = osEmesso([
+      { port: 22, protocol: "tcp", service: "ssh", version: "OpenSSH 8.4 Debian" },
+      { port: 443, protocol: "tcp", service: "https", version: "VMware ESXi SOAP API 7.0.3" },
+    ]);
+    assert.equal(os.length, 1);
+    assert.equal(os[0].claim, "esxi", "ESXi lo dice il prodotto, Debian e' solo il banner di OpenSSH");
+  });
+
+  it("nessuna porta che parli di un sistema operativo: niente famiglia inventata", () => {
+    assert.deepEqual(
+      osEmesso([{ port: 80, protocol: "tcp", service: "http", version: "nginx 1.24.0" }]),
+      [],
+    );
+  });
+
+  it("il server Windows resta windows (il prodotto lo dichiara)", () => {
+    const os = osEmesso(PORTE_WINDOWS);
+    assert.equal(os.length, 1);
+    assert.equal(os[0].claim, "windows");
   });
 });

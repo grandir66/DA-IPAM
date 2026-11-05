@@ -347,24 +347,51 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
 
     /* 5b. La VERSIONE dei servizi (`-sV`): è il posto dove un prodotto dice il proprio
      * nome, e fino al 05/11/2026 non la leggeva nessuno — né per l'OS né per la
-     * categoria. Si prende la prima porta che nomina un prodotto noto, in ordine di
-     * porta, e si emette quello che quel prodotto implica. Il dato è già in archivio
-     * su ogni host scansionato: questa lettura vale anche all'indietro. */
-    for (const p of [...ports].sort((a, b) => a.port - b.port)) {
-      const prodotto = prodottoDaVersione(p.version);
-      if (!prodotto) continue;
-      const grezzo = `${p.port}/${(p.version ?? "").slice(0, 120)}`;
-      if (prodotto.vendor) {
-        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "vendor", claim: prodotto.vendor, confidence: 0.8, raw_value: grezzo });
+     * categoria. Il dato è già in archivio su ogni host scansionato: questa lettura
+     * vale anche all'indietro.
+     *
+     * Produttore e categoria vengono dalla PRIMA porta che nomina un prodotto noto (in
+     * ordine di porta): è l'apparato, e un apparato è una cosa sola. Il sistema
+     * operativo no: si cerca su TUTTE le porte, perché il prodotto che dà la categoria
+     * spesso non dice l'OS. Misurato sul PX-NAS `192.168.99.1`: la 3128 dice «Proxmox
+     * Virtual Environment» (hypervisor, nessun OS), la 22 «OpenSSH 10.0p2 Debian»
+     * (linux) — fermandosi alla prima l'host restava senza famiglia. */
+    const porteInOrdine = [...ports].sort((a, b) => a.port - b.port);
+    const conProdotto = porteInOrdine
+      .map((p) => ({ p, prodotto: prodottoDaVersione(p.version) }))
+      .filter((x): x is { p: typeof x.p; prodotto: NonNullable<typeof x.prodotto> } => x.prodotto !== null);
+
+    const primo = conProdotto[0];
+    if (primo) {
+      const grezzo = `${primo.p.port}/${(primo.p.version ?? "").slice(0, 120)}`;
+      if (primo.prodotto.vendor) {
+        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "vendor", claim: primo.prodotto.vendor, confidence: 0.8, raw_value: grezzo });
       }
-      if (prodotto.category && isValidCategory(prodotto.category)) {
-        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "category", claim: prodotto.category, confidence: 0.8, raw_value: grezzo });
+      if (primo.prodotto.category && isValidCategory(primo.prodotto.category)) {
+        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "category", claim: primo.prodotto.category, confidence: 0.8, raw_value: grezzo });
       }
-      const famiglia = prodotto.os ?? osFamilyFromText(p.version ?? "");
-      if (famiglia) {
-        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "os", claim: famiglia, confidence: 0.8, raw_value: grezzo });
-      }
-      break;
+    }
+
+    /* Una sola famiglia, non una per porta: due claim uguali di peso si pareggiano e
+     * il motore non saprebbe quale preferire. Si prende, in quest'ordine:
+     *  1. l'OS **dichiarato** da un prodotto della tabella (ESXi, Windows): è il
+     *     prodotto stesso a dirlo, confidenza 0.8;
+     *  2. altrimenti la famiglia letta nel testo di un banner qualunque («OpenSSH …
+     *     Debian»): è un indizio di contorno, confidenza 0.7 (0.85 × 0.7 = 0.595,
+     *     ancora sopra la soglia, e sotto chi parla col sistema operativo). */
+    const dichiarato = conProdotto.find((x) => x.prodotto.os);
+    const dalBanner = dichiarato ? null : porteInOrdine.find((p) => osFamilyFromText(p.version ?? ""));
+    const scelta = dichiarato
+      ? { porta: dichiarato.p, famiglia: dichiarato.prodotto.os as string, confidenza: 0.8 }
+      : dalBanner
+        ? { porta: dalBanner, famiglia: osFamilyFromText(dalBanner.version ?? "") as string, confidenza: 0.7 }
+        : null;
+    if (scelta) {
+      out.push({
+        source: "nmap_service", phase: "scan_nmap_base", dimension: "os",
+        claim: scelta.famiglia, confidence: scelta.confidenza,
+        raw_value: `${scelta.porta.port}/${(scelta.porta.version ?? "").slice(0, 120)}`,
+      });
     }
   }
 

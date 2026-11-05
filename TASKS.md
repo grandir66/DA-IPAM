@@ -104,6 +104,26 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-05 — L'OS trovato da nmap non arriva alle tabelle (difetto, causa misurata)
+
+Riccardo: «il detect dei sistemi operativi del nmap aggiuntivo non riporta alcun dato alle tabelle
+delle subnet; esiste un pulsante per riclassificare, ma evidentemente non fa nulla». Misurato sul
+72729 (sola lettura), dove nel frattempo il profilo è girato su **19 host**.
+
+- [x] **`-O` funziona e il dato è buono**: `hosts.os_info` è pieno su **17 host su 19** con valori veri — `Linux 2.6.32`, `Linux 3.2 - 3.8` (×3), `Linux 4.15 - 5.19` (×2), `Linux 4.19 - 5.15`, `OpenWrt 19.07 (Linux 4.14)`, `HP iLO 4 or iLO 5 remote management interface`, `EPSON Built-in Print Server`, `Crestron XPanel control system`, `Windows Server 2022 Standard` (×4). Quindi il detect non è rotto
+- [x] **La tabella della subnet non mostra `os_info`**: mostra `attr_vendor_name`/`attr_vendor` · **`attr_os_family`** (`networks/[id]/network-detail-client.tsx:1665`), cioè l'OS **dell'attribuzione**. E `attr_os_family` è pieno su **5 host su 19**: solo i Windows. Tutti i 14 Linux/iLO/stampante/Crestron hanno l'OS in archivio e la cella vuota
+- [x] **Causa**: in `attribution/profilo-evidence.ts` l'evidenza di dimensione `os` nasce **solo** da `rdp-ntlm-info` (0.9), `smb-os-discovery` (0.85) e `nbstat` (0.45). L'osmatch di `-O` (`NmapResult.os`, che `fattiDaRisultato` usa come ripiego per `os_info`) **non diventa un'evidenza**, e nemmeno `snmp-sysdescr` o il nuovo `vmware-version`. L'attribuzione non sa niente di quello che nmap ha visto
+- [x] **Il pulsante «Attribuzione» non è rotto, è a vuoto**: apre l'anteprima di `POST /api/attribution/recompute {preview:true}` e applica le evidenze **esistenti**. Il profilo chiama già `recomputeAttributionSafe` quando salva, quindi a mano non c'è più niente da proporre: senza evidenze nuove di OS il ricalcolo è idempotente e l'utente lo legge come «non fa nulla». Due cose diverse da sistemare: l'evidenza che manca e il fatto che il pulsante non dica «niente da proporre»
+- [ ] **Fix proposto** (aspetta il sì): (1) emettere un'evidenza `os` dall'osmatch di nmap, con la confidenza legata all'`accuracy` che nmap riporta, e da `snmp-sysdescr`/`vmware-version`, mappando la stringa con il `famigliaOs` dell'attribuzione — «OpenWrt 19.07 (Linux 4.14)» → linux, «HP iLO…» resta senza famiglia; (2) mostrare l'OS **grezzo** dove la famiglia non c'è (nella tabella della subnet e nella colonna «OS» di Discovery, che oggi è nascosta di serie); (3) far dire al pulsante «niente da proporre: le evidenze sono già applicate» invece di una finestra vuota
+- [ ] Da misurare col fix: quanti dei 14 host senza `attr_os_family` la prendono, e quanti restano senza perché la stringa non è una famiglia nota
+
+## 2026-11-05 — Aggiornatore delle sonde: bersaglio «almeno questa versione»
+
+Riccardo (05/11) ha chiesto di scrivere il miglioramento proposto a fine sessione.
+
+- [ ] Oggi `aggiorna-sonda.sh` accetta **un numero esatto** (`versione_desiderata`): con `SOLO_SU_COMANDO=1` sulle appliance, se fra il comando e il giro del timer l'hub pubblica una versione nuova, la sonda scrive «si aspetta che l'hub la pubblichi» e **resta ferma**. È successo **due volte** col 72729 il 04/11 (fissata 0.8.235 mentre l'hub era già alla 0.8.236, poi 0.8.236 contro 0.8.237); l'hub serve solo il tarball della versione in esecuzione, quindi una fissata vecchia è morta
+- [ ] Proposta: un bersaglio del tipo **«almeno questa versione»** (o un `segue_hub` che valga anche con `SOLO_SU_COMANDO=1`, una volta dato il comando), così l'aggiornamento di una sonda non dipende dalla fretta di chi rilascia. Il codice sta in **DA-Vul-can** (`infra/scanner-edge/scripts/aggiorna-sonda.sh`, condizione a riga 478) e la versione la scrive DA-Link (`PUT /api/edge-bridges/kit/versione`): riga gemella nel TASKS di DA-Vul-can
+
 ## 2026-11-05 — Chiusura della sessione «profili di scansione»
 
 Consuntivo nel piano [`plans/2026-11-04-profili-di-scansione.md`](docs/superpowers/plans/2026-11-04-profili-di-scansione.md),

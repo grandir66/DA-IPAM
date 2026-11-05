@@ -26,6 +26,23 @@ stato di avanzamento». Riccardo (05/11): sì ai passi 1 e 2, livello leggero; 3
 
 - [ ] Riccardo (05/11): sotto Security un menù che fa il contrario del pannello VA Scan: una pagina in cui si definisce la scansione e si scelgono le reti fra le subnet disponibili, impostando la tipologia di scansione e se farla su tutta la subnet o solo sugli IP rilevati. Oggi si parte dalla rete. Si appoggia a orario fisso e finestra (piano `2026-11-05-scansione-a-finestra.md` in DA-Vul-can) e alle rotte `edge-scan`; da fare dopo il collaudo della finestra.
 
+## 2026-11-05 — Punteggio: share enumerabili e utenti guest come rischio più alto
+
+Riccardo (05/11): «dovremmo valutare anche come rischio più elevato l'enumerabilità delle share e la presenza
+di utenti guest». Misurato oggi sul 72729: gli host Windows la sonda li vede (`Using NetBIOS to retrieve
+information from a SMB host` su ~20 IP della 192.168.0.0/24) ma **tutto a gravità `Log`**, quindi sparisce nel
+rumore. È la stessa famiglia del difetto B1 (i `Log` affogano i rilievi veri).
+
+- [ ] Alzare la gravità dei rilievi di **enumerazione SMB senza credenziali** (null-session / NetBIOS che
+  elenca share, utenti, politiche): oggi `Log`, vanno portati almeno a Medium — è esposizione, non informazione
+- [ ] **Utente guest / accesso anonimo** alle share come rilievo ad alta gravità a sé: è un accesso ai dati
+  senza autenticazione, non un dettaglio di inventario
+- [ ] Dove si decide: `enum4linux`/SMB sulla sonda (DA-Vul-can) per *produrre* il rilievo, e la mappa di
+  gravità/categoria in DA-IPAM per *pesarlo*. Oggi `enum4linux` e `ldap-enum` producono **0 righe** perché
+  girano senza credenziali: la lettura piena delle share (quali sono aperte, con che permessi) resta legata al
+  blocco di fondo — le credenziali della subnet non arrivano alla sonda
+- [ ] Si lega a B1 (separare i `Log` dal conteggio) e alla voce «Credenziali di serie» qui sotto
+
 ## 2026-11-05 — Credenziali di serie: la verifica c'è già, è spenta
 
 Riccardo (05/11): «sto sviluppando un sistema di VA per la gestione delle criticità aziendali, e il sistema

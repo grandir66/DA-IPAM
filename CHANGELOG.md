@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: collector Infoblox (`infoblox-nios`) in sola lettura per reti, DHCP e DNS, da riga di comando. Era collaudato su un ramo a parte dal 03/11 e rischiava di invecchiare lì; non scrive ancora nulla nell'inventario, perché il modello dei dati va deciso prima.
+
 - **Corretto**: se le credenziali non arrivano allo scanner lo dice il pannello della rete, con il motivo; prima restava nel log della sonda e la scansione partiva senza. Un legame che manca si rimanda da solo col job di sincronia, al massimo una volta al giorno perché accende Greenbone, e solo alle sonde dalla 0.8.249: quelle prima cancellerebbero il legame.
 
 - **Nuovo**: nella scansione a finestra si sceglie quando i rilievi arrivano a Vulcan: a fine passaggio, a fine fascia o a ogni gruppo. Serve Scanner-Edge 0.8.240; le sonde più vecchie inviano a ogni gruppo e la scelta resta spenta.

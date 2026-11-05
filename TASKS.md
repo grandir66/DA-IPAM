@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-06 — Decisioni di Riccardo sull'analisi del 04/11
+
+- [x] Riccardo: «7 si»: spuntate le 43 voci fatte, chiuse le 21 superate (`- [-]` col motivo). I 7 doppioni restano.
+- [x] Riccardo: «4 inseriamo la scansione»: collector `infoblox-nios` portato su `dev` da `origin/codex/infoblox`, solo codice, prove, manuale e piano. Nessun aggancio ai dati, nessun giro automatico.
+- [ ] Da chiedere: «inseriamo la scansione» voleva dire anche un giro pianificato? Oggi il collector si lancia solo da riga di comando.
+- [ ] Riccardo (06/11): la pagina di riclassifica diventa una **modale coi soli device che hanno dati multipli di classificazione**: dati messi a confronto, scelta umana, applicata come scelta manuale. Forma tabellare: per gli IP contesi una colonna per ogni dato, un clic sulla cella e quella diventa la scelta dell'IP. Oggi c'è `components/networks/attribution-preview-dialog.tsx`, che mostra solo prima e dopo; la scrittura manuale esiste già (`POST /api/hosts/[id]/attribution/override`). Prima si propone l'interfaccia oggetto per oggetto.
+- [x] Misurato sull'hub il 06/11 (379 host, 105 già manuali): contesi per il motore 12 (`conflicts_json` dell'ultimo giro, quasi tutti `compute.server` contro `compute.vm`); con radici di categoria diverse fra le evidenze vive 48; con OS diversi 11. Il conteggio grezzo dava 222 host su 361, gonfiato da `proxmox`/`proxmox-server-solutions` e `compute`/`compute.server`: non va usato.
+- [ ] Da capire: sull'hub `attribution_evidence` ha 174.030 righe con fonte `oui`, ma solo 474 vive: le altre sono sostituite e si accumulano a ogni giro, senza retention.
+
 ## 2026-11-06 — Host lenti e avanzamento per IP
 
 - [ ] Piano in DA-Vul-can: `docs/superpowers/plans/2026-11-06-host-lenti-e-avanzamento-per-ip.md`. Qui: avanzamento per IP nel pannello VA, rilievi a scansione in corso in `runVulnSync`, interruttore degli host lenti. Richiesta di Riccardo del 05/11. In attesa del suo via.
@@ -285,7 +294,7 @@ I 157 aperti di prima: **43 fatti e mai spuntati, 21 superati, 7 doppioni, 86 vi
 
 - [ ] **A1. Sonda del 72729 ferma alla 0.8.234** (34). Ogni giro fermato dal guardiano sparisce senza traccia. In DA-IPAM non c'è niente da fare: serve il rilascio di DA-Vul-can, chiesto alla sessione «Password non funziona su 72279». Poi si controlla `GET /api/v1/scans?stato=error`. S. Nessuna decisione.
 - [x] **A2. Promozione `dev`→`main`** (fast-forward): fatta il 04/11 col sì di Riccardo (domanda 8, «Sì a tutte e 9»). `main` = `dev` = `5de093d5`, 0.9.969, verificato con `git ls-remote`. Su `dev` c'erano solo la 0.9.968, la 0.9.969 e note. Cancello sul commit: lint 0 errori, tsc 0, 7.152 prove passate e 0 fallite, build 0. 70151 (`100.107.145.24`) arrivata alla 0.9.969, `/api/health` ok. Sul 72729 la 0.9.968 rende davvero solo dopo A1. Le altre appliance non sono state controllate.
-- [ ] **A3. Classi del 72729 da ricalcolare** (1087 riaperta in forma nuova). Il ricalcolo del 04/11 16:10 ha messo in `iot` 30 host, fra cui 11 Weintek e 10 CREVIS. Dopo è arrivata la radice `ot`: il codice ora dà `hmi` e `plc`, ma quei host cambiano solo con un ricalcolo o una scansione con porte (non misurato se sia già successo). Comando già provato: `scripts/attribution-recompute-cli.ts`. S. **Decide Riccardo**: scrive sul cliente, snapshot della VM 100 prima.
+- [-] **A3. Classi del 72729 da ricalcolare** (1087 riaperta in forma nuova). Il ricalcolo del 04/11 16:10 ha messo in `iot` 30 host, fra cui 11 Weintek e 10 CREVIS. Dopo è arrivata la radice `ot`: il codice ora dà `hmi` e `plc`, ma quei host cambiano solo con un ricalcolo o una scansione con porte (non misurato se sia già successo). Comando già provato: `scripts/attribution-recompute-cli.ts`. S. **Decide Riccardo**: scrive sul cliente, snapshot della VM 100 prima. — **Superata il 06/11** (Riccardo: ok): le 11 Weintek risultano già `hmi` nel documento del 05/11; i CREVIS non controllati.
 - [ ] **A4. Collaudo Windows ancora da fare** (162; piano WMI S10). WinRM/WMI automatico è su `main` ma non è mai stato provato su un DC vero, né con un account che i PC accettano: al 72729 12 PC su 13 rifiutano quello attuale. Servono la rete finta di Riccardo e l'account amministratore locale dell'IT del cliente. M. **Serve Riccardo**.
 - [ ] **A5. Stampanti del 72729** (1107, 1108): 8 seriali su 10. Restano la WF-6590 (192.168.0.131, nessun seriale in Printer-MIB) e 192.168.1.215 (lettura senza dati). La scheda stampante non è mai stata guardata a schermo. S. Nessuna decisione.
 - [ ] **A6. Rete «parma» 192.168.2.0/24 del 72729 muta** (150): 0 host, compresi gateway e switch «pese». Da guardare criteri e rotte sul Fortinet, o se è una sede in VPN. Sul posto, anche le porte 26, 29, 40, 45 a 10 Mbps half (148). S. **Serve Riccardo** (accesso al Fortinet o risposta dell'IT).
@@ -309,12 +318,12 @@ I 157 aperti di prima: **43 fatti e mai spuntati, 21 superati, 7 doppioni, 86 vi
 
 ### C. Miglioramenti
 
-- [ ] **C1. Infoblox**, due passi distinti.
+- [ ] **C1. Infoblox**, due passi distinti. **Riccardo 06/11: «inseriamo la scansione»**: collector portato su `dev` (vedi sotto). Se voleva anche un giro pianificato è un lavoro in più, da chiedergli. Il passo «dati in IPAM» non ha ricevuto risposta: resta aperto.
   - **Portare il collector su `dev`**: `origin/codex/infoblox`, 6 commit, conflitti solo in CHANGELOG, TASKS e versione. Raccolta collaudata (6.853 record in 37 s), resta da CLI, nessun effetto sui dati. Il documento di consegna dice che il ramo non è su origin: ora c'è. S. **Decide Riccardo**.
   - **Far entrare i dati in DA-IPAM**: è questo il blocco vero. Mai progettato. `networks.cidr` è UNIQUE e due viste possono avere lo stesso CIDR; `dhcp_leases` vuole il MAC e il CHECK di `source_type` non ammette `infoblox`; DNS senza una destinazione. L, livello Completo, sequenza in `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`. **Decide Riccardo** se serve e per quale cliente.
 - [ ] **C2. Rilievi sommati per host** (17, 18; lato DA-Vul-can 16). Il rilievo di un host si sostituisce solo con quelli nuovi di quell'host; il giorno per giorno copre tutta la subnet. Il primo pezzo c'è (`vuln_findings_attuali`). M qui, più DA-Vul-can. Richiesta di Riccardo già fatta, va messa in ordine con Edge.
-- [ ] **C3. Proxmox** (1035, 1043). `proxmox-ve` è fuori dal pulsante e lì resta (`riconosci.ts`). Mancano: modello, seriale e produttore dei nodi (vuoti nel collaudo su 4 nodi; codice scritto, mai riprovato), IP dei guest su 24 di 52, schede di rete non proiettate, `sockets` fisso a 1. La scansione di oggi dà già tutto, quindi agganciarlo non aggiunge dati. Proposta: resta fuori. M per la parità. **Decide Riccardo**.
-- [ ] **C4. SSH Ubiquiti** (995). Fermo dal 22/10 su autenticazione rifiutata, nessun tentativo in più. SNMP e controller UniFi danno già i dati e il 23/10 si è deciso che Ubiquiti resta in SNMP; l'SSH aggiungerebbe poco (`mca-status`). Proposta: chiudere. In alternativa serve la credenziale dei device dal controller. S. **Decide Riccardo**.
+- [ ] **C3. Proxmox** (1035, 1043). `proxmox-ve` è fuori dal pulsante e lì resta (`riconosci.ts`). Mancano: modello, seriale e produttore dei nodi (vuoti nel collaudo su 4 nodi; codice scritto, mai riprovato), IP dei guest su 24 di 52, schede di rete non proiettate, `sockets` fisso a 1. La scansione di oggi dà già tutto, quindi agganciarlo non aggiunge dati. Proposta: resta fuori. M per la parità. **Decide Riccardo**. — **Riccardo 06/11: «2 si»**, letto come risposta sul Proxmox: resta fuori dal pulsante, nessun lavoro. Da confermare che il 2 fosse questa domanda.
+- [ ] **C4. SSH Ubiquiti** (995). Fermo dal 22/10 su autenticazione rifiutata, nessun tentativo in più. SNMP e controller UniFi danno già i dati e il 23/10 si è deciso che Ubiquiti resta in SNMP; l'SSH aggiungerebbe poco (`mca-status`). Proposta: chiudere. In alternativa serve la credenziale dei device dal controller. S. **Decide Riccardo**. — **Riccardo 06/11: «lasciamo la possibilità»**: la voce non si chiude come rinuncia, l'SSH resta previsto nel collector; si riprova solo quando c'è la credenziale dei device. Nessun lavoro ora.
 - [ ] **C5. LibreNMS** (602, 608, 610, 613, 615). I dati sull'hub arrivano (52 apparati, 1094 porte), ma: vicini nella mappa non fatti, `librenms_vicino` non è letta dalla topologia (M, zona rossa); nessun ADR; limiti di avviso non letti; 5 server mai interrogati da provare; prove T1 e T5. Dimensione totale M.
 - [ ] **C6. Collaudi dei collector** (805, 808, 812, 830, 831, 845, 852, 996, 1034, 719, 721, 663): prove in locale su apparati veri, tutte «in attesa di Riccardo» dal 21-22/10, molte ormai implicite nell'uso su 70151. M. Da leggere una volta sola, tenendo solo quelle che non sono già state esercitate.
 - [ ] **C7. Decisioni rimaste sui collector** (817, 821, 853): ritirare `src/lib/devices/acquisition/`? Togliere «(anteprima)» dall'interruttore? S. **Decide Riccardo**.
@@ -555,7 +564,7 @@ bozza con livello completo proposto, in attesa del via.
 - [x] Trovato il motivo per cui le regole OT di stamattina non scatteranno mai: 102, 502, 1883, 8883, 4840 e 44818 non sono in `NMAP_DEFAULT_TCP_PORTS`, 47808/5683/2222 non sono nella lista UDP. Le firme aspettano porte che nessuno prova
 - [x] `bacnet-discover` del comando di Riccardo non esiste: lo script è `bacnet-info`, UDP 47808. Un nome inesistente fa abortire tutta la scansione, non salta lo script. Mancano anche `dnp3-info` e qualunque cosa per Profinet, GE SRTP e FINS oltre a `omron-info`
 - [x] Decisioni di Riccardo (04/11): probe OT solo di lettura, **niente `modbus-discover`** (intrusive); **`mqtt-subscribe` incluso com'è**, payload compresi (conseguenza a verbale: dati di processo del cliente nel nostro database, il piano mette un tetto in byte); PLC e HMI **foglie distinte** da IoT; interruttore **globale** in Opzioni
-- [ ] Da confermare al via: la radice nuova di livello 1 `ot` (foglie `plc`, `hmi`, `drive`, `rtu`, `io_remoto`, `gateway`) invece di `iot.plc`/`iot.hmi`. «Distinti da IoT» non diceva dove
+- [x] Da confermare al via: la radice nuova di livello 1 `ot` (foglie `plc`, `hmi`, `drive`, `rtu`, `io_remoto`, `gateway`) invece di `iot.plc`/`iot.hmi`. «Distinti da IoT» non diceva dove
 - [x] Riccardo (04/11): «vai e procedi con un controllo leggero, vorrei avere la funzione disponibile al più presto» e «vediamo di abilitare tutto il possibile». Livello **leggero**, non completo
 - [x] Riccardo (04/11): «si applicherebbe l'approfondito con la selezione dei device dalla lista […] abilitabile solo su determinati device selezionati dentro a subnet». Il meccanismo esisteva già: `hostScope` nella pagina della rete, e le azioni fuori da `noHostSelectionNeeded` pretendono la selezione. Il pulsante «Profilo» segue «Accesso agli host»: spento senza selezione
 - [x] Scelta d'architettura: modulo a parte (`src/lib/scanner/profili/`) e rotta `POST /api/scans/profilo`, **non** un `DiscoveryScanType` nuovo. `discovery.ts` è 3381 righe con `scanType` sparso in una trentina di condizioni: infilarci un tipo nuovo era il modo più sicuro di rompere la scansione di tutti i clienti
@@ -568,12 +577,12 @@ bozza con livello completo proposto, in attesa del via.
 - [ ] Da verificare sulle appliance dei clienti: se il processo ha i privilegi per `-O` e `-sU`. Sull'hub gira root; sulle appliance no si sa. Senza, il profilo degrada e lo scrive nel registro
 - [ ] `--version-intensity` alzata a 7 **solo dentro il profilo Approfondito**, che gira su host scelti a mano: il valore globale resta 0. Il costo per host non è ancora misurato su una rete vera
 - [ ] Da ripensare nella tappa 2: `-O` è passato con `--osscan-limit`, che salta il riconoscimento sugli host senza almeno una porta chiusa — su un apparato molto filtrato quindi non parte, e il registro del giro mostra il comando ma non dice che è stato saltato. Tolto il flag si prova sempre, al prezzo di qualche pacchetto in più
-- [ ] Resta da fare: mostrare i rilievi nella scheda dell'apparato (oggi stanno in `host_profilo_rilievi` e riempiono i campi vuoti, ma non c'è una tab che li faccia vedere)
-- [ ] Ordine scelto: prima il profilo **Approfondito** (nessun rischio, rende su ogni cliente, collauda il parser), poi **IoT/OT**, che è quello che manda pacchetti ai PLC
+- [x] Resta da fare: mostrare i rilievi nella scheda dell'apparato (oggi stanno in `host_profilo_rilievi` e riempiono i campi vuoti, ma non c'è una tab che li faccia vedere)
+- [x] Ordine scelto: prima il profilo **Approfondito** (nessun rischio, rende su ogni cliente, collauda il parser), poi **IoT/OT**, che è quello che manda pacchetti ai PLC
 - [ ] Da verificare sulle appliance dei clienti, non solo sull'hub: se il processo ha i privilegi per `-O` e `-sU`. Senza, il profilo deve degradare e dirlo, non fallire muto
 - [ ] `--version-intensity` si alza solo con la misura del tempo prima e dopo su una rete vera (passo S5). Se costa troppo resta a 0 e si scrive
-- [ ] Chiude l'«asse 2 (GET della pagina web)» rimasto aperto nella sezione delle stampanti: lo coprono `http-title`/`http-headers` del profilo Approfondito
-- [ ] `rdp-ntlm-info` dà nome DNS, nome NetBIOS, dominio e build di Windows **senza credenziali**: tocca anche il filo WMI/WinRM aperto oggi, dove 12 PC su 13 rifiutano l'account
+- [x] Chiude l'«asse 2 (GET della pagina web)» rimasto aperto nella sezione delle stampanti: lo coprono `http-title`/`http-headers` del profilo Approfondito
+- [x] `rdp-ntlm-info` dà nome DNS, nome NetBIOS, dominio e build di Windows **senza credenziali**: tocca anche il filo WMI/WinRM aperto oggi, dove 12 PC su 13 rifiutano l'account
 
 ## 2026-11-04 — Stampanti: seriale e part number; regole OT mai arrivate alle appliance
 
@@ -588,7 +597,7 @@ Riccardo (04/11): «uno dei più utili sarebbe il seriale ma non viene ottenuto 
 - [x] Riccardo (04/11): scansione Nmap completa 15:14-15:29 UTC, 95 host, 273 porte. Stampante 192.168.0.201 letta: modello, seriale, part number W1A29A, firmware. Le altre 9 non risultano lette
 - [x] Trovato: le regole OT funzionano (`final_device: "Weintek HMI"`, `rule:mac_vendor`) ma non scrivono la classe. Dal Fix C1 l'unico motore che scrive `hosts.classification` è l'attribuzione v2, e dall'OUI prendeva solo il vendor. Prima avevo indicato la soglia 0,56 del fingerprint: sbagliato, quel percorso non scrive
 - [x] Evidenza categoria dall'OUI per i produttori solo OT (`OUI_SOLO_OT` in `attribution/emitters.ts`). Weintek e CREVIS finiscono `iot`, non `hmi`/`plc`: `legacy-projection.ts` collassa le foglie `iot.*` per regola esplicita e le prove esistenti la fissano
-- [ ] Da decidere con Riccardo: PLC e HMI distinti da IoT nella classificazione (nuove foglie della tassonomia e prove da rivedere)
+- [x] Da decidere con Riccardo: PLC e HMI distinti da IoT nella classificazione (nuove foglie della tassonomia e prove da rivedere)
 - [x] 0.9.963 su `main` e sulla 72729 (ripartita alle 16:09 UTC, health 200), 70151 a 0.9.963. `scripts/attribution-recompute-cli.ts DEFAULT 192.168.0.0/24 --no-vendor-refresh` alle 16:10 UTC: 30 host cambiati, tutti `unknown → iot`, 11 Weintek, 10 CREVIS, 6 Control Techniques, 3 Kronotech, nessun altro. Classi di prima in `/root/classi-prima-20261104.txt` sulla VM 100. Unknown da 77 a 47. Le altre appliance si riallineano alla prossima scansione con porte
 - [x] Riccardo «Aggiorna selezionati» alle 15:50 UTC: 8 seriali veri su 10, 6 part number HP, modelli precisi. Restano senza seriale la WF-6590 (192.168.0.131, nessuna Printer-MIB per il seriale) e 192.168.1.215 (lettura senza dati, da guardare). Snapshot `pre-stampanti-20261104` tolto. Verifica dal database: la pagina non l'ho vista
 - [ ] Asse 2 (GET della pagina web) e asse 3 (password di default) del detect restano da decidere con Riccardo
@@ -625,9 +634,9 @@ Riccardo (04/11): «ho una rete vecchia e mi aspettavo che in assenza di winrm w
 - [x] Causa: il ripiego WMI c'è (`src/lib/devices/wmi-bridge.py`, impacket presente nel venv) ma scatta solo in `getDeviceInfo` per un apparato Windows con credenziale. La scansione prova solo WinRM (`discovery.ts`), quindi senza WinRM non lega nessuna credenziale; in più la rete 1 ha in catena solo la voce SNMP `public`
 - [x] Prova vera (Riccardo: «puoi provare tu con le credenziali registrate»): `runWmiProbe` su 192.168.0.227, una volta, voce `WinRM`, script temporaneo tolto. Esito `AUTH_REJECTED`, `rpc_s_access_denied` in 0,5 s. Login LDAP della stessa voce riuscito: password giusta. È lo stesso utente della voce `ad`, solo Domain Users (gruppo primario 513, 0 gruppi diretti). Causa: mancano i diritti sul PC
 - [ ] Serve un account dedicato amministratore locale dei PC (GPO del loro IT), non Domain Admins. Poi nuova prova su un PC. Il passaggio del firewall oltre la 135 resta da confermare: il rifiuto arriva prima di usare le porte dinamiche
-- [ ] Riccardo (04/11): «potrebbero esserci tante macchine windows che rispondono wmi con account di dominio». Piano: [`docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`](docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md), bozza con livello completo proposto; primo passo la misura sui PC del 72729. Va in appliance solo con rilascio su `main`
+- [x] Riccardo (04/11): «potrebbero esserci tante macchine windows che rispondono wmi con account di dominio». Piano: [`docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md`](docs/superpowers/plans/2026-11-04-wmi-nella-scansione.md), bozza con livello completo proposto; primo passo la misura sui PC del 72729. Va in appliance solo con rilascio su `main`
 - [x] Misura sul 72729 (Riccardo: «Sì, prova i PC»): 13 PC con 135 aperta e senza WinRM, 12 rifiutano l'account readonly, 1 (192.168.0.207) non risponde sulla 135, 0 accettano. L'account dedicato dell'IT del cliente serve per il collaudo finale
-- [ ] Riccardo (04/11): «dobbiamo gestire il sistema per testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma in generale». E: deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni; nell'applicativo deve essere chiaro cosa abilitare per l'utente e cosa abilitare per la sicurezza del dominio. Piano riscritto in forma generale, 11 passi, stesso file: motore WinRM+WMI, catalogo unico dei diritti, controllo dell'account. Bozza da approvare, tavola degli oggetti proposta il 04/11
+- [x] Riccardo (04/11): «dobbiamo gestire il sistema per testare sia winrm che wmi in automatico senza bloccarsi, non tanto per questo utente ma in generale». E: deve essere chiara la definizione dei diritti dell'utente necessari per le scansioni; nell'applicativo deve essere chiaro cosa abilitare per l'utente e cosa abilitare per la sicurezza del dominio. Piano riscritto in forma generale, 11 passi, stesso file: motore WinRM+WMI, catalogo unico dei diritti, controllo dell'account. Bozza da approvare, tavola degli oggetti proposta il 04/11
 - [x] Sviluppato su `dev` col piano citato sopra: motore, freni, catalogo dei diritti, «Controlla account», pannello per host. Manca il collaudo. Riccardo (04/11): i test IT li fa in una rete finta, 72729 non si può modificare. Il Task 10 non si fa sul 72729, e la promozione su `main` resta ferma: le appliance da immagine seguono `main` entro 15 minuti, 72729 compreso
 - [x] Difetto già presente, corretto: con 5985 chiusa la scansione conta un fallimento senza nessun login, e dopo 3 host esclude la voce dall'esecuzione
 - [ ] Con WMI mancano software da registro, ultimo utente collegato, PowerShell (limiti scritti in `getDeviceInfoFromWmi`). `device-connection-test.ts:313` dice ancora che si usa solo WinRM: da riallineare
@@ -727,37 +736,37 @@ Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccan
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 
 Riccardo (23/10): sta valutando un vault unico al posto dei file locali di ogni app, a partire dalle credenziali del DA-IPAM di Domarc (hub) e poi firewall e altri device. Piano in valutazione: `~/Downloads/da-vault — Piano di implementazione.md` (OpenBao interno + KDBX/age dai clienti, libreria `@domarc/vault`).
-- [ ] decidere dove gira OpenBao: Riccardo pensa a DA-Link o a DA-Auth (oggi sulla .42); valutazione Claude 23/10: no alla .42, sì alla VM di DA-Link o a una VM piccola dedicata
+- [-] decidere dove gira OpenBao: Riccardo pensa a DA-Link o a DA-Auth (oggi sulla .42); valutazione Claude 23/10: no alla .42, sì alla VM di DA-Link o a una VM piccola dedicata — chiusa il 06/11 (OpenBao tolto).
 - [x] punto d'innesto nel codice (fatto il 23/10, ADR 0034: la chiave degli slot sta dentro `encrypt()` di `crypto.ts`, il riferimento OpenBao dentro il lettore unico): `src/lib/credentials/segreti.ts` (lettore unico dei segreti), più gli altri `encrypt()` fuori da `credentials/` (integrazioni, vuln edge, inventory-agent, network-services)
-- [ ] rimando a DA-Link/TASKS.md (stessa data) per la parte vault interno
-- [ ] Riccardo (23/10): valutare Keeper (già in uso, tenant keepersecurity.eu) sia per il vault personale dei file «accessi» sul Mac sia per la soluzione. Analisi Claude 23/10: Keeper (cartelle condivise + Secrets Manager, un'applicazione KSM per app) al posto di OpenBao per Domarc; dai clienti resta l'archivio locale con slot age. Da verificare: licenza (KSM, SSO Entra, KeeperPAM inclusi?), prezzo per chiamate API
-- [ ] licenza letta nella console il 23/10: **Keeper Business**, 18 licenze, scade 20/06/2027, 100 GB; niente SSO (serve Enterprise, listino 5,50 €/utente/mese), niente ARAM, compliance, BreachWatch. **KSM richiede KeeperPAM, 90 €/utente/mese**: chiedere a Keeper il preventivo per 2-3 utenti PAM prima di decidere KSM vs OpenBao per le app. Persone e vault personale: Business basta
+- [-] rimando a DA-Link/TASKS.md (stessa data) per la parte vault interno — chiusa il 06/11 (OpenBao tolto).
+- [-] Riccardo (23/10): valutare Keeper (già in uso, tenant keepersecurity.eu) sia per il vault personale dei file «accessi» sul Mac sia per la soluzione. Analisi Claude 23/10: Keeper (cartelle condivise + Secrets Manager, un'applicazione KSM per app) al posto di OpenBao per Domarc; dai clienti resta l'archivio locale con slot age. Da verificare: licenza (KSM, SSO Entra, KeeperPAM inclusi?), prezzo per chiamate API — chiusa il 06/11 (OpenBao tolto).
+- [-] licenza letta nella console il 23/10: **Keeper Business**, 18 licenze, scade 20/06/2027, 100 GB; niente SSO (serve Enterprise, listino 5,50 €/utente/mese), niente ARAM, compliance, BreachWatch. **KSM richiede KeeperPAM, 90 €/utente/mese**: chiedere a Keeper il preventivo per 2-3 utenti PAM prima di decidere KSM vs OpenBao per le app. Persone e vault personale: Business basta — chiusa il 06/11 (OpenBao tolto).
 - [x] **Decisione di Riccardo (23/10)**: Keeper Business solo per le persone e il vault personale (Commander per gli agenti); per le app **OpenBao** (open source, self-hosted): KSM troppo costoso e il prodotto è pensato per essere open source. Dai clienti archivio locale con slot age. Il vault personale si fa per primo (piano in ~/.claude)
 - [x] piano riscritto (23/10, sessione da-vault): `docs/superpowers/plans/2026-10-23-da-vault.md` — regola della fonte (se una macchina la usa sta in OpenBao, altrimenti Keeper; in Keeper solo puntatori), 12 passi, livello completo, ~5-6 settimane
 - [x] Riccardo (23/10): D1 OpenBao in container nella VM di DA-Link, niente VM nuova; D2 nel DA-IPAM dei clienti entrano tecnici e cliente; D3 per ora senza YubiKey (chiave age in Keeper, cartella personale); D4 `fc5171b` in esercizio ora, in OpenBao al passo 9 — piano aggiornato
 - [x] Riccardo (23/10): D5 slot Domarc acceso di serie con una riga nel contratto (chi non lo vuole lo spegne firmando); **piano approvato, livello completo**
 - [x] clausola sullo slot Domarc approvata da Riccardo il 23/10 (testo nel piano, sezione Decisioni)
 - [x] esecuzione, parte di codice (sessione cloud del 23/10, prompt `~/.claude/prompts/da-vault-esecuzione-1.md`): passi 5, 6 e 10 sul ramo `claude/da-vault-codice`, PR verso `dev` (dettaglio sotto)
-- [ ] analisi Claude 23/10 (da approvare): separare la «chiave» di ogni app (da TPM/OpenBao, mai in `.env.local`) dalle «credenziali condivise» dei device (OpenBao KV, solo riferimenti nelle app); dai clienti archivio locale cifrato con slot age e KDBX solo come esportazione, non come archivio vivo; login tecnici con OIDC nativo di OpenBao (DA-Auth non si tocca)
+- [-] analisi Claude 23/10 (da approvare): separare la «chiave» di ogni app (da TPM/OpenBao, mai in `.env.local`) dalle «credenziali condivise» dei device (OpenBao KV, solo riferimenti nelle app); dai clienti archivio locale cifrato con slot age e KDBX solo come esportazione, non come archivio vivo; login tecnici con OIDC nativo di OpenBao (DA-Auth non si tocca) — chiusa il 06/11 (OpenBao tolto).
 
 Esecuzione, parte di codice (23/10, sessione cloud, ramo `claude/da-vault-codice`, livello completo; interruttori spenti):
 - [x] passo 5, `src/lib/vault/`: `SecretStore` (tipi.ts), archivio a slot age (archivio.ts: cliente scrypt, Domarc X25519, TPM da `$CREDENTIALS_DIRECTORY/vault-key`), backend `locale` e `openbao` (solo fetch, AppRole, token 20 min, cache a tempo della cartella dell'app, `X-Domarc-Utente`, errore dichiarato oltre la cache), OpenBao finto per le prove — archivio 23, openbao 22, locale 6
 - [x] passo 10: chiave degli slot dentro `encrypt()`/`decrypt()`, 2FA sulla chiave d'installazione (ADR 0034), ricifra (a vuoto di serie, `--applica`, tutto o niente, lettore unico, VACUUM, crash con SIGKILL), «Vault bloccato» (banner, job in pausa), «Mostra password» (2FA, 5 min, admin, registro e pagina), «Esporta in KeePass» (kdbxweb + Argon2id di hash-wasm, key file nel suo slot), `scripts/da-vault-recover.ts`, `scripts/da-vault.ts`, archivio nel backup notturno
 - [x] passo 6: `credentials.credential_ref`, doppia lettura in `segreti.ts`, OpenBao dall'ambiente all'avvio, `scripts/da-vault-migra-openbao.ts` (a vuoto di serie, `--applica`, `--verifica`)
-- [ ] **in locale** (non fattibile dal cloud): container OpenBao nella VM di DA-Link (passo 1), app «Domarc Vault» in Entra, chiave Domarc age generata scollegata e messa in Keeper (passo 0), AppRole `da-ipam` dell'hub con `secret_id` in `LoadCredentialEncrypted`, CA in `NODE_EXTRA_CA_CERTS`
-- [ ] **in locale**: migrazione sui dati veri dell'hub (`--applica`, `--verifica`, poi `DA_VAULT_OPENBAO=1`); campione SNMP/SSH/API provato
-- [ ] **in locale**: appliance una alla volta, con la conferma di Riccardo per ciascuna: `crea` → `slot-tpm` (VM modello con `tpmstate0`) → unità con `LoadCredentialEncrypted=vault-key:…` → `DA_VAULT_LOCALE=1` e riavvio → `ricifra` a vuoto → `--applica`
-- [ ] **in locale**: un'esportazione aperta con KeePassXC senza DA-IPAM (la prova usa kdbxweb)
-- [ ] (scoperto) prima di svuotare le colonne cifrate sull'hub (versione dopo la doppia lettura): portare sul lettore unico le letture dirette (`credentials/trova.ts`, `apparato-archivio.ts`, `integrations/self-identity.ts`, `controllers/credenziale.ts`, `for_edit` di `/api/credentials/[id]`), poi svuota + VACUUM
-- [ ] (scoperto) l'interfaccia `SecretStore` è ricavata dal piano: il documento originale (`~/Downloads/da-vault — Piano di implementazione.md`) non era nel repo; confrontarla
-- [ ] (scoperto) «parte un avviso» quando il vault resta bloccato: oggi log CRITICAL + banner + Opzioni; manca un avviso nelle notifiche (email/webhook)
-- [ ] (scoperto) cambio di generazione della chiave Domarc: oggi `da-vault-recover rotate` a mano; la riscrittura dello slot al primo sblocco (piano, «Più avanti») non è fatta
+- [-] **in locale** (non fattibile dal cloud): container OpenBao nella VM di DA-Link (passo 1), app «Domarc Vault» in Entra, chiave Domarc age generata scollegata e messa in Keeper (passo 0), AppRole `da-ipam` dell'hub con `secret_id` in `LoadCredentialEncrypted`, CA in `NODE_EXTRA_CA_CERTS` — chiusa il 06/11 (OpenBao tolto).
+- [-] **in locale**: migrazione sui dati veri dell'hub (`--applica`, `--verifica`, poi `DA_VAULT_OPENBAO=1`); campione SNMP/SSH/API provato — chiusa il 06/11 (OpenBao tolto).
+- [-] **in locale**: appliance una alla volta, con la conferma di Riccardo per ciascuna: `crea` → `slot-tpm` (VM modello con `tpmstate0`) → unità con `LoadCredentialEncrypted=vault-key:…` → `DA_VAULT_LOCALE=1` e riavvio → `ricifra` a vuoto → `--applica` — chiusa il 06/11 (OpenBao tolto).
+- [-] **in locale**: un'esportazione aperta con KeePassXC senza DA-IPAM (la prova usa kdbxweb) — chiusa il 06/11 (OpenBao tolto).
+- [-] (scoperto) prima di svuotare le colonne cifrate sull'hub (versione dopo la doppia lettura): portare sul lettore unico le letture dirette (`credentials/trova.ts`, `apparato-archivio.ts`, `integrations/self-identity.ts`, `controllers/credenziale.ts`, `for_edit` di `/api/credentials/[id]`), poi svuota + VACUUM — chiusa il 06/11 (OpenBao tolto).
+- [-] (scoperto) l'interfaccia `SecretStore` è ricavata dal piano: il documento originale (`~/Downloads/da-vault — Piano di implementazione.md`) non era nel repo; confrontarla — chiusa il 06/11 (OpenBao tolto).
+- [-] (scoperto) «parte un avviso» quando il vault resta bloccato: oggi log CRITICAL + banner + Opzioni; manca un avviso nelle notifiche (email/webhook) — chiusa il 06/11 (OpenBao tolto).
+- [-] (scoperto) cambio di generazione della chiave Domarc: oggi `da-vault-recover rotate` a mano; la riscrittura dello slot al primo sblocco (piano, «Più avanti») non è fatta — chiusa il 06/11 (OpenBao tolto).
 - [ ] (scoperto) `kdbxweb` porta `@xmldom/xmldom` 0.7 con avvisi alti: forzato a 0.8.15 con `overrides` in package.json; da ricontrollare a ogni aggiornamento di kdbxweb
 - [ ] (scoperto) `ENCRYPTION_KEY` resta sull'appliance per i segreti TOTP (ADR 0034): toglierla vuole un'altra soluzione per la 2FA
 - [x] (24/10, sessione locale) PR #18 fusa (`17dddc68`) e rilasciata **v0.9.897**; PR #19 (ricarica della cache per un segreto mancante, secret_id illeggibile = errore controllato) **v0.9.898**
 - [x] (24/10) passo 6 sull'hub in esercizio: AppRole `app-da-ipam` (IP NetBird dell'hub), `.env.local` con `DA_VAULT_OPENBAO*`, backup in `data/backups/*-pre-da-vault-openbao-20261023-223753.db`, 17 credenziali migrate, `--verifica` 0 diverse, `DA_VAULT_OPENBAO=1`; SNMP, SSH, AD, UniFi ok dopo l'accensione. Dettaglio: DA-Link `TASKS.md` (parte locale)
-- [ ] (24/10) passo 10 su un'appliance di prova: serve l'accesso alle appliance del laboratorio e la VM modello con `tpmstate0` (Deploy-Appliance); passo 11 dai clienti con la loro passphrase
-- [ ] (24/10) **`vault.domarc.it` non è nel DNS**: sull'hub è in `/etc/hosts` (backup `/etc/hosts.bak-*`), da togliere quando c'è il record (Riccardo)
+- [-] (24/10) passo 10 su un'appliance di prova: serve l'accesso alle appliance del laboratorio e la VM modello con `tpmstate0` (Deploy-Appliance); passo 11 dai clienti con la loro passphrase — chiusa il 06/11 (OpenBao tolto).
+- [-] (24/10) **`vault.domarc.it` non è nel DNS**: sull'hub è in `/etc/hosts` (backup `/etc/hosts.bak-*`), da togliere quando c'è il record (Riccardo) — chiusa il 06/11 (vault.domarc.it ora risolve).
 
 
 ## 2026-10-23 — Uscita vera, istanza controllata e ricordata (livello completo, ADR 0033)
@@ -784,12 +793,12 @@ meno funzioni». Da decidere: quali funzioni restano, da dove prende le istanze 
 
 Riccardo (22/10): da verificare in un secondo momento, nessuna analisi fatta finora.
 
-- [ ] VLAN degli switch HP Comware: non sempre vengono rilevate tutte le VLAN.
-- [ ] VLAN degli switch HP Comware: le porte taggate (trunk) non vengono riconosciute.
-- [ ] Schermata VLAN: con troppe VLAN la tabella taglia le colonne più a destra (manca lo scorrimento orizzontale o l'adattamento).
-- [ ] Scansione switch: per default si abilita solo SNMP anche quando SSH risponde. Da decidere se è voluto (un protocollo basta) o se servono entrambi (es. SSH per VLAN/trunk dove SNMP è parziale, vedi Comware).
-- [ ] LibreNMS: aggiunta in batch di più oggetti, invece di uno alla volta dalla pagina Discovery.
-- [ ] LibreNMS: se l'integrazione è presente (configurata), gli oggetti che rispondono a SNMP si aggiungono in automatico. Da definire: quando (a fine scansione?), come si escludono, cosa si vede a schermo dell'esito.
+- [x] VLAN degli switch HP Comware: non sempre vengono rilevate tutte le VLAN.
+- [x] VLAN degli switch HP Comware: le porte taggate (trunk) non vengono riconosciute.
+- [x] Schermata VLAN: con troppe VLAN la tabella taglia le colonne più a destra (manca lo scorrimento orizzontale o l'adattamento).
+- [x] Scansione switch: per default si abilita solo SNMP anche quando SSH risponde. Da decidere se è voluto (un protocollo basta) o se servono entrambi (es. SSH per VLAN/trunk dove SNMP è parziale, vedi Comware).
+- [x] LibreNMS: aggiunta in batch di più oggetti, invece di uno alla volta dalla pagina Discovery.
+- [x] LibreNMS: se l'integrazione è presente (configurata), gli oggetti che rispondono a SNMP si aggiungono in automatico. Da definire: quando (a fine scansione?), come si escludono, cosa si vede a schermo dell'esito.
 
 ## 2026-10-23 — Barra laterale compatta e cambio password
 
@@ -802,10 +811,10 @@ comprimi ben visibile; scelta «tutto in alto». Segnalato: il cambio password n
 - [x] «URL dell'hub» in Impostazioni → Sistema, `/agents` rimanda lì (provato in locale)
 - [x] a menu compresso solo il simbolo (Riccardo, 23/10; resa guardata in locale a 1440)
 - [x] «Esci» nel menu dell'utente e ritorno a `/login` deciso dal browser (sull'hub il server rispondeva `https://0.0.0.0/login`; provato in locale)
-- [ ] **«Esci» non chiude davvero la sessione** (trovato il 23/10, c'era già prima): le richieste della dashboard partite prima dell'uscita
+- [x] **«Esci» non chiude davvero la sessione** (trovato il 23/10, c'era già prima): le richieste della dashboard partite prima dell'uscita
   tornano dopo e rimettono il cookie, perché il proxy rinnova il JWT a ogni risposta (traccia: signout `Max-Age=0` a +495 ms,
   `/api/status/*` rimettono `authjs.session-token` a +525 ms, `/` riapre la sessione). Zona rossa (accesso): proposta a Riccardo, in attesa dell'ok.
-- [ ] guardarla sull'hub dopo l'aggiornamento
+- [-] guardarla sull'hub dopo l'aggiornamento — chiusa il 06/11 (hub aggiornato).
 
 ## 2026-10-23 — Assegnatari NIS2 da AD e utente prevalente dei PC (idea, da decidere)
 
@@ -831,11 +840,11 @@ breve ed esecuzione in una sessione nuova.
       proposte; dettaglio e trappole nel piano
 - [x] tavola e soglia approvate da Riccardo (23/10); **piano: `docs/superpowers/plans/2026-10-23-assegnatari-da-ad.md`**,
       da eseguire in una sessione nuova (i punti sotto sono dettagliati là)
-- [ ] storico delle osservazioni utente↔host (WinRM, GLPI, Wazuh 60106, eventi 4624/4768 dei DC) e «utente prevalente» per PC
-- [ ] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy
-- [ ] `asset_assignees`: legame con l'utente AD (guid), reparto, ruolo, origine; «Importa da AD» con proposta
+- [x] storico delle osservazioni utente↔host (WinRM, GLPI, Wazuh 60106, eventi 4624/4768 dei DC) e «utente prevalente» per PC
+- [x] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy
+- [x] `asset_assignees`: legame con l'utente AD (guid), reparto, ruolo, origine; «Importa da AD» con proposta
       (abilitato, nome e cognome, mail, accesso recente, niente account di servizio) e conferma a spunte
-- [ ] proposta di assegnatario sull'asset dall'utente prevalente, mai sopra un'assegnazione manuale; utente AD
+- [x] proposta di assegnatario sull'asset dall'utente prevalente, mai sopra un'assegnazione manuale; utente AD
       disabilitato → asset da riassegnare
 - [x] chi scrive `ad_computers.host_id`: `linkAdComputerToHost` nella sync AD e `relinkAdComputersForNetwork` dopo una scansione
 
@@ -851,8 +860,8 @@ Esecuzione (23/10, sessione nuova, livello leggero; passi del piano):
 - [x] passo 9, documenti: CHANGELOG, CONTEXT §6, scheda-mappa
 - [ ] (aperto) WinRM ha dato 0 righe su 70791: nessun apparato Windows con l'utente collegato letto di recente; da guardare
 - [ ] (aperto) 3 agenti Wazuh su 11 senza host: i loro accessi alla tastiera non entrano; e 18 postazioni di rete non trovate fra gli host
-- [ ] (aperto) nessun «Accetta» provato col clic sull'hub (prova-claude è in sola lettura): lo prova Riccardo; la scrittura è coperta dalle prove
-- [ ] (aperto) nell'AD di domarc.it il campo «Reparto» contiene il ruolo: dato loro, non un errore
+- [x] (aperto) nessun «Accetta» provato col clic sull'hub (prova-claude è in sola lettura): lo prova Riccardo; la scrittura è coperta dalle prove
+- [-] (aperto) nell'AD di domarc.it il campo «Reparto» contiene il ruolo: dato loro, non un errore — chiusa il 06/11 (dato loro, non un errore).
 
 Pagina «Abbinamenti» (Riccardo, 23/10, decisioni alle domande; livello leggero, tavola da approvare prima del codice):
 - [x] tavola grafica sullo stesso canvas della prima (tavola 4, approvata il 23/10)
@@ -861,7 +870,7 @@ Pagina «Abbinamenti» (Riccardo, 23/10, decisioni alle domande; livello leggero
 - [x] conferma **tutto in un clic**, a spunte: crea l'assegnatario da AD se manca, crea l'asset se manca, assegna (prove; non eseguita sull'hub)
 - [x] asset già assegnati a un altro: sezione «Da rivedere», **senza spunta**; si sostituisce solo spuntando a mano
 - [x] prima conferma vera sull'hub fatta da Riccardo (23/10, 16:25): 11 abbinamenti, 6 asset creati, diario a posto
-- [ ] Abbinamenti, asset con lo stesso nome (Riccardo, 23/10: «sì, ma un utente può avere asset multipli»): se esiste già un
+- [x] Abbinamenti, asset con lo stesso nome (Riccardo, 23/10: «sì, ma un utente può avere asset multipli»): se esiste già un
   asset col nome del PC, la riga chiede «Collega a n. X» o «Crea nuovo» e non si conferma senza scelta. Il controllo è
   sul NOME del PC, mai sulla persona (più asset per persona è normale). Nato dal doppione NB-AGUZZOLI n. 31/36
 - [ ] NB-AGUZZOLI n. 31 (IP .172, oggi un iPhone): rinominare o dismettere lo decide Riccardo; 5 host Discovery con quel nome
@@ -911,7 +920,7 @@ timer di `src/lib/vulcan/`.
     backup 03:00 (`DA_INVENT_BACKUP_CRON`), Chocolatey 02:00, feed exploit 06:00, salute appliance e job fermi ogni 30
     min, segnale DA-Link ogni 5 min, DA-Vul-can coda 1 min/battito 15 min/inventario 24 h; (5) `mdm_sync` (job, ritmo 60);
     (6) aggiornamento automatico (systemd, 15 min).
-- [ ] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo — pubblicata il 22/10 sera
+- [x] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo — pubblicata il 22/10 sera
   (https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX, fogli «parametri e soglie» e «Schedulazioni», oggetti 14-30),
   in attesa dell'approvazione oggetto per oggetto. Lavoro nel worktree `.worktrees/da-ipam-opzioni`.
 - [x] Tavola approvata da Riccardo il 23/10 («ok su tutto»): soglie fisse col lucchetto, gruppo dei job in Opzioni che
@@ -977,7 +986,7 @@ Riccardo ha chiesto di valutare l'elenco «cose da fare» della sessione «VLAN 
 - [x] MAC virtuali: non aspetta più nessuno, è in `dev` dalla v0.9.876 (voce S3 qui sotto chiusa).
 - [x] Invio diretto all'hub con l'inventario: le regole ci sono (`DA-Vul-can/docs/operativo/contratto-ipam-hub.md`), A-IPAM è in v0.9.872, A-Link S7-S12a in esercizio; il primo inventario di 70791 è arrivato all'hub alle 16:18. Restano: il primo AD Health automatico (al prossimo controllo AD Health, vedi TASKS di DA-Link S12b) e A3 sull'hub (rotta e report dell'inventario, nessun piano ancora).
 - [x] CIDR vero nei documenti: fatto in DA-Vul-can (`nome-rete.ts`, «LAN BASE · 172.16.0.0/17»).
-- [ ] Collector modulari: il giro 7 (riga in Opzioni per l'acquisizione con i collector, Proxmox agganciato al pulsante) è su `origin/collector-modulari` ma **non in `dev`**: 5 commit da unire, `dev` intanto è andato avanti di 4 (v0.9.877-878). Poi le due prove sull'hub scritte nella sezione «giro 7».
+- [x] Collector modulari: il giro 7 (riga in Opzioni per l'acquisizione con i collector, Proxmox agganciato al pulsante) è su `origin/collector-modulari` ma **non in `dev`**: 5 commit da unire, `dev` intanto è andato avanti di 4 (v0.9.877-878). Poi le due prove sull'hub scritte nella sezione «giro 7».
 - [ ] Controller UniFi: decisione di Riccardo fra (a) lasciarlo strumento da CLI, (b) fotografia per apparato dalla stessa lettura della sincronizzazione, (c) radio e client (sezione «giro 7» su `collector-modulari`).
 - Restano aperti come scritti: collaudo HP della sede nuova (e lì si vede se «ArubaOS» è ArubaOS-Switch o AOS-CX), misure sul DB dell'hub, SSH rifiutato sugli Ubiquiti, NAS da ricollaudare, letture SNMP Comware incomplete (forse la stessa causa di VLAN e porte taggate mancanti). Rinviati di proposito: firmware e modelli in più, PoE/ottiche/sensori, LLDP, aggancio all'interfaccia per Comware, ProCurve, QNAP, VMware e NetApp.
 
@@ -1012,7 +1021,7 @@ Diagnosi in sola lettura sull'appliance 70151 (VM 104 su PX01, `qm guest exec`; 
 - [x] LibreNMS: migrazione `_v21` misurata su una copia del DB di 70151 (23/10 09:39 italiane: +1 tabella e il suo indice, hosts 243→243, integrity ok, copia cancellata); poi applicata dall'avvio della v0.9.885 (journal: «librenms esclusioni, aggiunto librenms_esclusione», segno `done:2026-10-23:v1`)
 - [x] LibreNMS: aggiunta in blocco dalla Discovery — stessa tavola, oggetti 8-9 — 23/10: resa a 1280 e 1920 con `fetch` finto (scheda nei tre stati, card del modulo, finestra con i quattro esiti), nessun errore in pagina; esito per riga provato (`librenms-blocco.test.ts`, vista fallire)
 - [x] Matrice VLAN: colonne e intestazione fisse, altezza limitata (barra orizzontale oggi in fondo a una tabella di ~2500 px) — 23/10: resa con Chrome a 1280 e 1920, 24 VLAN × 50 porte finte, scorrimento verticale e orizzontale
-- [ ] MikroTik CORE1/CORE2 (6 switch SNMP) senza VLAN: RouterOS non espone Q-BRIDGE via SNMP; servono SSH (`/interface bridge vlan`) o il collector
+- [x] MikroTik CORE1/CORE2 (6 switch SNMP) senza VLAN: RouterOS non espone Q-BRIDGE via SNMP; servono SSH (`/interface bridge vlan`) o il collector
   - 23/10, letto nel codice: dare l'SSH non basta. Uno switch MikroTik usa la scheda degli switch (tabelle `switch_vlan`); in SSH la lettura SNMP degli switch è saltata (`jobs.ts`, ramo switch), la lettura delle VLAN di bridge (`letturaSchedaMikrotik`) parte solo nel ramo dei router e scrive le tabelle della scheda MikroTik, e la sezione VLAN del collector `mikrotik-routeros` esce sempre `partial` e senza ifIndex, quindi `proiettaVlan` non la scrive. Strada da scegliere con Riccardo
   - **Riccardo 23/10: strada «lettura SSH degli switch»** — il giro degli switch MikroTik in SSH fa anche la lettura delle VLAN di bridge (oggi solo router) e la scrive in `switch_vlan` (porta per nome → ifIndex); la lettura SNMP resta accanto
   - [x] 23/10, codice: `letturaVlanSwitchMikrotik` (giro, «Interroga», apparati scelti) → `switch_vlan` con fonte «mikrotik»; le porte via SNMP accanto all'SSH le dava già il client combinato degli switch. Prove viste fallire (proiezione, regola delle letture), prova del giro aggiornata (SW-7 ora legge via SSH)
@@ -1048,9 +1057,9 @@ Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router manc
 - [x] Promote dev → main v0.9.873 (85662969), chiesto da Riccardo il 22/10
 - [x] Esecuzione del piano [`2026-10-22-pagina-opzioni.md`](docs/superpowers/plans/2026-10-22-pagina-opzioni.md) (9 task, leggero; 8 = aggiornamento che non retrocede + installatore, 9 = errore SSH), avviata il 22/10 sera nel worktree `.worktrees/da-ipam-opzioni`; ordine 1-6, 8, 9, poi 7 (Riccardo:)
   - [x] Task 1-9 · v0.9.874 su dev (42c5ba90), Deploy-Appliance e9a1fda su main; 70151 aggiornata e verificata (job 8-11 nati, ARP job 4 invariato); consuntivo nel piano
-  - [ ] Riccardo apre `/settings/opzioni` su 70151
-  - [ ] Promote dev → main (chiedere a Riccardo)
-  - [ ] Hub: guardare i job di serie nati al suo prossimo aggiornamento (oggi fermo a 0.9.872)
+  - [-] Riccardo apre `/settings/opzioni` su 70151 — chiusa il 06/11 (superata).
+  - [x] Promote dev → main (chiedere a Riccardo)
+  - [x] Hub: guardare i job di serie nati al suo prossimo aggiornamento (oggi fermo a 0.9.872)
   - Trovato: la spec rimanda al censimento del §1, che nel file non c'era; recuperato dal trascritto della sessione di progettazione, va nella spec col Task 6
 
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
@@ -1078,7 +1087,7 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [ ] T7 resta: provare la scheda con dati veri dopo l'accensione sull'hub (T10); limiti di avviso di LibreNMS non letti (solo il 10%)
 - [x] T8 pagina del modulo (cloud 22/10 giro 2; resa vista a 1440 e 1920): non interrogati, rifiutati, candidati — nota: la card «Letture in più» mostra «Nessuna lettura ancora» per LibreNMS (gli esiti sono per parte, non per apparato): l'esito per parte va in L5
 - [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
-- [ ] T10 accensione sull'hub, ADR, documenti
+- [x] T10 accensione sull'hub, ADR, documenti
 
 ## 2026-10-22 — scansione automatica dei device scelti
 
@@ -1120,15 +1129,15 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [x] T10 matrice VLAN condivisa estratta dalla scheda MikroTik (aspetto invariato) — v0.9.856; matrice in `components/scheda/matrice-vlan.tsx` + `lib/scheda/matrice-vlan.ts`; la tab VLAN del MikroTik è identica byte per byte prima e dopo
 - [x] T11 tab VLAN dello switch: striscia VLAN/trunk/access/senza VLAN + matrice — v0.9.857; striscia e matrice viste a 1440 e 1920 sulla copia (48POE 13·45·7·0, ProMax 13·31·1·20 «dedotta»); revisione completa: approvato + 4 minori corretti
 - [x] T12 accensione sull'hub e verifica sul dato vero — hub v0.9.858 (22/10, 04:05): migrazioni `cluster_principale_v21` e `switch_vlan_v21` fatte (righe nel journal); lettura `switch_vlan` ACCESA («procedi fino al live»); lettura fatta una volta da script: 5 switch letti, 13 VLAN ciascuno, SW-UFLEX-RG-10GB (apparato 9) TEMPO_SCADUTO; tab VLAN di SW-CED-48POE-242 vista con i nomi veri; la Panoramica ora conta 13 come la tab (831c88d5); Discovery: 7 cluster, 17 righe nascoste; correzioni della revisione finale 4cf651d8 (filtri e ricerca anche sui secondari, CSV «Altri IP», blocco anche su PUT host e DHCP AD) e ratchet di `db.ts` (df2e7dc3); CONTEXT, CHANGELOG, scheda-mappa aggiornati
-- [ ] (a) job `arp_poll` sull'hub: il job `apparati_scelti` #25 (22/10) legge già ogni 4 ore router e switch scelti; da chiudere se Riccardo conferma che basta (decide lui)
+- [x] (a) job `arp_poll` sull'hub: il job `apparati_scelti` #25 (22/10) legge già ogni 4 ore router e switch scelti; da chiudere se Riccardo conferma che basta (decide lui)
 - [ ] (b) cluster 10 e 11 (iLO HPE + schede di rete dello stesso server?) da confermare con Riccardo
 - [x] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch → Riccardo 22/10: non è più attivo; apparato 9 disattivato (enabled=0, non cancellato).
 - [x] (d) T13 completamento dal controller UniFi (ok di Riccardo 22/10): lista bianca + `GET rest/networkconf`, native in `switch_vlan_nativa` dalla sync UniFi (solo con `switch_vlan` accesa); ProMax 14 porte completate, resta «dedotta» (18 porte senza nativa dal controller); prove `unifi-vlan-native`, `vlan-switch`, `unifi-api`; resa a 1440 vista sulla copia
-- [ ] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
+- [x] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
 - [ ] (f) le migrazioni sulla copia del cliente A (MikroTik v1-v3, cluster, `switch_vlan`) non sono mai state misurate: la copia non era disponibile
 - [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 confrontabili, e l'SNMP non dà le porte 33-52 (sugli altri 4 switch 99/99 uguali): la lettura Q-BRIDGE della ProMax (bit «inversi», ifIndex) è da rivedere — Riccardo 22/10: forse porte aggregate (LAG); da verificare con la lettura dei LAG.
 - [ ] Native del controller senza scadenza: se uno switch esce dal controller o la lettura `switch_vlan` si spegne e riaccende, le righe di `switch_vlan_nativa` restano (l'età si vede da `nativa_letta_il` nella riga delle fonti); da decidere se farle scadere
-- [ ] Sull'hub la nativa si scrive al primo giro di `unifi_sync` #22 (03:00) dopo il rilascio: verificare `switch_vlan_nativa` il giorno dopo
+- [x] Sull'hub la nativa si scrive al primo giro di `unifi_sync` #22 (03:00) dopo il rilascio: verificare `switch_vlan_nativa` il giorno dopo
 - [x] Panoramica dello switch sull hub (SW-CED-48POE-242): scorreva di ~190 px a 1440×900. Il riquadro mostrava già 5 VLAN: a far scorrere era la colonna destra (dettaglio + vicini + VLAN). Ora VLAN a 8 voci (due colonne da 4) sotto «Porte da guardare», «tutte (N) ›» verso la tab: a 1440×900 entra (scrollHeight 900, vista sulla copia).
 - [ ] Con un filtro a chip che riempie la tabella (Trunk 7, Tutte) la pagina scorre ancora di ~150 px: la tabella arriva a 230 px e il riquadro VLAN sta sotto. Da decidere se accettarlo (vista di lavoro scelta dall'utente) o accorciare la tabella.
 
@@ -1147,7 +1156,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](doc
 - [x] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD — riquadro in «Cosa esce» (oggi «Spento: manca VULCAN_TOKEN»), «Invia ora» solo admin, riga nella pagina AD; revisione completa: approvato
 - [x] T9 collaudo contro DA-Vul-can di sviluppo, documenti, copie cancellate — 22/10, DA-Vul-can origin/HEAD in locale (DB vuoto, CA di prova solo per il collaudo): spento 503 → in coda; acceso AD 201, battito 200, inventario 201 (351 oggetti), doppione 200 senza seconda riga, 401 e 403 → «sospeso»; worktree, CA e copie rimossi; CHANGELOG, CONTEXT §6, consuntivo nel piano
 - [x] Rilascio su `dev` e verifica sul live (hub e cliente A «Spento», nessuna riga `[vulcan]` nel journal) — al controllore → hub v0.9.872 (22/10 13:16 ora italiana): migrazione vulcan_coda_v21 fatta, coda vuota, nessuna riga [vulcan] nel journal. Cliente A: arriva col suo aggiornamento da dev, non verificato da qui.
-- [ ] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
+- [x] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
 
 ## 2026-10-22 — topologia: spazio in basso, cavi a mano, server non agganciati
 
@@ -1177,7 +1186,7 @@ Piano: [`docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`](docs
 - [x] T11 matrice VLAN completa, VLAN con la madre, DNS e utenti (solo admin) (P4) — v0.9.841; utenti del router solo admin (provato via HTTP: admin 200 senza password, viewer 403); data per sezione; revisione completa: approvato, 1 importante + 3 minori corretti
 - [x] T12 documenti (CHANGELOG, CONTEXT §6, scheda-mappa) — documenti fatti; verifica sull'hub: vedi sotto
 - [x] T12 verifica sull'hub (22/10 01:00 ora italiana, v0.9.842): segno `scheda_mikrotik_v21` = v3, riga nel journal; `mikrotik_scheda` assente = spenta, tabelle VLAN/DNS/utenti vuote; interfacce del router con tipo (33/33). `/objects/227` con `prova-claude` (viewer): Panoramica entra in 1440×900, tab Panoramica · Interfacce · Routing e ARP · DHCP · Dispositivi · Configurazione (VLAN e Bridge ancora assenti: tabelle bridge vuote fino al prossimo giro della topologia, al più 1/ora), Interfacce raggruppate per tipo con commenti e versione dei vicini, niente Utenti per il viewer. SNS EVA2 e switch invariati. Da guardare dopo il giro: le tab VLAN e Bridge
-- [ ] Aperti dopo il piano:
+- [-] Aperti dopo il piano: — chiusa il 06/11 (solo un titolo).
   - [x] accendere la lettura `mikrotik_scheda` sull'hub (decide Riccardo; nata spenta, nessun comando nuovo ai router finché non la accende un admin) → Riccardo (22/10): sì; accesa sull hub il 22/10 alle 01:43 ora italiana.
   - [x] sesta casella «pool DHCP più pieno» (v0.9.844): la casella Firmware c'è sempre col valore installato (Riccardo 22/10: «il firmware installato è importante»), in attenzione con «▲ aggiornabile a X» quando c'è un aggiornamento; il pool ≥85% (dalla cache della tab DHCP) prende il posto di «Acceso da», l uptime resta nel riquadro Risorse
   - [x] conteggi nelle etichette delle tab (dove il dato è già in pagina; mancano Interfacce, DHCP, Dispositivi, VLAN MikroTik) e vicini «non in IPAM» / link all host (v0.9.843, rotta `/api/devices/[id]/vicini-ipam`)
@@ -1234,7 +1243,7 @@ Tavola: https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv (oggi, scheletro comun
       - Non portato: un host non gestito (tipo `host`) non ha più «Dettagli» (LibreNMS, IP collegati, Sulla mappa, SNMP): ha Panoramica generica, Sicurezza e Storico — decisione del piano; si riapre solo se Riccardo lo chiede
       - Non portato: raccolta di VPN, regole firewall in elenco, database SQL, siti, posta, backup, inode/LVM, NTP/AppArmor, archivio delle configurazioni — fuori dal piano (B2/B4/B5 del piano `recupero-dadude3-mknet`)
     - T8 verificato: `TabDettagli` resta solo per `generico` (stampanti, AP, UPS, postazioni: inventario base, informazioni SNMP, IP collegati e software non stanno nella Panoramica generica); per gli altri tipi tolto. «Aggiungi a dispositivi da Discovery» tolto da `dettagli/software.tsx`; bug di precedenza `_total_vm_rows` già sparito in T6 (`numeroVm`, 3 prove).
-- [ ] Coordinare col piano DADude3/MKNET: B2 (porte HP/MikroTik), B4 (Hyper-V, Windows, Linux), B5 (archivio configurazioni) riempiono i riquadri «dato da raccogliere» della tavola.
+- [-] Coordinare col piano DADude3/MKNET: B2 (porte HP/MikroTik), B4 (Hyper-V, Windows, Linux), B5 (archivio configurazioni) riempiono i riquadri «dato da raccogliere» della tavola. — chiusa il 06/11 (piano superato).
 
 ## 2026-10-21 — recupero da DADude3 e DA-MKNET (fase di piano)
 
@@ -1260,10 +1269,10 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] Riccardo (21/10 sera): «accetto le tue proposte» → decisioni D1-D9 scritte nel §7 del piano.
 - [x] D1: collector pubblicati sul ramo `collector-modulari` (`6cca5a8a`); `origin/dev` non toccato.
 - [x] Riccardo: sviluppo nel cloud finché non serve unire in locale. Prompt nel repo: `docs/handoff/2026-10-21-prompt-cloud-collector-modulari.md` (il cloud non vede `~/.claude`).
-- [ ] Aperta: «ArubaOS» della sede nuova è ArubaOS-Switch o AOS-CX? Si vede al collaudo (`sysDescr`).
-- [ ] Sessione cloud su `collector-modulari`: merge di `origin/dev`, poi S1 → S2 → C0 → C1 → C2 → C3 (S3 dopo il commit delle tappe 3-5).
-- [ ] In locale (Riccardo): misure sul DB dell'hub, collaudo HP nella sede nuova, unione in `dev`.
-- [ ] S3 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
+- [x] Aperta: «ArubaOS» della sede nuova è ArubaOS-Switch o AOS-CX? Si vede al collaudo (`sysDescr`).
+- [x] Sessione cloud su `collector-modulari`: merge di `origin/dev`, poi S1 → S2 → C0 → C1 → C2 → C3 (S3 dopo il commit delle tappe 3-5).
+- [x] In locale (Riccardo): misure sul DB dell'hub, collaudo HP nella sede nuova, unione in `dev`.
+- [x] S3 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
 - [x] Cloud (22/10), passo 0: i due donatori (`dadude-native`, `DA-MKNET`) sono leggibili come repository della sessione; nessuna password dei vecchi `OLDSCRIPT` copiata.
 - [x] Cloud, merge di `origin/dev` in `collector-modulari` (`d41537e9`): conflitti solo in CHANGELOG, CONTEXT e TASKS, tenute le sezioni di entrambi i rami; 79 prove del modulo e `tsc` verdi (exit 0).
 - [x] S1: l'export MikroTik solo admin **era già in `dev`** (sessione della scheda router, `9232b22d`: `mikrotik-guardia.ts`, contratto in `api-auth-guards`). Riletto come revisore: il 403 arrivava dopo la ricerca dell'apparato (un non admin poteva distinguere 404 da 403) e la lista degli admin era duplicata. Corretto (prova vista rossa, poi verde): guardia prima della ricerca, `eAdmin` unico.
@@ -1298,7 +1307,7 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] Ratchet `db.ts` rosso: già sistemato su `dev` da un'altra sessione (`df2e7dc3`), verde il 22/10.
 - [x] Giro cloud 3 (22/10): merge di `origin/dev` (`7b97fc1f`, conflitto solo in CONTEXT §6, tenute le voci di entrambi).
 - [x] (a) giri pianificati (`cba44003`): `cron/jobs.ts` passa da `scriviPorteDelGiro` (`acquisizione-modulare/giri.ts`). Acceso + collector + snapshot non in errore che ha scritto le porte: i campi che la proiezione scrive da quello snapshot (per porta) restano del collector, il giro scrive MAC per porta e il resto; le porte che solo il collector conosce restano. Spento, «classica», nessuno snapshot: `upsertSwitchPorts` come oggi. Prova vista rossa (il giro rimetteva «100/1000T» sopra «1000 Mbps»).
-- [ ] (a), nota: `POST /api/networks/bulk-scan-devices` (ARP dei router dalla pagina Reti) scrive ancora con `upsertSwitchPorts`: non è un giro pianificato, lasciato com'è. Da decidere se allinearlo.
+- [-] (a), nota: `POST /api/networks/bulk-scan-devices` (ARP dei router dalla pagina Reti) scrive ancora con `upsertSwitchPorts`: non è un giro pianificato, lasciato com'è. Da decidere se allinearlo. — chiusa il 06/11 (la rotta non chiama più upsertSwitchPorts).
 - [x] (c) `collector` in `leggeViciniDiRete` (`551c7da9`): prova vista rossa, topologia 916/916, T1 non lo legge.
 - [x] (e) scansione in blocco (`acfb6fb8`): i dubbi si saltano prima del test delle credenziali, vanno in `skipped_devices` e nel nuovo elenco `dubbi`, con una frase nel messaggio. Spento = nessun salto.
 - [x] C3 `qnap-nas` (`8d9e4c93`), con l'infrastruttura comune: `ssh_modo` nel descrittore (`console`/`exec`/`exec_per_comando`; Comware lo dichiara), uscita 127 = non supportato, `costruzione.ts`, `linux-parsers.ts`, sezione opzionale `shares`.
@@ -1338,13 +1347,13 @@ Prompt: `~/.claude/prompts/da-ipam-sonde-e-aperti-2026-10-21.md`.
 - [x] 5d. Piano `docs/superpowers/plans/2026-10-21-tappe-3-5-rendi-apparato.md`: T1 catalogo+ruoli+migrazione · T2 classificazione unica · T3 ricerca credenziali · T4 finestra · T5 scheda/liste/wizard · T6 chiusura.
 - [x] 6. `CONTEXT.md` da 19 617 a ~10,5k caratteri; il testo integrale del 21/10 mattina in `docs/storia/CONTEXT-diario-ottobre-2026.md`. Il vecchio §9 è confluito nel §8 e nel diario (nessun file lo citava).
 - [x] 7. Etichetta DTS: sull'appliance DTS (`ssh dts`, tenant 71734) la rete 1 è **già** «LAN BASE 172.16.0.0/17», aggiornata il 20/10 alle 20:13 italiane. Niente da scrivere in DA-IPAM. Il /18 sta nei **report storici di DA-Vul-can** (`reports.edge_scan_label` fissato all'upload, luglio-ottobre; `edge_scan_cidr` è sempre /17).
-- [ ] 7b. Riccardo (21/10): strada A, i documenti di DA-Vul-can mostrano il CIDR vero (`edge_scan_cidr`), lo storico non si tocca. Passata alla sessione DA-VULCAN 21-10.
+- [x] 7b. Riccardo (21/10): strada A, i documenti di DA-Vul-can mostrano il CIDR vero (`edge_scan_cidr`), lo storico non si tocca. Passata alla sessione DA-VULCAN 21-10.
 - [x] 8. Valutazione scritta: `docs/proposte/2026-10-21-dati-ad-verso-vulcan.md`. L'export `domarc-ad-health` esiste già in DA-IPAM, manca il lettore in DA-Vul-can; il ramo `feat/ad-health-ingest` non esiste in nessuno dei due repo. Consiglio: prima caricamento a mano + lettore, poi consegna via edge.
-- [ ] 8b. Riccardo (21/10): **invio diretto da DA-IPAM all'hub, come fa la sonda edge**, più un **report dell'inventario degli oggetti rilevati** per un'analisi completa. DA-Vul-can sta già facendo un'integrazione in una sessione separata: chiesto a DA-VULCAN 21-10 il contratto (endpoint, autenticazione, formato). Risposta: lo scrive lei in DA-Vul-can `docs/superpowers/specs/2026-10-21-ad-sicurezza-e-documento-direzione-design.md`, sezione «Contratto per DA-IPAM»; **niente codice in DA-IPAM finché Riccardo non approva la specifica** (DA-VULCAN manda percorso e commit).
+- [x] 8b. Riccardo (21/10): **invio diretto da DA-IPAM all'hub, come fa la sonda edge**, più un **report dell'inventario degli oggetti rilevati** per un'analisi completa. DA-Vul-can sta già facendo un'integrazione in una sessione separata: chiesto a DA-VULCAN 21-10 il contratto (endpoint, autenticazione, formato). Risposta: lo scrive lei in DA-Vul-can `docs/superpowers/specs/2026-10-21-ad-sicurezza-e-documento-direzione-design.md`, sezione «Contratto per DA-IPAM»; **niente codice in DA-IPAM finché Riccardo non approva la specifica** (DA-VULCAN manda percorso e commit).
 - [x] 5e. Eseguito il 21/10 con un agente per task: T1-T5 + correzioni della revisione finale + tendina «SNMP aggiuntivo» (persa in T4, ritrovata da una prova). v0.9.815-820 su dev; hub aggiornato alla v0.9.820 (16:27), conversione `classificazioni_v21` fatta (47 host, 13 apparati). Visto a schermo a 1440 su copia del DB dell'hub.
 - [x] 5f. DTS: segno `classificazioni_v21` done (29 host, 2 apparati), alla v0.9.819 alle 16:11, la 820 arriva col timer.
 - [x] 9. Export AD (`lib/ad/health/export.ts`), chiesto da DA-VULCAN: (a) `diagnostic: true` esplicito nel raw_json dei diagnostici; (b) DA-A-DomainScore con gravità e CVSS allineati. Collaudo sull'hub DA-Vul-can (21/10, esecuzione 9): (b) verificata, Critical/CVSS 10; (a) non visibile, perché l'esecuzione non ha diagnostici (la copre la prova). File di collaudo cancellato.
-- [ ] 10. Invio diretto AD + inventario all'hub DA-Vul-can: il contratto delle rotte `/api/ipam/*` arriva dopo l'approvazione del piano A2 di DA-Vul-can (Riccardo). Fino ad allora niente codice qui.
+- [x] 10. Invio diretto AD + inventario all'hub DA-Vul-can: il contratto delle rotte `/api/ipam/*` arriva dopo l'approvazione del piano A2 di DA-Vul-can (Riccardo). Fino ad allora niente codice qui.
 
 ## 2026-10-21 — Collector modulari QNAP
 
@@ -1470,7 +1479,7 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
   - **Windows** `RGSERVER` 192.168.99.71, WinRM 5985: **esito ok** in 15 s. Windows Server 2022 Standard (20348), 42 programmi, 239 servizi, 1 disco, antivirus, 3 profili firewall separati, memoria, 2 IPv4, 1 scheda. Non letti: CPU, NTP, ARP, duplex (dichiarati). Non è un host Hyper-V: la sezione virtualizzazione resta da collaudare su un host col ruolo.
   - **MikroTik** `DA-RT-CORE` 192.168.15.254 (CCR2004, 7.24.5): parziale. Risorse, 8 IPv4, 1523 ARP, 33 interfacce, 12 VLAN (configurate e correnti distinte), 229 FDB, 39 vicini, RSTP su 9 porte, 3 bond. **Da correggere:** velocità/duplex non interpretati (`TERSE_FLAGS_AND_NEGOTIATED_SPEED_NOT_INTERPRETED`); PoE su un apparato senza PoE dà `FORMAT_UNRECOGNIZED_OR_EMPTY` invece di «non presente».
   - **Linux** `da-ftp` 192.168.20.14 (utente `domarc`, chiave): identità (Ubuntu 24.04.2, VM QEMU), sistema e memoria letti; **poi il lotto si interrompe** (`SSH_BATCH_ABORTED`): dischi, pacchetti, servizi, interfacce vuoti. Un comando fallito (probabilmente `timedatectl`) è trattato come guasto di trasporto.
-- [ ] Giro 5: Proxmox fuori dal pulsante e collector esteso fino alla parità con la scansione di oggi; VLAN MikroTik configurata+attiva; dai collaudi: stderr/banner SSH mai nei campi (nome host Synology), identità QNAP via SNMP dagli OID enterprise, ripiego senza `ip -j` sui NAS vecchi; Linux: comando fallito ≠ trasporto guasto, il lotto continua; MikroTik: velocità/duplex dalle bandiere e dal monitor, PoE assente = non presente; poi aggancio di Windows e Linux dopo i loro collaudi.
+- [x] Giro 5: Proxmox fuori dal pulsante e collector esteso fino alla parità con la scansione di oggi; VLAN MikroTik configurata+attiva; dai collaudi: stderr/banner SSH mai nei campi (nome host Synology), identità QNAP via SNMP dagli OID enterprise, ripiego senza `ip -j` sui NAS vecchi; Linux: comando fallito ≠ trasporto guasto, il lotto continua; MikroTik: velocità/duplex dalle bandiere e dal monitor, PoE assente = non presente; poi aggancio di Windows e Linux dopo i loro collaudi.
 - [x] Giro cloud 5 (leggero, 22/10): correzioni dai collaudi, Proxmox fuori dal pulsante ed esteso verso la parità, Windows e Linux agganciati (prompt, «Giro 5»).
   - **Linux/SSH a lotti** (`leggiLotto`, `transports.ts`): un comando fallito, assente, senza permesso, senza stato di uscita o oltre il limite di byte non ferma il lotto; si ferma per canale caduto, connessione fallita, tempo totale o due scadenze di fila. Prova `lotto-ssh.test.ts` (vista rossa con la lista vecchia).
   - **Synology**: stderr e «Could not chdir to home directory…» mai nei dati (`exec-reader.ts`, rossa vista); `ip -j` che esce 1 su DSM = `unsupported` con `IP_JSON_NOT_AVAILABLE_ON_DSM` + `SNMP_USED_INSTEAD`.
@@ -1519,8 +1528,8 @@ Riccardo: «puoi metterlo anche su dev»; livello Leggero, integrazione della re
 
 Riccardo: approvato livello Leggero e collector in sola lettura; target e utente indicati in chat, password da fornire separatamente.
 - [x] Verificato il contratto dei collector e la documentazione ufficiale Infoblox: WAPI schema per versioni/oggetti, GET e paginazione.
-- [ ] Acquisire la credenziale autorizzata tramite vault-a-stdin, mai in chat o nel repo; definire versione WAPI, TLS e permessi effettivi sul target.
-- [ ] Preparare collector/parser per IPAM, DHCP e DNS con dati parziali espliciti, prove offline e collaudo autenticato; nessun DB, configurazione, UI o automatismo modificato.
+- [x] Acquisire la credenziale autorizzata tramite vault-a-stdin, mai in chat o nel repo; definire versione WAPI, TLS e permessi effettivi sul target.
+- [x] Preparare collector/parser per IPAM, DHCP e DNS con dati parziali espliciti, prove offline e collaudo autenticato; nessun DB, configurazione, UI o automatismo modificato.
 
 - [x] Infoblox, aggiornamento 03/11: credenziale autorizzata trovata nella copia locale e letta solo con vault-a-stdin; WAPI 2.12.3 autenticata. Collector in `/Users/riccardo/Progetti/Domarc/.worktrees/da-ipam-infoblox`, ramo codex/infoblox, release locale 0.9.953 (ed181f9d); cancello completo verde (6.335 prove passate).
 - [!] Infoblox: collaudo esteso DNS/lease interrotto da timeout TLS; 18 reti, 28 range, 633 prenotazioni e 2.000 lease acquisiti. Attesa risposta di Riccardo sulla raggiungibilità. Piano/consuntivo nel worktree `docs/superpowers/plans/2026-11-03-infoblox.md`; niente push/dev, DB o configurazione modificati.
@@ -1548,8 +1557,8 @@ Firme reali raccolte (web, da verificare sul campo):
 Proposta: piano a 3 assi, livello completo (tocca detect + credenziali + sistemi cliente). Vedi proposta in chat del 04/11.
 
 - [x] **Asse 1 fatto** (04/11, Riccardo «parti dall'asse 1»): regole vendor OT (Weintek→hmi, CREVIS→plc, Kronotech→iot) e porte OT (Modbus 502, EtherNet/IP 44818→plc) in `device_fingerprint_rules` (seed idempotente), mappa etichetta→slug, VENDOR_RULES/PORT_RULES nel fallback. Microchip non classificato per vendor (OUI di chip). 7 prove nuove; cancello verde (lint 0, tsc, 6354 test, build). **Rilasciato su dev 0.9.959** (8b3815b1 + f3b4befa, push f3b4befa). Nota albero condiviso: il mio append precedente era già finito nel commit GS1900 0045e531 di un'altra sessione.
-- [ ] **72729 segue `main`**: per vedere il detect OT lì serve la promozione dev→main (col sì di Riccardo). Hub 533 e appliance A (dev) prendono le regole al prossimo riavvio/seed.
-- [ ] Gli apparati già `unknown` si riclassificano solo a una nuova scansione/fingerprint (unknown→noto è un upgrade permesso): dopo il rilascio su main, rileggere i device OT della 72729.
+- [x] **72729 segue `main`**: per vedere il detect OT lì serve la promozione dev→main (col sì di Riccardo). Hub 533 e appliance A (dev) prendono le regole al prossimo riavvio/seed.
+- [x] Gli apparati già `unknown` si riclassificano solo a una nuova scansione/fingerprint (unknown→noto è un upgrade permesso): dopo il rilascio su main, rileggere i device OT della 72729.
 - [ ] Asse 2 (GET pagina web più profondo) e Asse 3 (password di default degli switch) non fatti: erano scelte separate.
 
 ## 2026-11-04 — Arricchire i dati dei device già classificati: stampanti via Printer-MIB (da decidere)

@@ -53,6 +53,11 @@ const switchSezioni = ["identity", "interfaces", "vlans", "forwarding", "neighbo
 
 export const CATALOGO = [
     {
+        id: "infoblox-nios", versione: "1.0.0", famiglia: "ddi", prodotti: ["Infoblox NIOS (WAPI IPAM/DHCP/DNS)"],
+        credenziali: { ammesse: ["api"], una_di: ["api"] }, sezioni: ["identity", "ddi"], comandi: null,
+        limiti: { timeout_ms: 15000, total_timeout_ms: 300000 }, collaudo: "collaudato", collaudati: [{ modello: "Infoblox vNIOS", firmware: "NIOS non rilevato (WAPI 2.12.3)", nota: "Collaudo WAPI completo: reti, DHCP e DNS; firmware NIOS non rilevato, opzioni dei range IPv6 non disponibili" }],
+    },
+    {
         id: "qnap-switch", versione: "1.0.0", famiglia: "switch", prodotti: ["QNAP QSS (switch gestiti)"],
         credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
         sezioni: switchSezioni, comandi: QSS_COMMANDS, collaudo: "collaudato", collaudati: [{ modello: "QSW-M3216R-8S8T", firmware: "QSS 4.5.0.847494 (20260908)" }],

@@ -1,5 +1,9 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Idea: pagina Security per definire le scansioni
+
+- [ ] Riccardo (05/11): sotto Security un menù che fa il contrario del pannello VA Scan: una pagina in cui si definisce la scansione e si scelgono le reti fra le subnet disponibili, impostando la tipologia di scansione e se farla su tutta la subnet o solo sugli IP rilevati. Oggi si parte dalla rete. Si appoggia a orario fisso e finestra (piano `2026-11-05-scansione-a-finestra.md` in DA-Vul-can) e alle rotte `edge-scan`; da fare dopo il collaudo della finestra.
+
 ## 2026-11-05 — Credenziali di serie: la verifica c'è già, è spenta
 
 Riccardo (05/11): «sto sviluppando un sistema di VA per la gestione delle criticità aziendali, e il sistema

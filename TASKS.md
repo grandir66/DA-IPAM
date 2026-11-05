@@ -1,5 +1,42 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Credenziali di serie: la verifica c'è già, è spenta
+
+Riccardo (05/11): «sto sviluppando un sistema di VA per la gestione delle criticità aziendali, e il sistema
+dovrebbe usare le credenziali inserite di cui sono titolare, ma volutamente sono ridotte al minimo. Per i test
+aggiuntivi andrebbero usati archivi di credenziali pubblici per utenze di default, non ovviamente credenziali
+dal dark web o dati di compromissione: deve essere solo una verifica che le credenziali di default non siano
+ancora presenti negli apparati».
+
+Il lavoro vero sta in DA-Vul-can (`infra/scanner-edge/app/scanner_edge/modules/nuclei/service.py`): qui resta
+la riga che ci rimanda, più la parte di DA-IPAM (categoria del rilievo, anti-lockout).
+
+- [x] **I template ci sono già: 310**, contati sulla sonda del 72729 — `network/default-login`,
+  `http/default-logins`, `javascript/default-logins` dentro `nuclei-templates`. È esattamente l'archivio
+  pubblico che Riccardo descrive: credenziali di serie pubblicate dai costruttori, nessun dato di
+  compromissione
+- [x] **Non vengono mai provati**: il profilo `standard` di nuclei gira con
+  `-tags cve,exposure,misconfig,vuln` (`modules/nuclei/service.py:40`). `default-login` non c'è
+- [x] Quello che già funziona su questo asse: `snmp-enum` prova le community di serie (onesixtyone +
+  snmpwalk `public`) ed è dentro `completo-interno`; nuclei ha già trovato `SNMPv1 Public Community String`
+  (gravità alta) sulla stampante 192.168.1.215
+- [x] `cred-bind` è un'altra cosa e va tenuta distinta: prova **una** coppia utente/password fornita, su LDAP
+  e SMB, senza salvarla. Serve per le credenziali di cui Riccardo è titolare, non per uno spazzolamento
+- [ ] **Da fare, passo 1 (piccolo)**: aggiungere `default-login` ai tag del profilo. Copre subito i
+  ~290 template HTTP sulle interfacce web già scoperte — stampanti, switch, NAS: è lì che le default restano
+- [ ] **Da fare, passo 2 (più lungo)**: i template di `network/default-login` (FTP, SSH, telnet) vogliono
+  bersagli `host:porta`, non URL. Oggi nuclei riceve un solo URL per giro (`-u http://ip:porta`), quindi quei
+  template non scattano. Serve dargli anche una lista di host e porte
+- [ ] **Da decidere prima di accendere, è il rischio vero**: un template di default-login **tenta l'accesso**.
+  Su apparati e domini con blocco dopo N tentativi si rischia di bloccare utenze del cliente. In DA-IPAM
+  esistono già `scanner/credential-anti-lockout.ts` e `scanner/credential-run-budget.ts`: la stessa cautela va
+  portata su questo asse, o si limita il passo 1 agli apparati (dove il blocco non c'è) tenendo fuori AD
+- [ ] **Da fare, passo 3**: in DA-IPAM il rilievo «credenziale di serie ancora attiva» merita una categoria
+  sua. È il tipo di finding su cui un cliente agisce davvero, e oggi finirebbe mescolato al resto
+- [ ] Si aggancia a **C9** («asse 3: password di default negli apparati dei clienti») e al blocco più grosso
+  già misurato: le credenziali della subnet non arrivano alla sonda (`ssh`, `smb`, `snmp` e AD vuoti su
+  tutte e due le reti del 72729)
+
 ## 2026-11-05 — I profili assessment vanno spiegati in pagina
 
 Riccardo (05/11): «oltre che spiegarli dovresti descriverli nella UI molto meglio». La tendina del pannello

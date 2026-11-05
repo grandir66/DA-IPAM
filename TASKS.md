@@ -19,7 +19,7 @@ stato di avanzamento». Riccardo (05/11): sì ai passi 1 e 2, livello leggero; 3
 - [x] Scoperto strada facendo: un ping ucciso dallo stop valeva «nessuna risposta» (`killed`): ora è «sconosciuto»
 - [x] Scoperto strada facendo: i giri dei profili non uscivano mai dalla mappa: ora restano 5 minuti come gli altri
 - [x] Revisione a freddo: un giro fermato scriveva in `scan_history` e la pagina rete l'avrebbe letto come fase eseguita (anche «credenziali verificate»). Tolta la riga, corretti anche i rilievi minori
-- [ ] Da decidere (Riccardo): fermare a mano una rete in un job su tutte le reti lascia proseguire il job con la rete dopo e aggiorna `last_run`. Oggi è così: si ferma quel giro, non il job
+- [x] Deciso (Riccardo, 05/11: «Va bene così»): fermare a mano una rete in un job su tutte le reti ferma quel giro, non il job: si prosegue con la rete dopo e `last_run` si aggiorna
 - Trappole: `ScanProgress` non ha il tenant (sull'hub `network_id` non basta a separare i clienti); la mappa è in memoria (persa al riavvio, i giri finiti spariscono dopo 5 min); i job senza `discoverNetwork` stanno solo in `runningJobs`
 
 ## 2026-11-05 — Idea: pagina Security per definire le scansioni

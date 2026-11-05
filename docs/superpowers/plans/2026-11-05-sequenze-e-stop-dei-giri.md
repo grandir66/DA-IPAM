@@ -33,4 +33,4 @@ scansioni. Niente live: si pubblica su `dev`; il push su `main` di DA-IPAM resta
   «Avanzata» e «Accesso agli host» (in locale non c'erano host), e lo stop di un profilo.
 - **Scostamenti**: niente riga in `scan_history` per un giro fermato. Sul server di sviluppo `next dev` da `127.0.0.1` la pagina si
   ricarica in cerchio (HMR bloccato, `allowedDevOrigins`): per le prove nel browser si usa `next start`.
-- **Consigli**: un fermo per job, oltre che per giro (voce in `TASKS.md`).
+- **Decisione**: lo stop ferma il giro, non il job (Riccardo, 05/11).

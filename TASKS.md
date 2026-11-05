@@ -55,6 +55,22 @@ stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTT
 - [ ] **Da decidere, stessa famiglia di problema**: anche `nmap -sV` tocca la 9100 (è in `ports.ts` e in
   `ALWAYS_USEFUL_TCP_PORTS`) e alcune sue sonde possono far stampare. Il foglio in mano a Riccardo è il nostro
   probe, non nmap, ma va guardato
+- [x] **Fatto col sì di Riccardo** (05/11): la 192.168.1.0/24 del 72729 è su **`completo-interno`**. Snapshot
+  `pre-profilo-20261105` della VM 100 sul nodo `pve` prima di toccare, tolto dopo la verifica. Fatto per la
+  strada dell'app (`resolveAssessmentForNetwork` + `/api/v1/networks/ensure` senza host, senza credenziali e
+  senza `targeting_mode`, poi `setNetworkAssessmentConfig`), non con una UPDATE a mano. Verificato su tutte e
+  due le parti: `networks.assessment_profile_id` = `completo-interno` nel database della sonda **e** in quello
+  di DA-IPAM; label, pianificazione e `host_count` invariati
+- [ ] **Difetto trovato mentre lo facevo, da guardare**: le due copie del profilo possono **divergere**. Alle
+  10:40 DA-IPAM diceva `validation-plus` e la sonda eseguiva `smoke-interno` (assessment_runs 1 e 2 del 05/11).
+  A eseguire è la riga della sonda; il pannello però mostra la copia locale (`assessmentFromNetwork(network)`
+  in `loadEdgeSubnetStatus`), quindi la pagina può dire un profilo e la scansione farne un altro. E la copia
+  locale finisce anche nel corpo di `/networks/ensure` come valore di partenza, quindi una riga stantia può
+  riscrivere quella della sonda. Da capire come si erano disallineate e se il pannello debba leggere la sonda
+- [x] Da sapere: alle 09:32 era partita una scansione (`scans.id` 4, profilo `fast`, `pending`): l'assessment
+  in coda a quella userà già `completo-interno`. E fra le 09:05 e le 10:40 il `targeting_mode` di **tutte e
+  due** le reti è passato da `full_subnet` a `found_ips` e la rete 1 ha cambiato label: non è stato questo
+  lavoro (la rete 1 non l'ho toccata), è lavoro fatto dalla pagina
 - [ ] **Da decidere**: la rete 192.168.1.0/24 del 72729 ha il profilo di assessment `smoke-interno`, che esegue
   solo `service-fp`. È il motivo per cui mancano tls-deep, snmp-enum, dns-enum e gli altri, non un guasto
 

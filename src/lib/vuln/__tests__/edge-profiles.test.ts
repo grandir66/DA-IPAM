@@ -22,6 +22,7 @@ import {
   findEdgeProfile,
   missingProfileMessage,
   parseEdgeProfilesResponse,
+  confrontaAssessment,
 } from "@/lib/vuln/edge-profiles";
 
 /**
@@ -230,13 +231,11 @@ function sourceFiles(dir: string): string[] {
  * leggono dall'edge, non da una lista scritta qui. Le descrizioni in italiano sono
  * un'altra cosa e per forza indicizzate per id: non costruiscono nessun elenco, e
  * un id che non conoscono resta scegliibile e si descrive dai suoi moduli (prove in
- * `profili-assessment-testi.test.ts`). Quei due file sono ammessi, e sotto si
- * controlla che non si siano messi a fare da catalogo.
+ * `profili-assessment-testi.test.ts`). Quel file è ammesso, e sotto si controlla che
+ * non si sia messo a fare da catalogo. I file di prova non servono in lista:
+ * `sourceFiles` non entra nei `__tests__`.
  */
-const DESCRIZIONI_AMMESSE = [
-  "src/lib/vuln/profili-assessment-testi.ts",
-  "src/lib/vuln/__tests__/profili-assessment-testi.test.ts",
-];
+const DESCRIZIONI_AMMESSE = ["src/lib/vuln/profili-assessment-testi.ts"];
 
 test("lucchetto: nessuna lista fissa di profili assessment nel codice (si leggono dall'edge)", () => {
   const vecchi = /["'`](smoke-interno|safe-interno|validation-plus|interno-approfondito)["'`]/;
@@ -267,4 +266,56 @@ test("lucchetto: la rotta dei profili chiede l'autenticazione per prima e lavora
   assert.ok(auth > 0, "requireAuth() nel GET");
   assert.ok(tenant > auth, "withTenantFromSession dopo l'auth");
   assert.ok(edge > tenant, "la chiamata all'edge dentro il contesto tenant");
+});
+
+// --- Confronto fra la copia di DA-IPAM e quella della sonda (05/11/2026) ------
+// Le due copie si separano solo per una modifica fatta fuori dall'app: sul 72729
+// DA-IPAM diceva validation-plus e la sonda eseguiva smoke-interno. Qui gli id
+// sono finti di proposito: il confronto non sa niente del catalogo, e scrivere
+// quelli veri accenderebbe il lucchetto qui sopra.
+
+test("sonda che non lo dice (più vecchia del 05/11/2026): non si inventa un disallineamento", () => {
+  const c = confrontaAssessment({ enabled: true, profileId: "profilo-a" }, undefined);
+  assert.deepEqual(c, { stato: "non-noto" });
+});
+
+test("stessa configurazione: allineati", () => {
+  const c = confrontaAssessment(
+    { enabled: true, profileId: "profilo-a" },
+    { enabled: true, profileId: "profilo-a" },
+  );
+  assert.deepEqual(c, { stato: "allineati" });
+});
+
+test("profili diversi: lo dice, e riporta tutti e due i lati", () => {
+  const c = confrontaAssessment(
+    { enabled: true, profileId: "profilo-a" },
+    { enabled: true, profileId: "profilo-b" },
+  );
+  assert.deepEqual(c, {
+    stato: "diversi",
+    qui: { enabled: true, profileId: "profilo-a" },
+    sonda: { enabled: true, profileId: "profilo-b" },
+  });
+});
+
+test("acceso qui e spento sulla sonda: diversi", () => {
+  const c = confrontaAssessment(
+    { enabled: true, profileId: "profilo-a" },
+    { enabled: false, profileId: null },
+  );
+  assert.equal(c.stato, "diversi");
+});
+
+test("spento da tutte e due le parti: allineati, anche con profili diversi scritti accanto", () => {
+  const c = confrontaAssessment(
+    { enabled: false, profileId: "profilo-a" },
+    { enabled: false, profileId: "profilo-b" },
+  );
+  assert.deepEqual(c, { stato: "allineati" });
+});
+
+test("stringa vuota e null sono la stessa cosa", () => {
+  const c = confrontaAssessment({ enabled: false, profileId: "" }, { enabled: false, profileId: null });
+  assert.deepEqual(c, { stato: "allineati" });
 });

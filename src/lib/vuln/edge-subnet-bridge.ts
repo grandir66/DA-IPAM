@@ -65,6 +65,12 @@ export interface EdgeSubnetStatus {
   assessment_enabled: boolean;
   /** Id salvato sulla rete: può non esistere più sull'edge (lo controlla il pannello). */
   assessment_profile_id: string | null;
+  /**
+   * L'assessment com'è sulla sonda, cioè quello che verrà davvero eseguito.
+   * `undefined` quando la sonda non lo dice: fino al 05/11/2026 il `lookup` non
+   * aveva quei campi, e un disallineamento inventato sarebbe peggio del silenzio.
+   */
+  assessment_sonda?: { enabled: boolean; profileId: string | null };
   edgeNetwork: {
     network_id: number;
     cidr: string;
@@ -172,6 +178,8 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
         smb: { id: string; name: string } | null;
         snmp: { id: string; name: string } | null;
       };
+      assessment_enabled?: boolean;
+      assessment_profile_id?: string | null;
     }>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`);
 
     if (!lookup.found || lookup.network_id == null) {
@@ -193,6 +201,16 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       ipamCredentials,
       targeting_mode: targetingMode,
       ...assessment,
+      // Solo se la sonda l'ha detto: `typeof` e non un `??`, perché `false` e
+      // `null` sono risposte valide e vanno distinte dal «non lo dice».
+      ...(typeof lookup.assessment_enabled === "boolean"
+        ? {
+            assessment_sonda: {
+              enabled: lookup.assessment_enabled,
+              profileId: (lookup.assessment_profile_id || "").trim() || null,
+            },
+          }
+        : {}),
       edgeNetwork: {
         network_id: lookup.network_id,
         cidr: lookup.cidr ?? network.cidr,

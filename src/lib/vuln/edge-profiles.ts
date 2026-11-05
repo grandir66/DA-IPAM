@@ -134,3 +134,47 @@ export function effectiveAssessment(req: AssessmentRequest, saved: AssessmentCon
   if (!profileId) return { ok: false, error: SCEGLI_PROFILO };
   return { ok: true, enabled: true, profileId };
 }
+
+/**
+ * Confronto fra la configurazione assessment di DA-IPAM e quella della sonda.
+ *
+ * Le due copie esistono entrambe: DA-IPAM ne tiene una (è quella che il pannello
+ * mostra e quella che parte nel corpo di `/networks/ensure`), ma a **eseguire** è
+ * la riga della sonda. Finché passa tutto dalla pagina restano allineate — la
+ * copia locale si scrive solo dopo che la sonda ha accettato. Una modifica fatta
+ * **fuori** (a mano sul database, o dall'interfaccia della sonda) le separa, e
+ * nessuno se ne accorgeva: il 05/11/2026 sul 72729 DA-IPAM diceva un profilo e
+ * la sonda ne eseguiva un altro (gli id non si scrivono qui fra apici: li vieta il
+ * lucchetto in edge-profiles.test.ts, e avrebbe ragione).
+ *
+ * `undefined` per la sonda significa «non l'ha detto»: una sonda più vecchia del
+ * 05/11/2026 non ha quei campi nel `lookup`. In quel caso non si inventa un
+ * disallineamento — si dice che non è noto.
+ */
+export type ConfrontoAssessment =
+  | { stato: "non-noto" }
+  | { stato: "allineati" }
+  | { stato: "diversi"; qui: AssessmentConfig; sonda: AssessmentConfig };
+
+/** Stringa vuota e `null` sono la stessa cosa: «nessun profilo». */
+function normalizzaProfilo(id: string | null | undefined): string | null {
+  return (id || "").trim() || null;
+}
+
+export function confrontaAssessment(
+  qui: AssessmentConfig,
+  sonda: AssessmentConfig | undefined,
+): ConfrontoAssessment {
+  if (!sonda) return { stato: "non-noto" };
+  const idQui = normalizzaProfilo(qui.profileId);
+  const idSonda = normalizzaProfilo(sonda.profileId);
+  // Spento da tutte e due le parti: che profilo sia scritto accanto non conta,
+  // non viene eseguito niente.
+  if (!qui.enabled && !sonda.enabled) return { stato: "allineati" };
+  if (qui.enabled === sonda.enabled && idQui === idSonda) return { stato: "allineati" };
+  return {
+    stato: "diversi",
+    qui: { enabled: qui.enabled, profileId: idQui },
+    sonda: { enabled: sonda.enabled, profileId: idSonda },
+  };
+}

@@ -65,10 +65,21 @@ stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTT
   DA-IPAM diceva `validation-plus` e la sonda eseguiva `smoke-interno`. Nel codice la copia locale si scrive in
   **un punto solo** — `rememberAssessmentAcceptedByEdge` (`edge-subnet-bridge.ts:251`) — e **solo dopo** che
   `/api/v1/networks/ensure` ha accettato: dalla pagina le due parti non possono separarsi
-- [ ] **Resta vero e va deciso**: una modifica fatta **fuori** da DA-IPAM (a mano, o dall'interfaccia della
-  sonda) non la nota nessuno. Il pannello mostra la copia locale mentre a eseguire è la riga della sonda, e la
-  copia locale fa da valore di partenza nel corpo di `ensure`, quindi alla prima scansione riscrive quella
-  della sonda. Oggi non c'è nessun controllo che segnali la differenza. S. **Decide Riccardo** se serve
+- [x] **Fatto col sì di Riccardo** (05/11): il pannello dice quando le due copie non combaciano.
+  - Sonda (**ramo `claude/lookup-assessment-20261105` di DA-Vul-can, non su `main`**): `GET /api/v1/networks/lookup`
+    riporta `assessment_enabled` e `assessment_profile_id`. Prima quel valore usciva solo da un `PATCH`, che
+    scrive: non va bene per una lettura a ogni apertura del pannello. Additivo, un DA-IPAM vecchio lo ignora.
+    3 prove nuove, 2 viste fallire (`KeyError`); 513 prove della sonda verdi
+  - DA-IPAM: `confrontaAssessment` in `edge-profiles.ts` (puro), `assessment_sonda` in `EdgeSubnetStatus`, e
+    l'avviso nel pannello. Il confronto si fa su quello **salvato**, non su quello che si sta scegliendo, se no
+    lampeggia a ogni clic. Sonda che non lo dice = «non noto», nessun falso allarme. 6 prove, 2 guasti
+    introdotti apposta per vederle fallire. Cancello: lint 0, tsc 0, **7.216 prove, 0 fallite**, build 0
+  - Tolta dal lucchetto la voce per il file di prova delle descrizioni: era inutile, `sourceFiles` non entra
+    nei `__tests__`. Ce l'avevo messa io stamattina
+- [ ] **Resta da decidere**: il rilascio della sonda. Finché quel ramo non va su `main` di DA-Vul-can l'avviso
+  non può comparire (DA-IPAM non ha il dato). È un rilascio alle appliance e tocca un file che un'altra
+  sessione sta riscrivendo (`api_v1_ipam.py`, +169 righe sul ramo `claude/scansione-a-finestra-20261105`):
+  va coordinato con quella. **Decide Riccardo**
 - [x] Da sapere: alle 09:32 era partita una scansione (`scans.id` 4, profilo `fast`, `pending`): l'assessment
   in coda a quella userà già `completo-interno`. E fra le 09:05 e le 10:40 il `targeting_mode` di **tutte e
   due** le reti è passato da `full_subnet` a `found_ips` e la rete 1 ha cambiato label: non è stato questo

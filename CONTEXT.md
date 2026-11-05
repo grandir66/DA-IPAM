@@ -38,6 +38,17 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Rilascio del 05/11/2026
 
+**0.9.974 su `dev`** (`30926e2f`, hub 533 aggiornata e sana): il sistema operativo si ricava da **tutte** le
+stringhe di versione delle porte, non solo dalla prima che nomina un prodotto noto. Produttore e categoria
+restano dalla prima porta con un prodotto (l'apparato è uno); la famiglia prende prima l'OS **dichiarato** da un
+prodotto della tabella (ESXi, Windows, confidenza 0.8), poi il testo di un banner qualunque (0.7, e 0.85 × 0.7 =
+0.595, sopra soglia). Trovato misurando PX-NAS `192.168.99.1`: categoria `compute.hypervisor` dalla 3128
+(«Proxmox Virtual Environment») e famiglia vuota, perché la 22 («OpenSSH 10.0p2 Debian» → linux) non si leggeva
+più. Verificato in sola lettura sull'hub col codice nuovo: 10 host passano da vuoto a `linux` (i sei nodi Proxmox
+della `192.168.16.x`, i tre router `192.168.40.165/167/168` e `192.168.4.171` col banner «Linux telnetd»), e
+nessuna categoria cambia. **In archivio i valori restano quelli vecchi** finché non gira un ricalcolo
+(«Attribuzione» o `scripts/attribution-recompute-cli.ts`): il DB dell'hub non è stato toccato. **Non ancora su `main`.**
+
 `main` = `dev` = `74f4a61b` = **0.9.973** (dentro: 0.9.970, 0.9.971, 0.9.972), promossa col sì di Riccardo (la 0.9.970 e la 0.9.971 sono dentro). Porta: i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato) e la colonna «Da rivedere» in Discovery; i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`) e la decodifica delle entità XML; **l'OS visto da nmap che arriva in tabella** (peso `nmap_os` 0.5 → 0.85, vedi la trappola della soglia qui sopra) con l'OS grezzo mostrato dove la famiglia non si decide; il peso dell'evidenza che si riscrive al refresh, senza cui la correzione sarebbe stata inerte sugli host già scansionati. Nella 0.9.970 `POST /api/hosts/conferma-rivisti` era uscita con la sola autenticazione invece di admin: corretta nella 0.9.971. Dalla 0.9.973 i prodotti si riconoscono dalla **stringa di versione** dei servizi (`prodottoDaVersione`), anche all'indietro al primo ricalcolo. **Resa a schermo non vista.**
 
 `main` = `dev` = `a0234549` = **0.9.970**, promossa col sì di Riccardo. Porta i profili che riempiono anche l'apparato (solo colonne vuote, seriale validato), i tre script in più nella lettura (`snmp-info`, `vmware-version`, `ldap-rootdse`), la decodifica delle entità XML nell'output degli script e la colonna «Da rivedere» in Discovery con chip e conferma in blocco. **Resa a schermo non vista** (nessun accesso all'app in locale, sola lettura sul 72729).

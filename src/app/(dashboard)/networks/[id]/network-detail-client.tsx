@@ -40,7 +40,7 @@ import { IpGrid } from "@/components/shared/ip-grid";
 import { useGiri } from "@/components/shared/giri-context";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
-import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
+import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1259,8 +1259,8 @@ export function NetworkDetailClient({
               onClick={() => setAttributionPreviewOpen(true)}
               title={
                 scanPhases
-                  ? `Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze. Oggi: ${scanPhases.attribution.level2} host a livello 2, ${scanPhases.attribution.level1} a livello 1, ${scanPhases.attribution.none} senza su ${scanPhases.attribution.total}.${scanPhases.attribution.suggestion ? ` ${scanPhases.attribution.suggestion}` : ""}`
-                  : "Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze"
+                  ? `IP con dati di classificazione diversi: si confrontano e si sceglie. Oggi: ${scanPhases.attribution.level2} host a livello 2, ${scanPhases.attribution.level1} a livello 1, ${scanPhases.attribution.none} senza su ${scanPhases.attribution.total}.${scanPhases.attribution.suggestion ? ` ${scanPhases.attribution.suggestion}` : ""}`
+                  : "IP con dati di classificazione diversi: si confrontano e si sceglie"
               }
             >
               <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
@@ -1881,7 +1881,7 @@ export function NetworkDetailClient({
         />
       )}
 
-      <AttributionPreviewDialog
+      <IpContesiDialog
         open={attributionPreviewOpen}
         onOpenChange={setAttributionPreviewOpen}
         networkId={network.id}

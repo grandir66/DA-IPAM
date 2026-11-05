@@ -1,5 +1,9 @@
 # TASKS — DA-IPAM
 
+## 2026-11-06 — Host lenti e avanzamento per IP
+
+- [ ] Piano in DA-Vul-can: `docs/superpowers/plans/2026-11-06-host-lenti-e-avanzamento-per-ip.md`. Qui: avanzamento per IP nel pannello VA, rilievi a scansione in corso in `runVulnSync`, interruttore degli host lenti. Richiesta di Riccardo del 05/11. In attesa del suo via.
+
 ## 2026-11-05 — Tolti i job di scansione VA del 72729 (si riaccendono a sonda pronta)
 
 Riccardo (05/11): «rimuovi i job in 72729 di scansione, li faremo partire quando abbiamo una sonda perfetta

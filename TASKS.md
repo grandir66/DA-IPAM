@@ -104,6 +104,20 @@ Trovato sul 72729 (sola lettura): scansione 1, rete 192.168.0.0/24, profilo deep
 - [ ] Riccardo (04/11): potrebbe pianificare una scansione al giorno; i rilievi degli host si sommano finché un rilievo nuovo non li sostituisce, per avere la copertura completa degli IP della subnet.
 - [ ] Da capire: `gvmd` «Credential could not be created by admin» alle 14:13 ora italiana del 04/11, stesso minuto del salvataggio della rete 192.168.1.0/24.
 
+## 2026-11-05 — Il profilo non riconosce i prodotti IT (Proxmox, server Windows): buco di regole
+
+Riccardo, provando su `192.168.99.2`: «nmap non ha riconosciuto né proxmox né un server windows e
+non ha fornito molte info in più di quelle delle scansioni normali». Letto nel codice; **il suo caso
+non l'ho misurato**: `192.168.99.x` non è su nessuno dei tre tenant dell'hub e non so quale
+installazione lo censisce (chiesto a Riccardo).
+
+- [x] **Le porte ci sono**: 8006 e 8007 (Proxmox) sono nell'elenco TCP e in `PORTE_TLS`, quindi `ssl-cert` le interroga; 3389, 445, 139 e la UDP 137 pure. Non è un problema di porte non provate
+- [x] **Il buco sta nelle regole, non nella raccolta**: in `attribution/profilo-evidence.ts` l'unica tabella di produttori (`PRODUTTORI_NOTI`) è **solo OT** (Siemens, Rockwell, Schneider, Omron, Beckhoff, WAGO…). Un certificato di Proxmox, VMware, Synology, QNAP, HPE o Microsoft non produce nessuna evidenza di produttore. E **nessuno script del profilo emette una categoria** fuori da quelli di campo (`s7-info`, `enip-info`, `bacnet-info`, `omron-info`, `mqtt-subscribe`): `http-title`, `ssl-cert`, `rdp-ntlm-info`, `ldap-rootdse` non dicono «questo è un server», «questo è un hypervisor»
+- [x] Quindi: su un **Proxmox** il profilo raccoglie il certificato della 8006 e il titolo della pagina, li mostra nella tab «Rilievi» e non ne ricava né produttore né categoria — il riconoscimento di Proxmox oggi vive altrove (il collector con le credenziali dell'API). Su un **server Windows** l'OS diventa `windows` (via `rdp-ntlm-info`/`smb-os-discovery`), ma la **categoria** «server» non la propone nessuno script del profilo: arriva da AD, dalle porte o da Wazuh
+- [x] Ed è anche la risposta a «non molte info in più»: il profilo aggiunge dove uno script risponde **e** dove una regola sa leggerlo. Oggi la seconda metà esiste solo per il mondo OT
+- [ ] **Proposta** (aspetta il sì): una tabella di riconoscimento dei prodotti IT come quella OT, che da titolo web, CN/organizzazione del certificato e porta caratteristica emetta **produttore + categoria** — «Proxmox Virtual Environment» sulla 8006 → `vendor: proxmox`, `category: compute.hypervisor`; «VMware ESXi» sulla 443 → hypervisor; Synology/QNAP sulla 5000/5001 → NAS; iLO/iDRAC sulla 443 → BMC; `ldap-rootdse` con `domainControllerFunctionality` → `compute.server` con ruolo DC. Sono righe dichiarative, funzioni pure, provabili con le fixture dei rilievi veri che abbiamo già in archivio
+- [ ] Da misurare quando Riccardo dice dove gira l'IPAM di `192.168.99.x`: quali script hanno risposto su `.2`, se `-O` ha avuto i privilegi (senza root degrada e lo scrive nel registro) e cosa è finito in `host_profilo_rilievi`
+
 ## 2026-11-05 — L'OS trovato da nmap non arriva alle tabelle (difetto, causa misurata)
 
 Riccardo: «il detect dei sistemi operativi del nmap aggiuntivo non riporta alcun dato alle tabelle

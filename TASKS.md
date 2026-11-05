@@ -1,5 +1,21 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Tolti i job di scansione VA del 72729 (si riaccendono a sonda pronta)
+
+Riccardo (05/11): «rimuovi i job in 72729 di scansione, li faremo partire quando abbiamo una sonda perfetta
+testata in altre reti». Snapshot `pre-rimozione-job-20261105` della VM 100 su `pve` prima, tolto dopo la verifica.
+
+- [x] Rimossi dalla **sonda** (`network_schedules`, 3 righe, 0 rimaste) e dalla **copia in DA-IPAM**
+  (`edge_scan_schedules`, 2 righe, 0 rimaste). Nessuna scansione in corso al momento della rimozione
+- [x] **Per riaccenderli** (dalla pagina VA Scan della rete, o reinserendoli): erano
+  - rete 1 (192.168.0.0/24): **vuln** `balanced` mensile `0 9 6 * *`; **web-scan** `standard` `0 2 * * 0`
+  - rete 2 (192.168.1.0/24): **vuln** `balanced` mensile `0 10 6 * *`
+- [ ] **Non toccati** (sono discovery interna di DA-IPAM, non la VA della sonda): i `scheduled_jobs`
+  `fast_scan` (reti 1/2/3, ogni ora), `known_host_check`, `arp_poll`, `vuln_sync`, ecc. Se Riccardo vuole
+  fermare **anche** la discovery sul cliente, si disattivano questi; chiesto
+- [ ] Si lega al fix SNMP della sonda (ramo `claude/fix-snmp-auth-20261105` di DA-Vul-can, in pausa) e al
+  lavoro «sonda perfetta testata in altre reti»
+
 ## 2026-11-05 — Perché le scansioni restano in superficie: credenziali non autenticate
 
 Riccardo vuole una scansione completa per il quadro al cliente. Misurato sul 72729: le scansioni girano **non

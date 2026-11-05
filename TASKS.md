@@ -1,5 +1,9 @@
 # TASKS — DA-IPAM
 
+## 2026-11-05 — Falle recenti in primo piano (Riccardo)
+
+- [ ] Riccardo (05/11): quadro chiaro delle vulnerabilità recenti e occhio di riguardo a ogni nuova vulnerabilità; nelle nuove scansioni si cercano prima le nuove falle; per le reti già scansionate le vecchie hanno meno impatto. Task 12 del piano `2026-11-05-base-scansioni.md` in DA-Vul-can
+
 ## 2026-11-05 — Motore nuclei e falle MikroTik (Riccardo)
 
 Piano: `docs/superpowers/plans/2026-11-05-base-scansioni.md` in DA-Vul-can, Task 1 e 2 estesi.

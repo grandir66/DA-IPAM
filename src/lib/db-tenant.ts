@@ -2541,6 +2541,32 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.warn(`[db-tenant] ${tenantCode}: migrazione networks.probes_enabled fallita:`, e);
   }
 
+  // Scansione a finestra (05/11/2026): `edge_scan_schedules` porta anche la finestra della rete.
+  // Predefiniti che non cambiano nulla: `modo` = 'orario' per ogni riga che c'era, le altre colonne vuote.
+  try {
+    const cols = new Set(
+      (newDb.prepare("PRAGMA table_info(edge_scan_schedules)").all() as Array<{ name: string }>).map((c) => c.name),
+    );
+    if (cols.size > 0) {
+      const nuove: Array<[string, string]> = [
+        ["modo", "TEXT NOT NULL DEFAULT 'orario'"],
+        ["fascia_dalle", "TEXT"],
+        ["fascia_alle", "TEXT"],
+        ["ip_per_gruppo", "INTEGER"],
+        ["tentativi", "INTEGER"],
+        ["ripeti", "TEXT"],
+      ];
+      for (const [nome, tipo] of nuove) {
+        if (!cols.has(nome)) {
+          newDb.exec(`ALTER TABLE edge_scan_schedules ADD COLUMN ${nome} ${tipo}`);
+          console.info(`[db-tenant] ${tenantCode}: aggiunta edge_scan_schedules.${nome}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione edge_scan_schedules.finestra fallita:`, e);
+  }
+
   // Migrazione runtime: host_credentials.protocol_type CHECK include 'redfish'/'onvif'
   // (Fase 4b Task 3+4 — BMC Redfish e telecamere ONVIF ora hanno un protocol_type
   // dedicato invece di riusare 'api', vedi task-1-report.md §Decisione da confermare).

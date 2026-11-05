@@ -22,8 +22,21 @@ import {
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
-import { saveEdgeSchedule } from "@/lib/vuln/edge-schedule-store";
-import { nearestIntervalForFrequency, type Frequency } from "@/lib/vuln/cron-builder";
+import {
+  dimenticaEdgeFinestra,
+  getEdgeSchedule,
+  saveEdgeFinestra,
+  saveEdgeSchedule,
+} from "@/lib/vuln/edge-schedule-store";
+import { nearestIntervalForFrequency, type Frequency, type FinestraInput } from "@/lib/vuln/cron-builder";
+import {
+  SONDA_DA_AGGIORNARE,
+  leggiRispostaFinestra,
+  leggiRispostaIp,
+  type EsitoElencoIp,
+  type StatoFinestra,
+  type StatoIp,
+} from "@/lib/vuln/finestra";
 import {
   effectiveAssessment,
   findEdgeProfile,
@@ -475,7 +488,7 @@ export async function saveEdgeSubnetSchedule(
     /** Id già controllato sull'edge (`resolveAssessmentForNetwork`). */
     assessmentProfileId?: string | null;
   },
-): Promise<{ ok: boolean; error?: string; degraded?: boolean; warning?: string }> {
+): Promise<{ ok: boolean; error?: string; status?: number; degraded?: boolean; warning?: string }> {
   const scanner = getActiveEdgeScanner();
   if (!scanner || scanner.enabled !== 1) {
     return { ok: false, error: "Scanner-Edge non configurato o disabilitato" };
@@ -484,6 +497,14 @@ export async function saveEdgeSubnetSchedule(
   const network = getNetworkById(networkId);
   if (!network) {
     return { ok: false, error: "Rete non trovata" };
+  }
+
+  // Una rete con la finestra accesa rifiuta la pianificazione a orario (409 della sonda): tornare a
+  // «Orario fisso» è prima la `DELETE /finestra`, poi questo salvataggio. Se la cancellazione non
+  // riesce (un gruppo che non si ferma) l'orario non si salva e si dice il motivo.
+  if (await haUnaFinestra(networkId)) {
+    const tolta = await cancellaFinestraDellaSonda(scanner, network);
+    if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
   }
 
   try {
@@ -604,4 +625,220 @@ export async function removeEdgeSubnetSchedule(
           : "Errore sconosciuto";
     return { ok: false, error: msg };
   }
+}
+
+
+// ── Scansione a finestra (05/11/2026) ──────────────────────────────────────────────────────────
+
+export { SONDA_DA_AGGIORNARE };
+
+/**
+ * Vero se l'errore è il 404 di una rotta che la sonda non ha («Not Found» di FastAPI), non il 404
+ * di una rete o di una finestra che mancano («Rete edge non trovata», «La rete non ha una
+ * finestra»): solo il primo vuol dire «sonda da aggiornare».
+ */
+export function eSondaSenzaFinestra(e: unknown): boolean {
+  return e instanceof EdgeClientError && e.status === 404 && (e.detail ?? "").trim().toLowerCase() === "not found";
+}
+
+/** Stato HTTP da restituire a chi chiama: i rifiuti della sonda (400, 409) restano tali, il resto è un guasto a monte. */
+function statoRifiuto(e: unknown): 400 | 409 | 502 {
+  if (e instanceof EdgeClientError && (e.status === 400 || e.status === 409)) return e.status;
+  return 502;
+}
+
+/** Il motivo di un rifiuto della sonda (corpo del 400 o del 409), altrimenti il testo dell'errore. */
+function motivoEdge(e: unknown): string {
+  if (e instanceof EdgeClientError) return e.detail?.trim() || e.message;
+  return e instanceof Error ? e.message : "Errore sconosciuto";
+}
+
+type ScannerAttivo = NonNullable<ReturnType<typeof getActiveEdgeScanner>>;
+
+/** Id della rete sulla sonda, cercato dal CIDR; `null` se la sonda non la conosce ancora. */
+async function idReteSullaSonda(scanner: ScannerAttivo, cidr: string): Promise<number | null> {
+  const lookup = await edgeApiGet<{ found: boolean; network_id?: number }>(
+    scanner,
+    `/api/v1/networks/lookup?cidr=${encodeURIComponent(cidr)}`,
+  );
+  return lookup.found && lookup.network_id != null ? lookup.network_id : null;
+}
+
+function sondaPronta(): { ok: true; scanner: ScannerAttivo } | { ok: false; error: string } {
+  const scanner = getActiveEdgeScanner();
+  if (!scanner || scanner.enabled !== 1) return { ok: false, error: "Scanner-Edge non configurato o disabilitato" };
+  return { ok: true, scanner };
+}
+
+/**
+ * La rete ha una finestra da togliere prima di un orario fisso? Lo dice la riga di IPAM (`modo`) o,
+ * se non c'è, la sonda: la riga può mancare (ripristino, importazione) mentre la finestra c'è. Se la
+ * sonda non risponde non si indovina: l'orario si prova a salvare e il 409 della sonda dice il perché.
+ */
+async function haUnaFinestra(networkId: number): Promise<boolean> {
+  if (getEdgeSchedule(networkId)?.modo === "finestra") return true;
+  const s = await leggiFinestra(networkId);
+  return s.stato === "ok" && s.finestra !== null;
+}
+
+/** Lettura della finestra di una rete. Ogni esito ha il suo nome: mai «nessuna finestra» al posto di un guasto. */
+export async function leggiFinestra(networkId: number): Promise<StatoFinestra> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { stato: "sonda_assente", messaggio: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { stato: "errore", messaggio: "Rete non trovata" };
+  try {
+    const edgeId = await idReteSullaSonda(pronta.scanner, network.cidr);
+    if (edgeId === null) return { stato: "rete_non_registrata" };
+    const raw = await edgeApiGet<unknown>(pronta.scanner, `/api/v1/networks/${edgeId}/finestra`, { timeoutMs: 15000 });
+    const letta = leggiRispostaFinestra(raw);
+    if (!letta.ok) return { stato: "errore", messaggio: letta.error };
+    return { stato: "ok", ...letta.dati };
+  } catch (e) {
+    if (eSondaSenzaFinestra(e)) return { stato: "da_aggiornare" };
+    return { stato: "errore", messaggio: motivoEdge(e) };
+  }
+}
+
+/** Una pagina dell'elenco degli IP dell'ultimo passaggio (`stato` vuoto = tutti). */
+export async function leggiFinestraIp(
+  networkId: number,
+  q: { stato?: StatoIp; limit?: number; offset?: number } = {},
+): Promise<EsitoElencoIp> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { stato: "errore", messaggio: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { stato: "errore", messaggio: "Rete non trovata" };
+  const query = new URLSearchParams();
+  if (q.stato) query.set("stato", q.stato);
+  query.set("limit", String(q.limit ?? 200));
+  query.set("offset", String(q.offset ?? 0));
+  try {
+    const edgeId = await idReteSullaSonda(pronta.scanner, network.cidr);
+    if (edgeId === null) return { stato: "errore", messaggio: "Rete non registrata sull'edge" };
+    const raw = await edgeApiGet<unknown>(pronta.scanner, `/api/v1/networks/${edgeId}/finestra/ip?${query}`, {
+      timeoutMs: 15000,
+    });
+    const letta = leggiRispostaIp(raw);
+    if (!letta.ok) return { stato: "errore", messaggio: letta.error };
+    return { stato: "ok", totale: letta.totale, ip: letta.ip };
+  } catch (e) {
+    if (eSondaSenzaFinestra(e)) return { stato: "da_aggiornare" };
+    return { stato: "errore", messaggio: motivoEdge(e) };
+  }
+}
+
+/**
+ * Salva la finestra della rete: `ensure` come per la pianificazione (credenziali comprese; gli host
+ * solo se il modo li usa, perché la sonda ne ricava l'elenco degli IP e lo controlla subito), poi la
+ * `PUT`. La sonda spegne da sé la pianificazione `vuln` della rete.
+ */
+export async function saveEdgeSubnetFinestra(
+  networkId: number,
+  f: FinestraInput,
+): Promise<{ ok: boolean; error?: string; status?: number; daAggiornare?: boolean; avviso?: string | null }> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { ok: false, error: pronta.error };
+  const { scanner } = pronta;
+  const network = getNetworkById(networkId);
+  if (!network) return { ok: false, error: "Rete non trovata" };
+
+  try {
+    const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
+      scanner,
+      "/api/v1/networks/ensure",
+      buildEdgeEnsureBody(networkId, {
+        syncHosts: f.targetingMode !== "full_subnet",
+        syncCredentials: true,
+        targetingMode: f.targetingMode,
+        assessmentEnabled: f.assessmentEnabled,
+        assessmentProfileId: f.assessmentProfileId,
+      }),
+      { timeoutMs: 120000 },
+    );
+    rememberAssessmentAcceptedByEdge(networkId, f);
+
+    let risposta: { avviso?: string | null };
+    try {
+      risposta = await edgeApiPut<{ avviso?: string | null }>(
+        scanner,
+        `/api/v1/networks/${ensured.network_id}/finestra`,
+        {
+          enabled: f.enabled,
+          giorni: f.giorni,
+          dalle: f.dalle,
+          alle: f.alle,
+          ip_per_gruppo: f.ipPerGruppo,
+          tentativi: f.tentativi,
+          ripeti: f.ripeti,
+          profile: f.profile,
+          targeting_mode: f.targetingMode,
+        },
+        { timeoutMs: 60000 },
+      );
+    } catch (e) {
+      if (eSondaSenzaFinestra(e)) return { ok: false, error: SONDA_DA_AGGIORNARE, status: 409, daAggiornare: true };
+      return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
+    }
+
+    setNetworkTargetingMode(networkId, f.targetingMode);
+    saveEdgeFinestra({
+      network_id: networkId,
+      job_name: null,
+      days_of_week: [...f.giorni].sort((a, b) => a - b).join(","),
+      fascia_dalle: f.dalle,
+      fascia_alle: f.alle,
+      ip_per_gruppo: f.ipPerGruppo,
+      tentativi: f.tentativi,
+      ripeti: f.ripeti,
+      profile: f.profile,
+      targeting_mode: f.targetingMode,
+      enabled: f.enabled,
+    });
+    return { ok: true, avviso: typeof risposta?.avviso === "string" && risposta.avviso.trim() ? risposta.avviso : null };
+  } catch (e) {
+    return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
+  }
+}
+
+type EsitoCancellazione =
+  | { esito: "cancellata" }
+  /** La sonda non ha la finestra (o non la conosce neppure): lo stato voluto c'è già. */
+  | { esito: "non_c_era" }
+  | { esito: "errore"; error: string; status: 400 | 409 | 502 };
+
+/**
+ * `DELETE /finestra` sulla sonda. Il 409 (un gruppo che non si ferma) è un errore col suo motivo:
+ * la finestra resta spenta e si può ripetere. Un 404 «Not Found» (sonda senza la rotta) o «La rete
+ * non ha una finestra» vuol dire che non c'è niente da togliere.
+ */
+async function cancellaFinestraDellaSonda(scanner: ScannerAttivo, network: { cidr: string }): Promise<EsitoCancellazione> {
+  try {
+    const edgeId = await idReteSullaSonda(scanner, network.cidr);
+    if (edgeId === null) return { esito: "non_c_era" };
+    try {
+      await edgeApiDelete(scanner, `/api/v1/networks/${edgeId}/finestra`, { timeoutMs: 120000 });
+    } catch (e) {
+      if (eSondaSenzaFinestra(e)) return { esito: "non_c_era" };
+      if (e instanceof EdgeClientError && e.status === 404 && /non ha una finestra/i.test(e.detail ?? "")) {
+        return { esito: "non_c_era" };
+      }
+      return { esito: "errore", error: motivoEdge(e), status: statoRifiuto(e) };
+    }
+    return { esito: "cancellata" };
+  } catch (e) {
+    return { esito: "errore", error: motivoEdge(e), status: statoRifiuto(e) };
+  }
+}
+
+/** Cancella la finestra: la sonda ferma i gruppi e annulla il passaggio. Non riaccende nessuna pianificazione. */
+export async function removeEdgeSubnetFinestra(networkId: number): Promise<{ ok: boolean; error?: string; status?: number }> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { ok: false, error: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { ok: false, error: "Rete non trovata" };
+  const tolta = await cancellaFinestraDellaSonda(pronta.scanner, network);
+  if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
+  dimenticaEdgeFinestra(networkId);
+  return { ok: true };
 }

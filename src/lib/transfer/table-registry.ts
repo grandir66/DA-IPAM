@@ -32,6 +32,8 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },
   { table: "proxmox_hosts", scope: "tenant", tier: "config" },
   { table: "mdm_config", scope: "tenant", tier: "config", secretColumns: ["password_encrypted"] },
+  // Dal 05/11 porta anche la finestra della rete (modo, fascia, IP per gruppo…): colonne lette dallo schema, un
+  // bundle più vecchio le lascia ai predefiniti (modo 'orario'). La verità della finestra sta sulla sonda Edge.
   { table: "edge_scan_schedules", scope: "tenant", tier: "config" },
   { table: "network_controllers", scope: "tenant", tier: "config", secretColumns: ["password_enc", "api_key_enc"] },
   // Pannello Zabbix (passo 7.4): gli abbinamenti verificati da una persona viaggiano con gli host.

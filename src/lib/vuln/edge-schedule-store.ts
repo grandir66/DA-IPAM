@@ -11,7 +11,21 @@ export interface EdgeScheduleConfig {
   profile: string | null;
   targeting_mode: string | null;
   enabled: boolean;
+  /** `orario` = cron (di sempre); `finestra` = fascia oraria in ora italiana (05/11/2026). */
+  modo: ModoEdge;
+  fascia_dalle: string | null;
+  fascia_alle: string | null;
+  ip_per_gruppo: number | null;
+  tentativi: number | null;
+  ripeti: string | null;
 }
+
+export type ModoEdge = "orario" | "finestra";
+
+type CampiFinestra = "modo" | "fascia_dalle" | "fascia_alle" | "ip_per_gruppo" | "tentativi" | "ripeti";
+
+/** Chi salva un orario fisso non è tenuto a nominare la finestra: `modo` torna `orario`. */
+export type EdgeScheduleInput = Omit<EdgeScheduleConfig, CampiFinestra> & Partial<Pick<EdgeScheduleConfig, CampiFinestra>>;
 
 function db() {
   const c = getCurrentTenantCode();
@@ -44,20 +58,93 @@ function daRiga(r: Record<string, unknown>): EdgeScheduleConfig {
     profile: (r.profile as string) ?? null,
     targeting_mode: (r.targeting_mode as string) ?? null,
     enabled: !!r.enabled,
+    modo: r.modo === "finestra" ? "finestra" : "orario",
+    fascia_dalle: (r.fascia_dalle as string) ?? null,
+    fascia_alle: (r.fascia_alle as string) ?? null,
+    ip_per_gruppo: (r.ip_per_gruppo as number) ?? null,
+    tentativi: (r.tentativi as number) ?? null,
+    ripeti: (r.ripeti as string) ?? null,
   };
 }
 
-export function saveEdgeSchedule(c: EdgeScheduleConfig): void {
+/**
+ * Salva l'orario fisso della rete. Rimette `modo` a `orario`; le colonne della finestra restano
+ * come sono (servono a riproporre l'ultima finestra), tranne `days_of_week` che è dell'orario
+ * come della finestra e prende il valore nuovo.
+ */
+export function saveEdgeSchedule(c: EdgeScheduleInput): void {
   db()
     .prepare(
       `INSERT INTO edge_scan_schedules
-         (network_id, job_name, frequency, at_time, days_of_week, day_of_month, cron_expr, profile, targeting_mode, enabled, updated_at)
-       VALUES (@network_id,@job_name,@frequency,@at_time,@days_of_week,@day_of_month,@cron_expr,@profile,@targeting_mode,@enabled, datetime('now'))
+         (network_id, job_name, frequency, at_time, days_of_week, day_of_month, cron_expr, profile, targeting_mode, enabled, modo, updated_at)
+       VALUES (@network_id,@job_name,@frequency,@at_time,@days_of_week,@day_of_month,@cron_expr,@profile,@targeting_mode,@enabled,'orario', datetime('now'))
        ON CONFLICT(network_id) DO UPDATE SET job_name=@job_name, frequency=@frequency, at_time=@at_time,
          days_of_week=@days_of_week, day_of_month=@day_of_month, cron_expr=@cron_expr, profile=@profile,
-         targeting_mode=@targeting_mode, enabled=@enabled, updated_at=datetime('now')`,
+         targeting_mode=@targeting_mode, enabled=@enabled, modo='orario', updated_at=datetime('now')`,
+    )
+    .run({
+      network_id: c.network_id,
+      job_name: c.job_name,
+      frequency: c.frequency,
+      at_time: c.at_time,
+      days_of_week: c.days_of_week,
+      day_of_month: c.day_of_month,
+      cron_expr: c.cron_expr,
+      profile: c.profile,
+      targeting_mode: c.targeting_mode,
+      enabled: c.enabled ? 1 : 0,
+    });
+}
+
+/**
+ * Ricorda la finestra che la sonda ha accettato. L'orario fisso (cron, frequenza, ora) resta nella
+ * riga com'era: `days_of_week` è condiviso e qui prende i giorni della finestra.
+ */
+export function saveEdgeFinestra(c: {
+  network_id: number;
+  job_name: string | null;
+  days_of_week: string;
+  fascia_dalle: string;
+  fascia_alle: string;
+  ip_per_gruppo: number;
+  tentativi: number;
+  ripeti: string;
+  profile: string;
+  targeting_mode: string | null;
+  enabled: boolean;
+}): void {
+  db()
+    .prepare(
+      `INSERT INTO edge_scan_schedules
+         (network_id, job_name, days_of_week, profile, targeting_mode, enabled, modo, fascia_dalle, fascia_alle,
+          ip_per_gruppo, tentativi, ripeti, updated_at)
+       VALUES (@network_id,@job_name,@days_of_week,@profile,@targeting_mode,@enabled,'finestra',@fascia_dalle,@fascia_alle,
+          @ip_per_gruppo,@tentativi,@ripeti, datetime('now'))
+       ON CONFLICT(network_id) DO UPDATE SET job_name=COALESCE(@job_name, job_name), days_of_week=@days_of_week,
+         profile=@profile, targeting_mode=@targeting_mode, enabled=@enabled, modo='finestra',
+         fascia_dalle=@fascia_dalle, fascia_alle=@fascia_alle, ip_per_gruppo=@ip_per_gruppo,
+         tentativi=@tentativi, ripeti=@ripeti, updated_at=datetime('now')`,
     )
     .run({ ...c, enabled: c.enabled ? 1 : 0 });
+}
+
+/**
+ * La finestra non c'è più sulla sonda: la riga torna all'orario fisso, spento (il `DELETE` della
+ * sonda non riaccende la pianificazione). Una riga che era solo finestra, senza orario, si toglie.
+ */
+export function dimenticaEdgeFinestra(networkId: number): void {
+  const d = db();
+  d.transaction(() => {
+    const r = d.prepare(`SELECT frequency, modo FROM edge_scan_schedules WHERE network_id=?`).get(networkId) as
+      | { frequency: string | null; modo: string }
+      | undefined;
+    if (!r || r.modo !== "finestra") return;
+    if (r.frequency == null) {
+      d.prepare(`DELETE FROM edge_scan_schedules WHERE network_id=?`).run(networkId);
+    } else {
+      d.prepare(`UPDATE edge_scan_schedules SET modo='orario', enabled=0, updated_at=datetime('now') WHERE network_id=?`).run(networkId);
+    }
+  })();
 }
 
 export function deleteEdgeSchedule(networkId: number): void {

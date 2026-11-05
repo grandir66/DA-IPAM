@@ -2,7 +2,7 @@
 import { parseDbDate } from "@/lib/db-date";
 import { etichettaTipo } from "@/lib/credentials/tipi";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +38,8 @@ import { contaModuli, descriviProfilo } from "@/lib/vuln/profili-assessment-test
 import { fetchJson } from "@/lib/fetch-json";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
+import { FinestraAvanzamento, FinestraImpostazioni, RigaMessaggio, useFinestra } from "@/components/networks/subnet-edge-finestra";
+import { SONDA_DA_AGGIORNARE } from "@/lib/vuln/finestra";
 
 const SLOT_LABELS: Record<string, string> = {
   ssh: "SSH / Linux",
@@ -95,6 +97,8 @@ interface SavedSchedule {
   profile: EdgeScanProfile | null;
   targeting_mode: EdgeTargetingMode | null;
   enabled: boolean;
+  /** `finestra` = la rete è pianificata a finestra (05/11/2026); assente su un hub senza la colonna. */
+  modo?: "orario" | "finestra";
 }
 
 function parseDaysCsv(csv: string | null): number[] {
@@ -172,6 +176,23 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const [jobName, setJobName] = useState("");
   const [jobNameTouched, setJobNameTouched] = useState(false);
 
+  // Come si pianifica: orario fisso (cron) o a finestra. Parte da ciò che la rete ha salvato; dopo il
+  // primo clic decide la persona. La finestra si rilegge dalla sonda solo a pannello aperto.
+  const [modo, setModo] = useState<"orario" | "finestra">("orario");
+  const modoScelto = useRef(false);
+  const fin = useFinestra(networkId, open);
+  const sondaDaAggiornare = fin.dati?.stato === "da_aggiornare";
+  const modoEffettivo = sondaDaAggiornare ? "orario" : modo;
+  // Se la sonda ha già una finestra per questa rete, il pannello si apre sulla finestra.
+  const finestraSullaSonda = fin.dati?.stato === "ok" && fin.dati.finestra !== null;
+  useEffect(() => {
+    if (finestraSullaSonda && !modoScelto.current) setModo("finestra");
+  }, [finestraSullaSonda]);
+  function scegliModo(m: "orario" | "finestra") {
+    modoScelto.current = true;
+    setModo(m);
+  }
+
   // Live counts from hosts prop (when available)
   const foundCount = hosts ? hosts.filter((h) => h.status !== "offline").length : null;
   const populated24Count = hosts
@@ -216,6 +237,8 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         ) {
           void loadEdgeProfiles();
         }
+        // Solo verso «finestra»: la lettura dalla sonda può arrivare prima di questa e non va annullata.
+        if (!modoScelto.current && saved?.modo === "finestra") setModo("finestra");
         if (saved) {
           setHasSchedule(true);
           setScheduleEnabled(saved.enabled);
@@ -371,6 +394,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
         }
         setHasSchedule(true);
         setStatus(d);
+        void fin.rileggi(); // se c'era una finestra, la sonda l'ha cancellata prima di salvare l'orario
       } else {
         toast.error(d.error || "Salvataggio schedulazione fallito");
       }
@@ -484,7 +508,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={`${modoEffettivo === "finestra" ? "sm:max-w-6xl" : "sm:max-w-4xl"} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-purple-600" />
@@ -803,6 +827,49 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
 
             {/* ─────────────── Colonna destra: schedulazione ─────────────── */}
             <div className="md:border-l md:pl-6">
+              {/* ─── Come si pianifica: la scelta del modo (finestra: subnet-edge-finestra.tsx) ─── */}
+              <div className="mb-4 space-y-1.5">
+                <p className="text-[13px] font-semibold">Come si pianifica</p>
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Come si pianifica">
+                  <Button
+                    type="button"
+                    variant={modoEffettivo === "orario" ? "default" : "outline"}
+                    aria-pressed={modoEffettivo === "orario"}
+                    onClick={() => scegliModo("orario")}
+                  >
+                    {modoEffettivo === "orario" ? "✓ " : ""}Orario fisso
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={modoEffettivo === "finestra" ? "default" : "outline"}
+                    aria-pressed={modoEffettivo === "finestra"}
+                    onClick={() => scegliModo("finestra")}
+                    disabled={sondaDaAggiornare}
+                    title={sondaDaAggiornare ? SONDA_DA_AGGIORNARE : undefined}
+                  >
+                    {modoEffettivo === "finestra" ? "✓ " : ""}A finestra
+                  </Button>
+                </div>
+                {sondaDaAggiornare && <RigaMessaggio riga={{ tono: "neutro", testo: `● ${SONDA_DA_AGGIORNARE}` }} />}
+              </div>
+
+              {modoEffettivo === "finestra" ? (
+                <FinestraImpostazioni
+                  networkId={networkId}
+                  lettura={fin}
+                  targetingMode={targetingMode}
+                  conteggi={{
+                    full_subnet: fullSubnetCount,
+                    found_ips: foundCount,
+                    populated_24: populated24Count !== null ? populated24Count * 254 : null,
+                  }}
+                  assessmentEnabled={assessmentEnabled}
+                  assessmentProfileId={assessmentProfileId}
+                  assessmentError={assessmentChoiceError()}
+                  disabled={!status.edgeEnabled}
+                  onTornatoAOrario={() => scegliModo("orario")}
+                />
+              ) : (
               <div>
                 <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-amber-600" />
@@ -898,8 +965,11 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </div>
+
+          {modoEffettivo === "finestra" && <FinestraAvanzamento networkId={networkId} lettura={fin} />}
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between">
             <Link

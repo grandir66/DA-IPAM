@@ -118,7 +118,13 @@ export interface VulnScannerRow {
 }
 
 export class EdgeClientError extends Error {
-  constructor(public status: number, message: string) {
+  /**
+   * `detail`: il motivo come lo ha scritto l'edge (tutto il corpo di un errore, o il `detail` di
+   * FastAPI), senza il prefisso «edge NNN:» e senza il taglio a 200 caratteri di `message`.
+   * Serve dove il motivo è la risposta (rifiuti della finestra, 400 e 409) o dove va distinto
+   * («Not Found» di una rotta che non c'è da «Rete edge non trovata»).
+   */
+  constructor(public status: number, message: string, public detail?: string) {
     super(message);
     this.name = "EdgeClientError";
   }
@@ -349,7 +355,11 @@ async function edgeFetch<T>(
   });
   if (res.status < 200 || res.status >= 300) {
     const detail = edgeErrorDetail(res.body);
-    throw new EdgeClientError(res.status, `edge ${res.status}: ${detail || res.statusText}`);
+    throw new EdgeClientError(
+      res.status,
+      `edge ${res.status}: ${detail || res.statusText}`,
+      edgeErrorDetail(res.body, TETTO_MOTIVO_EDGE).trim() || res.statusText,
+    );
   }
   try {
     return JSON.parse(res.body) as T;
@@ -364,18 +374,21 @@ async function edgeFetch<T>(
  * JSON. Il resto (testo, `detail` non stringa come nei 422 di validazione) si
  * mostra com'è, tagliato a 200 caratteri.
  */
-function edgeErrorDetail(body: string): string {
+function edgeErrorDetail(body: string, max = 200): string {
   try {
     const parsed = JSON.parse(body) as unknown;
     if (parsed && typeof parsed === "object" && "detail" in parsed) {
       const detail = (parsed as { detail: unknown }).detail;
-      if (typeof detail === "string" && detail.trim()) return detail.trim().slice(0, 200);
+      if (typeof detail === "string" && detail.trim()) return detail.trim().slice(0, max);
     }
   } catch {
     // non JSON: si mostra il testo com'è
   }
-  return body.slice(0, 200);
+  return body.slice(0, max);
 }
+
+/** Tetto del motivo intero (`EdgeClientError.detail`): un corpo d'errore dell'edge è una frase, non una pagina. */
+const TETTO_MOTIVO_EDGE = 2000;
 
 /**
  * Pre-pairing: legge cert info dall'edge SENZA pin (accetta qualsiasi

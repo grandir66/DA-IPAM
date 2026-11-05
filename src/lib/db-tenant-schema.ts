@@ -2232,7 +2232,14 @@ CREATE TABLE IF NOT EXISTS edge_scan_schedules (
   profile TEXT,
   targeting_mode TEXT,
   enabled INTEGER DEFAULT 1,
-  updated_at TEXT DEFAULT (datetime('now'))
+  updated_at TEXT DEFAULT (datetime('now')),
+  -- Scansione a finestra (05/11/2026): modo 'orario' (cron) o 'finestra' (fascia oraria in ora italiana).
+  modo TEXT NOT NULL DEFAULT 'orario',
+  fascia_dalle TEXT,
+  fascia_alle TEXT,
+  ip_per_gruppo INTEGER,
+  tentativi INTEGER,
+  ripeti TEXT
 );
 
 -- ============================================================================

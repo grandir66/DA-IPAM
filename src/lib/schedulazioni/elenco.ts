@@ -22,7 +22,7 @@ import { listControllerViews } from "@/lib/controllers/service";
 import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import { etichettaFrequenza, frequenzaDaJob, leggiConfig, prossimaEsecuzione } from "@/lib/apparati-scelti/regole";
 import { listEdgeSchedules } from "@/lib/vuln/edge-schedule-store";
-import { describeCron, type Frequency } from "@/lib/vuln/cron-builder";
+import { describeCron, describeFinestra, type Frequency } from "@/lib/vuln/cron-builder";
 import { ultimoBackup } from "@/lib/backup/engine";
 import { getNotificationConfig } from "@/lib/notifications/config";
 import { leggiConfigDalink } from "@/lib/dalink/config";
@@ -243,7 +243,19 @@ function righeController(jobs: ScheduledJob[]): RigaSchedulazione[] {
 function righeEdge(reti: Map<number, string>): RigaSchedulazione[] {
   return listEdgeSchedules().map((e) => {
     let quando = e.cron_expr ? `cron ${e.cron_expr}` : "—";
-    if (e.frequency && e.at_time) {
+    if (e.modo === "finestra") {
+      // Finestra (05/11): fascia in ora italiana, non un cron. Una riga illeggibile si dice, non si nasconde.
+      try {
+        quando = describeFinestra({
+          giorni: (e.days_of_week ?? "").match(/\d/g)?.map(Number) ?? [],
+          dalle: e.fascia_dalle ?? "",
+          alle: e.fascia_alle ?? "",
+          ripeti: e.ripeti === "settimana" ? "settimana" : "mese",
+        });
+      } catch {
+        quando = "finestra illeggibile";
+      }
+    } else if (e.frequency && e.at_time) {
       try {
         quando = describeCron({
           frequency: e.frequency as Frequency,

@@ -61,12 +61,14 @@ stampare a tutte le stampanti della ditta stampe di questo tipo» — `GET / HTT
   senza `targeting_mode`, poi `setNetworkAssessmentConfig`), non con una UPDATE a mano. Verificato su tutte e
   due le parti: `networks.assessment_profile_id` = `completo-interno` nel database della sonda **e** in quello
   di DA-IPAM; label, pianificazione e `host_count` invariati
-- [ ] **Difetto trovato mentre lo facevo, da guardare**: le due copie del profilo possono **divergere**. Alle
-  10:40 DA-IPAM diceva `validation-plus` e la sonda eseguiva `smoke-interno` (assessment_runs 1 e 2 del 05/11).
-  A eseguire è la riga della sonda; il pannello però mostra la copia locale (`assessmentFromNetwork(network)`
-  in `loadEdgeSubnetStatus`), quindi la pagina può dire un profilo e la scansione farne un altro. E la copia
-  locale finisce anche nel corpo di `/networks/ensure` come valore di partenza, quindi una riga stantia può
-  riscrivere quella della sonda. Da capire come si erano disallineate e se il pannello debba leggere la sonda
+- [x] **Non era un difetto: l'aveva cambiato Riccardo a mano** (05/11), fuori dall'app. Per questo alle 10:40
+  DA-IPAM diceva `validation-plus` e la sonda eseguiva `smoke-interno`. Nel codice la copia locale si scrive in
+  **un punto solo** — `rememberAssessmentAcceptedByEdge` (`edge-subnet-bridge.ts:251`) — e **solo dopo** che
+  `/api/v1/networks/ensure` ha accettato: dalla pagina le due parti non possono separarsi
+- [ ] **Resta vero e va deciso**: una modifica fatta **fuori** da DA-IPAM (a mano, o dall'interfaccia della
+  sonda) non la nota nessuno. Il pannello mostra la copia locale mentre a eseguire è la riga della sonda, e la
+  copia locale fa da valore di partenza nel corpo di `ensure`, quindi alla prima scansione riscrive quella
+  della sonda. Oggi non c'è nessun controllo che segnali la differenza. S. **Decide Riccardo** se serve
 - [x] Da sapere: alle 09:32 era partita una scansione (`scans.id` 4, profilo `fast`, `pending`): l'assessment
   in coda a quella userà già `completo-interno`. E fra le 09:05 e le 10:40 il `targeting_mode` di **tutte e
   due** le reti è passato da `full_subnet` a `found_ips` e la rete 1 ha cambiato label: non è stato questo

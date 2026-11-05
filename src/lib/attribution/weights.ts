@@ -5,7 +5,14 @@ export const ATTR_SOURCE_WEIGHTS: Record<AttributionSource, number> = {
   snmp_sysobj: 0.95, snmp_sysdescr: 0.85, lldp: 0.9, cdp: 0.9,
   oui: 0.9, mac_product: 0.85, http_banner: 0.9, tls_cert: 0.85,
   wsd: 0.9, mdns: 0.8, ssdp: 0.75, smb: 0.75, ssh: 0.6, redfish: 0.95, onvif: 0.95,
-  fingerbank: 0.6, netbios: 0.5, nmap_service: 0.5,
+  fingerbank: 0.6, netbios: 0.5,
+  /* nmap_service 0.5 -> 0.85 (05/11/2026): dal 05/11 questa sorgente non porta piu'
+   * solo «c'e' un servizio», ma il NOME del prodotto letto nella stringa di versione
+   * di `-sV` («Proxmox Virtual Environment REST API 3.0», «Microsoft Windows RPC»).
+   * Con 0.5 non avrebbe mai superato MIN_CLAIM_SCORE da sola (stesso conto di
+   * nmap_os): la regola nuova sarebbe nata inerte. A 0.85 il punteggio e' 0.68,
+   * sotto ad/wazuh/manual e alla pari di snmp_sysdescr. */
+  nmap_service: 0.85,
   /* nmap_os 0.5 -> 0.8 (05/11/2026, difetto misurato sul 72729 e sull'hub).
    * L'emettitore manda l'impronta di `-O` con confidenza 0.7: con peso 0.5 il
    * punteggio era 0.5x0.7 = 0.35, sotto MIN_CLAIM_SCORE (0.56). Quindi un host

@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: i prodotti che si presentano per nome vengono riconosciuti. La stringa di versione che la scansione legge su una porta — «Proxmox Virtual Environment REST API 3.0», «Microsoft Windows RPC», «VMware ESXi», «Synology DiskStation», «MikroTik RouterOS», «HP ETHERNET MULTI-ENVIRONMENT» — diventa produttore, categoria e sistema operativo. Prima non la leggeva nessuno: un nodo Proxmox restava «sconosciuto» pur avendo scritto il proprio nome in archivio (provato da Riccardo il 05/11 sul banco: né il Proxmox né il server Windows venivano riconosciuti). **Vale anche all'indietro**: il dato è già negli host scansionati, basta il prossimo ricalcolo.
+
 - **Corretto**: il peso di un'evidenza si riscrive quando la scansione la rivede. È una proprietà della sorgente, non della singola osservazione: prima restava quello del giorno in cui la riga era nata, quindi cambiare i pesi del motore non aveva effetto su ciò che era già in archivio — e la correzione dell'OS qui sopra sarebbe rimasta inerte su tutti gli host già scansionati.
 
 - **Corretto, cosa vede il cliente**: il sistema operativo che nmap riconosce ora arriva in tabella. Il dato c'era in archivio e l'evidenza anche, ma il motore della classificazione le dava un peso tale che **da sola non poteva mai** decidere una famiglia (0,5 × 0,7 = 0,35 contro una soglia di 0,56): così ogni Linux senza SMB restava senza sistema operativo. Sul 72729 erano 9 host, sull'hub 31 su 378. Il peso dell'impronta nmap passa a 0,85 — sopra la soglia, ma sotto chi parla davvero col sistema operativo: se SMB o RDP dicono Windows e nmap dice Linux, vince Windows.

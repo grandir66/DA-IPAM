@@ -129,6 +129,38 @@ function osFamilyFromText(text: string): string | null {
   return null;
 }
 
+/**
+ * Prodotti riconoscibili dalla **stringa di versione** che `-sV` mette su una porta
+ * (05/11/2026, prova di Riccardo sul banco: il Proxmox dichiarava «Proxmox Virtual
+ * Environment REST API 3.0» sulla 3128 e il server Windows «Microsoft Windows RPC»
+ * sulla 135, e nessuno dei due aveva categoria o sistema operativo).
+ *
+ * È il banner che il servizio dà di sé: vale molto quando nomina il prodotto, e per
+ * questo si tiene stretto — regex ancorate a nomi di prodotto, mai a parole generiche.
+ * Le categorie sono slug validi della tassonomia (`taxonomy.ts`), controllati da una prova.
+ */
+const PRODOTTI_DA_VERSIONE: ReadonlyArray<{
+  re: RegExp; vendor?: string; category?: string; os?: string; nome: string;
+}> = [
+  { re: /proxmox virtual environment/i, vendor: "proxmox", category: "compute.hypervisor", nome: "Proxmox VE" },
+  { re: /vmware esxi/i, vendor: "vmware", category: "compute.hypervisor", os: "esxi", nome: "VMware ESXi" },
+  { re: /vmware authentication daemon/i, vendor: "vmware", category: "compute.hypervisor", nome: "VMware authd" },
+  { re: /\bsynology\b|diskstation/i, vendor: "synology", category: "storage.nas", nome: "Synology DSM" },
+  { re: /\bqnap\b|qts\b/i, vendor: "qnap", category: "storage.nas", nome: "QNAP QTS" },
+  { re: /mikrotik|routeros/i, vendor: "mikrotik", category: "network.router", nome: "MikroTik RouterOS" },
+  { re: /jetdirect|hp ethernet multi-environment/i, vendor: "hp", category: "peripheral.printer", nome: "HP JetDirect" },
+  { re: /\bilo\b|integrated lights-out/i, vendor: "hpe", nome: "HPE iLO" },
+  { re: /\bidrac\b/i, vendor: "dell", nome: "Dell iDRAC" },
+  { re: /microsoft windows/i, os: "windows", nome: "Microsoft Windows" },
+  { re: /unifi|ubiquiti/i, vendor: "ubiquiti", nome: "Ubiquiti UniFi" },
+];
+
+/** Prodotto riconosciuto in una stringa di versione, o `null`. */
+export function prodottoDaVersione(versione: string | null | undefined) {
+  if (!versione) return null;
+  return PRODOTTI_DA_VERSIONE.find((p) => p.re.test(versione)) ?? null;
+}
+
 function safeJson<T>(raw: string | null): T | null {
   if (!raw) return null;
   try { return JSON.parse(raw) as T; } catch { return null; }
@@ -308,10 +340,32 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   }
 
   // 5. porte aperte (debole)
-  const ports = safeJson<Array<{ port: number }>>(host.open_ports);
+  const ports = safeJson<Array<{ port: number; version?: string | null }>>(host.open_ports);
   if (ports && ports.length > 0) {
     const cat = categoryFromLegacyText({ openPorts: ports });
     if (cat) out.push({ source: "ports", phase: "scan_naabu", dimension: "category", claim: cat, confidence: 0.5, raw_value: ports.map((p) => p.port).join(",") });
+
+    /* 5b. La VERSIONE dei servizi (`-sV`): è il posto dove un prodotto dice il proprio
+     * nome, e fino al 05/11/2026 non la leggeva nessuno — né per l'OS né per la
+     * categoria. Si prende la prima porta che nomina un prodotto noto, in ordine di
+     * porta, e si emette quello che quel prodotto implica. Il dato è già in archivio
+     * su ogni host scansionato: questa lettura vale anche all'indietro. */
+    for (const p of [...ports].sort((a, b) => a.port - b.port)) {
+      const prodotto = prodottoDaVersione(p.version);
+      if (!prodotto) continue;
+      const grezzo = `${p.port}/${(p.version ?? "").slice(0, 120)}`;
+      if (prodotto.vendor) {
+        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "vendor", claim: prodotto.vendor, confidence: 0.8, raw_value: grezzo });
+      }
+      if (prodotto.category && isValidCategory(prodotto.category)) {
+        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "category", claim: prodotto.category, confidence: 0.8, raw_value: grezzo });
+      }
+      const famiglia = prodotto.os ?? osFamilyFromText(p.version ?? "");
+      if (famiglia) {
+        out.push({ source: "nmap_service", phase: "scan_nmap_base", dimension: "os", claim: famiglia, confidence: 0.8, raw_value: grezzo });
+      }
+      break;
+    }
   }
 
   // 6. AD — autoritativo su OS (spec §4.3 punto 4)

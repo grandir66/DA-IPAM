@@ -6,7 +6,7 @@ Riccardo (05/11, ~18:55): «in questo momento 72729 ha stampato ancora cose». L
 
 - [x] Fonte quasi certa: il template nuclei `CVE-2022-24706` scrive sulla 9100 a ogni giro. Tolto a mano dalla sonda 72729 il 05/11 alle 18:57, spostato in `nuclei-templates/sospesi-20261105/`
 - [x] Causa confermata dalla foto del foglio. Correzione in DA-Vul-can 0.8.244, sonde aggiornate il 05/11
-- [ ] 72729 resta a 0.8.239 finché non finisce il giro in corso: lo protegge il template spostato. Dopo si chiede la versione da DA-Link
+- [x] 72729 alla 0.8.247 il 05/11 alle 23:13, a giro finito (21:02): correzione vista nel contenitore. Il template resta in `nuclei-templates/sospesi-20261105/`, non serve rimetterlo
 
 ## 2026-11-05 — Credenziali registrate usate dalle scansioni (Riccardo)
 

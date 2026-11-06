@@ -268,3 +268,81 @@ test("un giro aperto che la sonda non dà più da oltre 48 ore diventa parziale 
     );
     assert.deepEqual(rilievi(), [{ ip: "192.0.2.1", nvt_oid: "tenuto" }]);
   }));
+
+test("errore con zero rilievi e /cve ancora vuoto: il giro resta aperto coi rilievi in corso, poi i definitivi lo portano a parziale", () =>
+  dentro(async () => {
+    sonda.running = [scan(7, "rep-aperta", "running", ts(3 * ORA), null, 1)];
+    sonda.inCorso[7] = [[riga(7, "192.0.2.1", "in-corso", ts(ORA))]];
+    await runVulnSync();
+
+    // Edge scrive lo stato prima dei rilievi definitivi: error, finding_count 0, /cve vuoto.
+    sonda.running = [];
+    sonda.inCorso = {};
+    sonda.error = [scan(7, "rep-aperta", "error", ts(3 * ORA), ts(60_000), 0, "ferma al 98%")];
+    await runVulnSync();
+    assert.deepEqual(runs().map((r) => (r as { status: string }).status), ["in_corso"], "non si chiude");
+    assert.deepEqual(rilievi(), [{ ip: "192.0.2.1", nvt_oid: "in-corso" }], "i rilievi in corso restano");
+    assert.equal(ultimaNonRiuscita(getTenantDb(T), scannerId), null);
+    // Il since resta abbassato: una sincronia dopo i definitivi arrivano anche se anteriori a last_sync_at.
+    sonda.error = [scan(7, "rep-aperta", "error", ts(3 * ORA), ts(60_000), 1, "ferma al 98%")];
+    sonda.cve = [riga(7, "192.0.2.1", "def-1", ts(60_000))];
+    await runVulnSync();
+    assert.deepEqual(runs().map((r) => (r as { status: string }).status), ["parziale"]);
+    assert.deepEqual(rilievi(), [{ ip: "192.0.2.1", nvt_oid: "def-1" }]);
+  }));
+
+test("definitivi che arrivano per un giro già chiuso error lo portano a parziale", () =>
+  dentro(async () => {
+    const d = getTenantDb(T);
+    d.prepare("INSERT INTO vuln_scan_runs (scanner_id, edge_scan_id, edge_scan_uid, status, started_at, finished_at) VALUES (?, 7, 'rep-aperta', 'error', ?, ?)")
+      .run(scannerId, ts(3 * ORA), ts(60_000));
+    sonda.error = [scan(7, "rep-aperta", "error", ts(3 * ORA), ts(60_000), 1)];
+    sonda.cve = [riga(7, "192.0.2.1", "def-1", ts(30_000))];
+    await runVulnSync();
+    assert.equal((runs()[0] as { status: string }).status, "parziale");
+    assert.equal(ultimaNonRiuscita(d, scannerId)?.status, "parziale");
+  }));
+
+test("definitivi per un giro ancora in_corso: niente doppi", () =>
+  dentro(async () => {
+    sonda.running = [scan(7, "rep-aperta", "running", ts(3 * ORA), null, 1)];
+    sonda.inCorso[7] = [[riga(7, "192.0.2.1", "def-1", ts(ORA))]];
+    await runVulnSync();
+    // /cve ha già i definitivi (stessa riga) ma la sonda dà ancora la scansione come running.
+    sonda.cve = [riga(7, "192.0.2.1", "def-1", ts(30_000))];
+    await runVulnSync();
+    assert.equal(rilievi().length, 1, "un rilievo, non due");
+  }));
+
+test("ripresa da capo: il giro vecchio in_corso con lo stesso id locale è superato, senza rilievi e senza falso allarme", () =>
+  dentro(async () => {
+    sonda.running = [scan(7, "rep-vecchia", "running", ts(3 * ORA), null, 1)];
+    sonda.inCorso[7] = [[riga(7, "192.0.2.1", "vecchio", ts(ORA))]];
+    await runVulnSync();
+
+    // Edge riparte da capo: stesso id locale, altro report.
+    sonda.running = [scan(7, "rep-nuova", "running", ts(60_000), null, 0)];
+    sonda.inCorso[7] = [[riga(7, "192.0.2.2", "nuovo", ts(1000))]];
+    await runVulnSync();
+    assert.deepEqual(
+      runs().map((r) => r as { edge_scan_uid: string; status: string; error_message: string | null }).map((r) => [r.edge_scan_uid, r.status, r.error_message]),
+      [["rep-vecchia", "superato", "ripresa da capo"], ["rep-nuova", "in_corso", null]],
+    );
+    assert.deepEqual(rilievi(), [{ ip: "192.0.2.2", nvt_oid: "nuovo" }]);
+    assert.equal(ultimaNonRiuscita(getTenantDb(T), scannerId), null);
+  }));
+
+test("ripresa da capo scoperta dal flusso normale (la nuova arriva già chiusa)", () =>
+  dentro(async () => {
+    sonda.running = [scan(7, "rep-vecchia", "running", ts(3 * ORA), null, 1)];
+    sonda.inCorso[7] = [[riga(7, "192.0.2.1", "vecchio", ts(ORA))]];
+    await runVulnSync();
+    sonda.running = [];
+    sonda.inCorso = {};
+    getTenantDb(T).prepare("UPDATE vuln_scanners SET last_sync_at = ? WHERE id = ?").run(ts(2 * 60_000), scannerId);
+    sonda.done = [scan(7, "rep-nuova", "done", ts(2 * ORA), ts(60_000), 1)];
+    sonda.cve = [riga(7, "192.0.2.2", "nuovo", ts(60_000))];
+    await runVulnSync();
+    assert.deepEqual(runs().map((r) => (r as { status: string }).status), ["superato", "done"]);
+    assert.deepEqual(rilievi(), [{ ip: "192.0.2.2", nvt_oid: "nuovo" }]);
+  }));

@@ -17,7 +17,7 @@ import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { encrypt } from "@/lib/crypto";
 import { leggiRispostaInCorso } from "@/lib/vuln/avanzamento";
-import { leggiAvanzamento } from "@/lib/vuln/edge-subnet-bridge";
+import { leggiAvanzamento, leggiHostLenti, salvaHostLenti } from "@/lib/vuln/edge-subnet-bridge";
 import { leggiAvanzamentoRotta } from "@/lib/vuln/avanzamento-rotta";
 
 const T = "TESTAVANZAMENTO";
@@ -28,6 +28,8 @@ const VERA = [
     in_analisi: [], da_fare: [], lenti: [] },
 ];
 
+const LENTI = { escludi_lenti: true, host: [{ ip: "192.168.5.7", durata_s: null, volte: 3, visto_at: "2026-11-06 08:00:00" }] };
+let lentiVecchia = false;
 let server: Server;
 let risposta: { status: number; body: string } = { status: 200, body: "[]" };
 let rete = 0;
@@ -39,8 +41,13 @@ before(async () => {
     cap: null, telefono: null, email: null, piva: null, cf: null, referente: null, note: null, active: 1,
   });
   server = createServer((req, res) => {
-    const ok = (req.url ?? "").split("?")[0] === "/api/v1/scans/in-corso";
-    const r = ok ? risposta : { status: 404, body: '{"detail":"Not Found"}' };
+    const url = (req.url ?? "").split("?")[0];
+    let r = { status: 404, body: '{"detail":"Not Found"}' };
+    if (url === "/api/v1/scans/in-corso") r = risposta;
+    else if (url === "/api/v1/networks/lookup") r = { status: 200, body: '{"found":true,"network_id":5}' };
+    else if (url === "/api/v1/networks/5/host-lenti" && !lentiVecchia) {
+      r = req.method === "PUT" ? { status: 404, body: '{"detail":"ip non presente"}' } : { status: 200, body: JSON.stringify(LENTI) };
+    }
     res.writeHead(r.status, { "Content-Type": "application/json" });
     res.end(r.body);
   });
@@ -70,6 +77,18 @@ test("la risposta vera si legge; una forma diversa è un errore detto", () => {
   assert.equal(leggiRispostaInCorso([{ ...VERA[0], totale: undefined }]).ok, false);
 });
 
+test("una scansione senza rete (cidr null) o con un «da» null non rompe l'elenco; «lenti» ha la sua forma", () => {
+  const lento = { ip: "192.168.5.7", durata_s: 1900, volte: 2, visto_at: "2026-11-06 08:00:00" };
+  const r = leggiRispostaInCorso([
+    { ...VERA[0], cidr: null, in_analisi: [{ ip: "192.168.5.1", da: null }] },
+    { ...VERA[1], lenti: [lento, { ...lento, durata_s: null }] },
+  ]);
+  assert.equal(r.ok, true);
+  if (r.ok) { assert.equal(r.scans[0].cidr, null); assert.equal(r.scans[0].in_analisi[0].da, null); assert.equal(r.scans[1].lenti.length, 2); }
+  assert.equal(leggiRispostaInCorso([{ ...VERA[0], lenti: [{ ip: "x" }] }]).ok, false);
+  assert.equal(leggiRispostaInCorso([{ ...VERA[0], lenti: ["x"] }]).ok, false);
+});
+
 test("leggiAvanzamento abbina la scansione alla rete per CIDR", () =>
   dentro(async () => {
     const a = await leggiAvanzamento(rete);
@@ -96,4 +115,19 @@ test("un guasto vero resta un errore col suo motivo; la rotta dà «nessuna» so
     assert.equal((await leggiAvanzamento(rete))?.stato, "errore");
     risposta = { status: 200, body: "[]" };
     assert.deepEqual(await leggiAvanzamentoRotta(rete), { status: 200, body: { stato: "nessuna" } });
+  }));
+
+test("host lenti: lettura valida, sonda vecchia = da aggiornare, 404 della sonda per un IP assente resta 404", () =>
+  dentro(async () => {
+    lentiVecchia = false;
+    assert.deepEqual(await leggiHostLenti(rete), { stato: "ok", ...LENTI });
+    const e = await salvaHostLenti(rete, { togli_ip: "192.168.5.99" });
+    assert.equal(e.ok, false);
+    if (!e.ok) { assert.equal(e.status, 404); assert.equal(e.daAggiornare, undefined); }
+    lentiVecchia = true;
+    assert.deepEqual(await leggiHostLenti(rete), { stato: "da_aggiornare" });
+    const v = await salvaHostLenti(rete, { escludi_lenti: false });
+    assert.equal(v.ok, false);
+    if (!v.ok) { assert.equal(v.status, 409); assert.equal(v.daAggiornare, true); }
+    lentiVecchia = false;
   }));

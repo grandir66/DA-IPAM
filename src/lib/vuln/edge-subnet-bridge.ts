@@ -23,7 +23,7 @@ import {
   listaInCorso,
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
-import type { AvanzamentoRete } from "@/lib/vuln/avanzamento";
+import { leggiRispostaHostLenti, type AvanzamentoRete, type RispostaHostLenti } from "@/lib/vuln/avanzamento";
 import { impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
@@ -775,7 +775,7 @@ export async function leggiAvanzamento(networkId: number): Promise<AvanzamentoRe
   try {
     const scans = await listaInCorso(pronta.scanner);
     const cidr = network.cidr.trim();
-    const sua = scans.find((s) => s.cidr.trim() === cidr);
+    const sua = scans.find((s) => s.cidr !== null && s.cidr.trim() === cidr);
     return sua ? { stato: "ok", ...sua } : null;
   } catch (e) {
     if (eSondaSenzaInCorso(e)) return { stato: "da_aggiornare" };
@@ -942,3 +942,65 @@ export async function removeEdgeSubnetFinestra(networkId: number): Promise<{ ok:
   if (tolta.esito === "errore") return { ok: false, error: tolta.error, status: tolta.status };
   return { ok: true };
 }
+
+
+// ── Host lenti (06/11/2026, piano host lenti) ──────────────────────────────────────────────────
+
+export type StatoHostLenti =
+  | ({ stato: "ok" } & RispostaHostLenti)
+  | { stato: "da_aggiornare" }
+  | { stato: "sonda_assente"; messaggio: string }
+  | { stato: "rete_non_registrata" }
+  | { stato: "errore"; messaggio: string };
+
+export type EsitoSalvaHostLenti =
+  | ({ ok: true } & RispostaHostLenti)
+  | { ok: false; error: string; status: 400 | 404 | 409 | 502; daAggiornare?: boolean };
+
+/** Host fuori standard di una rete, dalla sonda. Ogni esito ha il suo nome; sonda vecchia = «da aggiornare». */
+export async function leggiHostLenti(networkId: number): Promise<StatoHostLenti> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { stato: "sonda_assente", messaggio: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { stato: "errore", messaggio: "Rete non trovata" };
+  try {
+    const edgeId = await idReteSullaSonda(pronta.scanner, network.cidr);
+    if (edgeId === null) return { stato: "rete_non_registrata" };
+    const raw = await edgeApiGet<unknown>(pronta.scanner, `/api/v1/networks/${edgeId}/host-lenti`, { timeoutMs: 15000 });
+    const letta = leggiRispostaHostLenti(raw);
+    if (!letta.ok) return { stato: "errore", messaggio: letta.error };
+    return { stato: "ok", ...letta.dati };
+  } catch (e) {
+    if (eSondaSenzaFinestra(e)) return { stato: "da_aggiornare" };
+    return { stato: "errore", messaggio: motivoEdge(e) };
+  }
+}
+
+/**
+ * `PUT /networks/{id}/host-lenti`: `escludi_lenti` accende o spegne l'esclusione, `togli_ip` toglie
+ * un IP dall'elenco. 404 della sonda per rete o IP assenti resta 404 col suo motivo; un 404 «Not Found»
+ * (rotta assente) è «sonda da aggiornare» (409, `daAggiornare`).
+ */
+export async function salvaHostLenti(
+  networkId: number,
+  corpo: { escludi_lenti?: boolean; togli_ip?: string },
+): Promise<EsitoSalvaHostLenti> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { ok: false, error: pronta.error, status: 409 };
+  const network = getNetworkById(networkId);
+  if (!network) return { ok: false, error: "Rete non trovata", status: 404 };
+  try {
+    const edgeId = await idReteSullaSonda(pronta.scanner, network.cidr);
+    if (edgeId === null) return { ok: false, error: "Rete non registrata sull'edge", status: 404 };
+    const raw = await edgeApiPut<unknown>(pronta.scanner, `/api/v1/networks/${edgeId}/host-lenti`, corpo, { timeoutMs: 15000 });
+    const letta = leggiRispostaHostLenti(raw);
+    if (!letta.ok) return { ok: false, error: letta.error, status: 502 };
+    return { ok: true, ...letta.dati };
+  } catch (e) {
+    if (eSondaSenzaFinestra(e)) return { ok: false, error: SONDA_DA_AGGIORNARE_LENTI, status: 409, daAggiornare: true };
+    if (e instanceof EdgeClientError && e.status === 404) return { ok: false, error: motivoEdge(e), status: 404 };
+    return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
+  }
+}
+
+const SONDA_DA_AGGIORNARE_LENTI = "Questa sonda è da aggiornare: la gestione degli host lenti si accende dopo l'aggiornamento.";

@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-06 — URGENTE 72729: celle frigo bloccate, PLC spariti durante il giro (Riccardo)
+
+Riccardo (06/11, 08:20): il cliente ha telefonato, «le celle frigo della rete si sono bloccate a causa delle scansioni»; non sa se è successo ieri.
+
+- [x] Sonda 72729 alle 08:24: nessuna scansione in corso. Sospesi in DA-IPAM `fast_scan` (3), `known_host_check` (3), `arp_poll`, poi `da-ipam` riavviato perché lo scheduler tiene i job in memoria. Restano `ad_sync`, `dns_resolve`, `hypervisor_sync`, `meshcentral_sync`, `vuln_sync`. Per riaccenderli: `/root/job-sospesi-frigo-20261106.json`, poi riavvio
+- [x] Sulla `192.168.0.0/24` c'è un impianto: PLC CREVIS, HMI Weintek, inverter Vacon, gateway HMS, Schneider, `CelleSF-PC` (192.168.0.82)
+- [x] Nove PLC CREVIS (192.168.0.121-123, 125-130) visti l'ultima volta dal giro delle 18:00 italiane del 05/11, mai più dopo. `completo-interno` è partito alle 17:36: nuclei su di loro dalle 17:42 alle 18:25, più gli altri moduli. .128, .129 e .130 hanno finito in 13 secondi contro i 2-4 minuti dei primi: probabilmente già non rispondevano alle 18:17. Coincidenza forte, non prova
+- [ ] Riavvio fisico dei PLC da parte del cliente. Non toccarli da qui: nessun pacchetto mandato
+- [ ] Prima di ogni nuova scansione: mai nuclei, Greenbone o moduli attivi su `plc`, `hmi`, `iot` e sui costruttori industriali. Vale per tutte le sonde
+- [ ] Controllare se altri clienti hanno impianti nelle reti scansionate
+
 ## 2026-11-06 — Decisioni di Riccardo sull'analisi del 04/11
 
 - [x] Riccardo: «7 si»: spuntate le 43 voci fatte, chiuse le 21 superate (`- [-]` col motivo). I 7 doppioni restano.

@@ -14,6 +14,11 @@ Per fare la stessa scansione su tre reti bisognava aprirle una per una e ripeter
 - Edge fa una scansione alla volta: le reti in più restano **in coda** e la pagina lo mostra. Una rete già in corso o in coda non si può scegliere, perché Edge ne accoderebbe una seconda.
 - **Freno sugli impianti**: una rete con PLC, HMI, IoT, porte di campo o costruttori di campo non si sceglie e non parte, nemmeno chiamando la rotta. Al 72729 i PLC delle celle frigo sono spariti due volte durante una scansione: la coincidenza non è una prova, ma un clic su più reti non può passarci sopra. Vale solo per questa pagina: il pannello VA Scan e i piani già salvati restano come sono, e una rete mai rilevata non ha host da guardare.
 - **Verifica formale** chiede la conferma dell'autorizzazione scritta del cliente, controllata anche dal server. L'esito è per rete, e «Riprova» agisce solo su quelle fallite.
+## [Non rilasciato] — 2026-11-06 · Avanzamento per IP e host lenti nel pannello VA Scan
+
+- A scansione aperta il pannello della rete dice quale IP è in analisi e da quanto, quali sono fatti e quali da fare: prima si vedeva solo a fine scansione, o entrando su Edge.
+- Gli host lenti di una rete si vedono nello stesso pannello, con il comando per riportarli nella scansione e l'interruttore per escluderli, spento di serie. Cambiarli è da amministratore.
+- A finestra questi blocchi non compaiono: l'avanzamento c'è già e la regola degli host lenti non scatta.
 
 ## [Non rilasciato] — 2026-11-06 · Gli apparati si riconoscono da ciò che dicono di sé
 

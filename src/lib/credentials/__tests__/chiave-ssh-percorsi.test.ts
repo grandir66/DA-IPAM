@@ -8,7 +8,6 @@
  * - la prova di connessione di un Proxmox rispondeva «Configura le
  *   credenziali…» anche se l'SSH a chiave avrebbe funzionato;
  * - la prova di un binding SSH diceva «Password mancante»;
- * - l'anteprima verso lo scanner la mostrava non selezionata senza dire perché;
  * - il ponte paramiko (inventario software, installazione via SSH) e il
  *   terminale la scartavano con «non ha utente e password» o «credenziali SSH
  *   non disponibili», senza dire che il problema è la chiave.
@@ -207,16 +206,16 @@ describe("voce SSH a chiave nei percorsi SSH", () => {
     });
   });
 
-  it("anteprima verso lo scanner: la voce a chiave c'è, non selezionata, col motivo; quella a password parte", () => {
+  // Cambiata il 06/11/2026: «anche ssh se presente» (Riccardo). Prima la chiave restava fuori.
+  it("anteprima verso lo scanner: la voce a chiave parte con la sua chiave", () => {
     withTenant(T, () => {
       const { preview, transfer } = collectEdgeCredentialsForNetwork(id.rete, { registra: false });
-      const voce = preview.find((p) => p.credential_id === id.chiave);
-      assert.ok(voce, "la voce a chiave compare nell'anteprima");
-      assert.equal(voce.selected_for_scan, false);
-      assert.equal(voce.motivo, "Non inviata allo scanner: chiave SSH");
-      assert.ok(!transfer.some((t) => t.ipam_credential_id === id.chiave), "la chiave non parte verso lo scanner");
+      const voce = transfer.find((t) => t.ipam_credential_id === id.chiave);
+      assert.ok(voce, "la voce a chiave parte verso lo scanner");
+      assert.equal(voce.cred_type, "usk");
+      assert.ok(voce.private_key, "porta la chiave");
+      assert.equal(preview.find((p) => p.credential_id === id.chiave)?.motivo, undefined);
       assert.ok(transfer.some((t) => t.ipam_credential_id === id.password && t.slot === "ssh"), "la voce a password parte");
-      assert.equal(preview.find((p) => p.credential_id === id.password)?.selected_for_scan, true);
     });
   });
 

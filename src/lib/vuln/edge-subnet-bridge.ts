@@ -323,6 +323,8 @@ function buildEdgeEnsureBody(
         cred_type: c.cred_type,
         ...(c.login ? { login: c.login } : {}),
         ...(c.password ? { password: c.password } : {}),
+        ...(c.private_key ? { private_key: c.private_key } : {}),
+        ...(c.passphrase ? { passphrase: c.passphrase } : {}),
         ...(c.community ? { community: c.community } : {}),
         ...(c.domain ? { domain: c.domain } : {}),
         ...(c.ipam_credential_id != null ? { ipam_credential_id: c.ipam_credential_id } : {}),

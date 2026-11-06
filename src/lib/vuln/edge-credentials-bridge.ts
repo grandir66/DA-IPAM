@@ -4,6 +4,8 @@
  */
 
 import {
+  accessoSshCredenziale,
+  getAdIntegrations,
   getAdRealm,
   getCredentialById,
   getCredentialCommunityString,
@@ -12,9 +14,9 @@ import {
   getNetworkById,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
-  getSshLinuxCredentialPair,
   buildSnmpCommunitiesForNetwork,
 } from "@/lib/db";
+import { credenzialeLdapDb } from "@/lib/ad/credenziale-ldap";
 import { catenaReteDb } from "@/lib/credentials/resolve";
 import { normalizzaTipo } from "@/lib/credentials/tipi";
 
@@ -34,9 +36,11 @@ export interface EdgeCredentialPreview {
 export interface EdgeCredentialTransfer {
   slot: EdgeCredentialSlot;
   name: string;
-  cred_type: "up" | "snmp";
+  cred_type: "up" | "snmp" | "usk";
   login?: string;
   password?: string;
+  private_key?: string;
+  passphrase?: string;
   community?: string;
   domain?: string;
   ipam_credential_id?: number;
@@ -57,17 +61,20 @@ function splitWindowsLogin(raw: string): { login: string; domain: string | null 
 }
 
 /**
- * Perché una voce non può partire verso lo scanner, per tipo e metodo. Lo slot
- * SNMP dello scanner prende solo una community (`cred_type: "snmp"`) e lo slot
- * SSH solo utente e password (`cred_type: "up"`): una SNMP v3 (T12) o una SSH a
- * chiave (T14, interfaccia punto 9) compare nell'anteprima, non selezionata,
- * invece di sparire o di partire con la password vuota.
+ * Perché una voce non può partire verso lo scanner. Lo slot SNMP dello scanner
+ * prende solo una community: una SNMP v3 (T12) compare nell'anteprima, non
+ * selezionata, invece di sparire o di partire vuota.
  */
-function motivoEsclusione(cred: { credential_type: string; auth_method?: string | null }): string | null {
+function motivoEsclusione(cred: { credential_type: string }): string | null {
   const tipo = normalizzaTipo(String(cred.credential_type || ""));
   if (tipo === "snmp_v3") return "Non inviata allo scanner: SNMP v3 (lo scanner usa solo community)";
-  if (tipo === "ssh" && cred.auth_method === "chiave") return "Non inviata allo scanner: chiave SSH";
   return null;
+}
+
+/** L'account di una voce `ad`: si legge come fa il bind LDAP, non come una voce Windows (D7). */
+function coppiaAccountAd(credentialId: number): { username: string; password: string } | null {
+  const c = credenzialeLdapDb(getDb(), { credential_id: credentialId, encrypted_username: "", encrypted_password: "" });
+  return c.ok ? { username: c.username, password: c.password } : null;
 }
 
 function buildTransferFromCredential(
@@ -97,21 +104,35 @@ function buildTransferFromCredential(
   }
 
   if (slot === "ssh") {
-    const pair = getSshLinuxCredentialPair(credentialId);
-    if (!pair) return null;
+    const esito = accessoSshCredenziale(credentialId);
+    if (!esito.ok) return null;
+    const { username, password, privateKey, passphrase } = esito.accesso;
+    if (privateKey) {
+      return {
+        slot: "ssh",
+        name: baseName,
+        cred_type: "usk",
+        login: username,
+        private_key: privateKey,
+        ...(passphrase ? { passphrase } : {}),
+        ipam_credential_id: credentialId,
+        sort_order: sortOrder,
+      };
+    }
+    if (!password) return null;
     return {
       slot: "ssh",
       name: baseName,
       cred_type: "up",
-      login: pair.username,
-      password: pair.password,
+      login: username,
+      password,
       ipam_credential_id: credentialId,
       sort_order: sortOrder,
     };
   }
 
   if (slot === "smb" || slot === "ad") {
-    const pair = getCredentialLoginPair(credentialId, "windows");
+    const pair = type === "ad" ? coppiaAccountAd(credentialId) : getCredentialLoginPair(credentialId, "windows");
     if (!pair) return null;
     const parsed = splitWindowsLogin(pair.username);
     const realm = getAdRealm()?.realm ?? null;
@@ -179,6 +200,11 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
   }
   for (const credId of getOrderedDetectCredentialIds(networkId, "windows", opts)) {
     pushCred(credId, "smb");
+  }
+  // L'account AD dell'integrazione vale per lo scanner (Riccardo, 05/11/2026), non per la lista
+  // della rete: lì finirebbe nelle prove in sequenza (D7). Viene dopo le voci Windows della rete.
+  for (const integrazione of getAdIntegrations()) {
+    if (integrazione.enabled && integrazione.credential_id != null) pushCred(integrazione.credential_id, "smb");
   }
   // Slot AD per assessment cred-bind (stesse cred Windows, payload dedicato edge).
   const smbIds = transfer.filter((t) => t.slot === "smb").map((t) => t.ipam_credential_id);

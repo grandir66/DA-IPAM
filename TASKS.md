@@ -27,7 +27,8 @@ Misurato sul 72729 il 06/11 00:00-00:04Z: 192.168.0.52 e .53 sono due **Cisco SG
 - [x] Vicini SNMP dietro `automatismo.vicini_snmp`, spento: **il filtro di ADR 0018 non è una svista, non si tocca**. `topologia-t2-freno.test.ts` verde
 - [x] `-O`: categoria dal testo, ipotesi sotto il 95% scartate; `da-ipam` è root sul 72729, nmap ha anche `cap_net_raw`
 - [x] Trovato strada facendo: `salva.ts` ricalcolava solo con evidenze dagli script, quindi `-O` da solo scriveva `os_info` e la classe restava `unknown`. Corretto, prova in `sconosciuti.test.ts`
-- [x] Giro notturno `automatismo.riconoscimento`, spento: `sconosciuti.test.ts` 10 verdi
+- [x] Giro notturno `automatismo.riconoscimento`, spento: `sconosciuti.test.ts` 14 verdi
+- [x] Revisione indipendente: 7 rilievi, nessun bloccante, tutti corretti. Stampanti anche da 515, 631 e produttore; `-O` senza privilegi non brucia il tentativo; errori ritentati dopo 3 giorni; un guasto su una rete non ferma le altre; un'ipotesi di `-O` resta scritta con «(ipotesi N%)» e non dà categoria, altrimenti i profili a mano perdevano la famiglia del sistema operativo
 - [x] Prova sulla copia del DB del 72729 (copia tolta dopo): ricalcolo di tutti i 138 host 0 differenze; con gli annunci cambiano solo .52 e .53 (`switch`, modello, firmware); seconda passata 0 campi. Il frame CDP vero decodificato dal sensore nuovo dà gli stessi valori
 - [ ] Vedere sul 72729 vero: serve DA-Vul-can sulla sonda e questa versione su `main` di DA-IPAM (conferma di Riccardo)
 - [ ] Decisione di Riccardo: accendere `automatismo.riconoscimento` sul 72729. Prova a vuoto del 06/11, 8 host: 192.168.0.30 (Raspberry), .190, .246 (D-Link), 192.168.1.41, .47, .48, .49, .254, gli ultimi 5 senza produttore. Sono rete di un impianto: da guardare prima, e il 05/11 ha chiesto di tenere fermi i job di scansione fino a sonda provata

@@ -9,7 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 Al 72729 due Cisco SG200-26 con SNMP spento stavano `unknown` e senza modello mentre si annunciavano col CDP ogni 60 secondi.
 
 ### Aggiunto
-- **Annunci CDP/LLDP del trunk sugli host**: modello e firmware riempiti (mai sovrascritti) e categoria dall'attribuzione. L'host si trova per IP di gestione, poi per MAC del telaio; due host possibili vuol dire nessun legame. Serve il sensore di DA-Vul-can dalla 0.8.256; con uno più vecchio non cambia niente.
+- **Annunci CDP/LLDP del trunk sugli host**: modello e firmware riempiti (mai sovrascritti) e categoria dall'attribuzione. L'host si trova per IP di gestione, poi per MAC del telaio; due host possibili vuol dire nessun legame. Serve il sensore di DA-Vul-can dalla 0.8.257; con uno più vecchio non cambia niente.
 - **Levetta «Riconoscimento degli host sconosciuti»** (Opzioni, spenta di serie): ogni notte `-O` su al massimo 10 `unknown`, una volta ogni 30 giorni. Salta 9100, porte di campo e produttori di campo: `-O` manda pacchetti malformati.
 - **Levetta «Riconoscimento dai vicini letti via SNMP»** (spenta di serie): è la decisione per cliente che l'ADR 0018 chiede perché una lettura in più cambi le classificazioni.
 - La descrizione LLDP dei vicini si legge via SNMP (colonna 10): la tabella si leggeva già intera, nessuna lettura in più.

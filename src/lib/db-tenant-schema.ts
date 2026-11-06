@@ -2259,6 +2259,24 @@ CREATE TABLE IF NOT EXISTS edge_scan_schedules (
 );
 
 -- ============================================================================
+-- Proposta di profilo VA per device (06/11/2026). 'proposto' lo scrive il sistema,
+-- 'confermato' ed 'escluso' una persona, e non tornano indietro da soli.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS va_proposte (
+  host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+  famiglia TEXT NOT NULL,
+  voce TEXT,
+  con_web INTEGER NOT NULL DEFAULT 0,
+  confidenza TEXT NOT NULL,
+  motivo TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'proposto' CHECK (stato IN ('proposto','confermato','escluso')),
+  da_rivedere INTEGER NOT NULL DEFAULT 0,
+  confermata_da TEXT,
+  confermata_il TEXT,
+  aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================================
 -- MeshCentral RMM (modulo opt-in; tabelle vivono anche se feature OFF, vuote)
 -- mc_config = singleton config cifrata per-tenant (pattern mdm_config).
 -- mc_node/mc_remote_session/mc_node_bind = spec §6.

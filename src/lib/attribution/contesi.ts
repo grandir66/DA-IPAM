@@ -180,7 +180,7 @@ export function leggiContesiDiRete(
   dbh: Database.Database,
   networkId: number,
   nowIso: string,
-  opzioni: { includiManuali?: boolean } = {},
+  opzioni: { includiManuali?: boolean; limite?: number } = {},
 ): ElencoContesi {
   const host = dbh.prepare(
     `SELECT id, ip, hostname, attr_vendor, attr_category, attr_os_family, classification_manual

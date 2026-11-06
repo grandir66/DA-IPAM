@@ -20,6 +20,7 @@ export interface HostPerImpianti {
   network_id: number;
   ip: string;
   classification?: string | null;
+  attr_category?: string | null;
   vendor?: string | null;
   device_manufacturer?: string | null;
   inferred_vendor?: string | null;
@@ -42,6 +43,8 @@ function haPortaDiCampo(openPorts: string | null | undefined): boolean {
 
 export function eImpianto(h: Omit<HostPerImpianti, "network_id" | "ip">): boolean {
   if (CATEGORIE_IMPIANTO.has((h.classification ?? "").trim())) return true;
+  // L'attribuzione è più fine della classificazione: `ot.drive` e `ot.gateway` lì non hanno una categoria propria.
+  if (/^(ot|iot)(\.|$)/.test((h.attr_category ?? "").trim())) return true;
   const produttore = [h.vendor, h.device_manufacturer, h.inferred_vendor, h.attr_vendor_name].filter(Boolean).join(" ");
   return PRODUTTORE_DI_CAMPO.test(produttore) || haPortaDiCampo(h.open_ports);
 }

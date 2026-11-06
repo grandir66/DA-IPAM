@@ -4,7 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
-## [Non rilasciato] — 2026-11-06 · Il freno sugli impianti vale anche per le scansioni manuali
+## [Non rilasciato] — 2026-11-06 · Ricognizione delicata e proposta di profilo per device
+
+Una rete intera con un profilo solo manda a un PLC gli stessi controlli di un server. Prima si guarda cosa c'è, poi si propone.
+
+### Aggiunto
+- **Ricognizione delicata** (sequenza `ricognizione`): ping, costruttori dal router, poi solo porte aperte, lente e un host alla volta, senza versioni, sistema operativo né script. Porte solo a chi ha un costruttore noto e non di campo; gli altri restano ai dati passivi.
+- **Proposta per device** (`/api/networks/[id]/proposte-va`): famiglia, profilo e motivo in una riga. Tipo sconosciuto, conteso o a bassa confidenza non riceve un profilo. La proposta non lancia niente: conferma una persona, e un impianto non si conferma. Interfaccia in arrivo, dopo la tavola.
+
+ — 2026-11-06 · Il freno sugli impianti vale anche per le scansioni manuali
 
 Il freno copriva Edge e il giro veloce: `nmap`, `snmp`, `ipam_full`, `network_discovery` e gli accessi toccavano ancora gli apparati di campo.
 

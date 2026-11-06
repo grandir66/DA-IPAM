@@ -83,9 +83,9 @@ Riccardo (05/11, ~18:55): «in questo momento 72729 ha stampato ancora cose». L
 Riccardo (05/11): per i clienti con DA-IPAM e scansione attiva, le credenziali registrate si potranno usare per la scansione. Esempio: il 72729 ha credenziali SNMP e AD, da usare con Greenbone e nuclei. Analisi completa in `DA-Vul-can/TASKS.md`, stesso titolo.
 
 - [x] Misurato sul 72729, 05/11 18:57: qui 1 voce `ad`, 2 `snmp`, 1 `windows` e 3 legami con le reti; su Edge tutti gli slot vuoti. Conferma la voce «le credenziali della subnet non arrivano alla sonda»
-- [ ] Da controllare qui: quali voci stanno nei 3 legami e se `collectEdgeCredentialsForNetwork` produce davvero righe `smb` e `ad`. Una voce di tipo `ad` non è detto che entri nella catena `windows`
+- [x] Lo scanner prende l'account AD dall'integrazione (fuori dalla lista della rete: la discovery non lo prova, D7) e le voci SSH a chiave. `main` = `dev` = `dd51bb30` = 0.9.984, con dentro anche Infoblox e IP contesi di altre sessioni (Riccardo: «procedi»). Tutte le prove verdi. Sul 72729 legami pieni il 06/11
 - [x] Pannello della rete: l'esito si vede, un legame mancante si rimanda col job di sincronia, una volta al giorno al massimo (`edge-credenziali-esito.ts`, 7 prove). `main` = `dev` = `7af846ef` = 0.9.981, promossa col sì di Riccardo il 06/11 dopo tipi, lint, 7311 prove e build verdi; 72729 e 70151 verificate da `/api/health`. Riquadro del pannello non guardato a schermo
-- [ ] Da guardare: al primo giro del job di sincronia le reti con un legame mancante accendono Greenbone per scriverlo (72729 compreso, nessuna scansione). Vedere sul 72729 che lo slot `snmp` si riempia e che `credentials.falliti` resti vuoto
+- [x] Primo giro del job sul 72729: SNMP legato alle 00:32, account AD all'01:32, `falliti` vuoto
 
 ## 2026-11-05 — OWASP Top 10 (Riccardo)
 

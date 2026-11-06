@@ -48,7 +48,11 @@ export function contesiDiRete(networkId: number, adesso = new Date().toISOString
   );
 }
 
-export function rigeneraProposte(networkId: number, adesso = new Date().toISOString()): { scritte: number; daRivedere: number } {
+export function rigeneraProposte(
+  networkId: number,
+  adesso = new Date().toISOString(),
+  soloHost?: ReadonlySet<number>,
+): { scritte: number; daRivedere: number } {
   const db = getDb();
   const hosts = getHostsByNetwork(networkId).filter((h) => h.status !== "offline") as Array<Host & Parameters<typeof proponiProfilo>[0]>;
   const contesi = contesiDiRete(networkId, adesso);
@@ -71,6 +75,7 @@ export function rigeneraProposte(networkId: number, adesso = new Date().toISOStr
   let daRivedere = 0;
   db.transaction(() => {
     for (const h of hosts) {
+      if (soloHost && !soloHost.has(h.id)) continue;
       const nuova = proponiProfilo(h, { conteso: contesi.has(h.id) });
       const azione = esitoRigenerazione(salvate.get(h.id), nuova);
       if (azione === "scrivi") {
@@ -92,6 +97,100 @@ export function leggiProposte(networkId: number): RigaProposta[] {
      FROM va_proposte p JOIN hosts h ON h.id = p.host_id
      WHERE h.network_id = ? ORDER BY p.famiglia, h.ip`,
   ).all(networkId) as RigaProposta[];
+}
+
+/** Quanto è avanti la proposta di ogni rete, per l'elenco delle reti: una query sola, niente N+1. */
+export interface ContoProposte {
+  totale: number;
+  confermate: number;
+  daRivedere: number;
+}
+
+export function contiPropostePerRete(): Record<number, ContoProposte> {
+  const righe = getDb().prepare(
+    `SELECT h.network_id AS rete, COUNT(*) AS totale,
+            SUM(CASE WHEN p.stato = 'confermato' AND p.da_rivedere = 0 THEN 1 ELSE 0 END) AS confermate,
+            SUM(p.da_rivedere) AS daRivedere
+     FROM va_proposte p JOIN hosts h ON h.id = p.host_id GROUP BY h.network_id`,
+  ).all() as Array<ContoProposte & { rete: number }>;
+  return Object.fromEntries(righe.map(({ rete, ...c }) => [rete, c]));
+}
+
+/** L'ultima volta che una riga della rete è cambiata; `null` se la rete non ha proposte. */
+export function ultimaProposta(networkId: number): string | null {
+  const r = getDb().prepare(
+    `SELECT MAX(p.aggiornata_il) AS il FROM va_proposte p JOIN hosts h ON h.id = p.host_id WHERE h.network_id = ?`,
+  ).get(networkId) as { il: string | null } | undefined;
+  return r?.il ?? null;
+}
+
+/**
+ * Accetta il tipo nuovo di un host «da rivedere». Riconfermarlo non basterebbe: la famiglia salvata
+ * resta quella vecchia e il lancio lo toglierebbe di nuovo. La riga torna `proposto` e la rigenerazione
+ * la scrive nella famiglia giusta, dove una persona decide da capo. Conferma vecchia persa di proposito.
+ * Si rigenera solo chi si riapre: gli altri host restano come sono. Un host offline non si riapre: la
+ * rigenerazione lo salta e resterebbe proposto nella famiglia vecchia.
+ */
+export function riapriProposte(networkId: number, hostIds: number[]): { riaperte: number } {
+  const db = getDb();
+  const online = new Set(getHostsByNetwork(networkId).filter((h) => h.status !== "offline").map((h) => h.id));
+  const ammessi = new Set(leggiProposte(networkId).filter((r) => r.da_rivedere && online.has(r.host_id)).map((r) => r.host_id));
+  const scrivi = db.prepare(
+    `UPDATE va_proposte SET stato='proposto', da_rivedere=0, confermata_da=NULL, confermata_il=NULL, aggiornata_il=datetime('now') WHERE host_id=?`,
+  );
+  const riaperti = new Set(hostIds.filter((id) => ammessi.has(id)));
+  db.transaction(() => {
+    for (const id of riaperti) scrivi.run(id);
+  })();
+  if (riaperti.size > 0) rigeneraProposte(networkId, undefined, riaperti);
+  return { riaperte: riaperti.size };
+}
+
+export interface GruppoLanciato {
+  scan_id: number;
+  famiglia: Famiglia;
+  device: number;
+  lanciato_il: string;
+  /** Come è finito, una volta saputo: poi la sonda non si interroga più per questo gruppo. */
+  chiuso: "finito" | "errore" | null;
+  chiuso_messaggio: string | null;
+}
+
+/** Oltre questi giorni le righe non servono: né al riquadro né a nessun altro. */
+const GIORNI_GRUPPI = 30;
+const ORE_RIQUADRO = 72;
+
+/** Ricorda quale scansione è quale gruppo: la sonda non conosce le famiglie. */
+export function registraGruppiLanciati(networkId: number, gruppi: Array<Pick<GruppoLanciato, "scan_id" | "famiglia" | "device">>, il: string): void {
+  const db = getDb();
+  const scrivi = db.prepare(
+    `INSERT OR REPLACE INTO va_gruppi_lanciati (network_id, scan_id, famiglia, device, lanciato_il) VALUES (?, ?, ?, ?, ?)`,
+  );
+  const limite = new Date(new Date(il).getTime() - GIORNI_GRUPPI * 86400000).toISOString();
+  db.transaction(() => {
+    db.prepare(`DELETE FROM va_gruppi_lanciati WHERE lanciato_il < ?`).run(limite);
+    for (const g of gruppi) scrivi.run(networkId, g.scan_id, g.famiglia, g.device, il);
+  })();
+}
+
+/**
+ * I gruppi recenti della rete, di tutti i lanci: «Riprova» è un lancio nuovo e il gruppo di prima può
+ * essere ancora in corso, e uno andato in errore deve restare visibile anche quando gli altri chiudono.
+ */
+export function gruppiRecenti(networkId: number, adesso = new Date()): GruppoLanciato[] {
+  const da = new Date(adesso.getTime() - ORE_RIQUADRO * 3600000).toISOString();
+  return getDb().prepare(
+    `SELECT scan_id, famiglia, device, lanciato_il, chiuso, chiuso_messaggio FROM va_gruppi_lanciati
+     WHERE network_id = ? AND lanciato_il >= ? ORDER BY scan_id DESC LIMIT 50`,
+  ).all(networkId, da) as GruppoLanciato[];
+}
+
+export function segnaGruppiChiusi(networkId: number, chiusi: ReadonlyArray<{ scan_id: number; chiuso: "finito" | "errore"; messaggio: string | null }>): void {
+  const db = getDb();
+  const scrivi = db.prepare(`UPDATE va_gruppi_lanciati SET chiuso = ?, chiuso_messaggio = ? WHERE network_id = ? AND scan_id = ?`);
+  db.transaction(() => {
+    for (const c of chiusi) scrivi.run(c.chiuso, c.messaggio, networkId, c.scan_id);
+  })();
 }
 
 export interface Conferma {

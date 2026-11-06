@@ -2276,6 +2276,18 @@ CREATE TABLE IF NOT EXISTS va_proposte (
   aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Quale scansione di Edge è quale gruppo (Passo 5, 06/11/2026): la sonda sa solo gli IP, la famiglia la sa IPAM.
+CREATE TABLE IF NOT EXISTS va_gruppi_lanciati (
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  scan_id INTEGER NOT NULL,
+  famiglia TEXT NOT NULL,
+  device INTEGER NOT NULL,
+  lanciato_il TEXT NOT NULL,
+  chiuso TEXT CHECK (chiuso IN ('finito','errore')),
+  chiuso_messaggio TEXT,
+  PRIMARY KEY (network_id, scan_id)
+);
+
 -- ============================================================================
 -- MeshCentral RMM (modulo opt-in; tabelle vivono anche se feature OFF, vuote)
 -- mc_config = singleton config cifrata per-tenant (pattern mdm_config).

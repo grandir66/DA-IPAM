@@ -19,6 +19,7 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import { rilevaGestori } from "@/lib/permessi/rilevatore-guardie";
 import { lanciaGruppiConfermati, type DipendenzeLancio } from "@/lib/vuln/proposta/lancio";
+import { gruppiRecenti } from "@/lib/vuln/proposta/store";
 import type { EsitoGruppoEdge, GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
 
@@ -175,6 +176,48 @@ test("«già in corso» non ferma gli altri gruppi: non è un guasto", async () 
   assert.equal(e.gruppi[0].esito.stato, "gia_in_corso");
 });
 
+test("solo le famiglie spuntate partono: le altre non arrivano alla sonda", async () => {
+  const { rete } = await preparaRete();
+  const { f, chiamate } = avviaFinto();
+  const e = await withTenant(T, () => lanciaGruppiConfermati(rete, { avvia: f, catalogo }, { famiglie: ["windows"] }));
+  assert.deepEqual(chiamate.flatMap((g) => g.ips), ["10.7.0.11"]);
+  assert.deepEqual(e.gruppi.map((g) => g.famiglia), ["windows"]);
+});
+
+test("un'eccezione a metà giro ferma il lancio ma non perde i gruppi già partiti", async () => {
+  const { rete } = await preparaRete();
+  let n = 0;
+  const avvia: DipendenzeLancio["avvia"] = async () => {
+    if (++n === 2) throw new Error("rotto");
+    return { stato: "lanciato", scan_id: 900 + n, status: "running", ip_tolti: [] };
+  };
+  await withTenant(T, async () => {
+    const e = await lanciaGruppiConfermati(rete, { avvia, catalogo });
+    assert.deepEqual(e.gruppi.map((g) => g.esito.stato), ["lanciato", "non_so", "non_tentato"]);
+    assert.deepEqual(gruppiRecenti(rete).map((g) => g.scan_id), [901]);
+  });
+});
+
+test("i gruppi partiti si ricordano, perché la sonda non sa le famiglie; chi non è partito no", async () => {
+  const { rete } = await preparaRete();
+  const { f } = avviaFinto([undefined, { stato: "rifiutato", status: 400, messaggio: "no" }]);
+  await withTenant(T, async () => {
+    await lanciaGruppiConfermati(rete, { avvia: f, catalogo });
+    // «Riprova» è un lancio nuovo: il gruppo di prima deve restare da seguire.
+    await lanciaGruppiConfermati(rete, { avvia: async () => ({ stato: "lanciato", scan_id: 200, status: "pending", ip_tolti: [] }), catalogo }, { famiglie: ["windows"] });
+    const u = gruppiRecenti(rete);
+    assert.deepEqual(u.map((g) => [g.scan_id, g.famiglia, g.device]), [[200, "windows", 1], [103, "linux", 1], [101, "rete", 1]]);
+  });
+});
+
+test("un guasto nel ricordare i gruppi non nasconde che sono partiti", async () => {
+  const { rete } = await preparaRete();
+  const { f } = avviaFinto();
+  const e = await withTenant(T, () => lanciaGruppiConfermati(rete, { avvia: f, catalogo, registra: () => { throw new Error("disco pieno"); } }));
+  assert.ok(e.gruppi.every((g) => g.esito.stato === "lanciato"));
+  assert.ok(e.avvisi.some((a) => /disco pieno/.test(a)));
+});
+
 test("nessuna proposta confermata: nessun lancio, e lo dice", async () => {
   const rete = await withTenant(T, async () =>
     Number(getTenantDb(T).prepare("INSERT INTO networks (cidr, name) VALUES ('10.8.0.0/24', 'vuota')").run().lastInsertRowid));
@@ -204,4 +247,15 @@ test("la rotta non si fida del client e non ripiega sulla rete intera", () => {
   const src = readFileSync(ROTTA, "utf8");
   assert.doesNotMatch(src, /\.json\(\)/, "gli IP non arrivano dal corpo della richiesta: si rileggono dal database");
   assert.doesNotMatch(src, /triggerSubnetEdgeScan|edge-scan|\/scan\b/, "mai la scansione della rete intera");
+});
+
+test("senza famiglie la rotta rifiuta: una richiesta incompleta non diventa «tutte»", () => {
+  const src = readFileSync(ROTTA, "utf8");
+  assert.match(src, /\.min\(1,/);
+  const controllo = src.indexOf("Famiglie.safeParse");
+  const lancio = src.indexOf("lanciaGruppiConfermati(n");
+  assert.ok(controllo > 0 && lancio > controllo, "prima il controllo, poi il lancio");
+  assert.match(src, /famiglie: parsed\.data/);
+  assert.doesNotMatch(src, /\bimpianti\b.*z\.enum|z\.enum.*\bimpianti\b/, "IoT e OT non sono mai lanciabili");
+  assert.doesNotMatch(src, /z\.enum.*da_chiarire/);
 });

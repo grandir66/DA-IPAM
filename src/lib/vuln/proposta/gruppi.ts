@@ -56,8 +56,14 @@ const SCHEDE: Partial<Record<Famiglia, Scheda>> = {
   periferiche: { profile: "fast", nuclei: "gestione", moduli: "base", soloModuliAmmessi: false },
 };
 
+/** La riga della tabella per una famiglia; `null` per impianti e «da chiarire», che non partono mai. */
+export function schedaDiFamiglia(f: Famiglia): { profile: EdgeScanProfile; nuclei: NucleiGruppo | null; moduli: "base" | "completi" | null } | null {
+  const s = SCHEDE[f];
+  return s ? { profile: s.profile, nuclei: s.nuclei, moduli: s.moduli } : null;
+}
+
 /** Ordine di lancio: quello della tabella del piano. Chi non c'è qui (impianti, da_chiarire) non parte. */
-const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche"];
+export const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche"];
 
 /**
  * Per Rete e Windows si elencano i moduli AMMESSI, non quelli esclusi: una lista di esclusi fallisce

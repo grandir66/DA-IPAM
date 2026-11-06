@@ -20,8 +20,8 @@ import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
 import type { EsitoGruppoEdge, GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
 import { gruppiDaConfermate, type GruppoDaLanciare } from "./gruppi";
-import { ETICHETTE_FAMIGLIA, proponiProfilo, type HostPerProposta } from "./regole";
-import { contesiDiRete, leggiProposte, type RigaProposta } from "./store";
+import { ETICHETTE_FAMIGLIA, proponiProfilo, type Famiglia, type HostPerProposta } from "./regole";
+import { contesiDiRete, leggiProposte, registraGruppiLanciati, type GruppoLanciato, type RigaProposta } from "./store";
 
 export interface DipendenzeLancio {
   proposte: (networkId: number) => RigaProposta[];
@@ -31,6 +31,8 @@ export interface DipendenzeLancio {
   /** `errore` = la lettura è fallita: il lancio non parte. `profili` vuoto senza errore = catalogo davvero vuoto. */
   catalogo: () => Promise<{ profili: EdgeAssessmentProfile[]; avviso: string | null; errore?: string }>;
   avvia: (networkId: number, gruppo: GruppoPerEdge) => Promise<EsitoGruppoEdge>;
+  /** Ricorda quale scansione è quale gruppo, per l'avanzamento gruppo per gruppo. */
+  registra: (networkId: number, gruppi: Array<Pick<GruppoLanciato, "scan_id" | "famiglia" | "device">>, il: string) => void;
 }
 
 export interface TolloDalLancio {
@@ -69,12 +71,18 @@ const REALI: DipendenzeLancio = {
   contesi: (n) => contesiDiRete(n),
   catalogo: catalogoDaEdge,
   avvia: avviaGruppoEdge,
+  registra: registraGruppiLanciati,
 };
 
 /** Dopo questi esiti si va avanti col gruppo dopo: è andato, o Edge ha rifiutato proprio quel gruppo. */
 const CONTINUA = new Set<EsitoGruppoEdge["stato"]>(["lanciato", "non_partito", "rifiutato", "gia_in_corso"]);
 
-export async function lanciaGruppiConfermati(networkId: number, deps: Partial<DipendenzeLancio> = {}): Promise<EsitoLancio> {
+/** `famiglie`: i gruppi spuntati nella pagina (la rotta li pretende); le altre famiglie non partono. */
+export async function lanciaGruppiConfermati(
+  networkId: number,
+  deps: Partial<DipendenzeLancio> = {},
+  opzioni: { famiglie?: readonly Famiglia[] } = {},
+): Promise<EsitoLancio> {
   const d = { ...REALI, ...deps };
   const confermate = d.proposte(networkId).filter((r) => r.stato === "confermato");
   const host = new Map(d.host(networkId).map((h) => [h.id, h]));
@@ -84,6 +92,7 @@ export async function lanciaGruppiConfermati(networkId: number, deps: Partial<Di
   const buone: RigaProposta[] = [];
   for (const r of confermate) {
     const h = host.get(r.host_id);
+    if (opzioni.famiglie && !opzioni.famiglie.includes(r.famiglia)) continue;
     const togli = (motivo: string) => tolti.push({ host_id: r.host_id, ip: r.ip, motivo });
     if (!h) togli("host non più presente nella rete");
     else if (eImpianto(h)) togli("è un impianto o un apparato di campo: non si scansiona");
@@ -118,10 +127,25 @@ export async function lanciaGruppiConfermati(networkId: number, deps: Partial<Di
     const perEdge: GruppoPerEdge = {
       ips: g.ips, profile: g.profile, nuclei_profilo: g.nuclei_profilo, assessment_profile_id: g.assessment_profile_id,
     };
-    const esito = await d.avvia(networkId, perEdge);
+    // Un'eccezione qui non deve perdere i gruppi già partiti: si ferma il giro e si dice che non si sa.
+    const esito: EsitoGruppoEdge = await d.avvia(networkId, perEdge).catch((e: unknown) => ({
+      stato: "non_so" as const,
+      messaggio: e instanceof Error ? e.message : "errore sconosciuto",
+    }));
     esiti.push({ ...g, esito });
     if (!CONTINUA.has(esito.stato)) {
       motivoStop = `non tentato: il gruppo «${ETICHETTE_FAMIGLIA[g.famiglia]}» si è fermato (${esito.stato})`;
+    }
+  }
+  const lanciati = esiti.flatMap((g) => (g.esito.stato === "lanciato"
+    ? [{ scan_id: g.esito.scan_id, famiglia: g.famiglia, device: g.ips.length - g.esito.ip_tolti.length }]
+    : []));
+  if (lanciati.length > 0) {
+    try {
+      d.registra(networkId, lanciati, new Date().toISOString());
+    } catch (e) {
+      // I gruppi sono partiti: un guasto qui non deve far credere il contrario, si perde solo il consuntivo.
+      avvisi.push(`Avanzamento per gruppo non disponibile: ${e instanceof Error ? e.message : "scrittura non riuscita"}`);
     }
   }
   return { gruppi: esiti, tolti, avvisi, errore: null, fermato: motivoStop !== null };

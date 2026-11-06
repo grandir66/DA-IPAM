@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Pagina Scansioni VA (tavola approvata il 06/11/2026): 1 Profilo → 2 Reti → 3 Quando.
+ * Pagina Scansioni VA, due schede (tavole approvate il 06/11/2026). «Per device»: `per-device.tsx`.
+ * «Un profilo solo», qui: 1 Profilo → 2 Reti → 3 Quando.
  * Le impostazioni restano della singola rete: la pagina le scrive su tutte quelle scelte, e il
  * pannello VA Scan della rete continua a servire per ritoccarne una sola.
  */
@@ -18,11 +19,14 @@ import {
   IntestazionePagina,
   InCorso,
   Pannello,
+  SchedePagina,
   TesseraNumero,
   VoceSelezionabile,
   Vuoto,
 } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
+import { PerDevice } from "./per-device";
+import { Stato } from "./stato-va";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
@@ -70,26 +74,16 @@ function dataBreve(v: string | null): string {
   return parseDbDate(v).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Stato con segno e fondo pieno, mai la sola tinta. */
-function Stato({ tono, children }: { tono: "ok" | "in_corso" | "avviso" | "spento"; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[13px] font-semibold",
-        tono === "ok" && "border-foreground bg-card text-foreground",
-        tono === "in_corso" && "border-[#0D2537] bg-[#0D2537] text-white",
-        tono === "avviso" && "border-[#0D2537] bg-[#FFD400] text-[#0D2537]",
-        tono === "spento" && "border-muted-foreground bg-muted text-foreground",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function ColonnaCambio({ c }: { c: Cambio }) {
+function ColonnaCambio({ c, onPerDevice }: { c: Cambio; onPerDevice: () => void }) {
   if (c.tono === "nessuno") return <span className="text-[13px] text-muted-foreground">{c.testo}</span>;
-  if (c.tono === "impianto") return <Stato tono="spento">{c.testo}</Stato>;
+  if (c.tono === "impianto") {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Stato tono="errore">{c.testo}</Stato>
+        <button type="button" className="text-sm text-cian-testo hover:underline" onClick={onPerDevice}>Vai a Per device ›</button>
+      </span>
+    );
+  }
   return <Stato tono={c.tono === "in_corso" ? "in_corso" : "avviso"}>{c.testo}</Stato>;
 }
 
@@ -160,6 +154,7 @@ export function ScansioniVaClient() {
   const [errore, setErrore] = useState<string | null>(null);
   const [caricamento, setCaricamento] = useState(true);
 
+  const [scheda, setScheda] = useState<"device" | "profilo">("device");
   const [voce, setVoce] = useState<IdVoce>("bilanciato");
   const [ambito, setAmbito] = useState<EdgeTargetingMode>("full_subnet");
   const [modo, setModo] = useState<ModoScansione>("immediata");
@@ -292,7 +287,7 @@ export function ScansioniVaClient() {
   const intestazione = (
     <IntestazionePagina
       titolo="Scansioni VA"
-      sottotitolo="Si parte dal profilo, poi si scelgono le reti."
+      sottotitolo="Un gruppo per tipo di device, o un profilo solo su più reti."
       azioni={<Link href="/vulnerabilities" className="text-sm text-cian-testo hover:underline">Rapporti in Vulnerabilità ›</Link>}
     />
   );
@@ -338,6 +333,17 @@ export function ScansioniVaClient() {
       />
       {errore && <LoadError what="lo stato aggiornato" message={errore} onRetry={() => void leggi()} />}
 
+      <SchedePagina
+        etichetta="Come scansionare"
+        scelta={scheda}
+        onScegli={setScheda}
+        voci={[
+          { valore: "device", titolo: "Per device", descrizione: "Un gruppo per tipo di device, anche nella stessa rete." },
+          { valore: "profilo", titolo: "Un profilo solo", descrizione: "Lo stesso profilo su più reti." },
+        ]}
+      />
+
+      {scheda === "device" ? <PerDevice quadro={quadro} amministratore={amministratore} onRileggi={leggi} /> : (<>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Reti scelte" valore={scelteValide.length} qualifica={`su ${quadro.reti.length}`} />
         <TesseraNumero
@@ -392,7 +398,7 @@ export function ScansioniVaClient() {
         sottotitolo={`${hostScelti.toLocaleString("it-IT")} host online`}
         corpoClassName="p-0"
         piede={quadro.reti.some((r) => r.impianti > 0)
-          ? "Le reti con PLC, HMI, IoT o apparati di campo non si scansionano da qui: una scansione può fermarli."
+          ? "Le reti con PLC, HMI, IoT o apparati di campo non si scansionano da qui, ma da Per device: gli impianti restano fuori."
           : undefined}
         azioni={
           <>
@@ -443,7 +449,7 @@ export function ScansioniVaClient() {
               </thead>
               <tbody>
                 {visibili.map(({ r, c }) => (
-                  <RigaRete key={r.id} r={r} c={c} scelta={scelte.has(r.id) && !c.blocca} onCambia={() => cambiaRete(r.id)} voci={quadro.voci} />
+                  <RigaRete key={r.id} r={r} c={c} scelta={scelte.has(r.id) && !c.blocca} onCambia={() => cambiaRete(r.id)} voci={quadro.voci} onPerDevice={() => setScheda("device")} />
                 ))}
                 {visibili.length === 0 && (
                   <tr><td colSpan={9} className="px-3 py-4 text-center text-muted-foreground">Nessuna rete corrisponde alla ricerca.</td></tr>
@@ -555,11 +561,12 @@ export function ScansioniVaClient() {
       </Pannello>
 
       {esiti && <EsitoLancio esiti={esiti} occupato={lanciando} onRiprova={(ids) => void lancia(ids)} />}
+      </>)}
     </div>
   );
 }
 
-function RigaRete({ r, c, scelta, onCambia, voci }: { r: ReteScansione; c: Cambio; scelta: boolean; onCambia: () => void; voci: VoceRisolta[] }) {
+function RigaRete({ r, c, scelta, onCambia, voci, onPerDevice }: { r: ReteScansione; c: Cambio; scelta: boolean; onCambia: () => void; voci: VoceRisolta[]; onPerDevice: () => void }) {
   const profilo = voci.find((v) => v.assessmentId === r.assessmentId)?.moduliNome?.split(",")[0] ?? r.assessmentId ?? "—";
   const ultima = r.sonda === "errore" ? "non letta" : r.ultimaVa ? dataBreve(r.ultimaVa) : "mai";
   return (
@@ -576,7 +583,7 @@ function RigaRete({ r, c, scelta, onCambia, voci }: { r: ReteScansione; c: Cambi
       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{ultima}</td>
       <td className="px-3 py-1.5">{r.piano?.testo ?? "—"}</td>
       <td className="whitespace-nowrap px-3 py-1.5">{profilo}</td>
-      <td className="whitespace-nowrap px-3 py-1.5" title={r.impiantiEsempi.join(" · ") || undefined}><ColonnaCambio c={c} /></td>
+      <td className="whitespace-nowrap px-3 py-1.5" title={r.impiantiEsempi.join(" · ") || undefined}><ColonnaCambio c={c} onPerDevice={onPerDevice} /></td>
     </tr>
   );
 }

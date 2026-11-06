@@ -9,6 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 Una rete intera con un profilo solo manda a un PLC gli stessi controlli di un server. Prima si guarda cosa c'è, poi si propone.
 
 ### Aggiunto
+- **Scheda «Per device» in Scansioni VA**: si sceglie la rete, si vedono le famiglie con i profili che partirebbero davvero, si confermano i device e si scelgono i gruppi da lanciare. IoT/OT restano visibili ma non si spuntano, così si sa chi è rimasto fuori. Una rete con impianti, bloccata con un profilo solo, da qui si scansiona senza toccarli. Dopo il lancio: esito per gruppo, chi è stato tolto e da chi, avanzamento gruppo per gruppo.
 - **Lancio per gruppi** (`POST /api/networks/[id]/proposte-va/lancia`): dalle righe confermate nasce un gruppo per famiglia con i suoi profili, e ogni gruppo ha il suo esito. Una sonda vecchia dice «da aggiornare» e non ripiega sulla rete intera; IoT/OT e «Da chiarire» non partono mai. Niente pulsante finché non c'è la pagina per device.
 - **Ricognizione delicata** (sequenza `ricognizione`): ping, costruttori dal router, poi solo porte aperte, lente e un host alla volta, senza versioni, sistema operativo né script. Porte solo a chi ha un costruttore noto e non di campo; gli altri restano ai dati passivi.
 - **Proposta per device** (`/api/networks/[id]/proposte-va`): famiglia, profilo e motivo in una riga. Tipo sconosciuto, conteso o a bassa confidenza non riceve un profilo. La proposta non lancia niente: conferma una persona, e un impianto non si conferma. Interfaccia in arrivo, dopo la tavola.

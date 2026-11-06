@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import { proponiProfilo } from "@/lib/vuln/proposta/regole";
-import { confermaProposte, esitoRigenerazione, leggiProposte, rigeneraProposte } from "@/lib/vuln/proposta/store";
+import { confermaProposte, contiPropostePerRete, esitoRigenerazione, leggiProposte, riapriProposte, rigeneraProposte } from "@/lib/vuln/proposta/store";
 
 const h = (x: Record<string, unknown>) => ({ network_id: 1, ip: "10.0.0.1", ...x });
 const porte = (...p: number[]) => JSON.stringify(p.map((port) => ({ port, protocol: "tcp" })));
@@ -98,4 +98,37 @@ test("sul database: salva, conferma, rifiuta l'impianto, e l'host diventato impi
     const r = leggiProposte(id).find((x) => x.host_id === sw);
     assert.deepEqual([r?.stato, r?.famiglia, r?.voce], ["proposto", "impianti", null]);
   });
+});
+
+test("«Prendi il nuovo tipo»: l'host da rivedere torna proposto nella famiglia giusta, senza la conferma vecchia", async () => {
+  const T = "TESTRIAPRI06";
+  try {
+    await withTenant(T, async () => {
+      const d = getTenantDb(T);
+      const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.8.0.0/24', 'x')").run().lastInsertRowid);
+      const h = d.prepare("INSERT INTO hosts (network_id, ip, status, classification) VALUES (?, ?, 'online', ?)");
+      const uno = Number(h.run(rete, "10.8.0.1", "router").lastInsertRowid);
+      const due = Number(h.run(rete, "10.8.0.2", "router").lastInsertRowid);
+      const tre = Number(h.run(rete, "10.8.0.3", "router").lastInsertRowid);
+      rigeneraProposte(rete);
+      confermaProposte(rete, { hostIds: [uno, due, tre], stato: "confermato", chi: "prova" });
+      d.prepare("UPDATE hosts SET classification = 'server_linux', open_ports = ? WHERE id = ?").run(porte(22), uno);
+      assert.equal(rigeneraProposte(rete).daRivedere, 1);
+      assert.deepEqual(contiPropostePerRete()[rete], { totale: 3, confermate: 2, daRivedere: 1 });
+      // Riaprirne uno non deve rivalutare gli altri: il tre cambia tipo, ma nessuno ha chiesto di rileggerlo.
+      d.prepare("UPDATE hosts SET classification = 'server_linux', open_ports = ? WHERE id = ?").run(porte(22), tre);
+
+      assert.equal(riapriProposte(rete, [due]).riaperte, 0, "chi non è da rivedere non si tocca");
+      assert.equal(riapriProposte(rete, [uno]).riaperte, 1);
+      const r = leggiProposte(rete).find((x) => x.host_id === uno)!;
+      assert.deepEqual([r.famiglia, r.stato, r.da_rivedere, r.confermata_da], ["linux", "proposto", 0, null]);
+      assert.equal(leggiProposte(rete).find((x) => x.host_id === due)!.stato, "confermato");
+      assert.equal(leggiProposte(rete).find((x) => x.host_id === tre)!.da_rivedere, 0);
+      d.prepare("UPDATE hosts SET status = 'offline', classification = 'server_linux', open_ports = ? WHERE id = ?").run(porte(22), due);
+      d.prepare("UPDATE va_proposte SET da_rivedere = 1 WHERE host_id = ?").run(due);
+      assert.equal(riapriProposte(rete, [due]).riaperte, 0, "un host offline non si riapre: resterebbe nella famiglia vecchia");
+    });
+  } finally {
+    try { deleteTenantDatabase(T); } catch { /* già tolto */ }
+  }
 });

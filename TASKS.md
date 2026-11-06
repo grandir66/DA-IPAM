@@ -5,7 +5,7 @@
 Riccardo (06/11): prima scansione delicata, poi proposta di profilo per device e scansioni separate per tipologia anche nella stessa rete. Piano e domande: `DA-Vul-can/docs/superpowers/plans/2026-11-06-profili-per-device.md`. Non parte senza il suo sì.
 
 - [x] Passo 4 (06/11): `avviaGruppoEdge`, `lanciaGruppiConfermati`, rotta `proposte-va/lancia`. Edge in `DA-Vul-can`, stessa voce del suo `TASKS.md`
-- [ ] Passo 5: pagina per device; note su cosa mostrare nel `TASKS.md` di DA-Vul-can
+- [x] Passo 5: scheda «Per device», resa a 1920 con dati finti, mai provata contro una sonda vera. Serve il deploy di Edge
 
 ## 2026-11-06 — URGENTE 72729: celle frigo bloccate, PLC spariti durante il giro (Riccardo)
 

@@ -556,7 +556,7 @@ export async function listEdgeProfiles(
 export async function listScans(
   scanner: VulnScannerRow,
   since?: string,
-  stato?: "error" | "running",
+  stato?: "error" | "running" | "pending",
 ): Promise<EdgeScan[]> {
   const params = new URLSearchParams();
   if (since) params.set("since", since);

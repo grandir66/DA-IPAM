@@ -613,7 +613,7 @@ function conteggio(p: PassaggioSonda, stato: StatoIp): number {
   }
 }
 
-function Barra({ percento, etichetta, alta, colore }: { percento: number; etichetta: string; alta?: boolean; colore: string }) {
+export function Barra({ percento, etichetta, alta, colore }: { percento: number; etichetta: string; alta?: boolean; colore: string }) {
   return (
     <div
       role="img"

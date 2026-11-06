@@ -32,6 +32,8 @@ export interface AvanzamentoScan {
   finiti: number;
   in_analisi: IpInAnalisi[];
   da_fare: string[];
+  /** IP finiti. Assente su una sonda di poco più vecchia: elenco vuoto, il conteggio resta `finiti`. */
+  fatti: string[];
   lenti: HostLento[];
 }
 
@@ -68,6 +70,7 @@ export function leggiRispostaInCorso(raw: unknown): { ok: true; scans: Avanzamen
       return male("«in_analisi» non è un elenco di {ip, da}");
     }
     if (!Array.isArray(r.da_fare) || !r.da_fare.every((x) => typeof x === "string")) return male("«da_fare» non è un elenco di IP");
+    if (r.fatti !== undefined && !(Array.isArray(r.fatti) && r.fatti.every((x) => typeof x === "string"))) return male("«fatti» non è un elenco di IP");
     if (!Array.isArray(r.lenti) || !r.lenti.every(eHostLento)) return male("«lenti» non è un elenco di {ip, durata_s, volte, visto_at}");
     scans.push({
       scan_id: r.scan_id as number,
@@ -79,6 +82,7 @@ export function leggiRispostaInCorso(raw: unknown): { ok: true; scans: Avanzamen
       finiti: r.finiti,
       in_analisi: (r.in_analisi as Array<{ ip: string; da?: string | null }>).map((x) => ({ ip: x.ip, da: x.da ?? null })),
       da_fare: r.da_fare as string[],
+      fatti: (r.fatti as string[] | undefined) ?? [],
       lenti: r.lenti as HostLento[],
     });
   }
@@ -97,4 +101,31 @@ export function leggiRispostaHostLenti(raw: unknown): { ok: true; dati: Risposta
   if (typeof raw.escludi_lenti !== "boolean") return male("manca «escludi_lenti»");
   if (!Array.isArray(raw.host) || !raw.host.every(eHostLento)) return male("«host» non è un elenco di {ip, durata_s, volte, visto_at}");
   return { ok: true, dati: { escludi_lenti: raw.escludi_lenti, host: raw.host.map((h) => ({ ip: h.ip, durata_s: h.durata_s, volte: h.volte, visto_at: h.visto_at })) } };
+}
+
+/** «4h 45», «2 min», «<1 min»: stessa scrittura della tabella «Tempi per IP» di Edge. */
+export function testoDurata(secondi: number | null): string {
+  if (secondi === null) return "–";
+  if (secondi < 60) return "<1 min";
+  if (secondi < 3600) return `${Math.floor(secondi / 60)} min`;
+  return `${Math.floor(secondi / 3600)}h ${String(Math.floor((secondi % 3600) / 60)).padStart(2, "0")}`;
+}
+
+/** Da quanto un IP è in analisi: «da 3 ore e 10», «da 1 ora», «da 12 min». `da` è UTC della sonda. Vuoto se non si sa. */
+export function daQuanto(da: string | null, adesso: Date): string {
+  if (!da) return "";
+  const inizio = Date.parse(`${da.replace(" ", "T")}Z`);
+  if (Number.isNaN(inizio)) return "";
+  const minuti = Math.max(0, Math.floor((adesso.getTime() - inizio) / 60000));
+  if (minuti < 1) return "da meno di un minuto";
+  if (minuti < 60) return `da ${minuti} min`;
+  const ore = Math.floor(minuti / 60);
+  const resto = minuti % 60;
+  return `da ${ore} ${ore === 1 ? "ora" : "ore"}${resto ? ` e ${resto}` : ""}`;
+}
+
+/** Percentuale della barra: quella di Greenbone, se non c'è ancora la quota di IP finiti. */
+export function percentoBarra(a: Pick<AvanzamentoScan, "percento" | "finiti" | "totale">): number {
+  if (a.percento !== null) return a.percento;
+  return a.totale > 0 ? Math.round((a.finiti / a.totale) * 100) : 0;
 }

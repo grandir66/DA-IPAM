@@ -16,7 +16,7 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { encrypt } from "@/lib/crypto";
-import { leggiRispostaInCorso } from "@/lib/vuln/avanzamento";
+import { leggiRispostaInCorso, testoDurata, daQuanto, percentoBarra } from "@/lib/vuln/avanzamento";
 import { leggiAvanzamento, leggiHostLenti, salvaHostLenti } from "@/lib/vuln/edge-subnet-bridge";
 import { leggiAvanzamentoRotta } from "@/lib/vuln/avanzamento-rotta";
 
@@ -131,3 +131,35 @@ test("host lenti: lettura valida, sonda vecchia = da aggiornare, 404 della sonda
     if (!v.ok) { assert.equal(v.status, 409); assert.equal(v.daAggiornare, true); }
     lentiVecchia = false;
   }));
+
+test("testoDurata scrive come la tabella di Edge", () => {
+  assert.equal(testoDurata(null), "–");
+  assert.equal(testoDurata(59), "<1 min");
+  assert.equal(testoDurata(120), "2 min");
+  assert.equal(testoDurata(7260), "2h 01");
+  assert.equal(testoDurata(26400), "7h 20");
+});
+
+test("daQuanto parte dall'ora UTC della sonda", () => {
+  const adesso = new Date("2026-11-06T11:20:00Z");
+  assert.equal(daQuanto("2026-11-06 08:10:00", adesso), "da 3 ore e 10");
+  assert.equal(daQuanto("2026-11-06 10:20:00", adesso), "da 1 ora");
+  assert.equal(daQuanto("2026-11-06 11:08:00", adesso), "da 12 min");
+  assert.equal(daQuanto("2026-11-06 11:19:40", adesso), "da meno di un minuto");
+  assert.equal(daQuanto(null, adesso), "");
+  assert.equal(daQuanto("boh", adesso), "");
+});
+
+test("percentoBarra preferisce Greenbone e ripiega sugli IP finiti", () => {
+  assert.equal(percentoBarra({ percento: 96, finiti: 1, totale: 4 }), 96);
+  assert.equal(percentoBarra({ percento: null, finiti: 1, totale: 4 }), 25);
+  assert.equal(percentoBarra({ percento: null, finiti: 0, totale: 0 }), 0);
+});
+
+test("fatti: una sonda senza il campo dà elenco vuoto, un campo sbagliato è un errore", () => {
+  const senza = leggiRispostaInCorso(VERA);
+  assert.ok(senza.ok && senza.scans[0].fatti.length === 0);
+  const con = leggiRispostaInCorso([{ ...VERA[0], fatti: ["192.168.5.1"] }]);
+  assert.ok(con.ok && con.scans[0].fatti[0] === "192.168.5.1");
+  assert.equal(leggiRispostaInCorso([{ ...VERA[0], fatti: "no" }]).ok, false);
+});

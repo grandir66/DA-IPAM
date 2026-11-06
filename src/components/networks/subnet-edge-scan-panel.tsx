@@ -40,6 +40,7 @@ import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/network
 import { slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 import { FinestraAvanzamento, FinestraImpostazioni, RigaMessaggio, useFinestra } from "@/components/networks/subnet-edge-finestra";
 import { SONDA_DA_AGGIORNARE } from "@/lib/vuln/finestra";
+import { AvanzamentoScansione, BloccoHostLenti, useHostLenti, useAvanzamento } from "@/components/networks/subnet-edge-avanzamento";
 
 const SLOT_LABELS: Record<string, string> = {
   ssh: "SSH / Linux",
@@ -185,6 +186,9 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
   const fin = useFinestra(networkId, open);
   const sondaDaAggiornare = fin.dati?.stato === "da_aggiornare";
   const modoEffettivo = sondaDaAggiornare ? "orario" : modo;
+  // A finestra l'avanzamento ce l'ha già `FinestraAvanzamento`, e la regola degli host lenti non scatta.
+  const avanzamento = useAvanzamento(networkId, open && modoEffettivo === "orario");
+  const lenti = useHostLenti(networkId, open && modoEffettivo === "orario");
   // Se la sonda ha già una finestra per questa rete, il pannello si apre sulla finestra.
   const finestraSullaSonda = fin.dati?.stato === "ok" && fin.dati.finestra !== null;
   useEffect(() => {
@@ -580,6 +584,13 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
               </p>
               {last.error_message && <p className="text-sm font-medium">{last.error_message}</p>}
             </div>
+          )}
+
+          {modoEffettivo === "orario" && (
+            <>
+              <AvanzamentoScansione lettura={avanzamento} />
+              <BloccoHostLenti networkId={networkId} lettura={lenti} posto="sopra" />
+            </>
           )}
 
           {/* Layout a 2 colonne: sinistra = scope + scan manuale + credenziali, destra = schedulazione */}
@@ -1036,6 +1047,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
           </div>
 
           {modoEffettivo === "finestra" && <FinestraAvanzamento networkId={networkId} lettura={fin} />}
+          {modoEffettivo === "orario" && <BloccoHostLenti networkId={networkId} lettura={lenti} posto="fondo" />}
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between">
             <Link

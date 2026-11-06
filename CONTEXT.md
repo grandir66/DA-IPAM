@@ -38,7 +38,7 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Impianti verso le sonde — 06/11/2026
 
-`allineaReteEdge` manda a Edge l'elenco di `eImpianto` col job di sincronia (dalla 0.9.987): è l'unica fonte che conosce impianti spenti o noti solo dal costruttore. **Trappola**: le appliance lo ricevono solo con la promozione su `main`; al 72729 l'elenco è scritto a mano il 06/11 e resta fermo fino ad allora. Sul 72729 restano sospesi `fast_scan`, `known_host_check`, `arp_poll`: valori in `/root/job-sospesi-frigo-20261106.json`, si riaccendono solo su ordine di Riccardo. Causa del blocco delle celle non accertata: `TASKS.md`.
+`allineaReteEdge` manda a Edge l'elenco di `eImpianto` col job di sincronia (dalla 0.9.987): è l'unica fonte che conosce impianti spenti o noti solo dal costruttore. Su `main` dal 06/11 (`503bfc0a`, 0.9.990). **Trappola**: un'appliance ferma a una versione precedente non manda l'elenco, e la sonda resta col solo inventario suo. Sul 72729 restano sospesi `fast_scan`, `known_host_check`, `arp_poll`: valori in `/root/job-sospesi-frigo-20261106.json`, si riaccendono solo su ordine di Riccardo. Causa del blocco delle celle non accertata: `TASKS.md`.
 
 ## IP contesi — 06/11/2026
 

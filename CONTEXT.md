@@ -36,6 +36,10 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 `main` = `dev` = `3f0a991e` = **0.9.985**, col sì di Riccardo; visto sul 72729: .52 e .53 riconosciuti. Annunci CDP/LLDP del trunk: `trunk/apparati-dal-trunk.ts` riempie modello e firmware, `attribution/annunci.ts` dà la categoria alle tre facciate dei segnali. Giro notturno `-O` sugli `unknown`: `scanner/profili/sconosciuti.ts`, levetta `automatismo.riconoscimento`, spenta. Vicini SNMP: levetta `automatismo.vicini_snmp`, spenta. Trappole: il filtro `NEIGHBORS_MODEL_SOURCES_SQL` è un freno voluto (ADR 0018), non una svista; le capacità non sono autoritative perché `lldpd` su Linux annuncia bridge e router; `-O` non va mai su stampanti e apparati di campo. Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`.
 
+## Impianti verso le sonde — 06/11/2026
+
+`allineaReteEdge` manda a Edge l'elenco di `eImpianto` col job di sincronia (dalla 0.9.987): è l'unica fonte che conosce impianti spenti o noti solo dal costruttore. **Trappola**: le appliance lo ricevono solo con la promozione su `main`; al 72729 l'elenco è scritto a mano il 06/11 e resta fermo fino ad allora. Sul 72729 restano sospesi `fast_scan`, `known_host_check`, `arp_poll`: valori in `/root/job-sospesi-frigo-20261106.json`, si riaccendono solo su ordine di Riccardo. Causa del blocco delle celle non accertata: `TASKS.md`.
+
 ## IP contesi — 06/11/2026
 
 «Conteso» sta in `src/lib/attribution/contesi.ts` e non è né `count(distinct claim)` né `conflicts` del motore (12 host contro 70 veri sull'hub): una categoria generica non contraddice la sua foglia, un prefisso di produttore è lo stesso produttore. La scelta è un'evidenza `manual`, che vince sempre: le scansioni dopo non cambiano quel dato. **Trappola**: con `classification_manual=1` una scelta di categoria non arriverebbe a `hosts.classification`, quindi quelle righe si vedono e non si scelgono.

@@ -14,6 +14,7 @@ import {
   ArrowUpFromLine,
   Network,
   Scan,
+  ScanSearch,
   Key,
   Settings,
   ServerCog,
@@ -107,6 +108,7 @@ const networkSubItems: readonly SubItem[] = [
 // dal 25/10 (Riccardo): con i rilievi della sonda passiva è una pagina di sicurezza.
 const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
+  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
   { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
   { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
@@ -460,6 +462,8 @@ export function Sidebar() {
     if (href.includes("?")) return attivaConQuery(href);
     // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
     if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
+    // Su Scansioni VA non si accende anche «Vulnerabilità».
+    if (href === "/vulnerabilities" && pathname.startsWith("/vulnerabilities/scansioni")) return false;
     // Sulle Reti dal trunk non si accende anche «Tabella ARP».
     if (href === "/arp-table" && pathname.startsWith("/arp-table/trunk")) return false;
     return pathname.startsWith(href);

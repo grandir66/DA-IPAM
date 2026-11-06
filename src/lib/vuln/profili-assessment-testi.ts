@@ -113,6 +113,24 @@ const PROFILI: Record<string, { aCosaServe: string; quando: string }> = {
   },
 };
 
+/**
+ * Quale voce della pagina Scansioni VA usa quel profilo dell'edge (06/11/2026). Non è un elenco di
+ * profili: la lista resta quella letta dall'edge, e un profilo che l'edge non ha lascia spenta la
+ * voce. Un profilo che qui non compare si sceglie dal pannello VA Scan della rete; quello per i
+ * domini pubblici sta fuori di proposito, perché la pagina lavora sulle reti del cliente.
+ */
+const VOCE_PAGINA: Record<string, VoceScansione> = {
+  "smoke-interno": "moduli-base",
+  "completo-interno": "moduli-completi",
+  "validation-plus": "moduli-verifica",
+};
+
+export type VoceScansione = "moduli-base" | "moduli-completi" | "moduli-verifica";
+
+export function vocePaginaDelProfilo(id: string): VoceScansione | null {
+  return VOCE_PAGINA[id] ?? null;
+}
+
 export function descriviModulo(id: string): DescrizioneModulo {
   const m = MODULI[id];
   if (m) return { ...m, descritto: true };

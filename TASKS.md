@@ -10,6 +10,27 @@ Riccardo (06/11, 08:20): il cliente ha telefonato, «le celle frigo della rete s
 - [ ] Riavvio fisico dei PLC da parte del cliente. Non toccarli da qui: nessun pacchetto mandato
 - [ ] Prima di ogni nuova scansione: mai nuclei, Greenbone o moduli attivi su `plc`, `hmi`, `iot` e sui costruttori industriali. Vale per tutte le sonde
 - [ ] Controllare se altri clienti hanno impianti nelle reti scansionate
+## 2026-11-06 — Pagina Scansioni VA: si parte dal profilo, poi le reti
+
+Task 11 di `DA-Vul-can/docs/superpowers/plans/2026-11-05-base-scansioni.md`. Tavola approvata da Riccardo il 06/11: https://claude.ai/artifact/Brrs7JFGyLNR29dxtQL5V6
+
+- [x] Lancio immediato: lascia sulla rete profilo assessment e ambito, perché Edge legge il profilo dalla sua riga a fine scansione. Quindi avviso anche per Immediata nella colonna «Cosa cambia» (correzione alla tavola)
+- [x] Reti insieme: Edge fa una scansione Greenbone alla volta e accoda le altre (28/10, 79994). Niente gruppi; la pagina mostra «In coda». Una seconda sulla stessa rete Edge la accoderebbe: la pagina la salta
+- [x] Le spunte su host e credenziali si vedono solo con Immediata: pianificazione e finestra non le leggono (differenza dalla tavola)
+- [x] Gli abbinamenti profilo/moduli stanno in `profili-assessment-testi.ts`: il lucchetto di `edge-profiles.test.ts` vieta gli id altrove, e l'elenco resta quello letto da Edge
+- [x] Resa a 1920 vista in locale su dati finti e finto Edge (immediata, pianificata, finestra, esito); lancio su tre reti arrivato al finto Edge
+- [ ] Lancio vero su due reti da una sonda (verifica del Task 11)
+
+## 2026-11-06 — Router MikroTik remoto per le analisi nelle reti dei clienti (idea, rinviata)
+
+Riccardo (06/11): piano per una prova su un cliente «non ora»; si riprende quando lo chiede.
+
+Riccardo (06/11): usare un MikroTik remoto per parte delle analisi presso i clienti, tenendo qui l'installazione principale.
+Letto il codice, niente scritto. Il router non può fare da esecutore (niente nmap); la strada è IPAM instradato attraverso il router, che resta fonte di ARP/DHCP/bridge (`network_router`, `runArpPoll`).
+
+- [x] Riccardo (06/11): il caso è **più clienti**, non più sedi dello stesso cliente
+- Proposta, da confermare: una VM o un LXC per cliente in sede, ciascuno col suo tunnel verso il MikroTik. Tiene valida la decisione del 12/10 (un'installazione = un cliente) e regge reti con gli stessi indirizzi, che un'unica installazione non può distinguere: nel codice non c'è scelta dell'indirizzo sorgente né namespace, e la chiave `ENCRYPTION_KEY` è una per installazione
+- [ ] Da provare se si fa: tunnel giù durante un giro (soglia offline ADR 0006), MAC e `-O` di nmap attraverso il tunnel, `getActiveEdgeScanner` prende una sola Edge per cliente
 
 ## 2026-11-06 — Decisioni di Riccardo sull'analisi del 04/11
 
@@ -127,7 +148,7 @@ Piano: `docs/superpowers/plans/2026-11-05-base-scansioni.md` in DA-Vul-can, bozz
 
 ## 2026-11-05 — Base richiesta per le scansioni (Riccardo)
 
-Riccardo (05/11), dopo il changelog del giorno. Sei parti; vale per DA-IPAM e per Edge in DA-Vul-can, la stessa voce sta nei due `TASKS.md`. Piano ancora da scrivere.
+Riccardo (05/11), dopo il changelog del giorno. Sei parti; vale per DA-IPAM e per Edge in DA-Vul-can, la stessa voce sta nei due `TASKS.md`. Piano: `DA-Vul-can/docs/superpowers/plans/2026-11-05-base-scansioni.md`; la pagina è il Task 11.
 
 1. **Gestione delle scansioni.** Tre modi: immediata, schedulata, a finestra. Immediate e schedulate escono verso IPAM e Vulcan appena finite; quelle a finestra quando è impostato. Ripartenze con lo stato di quanto fatto, per recuperare le scansioni parziali. Pagina dedicata che parte dalla scansione e sceglie le reti, non il contrario.
 2. **Motori.** nmap con più profili che producono indicazioni per assegnare i device e riconoscere OS e tutto il possibile. SNMP con le community di default sempre presenti. nuclei con profili efficaci e controlli per altri parametri.
@@ -137,7 +158,7 @@ Riccardo (05/11), dopo il changelog del giorno. Sei parti; vale per DA-IPAM e pe
 6. **Motori specifici (NUOVO):** verifica di vulnerabilità gravi, «ad esempio php2shell».
 
 - [ ] Da chiarire con Riccardo: cosa intende con «php2shell» e cosa vuol dire il punto 5
-- [ ] Scrivere il piano, una tappa per punto
+- [x] Scrivere il piano, una tappa per punto: è in DA-Vul-can, `docs/superpowers/plans/2026-11-05-base-scansioni.md`
 
 ## 2026-11-05 — Proposta: le scansioni non bloccano la pagina, bacheca dei giri
 

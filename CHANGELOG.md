@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-06 · Scansioni VA: si parte dal profilo, poi le reti
+
+Per fare la stessa scansione su tre reti bisognava aprirle una per una e ripetere gli stessi passi, senza una vista d'insieme di cosa aveva ogni rete.
+
+### Aggiunto
+- **Pagina Scansioni VA** (gruppo Sicurezza): un profilo, le reti, poi Immediata, Pianificata o A finestra. Il profilo unisce la profondità Greenbone e i moduli di Edge; una voce il cui profilo manca sulla sonda si vede e non si sceglie. Le impostazioni restano della singola rete: il pannello VA Scan continua a servire per ritoccarne una.
+- La colonna **Cosa cambia** dice rete per rete cosa succede, anche con l'immediata: il profilo moduli resta salvato sulla rete, quindi una pianificazione esistente lo usa dal giro dopo.
+- Edge fa una scansione alla volta: le reti in più restano **in coda** e la pagina lo mostra. Una rete già in corso o in coda non si può scegliere, perché Edge ne accoderebbe una seconda.
+- **Verifica formale** chiede la conferma dell'autorizzazione scritta del cliente, controllata anche dal server. L'esito è per rete, e «Riprova» agisce solo su quelle fallite.
+
 ## [Non rilasciato] — 2026-11-06 · Gli apparati si riconoscono da ciò che dicono di sé
 
 Al 72729 due Cisco SG200-26 con SNMP spento stavano `unknown` e senza modello mentre si annunciavano col CDP ogni 60 secondi.

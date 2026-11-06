@@ -16,10 +16,11 @@ type Contesto = { params: Promise<{ id: string }> };
 const corpoSchema = z
   .object({
     escludi_lenti: z.boolean().optional(),
+    job_lenti: z.boolean().optional(),
     togli_ip: z.string().trim().min(1).max(64).optional(),
   })
   .strict()
-  .refine((c) => c.escludi_lenti !== undefined || c.togli_ip !== undefined, "Serve «escludi_lenti» o «togli_ip»");
+  .refine((c) => c.escludi_lenti !== undefined || c.job_lenti !== undefined || c.togli_ip !== undefined, "Serve «escludi_lenti», «job_lenti» o «togli_ip»");
 
 async function idRete(ctx: Contesto): Promise<number | null> {
   const { id } = await ctx.params;
@@ -58,6 +59,6 @@ export async function PUT(req: Request, ctx: Contesto) {
     }
     const r = await salvaHostLenti(networkId, parsed.data);
     if (!r.ok) return NextResponse.json({ ok: false, error: r.error, daAggiornare: r.daAggiornare ?? false }, { status: r.status });
-    return NextResponse.json({ escludi_lenti: r.escludi_lenti, host: r.host });
+    return NextResponse.json({ escludi_lenti: r.escludi_lenti, job_lenti: r.job_lenti, host: r.host });
   });
 }

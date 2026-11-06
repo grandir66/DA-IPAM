@@ -92,6 +92,8 @@ export function leggiRispostaInCorso(raw: unknown): { ok: true; scans: Avanzamen
 /** Host lenti di una rete come li dà la sonda (`GET /networks/{id}/host-lenti`). */
 export interface RispostaHostLenti {
   escludi_lenti: boolean;
+  /** Riscansione automatica nel job separato, spenta di serie. Assente su una sonda vecchia: spenta. */
+  job_lenti: boolean;
   host: HostLento[];
 }
 
@@ -99,8 +101,9 @@ export function leggiRispostaHostLenti(raw: unknown): { ok: true; dati: Risposta
   const male = (cosa: string) => ({ ok: false as const, error: `Risposta della sonda non riconosciuta: ${cosa}.` });
   if (!eOggetto(raw)) return male("non è un oggetto");
   if (typeof raw.escludi_lenti !== "boolean") return male("manca «escludi_lenti»");
+  if (raw.job_lenti !== undefined && typeof raw.job_lenti !== "boolean") return male("«job_lenti» non è vero o falso");
   if (!Array.isArray(raw.host) || !raw.host.every(eHostLento)) return male("«host» non è un elenco di {ip, durata_s, volte, visto_at}");
-  return { ok: true, dati: { escludi_lenti: raw.escludi_lenti, host: raw.host.map((h) => ({ ip: h.ip, durata_s: h.durata_s, volte: h.volte, visto_at: h.visto_at })) } };
+  return { ok: true, dati: { escludi_lenti: raw.escludi_lenti, job_lenti: raw.job_lenti === true, host: raw.host.map((h) => ({ ip: h.ip, durata_s: h.durata_s, volte: h.volte, visto_at: h.visto_at })) } };
 }
 
 /** «4h 45», «2 min», «<1 min»: stessa scrittura della tabella «Tempi per IP» di Edge. */

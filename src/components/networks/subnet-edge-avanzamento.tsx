@@ -161,7 +161,7 @@ export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: numb
   const [salvando, setSalvando] = useState(false);
   const d = lettura.dati;
 
-  const salva = async (corpo: { escludi_lenti?: boolean; togli_ip?: string }) => {
+  const salva = async (corpo: { escludi_lenti?: boolean; job_lenti?: boolean; togli_ip?: string }) => {
     setSalvando(true);
     try {
       const res = await fetchJson<RispostaHostLenti>(`/api/networks/${networkId}/edge-scan/host-lenti`, {
@@ -187,17 +187,34 @@ export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: numb
   if (conHost !== (posto === "sopra")) return null;
 
   const interruttore = (
-    <div className="flex items-start gap-2.5">
-      <Switch
-        id={`escludi-lenti-${networkId}`}
-        checked={d.escludi_lenti}
-        disabled={salvando}
-        onCheckedChange={(v) => void salva({ escludi_lenti: v })}
-        className="mt-0.5"
-      />
-      <div>
-        <Label htmlFor={`escludi-lenti-${networkId}`} className="text-sm">Escludi gli host lenti dalla scansione principale</Label>
-        <p className={NOTA}>Vanno subito nel job separato, dopo le altre scansioni della sonda.</p>
+    <div className="space-y-2.5">
+      <div className="flex items-start gap-2.5">
+        <Switch
+          id={`escludi-lenti-${networkId}`}
+          checked={d.escludi_lenti}
+          disabled={salvando}
+          onCheckedChange={(v) => void salva({ escludi_lenti: v })}
+          className="mt-0.5"
+        />
+        <div>
+          <Label htmlFor={`escludi-lenti-${networkId}`} className="text-sm">Escludi gli host lenti dalla scansione principale</Label>
+          <p className={NOTA}>
+            {d.job_lenti ? "Vanno subito nel job separato, dopo le altre scansioni della sonda." : "Restano fuori dalla scansione finché non li riporti."}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-start gap-2.5">
+        <Switch
+          id={`job-lenti-${networkId}`}
+          checked={d.job_lenti}
+          disabled={salvando}
+          onCheckedChange={(v) => void salva({ job_lenti: v })}
+          className="mt-0.5"
+        />
+        <div>
+          <Label htmlFor={`job-lenti-${networkId}`} className="text-sm">Riscansiona gli host lenti in un job separato</Label>
+          <p className={NOTA}>Spento di serie. Da non accendere sulle reti con impianti: un host lento può essere un PLC in difficoltà.</p>
+        </div>
       </div>
     </div>
   );

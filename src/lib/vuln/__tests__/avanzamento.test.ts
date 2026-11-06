@@ -16,7 +16,7 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { encrypt } from "@/lib/crypto";
-import { leggiRispostaInCorso, testoDurata, daQuanto, percentoBarra } from "@/lib/vuln/avanzamento";
+import { leggiRispostaHostLenti, leggiRispostaInCorso, testoDurata, daQuanto, percentoBarra } from "@/lib/vuln/avanzamento";
 import { leggiAvanzamento, leggiHostLenti, salvaHostLenti } from "@/lib/vuln/edge-subnet-bridge";
 import { leggiAvanzamentoRotta } from "@/lib/vuln/avanzamento-rotta";
 
@@ -28,7 +28,7 @@ const VERA = [
     in_analisi: [], da_fare: [], lenti: [] },
 ];
 
-const LENTI = { escludi_lenti: true, host: [{ ip: "192.168.5.7", durata_s: null, volte: 3, visto_at: "2026-11-06 08:00:00" }] };
+const LENTI = { escludi_lenti: true, job_lenti: false, host: [{ ip: "192.168.5.7", durata_s: null, volte: 3, visto_at: "2026-11-06 08:00:00" }] };
 let lentiVecchia = false;
 let server: Server;
 let risposta: { status: number; body: string } = { status: 200, body: "[]" };
@@ -154,6 +154,15 @@ test("percentoBarra preferisce Greenbone e ripiega sugli IP finiti", () => {
   assert.equal(percentoBarra({ percento: 96, finiti: 1, totale: 4 }), 96);
   assert.equal(percentoBarra({ percento: null, finiti: 1, totale: 4 }), 25);
   assert.equal(percentoBarra({ percento: null, finiti: 0, totale: 0 }), 0);
+});
+
+test("job_lenti: spento se la sonda non lo dice, un valore sbagliato è un errore", () => {
+  const base = { escludi_lenti: false, host: [] };
+  const vecchia = leggiRispostaHostLenti(base);
+  assert.ok(vecchia.ok && vecchia.dati.job_lenti === false);
+  const accesa = leggiRispostaHostLenti({ ...base, job_lenti: true });
+  assert.ok(accesa.ok && accesa.dati.job_lenti === true);
+  assert.equal(leggiRispostaHostLenti({ ...base, job_lenti: "sì" }).ok, false);
 });
 
 test("fatti: una sonda senza il campo dà elenco vuoto, un campo sbagliato è un errore", () => {

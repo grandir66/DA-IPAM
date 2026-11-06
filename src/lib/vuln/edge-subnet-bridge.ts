@@ -977,13 +977,14 @@ export async function leggiHostLenti(networkId: number): Promise<StatoHostLenti>
 }
 
 /**
- * `PUT /networks/{id}/host-lenti`: `escludi_lenti` accende o spegne l'esclusione, `togli_ip` toglie
+ * `PUT /networks/{id}/host-lenti`: `escludi_lenti` accende o spegne l'esclusione, `job_lenti` la
+ * riscansione nel job separato, `togli_ip` toglie
  * un IP dall'elenco. 404 della sonda per rete o IP assenti resta 404 col suo motivo; un 404 «Not Found»
  * (rotta assente) è «sonda da aggiornare» (409, `daAggiornare`).
  */
 export async function salvaHostLenti(
   networkId: number,
-  corpo: { escludi_lenti?: boolean; togli_ip?: string },
+  corpo: { escludi_lenti?: boolean; job_lenti?: boolean; togli_ip?: string },
 ): Promise<EsitoSalvaHostLenti> {
   const pronta = sondaPronta();
   if (!pronta.ok) return { ok: false, error: pronta.error, status: 409 };

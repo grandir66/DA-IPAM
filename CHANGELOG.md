@@ -17,7 +17,7 @@ Per fare la stessa scansione su tre reti bisognava aprirle una per una e ripeter
 ## [Non rilasciato] — 2026-11-06 · Avanzamento per IP e host lenti nel pannello VA Scan
 
 - A scansione aperta il pannello della rete dice quale IP è in analisi e da quanto, quali sono fatti e quali da fare: prima si vedeva solo a fine scansione, o entrando su Edge.
-- Gli host lenti di una rete si vedono nello stesso pannello, con il comando per riportarli nella scansione e l'interruttore per escluderli, spento di serie. Cambiarli è da amministratore.
+- Gli host lenti di una rete si vedono nello stesso pannello, con il comando per riportarli nella scansione e gli interruttori per escluderli e per riscansionarli in un job separato, tutti e due spenti di serie: al 72729 i PLC sono spariti durante una scansione, e un host lento può essere proprio un apparato che soffre. Cambiarli è da amministratore.
 - A finestra questi blocchi non compaiono: l'avanzamento c'è già e la regola degli host lenti non scatta.
 
 ## [Non rilasciato] — 2026-11-06 · Gli apparati si riconoscono da ciò che dicono di sé

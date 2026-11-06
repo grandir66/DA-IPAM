@@ -12,6 +12,11 @@
  *   4. GET /api/v1/cve?since=last_sync_at paginato → bulk insert in vuln_findings
  *   5. match host_id su (ip, network_id) — single match assegna, multi/zero NULL
  *   6. update last_sync_at; errori → last_error, non rilancia
+ *
+ * Rilievi a scansione aperta (06/11/2026, piano host lenti): in un passo separato (`sincronizzaInCorso`),
+ * che non ferma mai la sincronia, la sonda dà i rilievi degli host già finiti di una scansione ancora
+ * aperta. Stanno in un giro `status = 'in_corso'`, sostituiti per intero a ogni sincronia. Alla chiusura
+ * il giro prende i definitivi di `/cve` e perde quelli in corso (vedi `chiusure` e `sinceEffettivo`).
  */
 
 import { statoDelGiro } from "@/lib/vuln/esito-scansione";
@@ -21,8 +26,10 @@ import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getNetworks } from "@/lib/db";
 import {
   EdgeClientError,
+  eSondaSenzaInCorso,
   listScans,
   pullFindings,
+  pullRilieviInCorso,
   type EdgeFinding,
   type EdgeScan,
   type VulnScannerRow,
@@ -36,6 +43,21 @@ interface HostMatchRow {
 
 function nowIso(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+/** Le date della sonda e di `last_sync_at` si confrontano come testo «AAAA-MM-GG hh:mm:ss» (UTC). */
+function normalizzaData(d: string): string {
+  return d.replace("T", " ").slice(0, 19);
+}
+
+/** Dopo quante ore senza che la sonda lo dia più un giro aperto si chiude (parziale o errore). */
+const ORE_GIRO_ORFANO = 48;
+const PAGINA_RILIEVI = 1000;
+const OFFSET_MASSIMO = 100000;
+
+interface Chiusura {
+  runId: number;
+  scan: EdgeScan;
 }
 
 /**
@@ -111,6 +133,21 @@ export async function runVulnSync(): Promise<{
     const fallite = (await listScans(scanner, undefined, "error")).filter((s) => s.status === "error");
     const scans: EdgeScan[] = [...(await listScans(scanner, since)), ...fallite];
 
+    // Giri rimasti `in_corso` da una sincronia precedente: la sonda può averli chiusi fra l'elenco dei
+    // running e la fine di quella sincronia (finished_at <= last_sync_at), e allora `since` non li
+    // elenca più. Si chiedono senza `since`, solo per questi, e solo se ce ne sono.
+    const apertiLocali = db
+      .prepare("SELECT edge_scan_uid FROM vuln_scan_runs WHERE scanner_id = ? AND status = 'in_corso' AND edge_scan_uid IS NOT NULL")
+      .all(scanner.id) as Array<{ edge_scan_uid: string }>;
+    if (apertiLocali.length > 0) {
+      const uids = new Set(apertiLocali.map((r) => r.edge_scan_uid));
+      const visti = new Set(scans.map((x) => x.gvm_report_id).filter((u): u is string => !!u));
+      for (const chiusa of await listScans(scanner)) {
+        const u = chiusa.gvm_report_id;
+        if (u && uids.has(u) && !visti.has(u)) scans.push(chiusa);
+      }
+    }
+
     // network_id qui resta NULL: l'ID arrivato dall'edge è dello *suo*
     // namespace e non corrisponde a `networks.id` lato IPAM. Il match host
     // viene fatto per IP a valle (vedi matchHostId). Eventuale mapping
@@ -128,25 +165,30 @@ export async function runVulnSync(): Promise<{
        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     );
     const findByUid = db.prepare(
-      "SELECT id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_uid = ?",
+      "SELECT id, status FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_uid = ?",
     );
     const findByLocalId = db.prepare(
-      "SELECT id, edge_scan_uid FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
+      "SELECT id, edge_scan_uid, status FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
     );
     const detachStaleLocalId = db.prepare(
       "UPDATE vuln_scan_runs SET edge_scan_id = NULL WHERE id = ?",
     );
 
     const scanRunByEdgeId = new Map<number, { runId: number; networkId: number | null }>();
+    const chiusure: Chiusura[] = [];
     for (const s of scans) {
       const uid = s.gvm_report_id ?? null;
 
       // già importato? (per UUID se disponibile, altrimenti per id locale)
       const already = (uid
         ? findByUid.get(scanner.id, uid)
-        : findByLocalId.get(scanner.id, s.id)) as { id: number } | undefined;
+        : findByLocalId.get(scanner.id, s.id)) as { id: number; status: string | null } | undefined;
       if (already) {
         scanRunByEdgeId.set(s.id, { runId: already.id, networkId: s.network_id });
+        // Un giro tenuto aperto che la sonda ora dà chiuso: si completa DOPO il pull dei definitivi.
+        if (already.status === "in_corso" && s.status !== "running" && !chiusure.some((c) => c.runId === already.id)) {
+          chiusure.push({ runId: already.id, scan: s });
+        }
         continue;
       }
 
@@ -214,10 +256,38 @@ export async function runVulnSync(): Promise<{
       "SELECT id, network_id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_id = ?",
     );
 
+    // `since` per i giri che chiudono. I definitivi hanno `scanned_at = datetime('now')` della sonda al
+    // parse (parse_cve.py), cioè alla chiusura; `last_sync_at` lo scrive la sincronia a fine corsa. Se la
+    // scansione chiude mentre quella sincronia gira, `scanned_at <= last_sync_at` e col solo `since` i
+    // definitivi non arriverebbero mai (e i rilievi in corso, cancellati, sarebbero persi). Quindi per
+    // questa sincronia `since` scende a poco prima della partenza del giro più vecchio fra quelli che
+    // chiudono (stesso orologio della sonda); ma la fascia in più (sinceEffettivo, since] può contenere
+    // rilievi già importati di altri giri, append-only: lì si accettano solo quelli dei giri che chiudono.
+    const sinceNorm = since ? normalizzaData(since) : undefined;
+    let sinceEffettivo = since;
+    if (since && chiusure.length > 0) {
+      const partenze = chiusure.map((c) => (c.scan.started_at ? Date.parse(normalizzaData(c.scan.started_at).replace(" ", "T") + "Z") : NaN));
+      if (partenze.some((t) => Number.isNaN(t))) {
+        sinceEffettivo = undefined; // partenza illeggibile: nessun limite, il filtro per giro evita i doppioni
+      } else {
+        const prima = normalizzaData(new Date(Math.min(...partenze) - 1000).toISOString());
+        if (prima < normalizzaData(since)) sinceEffettivo = prima;
+      }
+    }
+    const filtraFascia = sinceEffettivo !== since;
+    const edgeIdChiusi = new Set(chiusure.map((c) => c.scan.id));
+    const cancellaDelGiro = db.prepare("DELETE FROM vuln_findings WHERE scan_run_id = ?");
+    let daPulire = chiusure.map((c) => c.runId);
+
     // Transaction wrapper per bulk insert
     const insertMany = db.transaction((findings: EdgeFinding[]) => {
+      // Insieme ai primi definitivi (o alla pagina vuota) escono i rilievi in corso dei giri che chiudono,
+      // e anche eventuali definitivi di un tentativo precedente interrotto: il giro si rifà da zero.
+      for (const runId of daPulire) cancellaDelGiro.run(runId);
+      daPulire = [];
       for (const grezzo of findings) {
         const f = normalizzaRilievoControllo(grezzo);
+        if (filtraFascia && !edgeIdChiusi.has(f.scan_id) && !(sinceNorm && normalizzaData(f.scanned_at) > sinceNorm)) continue;
         let runRef = scanRunByEdgeId.get(f.scan_id);
         if (!runRef) {
           const r = findRunByEdgeId.get(scanner.id, f.scan_id) as
@@ -250,9 +320,9 @@ export async function runVulnSync(): Promise<{
     });
 
     while (true) {
-      const page = await pullFindings(scanner, { since, offset, limit });
+      const page = await pullFindings(scanner, { since: sinceEffettivo, offset, limit });
+      insertMany(page.items); // anche vuota: toglie i rilievi in corso dei giri che chiudono
       if (page.items.length === 0) break;
-      insertMany(page.items);
       if (page.next_offset === null) break;
       offset = page.next_offset;
       if (offset > 100000) {
@@ -260,6 +330,15 @@ export async function runVulnSync(): Promise<{
         console.warn(`[vuln-sync] offset > 100k su scanner ${scanner.id}, abort`);
         break;
       }
+    }
+
+    // Pull finito senza errori: i giri che chiudevano chiudono davvero. Se il pull fosse fallito sarebbero
+    // rimasti `in_corso` e il prossimo giro li rifarebbe da zero.
+    const chiudi = db.prepare(
+      "UPDATE vuln_scan_runs SET status = ?, finished_at = ?, finding_count = ?, error_message = ? WHERE id = ?",
+    );
+    for (const c of chiusure) {
+      chiudi.run(statoDelGiro(c.scan), c.scan.finished_at, c.scan.finding_count, c.scan.error_message ?? null, c.runId);
     }
 
     ripulisciRilieviControlli(db);
@@ -271,6 +350,9 @@ export async function runVulnSync(): Promise<{
     if (contiCorretti > 0) {
       console.info(`[vuln-sync] finding_count riallineato su ${contiCorretti} giri dello scanner ${scanner.id}`);
     }
+
+    // Rilievi a scansione aperta: passo a sé, mai un errore per la sincronia (vedi la funzione).
+    await sincronizzaInCorso(db, scanner);
 
     // Push-hosts periodico: aggiorna inventario sull'edge per le reti con
     // targeting_mode dinamico (found_ips / populated_24). Le reti full_subnet
@@ -346,5 +428,115 @@ export async function runVulnSync(): Promise<{
       ).run(msg.slice(0, 500), newCount, scanner.id);
     }
     return { ok: false, newScans, newFindings, error: msg };
+  }
+}
+
+/**
+ * Rilievi degli host finiti di una scansione ancora aperta. Mai un errore per la sincronia: una sonda
+ * vecchia (404/422) si salta, ogni altro guasto si scrive nel log e `last_sync_at`, `last_error` e i
+ * contatori dello scanner restano quelli del flusso normale.
+ *
+ * Per ogni scansione `running` con UUID: giro `in_corso` (uno solo per UUID), tutte le pagine di
+ * `/rilievi-in-corso` raccolte PRIMA della transazione, poi cancellazione e riscrittura dei rilievi del
+ * giro in un colpo solo: una pagina che fallisce non cancella niente. Una lista vuota con rilievi già
+ * tenuti vuol dire che la scansione ha chiuso fra l'elenco e la richiesta: si lascia com'è, i
+ * definitivi arrivano alla prossima sincronia.
+ */
+async function sincronizzaInCorso(db: ReturnType<typeof getTenantDb>, scanner: VulnScannerRow): Promise<void> {
+  try {
+    let running: EdgeScan[];
+    try {
+      // Un edge ancora più vecchio ignora `stato` e rimanda le chiuse: il filtro le scarta.
+      running = (await listScans(scanner, undefined, "running")).filter((s) => s.status === "running");
+    } catch (e) {
+      if (eSondaSenzaInCorso(e)) return; // sonda da aggiornare, niente di rotto
+      throw e;
+    }
+
+    const findByUid = db.prepare("SELECT id, status, network_id FROM vuln_scan_runs WHERE scanner_id = ? AND edge_scan_uid = ?");
+    const liberaIdLocale = db.prepare(
+      "UPDATE vuln_scan_runs SET edge_scan_id = NULL WHERE scanner_id = ? AND edge_scan_id = ? AND COALESCE(edge_scan_uid, '') <> ?",
+    );
+    const insertRun = db.prepare(
+      `INSERT INTO vuln_scan_runs (scanner_id, edge_scan_id, edge_scan_uid, network_id, started_at, finished_at, finding_count, status, error_message)
+       VALUES (?, ?, ?, NULL, ?, NULL, ?, 'in_corso', NULL)`,
+    );
+    const cancellaDelGiro = db.prepare("DELETE FROM vuln_findings WHERE scan_run_id = ?");
+    const contaDelGiro = db.prepare("SELECT COUNT(*) AS n FROM vuln_findings WHERE scan_run_id = ?");
+    const aggiornaConteggio = db.prepare("UPDATE vuln_scan_runs SET finding_count = ? WHERE id = ?");
+    const insertFinding = db.prepare(
+      `INSERT INTO vuln_findings
+        (host_id, scan_run_id, ip, mac, hostname, port, service,
+         cve_id, cvss_score, cvss_vector, severity,
+         nvt_oid, nvt_name, description, scanned_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const sostituisci = db.transaction((runId: number, networkId: number | null, items: EdgeFinding[]) => {
+      cancellaDelGiro.run(runId);
+      for (const grezzo of items) {
+        const f = normalizzaRilievoControllo(grezzo);
+        insertFinding.run(
+          matchHostId(db, f.ip, f.network_id ?? networkId), runId, f.ip, f.mac, f.hostname, f.port, f.service,
+          f.cve_id, f.cvss_score, f.cvss_vector, f.severity, f.nvt_oid, f.nvt_name, f.description, f.scanned_at,
+        );
+      }
+      aggiornaConteggio.run(items.length, runId);
+    });
+
+    const uidVisti = new Set<string>();
+    for (const s of running) {
+      const uid = s.gvm_report_id;
+      if (!uid) continue; // appena partita: il report Greenbone non c'è ancora, si riprende alla prossima
+      uidVisti.add(uid);
+      try {
+        let run = findByUid.get(scanner.id, uid) as { id: number; status: string | null; network_id: number | null } | undefined;
+        if (run && run.status !== "in_corso") continue; // già chiusa e importata dal flusso normale
+        if (!run) {
+          liberaIdLocale.run(scanner.id, s.id, uid);
+          const info = insertRun.run(scanner.id, s.id, uid, s.started_at, s.finding_count ?? 0);
+          run = { id: Number(info.lastInsertRowid), status: "in_corso", network_id: null };
+        }
+
+        const items: EdgeFinding[] = [];
+        let offset = 0;
+        for (;;) {
+          const pagina = await pullRilieviInCorso(scanner, s.id, { offset, limit: PAGINA_RILIEVI });
+          items.push(...pagina.items);
+          if (pagina.next_offset === null || pagina.items.length === 0) break;
+          offset = pagina.next_offset;
+          if (offset > OFFSET_MASSIMO) throw new Error(`offset > ${OFFSET_MASSIMO} sui rilievi in corso`);
+        }
+        const tenuti = (contaDelGiro.get(run.id) as { n: number }).n;
+        if (items.length === 0 && tenuti > 0) continue;
+        sostituisci(run.id, s.network_id, items);
+      } catch (e) {
+        // Un giro che non si legge non ferma gli altri né la sincronia; i rilievi già tenuti restano.
+        const msg = e instanceof EdgeClientError ? `edge HTTP ${e.status}` : e instanceof Error ? e.message : "errore sconosciuto";
+        console.warn(`[vuln-sync] rilievi in corso della scansione ${s.id} non letti: ${msg}`);
+      }
+    }
+
+    // Un giro aperto che la sonda non dà più (scansione cancellata, sonda ricostruita) non resta aperto
+    // per sempre. I rilievi tenuti sono di host finiti e sono veri: si tengono, il giro diventa
+    // `parziale` (o `error` se non ne ha), come una scansione fermata.
+    const limite = normalizzaData(new Date(Date.now() - ORE_GIRO_ORFANO * 3600_000).toISOString());
+    const aperti = db
+      .prepare("SELECT id, edge_scan_uid, COALESCE(started_at, pulled_at) AS partito FROM vuln_scan_runs WHERE scanner_id = ? AND status = 'in_corso'")
+      .all(scanner.id) as Array<{ id: number; edge_scan_uid: string | null; partito: string | null }>;
+    const chiudiOrfano = db.prepare("UPDATE vuln_scan_runs SET status = ?, finished_at = ?, error_message = ? WHERE id = ?");
+    for (const r of aperti) {
+      if ((r.edge_scan_uid && uidVisti.has(r.edge_scan_uid)) || !r.partito || normalizzaData(r.partito) >= limite) continue;
+      const n = (contaDelGiro.get(r.id) as { n: number }).n;
+      chiudiOrfano.run(
+        n > 0 ? "parziale" : "error",
+        nowIso(),
+        `La sonda non dà più la scansione da oltre ${ORE_GIRO_ORFANO} ore: giro chiuso senza esito` + (n > 0 ? "; tenuti i rilievi degli host finiti" : ""),
+        r.id,
+      );
+    }
+    riagganciaHost(db);
+  } catch (e) {
+    const msg = e instanceof EdgeClientError ? `edge HTTP ${e.status}` : e instanceof Error ? e.message : "errore sconosciuto";
+    console.warn(`[vuln-sync] rilievi a scansione aperta non sincronizzati: ${msg}`);
   }
 }

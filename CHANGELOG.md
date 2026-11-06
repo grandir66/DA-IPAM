@@ -31,6 +31,10 @@ Al 72729 due Cisco SG200-26 con SNMP spento stavano `unknown` e senza modello me
 
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
+- **Nuovo**: i rilievi di una scansione ancora aperta arrivano a mano a mano che gli host finiscono, senza aspettare la fine (anche di ore). La sincronia con la sonda li tiene in un giro «in corso» che sostituisce per intero a ogni passaggio; alla chiusura il giro prende i rilievi definitivi, e se una scansione chiude mentre la sincronia sta ancora girando il limite `since` scende apposta, altrimenti quei rilievi non sarebbero mai arrivati. Un giro che la sonda non dà più da 48 ore si chiude come parziale tenendo i rilievi degli host finiti. Una sonda senza le rotte nuove continua come prima. Richiede Edge dalla versione che le espone.
+
+- **Nuovo**: `GET /api/networks/[id]/edge-scan/avanzamento` dà l'avanzamento per IP della scansione aperta di una rete (host finiti, in analisi e da quanto, da fare), letto dalla sonda e abbinato per CIDR. Con una sonda vecchia risponde «da aggiornare», non un errore. Il pannello arriva a parte.
+
 - **Nuovo**: il pulsante «Attribuzione» della rete apre gli **IP contesi**: una riga per ogni dato su cui le fonti non concordano, una colonna per fonte, un clic sulla cella e quel valore diventa la scelta manuale dell'IP. L'anteprima mostrava solo il prima e il dopo, quindi una persona non poteva decidere guardando cosa dice ogni fonte. Si scelgono solo valori detti da una fonte; `compute` accanto a `compute.server` e `proxmox` accanto a `proxmox-server-solutions` non contano come contrasto.
 
 - **Nuovo**: collector Infoblox (`infoblox-nios`) in sola lettura per reti, DHCP e DNS, da riga di comando. Era collaudato su un ramo a parte dal 03/11 e rischiava di invecchiare lì; non scrive ancora nulla nell'inventario, perché il modello dei dati va deciso prima.

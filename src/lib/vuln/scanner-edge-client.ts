@@ -26,6 +26,7 @@ import { connect as tlsConnect } from "node:tls";
 import { URL } from "node:url";
 import { safeDecrypt } from "@/lib/crypto";
 import { parseEdgeProfilesResponse, type EdgeProfilesList } from "@/lib/vuln/edge-profiles";
+import { leggiRispostaInCorso, type AvanzamentoScan } from "@/lib/vuln/avanzamento";
 
 /**
  * Probe TLS preliminare: apre una connessione, legge il cert peer e
@@ -555,13 +556,54 @@ export async function listEdgeProfiles(
 export async function listScans(
   scanner: VulnScannerRow,
   since?: string,
-  stato?: "error",
+  stato?: "error" | "running",
 ): Promise<EdgeScan[]> {
   const params = new URLSearchParams();
   if (since) params.set("since", since);
   if (stato) params.set("stato", stato);
   const q = params.size > 0 ? `?${params}` : "";
   return edgeFetch<EdgeScan[]>(scanner, `/api/v1/scans${q}`);
+}
+
+/**
+ * Una sonda che non ha le rotte dei rilievi a scansione aperta (06/11/2026): `stato=running` dà 422
+ * (il filtro ammette solo done/error), `/scans/in-corso` cade su `/scans/{scan_id}` con un id non
+ * numerico (422), una rotta assente dà 404. Per chi chiama vuol dire «sonda da aggiornare», non un guasto.
+ */
+export function eSondaSenzaInCorso(e: unknown): boolean {
+  return e instanceof EdgeClientError && (e.status === 422 || e.status === 404);
+}
+
+/** Pagina dei rilievi di una scansione ancora aperta: stesse 16 chiavi di `/cve`. */
+export type EdgeRilieviInCorsoPage = EdgeCvePage;
+
+/**
+ * Avanzamento per IP delle scansioni aperte (`GET /api/v1/scans/in-corso`). Una forma diversa dal
+ * contratto è un errore detto, non una lista vuota. Sonda vecchia: `EdgeClientError` 404/422
+ * (vedi `eSondaSenzaInCorso`), che chi chiama traduce in «sonda da aggiornare».
+ */
+export async function listaInCorso(scanner: VulnScannerRow): Promise<AvanzamentoScan[]> {
+  const raw = await edgeFetch<unknown>(scanner, "/api/v1/scans/in-corso", {}, { timeoutMs: 15000 });
+  const letta = leggiRispostaInCorso(raw);
+  if (!letta.ok) throw new EdgeClientError(502, letta.error);
+  return letta.scans;
+}
+
+/** Rilievi in corso di una scansione aperta; lista vuota se nel frattempo ha chiuso, 404 se non esiste. */
+export async function pullRilieviInCorso(
+  scanner: VulnScannerRow,
+  scanId: number,
+  opts: { offset?: number; limit?: number } = {},
+): Promise<EdgeRilieviInCorsoPage> {
+  const params = new URLSearchParams();
+  params.set("offset", String(opts.offset ?? 0));
+  params.set("limit", String(opts.limit ?? 1000));
+  return edgeFetch<EdgeRilieviInCorsoPage>(
+    scanner,
+    `/api/v1/scans/${encodeURIComponent(String(scanId))}/rilievi-in-corso?${params.toString()}`,
+    {},
+    { timeoutMs: 30000 },
+  );
 }
 
 export async function pullFindings(

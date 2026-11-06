@@ -19,8 +19,11 @@ import {
   edgeApiPost,
   edgeApiPut,
   edgeApiDelete,
+  eSondaSenzaInCorso,
+  listaInCorso,
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
+import type { AvanzamentoRete } from "@/lib/vuln/avanzamento";
 import { impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
@@ -754,6 +757,28 @@ export async function leggiFinestra(networkId: number): Promise<StatoFinestra> {
     return { stato: "ok", ...letta.dati };
   } catch (e) {
     if (eSondaSenzaFinestra(e)) return { stato: "da_aggiornare" };
+    return { stato: "errore", messaggio: motivoEdge(e) };
+  }
+}
+
+/**
+ * Avanzamento per IP della scansione aperta di una rete (06/11/2026), dalla sonda e senza toccare
+ * Greenbone. Abbinata alla rete per CIDR, come la finestra: gli id della sonda non sono quelli di
+ * DA-IPAM. `null` = la sonda risponde e la rete non ha scansioni aperte; una sonda senza la rotta
+ * (404/422) è `da_aggiornare`, non un errore.
+ */
+export async function leggiAvanzamento(networkId: number): Promise<AvanzamentoRete | null> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { stato: "sonda_assente", messaggio: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { stato: "errore", messaggio: "Rete non trovata" };
+  try {
+    const scans = await listaInCorso(pronta.scanner);
+    const cidr = network.cidr.trim();
+    const sua = scans.find((s) => s.cidr.trim() === cidr);
+    return sua ? { stato: "ok", ...sua } : null;
+  } catch (e) {
+    if (eSondaSenzaInCorso(e)) return { stato: "da_aggiornare" };
     return { stato: "errore", messaggio: motivoEdge(e) };
   }
 }

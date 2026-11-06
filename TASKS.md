@@ -21,7 +21,8 @@ Task 11 di `DA-Vul-can/docs/superpowers/plans/2026-11-05-base-scansioni.md`. Tav
 - [x] Resa a 1920 vista in locale su dati finti e finto Edge (immediata, pianificata, finestra, esito); lancio su tre reti arrivato al finto Edge
 - [x] Riccardo (06/11): freno prima di pubblicare. Rete con `plc`, `hmi`, `iot`, `rete_ot`, `sensore`, porte di campo o costruttori di campo: non si sceglie e il server la salta, in tutti e tre i modi (`src/lib/vuln/impianti-in-rete.ts`). Prova vista fallire
 - [ ] Limiti del freno: solo questa pagina (pannello VA Scan e piani salvati no), solo ciò che l'inventario conosce, intera rete e non il singolo host. La regola vera va su Edge, con l'esclusione dei singoli host: voce URGENTE 72729 qui sopra
-- [ ] Lancio vero su due reti da una sonda (verifica del Task 11)
+- [x] 0.9.986 su `dev` (`6447649f`), hub 533 aggiornata il 06/11: pagina 200, Edge 0.8.258 letta, 4 voci attive, 7 reti di cui 2 fermate dal freno, POST da sola lettura 403. Letta via HTTP: il Chrome di prova non raggiunge l'hub, quindi la resa sul dato vero non è vista
+- [ ] Lancio vero su due reti da una sonda (verifica del Task 11), dopo l'esclusione dei singoli host su Edge
 
 ## 2026-11-06 — Router MikroTik remoto per le analisi nelle reti dei clienti (idea, rinviata)
 

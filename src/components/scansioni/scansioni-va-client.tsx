@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Loader2, RotateCw, Search } from "lucide-react";
+import { AvanzamentoDellaRete } from "@/components/networks/subnet-edge-avanzamento";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -348,6 +349,10 @@ export function ScansioniVaClient() {
         <TesseraNumero titolo="Pianificate" valore={numeri?.pianificate ?? null} />
         <TesseraNumero titolo="A finestra" valore={numeri?.aFinestra ?? null} />
       </div>
+
+      {quadro.reti.filter((r) => r.attivita === "in_corso").map((r) => (
+        <AvanzamentoDellaRete key={r.id} networkId={r.id} nome={r.nome} cidr={r.cidr} />
+      ))}
 
       <Pannello
         numero={1}

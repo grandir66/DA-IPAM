@@ -157,6 +157,17 @@ export function AvanzamentoScansione({ lettura }: { lettura: Lettura<StatoAvanza
   );
 }
 
+/** Lo stesso blocco per una rete della pagina Scansioni VA: un componente per rete, perché legge da sé. */
+export function AvanzamentoDellaRete({ networkId, nome, cidr }: { networkId: number; nome: string; cidr: string }) {
+  const lettura = useAvanzamento(networkId, true);
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm font-semibold">{nome} <span className="font-mono font-normal text-muted-foreground">{cidr}</span></p>
+      <AvanzamentoScansione lettura={lettura} />
+    </div>
+  );
+}
+
 export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: number; lettura: Lettura<StatoHostLenti>; posto: "sopra" | "fondo" }) {
   const [salvando, setSalvando] = useState(false);
   const d = lettura.dati;

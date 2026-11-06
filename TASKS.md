@@ -1,5 +1,11 @@
 # TASKS — DA-IPAM
 
+## 2026-11-06 — Una VA non deve poter fermare una rete (Riccardo)
+
+Riccardo (06/11): marcatempo bloccato al 72729, «non posso distruggere una rete per una va». Fatti e proposta in `DA-Vul-can/TASKS.md`, stessa data.
+
+- [ ] Qui il buco: `eImpianto` lo usa solo `scansioni-va.ts`; `fast_scan` e `known_host_check` non guardano l'elenco degli impianti. Si chiude col lavoro proposto, che aspetta il via di Riccardo
+
 ## 2026-11-06 — Scansioni per tipo di device (idea di Riccardo, piano in bozza)
 
 Riccardo (06/11): prima scansione delicata, poi proposta di profilo per device e scansioni separate per tipologia anche nella stessa rete. Piano e domande: `DA-Vul-can/docs/superpowers/plans/2026-11-06-profili-per-device.md`. Non parte senza il suo sì.

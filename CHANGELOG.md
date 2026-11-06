@@ -12,6 +12,7 @@ Per fare la stessa scansione su tre reti bisognava aprirle una per una e ripeter
 - **Pagina Scansioni VA** (gruppo Sicurezza): un profilo, le reti, poi Immediata, Pianificata o A finestra. Il profilo unisce la profondità Greenbone e i moduli di Edge; una voce il cui profilo manca sulla sonda si vede e non si sceglie. Le impostazioni restano della singola rete: il pannello VA Scan continua a servire per ritoccarne una.
 - La colonna **Cosa cambia** dice rete per rete cosa succede, anche con l'immediata: il profilo moduli resta salvato sulla rete, quindi una pianificazione esistente lo usa dal giro dopo.
 - Edge fa una scansione alla volta: le reti in più restano **in coda** e la pagina lo mostra. Una rete già in corso o in coda non si può scegliere, perché Edge ne accoderebbe una seconda.
+- **Freno sugli impianti**: una rete con PLC, HMI, IoT, porte di campo o costruttori di campo non si sceglie e non parte, nemmeno chiamando la rotta. Al 72729 i PLC delle celle frigo sono spariti due volte durante una scansione: la coincidenza non è una prova, ma un clic su più reti non può passarci sopra. Vale solo per questa pagina: il pannello VA Scan e i piani già salvati restano come sono, e una rete mai rilevata non ha host da guardare.
 - **Verifica formale** chiede la conferma dell'autorizzazione scritta del cliente, controllata anche dal server. L'esito è per rete, e «Riprova» agisce solo su quelle fallite.
 
 ## [Non rilasciato] — 2026-11-06 · Gli apparati si riconoscono da ciò che dicono di sé

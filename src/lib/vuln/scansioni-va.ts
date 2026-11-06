@@ -3,7 +3,7 @@
  * alla sonda, una rete alla volta. Una rete che non riesce non ferma le altre: l'esito è per rete.
  */
 import { z } from "zod";
-import { getNetworkById, getNetworks } from "@/lib/db";
+import { getAllHostsFlat, getHostsByNetwork, getNetworkById, getNetworks } from "@/lib/db";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { listEdgeSchedules, type EdgeScheduleConfig } from "@/lib/vuln/edge-schedule-store";
 import { edgeApiGet, leggiSaluteEdge, listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
@@ -17,6 +17,7 @@ import { assessmentProfileIdSchema, type EdgeAssessmentProfile } from "@/lib/vul
 import { buildCron, describeCron, describeFinestra, slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 import { salvaFinestraRotta, finestraSchema } from "@/lib/vuln/finestra-rotte";
 import { SONDA_DA_AGGIORNARE } from "@/lib/vuln/finestra";
+import { MOTIVO_IMPIANTO, impiantiDellaRete, impiantiPerRete, type ImpiantiRete } from "@/lib/vuln/impianti-in-rete";
 import {
   attivitaDaScansione,
   profiliFuoriDalleVoci,
@@ -99,7 +100,7 @@ function pianoDa(s: EdgeScheduleConfig | undefined): PianoRete | null {
   }
 }
 
-function reteSenzaSonda(n: ReturnType<typeof getNetworks>[number], piano: PianoRete | null): ReteScansione {
+function reteSenzaSonda(n: ReturnType<typeof getNetworks>[number], piano: PianoRete | null, impianti: ImpiantiRete | undefined): ReteScansione {
   return {
     id: n.id,
     nome: n.name || n.cidr,
@@ -112,13 +113,17 @@ function reteSenzaSonda(n: ReturnType<typeof getNetworks>[number], piano: PianoR
     attivita: null,
     piano,
     assessmentId: Number(n.assessment_enabled ?? 0) === 1 ? (n.assessment_profile_id || null) : null,
+    impianti: impianti?.host ?? 0,
+    impiantiEsempi: impianti?.esempi ?? [],
   };
 }
 
 export async function leggiQuadroScansioni(): Promise<QuadroScansioni> {
   const reti = getNetworks();
   const piani = new Map(listEdgeSchedules().map((s) => [s.network_id, s]));
-  const base = reti.map((n) => reteSenzaSonda(n, pianoDa(piani.get(n.id))));
+  // Se l'inventario non si legge la pagina va in errore: il freno non si salta in silenzio.
+  const impianti = impiantiPerRete(getAllHostsFlat());
+  const base = reti.map((n) => reteSenzaSonda(n, pianoDa(piani.get(n.id)), impianti.get(n.id)));
   const scanner = getActiveEdgeScanner();
   if (!scanner || scanner.enabled !== 1) {
     return {
@@ -232,6 +237,10 @@ async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fa
   const rete = getNetworkById(networkId);
   if (!rete) return { id: networkId, nome: `#${networkId}`, esito: "errore", motivo: "Rete non trovata" };
   const nome = rete.name || rete.cidr;
+  // Prima di ogni chiamata alla sonda, in tutti e tre i modi: il controllo in pagina non basta.
+  if (impiantiDellaRete(getHostsByNetwork(rete.id)).host > 0) {
+    return { id: rete.id, nome, esito: "saltata", motivo: MOTIVO_IMPIANTO };
+  }
   const comuneRete = { assessmentEnabled: true, assessmentProfileId: l.assessment_id, targetingMode: l.ambito };
 
   if (l.modo === "immediata") {

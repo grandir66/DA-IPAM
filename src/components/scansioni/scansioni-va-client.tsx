@@ -88,6 +88,7 @@ function Stato({ tono, children }: { tono: "ok" | "in_corso" | "avviso" | "spent
 
 function ColonnaCambio({ c }: { c: Cambio }) {
   if (c.tono === "nessuno") return <span className="text-[13px] text-muted-foreground">{c.testo}</span>;
+  if (c.tono === "impianto") return <Stato tono="spento">{c.testo}</Stato>;
   return <Stato tono={c.tono === "in_corso" ? "in_corso" : "avviso"}>{c.testo}</Stato>;
 }
 
@@ -385,6 +386,9 @@ export function ScansioniVaClient() {
         conteggio={`${scelteValide.length} scelte`}
         sottotitolo={`${hostScelti.toLocaleString("it-IT")} host online`}
         corpoClassName="p-0"
+        piede={quadro.reti.some((r) => r.impianti > 0)
+          ? "Le reti con PLC, HMI, IoT o apparati di campo non si scansionano da qui: una scansione può fermarli."
+          : undefined}
         azioni={
           <>
             <span className="inline-flex" role="group" aria-label="Quali indirizzi">
@@ -567,7 +571,7 @@ function RigaRete({ r, c, scelta, onCambia, voci }: { r: ReteScansione; c: Cambi
       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{ultima}</td>
       <td className="px-3 py-1.5">{r.piano?.testo ?? "—"}</td>
       <td className="whitespace-nowrap px-3 py-1.5">{profilo}</td>
-      <td className="whitespace-nowrap px-3 py-1.5"><ColonnaCambio c={c} /></td>
+      <td className="whitespace-nowrap px-3 py-1.5" title={r.impiantiEsempi.join(" · ") || undefined}><ColonnaCambio c={c} /></td>
     </tr>
   );
 }

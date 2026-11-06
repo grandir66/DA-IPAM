@@ -22,15 +22,19 @@ export const GIORNI_TRA_I_TENTATIVI = 30;
 export const GIORNI_DOPO_UN_ERRORE = 3;
 export const HOST_PER_GIRO = 10;
 
-/** Porte di campo (profilo IoT/OT) e di stampa (raw, IPP, LPD): chi le ha aperte non riceve `-O`. */
-const PORTE_DA_NON_TOCCARE = new Set([102, 502, 515, 631, 1883, 2404, 4840, 8883, 9100, 9600, 18245, 18246, 19999, 20000, 44818]);
+/** Porte di campo (profilo IoT/OT). */
+export const PORTE_DI_CAMPO: readonly number[] = [102, 502, 1883, 2404, 4840, 8883, 9600, 18245, 18246, 19999, 20000, 44818];
+
+/** Porte di campo e di stampa (raw, IPP, LPD): chi le ha aperte non riceve `-O`. */
+const PORTE_DA_NON_TOCCARE = new Set([...PORTE_DI_CAMPO, 515, 631, 9100]);
 
 /**
  * Produttori di apparati di campo. Microchip c'è per i moduli Ethernet dentro gli apparati (19 `unknown` al 72729):
- * dal MAC non si sa cosa c'è attorno, quindi si tratta come campo.
+ * dal MAC non si sa cosa c'è attorno, quindi si tratta come campo. CREVIS, Weintek, Vacon, HMS e i controllori delle
+ * celle frigo dal 06/11: sono quelli visti al 72729 e i loro simili, e un host `unknown` di quei nomi non ha altro segnale.
  */
-const PRODUTTORE_DI_CAMPO =
-  /schneider|siemens|rockwell|allen[- ]?bradley|phoenix contact|wago|beckhoff|omron|mitsubishi|moxa|hms industrial|sollae|advantech|weidm|turck|festo|yokogawa|honeywell|emerson|lantronix|microchip|\babb\b/i;
+export const PRODUTTORE_DI_CAMPO =
+  /schneider|siemens|rockwell|allen[- ]?bradley|phoenix contact|wago|beckhoff|omron|mitsubishi|moxa|\bhms\b|sollae|advantech|weidm|turck|festo|yokogawa|honeywell|emerson|lantronix|microchip|\babb\b|crevis|weintek|vacon|danfoss|carel|dixell|eliwell|anybus|ewon|kronotech/i;
 
 /** Produttori di stampanti: la 9100 può non essere fra le porte note. HP resta qui anche se fa PC e switch: nel dubbio si salta. */
 const PRODUTTORE_DI_STAMPANTI =

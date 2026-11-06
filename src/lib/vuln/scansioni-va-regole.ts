@@ -95,6 +95,9 @@ export interface ReteScansione {
   attivita: Attivita;
   piano: PianoRete | null;
   assessmentId: string | null;
+  /** Host della rete che sono o possono essere impianti: la rete non si scansiona da questa pagina. */
+  impianti: number;
+  impiantiEsempi: string[];
 }
 
 export interface Scelta {
@@ -103,7 +106,7 @@ export interface Scelta {
   assessmentId: string | null;
 }
 
-export type TonoCambio = "nessuno" | "avviso" | "in_corso";
+export type TonoCambio = "nessuno" | "avviso" | "in_corso" | "impianto";
 
 export interface Cambio {
   tono: TonoCambio;
@@ -119,6 +122,9 @@ export interface Cambio {
  * lo legge dalla sua riga a fine scansione, quindi una pianificazione esistente lo usa dal giro dopo.
  */
 export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
+  if (rete.impianti > 0) {
+    return { tono: "impianto", testo: `✕ Impianto in rete: ${rete.impianti === 1 ? "1 host" : `${rete.impianti} host`}`, blocca: true, tocca: false };
+  }
   if (rete.attivita === "in_corso") return { tono: "in_corso", testo: "▶ In corso", blocca: true, tocca: false };
   if (rete.attivita === "in_coda") return { tono: "in_corso", testo: "… In coda", blocca: true, tocca: false };
 

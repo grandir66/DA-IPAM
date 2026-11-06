@@ -25,6 +25,7 @@ import {
   risolviVoci,
   type ReteScansione,
 } from "@/lib/vuln/scansioni-va-regole";
+import { eImpianto, impiantiPerRete } from "@/lib/vuln/impianti-in-rete";
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
 
 const ID_BASE = ["smoke", "interno"].join("-");
@@ -37,7 +38,7 @@ const CATALOGO = [p(ID_VERIFICA, true), p(ID_ESTERNO), p(ID_BASE), p(ID_COMPLETO
 
 const rete = (x: Partial<ReteScansione> = {}): ReteScansione => ({
   id: 1, nome: "Uffici", cidr: "10.0.0.0/24", vlan: null, hostOnline: 0, sonda: "nota",
-  ultimaVa: null, ultimaVaStato: null, attivita: null, piano: null, assessmentId: null, ...x,
+  ultimaVa: null, ultimaVaStato: null, attivita: null, piano: null, assessmentId: null, impianti: 0, impiantiEsempi: [], ...x,
 });
 
 test("le voci prendono il profilo dalla sonda; quello per i domini pubblici non entra", () => {
@@ -91,6 +92,40 @@ test("cosa cambia: salvare sostituisce il piano, e da finestra a orario lo dice"
   assert.equal(cosaCambia(rete(), { modo: "pianificata", assessmentId: "x" }).tocca, false);
   assert.equal(cosaCambia(finestra, { modo: "finestra", assessmentId: "x" }).testo, "▲ Sostituisce il piano attuale");
   assert.equal(cosaCambia(finestra, { modo: "pianificata", assessmentId: "x" }).testo, "▲ Sostituisce il piano: la finestra si annulla");
+});
+
+test("cosa cambia: una rete con un impianto non si sceglie, in nessun modo", () => {
+  for (const modo of ["immediata", "pianificata", "finestra"] as const) {
+    const c = cosaCambia(rete({ impianti: 3, attivita: "in_corso" }), { modo, assessmentId: "x" });
+    assert.equal(c.blocca, true);
+    assert.equal(c.testo, "✕ Impianto in rete: 3 host");
+  }
+});
+
+test("impianto: categoria, costruttore o porta di campo; una stampante e un PC non lo sono", () => {
+  const h = (x: Record<string, unknown>) => ({ network_id: 1, ip: "10.0.0.1", classification: "unknown", ...x });
+  for (const classification of ["plc", "hmi", "iot", "rete_ot", "sensore"]) {
+    assert.equal(eImpianto(h({ classification })), true, classification);
+  }
+  assert.equal(eImpianto(h({ vendor: "CREVIS Co., Ltd" })), true, "un host unknown di quel costruttore non ha altro segnale");
+  assert.equal(eImpianto(h({ device_manufacturer: "HMS Industrial Networks" })), true);
+  assert.equal(eImpianto(h({ vendor: "Schneider Electric" })), true);
+  assert.equal(eImpianto(h({ open_ports: JSON.stringify([{ port: 502, protocol: "tcp" }]) })), true);
+  assert.equal(eImpianto(h({ open_ports: "non è json" })), false);
+  assert.equal(eImpianto(h({ classification: "stampante", open_ports: JSON.stringify([{ port: 9100, protocol: "tcp" }]) })), false);
+  assert.equal(eImpianto(h({ classification: "workstation", vendor: "Dell Inc." })), false);
+});
+
+test("impianti per rete: si contano e si danno pochi esempi", () => {
+  const m = impiantiPerRete([
+    { network_id: 1, ip: "10.0.0.1", classification: "plc", custom_name: "PLC cella 1" },
+    { network_id: 1, ip: "10.0.0.2", classification: "workstation" },
+    { network_id: 2, ip: "10.0.1.1", classification: "hmi" },
+    { network_id: 1, ip: "10.0.0.3", classification: "hmi" },
+  ]);
+  assert.equal(m.get(1)?.host, 2);
+  assert.equal(m.get(2)?.host, 1);
+  assert.deepEqual(m.get(1)?.esempi, ["10.0.0.1 PLC cella 1", "10.0.0.3"]);
 });
 
 test("conteggi per le tessere", () => {
@@ -224,6 +259,30 @@ test("catalogo cambiato o profilo assente: ci si ferma prima di scrivere", async
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.status, 422);
     assert.deepEqual(chiamate(), []);
+  });
+});
+
+test("freno: una rete con un impianto non si lancia né si pianifica, e le altre partono (72729, 06/11)", async () => {
+  await withTenant(T, async () => {
+    const db = getTenantDb(T);
+    db.prepare("INSERT INTO hosts(network_id,ip,classification) VALUES(1,'10.0.0.77','plc')").run();
+    try {
+      const r = await lanciaSuReti(immediata({ reti: [1, 2] }));
+      assert.ok(r.ok);
+      assert.deepEqual(r.esiti.map((e) => e.esito), ["saltata", "avviata"]);
+      assert.match(r.esiti[0].motivo ?? "", /impianto/i);
+      assert.ok(!seen.some((s) => s.body.includes("10.0.0.0/24")), "alla sonda non arriva niente per quella rete");
+      seen = [];
+      const f = await lanciaSuReti({
+        modo: "pianificata", voce: "bilanciato", ambito: "full_subnet", reti: [1], assessment_id: ID_COMPLETO,
+        frequency: "weekly", at_time: "02:00", days_of_week: [0],
+      });
+      assert.ok(f.ok);
+      assert.equal(f.esiti[0].esito, "saltata");
+      assert.deepEqual(chiamate(), []);
+    } finally {
+      db.prepare("DELETE FROM hosts WHERE network_id=1").run();
+    }
   });
 });
 

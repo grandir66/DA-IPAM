@@ -19,6 +19,8 @@ Task 11 di `DA-Vul-can/docs/superpowers/plans/2026-11-05-base-scansioni.md`. Tav
 - [x] Le spunte su host e credenziali si vedono solo con Immediata: pianificazione e finestra non le leggono (differenza dalla tavola)
 - [x] Gli abbinamenti profilo/moduli stanno in `profili-assessment-testi.ts`: il lucchetto di `edge-profiles.test.ts` vieta gli id altrove, e l'elenco resta quello letto da Edge
 - [x] Resa a 1920 vista in locale su dati finti e finto Edge (immediata, pianificata, finestra, esito); lancio su tre reti arrivato al finto Edge
+- [x] Riccardo (06/11): freno prima di pubblicare. Rete con `plc`, `hmi`, `iot`, `rete_ot`, `sensore`, porte di campo o costruttori di campo: non si sceglie e il server la salta, in tutti e tre i modi (`src/lib/vuln/impianti-in-rete.ts`). Prova vista fallire
+- [ ] Limiti del freno: solo questa pagina (pannello VA Scan e piani salvati no), solo ciò che l'inventario conosce, intera rete e non il singolo host. La regola vera va su Edge, con l'esclusione dei singoli host: voce URGENTE 72729 qui sopra
 - [ ] Lancio vero su due reti da una sonda (verifica del Task 11)
 
 ## 2026-11-06 — Router MikroTik remoto per le analisi nelle reti dei clienti (idea, rinviata)

@@ -34,7 +34,7 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Riconoscimento degli apparati — 06/11/2026
 
-Annunci CDP/LLDP del trunk: `trunk/apparati-dal-trunk.ts` riempie modello e firmware, `attribution/annunci.ts` dà la categoria alle tre facciate dei segnali. Giro notturno `-O` sugli `unknown`: `scanner/profili/sconosciuti.ts`, levetta `automatismo.riconoscimento`, spenta. Vicini SNMP: levetta `automatismo.vicini_snmp`, spenta. Trappole: il filtro `NEIGHBORS_MODEL_SOURCES_SQL` è un freno voluto (ADR 0018), non una svista; le capacità non sono autoritative perché `lldpd` su Linux annuncia bridge e router; `-O` non va mai su stampanti e apparati di campo. Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`.
+`main` = `dev` = `3f0a991e` = **0.9.985**, col sì di Riccardo; visto sul 72729: .52 e .53 riconosciuti. Annunci CDP/LLDP del trunk: `trunk/apparati-dal-trunk.ts` riempie modello e firmware, `attribution/annunci.ts` dà la categoria alle tre facciate dei segnali. Giro notturno `-O` sugli `unknown`: `scanner/profili/sconosciuti.ts`, levetta `automatismo.riconoscimento`, spenta. Vicini SNMP: levetta `automatismo.vicini_snmp`, spenta. Trappole: il filtro `NEIGHBORS_MODEL_SOURCES_SQL` è un freno voluto (ADR 0018), non una svista; le capacità non sono autoritative perché `lldpd` su Linux annuncia bridge e router; `-O` non va mai su stampanti e apparati di campo. Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`.
 
 ## IP contesi — 06/11/2026
 

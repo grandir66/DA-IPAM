@@ -28,3 +28,13 @@ Caso guida: 192.168.0.52 e .53 del 72729, due Cisco SG200-26 firmware 1.3.2.02 c
 - **Il profilo automatico nasce spento** (standard: automatismi nuovi spenti; 05/11 Riccardo ha fermato i job di scansione del
   72729). Salta 9100 e stampanti (incidente del 05/11) e gli apparati OT: `-O` manda pacchetti malformati, su un PLC vecchio è
   la parte che può fare danno, come dice già il profilo IoT/OT.
+
+## Consuntivo
+
+**Fatto**: i sette passi, più i sette rilievi della revisione indipendente. DA-IPAM 0.9.985, Vulcan 0.8.257 live (snapshot `pre-rilascio-08257-20261106` della VM 664 su DA-PX-03). Sul 72729 vero .52 e .53 sono `switch` con modello e firmware, `unknown` da 50 a 48.
+
+**Mancante**: 71343-ipam e 79993-ipam-9 restano a 0.8.256 (accesso negato, scansioni non verificabili). Le due levette spente: decisione di Riccardo. Gli altri 48 `unknown` del 72729: il CDP non li copre e `-O` salta i 19 Microchip.
+
+**Scostamenti**: il punto 3 dietro una levetta per non scavalcare ADR 0018; la soglia del 95% è diventata un segno nel testo dopo la revisione; `verifica-permessi.sh` non eseguita, nessuna rotta toccata.
+
+**Consigli**: la build va fatta prima di dire «cancello verde»: qui è arrivata solo al momento di `main`. La firma web degli Sx200/300 copre gli switch senza CDP.

@@ -35,3 +35,9 @@ export function serveRimandare(
   const quando = Date.parse(`${sonda.esito_il.replace(" ", "T")}Z`);
   return Number.isFinite(quando) && adesso - quando >= UN_GIORNO_MS;
 }
+
+/** Serve mandare l'elenco degli impianti? Basta che ne manchi uno sulla sonda. */
+export function impiantiDaMandare(impianti: string[], sonda: string[] | undefined): boolean {
+  if (impianti.length === 0) return false;
+  return impianti.some((ip) => !sonda?.includes(ip));
+}

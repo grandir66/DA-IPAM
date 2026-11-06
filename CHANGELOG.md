@@ -35,6 +35,8 @@ Al 72729 due Cisco SG200-26 con SNMP spento stavano `unknown` e senza modello me
 
 - **Nuovo**: collector Infoblox (`infoblox-nios`) in sola lettura per reti, DHCP e DNS, da riga di comando. Era collaudato su un ramo a parte dal 03/11 e rischiava di invecchiare lì; non scrive ancora nulla nell'inventario, perché il modello dei dati va deciso prima.
 
+- **Sicurezza**: PLC, HMI e apparati di campo restano fuori da ogni motore di Edge, anche quando DA-IPAM li riconosce solo dal costruttore: l'elenco va alla sonda col job di sincronia e il pannello della rete dice quanti sono. Il giro veloce non li prova più in TCP se tacciono. Dopo il 72729: celle frigo bloccate, PLC spariti due volte durante una scansione.
+
 - **Nuovo**: lo scanner usa anche l'account dell'integrazione Active Directory e le credenziali SSH a chiave. L'account AD non entra nella lista della rete, così la discovery continua a non provarlo; una voce Windows legata alla rete ha la precedenza. Richiede Edge dalla 0.8.255.
 
 - **Corretto**: se le credenziali non arrivano allo scanner lo dice il pannello della rete, con il motivo; prima restava nel log della sonda e la scansione partiva senza. Un legame che manca si rimanda da solo col job di sincronia, al massimo una volta al giorno perché accende Greenbone, e solo alle sonde dalla 0.8.249: quelle prima cancellerebbero il legame.

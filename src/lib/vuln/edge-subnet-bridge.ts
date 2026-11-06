@@ -21,7 +21,8 @@ import {
   edgeApiDelete,
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
-import { serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
+import { impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
+import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import {
   dimenticaEdgeFinestra,
@@ -93,6 +94,7 @@ export interface EdgeSubnetStatus {
     last_scan: EdgeSubnetLastScan | null;
     schedule: EdgeVulnSchedule | null;
     credentials?: EdgeCredenzialiSonda;
+    protetti?: string[];
   } | null;
 }
 
@@ -184,6 +186,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
       last_scan?: EdgeSubnetLastScan | null;
       schedule?: EdgeVulnSchedule | null;
       credentials?: EdgeCredenzialiSonda;
+      protetti?: string[];
       assessment_enabled?: boolean;
       assessment_profile_id?: string | null;
     }>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`);
@@ -225,6 +228,7 @@ export async function loadEdgeSubnetStatus(networkId: number): Promise<EdgeSubne
         last_scan: lookup.last_scan ?? null,
         schedule: lookup.schedule ?? null,
         credentials: lookup.credentials,
+        protetti: lookup.protetti,
       },
     };
   } catch {
@@ -308,6 +312,8 @@ function buildEdgeEnsureBody(
     ipam_network_id: network.id,
     assessment_enabled: assessmentEnabled,
     assessment_profile_id: assessmentEnabled ? assessmentProfileId : null,
+    // Sempre, anche quando gli host non si mandano: Edge li toglie da ogni motore.
+    protetti: ipImpiantiDellaRete(networkId),
   };
 
   if (syncHosts) {
@@ -340,6 +346,11 @@ function buildEdgeEnsureBody(
   return body;
 }
 
+/** IP che nessun motore deve toccare (72729, 06/11/2026). Esportata per le prove. */
+export function ipImpiantiDellaRete(networkId: number): string[] {
+  return getHostsByNetwork(networkId).filter(eImpianto).map((h) => h.ip);
+}
+
 /** Host per l'edge. Esportata per le prove. */
 export function hostsForEdgeSync(networkId: number) {
   return getHostsByNetwork(networkId)
@@ -363,29 +374,31 @@ export function hostsForEdgeSync(networkId: number) {
 }
 
 /**
- * Rimanda le credenziali a una rete della sonda se un legame manca (freno: `serveRimandare`). I giri
- * pianificati partono dalla sonda e non passano da `/ensure`. true = mandate.
+ * Porta alla sonda quello che i giri pianificati non le danno: l'elenco degli impianti e i legami di
+ * credenziali mancanti (freno: `serveRimandare`). Solo per una rete che la sonda ha già: `ensure` la
+ * creerebbe. true = mandato.
  */
-export async function rimandaCredenzialiEdge(networkId: number, adesso = Date.now()): Promise<boolean> {
+export async function allineaReteEdge(networkId: number, adesso = Date.now()): Promise<boolean> {
   const scanner = getActiveEdgeScanner();
   const network = getNetworkById(networkId);
   if (!scanner || scanner.enabled !== 1 || !network) return false;
 
-  const slot = collectEdgeCredentialsForNetwork(networkId, { registra: false }).transfer.map((c) => c.slot);
-  if (slot.length === 0) return false;
-
-  const lookup = await edgeApiGet<{ found: boolean; credentials?: EdgeCredenzialiSonda }>(
+  const lookup = await edgeApiGet<{ found: boolean; credentials?: EdgeCredenzialiSonda; protetti?: string[] }>(
     scanner,
     `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
   );
-  if (!lookup.found || !serveRimandare(slot, lookup.credentials, adesso)) return false;
+  if (!lookup.found) return false;
+
+  const slot = collectEdgeCredentialsForNetwork(networkId, { registra: false }).transfer.map((c) => c.slot);
+  const credenziali = serveRimandare(slot, lookup.credentials, adesso);
+  if (!credenziali && !impiantiDaMandare(ipImpiantiDellaRete(networkId), lookup.protetti)) return false;
 
   await edgeApiPost<{ ok: boolean }>(
     scanner,
     "/api/v1/networks/ensure",
     buildEdgeEnsureBody(networkId, {
       syncHosts: false,
-      syncCredentials: true,
+      syncCredentials: credenziali,
       targetingMode: (network.targeting_mode as EdgeTargetingMode | null) ?? "full_subnet",
     }),
     { timeoutMs: 120000 },

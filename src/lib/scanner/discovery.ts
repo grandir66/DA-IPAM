@@ -28,6 +28,7 @@ import {
   setGetSettingFn,
 } from "./ports";
 import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
+import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { readArpCache as _localReadArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
@@ -1590,7 +1591,8 @@ async function runDiscovery(
       const onlineSet = new Set(onlineIps);
       const dbHosts = getHostsByNetwork(networkId);
       const tcpCandidates = dbHosts
-        .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+        // Un impianto che tace non si tocca: una connessione in più non serve a nessuno (72729, 06/11/2026).
+        .filter((h) => h.status === "online" && !onlineSet.has(h.ip) && !eImpianto(h))
         .map((h) => h.ip);
       if (tcpCandidates.length > 0) {
         progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;

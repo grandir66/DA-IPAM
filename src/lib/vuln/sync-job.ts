@@ -27,7 +27,7 @@ import {
   type EdgeScan,
   type VulnScannerRow,
 } from "./scanner-edge-client";
-import { pushHostsToEdge, rimandaCredenzialiEdge } from "./edge-subnet-bridge";
+import { allineaReteEdge, pushHostsToEdge } from "./edge-subnet-bridge";
 
 interface HostMatchRow {
   id: number;
@@ -303,12 +303,12 @@ export async function runVulnSync(): Promise<{
     // (72729, 05/11/2026). Stesso trattamento degli errori qui sopra: mai il corpo della risposta.
     for (const net of allNetworks) {
       try {
-        if (await rimandaCredenzialiEdge(net.id)) {
-          console.log(`[vuln-sync] credenziali rimandate alla sonda per la rete #${net.id}`);
+        if (await allineaReteEdge(net.id)) {
+          console.log(`[vuln-sync] impianti e credenziali allineati sulla sonda per la rete #${net.id}`);
         }
       } catch (credErr) {
         const msg = credErr instanceof EdgeClientError ? `edge HTTP ${credErr.status}` : "errore sconosciuto";
-        console.warn(`[vuln-sync] credenziali rete #${net.id} non rimandate: ${msg}`);
+        console.warn(`[vuln-sync] rete #${net.id} non allineata sulla sonda: ${msg}`);
       }
     }
 

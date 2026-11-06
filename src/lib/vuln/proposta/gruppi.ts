@@ -9,8 +9,9 @@
  * famiglie scansionabili; IoT/OT e «Da chiarire» non producono mai un gruppo. È la prima barriera: la
  * seconda è il freno `protetti` di Edge, che resta acceso anche se questo file sbagliasse.
  *
- * Regole che non si discutono (piano): nel dubbio si scende; le credenziali deboli restano fuori da
- * Windows, domini, router e firewall; niente parte da solo.
+ * Regole che non si discutono (piano): nel dubbio si scende; niente brute force; niente parte da solo.
+ * Le credenziali note dei prodotti (`default-login`) le decide Edge dal profilo della sonda, non questo
+ * file: dal 06/11 valgono per tutti i sistemi interni, Windows, domini, router e firewall compresi.
  */
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
 import type { EdgeScanProfile } from "@/lib/vuln/edge-subnet-bridge";
@@ -38,34 +39,33 @@ interface Scheda {
   profile: EdgeScanProfile;
   nuclei: NucleiGruppo | null;
   moduli: Moduli;
-  /** Windows, domini, router e firewall: nessun modulo con credenziali deboli (regola 5). */
-  senzaCredenzialiDeboli: boolean;
+  /** Rete e Windows, giro minimo della tabella del piano: passano solo i moduli giudicati e scritti qui. */
+  soloModuliAmmessi: boolean;
 }
 
 /**
- * Tabella famiglia → profili. Assessment: «base» è il giro minimo (impronta dei servizi), «completi» il
- * giro intero. Rete e Windows restano sul base perché il giro completo fa anche l'interrogazione SNMP con
- * la community di serie: è una credenziale debole e la regola 5 la esclude. Web non ha un profilo che
- * faccia solo TLS: nessuno. Un profilo che non si traduce senza ambiguità scende, non sale.
+ * Tabella famiglia → profili, quella approvata nel piano. Assessment: «base» è il giro minimo (impronta
+ * dei servizi), «completi» il giro intero. Rete e Windows restano sul base per scelta della tabella. Web
+ * non ha un profilo che faccia solo TLS: nessuno. Un profilo che non si traduce senza ambiguità scende.
  */
 const SCHEDE: Partial<Record<Famiglia, Scheda>> = {
-  rete: { profile: "balanced", nuclei: "gestione", moduli: "base", senzaCredenzialiDeboli: true },
-  windows: { profile: "balanced", nuclei: "quick", moduli: "base", senzaCredenzialiDeboli: true },
-  linux: { profile: "balanced", nuclei: "standard", moduli: "completi", senzaCredenzialiDeboli: false },
-  web: { profile: "balanced", nuclei: "standard", moduli: null, senzaCredenzialiDeboli: false },
-  periferiche: { profile: "fast", nuclei: "gestione", moduli: "base", senzaCredenzialiDeboli: false },
+  rete: { profile: "balanced", nuclei: "gestione", moduli: "base", soloModuliAmmessi: true },
+  windows: { profile: "balanced", nuclei: "quick", moduli: "base", soloModuliAmmessi: true },
+  linux: { profile: "balanced", nuclei: "standard", moduli: "completi", soloModuliAmmessi: false },
+  web: { profile: "balanced", nuclei: "standard", moduli: null, soloModuliAmmessi: false },
+  periferiche: { profile: "fast", nuclei: "gestione", moduli: "base", soloModuliAmmessi: false },
 };
 
 /** Ordine di lancio: quello della tabella del piano. Chi non c'è qui (impianti, da_chiarire) non parte. */
 const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche"];
 
 /**
- * Per Rete e Windows (regola 5) si elencano i moduli AMMESSI, non quelli esclusi: una lista di esclusi
- * fallisce aperta, perché un modulo che il catalogo di Edge aggiunge domani passerebbe senza che nessuno
- * l'abbia giudicato. Oggi solo l'impronta dei servizi. `snmp-enum` (community «public», credenziale di
- * serie) e `cred-bind` restano fuori per costruzione. Per aprire un modulo lo si giudica e lo si scrive qui.
+ * Per Rete e Windows si elencano i moduli AMMESSI, non quelli esclusi: una lista di esclusi fallisce
+ * aperta, perché un modulo che il catalogo di Edge aggiunge domani passerebbe senza che nessuno l'abbia
+ * giudicato. Oggi solo l'impronta dei servizi: il giro minimo non deve allargarsi da solo. Per aprire un
+ * modulo lo si giudica e lo si scrive qui.
  */
-const MODULI_AMMESSI_SENZA_CREDENZIALI_DEBOLI = ["service-fp"];
+const MODULI_AMMESSI_GIRO_MINIMO = ["service-fp"];
 
 const GRADINI: EdgeScanProfile[] = ["fast", "balanced", "deep"];
 
@@ -93,8 +93,8 @@ function idAssessment(
       scartati.push(`${p.label}: serve l'autorizzazione scritta`);
       continue;
     }
-    if (scheda.senzaCredenzialiDeboli) {
-      const fuori = p.steps.filter((m) => !MODULI_AMMESSI_SENZA_CREDENZIALI_DEBOLI.includes(m));
+    if (scheda.soloModuliAmmessi) {
+      const fuori = p.steps.filter((m) => !MODULI_AMMESSI_GIRO_MINIMO.includes(m));
       if (fuori.length > 0) {
         scartati.push(`${p.label}: modulo non ammesso su questa famiglia (${fuori.join(", ")})`);
         continue;

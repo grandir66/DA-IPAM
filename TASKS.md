@@ -4,6 +4,9 @@
 
 Riccardo (06/11): prima scansione delicata, poi proposta di profilo per device e scansioni separate per tipologia anche nella stessa rete. Piano e domande: `DA-Vul-can/docs/superpowers/plans/2026-11-06-profili-per-device.md`. Non parte senza il suo sì.
 
+- [x] Passo 4 (06/11): `avviaGruppoEdge`, `lanciaGruppiConfermati`, rotta `proposte-va/lancia`. Edge in `DA-Vul-can`, stessa voce del suo `TASKS.md`
+- [ ] Passo 5: pagina per device; note su cosa mostrare nel `TASKS.md` di DA-Vul-can
+
 ## 2026-11-06 — URGENTE 72729: celle frigo bloccate, PLC spariti durante il giro (Riccardo)
 
 Riccardo (06/11, 08:20): il cliente ha telefonato, «le celle frigo della rete si sono bloccate a causa delle scansioni»; non sa se è successo ieri.

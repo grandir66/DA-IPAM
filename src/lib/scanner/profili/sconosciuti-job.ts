@@ -25,8 +25,8 @@ export async function giroSconosciutiTutti(): Promise<void> {
       try {
         await withTenant(t.codice_cliente, async () => {
           const e = await giroSconosciuti(t.codice_cliente);
-          if (e.provati > 0 || e.retiOccupate > 0) {
-            console.info(`[riconoscimento] ${t.codice_cliente}: ${e.provati} host provati, ${e.campiRiempiti} campi, ${e.retiOccupate} reti occupate`);
+          if (e.provati > 0 || e.retiOccupate > 0 || e.retiInErrore > 0) {
+            console.info(`[riconoscimento] ${t.codice_cliente}: ${e.provati} host provati, ${e.campiRiempiti} campi, ${e.retiOccupate} reti occupate, ${e.retiInErrore} reti in errore`);
           }
         });
       } catch (e) {
@@ -43,5 +43,5 @@ export function avviaGiroSconosciuti(): void {
   const s = stato();
   if (s.avviato) return;
   s.avviato = true;
-  cron.schedule(CRON_RICONOSCIMENTO, () => void giroSconosciutiTutti());
+  cron.schedule(CRON_RICONOSCIMENTO, () => void giroSconosciutiTutti(), { timezone: "UTC" });
 }

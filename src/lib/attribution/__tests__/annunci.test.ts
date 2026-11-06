@@ -66,5 +66,8 @@ test("-O: il testo di nmap dice il mestiere, a confidenza bassa", () => {
   assert.equal(cat("Cisco SG200 or SG300 switch")?.claim, "network.switch");
   assert.equal(cat("HP 2530 switch")?.confidence, 0.7);
   assert.equal(cat("Linux 3.2 - 4.9"), undefined);
+  assert.equal(cat("Cisco SG200 or SG300 switch (ipotesi 87%)"), undefined, "un'ipotesi non dà un mestiere");
+  const fam = emitEvidenceFromSignals(segnali("Linux 5.4 (ipotesi 90%)")).find((e) => e.source === "nmap_os" && e.dimension === "os");
+  assert.equal(fam?.claim, "linux", "ma la famiglia del sistema operativo resta");
   assert.equal(cat("Microsoft Windows 10"), undefined);
 });

@@ -302,7 +302,8 @@ export function rilieviDaRisultato(r: NmapResult, profilo: ProfiloScansione["id"
 
 /**
  * Sotto questa soglia `-O` tira a indovinare («Aggressive OS guesses»): dal 06/11 dal suo testo nasce anche la
- * categoria dell'host, e un'ipotesi all'87% non deve diventare un mestiere.
+ * categoria dell'host, e un'ipotesi all'87% non deve diventare un mestiere. Il testo resta, col segno: la famiglia
+ * del sistema operativo vale anche da un'ipotesi, e sulla colonna si vede cos'è. `emitters.ts` legge il segno.
  */
 const PRECISIONE_MINIMA_OS = 95;
 
@@ -315,7 +316,10 @@ export function fattiDaRisultato(r: NmapResult): FattiProfilo {
   for (const s of script) fatti = unisci(fatti, fattiDaScript(s));
   /* `-O` scrive l'OS a livello host: vale come ripiego, non vince su chi ha
    * parlato col sistema operativo (SMB, RDP). */
-  if (!fatti.osInfo && pulito(r.os ?? undefined) && (r.osPrecisione ?? 100) >= PRECISIONE_MINIMA_OS) fatti.osInfo = r.os ?? undefined;
+  if (!fatti.osInfo && pulito(r.os ?? undefined)) {
+    const p = r.osPrecisione ?? 100;
+    fatti.osInfo = p >= PRECISIONE_MINIMA_OS ? (r.os ?? undefined) : `${r.os} (ipotesi ${p}%)`;
+  }
   /* Porte di campo aperte senza nessuno script che risponda: il protocollo si
    * dice, la classificazione la decide l'attribuzione. */
   if (!fatti.protocolloOt) {

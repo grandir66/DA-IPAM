@@ -9,7 +9,7 @@
 import type Database from "better-sqlite3";
 import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { SISTEMA_OPERATIVO, type Annuncio } from "@/lib/attribution/annunci";
-import { categoriaDaAnnuncio } from "@/lib/attribution/emitters";
+import { categoriaDaAnnuncio, CONFIDENZA_ANNUNCIO } from "@/lib/attribution/emitters";
 import { recomputeAttributionForDb } from "@/lib/attribution/recompute";
 import { propagaAllApparato, segnaDaRivedere } from "@/lib/scanner/profili/propaga-apparato";
 import type { FattiProfilo } from "@/lib/scanner/profili/tipi";
@@ -33,11 +33,13 @@ function fattiDaAnnuncio(r: RigaAnnuncio): Pick<FattiProfilo, "modello" | "firmw
   return fatti;
 }
 
+/** Solo le evidenze degli annunci: quelle dal nome del vicino (0.7) hanno la stessa fonte, e `expires_at` è ISO con T e Z. */
 function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number): boolean {
   return !!d.prepare(
     `SELECT 1 FROM attribution_evidence WHERE host_id = ? AND source IN ('cdp', 'lldp')
-     AND dimension = 'category' AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`,
-  ).get(hostId);
+     AND dimension = 'category' AND confidence >= ?
+     AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) LIMIT 1`,
+  ).get(hostId, CONFIDENZA_ANNUNCIO);
 }
 
 /** Va dopo `salvaVicini`. Gira ogni 2 minuti: il ricalcolo parte solo quando c'è qualcosa di nuovo. */

@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, setTenantSetting, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import {
-  CHIAVE_RICONOSCIMENTO, GIORNI_TRA_I_TENTATIVI, HOST_PER_GIRO, PROFILO_RICONOSCIMENTO, giroSconosciuti, scegliSconosciuti,
+  CHIAVE_RICONOSCIMENTO, GIORNI_DOPO_UN_ERRORE, GIORNI_TRA_I_TENTATIVI, HOST_PER_GIRO, PROFILO_RICONOSCIMENTO, giroSconosciuti, scegliSconosciuti,
 } from "@/lib/scanner/profili/sconosciuti";
 import { argomentiTcp } from "@/lib/scanner/profili/comando";
 import type { EsitoProfilo } from "@/lib/scanner/profili/motore";
@@ -118,5 +118,62 @@ test("acceso: prova, salva l'esito e non ripete il giorno dopo", async () => {
     assert.equal(r.attr_category, "network.switch");
     assert.equal(r.classification, "switch");
     assert.deepEqual(ips(), []);
+  });
+});
+
+// Revisione del 06/11: la promessa della levetta è «salta le stampanti», e la 9100 non è l'unica porta di una stampante.
+test("restano fuori le stampanti che non mostrano la 9100: IPP, LPD o il produttore", () => {
+  host("10.8.0.50", { porte: porte(80, 631) });
+  host("10.8.0.51", { porte: porte(80, 515) });
+  host("10.8.0.52", { vendor: "Brother Industries, Ltd." });
+  host("10.8.0.53", { vendor: "KYOCERA Display Corporation" });
+  assert.deepEqual(ips(), []);
+  assert.equal(PROFILO_RICONOSCIMENTO.tcp.includes(631), false);
+});
+
+test("-O saltato per i privilegi: nessun tentativo segnato, l'host resta da provare", async () => {
+  await withTenant(T, async () => {
+    host("10.8.0.54");
+    setTenantSetting(CHIAVE_RICONOSCIMENTO, "1");
+    const e = await giroSconosciuti(T, async (_p, lista) => {
+      const b = esitoFinto(lista[0]);
+      return { ...b, osDetectionSaltata: true, host: [{ ...b.host[0], fatti: {}, risultato: { ...b.host[0].risultato!, os: null } }] };
+    });
+    assert.equal(e.provati, 0);
+    assert.deepEqual(ips(), ["10.8.0.54"]);
+  });
+});
+
+test("un nmap che fallisce: esito errore e ritorno dopo pochi giorni, non dopo trenta", async () => {
+  await withTenant(T, async () => {
+    const id = host("10.8.0.55");
+    setTenantSetting(CHIAVE_RICONOSCIMENTO, "1");
+    await giroSconosciuti(T, async (_p, lista) => {
+      const b = esitoFinto(lista[0]);
+      return { ...b, host: [{ ...b.host[0], risultato: null, fatti: {}, errori: ["TCP: scaduto"] }] };
+    });
+    const d = getTenantDb(T);
+    assert.match((d.prepare("SELECT esito FROM riconoscimento_tentativi WHERE host_id = ?").get(id) as { esito: string }).esito, /^errore/);
+    assert.deepEqual(ips(), []);
+    d.prepare("UPDATE riconoscimento_tentativi SET ultimo_il = datetime('now', ?)").run(`-${GIORNI_DOPO_UN_ERRORE + 1} days`);
+    assert.deepEqual(ips(), ["10.8.0.55"]);
+  });
+});
+
+test("un guasto su una rete non ferma la successiva e segna i suoi host", async () => {
+  await withTenant(T, async () => {
+    const a = host("10.8.0.56");
+    const d = getTenantDb(T);
+    const altra = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.7.0.0/24', 'm')").run().lastInsertRowid);
+    const b = Number(d.prepare("INSERT INTO hosts (network_id, ip, open_ports, classification, status) VALUES (?, '10.7.0.1', ?, 'unknown', 'online')").run(altra, porte(80)).lastInsertRowid);
+    setTenantSetting(CHIAVE_RICONOSCIMENTO, "1");
+    const e = await giroSconosciuti(T, async (_p, lista) => {
+      if (lista[0] === "10.8.0.56") throw new Error("nmap sparito");
+      return esitoFinto(lista[0]);
+    });
+    assert.equal(e.provati, 1);
+    assert.equal(e.retiInErrore, 1);
+    assert.match((d.prepare("SELECT esito FROM riconoscimento_tentativi WHERE host_id = ?").get(a) as { esito: string }).esito, /^errore/);
+    assert.equal((d.prepare("SELECT esito FROM riconoscimento_tentativi WHERE host_id = ?").get(b) as { esito: string }).esito, "ok");
   });
 });

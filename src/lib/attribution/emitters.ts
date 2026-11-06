@@ -42,6 +42,7 @@ export interface AttributionSignals {
  * SG300 switch»), e fino a oggi di quella riga si leggeva solo la famiglia del sistema operativo.
  */
 function categoriaDaTestoNmap(testo: string): CategorySlug | null {
+  if (/\(ipotesi \d+%\)/.test(testo)) return null;   // il segno lo mette scanner/profili/lettura.ts
   if (/\bswitch\b/i.test(testo)) return "network.switch";
   if (/\brouter\b/i.test(testo)) return "network.router";
   if (/\bfirewall\b/i.test(testo)) return "network.firewall";
@@ -53,6 +54,8 @@ function categoriaDaTestoNmap(testo: string): CategorySlug | null {
 }
 
 /** La categoria di un annuncio: prima il testo, che è specifico, poi le capacità dichiarate. */
+export const CONFIDENZA_ANNUNCIO = 0.85;
+
 export function categoriaDaAnnuncio(a: Annuncio): string | null {
   return (a.piattaforma ? categoryFromLegacyText({ sysDescr: a.piattaforma }) : null) ?? categoriaDaCapacita(a.capacita, a.piattaforma);
 }
@@ -462,7 +465,7 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     const cat = categoriaDaAnnuncio(a);
     if (!cat) continue;
     const source = a.protocollo === "cdp" ? "cdp" : "lldp";
-    out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: 0.85, raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
+    out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: CONFIDENZA_ANNUNCIO, raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
     break;
   }
 

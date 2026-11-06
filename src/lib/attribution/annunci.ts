@@ -49,12 +49,19 @@ function viciniSnmpAccesi(dbh: Database.Database): boolean {
  * nessun annuncio, ogni altro errore risale (lo prende chi ricalcola l'attribuzione, che lo scrive nel log).
  */
 export function annunciDelHost(dbh: Database.Database, hostId: number): Annuncio[] {
+  const tabellaAssente = (e: unknown) => e instanceof Error && /no such (table|column)/.test(e.message);
+  let dalTrunk: Annuncio[];
   try {
-    const dalTrunk = dbh.prepare(
+    dalTrunk = dbh.prepare(
       `SELECT protocollo, piattaforma, capacita FROM trunk_vicini
        WHERE host_id = ? AND (piattaforma IS NOT NULL OR capacita IS NOT NULL)
        ORDER BY ultima_vista DESC LIMIT 5`,
     ).all(hostId) as Annuncio[];
+  } catch (e) {
+    if (!tabellaAssente(e)) throw e;
+    dalTrunk = [];
+  }
+  try {
     if (!viciniSnmpAccesi(dbh)) return dalTrunk;
     const daiVicini = dbh.prepare(
       `SELECT dn.protocol AS protocollo, dn.remote_platform AS piattaforma, dn.remote_caps AS capacita
@@ -67,7 +74,7 @@ export function annunciDelHost(dbh: Database.Database, hostId: number): Annuncio
     ).all(hostId) as Annuncio[];
     return [...dalTrunk, ...daiVicini];
   } catch (e) {
-    if (e instanceof Error && /no such (table|column)/.test(e.message)) return [];
+    if (tabellaAssente(e)) return dalTrunk;   // gli annunci del trunk valgono anche senza le colonne dei vicini
     throw e;
   }
 }

@@ -18,10 +18,12 @@ import type { ProfiloScansione } from "./tipi";
 
 export const CHIAVE_RICONOSCIMENTO = "riconoscimento.sconosciuti";
 export const GIORNI_TRA_I_TENTATIVI = 30;
+/** Un errore non è una risposta: si riprova presto, ma non ogni notte. */
+export const GIORNI_DOPO_UN_ERRORE = 3;
 export const HOST_PER_GIRO = 10;
 
-/** Porte di campo (profilo IoT/OT) e stampa raw: chi le ha aperte non riceve `-O`. */
-const PORTE_DA_NON_TOCCARE = new Set([102, 502, 1883, 2404, 4840, 8883, 9100, 9600, 18245, 18246, 19999, 20000, 44818]);
+/** Porte di campo (profilo IoT/OT) e di stampa (raw, IPP, LPD): chi le ha aperte non riceve `-O`. */
+const PORTE_DA_NON_TOCCARE = new Set([102, 502, 515, 631, 1883, 2404, 4840, 8883, 9100, 9600, 18245, 18246, 19999, 20000, 44818]);
 
 /**
  * Produttori di apparati di campo. Microchip c'è per i moduli Ethernet dentro gli apparati (19 `unknown` al 72729):
@@ -29,6 +31,10 @@ const PORTE_DA_NON_TOCCARE = new Set([102, 502, 1883, 2404, 4840, 8883, 9100, 96
  */
 const PRODUTTORE_DI_CAMPO =
   /schneider|siemens|rockwell|allen[- ]?bradley|phoenix contact|wago|beckhoff|omron|mitsubishi|moxa|hms industrial|sollae|advantech|weidm|turck|festo|yokogawa|honeywell|emerson|lantronix|microchip|\babb\b/i;
+
+/** Produttori di stampanti: la 9100 può non essere fra le porte note. HP resta qui anche se fa PC e switch: nel dubbio si salta. */
+const PRODUTTORE_DI_STAMPANTI =
+  /\bhp\b|hewlett|canon|brother|ricoh|kyocera|xerox|epson|lexmark|konica|sharp|oki data|zebra|toshiba tec/i;
 
 export const PROFILO_RICONOSCIMENTO: ProfiloScansione = {
   ...PROFILO_APPROFONDITO,
@@ -66,9 +72,9 @@ export function scegliSconosciuti(d: Database.Database): HostSconosciuto[] {
      WHERE COALESCE(NULLIF(h.classification, ''), 'unknown') = 'unknown'
        AND COALESCE(h.classification_manual, 0) = 0
        AND h.status = 'online'
-       AND (t.ultimo_il IS NULL OR t.ultimo_il < datetime('now', ?))
+       AND (t.ultimo_il IS NULL OR t.ultimo_il < datetime('now', CASE WHEN t.esito LIKE 'errore%' THEN ? ELSE ? END))
      ORDER BY t.ultimo_il IS NOT NULL, t.ultimo_il, h.id`,
-  ).all(`-${GIORNI_TRA_I_TENTATIVI} days`) as Array<HostSconosciuto & {
+  ).all(`-${GIORNI_DOPO_UN_ERRORE} days`, `-${GIORNI_TRA_I_TENTATIVI} days`) as Array<HostSconosciuto & {
     open_ports: string | null; vendor: string | null; device_manufacturer: string | null;
   }>;
 
@@ -77,7 +83,8 @@ export function scegliSconosciuti(d: Database.Database): HostSconosciuto[] {
     if (scelti.length >= HOST_PER_GIRO) break;
     const porte = porteAperte(c.open_ports);
     if (porte.length === 0 || porte.some((p) => PORTE_DA_NON_TOCCARE.has(p))) continue;
-    if (PRODUTTORE_DI_CAMPO.test(`${c.vendor ?? ""} ${c.device_manufacturer ?? ""}`)) continue;
+    const produttore = `${c.vendor ?? ""} ${c.device_manufacturer ?? ""}`;
+    if (PRODUTTORE_DI_CAMPO.test(produttore) || PRODUTTORE_DI_STAMPANTI.test(produttore)) continue;
     scelti.push({ id: c.id, ip: c.ip, network_id: c.network_id });
   }
   return scelti;
@@ -87,13 +94,14 @@ export interface EsitoGiroSconosciuti {
   provati: number;
   campiRiempiti: number;
   retiOccupate: number;
+  retiInErrore: number;
 }
 
 type Esecutore = (profilo: ProfiloScansione, ips: string[]) => Promise<EsitoProfilo>;
 
 /** Una rete già in scansione si salta senza segnare tentativi: la prossima notte tocca di nuovo a lei. */
 export async function giroSconosciuti(tenantCode: string, esegui: Esecutore = eseguiProfilo): Promise<EsitoGiroSconosciuti> {
-  const esito: EsitoGiroSconosciuti = { provati: 0, campiRiempiti: 0, retiOccupate: 0 };
+  const esito: EsitoGiroSconosciuti = { provati: 0, campiRiempiti: 0, retiOccupate: 0, retiInErrore: 0 };
   if (getTenantSetting(CHIAVE_RICONOSCIMENTO) !== "1") return esito;
   const d = getTenantDb(tenantCode);
 
@@ -119,11 +127,22 @@ export async function giroSconosciuti(tenantCode: string, esegui: Esecutore = es
       const giro = await esegui(PROFILO_RICONOSCIMENTO, host.map((h) => h.ip));
       const salvato = salvaEsitoProfilo(giro, new Map(host.map((h) => [h.ip, h.id])));
       esito.campiRiempiti += salvato.campiRiempiti;
+      /* Senza privilegi `-O` non parte: questi host non sono stati provati, e il giro lo dice invece di bruciarli per 30 giorni. */
+      if (giro.osDetectionSaltata) {
+        console.warn(`[riconoscimento] ${tenantCode}: -O saltato, il processo non ha i privilegi per i raw socket`);
+        continue;
+      }
       for (const h of host) {
         const riga = giro.host.find((x) => x.ip === h.ip);
-        segna.run(h.id, riga?.errori.length ? riga.errori.join("; ").slice(0, 200) : "ok");
+        segna.run(h.id, riga?.errori.length ? `errore: ${riga.errori.join("; ")}`.slice(0, 200) : "ok");
         esito.provati++;
       }
+    } catch (e) {
+      /* Un guasto di questa rete non ferma le altre, e i suoi host si segnano: senza, la notte dopo si riprenderebbero gli stessi. */
+      const testo = e instanceof Error ? e.message : String(e);
+      console.warn(`[riconoscimento] ${tenantCode}: rete ${networkId} non provata: ${testo}`);
+      esito.retiInErrore++;
+      for (const h of host) segna.run(h.id, `errore: ${testo}`.slice(0, 200));
     } finally {
       rilascia();
     }

@@ -6,6 +6,7 @@ Riccardo (06/11): marcatempo bloccato al 72729, «non posso distruggere una rete
 
 - [x] Corretto: avevo scritto che `fast_scan` non guarda gli impianti, misurando una copia locale 24 commit indietro. `discovery.ts` li rispetta già; restava solo `known_host_check`, chiuso
 - [x] `ammessi` verso Edge (`proposta/ammessi.ts`), blocco e sblocco nella scheda «Per device». Cancello completo verde su questo albero: tsc, eslint, build, 7474 prove passate, 0 fallite
+- [x] `dev` su `main` col sì di Riccardo, 06/11 19:02: `main` = `715c4237` = 0.9.993, fast-forward verificato con `git ls-remote`. 72729 riavviato alle 19:12 e 70151-ipam-2 alle 19:08; sul 72729 `ammessi` arrivato a Edge, vuoto
 - [ ] Vedere a schermo la riga «Rete bloccata» con un blocco vero
 - [ ] Riccardo (06/11): prove più aggressive, «possiamo simulare i plc? o testiamo su una rete più conosciuta?». Proposta: banco col pezzo vero, in `DA-Vul-can/TASKS.md`
 

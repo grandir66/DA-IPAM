@@ -226,7 +226,7 @@ export const ScanTriggerSchema = z.object({
 /** Sequenze a più fasi della pagina rete: si sceglie il nome, le fasi le decide il server. */
 export const ScanSequenzaSchema = z.object({
   network_id: z.coerce.number().int().positive(),
-  sequenza: z.enum(["scoperta", "avanzata", "accesso"]),
+  sequenza: z.enum(["scoperta", "avanzata", "accesso", "ricognizione"]),
   host_ids: z.array(z.coerce.number().int().positive()).optional(),
 });
 

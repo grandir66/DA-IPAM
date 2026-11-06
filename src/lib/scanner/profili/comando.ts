@@ -74,6 +74,13 @@ export interface OpzioniComando {
  * lo dice (lezione #6 — niente ripieghi muti), non fallisce.
  */
 export function argomentiTcp(profilo: ProfiloScansione, opts: OpzioniComando): string[] {
+  if (profilo.delicata) {
+    return [
+      "-Pn", "-sT", "-p", elencoPorte(profilo.tcp),
+      "-T2", "--max-retries", "0", "--max-parallelism", "5", "--scan-delay", "50ms",
+      "--host-timeout", `${profilo.hostTimeoutS}s`,
+    ];
+  }
   const script = scriptPerProtocollo(profilo, "tcp", opts.disponibili);
   const args = [
     "-Pn",

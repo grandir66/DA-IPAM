@@ -245,7 +245,7 @@ export async function eseguiProfilo(
       host.push({ ip, risultato, rilievi, fatti, udpSaltata: motivoUdp, errori });
     }
   }
-  await Promise.all(Array.from({ length: Math.min(HOST_PARALLELI, ips.length) }, () => lavoratore()));
+  await Promise.all(Array.from({ length: Math.min(profilo.delicata ? 1 : HOST_PARALLELI, ips.length) }, () => lavoratore()));
 
   return { profilo: profilo.id, host, scriptMancanti: mancanti, osDetectionSaltata: osSaltata, registro };
 }

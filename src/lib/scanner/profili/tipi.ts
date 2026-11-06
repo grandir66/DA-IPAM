@@ -24,7 +24,7 @@ export interface RegolaScript {
 
 export interface ProfiloScansione {
   /** Chiave stabile: finisce nel database e nelle rotte. */
-  id: "approfondito" | "iot_ot" | "riconoscimento";
+  id: "approfondito" | "iot_ot" | "riconoscimento" | "ricognizione";
   nome: string;
   descrizione: string;
   /** Porte TCP del profilo. */
@@ -44,6 +44,11 @@ export interface ProfiloScansione {
   tettoByteOutput: number;
   /** Tetto in secondi per host, per fase. */
   hostTimeoutS: number;
+  /**
+   * Solo porte aperte: niente `-sV`, `-O` né script, lentamente e un host alla volta (ricognizione,
+   * 06/11/2026). Serve a sapere cosa c'è prima di decidere quanto toccarlo.
+   */
+  delicata?: boolean;
 }
 
 /** Un rilievo letto da uno script, pronto da salvare. */

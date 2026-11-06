@@ -21,6 +21,8 @@ const ETICHETTE_GIRO: Record<string, string> = {
   sequenza_scoperta: "Scoperta host",
   sequenza_avanzata: "Avanzata",
   sequenza_accesso: "Accesso agli host",
+  sequenza_ricognizione: "Ricognizione delicata",
+  profilo_ricognizione: "Ricognizione delicata",
 };
 
 export function etichettaGiro(scanType: string): string {

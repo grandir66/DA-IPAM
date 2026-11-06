@@ -6,6 +6,7 @@ import { ARGOMENTI_VUOTI, argomentiNmap } from "@/lib/scanner/argomenti-nmap";
 import { discoverNetwork, type DiscoveryScanType } from "@/lib/scanner/discovery";
 import { corpoScanInCorso, isScanInCorso } from "@/lib/scanner/network-scan-lock";
 import { avviaSequenza, type FaseSequenza } from "@/lib/scanner/sequenze";
+import { avviaRicognizione } from "@/lib/scanner/profili/ricognizione";
 import { ScanSequenzaSchema } from "@/lib/validators";
 
 /**
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
         .filter((h) => h?.network_id === networkId)
         .map((h) => h!.ip);
       // Avanzata e accesso fanno tentativi e probe sui singoli host: solo su quelli scelti, come l'avvio singolo.
-      if (sequenza !== "scoperta" && targetIps.length === 0) {
+      if (sequenza !== "scoperta" && sequenza !== "ricognizione" && targetIps.length === 0) {
         return NextResponse.json({ error: "Seleziona uno o più host nella lista e riprova" }, { status: 400 });
       }
 
@@ -50,6 +51,14 @@ export async function POST(request: Request) {
 
       const fasi: Record<typeof sequenza, FaseSequenza[]> = {
         scoperta: [fase("ICMP", "scan_icmp"), fase("Nmap quick", "scan_nmap_base")],
+        // Prima chi risponde e il costruttore, poi le porte solo di chi non è di campo.
+        ricognizione: [
+          fase("Ping", "ping"),
+          {
+            nome: "Costruttori e porte",
+            avvia: (sequenzaId) => avviaRicognizione({ tenantCode, networkId, etichetta: rete.name, sequenzaId }),
+          },
+        ],
         avanzata: [fase("Porte e servizi", "nmap"), fase("SNMP", "snmp")],
         accesso: [
           ...(getNetworkCredentials(networkId).length > 0 ? [fase("Verifica credenziali", "credential_validate")] : []),

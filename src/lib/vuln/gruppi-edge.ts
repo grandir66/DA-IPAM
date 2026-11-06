@@ -30,6 +30,7 @@ export interface RispostaGruppo {
  * - `lanciato`: la riga esiste e non è in errore (anche se in coda: Edge fa una scansione alla volta);
  * - `non_partito`: Edge ha risposto 200 ma la riga è in errore (gruppo di soli impianti): non è un guasto;
  * - `da_aggiornare`: la sonda non ha la rotta (404 «Not Found»). Niente ripiego sulla rete intera;
+ * - `gia_in_corso`: Edge ha già in coda o in corso un gruppo con quegli IP (409, con lo scan_id): non è un guasto;
  * - `rete_non_registrata`, `sonda_assente`, `allineamento_fallito`: prima del lancio, non è partito niente;
  * - `rifiutato` (400, 409, 422) e `motore_non_disponibile` (503): Edge ha detto di no, col motivo;
  * - `non_so`: timeout, connessione caduta, risposta illeggibile. Il gruppo può essere partito o no.
@@ -37,6 +38,7 @@ export interface RispostaGruppo {
 export type EsitoGruppoEdge =
   | { stato: "lanciato"; scan_id: number; status: string; ip_tolti: string[] }
   | { stato: "non_partito"; scan_id: number; ip_tolti: string[]; messaggio: string }
+  | { stato: "gia_in_corso"; scan_id: number | null; messaggio: string }
   | { stato: "da_aggiornare" }
   | { stato: "rete_non_registrata"; messaggio?: string }
   | { stato: "sonda_assente"; messaggio: string }

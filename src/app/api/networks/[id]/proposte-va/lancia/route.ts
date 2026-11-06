@@ -19,6 +19,7 @@ export async function POST(_req: Request, { params }: Ctx) {
   return withTenantFromSession(async () => {
     const n = Number((await params).id);
     if (!Number.isInteger(n) || n <= 0 || !getNetworkById(n)) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
-    return NextResponse.json(await lanciaGruppiConfermati(n));
+    const esito = await lanciaGruppiConfermati(n);
+    return NextResponse.json(esito, { status: esito.errore ? 502 : 200 });
   });
 }

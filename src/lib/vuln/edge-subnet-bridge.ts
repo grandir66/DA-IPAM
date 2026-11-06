@@ -1018,6 +1018,11 @@ function esitoDaErroreGruppo(e: unknown): EsitoGruppoEdge {
   if (e instanceof EdgeClientError) {
     const motivo = motivoEdge(e);
     if (e.status === 404 && /rete edge non trovata/i.test(motivo)) return { stato: "rete_non_registrata", messaggio: motivo };
+    if (e.status === 409 && /già in corso/i.test(motivo)) {
+      // Edge scrive «… la scansione 41 …» nel detail (e `scan_id` nel JSON, che il client non conserva).
+      const id = /scansione (\d+)/i.exec(motivo)?.[1];
+      return { stato: "gia_in_corso", scan_id: id ? Number(id) : null, messaggio: motivo };
+    }
     if (e.status === 400 || e.status === 409 || e.status === 422) return { stato: "rifiutato", status: e.status, messaggio: motivo };
     if (e.status === 503) return { stato: "motore_non_disponibile", messaggio: motivo };
     return { stato: "non_so", messaggio: motivo };

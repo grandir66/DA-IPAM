@@ -20,13 +20,16 @@ import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
 import type { EsitoGruppoEdge, GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
 import { gruppiDaConfermate, type GruppoDaLanciare } from "./gruppi";
-import { ETICHETTE_FAMIGLIA } from "./regole";
-import { leggiProposte, type RigaProposta } from "./store";
+import { ETICHETTE_FAMIGLIA, proponiProfilo, type HostPerProposta } from "./regole";
+import { contesiDiRete, leggiProposte, type RigaProposta } from "./store";
 
 export interface DipendenzeLancio {
   proposte: (networkId: number) => RigaProposta[];
-  host: (networkId: number) => Array<Parameters<typeof eImpianto>[0] & { id: number }>;
-  catalogo: () => Promise<{ profili: EdgeAssessmentProfile[]; avviso: string | null }>;
+  host: (networkId: number) => Array<HostPerProposta & { id: number }>;
+  /** Host con fonti in disaccordo, per ricalcolare la famiglia sul dato di oggi. */
+  contesi: (networkId: number) => Set<number>;
+  /** `errore` = la lettura è fallita: il lancio non parte. `profili` vuoto senza errore = catalogo davvero vuoto. */
+  catalogo: () => Promise<{ profili: EdgeAssessmentProfile[]; avviso: string | null; errore?: string }>;
   avvia: (networkId: number, gruppo: GruppoPerEdge) => Promise<EsitoGruppoEdge>;
 }
 
@@ -43,35 +46,40 @@ export interface EsitoLancio {
   /** Host confermati che NON sono entrati in nessun gruppo, col motivo. */
   tolti: TolloDalLancio[];
   avvisi: string[];
+  /** Il lancio non è partito perché una lettura necessaria è fallita (catalogo assessment): nessun gruppo tentato. */
+  errore: string | null;
   /** true se un esito ha fermato il lancio (da aggiornare, non so, guasto): i gruppi dopo sono `non_tentato`. */
   fermato: boolean;
 }
 
-async function catalogoDaEdge(): Promise<{ profili: EdgeAssessmentProfile[]; avviso: string | null }> {
+async function catalogoDaEdge(): Promise<{ profili: EdgeAssessmentProfile[]; avviso: string | null; errore?: string }> {
   const scanner = getActiveEdgeScanner();
-  if (!scanner || scanner.enabled !== 1) return { profili: [], avviso: "Sonda non configurata: nessun profilo assessment letto" };
+  if (!scanner || scanner.enabled !== 1) return { profili: [], avviso: null, errore: "Sonda non configurata o disabilitata: nessun profilo assessment letto" };
   try {
     return { profili: (await listEdgeProfiles(scanner)).profiles, avviso: null };
   } catch (e) {
-    return { profili: [], avviso: `Profili assessment non letti dalla sonda (${e instanceof Error ? e.message : "errore"}): i gruppi partono senza assessment` };
+    // Un errore non è un catalogo vuoto: senza sapere quali profili ha la sonda il lancio non parte.
+    return { profili: [], avviso: null, errore: `Profili assessment non letti dalla sonda (${e instanceof Error ? e.message : "errore"}): il lancio non parte` };
   }
 }
 
 const REALI: DipendenzeLancio = {
   proposte: leggiProposte,
   host: (n) => getHostsByNetwork(n) as ReturnType<DipendenzeLancio["host"]>,
+  contesi: (n) => contesiDiRete(n),
   catalogo: catalogoDaEdge,
   avvia: avviaGruppoEdge,
 };
 
 /** Dopo questi esiti si va avanti col gruppo dopo: è andato, o Edge ha rifiutato proprio quel gruppo. */
-const CONTINUA = new Set<EsitoGruppoEdge["stato"]>(["lanciato", "non_partito", "rifiutato"]);
+const CONTINUA = new Set<EsitoGruppoEdge["stato"]>(["lanciato", "non_partito", "rifiutato", "gia_in_corso"]);
 
 export async function lanciaGruppiConfermati(networkId: number, deps: Partial<DipendenzeLancio> = {}): Promise<EsitoLancio> {
   const d = { ...REALI, ...deps };
   const confermate = d.proposte(networkId).filter((r) => r.stato === "confermato");
   const host = new Map(d.host(networkId).map((h) => [h.id, h]));
 
+  const contesi = d.contesi(networkId);
   const tolti: TolloDalLancio[] = [];
   const buone: RigaProposta[] = [];
   for (const r of confermate) {
@@ -81,13 +89,23 @@ export async function lanciaGruppiConfermati(networkId: number, deps: Partial<Di
     else if (eImpianto(h)) togli("è un impianto o un apparato di campo: non si scansiona");
     else if (r.famiglia === "impianti" || r.famiglia === "da_chiarire") togli(`famiglia «${ETICHETTE_FAMIGLIA[r.famiglia]}»: non si scansiona`);
     else if (r.da_rivedere) togli("la conferma è da rivedere: il tipo è cambiato");
+    // La famiglia salvata è quella di quando si è confermato: si ricalcola sul dato di oggi, contesi compresi.
+    // Se differisce l'host resta fuori. Non si riscrive va_proposte: la rilettura la fa una persona.
+    else if (proponiProfilo(h, { conteso: contesi.has(r.host_id) }).famiglia !== r.famiglia) togli("tipo cambiato, da rivedere");
     else buone.push(r);
   }
 
   const avvisi: string[] = [];
-  const { profili, avviso } = await d.catalogo();
-  if (avviso) avvisi.push(avviso);
+  let profili: EdgeAssessmentProfile[] = [];
+  if (buone.length > 0) {
+    const cat = await d.catalogo();
+    if (cat.errore) return { gruppi: [], tolti, avvisi, errore: cat.errore, fermato: true };
+    profili = cat.profili;
+    if (cat.avviso) avvisi.push(cat.avviso);
+    if (profili.length === 0) avvisi.push("Il catalogo dei profili assessment della sonda è vuoto: i gruppi partono senza assessment.");
+  }
   const gruppi = gruppiDaConfermate(buone, profili);
+  for (const g of gruppi) if (g.avviso) avvisi.push(`${ETICHETTE_FAMIGLIA[g.famiglia]}: ${g.avviso}`);
   if (gruppi.length === 0) avvisi.push("Nessuna proposta confermata da lanciare.");
 
   const esiti: EsitoLancio["gruppi"] = [];
@@ -106,5 +124,5 @@ export async function lanciaGruppiConfermati(networkId: number, deps: Partial<Di
       motivoStop = `non tentato: il gruppo «${ETICHETTE_FAMIGLIA[g.famiglia]}» si è fermato (${esito.stato})`;
     }
   }
-  return { gruppi: esiti, tolti, avvisi, fermato: motivoStop !== null };
+  return { gruppi: esiti, tolti, avvisi, errore: null, fermato: motivoStop !== null };
 }

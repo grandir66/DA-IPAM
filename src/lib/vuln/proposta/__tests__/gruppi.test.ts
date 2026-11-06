@@ -117,3 +117,20 @@ test("un profilo che chiede l'autorizzazione scritta non si sceglie da solo", ()
   // si scende al profilo più basso che non lo chiede, non si sale e non si lancia quello
   assert.equal(gruppiDaConfermate([riga("linux")], solo)[0].assessment_profile_id, "smoke-interno");
 });
+
+test("regola 5 fail-closed: per Rete e Windows vale solo un modulo ammesso, uno nuovo non passa", () => {
+  // Un modulo che il catalogo aggiunge domani e che qui nessuno ha giudicato: non è «non debole», è ignoto.
+  const nuovo = CATALOGO.map((p) => (p.id === "smoke-interno" ? { ...p, steps: [...p.steps, "modulo-mai-visto"] } : p));
+  const g = gruppiDaConfermate(tutte(), nuovo);
+  for (const f of ["rete", "windows"]) {
+    const x = g.find((y) => y.famiglia === f)!;
+    assert.equal(x.assessment_profile_id, null, f);
+    assert.match(x.avviso ?? "", /assessment/i, "il gruppo resta senza assessment e lo dice");
+  }
+  // Linux e Periferiche non sono nella regola: il loro profilo resta
+  assert.equal(g.find((y) => y.famiglia === "periferiche")!.assessment_profile_id, "smoke-interno");
+  // il catalogo attuale dà ancora il giro minimo, senza avviso
+  const ok = gruppiDaConfermate(tutte(), CATALOGO);
+  assert.equal(ok.find((y) => y.famiglia === "rete")!.assessment_profile_id, "smoke-interno");
+  assert.equal(ok.find((y) => y.famiglia === "rete")!.avviso, null);
+});

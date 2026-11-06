@@ -28,6 +28,8 @@ export interface GruppoDaLanciare {
   profile: EdgeScanProfile;
   nuclei_profilo: NucleiGruppo | null;
   assessment_profile_id: string | null;
+  /** Perché un assessment previsto non c'è (modulo non ammesso, profilo non nel catalogo); `null` se non c'è niente da dire. */
+  avviso: string | null;
 }
 
 type Moduli = "base" | "completi" | null;
@@ -57,8 +59,13 @@ const SCHEDE: Partial<Record<Famiglia, Scheda>> = {
 /** Ordine di lancio: quello della tabella del piano. Chi non c'è qui (impianti, da_chiarire) non parte. */
 const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche"];
 
-/** Moduli del catalogo di Edge che provano credenziali di serie (`snmp-enum`: community «public»). */
-const MODULI_CREDENZIALI_DEBOLI = ["snmp-enum"];
+/**
+ * Per Rete e Windows (regola 5) si elencano i moduli AMMESSI, non quelli esclusi: una lista di esclusi
+ * fallisce aperta, perché un modulo che il catalogo di Edge aggiunge domani passerebbe senza che nessuno
+ * l'abbia giudicato. Oggi solo l'impronta dei servizi. `snmp-enum` (community «public», credenziale di
+ * serie) e `cred-bind` restano fuori per costruzione. Per aprire un modulo lo si giudica e lo si scrive qui.
+ */
+const MODULI_AMMESSI_SENZA_CREDENZIALI_DEBOLI = ["service-fp"];
 
 const GRADINI: EdgeScanProfile[] = ["fast", "balanced", "deep"];
 
@@ -75,17 +82,28 @@ function idAssessment(
   moduli: Moduli,
   scheda: Scheda,
   catalogo: readonly EdgeAssessmentProfile[],
-): string | null {
-  const ordine: Array<"moduli-base" | "moduli-completi"> =
-    moduli === "completi" ? ["moduli-completi", "moduli-base"] : moduli === "base" ? ["moduli-base"] : [];
+): { id: string | null; avviso: string | null } {
+  if (moduli === null) return { id: null, avviso: null };
+  const ordine: Array<"moduli-base" | "moduli-completi"> = moduli === "completi" ? ["moduli-completi", "moduli-base"] : ["moduli-base"];
+  const scartati: string[] = [];
   for (const voce of ordine) {
     const p = catalogo.find((c) => vocePaginaDelProfilo(c.id) === voce);
     if (!p) continue;
-    if (p.requires_authorization) continue; // serve l'autorizzazione scritta del cliente: mai da qui
-    if (scheda.senzaCredenzialiDeboli && p.steps.some((s) => MODULI_CREDENZIALI_DEBOLI.includes(s))) continue;
-    return p.id;
+    if (p.requires_authorization) {
+      scartati.push(`${p.label}: serve l'autorizzazione scritta`);
+      continue;
+    }
+    if (scheda.senzaCredenzialiDeboli) {
+      const fuori = p.steps.filter((m) => !MODULI_AMMESSI_SENZA_CREDENZIALI_DEBOLI.includes(m));
+      if (fuori.length > 0) {
+        scartati.push(`${p.label}: modulo non ammesso su questa famiglia (${fuori.join(", ")})`);
+        continue;
+      }
+    }
+    return { id: p.id, avviso: null };
   }
-  return null;
+  const perche = scartati.length > 0 ? scartati.join("; ") : "profilo non presente nel catalogo della sonda";
+  return { id: null, avviso: `Nessun assessment: ${perche}` };
 }
 
 /**
@@ -110,12 +128,14 @@ export function gruppiDaConfermate(
       if (scelta !== null && gradino(scelta) < gradino(profile)) profile = scelta;
     }
     const moduli: Moduli = scheda.moduli === "completi" && profile === "fast" ? "base" : scheda.moduli;
+    const assessment = idAssessment(moduli, scheda, catalogo);
     gruppi.push({
       famiglia,
       ips,
       profile,
       nuclei_profilo: scheda.nuclei,
-      assessment_profile_id: idAssessment(moduli, scheda, catalogo),
+      assessment_profile_id: assessment.id,
+      avviso: assessment.avviso,
     });
   }
   return gruppi;

@@ -39,11 +39,11 @@ async function preparaRete(): Promise<{ rete: number; plc: string }> {
   return withTenant(T, async () => {
     const d = getTenantDb(T);
     const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES (?, 'x')").run(`10.7.${++k}.0/24`).lastInsertRowid);
-    const h = d.prepare("INSERT INTO hosts (network_id, ip, status, classification, vendor) VALUES (?, ?, 'online', ?, ?)");
-    const id = (ip: string, cls: string, vendor: string | null) => Number(h.run(rete, ip, cls, vendor).lastInsertRowid);
-    const win = id("10.7.0.11", "workstation", "Dell Inc.");
+    const h = d.prepare("INSERT INTO hosts (network_id, ip, status, classification, vendor, os_info) VALUES (?, ?, 'online', ?, ?, ?)");
+    const id = (ip: string, cls: string, vendor: string | null, os: string | null = null) => Number(h.run(rete, ip, cls, vendor, os).lastInsertRowid);
+    const win = id("10.7.0.11", "workstation", "Dell Inc.", "Windows 11 Pro");
     const router = id("10.7.0.1", "router", "MikroTik");
-    const linux = id("10.7.0.21", "server_linux", null);
+    const linux = id("10.7.0.21", "server_linux", null, "Ubuntu 22.04 Linux");
     const plc = id("10.7.0.50", "plc", "CREVIS Co., LTD");
     const p = d.prepare(
       `INSERT INTO va_proposte (host_id, famiglia, voce, con_web, confidenza, motivo, stato, da_rivedere, confermata_da, confermata_il, aggiornata_il)
@@ -118,13 +118,61 @@ test("«non so» (timeout) e guasti a monte fermano; un gruppo rifiutato con 422
   assert.equal(eb.gruppi[0].esito.stato, "rifiutato");
 });
 
-test("catalogo non letto: si dice, e nessun gruppo ha un assessment", async () => {
+test("catalogo illeggibile per un errore: il lancio non parte e dice il motivo", async () => {
   const { rete } = await preparaRete();
   const { f, chiamate } = avviaFinto();
   const e = await withTenant(T, () =>
-    lanciaGruppiConfermati(rete, { avvia: f, catalogo: async () => ({ profili: [], avviso: "profili non letti: timeout" }) }));
+    lanciaGruppiConfermati(rete, { avvia: f, catalogo: async () => ({ profili: [], avviso: null, errore: "Profili assessment non letti dalla sonda (timeout)" }) }));
+  assert.equal(chiamate.length, 0, "nessun gruppo parte");
+  assert.match(e.errore ?? "", /timeout/);
+  assert.deepEqual(e.gruppi, []);
+});
+
+test("catalogo letto e davvero vuoto: i gruppi partono senza assessment, con un avviso", async () => {
+  const { rete } = await preparaRete();
+  const { f, chiamate } = avviaFinto();
+  const e = await withTenant(T, () => lanciaGruppiConfermati(rete, { avvia: f, catalogo: async () => ({ profili: [], avviso: null }) }));
+  assert.equal(chiamate.length, 3);
   assert.ok(chiamate.every((g) => g.assessment_profile_id === null));
-  assert.ok(e.avvisi.some((a) => /profili non letti/.test(a)));
+  assert.equal(e.errore, null);
+  assert.ok(e.avvisi.some((a) => /vuoto/i.test(a)));
+});
+
+test("un modulo ignoto nel profilo di Rete o Windows: il gruppo parte senza assessment e l'avviso arriva", async () => {
+  const { rete } = await preparaRete();
+  const { f, chiamate } = avviaFinto();
+  const nuovo = CATALOGO.map((p) => (p.id === "smoke-interno" ? { ...p, steps: ["service-fp", "modulo-mai-visto"] } : p));
+  const e = await withTenant(T, () => lanciaGruppiConfermati(rete, { avvia: f, catalogo: async () => ({ profili: nuovo, avviso: null }) }));
+  assert.equal(chiamate.length, 3);
+  assert.deepEqual(chiamate.map((g) => g.assessment_profile_id), [null, null, "completo-interno"]);
+  assert.ok(e.avvisi.some((a) => /assessment/i.test(a)));
+});
+
+test("tipo cambiato dopo la conferma: l'host resta fuori e compare in tolti, la riga non si riscrive", async () => {
+  const { rete } = await preparaRete();
+  await withTenant(T, async () => {
+    // il PC Windows confermato ora non ha più né sistema né tipo noti; il server Linux è diventato conteso
+    getTenantDb(T).prepare("UPDATE hosts SET classification='unknown', os_info=NULL, vendor=NULL WHERE ip='10.7.0.11' AND network_id=?").run(rete);
+  });
+  const conteso = await withTenant(T, async () => Number((getTenantDb(T).prepare("SELECT id FROM hosts WHERE ip='10.7.0.21' AND network_id=?").get(rete) as { id: number }).id));
+  const prima = await withTenant(T, async () => getTenantDb(T).prepare("SELECT host_id, famiglia, stato FROM va_proposte ORDER BY host_id").all());
+  const { f, chiamate } = avviaFinto();
+  const e = await withTenant(T, () =>
+    lanciaGruppiConfermati(rete, { avvia: f, catalogo, contesi: () => new Set([conteso]) }));
+  assert.deepEqual(chiamate.flatMap((g) => g.ips), ["10.7.0.1"], "parte solo il router");
+  const cambiati = e.tolti.filter((t) => /tipo cambiato, da rivedere/.test(t.motivo)).map((t) => t.ip).sort();
+  assert.deepEqual(cambiati, ["10.7.0.11", "10.7.0.21"]);
+  const dopo = await withTenant(T, async () => getTenantDb(T).prepare("SELECT host_id, famiglia, stato FROM va_proposte ORDER BY host_id").all());
+  assert.deepEqual(dopo, prima, "il lancio non riscrive va_proposte");
+});
+
+test("«già in corso» non ferma gli altri gruppi: non è un guasto", async () => {
+  const { rete } = await preparaRete();
+  const { f, chiamate } = avviaFinto([{ stato: "gia_in_corso", scan_id: 7, messaggio: "già in corso" }]);
+  const e = await withTenant(T, () => lanciaGruppiConfermati(rete, { avvia: f, catalogo }));
+  assert.equal(chiamate.length, 3);
+  assert.equal(e.fermato, false);
+  assert.equal(e.gruppi[0].esito.stato, "gia_in_corso");
 });
 
 test("nessuna proposta confermata: nessun lancio, e lo dice", async () => {

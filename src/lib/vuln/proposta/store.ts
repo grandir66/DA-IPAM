@@ -39,14 +39,19 @@ export function esitoRigenerazione(salvata: Salvata | undefined, nuova: Proposta
   return salvata.famiglia === nuova.famiglia ? "lascia" : "segna";
 }
 
-export function rigeneraProposte(networkId: number, adesso = new Date().toISOString()): { scritte: number; daRivedere: number } {
-  const db = getDb();
-  const hosts = getHostsByNetwork(networkId).filter((h) => h.status !== "offline") as Array<Host & Parameters<typeof proponiProfilo>[0]>;
-  const contesi = new Set(
-    leggiContesiDiRete(db, networkId, adesso, { limite: Number.MAX_SAFE_INTEGER }).righe
+/** Host su cui le fonti non concordano su tipo o sistema (stesso criterio della rigenerazione). */
+export function contesiDiRete(networkId: number, adesso = new Date().toISOString()): Set<number> {
+  return new Set(
+    leggiContesiDiRete(getDb(), networkId, adesso, { limite: Number.MAX_SAFE_INTEGER }).righe
       .filter((r) => r.dimensione === "category" || r.dimensione === "os")
       .map((r) => r.host_id),
   );
+}
+
+export function rigeneraProposte(networkId: number, adesso = new Date().toISOString()): { scritte: number; daRivedere: number } {
+  const db = getDb();
+  const hosts = getHostsByNetwork(networkId).filter((h) => h.status !== "offline") as Array<Host & Parameters<typeof proponiProfilo>[0]>;
+  const contesi = contesiDiRete(networkId, adesso);
   const salvate = new Map(
     (db.prepare(
       `SELECT p.host_id, p.famiglia, p.stato FROM va_proposte p JOIN hosts h ON h.id = p.host_id WHERE h.network_id = ?`,

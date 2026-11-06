@@ -157,6 +157,21 @@ test("422 e 503 sono errori distinti, col motivo di Edge", () =>
     assert.equal(chiamateA("/networks/5/scan").length, 0);
   }));
 
+test("409 «già in corso»: esito distinto con lo scan_id esistente; un 409 diverso resta un rifiuto", () =>
+  dentro(async () => {
+    // forma vera: JSON con `detail` (frase), `scan_id` e `ip_in_comune`, come lo scrive la rotta di Edge
+    gruppi = {
+      status: 409,
+      body: JSON.stringify({ ok: false, detail: "Gruppo già in corso: la scansione 41 ha già in coda o in corso 10.9.0.11, 10.9.0.12", scan_id: 41, ip_in_comune: ["10.9.0.11", "10.9.0.12"] }),
+    };
+    const a = await avviaGruppoEdge(rete, GRUPPO);
+    assert.equal(a.stato, "gia_in_corso");
+    if (a.stato === "gia_in_corso") { assert.equal(a.scan_id, 41); assert.match(a.messaggio, /già in corso/); }
+    gruppi = { status: 409, body: "altro conflitto", testo: true };
+    assert.equal((await avviaGruppoEdge(rete, GRUPPO)).stato, "rifiutato");
+    assert.equal(chiamateA("/networks/5/scan").length, 0);
+  }));
+
 test("rete non registrata sulla sonda: non si crea, non si lancia", () =>
   dentro(async () => {
     lookup = { status: 200, body: '{"found":false}' };

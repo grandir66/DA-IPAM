@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-06 · Gli apparati si riconoscono da ciò che dicono di sé
+
+Al 72729 due Cisco SG200-26 con SNMP spento stavano `unknown` e senza modello mentre si annunciavano col CDP ogni 60 secondi.
+
+### Aggiunto
+- **Annunci CDP/LLDP del trunk sugli host**: modello e firmware riempiti (mai sovrascritti) e categoria dall'attribuzione. L'host si trova per IP di gestione, poi per MAC del telaio; due host possibili vuol dire nessun legame. Serve il sensore di DA-Vul-can dalla 0.8.256; con uno più vecchio non cambia niente.
+- **Levetta «Riconoscimento degli host sconosciuti»** (Opzioni, spenta di serie): ogni notte `-O` su al massimo 10 `unknown`, una volta ogni 30 giorni. Salta 9100, porte di campo e produttori di campo: `-O` manda pacchetti malformati.
+- **Levetta «Riconoscimento dai vicini letti via SNMP»** (spenta di serie): è la decisione per cliente che l'ADR 0018 chiede perché una lettura in più cambi le classificazioni.
+- La descrizione LLDP dei vicini si legge via SNMP (colonna 10): la tabella si leggeva già intera, nessuna lettura in più.
+
+### Corretto
+- Il testo di `-O` dà anche la categoria («Cisco SG200 or SG300 switch»), e un'ipotesi sotto il 95% non diventa sistema operativo.
+- Un profilo che riempie solo campi, come `-O` senza script, ora rifà la classificazione: restava ferma fino alla scansione dopo.
+
 ## [Non rilasciato] — 2026-11-04 · Accesso Windows automatico e diritti chiari
 
 - **Nuovo**: il pulsante «Attribuzione» della rete apre gli **IP contesi**: una riga per ogni dato su cui le fonti non concordano, una colonna per fonte, un clic sulla cella e quel valore diventa la scelta manuale dell'IP. L'anteprima mostrava solo il prima e il dopo, quindi una persona non poteva decidere guardando cosa dice ogni fonte. Si scelgono solo valori detti da una fonte; `compute` accanto a `compute.server` e `proxmox` accanto a `proxmox-server-solutions` non contano come contrasto.

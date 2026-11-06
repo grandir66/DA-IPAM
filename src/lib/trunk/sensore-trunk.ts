@@ -24,6 +24,7 @@ import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edg
 import { unisciReti, type TrunkMaschera } from "@/lib/trunk/reti";
 import { getTipiRilievoPerMac, valutaRilievi, type TipoRilievo } from "@/lib/trunk/rilievi";
 import { portaHostDalTrunk } from "@/lib/trunk/host-dal-trunk";
+import { portaApparatiDalTrunk } from "@/lib/trunk/apparati-dal-trunk";
 import { esiste } from "@/lib/percorsi";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
@@ -81,6 +82,25 @@ export interface TrunkVicino {
   indirizzo: string | null;
   vlan_nativa: number | null;
   ultima_vista: string;
+  /** Dal 06/11: un sensore più vecchio non li manda. */
+  piattaforma?: string | null;
+  versione?: string | null;
+  capacita?: string | null;
+  mac?: string | null;
+}
+
+/**
+ * L'host che si annuncia: per IP di gestione, poi per MAC del telaio. Non si usa il VID del frame: il CDP passa nella
+ * nativa e l'IP di gestione può stare in un'altra VLAN. Due host possibili vuol dire nessun legame, non il primo che capita.
+ */
+function hostDelVicino(d: ReturnType<typeof db>, v: TrunkVicino): number | null {
+  const unico = (righe: unknown[]): number | null => (righe.length === 1 ? (righe[0] as { id: number }).id : null);
+  if (v.indirizzo) {
+    const perIp = d.prepare("SELECT id FROM hosts WHERE ip = ?").all(v.indirizzo);
+    if (perIp.length > 0) return unico(perIp);
+  }
+  const mac = v.mac ? normalizeMacForStorage(v.mac) : null;
+  return mac ? unico(d.prepare("SELECT id FROM hosts WHERE mac = ?").all(mac)) : null;
 }
 
 interface Cursore {
@@ -328,13 +348,15 @@ export function salvaVicini(vicini: TrunkVicino[]): void {
   d.transaction(() => {
     d.prepare("DELETE FROM trunk_vicini").run();
     const ins = d.prepare(`
-      INSERT OR REPLACE INTO trunk_vicini (protocollo, sistema, porta, vid, indirizzo, vlan_nativa, ultima_vista)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO trunk_vicini (protocollo, sistema, porta, vid, indirizzo, vlan_nativa, ultima_vista,
+        piattaforma, versione, capacita, mac, host_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const v of vicini) {
       if (!v || typeof v.sistema !== "string" || typeof v.protocollo !== "string") continue;
       ins.run(v.protocollo, v.sistema, v.porta ?? "?", v.vid ?? 0, v.indirizzo ?? null,
-        typeof v.vlan_nativa === "number" ? v.vlan_nativa : null, v.ultima_vista ?? new Date().toISOString());
+        typeof v.vlan_nativa === "number" ? v.vlan_nativa : null, v.ultima_vista ?? new Date().toISOString(),
+        v.piattaforma ?? null, v.versione ?? null, v.capacita ?? null, v.mac ?? null, hostDelVicino(d, v));
     }
   })();
 }
@@ -469,6 +491,13 @@ async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise
     if (h.creati || h.mac) console.info(`[trunk] host dal trunk: ${h.creati} nuovi, ${h.mac} MAC compilati`);
   } catch (e) {
     console.warn(`[trunk] host dal trunk non portati: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // Dopo gli host: un apparato appena creato dal trunk prende subito modello e categoria.
+  try {
+    const a = portaApparatiDalTrunk();
+    if (a.campiRiempiti) console.info(`[trunk] annunci CDP/LLDP: ${a.campiRiempiti} campi riempiti su ${a.hostToccati} host`);
+  } catch (e) {
+    console.warn(`[trunk] annunci CDP/LLDP non portati: ${e instanceof Error ? e.message : String(e)}`);
   }
   valutaRilievi();
   return { fonte: l.fonte, osservazioni: totale, vlan: vlan.length };

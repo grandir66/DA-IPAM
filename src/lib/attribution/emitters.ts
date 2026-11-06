@@ -3,6 +3,7 @@
 import { classifyDevice } from "@/lib/device-classifier";
 import { lookupSysObjectId } from "@/lib/scanner/snmp-sysobj-lookup";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
+import { categoriaDaCapacita, type Annuncio } from "./annunci";
 import { kbLookupSysObjectId } from "./kb";
 import type { KbSysObjMatch } from "./kb";
 import { matchMacProduct } from "./mac-product";
@@ -32,6 +33,28 @@ export interface AttributionSignals {
   adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
   wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+  /** Cosa gli apparati dicono di sé (attribution/annunci.ts). Opzionale: i segnali di chi non li legge restano validi. */
+  annunci?: Annuncio[];
+}
+
+/**
+ * Il mestiere scritto nel testo di `-O` (06/11/2026): nmap chiude il nome con il tipo di apparato («Cisco SG200 or
+ * SG300 switch»), e fino a oggi di quella riga si leggeva solo la famiglia del sistema operativo.
+ */
+function categoriaDaTestoNmap(testo: string): CategorySlug | null {
+  if (/\bswitch\b/i.test(testo)) return "network.switch";
+  if (/\brouter\b/i.test(testo)) return "network.router";
+  if (/\bfirewall\b/i.test(testo)) return "network.firewall";
+  if (/\b(wap|access point)\b/i.test(testo)) return "network.access_point";
+  if (/\bprinter\b/i.test(testo)) return "peripheral.printer";
+  if (/\b(voip|ip) phone\b/i.test(testo)) return "voip.phone";
+  if (/\b(webcam|ip camera)\b/i.test(testo)) return "av.camera";
+  return null;
+}
+
+/** La categoria di un annuncio: prima il testo, che è specifico, poi le capacità dichiarate. */
+export function categoriaDaAnnuncio(a: Annuncio): string | null {
+  return (a.piattaforma ? categoryFromLegacyText({ sysDescr: a.piattaforma }) : null) ?? categoriaDaCapacita(a.capacita, a.piattaforma);
 }
 
 /**
@@ -334,6 +357,8 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   if (host.os_info) {
     const fam = osFamilyFromText(host.os_info);
     if (fam) out.push({ source: "nmap_os", phase: "scan_nmap_base", dimension: "os", claim: fam, confidence: 0.7, raw_value: host.os_info.slice(0, 200) });
+    const mestiere = categoriaDaTestoNmap(host.os_info);
+    if (mestiere) out.push({ source: "nmap_os", phase: "scan_nmap_base", dimension: "category", claim: mestiere, confidence: 0.7, raw_value: host.os_info.slice(0, 200) });
   }
 
   // 4. hostname (debole)
@@ -430,6 +455,15 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     const source = n.protocol === "cdp" ? "cdp" : "lldp";
     out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: 0.7, raw_value: n.remote_platform.slice(0, 200) });
     break; // un solo sighting basta: gli altri sono duplicati dello stesso vicinato
+  }
+
+  // L'apparato dice di sé: più forte del nome del vicino (0.7) ma non autoritativo, vedi AUTHORITATIVE_SOURCES.
+  for (const a of signals.annunci ?? []) {
+    const cat = categoriaDaAnnuncio(a);
+    if (!cat) continue;
+    const source = a.protocollo === "cdp" ? "cdp" : "lldp";
+    out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: 0.85, raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
+    break;
   }
 
   return out;

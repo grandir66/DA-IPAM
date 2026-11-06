@@ -944,6 +944,8 @@ export interface NmapResult {
   alive: boolean;
   ports: NmapPort[];
   os: string | null;
+  /** Precisione dichiarata da `-O` per `os` (0-100). Sotto il 100 è un'ipotesi. */
+  osPrecisione?: number | null;
   mac: string | null;
   snmpHostname?: string | null;
   snmpSysDescr?: string | null;

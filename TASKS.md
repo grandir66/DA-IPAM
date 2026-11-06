@@ -15,6 +15,26 @@
 
 - [ ] Piano in DA-Vul-can: `docs/superpowers/plans/2026-11-06-host-lenti-e-avanzamento-per-ip.md`. Qui: avanzamento per IP nel pannello VA, rilievi a scansione in corso in `runVulnSync`, interruttore degli host lenti. Richiesta di Riccardo del 05/11. In attesa del suo via.
 
+## 2026-11-06 — Riconoscere gli apparati da ciò che già sappiamo (livello completo)
+
+Riccardo (06/11): dalla sonda del 72729 192.168.0.53 è un Cisco ma non si capisce cosa sia; «nmap dovrebbe già farlo»; «dovevi già usare anche quello per popolare i dati di ipam... dagli altri device in rete, dai dati del trunk letti con i protocolli noti»; «sì, procedi». Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`. Metà sensore in `DA-Vul-can/TASKS.md`.
+
+Misurato sul 72729 il 06/11 00:00-00:04Z: 192.168.0.52 e .53 sono due **Cisco SG200-26 (PID SLM2024T), firmware 1.3.2.02**, SNMP spento, porta 90 chiusa, aperta la 80. 50 host `unknown` su 138; col CDP si annunciano solo questi due, LLDP 0 pacchetti in 125 s sulla sonda (ipotesi non verificata: il bridge di `pve` non lo inoltra).
+
+- [x] `trunk_vicini` con piattaforma, versione, capacità, MAC e host (`migrateRiconoscimento`, `apparati-dal-trunk.ts`): `apparati-dal-trunk.test.ts` 6 verdi
+- [x] Attribuzione: `annunci.ts`, capacità non autoritative, `lldpd` su Linux escluso: `annunci.test.ts` 5 verdi
+- [x] Descrizione LLDP via SNMP: colonna 10 della tabella già letta, `snmp-topologia.test.ts`. Corretto un mio rilievo del mattino: la riga del GS1900 aveva `remote_mac` e `remote_caps`, il MAC non stava solo nel nome
+- [x] Vicini SNMP dietro `automatismo.vicini_snmp`, spento: **il filtro di ADR 0018 non è una svista, non si tocca**. `topologia-t2-freno.test.ts` verde
+- [x] `-O`: categoria dal testo, ipotesi sotto il 95% scartate; `da-ipam` è root sul 72729, nmap ha anche `cap_net_raw`
+- [x] Trovato strada facendo: `salva.ts` ricalcolava solo con evidenze dagli script, quindi `-O` da solo scriveva `os_info` e la classe restava `unknown`. Corretto, prova in `sconosciuti.test.ts`
+- [x] Giro notturno `automatismo.riconoscimento`, spento: `sconosciuti.test.ts` 10 verdi
+- [x] Prova sulla copia del DB del 72729 (copia tolta dopo): ricalcolo di tutti i 138 host 0 differenze; con gli annunci cambiano solo .52 e .53 (`switch`, modello, firmware); seconda passata 0 campi. Il frame CDP vero decodificato dal sensore nuovo dà gli stessi valori
+- [ ] Vedere sul 72729 vero: serve DA-Vul-can sulla sonda e questa versione su `main` di DA-IPAM (conferma di Riccardo)
+- [ ] Decisione di Riccardo: accendere `automatismo.riconoscimento` sul 72729. Prova a vuoto del 06/11, 8 host: 192.168.0.30 (Raspberry), .190, .246 (D-Link), 192.168.1.41, .47, .48, .49, .254, gli ultimi 5 senza produttore. Sono rete di un impianto: da guardare prima, e il 05/11 ha chiesto di tenere fermi i job di scansione fino a sonda provata
+- [ ] Decisione di Riccardo: accendere `automatismo.vicini_snmp` per cliente
+- [ ] Riccardo (06/11): `192.168.0.53` ha la nota «verificare se eliminare» ed è vivo: a un ping non ha risposto e il primo GET è scaduto. Il controllo «Non risposto» può proporre di togliere un apparato acceso. Non toccato
+- [ ] Idea, non fatta: la firma web degli Sx200/300 (`GoAhead` + `/cs<8 hex>/config/log_off_page.htm`) riconosce uno switch anche senza CDP e senza `-O`
+
 ## 2026-11-05 — Tolti i job di scansione VA del 72729 (si riaccendono a sonda pronta)
 
 Riccardo (05/11): «rimuovi i job in 72729 di scansione, li faremo partire quando abbiamo una sonda perfetta

@@ -47,6 +47,7 @@ import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
+import { annunciDelHost, type Annuncio } from "./attribution/annunci";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { unisci, risolvi } from "./percorsi";
 
@@ -3204,6 +3205,7 @@ export interface AttributionSignals {
   adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
   wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+  annunci: Annuncio[];
 }
 
 export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
@@ -3234,7 +3236,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
        AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
-  return { host, adComputer, wazuh, neighborSightings };
+  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(d, hostId) };
 }
 
 /** Facade di db-tenant.ts::refreshHostVendorsFromMac (regola 12). Vedi lì per la doc completa. */

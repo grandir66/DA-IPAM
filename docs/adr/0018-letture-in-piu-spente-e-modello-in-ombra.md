@@ -117,3 +117,10 @@ dopo T2 (circa 18 ms sul Mac), modello per cavo 27-43 ms (solo a richiesta). A s
   di una riga `device`/`unifi` sulla stessa chiave. È voluto: la chiave non contiene la fonte, quelle colonne le legge solo
   il modello per cavo (§13.5.7, «Chi legge che cosa»), ed è l'unico posto dove una lettura in più dice qualcosa di un
   vicino già noto. Tre prove lo tengono.
+
+## Aggiornamento del 06/11 (riconoscimento degli apparati)
+
+Il punto 4 resta com'è: `NEIGHBORS_MODEL_SOURCES_SQL` non cambia. I vicini `snmp` entrano nell'attribuzione solo con la levetta
+`automatismo.vicini_snmp` accesa per cliente, con una query propria in `attribution/annunci.ts`. Spenta, una lettura in più
+continua a non cambiare le classificazioni: `topologia-t2-freno.test.ts` lo tiene. Gli annunci sentiti dal sensore trunk non
+passano da `device_neighbors`, quindi questa ADR non li riguarda.

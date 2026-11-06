@@ -218,6 +218,8 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
   const vicini: VicinoSnmp[] = [];
   const sotto = colonna(remT, S.lldpRemoti, 4), telaio = colonna(remT, S.lldpRemoti, 5), sottoPorta = colonna(remT, S.lldpRemoti, 6);
   const portaRem = colonna(remT, S.lldpRemoti, 7), nomeRem = colonna(remT, S.lldpRemoti, 9), capRem = colonna(remT, S.lldpRemoti, 12);
+  // Descrizione del sistema (colonna 10): la tabella si legge già intera, il modello dell'apparato vicino costa zero letture.
+  const descrRem = colonna(remT, S.lldpRemoti, 10);
   // Un vicino è una voce del telaio, della porta o del nome (revisione del Task 6, C7): chi non annuncia il nome di sistema
   // c'è lo stesso, col telaio come nome (il MAC, o il testo se il sottotipo non è un indirizzo). Senza niente non si scrive.
   for (const k of new Set([...nomeRem.keys(), ...telaio.keys(), ...portaRem.keys()])) {
@@ -237,10 +239,12 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
     const pr = portaRem.get(k);
     const remotePort = numero(sottoPorta.get(k)) === 3 ? (macDi(pr) ?? "") : testo(pr);
     const cap = capacitaDi(capRem.get(k));
+    const descr = testo(descrRem.get(k));
     vicini.push({
       localPort: ifIndex ? nomeDi(ifIndex) : (testo(locNome.get(porta)) || testo(locDescr.get(porta)) || `porta ${porta}`),
       localPortIndex: ifIndex && !discordi ? Number(ifIndex) : null, remoteDevice, remotePort, protocol: "lldp",
       ...(mac ? { remoteMac: mac } : {}), ...(ipDi.has(k) ? { remoteIp: ipDi.get(k) } : {}), ...(cap ? { remoteCaps: cap } : {}),
+      ...(descr ? { remotePlatform: descr } : {}),
     });
   }
   // CISCO-CDP-MIB (SN9): «cdp» (annuncio di collegamento) solo se chi legge e la piattaforma annunciata sono tutti e due

@@ -176,6 +176,8 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   "trunk_osservazioni",
   "trunk_vlan",
   "trunk_vicini",
+  // Tentativi del giro sugli `unknown` (2026-11-06): valgono per la rete da cui ha provato questa istanza.
+  "riconoscimento_tentativi",
   // Rilievi di sicurezza della rete osservata (2026-10-25): giudizi su quanto vede il sensore di questa istanza,
   // si ricalcolano a ogni lettura; copiati altrove descriverebbero una rete che lì non si vede.
   "rete_rilievi",

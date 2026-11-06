@@ -32,6 +32,10 @@ tempo per host, campi riempiti e classi, e si decide il giro largo; è anche la 
 per **guardare a schermo** la tab «Rilievi» e la colonna «Da rivedere», che nessuno ha ancora
 visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`.
 
+## Riconoscimento degli apparati — 06/11/2026
+
+Annunci CDP/LLDP del trunk: `trunk/apparati-dal-trunk.ts` riempie modello e firmware, `attribution/annunci.ts` dà la categoria alle tre facciate dei segnali. Giro notturno `-O` sugli `unknown`: `scanner/profili/sconosciuti.ts`, levetta `automatismo.riconoscimento`, spenta. Vicini SNMP: levetta `automatismo.vicini_snmp`, spenta. Trappole: il filtro `NEIGHBORS_MODEL_SOURCES_SQL` è un freno voluto (ADR 0018), non una svista; le capacità non sono autoritative perché `lldpd` su Linux annuncia bridge e router; `-O` non va mai su stampanti e apparati di campo. Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`.
+
 ## IP contesi — 06/11/2026
 
 «Conteso» sta in `src/lib/attribution/contesi.ts` e non è né `count(distinct claim)` né `conflicts` del motore (12 host contro 70 veri sull'hub): una categoria generica non contraddice la sua foglia, un prefisso di produttore è lo stesso produttore. La scelta è un'evidenza `manual`, che vince sempre: le scansioni dopo non cambiano quel dato. **Trappola**: con `classification_manual=1` una scelta di categoria non arriverebbe a `hosts.classification`, quindi quelle righe si vedono e non si scelgono.

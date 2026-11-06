@@ -195,6 +195,15 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Riconoscimento degli host unknown (06/11/2026): giro notturno con -O, spento di serie, si accende per cliente in
+    // Opzioni (automatismo.riconoscimento).
+    import("./src/lib/scanner/profili/sconosciuti-job").then(({ avviaGiroSconosciuti }) => {
+      avviaGiroSconosciuti();
+      console.log("> Riconoscimento unknown: giro notturno (solo i clienti che l'hanno acceso)");
+    }).catch((error) => {
+      console.error("WARNING: giro del riconoscimento non avviato:", error);
+    });
+
     // Eventi di sicurezza dai domain controller senza Wazuh (29/10/2026): registro Sicurezza
     // via WinRM ogni 5 minuti, per la pagina «Alert sicurezza». Di serie solo dove Wazuh non
     // legge già gli allarmi; si sceglie per cliente in Opzioni (automatismo.eventi_dc).

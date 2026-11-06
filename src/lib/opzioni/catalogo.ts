@@ -48,6 +48,8 @@ import { giroAccessiAdesso } from "@/lib/assegnatari/job";
 import { modoEventiDc, motivoPerNonLeggere, scriviModoEventiDc, wazuhLeggeGliAllarmi } from "@/lib/security/eventi-dc/raccolta";
 import { giroEventiDcAdesso, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
+import { CHIAVE_VICINI_SNMP } from "@/lib/attribution/annunci";
+import { CHIAVE_RICONOSCIMENTO } from "@/lib/scanner/profili/sconosciuti";
 import { statoVault } from "@/lib/vault/appliance";
 import { MOTIVO_OPENBAO_TOLTO, openBaoRimastoNelFile, vaultDalinkAcceso, vaultLocaleAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
@@ -820,6 +822,48 @@ function opzioniAutomatismi(): Opzione[] {
         scriviImpostazione(db, CHIAVE_GIRO_ACCESO, acceso ? "1" : "0");
         // Accendendo, il primo giro parte subito (in sottofondo): la scheda dell'asset ha dati senza aspettare l'ora.
         if (acceso) void giroAccessiAdesso(tenant());
+      },
+    },
+    {
+      // Riconoscimento degli host unknown (06/11/2026). Spento di serie: -O manda pacchetti malformati agli apparati.
+      id: "automatismo.riconoscimento",
+      gruppo: "automatismi",
+      nome: "Riconoscimento degli host sconosciuti",
+      cosa: "ogni notte nmap con riconoscimento del sistema su al massimo 10 host non classificati; salta stampanti e apparati di campo",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: {
+        siFerma: "il giro notturno sugli host non classificati.",
+        resta: "quanto già riconosciuto; i profili a mano restano disponibili.",
+      },
+      leggi() {
+        const acceso = getTenantSetting(CHIAVE_RICONOSCIMENTO) === "1";
+        return diSerieStato(acceso, esito("neutro", acceso ? "acceso" : "spento"));
+      },
+      cambia(r) {
+        setTenantSetting(CHIAVE_RICONOSCIMENTO, soloAcceso(r) ? "1" : "0");
+      },
+    },
+    {
+      // ADR 0018: una lettura in più non cambia le classificazioni da sola. Questa levetta è la decisione per cliente.
+      id: "automatismo.vicini_snmp",
+      gruppo: "automatismi",
+      nome: "Riconoscimento dai vicini letti via SNMP",
+      cosa: "quello che switch e router dicono dei loro vicini LLDP e CDP entra nella classificazione degli host",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: {
+        siFerma: "l'uso dei vicini letti via SNMP per classificare gli host.",
+        resta: "la lettura stessa e la mappa; le classificazioni già fatte si rivedono al prossimo ricalcolo.",
+      },
+      leggi() {
+        const acceso = getTenantSetting(CHIAVE_VICINI_SNMP) === "1";
+        return diSerieStato(acceso, esito("neutro", acceso ? "acceso" : "spento"));
+      },
+      cambia(r) {
+        setTenantSetting(CHIAVE_VICINI_SNMP, soloAcceso(r) ? "1" : "0");
       },
     },
     {

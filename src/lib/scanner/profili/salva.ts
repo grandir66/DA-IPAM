@@ -155,10 +155,12 @@ export function salvaEsitoProfilo(esito: EsitoProfilo, hostPerIp: ReadonlyMap<st
     if (evidenze.length > 0) {
       const esitoEv = recordEvidence(db, hostId, evidenze);
       out.evidenzeScritte += esitoEv.inserted + esitoEv.refreshed;
-      /* Rifusione: senza questa la classe non cambia. Dal Fix C1 l'unico motore
-       * che scrive `hosts.classification` e' l'attribuzione v2. */
-      recomputeAttributionSafe(hostId, "scan");
     }
+    /* Rifusione: senza questa la classe non cambia. Dal Fix C1 l'unico motore
+     * che scrive `hosts.classification` e' l'attribuzione v2. Vale anche per i soli
+     * campi riempiti: `-O` non e' uno script, scrive `os_info` e nient'altro, e fino
+     * al 06/11 la sua categoria restava ferma fino alla scansione successiva. */
+    if (evidenze.length > 0 || riempiteSuHost.length > 0) recomputeAttributionSafe(hostId, "scan");
   }
 
   return out;

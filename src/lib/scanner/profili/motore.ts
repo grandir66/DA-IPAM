@@ -171,6 +171,7 @@ function fondi(a: NmapResult | null, b: NmapResult | null): NmapResult | null {
     ...a,
     ports: porte.sort((x, y) => x.port - y.port),
     os: a.os ?? b.os,
+    osPrecisione: a.os ? a.osPrecisione : b.osPrecisione,
     mac: a.mac ?? b.mac,
     hostScripts: [...(a.hostScripts ?? []), ...(b.hostScripts ?? [])],
     snmpHostname: a.snmpHostname ?? b.snmpHostname,

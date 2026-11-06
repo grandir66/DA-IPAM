@@ -204,6 +204,13 @@ describe("parser: raccolta degli script", () => {
     assert.deepEqual(fatti.chiaviSsh?.sort(), ["11:22:33", "44:55:66"]);
   });
 
+  it("-O: sotto il 95% e' un'ipotesi e non diventa sistema operativo (06/11/2026)", () => {
+    const r = (osPrecisione?: number) => ({ ip: "10.0.0.1", alive: true, ports: [], os: "Cisco SG200 or SG300 switch", mac: null, osPrecisione });
+    assert.equal(fattiDaRisultato(r(100)).osInfo, "Cisco SG200 or SG300 switch");
+    assert.equal(fattiDaRisultato(r(87)).osInfo, undefined);
+    assert.equal(fattiDaRisultato(r()).osInfo, "Cisco SG200 or SG300 switch", "chi non dichiara la precisione resta com'era");
+  });
+
   it("snmp-info continua a riempire i tre campi SNMP come prima", () => {
     const r = parseNmapXml(xml(PORTA_SNMP))[0];
     assert.equal(r.snmpHostname, "switch01");

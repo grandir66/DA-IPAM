@@ -389,13 +389,16 @@ export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): 
     }
 
     let os: string | null = null;
+    let osPrecisione: number | null = null;
     if (host.os?.osmatch) {
       const osmatch = Array.isArray(host.os.osmatch) ? host.os.osmatch[0] : host.os.osmatch;
       os = osmatch?.["@_name"] || null;
+      const accuracy = Number(osmatch?.["@_accuracy"]);
+      osPrecisione = Number.isFinite(accuracy) ? accuracy : null;
     }
 
     results.push({
-      ip, alive, ports, os, mac,
+      ip, alive, ports, os, ...(osPrecisione !== null ? { osPrecisione } : {}), mac,
       ...(hostScripts.length > 0 ? { hostScripts } : {}),
       snmpHostname: snmpHostname || undefined,
       snmpSysDescr: snmpSysDescr || undefined,

@@ -29,6 +29,7 @@ import { networkDeviceUsesArpPoll } from "./network-device-arp";
 import { STATI_ESITO, type EsitoLettura, type EsitoRiga, type StatoApparato, type StatoEsito } from "./apparati-scelti/regole";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
+import { annunciDelHost, type Annuncio } from "./attribution/annunci";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
@@ -779,6 +780,28 @@ export function migrateHostsArchivio(db: Database.Database): string[] {
       if (exists("index", name)) continue;
       db.exec(ddl);
       added.push(name);
+    }
+  })();
+  return added;
+}
+
+/**
+ * Riconoscimento degli apparati (piano 2026-11-06): i campi degli annunci in `trunk_vicini` e i tentativi del giro
+ * degli `unknown`. Gemella di `migrateHostsArchivio`: additiva, idempotente, in una transazione, restituisce ciò che
+ * aggiunge. Chiamata in fondo a `getTenantDb`.
+ */
+export function migrateRiconoscimento(db: Database.Database): string[] {
+  const added: string[] = [];
+  const presenti = new Set((db.prepare("PRAGMA table_info(trunk_vicini)").all() as Array<{ name: string }>).map((c) => c.name));
+  db.transaction(() => {
+    for (const [colonna, tipo] of [["piattaforma", "TEXT"], ["versione", "TEXT"], ["capacita", "TEXT"], ["mac", "TEXT"], ["host_id", "INTEGER"]]) {
+      if (presenti.has(colonna)) continue;
+      db.exec(`ALTER TABLE trunk_vicini ADD COLUMN ${colonna} ${tipo}`);
+      added.push(`trunk_vicini.${colonna}`);
+    }
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'riconoscimento_tentativi'").get()) {
+      db.exec("CREATE TABLE riconoscimento_tentativi (host_id INTEGER PRIMARY KEY, ultimo_il TEXT NOT NULL, esito TEXT)");
+      added.push("riconoscimento_tentativi");
     }
   })();
   return added;
@@ -2947,6 +2970,17 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
   }
 
+  // Riconoscimento degli apparati (piano 2026-11-06). Se fallisce il tenant si apre lo stesso: gli annunci del trunk non
+  // si scrivono e il sensore lo dice nel log a ogni giro.
+  try {
+    const added = migrateRiconoscimento(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: riconoscimento apparati, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione del riconoscimento degli apparati fallita:`, e);
+  }
+
   // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già (v1), le tabelle di bridge, porte e
   // bond (v2) e quelle di VLAN dei bridge, interfacce VLAN, DNS e utenti (v3). Se fallisce il tenant si apre lo stesso: livelloSchemaSchedaMk() dice il livello che c'è e le letture scrivono
   // solo fin lì. La riga del journal è la prova del rilascio.
@@ -4167,6 +4201,7 @@ export interface AttributionSignals {
   adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
   wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+  annunci: Annuncio[];
 }
 
 export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
@@ -4197,7 +4232,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
        AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
-  return { host, adComputer, wazuh, neighborSightings };
+  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(d, hostId) };
 }
 
 /**

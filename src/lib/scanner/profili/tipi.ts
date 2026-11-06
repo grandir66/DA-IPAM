@@ -24,7 +24,7 @@ export interface RegolaScript {
 
 export interface ProfiloScansione {
   /** Chiave stabile: finisce nel database e nelle rotte. */
-  id: "approfondito" | "iot_ot";
+  id: "approfondito" | "iot_ot" | "riconoscimento";
   nome: string;
   descrizione: string;
   /** Porte TCP del profilo. */

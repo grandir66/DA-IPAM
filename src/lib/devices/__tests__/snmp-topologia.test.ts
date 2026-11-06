@@ -35,7 +35,7 @@ const VOCI: Voci = [
   [`${STP}.15.1.8.25`, mac(0x10, 0, 2, 0, 0xc, 0, 0, 0x99)], [`${STP}.15.1.9.25`, mac(0x80, 0x19)],
   [`${LOC}.3.24`, "Gi1/0/24"], [`${LOC}.4.24`, "GigabitEthernet1/0/24"],
   [`${REM}.4.0.24.1`, 4], [`${REM}.5.0.24.1`, mac(2, 0, 0xc, 0, 0, 0x99)], [`${REM}.6.0.24.1`, 5], [`${REM}.7.0.24.1`, "Gi1/0/48"],
-  [`${REM}.9.0.24.1`, "SW-CENTRO"], [`${REM}.12.0.24.1`, mac(0x28)],
+  [`${REM}.9.0.24.1`, "SW-CENTRO"], [`${REM}.10.0.24.1`, "HP J9660A Switch"], [`${REM}.12.0.24.1`, mac(0x28)],
   [`${MAN}.3.0.24.1.1.4.10.0.0.9`, 2],
   [`${CDP}.6.10101.1`, "SW-B"], [`${CDP}.7.10101.1`, "GigabitEthernet1/0/2"], [`${CDP}.8.10101.1`, "cisco MODELLO-PROVA-48"], [`${CDP}.4.10101.1`, mac(10, 0, 0, 7)],
   [`${CDP}.6.10124.2`, "AP-3"], [`${CDP}.7.10124.2`, "eth0"], [`${CDP}.8.10124.2`, "HPE MODELLO-PROVA"],
@@ -105,7 +105,7 @@ test("SN5: il vicino LLDP sulla porta locale data dal secondo pezzo dell'indice,
   const l = await leggiSnmpTopologia(walkFinto().walk, { lettoreCisco: true });
   assert.deepEqual(l.vicini.filter((v) => v.protocol === "lldp"), [{
     localPort: "Gi1/0/24", localPortIndex: 10124, remoteDevice: "SW-CENTRO", remotePort: "Gi1/0/48", protocol: "lldp",
-    remoteMac: "02:00:0C:00:00:99", remoteIp: "10.0.0.9", remoteCaps: "bridge,router",
+    remoteMac: "02:00:0C:00:00:99", remoteIp: "10.0.0.9", remoteCaps: "bridge,router", remotePlatform: "HP J9660A Switch",
   }]);
 });
 

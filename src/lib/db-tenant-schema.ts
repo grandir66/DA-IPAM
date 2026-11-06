@@ -1278,7 +1278,20 @@ CREATE TABLE IF NOT EXISTS trunk_vicini (
   indirizzo TEXT,
   vlan_nativa INTEGER,
   ultima_vista TEXT NOT NULL,
+  piattaforma TEXT,
+  versione TEXT,
+  capacita TEXT,
+  mac TEXT,
+  host_id INTEGER,
   PRIMARY KEY (protocollo, sistema, porta)
+);
+
+-- Riconoscimento automatico degli host unknown (06/11): l'ultimo tentativo, perché il giro notturno non
+-- ritorni ogni notte sullo stesso apparato. Senza chiave esterna: una riga orfana non pesa.
+CREATE TABLE IF NOT EXISTS riconoscimento_tentativi (
+  host_id INTEGER PRIMARY KEY,
+  ultimo_il TEXT NOT NULL,
+  esito TEXT
 );
 
 -- Rilievi di sicurezza della rete osservata (25/10): allarmi, esposizioni e novità calcolati da DA-IPAM

@@ -298,6 +298,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/dalink/segnale-job": "timer.dalink",
   "./src/lib/assegnatari/job": "timer.accessi_pc",
   "./src/lib/trunk/job": "timer.sensore_trunk",
+  "./src/lib/scanner/profili/sconosciuti-job": "timer.riconoscimento",
   "./src/lib/security/eventi-dc/job": "timer.eventi_dc",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
@@ -429,6 +430,25 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       esito: s.esito,
       dove: { href: `/settings/opzioni#${trunk.id}`, etichetta: "Opzioni ›" },
       cambio: { tipo: "opzione", id: trunk.id },
+    });
+  }
+
+  // Riconoscimento degli host unknown (06/11): levetta per cliente in Opzioni, giro notturno.
+  const riconoscimento = catalogo().find((o) => o.id === "automatismo.riconoscimento");
+  if (riconoscimento) {
+    const s = await leggiStato(riconoscimento);
+    righe.push({
+      ...base,
+      id: "timer.riconoscimento",
+      nome: riconoscimento.nome,
+      su: "gli host non riconosciuti",
+      quando: "ogni notte alle 2:23 UTC",
+      prossimo: null,
+      stato: s.acceso === true ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${riconoscimento.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: riconoscimento.id },
     });
   }
 

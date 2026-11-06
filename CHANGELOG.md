@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-06 · Il freno sugli impianti vale anche per le scansioni manuali
+
+Il freno copriva Edge e il giro veloce: `nmap`, `snmp`, `ipam_full`, `network_discovery` e gli accessi toccavano ancora gli apparati di campo.
+
+### Corretto
+- In ogni giro un impianto resta nel ping, così non finisce offline, ma non riceve nmap, naabu, TCP, SNMP, SSH o WinRM, e le porte già note restano.
+- Il profilo Approfondito su un impianto si rifiuta; IoT/OT resta sceglibile host per host.
+
 ## [Non rilasciato] — 2026-11-06 · Scansioni VA: si parte dal profilo, poi le reti
 
 Per fare la stessa scansione su tre reti bisognava aprirle una per una e ripetere gli stessi passi, senza una vista d'insieme di cosa aveva ogni rete.

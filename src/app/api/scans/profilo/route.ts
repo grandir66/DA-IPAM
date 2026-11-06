@@ -26,6 +26,7 @@ import {
 import { profiloPerId } from "@/lib/scanner/profili/profili";
 import { eseguiProfilo } from "@/lib/scanner/profili/motore";
 import { salvaEsitoProfilo } from "@/lib/scanner/profili/salva";
+import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import type { ScanProgress } from "@/types";
 
 const Corpo = z.object({
@@ -72,6 +73,13 @@ export async function POST(request: Request) {
     for (const id of hostIds) {
       const h = getHostById(id);
       if (h && h.network_id === networkId) hostPerIp.set(h.ip, id);
+    }
+    // Il profilo IoT/OT è di sola lettura e si sceglie host per host; gli altri su un impianto no (72729, 06/11/2026).
+    if (profilo.id !== "iot_ot") {
+      const impianti = hostIds.map((id) => getHostById(id)).filter((h) => h && eImpianto(h));
+      if (impianti.length > 0) {
+        return NextResponse.json({ error: `Host di campo fra quelli scelti: ${impianti.map((h) => h?.ip).join(", ")}. Con questi si usa il profilo IoT/OT.` }, { status: 409 });
+      }
     }
     const ips = [...hostPerIp.keys()];
     if (ips.length === 0) {

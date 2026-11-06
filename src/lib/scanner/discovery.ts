@@ -31,7 +31,7 @@ import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { readArpCache as _localReadArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
-import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
+import { querySnmpInfoMultiCommunity as localSnmpInfo, querySnmpSysGroupMultiCommunity as localSnmpSysGroup, snmpGet as localSnmpGet, normalizeOidString } from "./snmp-query";
 import { etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
@@ -965,7 +965,7 @@ async function runDiscovery(
   const nmapDiscoverHosts = _exec
     ? (target: string, timeoutMs?: number) => _exec!.nmapDiscoverHosts(target, timeoutMs)
     : _localNmapDiscoverHosts;
-  const nmapPortScan = _exec
+  const rawNmapPortScan = _exec
     ? (
         ip: string,
         customArgs?: string,
@@ -978,6 +978,27 @@ async function runDiscovery(
           opts?.onLog ? { onLog: opts.onLog } : undefined,
         )
     : _localNmapPortScan;
+  /* Freno sugli impianti (72729, 06/11/2026). Il ping resta: un impianto tolto dalla lista `ips` a fine
+   * giro finirebbe offline. Tutto il resto (nmap, naabu, TCP, SNMP, accessi) non lo tocca: `null` da nmap
+   * vuol dire «nessun dato», quindi le porte già note restano, e sono loro a tenerlo riconosciuto.
+   * L'inventario si rilegge: lo sweep può aver appena scritto un host nuovo. */
+  let impiantiLetti = { il: 0, ip: new Set<string>() };
+  const eIpImpianto = (ip: string): boolean => {
+    if (Date.now() - impiantiLetti.il > 5000) {
+      impiantiLetti = { il: Date.now(), ip: new Set(getHostsByNetwork(networkId).filter(eImpianto).map((h) => h.ip)) };
+    }
+    return impiantiLetti.ip.has(ip);
+  };
+  const nmapPortScan: typeof rawNmapPortScan = async (ip, ...resto) => (eIpImpianto(ip) ? null : rawNmapPortScan(ip, ...resto));
+  const querySnmpInfoMultiCommunity: typeof localSnmpInfo = async (ip, ...resto) =>
+    eIpImpianto(ip)
+      ? ({ sysName: null, sysDescr: null, sysObjectID: null, community: null, snmpVersion: null } as Awaited<ReturnType<typeof localSnmpInfo>>)
+      : localSnmpInfo(ip, ...resto);
+  const querySnmpSysGroupMultiCommunity: typeof localSnmpSysGroup = async (ip, ...resto) =>
+    eIpImpianto(ip)
+      ? ({ sysName: null, sysDescr: null, sysObjectID: null, community: null } as Awaited<ReturnType<typeof localSnmpSysGroup>>)
+      : localSnmpSysGroup(ip, ...resto);
+  const snmpGetDelGiro: typeof localSnmpGet = async (ip, ...resto) => (eIpImpianto(ip) ? [] : localSnmpGet(ip, ...resto));
   // Check locale di nmap (subprocess `nmap --version`).
   /* Porta delle prove (T3-16): con l'esecutore finto installato, anche le uscite
    * che non passano dall'esecutore (TCP del secondo passaggio, cache ARP locale,
@@ -987,9 +1008,10 @@ async function runDiscovery(
   const isNmapAvailable: () => Promise<boolean> = ioOverride
     ? async () => true
     : _localIsNmapAvailable;
-  const tcpConnect = ioOverride
+  const rawTcpConnect = ioOverride
     ? (ioOverride.tcpConnect ?? (async () => false))
     : _localTcpConnect;
+  const tcpConnect: typeof rawTcpConnect = async (ip, ...resto) => (eIpImpianto(ip) ? false : rawTcpConnect(ip, ...resto));
   const readArpCache = ioOverride
     ? (ioOverride.readArpCache ?? (async () => []))
     : _localReadArpCache;
@@ -1033,6 +1055,7 @@ async function runDiscovery(
       basePorts,
     });
     const require = opts?.require === true;
+    hosts = hosts.filter((ip) => !eIpImpianto(ip));
     try {
       const mode = (getSetting("port_discovery") ?? "nmap").trim();
       if (!require && (mode !== "naabu+nmap" || hosts.length === 0 || basePorts.length === 0)) {
@@ -1464,7 +1487,7 @@ async function runDiscovery(
     // SNMP-only discovery sugli IP non rispondenti (solo se community custom)
     const hasCustomCommunity = communities.some((c) => c !== "public" && c !== "private");
     if (hasCustomCommunity && offlineDbIps.length > 0 && offlineDbIps.length <= 512) {
-      const { snmpGet } = await import("./snmp-query");
+      const snmpGet = snmpGetDelGiro;
       progress.phase = `SNMP discovery (no-ICMP) — 0/${offlineDbIps.length}`;
       let discovered = 0;
       const SNMP_PROBE_BATCH = 32;
@@ -1839,7 +1862,7 @@ async function runDiscovery(
             batch.map(async (ip) => {
               try {
                 // Probe rapido: solo GET su sysObjectID + sysName + sysDescr con timeout corto
-                const { snmpGet } = await import("./snmp-query");
+                const snmpGet = snmpGetDelGiro;
                 for (const community of communities) {
                   const varbinds = await snmpGet(ip, community, 161,
                     ["1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"], 2500);
@@ -1904,6 +1927,7 @@ async function runDiscovery(
     const existingHosts = getHostsByNetwork(networkId);
     const inScopeWin = new Set(ips);
     const windowsHosts = existingHosts.filter((h) => {
+      if (eImpianto(h)) return false;
       if (!inScopeWin.has(h.ip)) return false;
       if (!h.open_ports) return false;
       try {
@@ -2016,6 +2040,7 @@ async function runDiscovery(
     const existingHosts = getHostsByNetwork(networkId);
     const inScopeSsh = new Set(ips);
     const sshHosts = existingHosts.filter((h) => {
+      if (eImpianto(h)) return false;
       if (!inScopeSsh.has(h.ip)) return false;
       if (!h.open_ports) return false;
       try {
@@ -2281,7 +2306,7 @@ async function runDiscovery(
           const batchResults = await Promise.all(
             batch.map(async (ip) => {
               try {
-                const { snmpGet } = await import("./snmp-query");
+                const snmpGet = snmpGetDelGiro;
                 for (const community of communities) {
                   const varbinds = await snmpGet(ip, community, 161,
                     ["1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"], 2500);
@@ -2335,6 +2360,7 @@ async function runDiscovery(
 
     // Fase 4: SSH per host con porta 22 (senza 445)
     const sshHosts = onlineIps.filter((ip) => {
+      if (eIpImpianto(ip)) return false;
       const data = nmapResults.get(ip);
       if (!data?.ports) return false;
       const has22 = data.ports.some((p) => p.port === 22);
@@ -2798,6 +2824,7 @@ async function runDiscovery(
     const inScope = new Set(ips);
     // Include host con porte note OPPURE con classificazione/OS che indica un tipo (da SNMP/AD)
     const targetHosts = existingHosts.filter((h) => {
+      if (eImpianto(h)) return false;
       if (!inScope.has(h.ip)) return false;
       if (h.open_ports) return true;
       const cls = h.classification ?? "";

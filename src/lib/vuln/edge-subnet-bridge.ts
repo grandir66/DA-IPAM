@@ -26,6 +26,7 @@ import {
 import { leggiRispostaHostLenti, type AvanzamentoRete, type RispostaHostLenti } from "@/lib/vuln/avanzamento";
 import { impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
+import { leggiRispostaGruppo, type EsitoGruppoEdge, type GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import {
   dimenticaEdgeFinestra,
@@ -1005,3 +1006,83 @@ export async function salvaHostLenti(
 }
 
 const SONDA_DA_AGGIORNARE_LENTI = "Questa sonda è da aggiornare: la gestione degli host lenti si accende dopo l'aggiornamento.";
+
+
+// ── Gruppi per tipo di device (06/11/2026, piano profili-per-device, Passo 4) ──────────────────
+
+/** Esito di un errore di Edge sul lancio del gruppo: ogni caso col suo nome, mai un successo per errore. */
+function esitoDaErroreGruppo(e: unknown): EsitoGruppoEdge {
+  // Il 404 «Not Found» nudo è una rotta che la sonda non ha. Quello con un motivo («Rete edge non
+  // trovata») è un altro. Qualunque altro 404 (es. «ipam integration disabled») non si indovina.
+  if (eSondaSenzaFinestra(e)) return { stato: "da_aggiornare" };
+  if (e instanceof EdgeClientError) {
+    const motivo = motivoEdge(e);
+    if (e.status === 404 && /rete edge non trovata/i.test(motivo)) return { stato: "rete_non_registrata", messaggio: motivo };
+    if (e.status === 400 || e.status === 409 || e.status === 422) return { stato: "rifiutato", status: e.status, messaggio: motivo };
+    if (e.status === 503) return { stato: "motore_non_disponibile", messaggio: motivo };
+    return { stato: "non_so", messaggio: motivo };
+  }
+  return { stato: "non_so", messaggio: e instanceof Error ? e.message : "Errore sconosciuto" };
+}
+
+/**
+ * Lancia su Edge un gruppo di IP della rete con i suoi profili (`POST /api/v1/networks/{id}/gruppi`).
+ *
+ * Perché non ripiega mai: al 72729 nove PLC sono spariti dentro una scansione della loro rete (05-06/11/2026;
+ * la causa NON è accertata). Una sonda che non ha la rotta dei gruppi darebbe, con un ripiego su
+ * `triggerSubnetEdgeScan`, proprio la scansione della rete intera: qui risponde `da_aggiornare` e non
+ * parte niente. Non si crea nemmeno la rete sulla sonda (`ensure` la creerebbe): se manca, `rete_non_registrata`.
+ *
+ * Prima si allinea la rete come fa `triggerSubnetEdgeScan` (`allineaReteEdge`: porta alla sonda l'elenco
+ * `protetti`); se l'allineamento non riesce il gruppo non parte. Timeout e connessione caduta sono
+ * `non_so`: il gruppo può essere già in coda, e non si ripete da qui.
+ */
+export async function avviaGruppoEdge(networkId: number, gruppo: GruppoPerEdge): Promise<EsitoGruppoEdge> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { stato: "sonda_assente", messaggio: pronta.error };
+  const network = getNetworkById(networkId);
+  if (!network) return { stato: "rete_non_registrata", messaggio: "Rete non trovata in DA-IPAM" };
+
+  let edgeId: number | null;
+  try {
+    edgeId = await idReteSullaSonda(pronta.scanner, network.cidr);
+  } catch (e) {
+    return esitoDaErroreGruppo(e);
+  }
+  if (edgeId === null) return { stato: "rete_non_registrata" };
+
+  try {
+    await allineaReteEdge(networkId);
+  } catch (e) {
+    return { stato: "allineamento_fallito", messaggio: motivoEdge(e) };
+  }
+
+  let raw: unknown;
+  try {
+    raw = await edgeApiPost<unknown>(
+      pronta.scanner,
+      `/api/v1/networks/${edgeId}/gruppi`,
+      {
+        ips: gruppo.ips,
+        profile: gruppo.profile,
+        nuclei_profilo: gruppo.nuclei_profilo,
+        assessment_profile_id: gruppo.assessment_profile_id,
+      },
+      { timeoutMs: 120000 },
+    );
+  } catch (e) {
+    return esitoDaErroreGruppo(e);
+  }
+  const letta = leggiRispostaGruppo(raw);
+  if (!letta.ok) return { stato: "non_so", messaggio: letta.error };
+  const r = letta.dati;
+  if (r.status === "error") {
+    return {
+      stato: "non_partito",
+      scan_id: r.scan_id,
+      ip_tolti: r.ip_tolti,
+      messaggio: r.error_message?.trim() || "Edge ha registrato il gruppo in errore, senza motivo",
+    };
+  }
+  return { stato: "lanciato", scan_id: r.scan_id, status: r.status, ip_tolti: r.ip_tolti };
+}

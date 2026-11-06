@@ -17,6 +17,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
 import type { EsitoGruppiAperti, GruppoAperto } from "@/lib/vuln/proposta/gruppi-aperti";
+import type { BloccoRete } from "@/lib/vuln/edge-subnet-bridge";
 import type { EsitoLancio } from "@/lib/vuln/proposta/lancio";
 import type { RigaFamiglia } from "@/lib/vuln/proposta/quadro";
 import type { Famiglia } from "@/lib/vuln/proposta/regole";
@@ -238,6 +239,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const [esito, setEsito] = useState<EsitoLancio | null>(null);
   const [gruppiAperti, setGruppiAperti] = useState<GruppoAperto[]>([]);
   const [apertiDetto, setApertiDetto] = useState<string | null>(null);
+  const [blocco, setBlocco] = useState<BloccoRete | null>(null);
   const [erroreConti, setErroreConti] = useState<string | null>(null);
   const reteCorrente = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -276,6 +278,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     if (r.ok) {
       setDati(r.data);
       setErrore(null);
+      const b = await fetchJson<{ blocco: BloccoRete | null }>(`/api/networks/${id}/blocco-va`);
+      if (reteCorrente.current === id) setBlocco(b.ok ? b.data.blocco : null);
     } else {
       setErrore(r.message);
     }
@@ -400,6 +404,15 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     setOccupato(false);
   };
 
+  const sblocca = async () => {
+    if (!rete) return;
+    setOccupato(true);
+    const r = await fetchJson<{ ok: boolean }>(`/api/networks/${rete.id}/blocco-va`, { method: "DELETE" });
+    if (r.ok) setBlocco(null);
+    else setRifiuto(r.message);
+    setOccupato(false);
+  };
+
   const manca = !amministratore ? "Solo lettura" : quadro.edge.stato !== "acceso" ? "Edge non risponde" : inLancio.length === 0 ? "Conferma almeno un device" : null;
   const senzaProposta = dati !== null && dati.proposte.length === 0;
 
@@ -411,6 +424,13 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
         <TesseraNumero titolo="Restano fuori" valore={dati ? proposte.length - nInLancio : null} />
         <TesseraNumero titolo="Gruppi aperti" valore={gruppiAperti.filter((g) => g.stato === "in_corso" || g.stato === "in_coda").length} nota="Edge fa una scansione alla volta" />
       </div>
+
+      {blocco && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
+          <Stato tono="errore">✕ Rete bloccata: {blocco.motivo}</Stato>
+          {amministratore && <Button size="sm" variant="outline" disabled={occupato} onClick={() => void sblocca()}>Sblocca la rete</Button>}
+        </div>
+      )}
 
       {haAperti && <GruppiAperti gruppi={gruppiAperti} />}
       {apertiDetto && <p className="text-sm"><Stato tono="avviso">▲ Gruppi aperti: {apertiDetto}</Stato></p>}

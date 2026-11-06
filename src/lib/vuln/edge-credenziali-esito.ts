@@ -37,6 +37,12 @@ export function serveRimandare(
 }
 
 /** Serve mandare l'elenco degli impianti? Basta che ne manchi uno sulla sonda. */
+/** Gli ammessi si mandano anche quando si svuotano: una conferma tolta deve arrivare alla sonda. */
+export function ammessiDaMandare(ammessi: string[], sonda: string[] | undefined): boolean {
+  if (sonda === undefined) return ammessi.length > 0;
+  return ammessi.length !== sonda.length || ammessi.some((ip) => !sonda.includes(ip));
+}
+
 export function impiantiDaMandare(impianti: string[], sonda: string[] | undefined): boolean {
   if (impianti.length === 0) return false;
   return impianti.some((ip) => !sonda?.includes(ip));

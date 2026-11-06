@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-06 · Una VA non deve poter fermare una rete
+
+Al 72729 PLC e marcatempo si sono bloccati dentro le scansioni, causa non accertata. Riccardo: «non posso distruggere una rete per una va». Una persona dà il via: Edge tocca solo gli host confermati.
+
+### Aggiunto
+- **Ammessi verso le sonde**: `ensure` manda `ammessi`, gli host confermati nella scheda «Per device» e ancora validi. Con un Edge aggiornato, senza conferme su quella rete non parte nessuna scansione, nemmeno sulla rete intera.
+- **Rete bloccata**: se la sentinella di Edge ferma un giro, la scheda «Per device» lo dice e un amministratore la sblocca (`/api/networks/[id]/blocco-va`).
+
+### Corretto
+- `known_host_check`: un impianto che non risponde al ping non riceve il ripiego TCP.
+
 ## [Non rilasciato] — 2026-11-06 · Ricognizione delicata e proposta di profilo per device
 
 Una rete intera con un profilo solo manda a un PLC gli stessi controlli di un server. Prima si guarda cosa c'è, poi si propone.

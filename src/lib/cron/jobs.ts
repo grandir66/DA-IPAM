@@ -24,6 +24,7 @@ import {
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
 // Decisione (a) di fine giro 2: le colonne delle porte che un collector fornisce non le riscrive il giro.
 import { scriviPorteDelGiro } from "@/lib/acquisizione-modulare/giri";
+import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import {
   attendiRilascio,
   CHIAVE_SOGLIA_ALLARME,
@@ -1556,7 +1557,8 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
   latencyMs = pingResult.latency_ms;
   if (pingResult.alive) {
     alive = true;
-  } else {
+  } else if (!eImpianto(host)) {
+    // Un impianto che tace non si tocca: come nel secondo passaggio di `fast` (72729, 06/11/2026).
     let portsToCheck: number[] = FALLBACK_TCP_PORTS;
     if (host.monitor_ports) {
       try {

@@ -4,7 +4,10 @@
 
 Riccardo (06/11): marcatempo bloccato al 72729, «non posso distruggere una rete per una va». Fatti e proposta in `DA-Vul-can/TASKS.md`, stessa data.
 
-- [ ] Qui il buco: `eImpianto` lo usa solo `scansioni-va.ts`; `fast_scan` e `known_host_check` non guardano l'elenco degli impianti. Si chiude col lavoro proposto, che aspetta il via di Riccardo
+- [x] Corretto: avevo scritto che `fast_scan` non guarda gli impianti, misurando una copia locale 24 commit indietro. `discovery.ts` li rispetta già; restava solo `known_host_check`, chiuso
+- [x] `ammessi` verso Edge (`proposta/ammessi.ts`), blocco e sblocco nella scheda «Per device». Cancello completo verde su questo albero: tsc, eslint, build, 7474 prove passate, 0 fallite
+- [ ] Vedere a schermo la riga «Rete bloccata» con un blocco vero
+- [ ] Riccardo (06/11): prove più aggressive, «possiamo simulare i plc? o testiamo su una rete più conosciuta?». Proposta: banco col pezzo vero, in `DA-Vul-can/TASKS.md`
 
 ## 2026-11-06 — Scansioni per tipo di device (idea di Riccardo, piano in bozza)
 

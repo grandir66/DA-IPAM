@@ -13,14 +13,14 @@
  * non tentati si elencano come tali.
  */
 import { getHostsByNetwork } from "@/lib/db";
-import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
 import { avviaGruppoEdge } from "@/lib/vuln/edge-subnet-bridge";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
 import type { EsitoGruppoEdge, GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
+import { valutaConfermate, type TolloDalLancio } from "./ammessi";
 import { gruppiDaConfermate, type GruppoDaLanciare } from "./gruppi";
-import { ETICHETTE_FAMIGLIA, proponiProfilo, type Famiglia, type HostPerProposta } from "./regole";
+import { ETICHETTE_FAMIGLIA, type Famiglia, type HostPerProposta } from "./regole";
 import { contesiDiRete, leggiProposte, registraGruppiLanciati, type GruppoLanciato, type RigaProposta } from "./store";
 
 export interface DipendenzeLancio {
@@ -33,12 +33,6 @@ export interface DipendenzeLancio {
   avvia: (networkId: number, gruppo: GruppoPerEdge) => Promise<EsitoGruppoEdge>;
   /** Ricorda quale scansione è quale gruppo, per l'avanzamento gruppo per gruppo. */
   registra: (networkId: number, gruppi: Array<Pick<GruppoLanciato, "scan_id" | "famiglia" | "device">>, il: string) => void;
-}
-
-export interface TolloDalLancio {
-  host_id: number;
-  ip: string;
-  motivo: string;
 }
 
 export type EsitoGruppoLancio = EsitoGruppoEdge | { stato: "non_tentato"; messaggio: string };
@@ -87,22 +81,7 @@ export async function lanciaGruppiConfermati(
   const confermate = d.proposte(networkId).filter((r) => r.stato === "confermato");
   const host = new Map(d.host(networkId).map((h) => [h.id, h]));
 
-  const contesi = d.contesi(networkId);
-  const tolti: TolloDalLancio[] = [];
-  const buone: RigaProposta[] = [];
-  for (const r of confermate) {
-    const h = host.get(r.host_id);
-    if (opzioni.famiglie && !opzioni.famiglie.includes(r.famiglia)) continue;
-    const togli = (motivo: string) => tolti.push({ host_id: r.host_id, ip: r.ip, motivo });
-    if (!h) togli("host non più presente nella rete");
-    else if (eImpianto(h)) togli("è un impianto o un apparato di campo: non si scansiona");
-    else if (r.famiglia === "impianti" || r.famiglia === "da_chiarire") togli(`famiglia «${ETICHETTE_FAMIGLIA[r.famiglia]}»: non si scansiona`);
-    else if (r.da_rivedere) togli("la conferma è da rivedere: il tipo è cambiato");
-    // La famiglia salvata è quella di quando si è confermato: si ricalcola sul dato di oggi, contesi compresi.
-    // Se differisce l'host resta fuori. Non si riscrive va_proposte: la rilettura la fa una persona.
-    else if (proponiProfilo(h, { conteso: contesi.has(r.host_id) }).famiglia !== r.famiglia) togli("tipo cambiato, da rivedere");
-    else buone.push(r);
-  }
+  const { buone, tolti } = valutaConfermate(confermate, host, d.contesi(networkId), opzioni.famiglie);
 
   const avvisi: string[] = [];
   let profili: EdgeAssessmentProfile[] = [];

@@ -24,8 +24,9 @@ import {
   listEdgeProfiles,
 } from "@/lib/vuln/scanner-edge-client";
 import { leggiRispostaHostLenti, type AvanzamentoRete, type RispostaHostLenti } from "@/lib/vuln/avanzamento";
-import { impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
+import { ammessiDaMandare, impiantiDaMandare, serveRimandare, type EdgeCredenzialiSonda } from "@/lib/vuln/edge-credenziali-esito";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
+import { ipAmmessiDellaRete } from "@/lib/vuln/proposta/ammessi";
 import { leggiRispostaGruppo, type EsitoGruppoEdge, type GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import {
@@ -318,6 +319,8 @@ function buildEdgeEnsureBody(
     assessment_profile_id: assessmentEnabled ? assessmentProfileId : null,
     // Sempre, anche quando gli host non si mandano: Edge li toglie da ogni motore.
     protetti: ipImpiantiDellaRete(networkId),
+    // Gli unici IP che la sonda tocca su una rete non pubblica: quelli confermati da una persona.
+    ammessi: ipAmmessiDellaRete(networkId),
   };
 
   if (syncHosts) {
@@ -387,7 +390,7 @@ export async function allineaReteEdge(networkId: number, adesso = Date.now()): P
   const network = getNetworkById(networkId);
   if (!scanner || scanner.enabled !== 1 || !network) return false;
 
-  const lookup = await edgeApiGet<{ found: boolean; credentials?: EdgeCredenzialiSonda; protetti?: string[] }>(
+  const lookup = await edgeApiGet<{ found: boolean; credentials?: EdgeCredenzialiSonda; protetti?: string[]; ammessi?: string[] }>(
     scanner,
     `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
   );
@@ -395,7 +398,8 @@ export async function allineaReteEdge(networkId: number, adesso = Date.now()): P
 
   const slot = collectEdgeCredentialsForNetwork(networkId, { registra: false }).transfer.map((c) => c.slot);
   const credenziali = serveRimandare(slot, lookup.credentials, adesso);
-  if (!credenziali && !impiantiDaMandare(ipImpiantiDellaRete(networkId), lookup.protetti)) return false;
+  const elenchi = impiantiDaMandare(ipImpiantiDellaRete(networkId), lookup.protetti) || ammessiDaMandare(ipAmmessiDellaRete(networkId), lookup.ammessi);
+  if (!credenziali && !elenchi) return false;
 
   await edgeApiPost<{ ok: boolean }>(
     scanner,
@@ -408,6 +412,37 @@ export async function allineaReteEdge(networkId: number, adesso = Date.now()): P
     { timeoutMs: 120000 },
   );
   return true;
+}
+
+export interface BloccoRete {
+  ip: string;
+  motivo: string;
+  bloccata_at: string;
+}
+
+/** Rete fermata dalla sentinella di Edge. `null` = la sonda non la conosce o non è bloccata. */
+export async function leggiBloccoRete(networkId: number): Promise<BloccoRete | null> {
+  const scanner = getActiveEdgeScanner();
+  const network = getNetworkById(networkId);
+  if (!scanner || scanner.enabled !== 1 || !network) return null;
+  const lookup = await edgeApiGet<{ found: boolean; blocco?: BloccoRete | null }>(
+    scanner,
+    `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
+  );
+  return lookup.found ? (lookup.blocco ?? null) : null;
+}
+
+/** Riapre una rete fermata dalla sentinella: solo da una persona, dal pulsante della scheda. */
+export async function sbloccaReteEdge(networkId: number): Promise<void> {
+  const scanner = getActiveEdgeScanner();
+  const network = getNetworkById(networkId);
+  if (!scanner || scanner.enabled !== 1 || !network) throw new Error("Sonda non configurata o disabilitata");
+  const lookup = await edgeApiGet<{ found: boolean; network_id?: number }>(
+    scanner,
+    `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
+  );
+  if (!lookup.found || lookup.network_id == null) throw new Error("La sonda non conosce questa rete");
+  await edgeApiPost<{ ok: boolean }>(scanner, `/api/v1/networks/${lookup.network_id}/sblocca`, {}, { timeoutMs: 30000 });
 }
 
 /**

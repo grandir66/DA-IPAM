@@ -70,6 +70,7 @@ import {
   setUplinkCavi,
   updateNetworkDevice,
   upsertNeighbors,
+  upsertRoutes,
   upsertSwitchPorts,
 } from "@/lib/db-tenant";
 import { codiceErrore } from "@/lib/devices/mikrotik-porte";
@@ -78,7 +79,8 @@ import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
 import type { UnifiDevice } from "./unifi-device";
 import type { UnifiDevicesAndNetworks } from "./unifi-api";
-import { vlanDelleReti, vlanNativePorte } from "./unifi-reti";
+import { rotteDelGateway, vlanDelleReti, vlanNativePorte } from "./unifi-reti";
+import { mapUnifiDeviceType } from "./unifi-map";
 import {
   buildUnifiMacIndex,
   mapUnifiDevice,
@@ -356,7 +358,7 @@ function writeDevice(
   if (!connected && before.ports > 0) {
     // porte dell'ultima sync: l'apparato è in `offline[]`
   } else if (ports.length > 0) {
-    upsertSwitchPorts(nd.id, ports);
+    upsertSwitchPorts(nd.id, ports, "controller");
     portsWritten = ports.length;
   } else if (before.ports > 0) {
     warnings.push(`${m.name}: il controller non riporta porte, nel DB ce ne sono ${before.ports}: non le cancello`);
@@ -421,7 +423,8 @@ function scriviCampiCavi(deviceId: number, d: UnifiDevice): string[] {
  */
 function scriviNative(deviceId: number, d: UnifiDevice, vlanDi: ReadonlyMap<string, number>, result: UnifiSyncResult): void {
   // Senza porte il controller non ha detto niente sulle native: «non so», le righe di prima restano.
-  if (d.type !== "usw" || d.state !== 1 || d.port_table.length === 0) return;
+  // Anche il gateway ha porte con la loro nativa (Riccardo, 07/11): router trattati come gli switch.
+  if (d.type === "uap" || d.state !== 1 || d.port_table.length === 0) return;
   const righe = vlanNativePorte(d, vlanDi);
   try {
     if (scriviVlanNativaSwitch(deviceId, righe)) result.vlanNativeScritte += righe.length;
@@ -431,7 +434,9 @@ function scriviNative(deviceId: number, d: UnifiDevice, vlanDi: ReadonlyMap<stri
   }
 }
 
-function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: ReadonlyMap<string, number> | null = null): void {
+type RotteGateway = ReturnType<typeof rotteDelGateway>;
+
+function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: ReadonlyMap<string, number> | null = null, rotteGateway: RotteGateway = []): void {
   // T2: l'interruttore e lo schema si leggono una volta per giro, lo stesso valore per tutti gli apparati. Accesa senza
   // lo schema nuovo non si scrive niente di nuovo, e il resoconto lo dice (spec §13.5.7, «Se la migrazione non riesce»).
   const accesa = letturaAccesa("controller");
@@ -487,6 +492,8 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: R
 
     claimed.add(out.device.id);
     if (vlanDi) scriviNative(out.device.id, d, vlanDi, result);
+    // Il gateway: reti e rotte statiche del controller. Solo connesso, e mai vuote: una lettura mancata non cancella.
+    if (rotteGateway.length > 0 && d.state === 1 && mapUnifiDeviceType(d.type) === "router") upsertRoutes(out.device.id, rotteGateway);
     if (out.created) {
       result.added++;
       ctx.existing.byHost.set(out.device.host, out.device);
@@ -543,10 +550,12 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
   const conReti = letturaAccesa("switch_vlan") && typeof source.listDevicesWithNetworks === "function";
   let devices: UnifiDevice[];
   let vlanDi: Map<string, number> | null = null;
+  let rotteGateway: RotteGateway = [];
   try {
     if (conReti) {
       const r = await source.listDevicesWithNetworks!();
       devices = r.devices;
+      if (r.networks) rotteGateway = rotteDelGateway(r.networks, r.routes ?? []);
       // Un elenco vuoto, o senza nessuna rete di porta, è un «non so» come un errore: scriverlo cancellerebbe le native.
       const mappa = r.networks && r.networks.length > 0 ? vlanDelleReti(r.networks) : null;
       if (mappa && mappa.size > 0) vlanDi = mappa;
@@ -575,7 +584,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
   }
 
   try {
-    writeDevices(devices, result, vlanDi);
+    writeDevices(devices, result, vlanDi, rotteGateway);
   } catch (e) {
     result.errors.push(`Sync UniFi interrotta: ${errorMessage(e)}`);
   }

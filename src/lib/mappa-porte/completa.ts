@@ -10,12 +10,50 @@
 import { isVirtualMac } from "@/lib/devices/mac-virtuali";
 import { parseDbDate } from "@/lib/db-date";
 import { normalizeMacForStorage } from "@/lib/utils";
-import type { Confidenza, IngressoMappaPorte, OggettoGrezzo, OggettoMappa, Prova } from "@/lib/mappa-porte/tipi";
+import type { Confidenza, IngressoMappaPorte, OggettoGrezzo, OggettoMappa, Prova, RigaPorta } from "@/lib/mappa-porte/tipi";
+import type { StratoPorta } from "@/lib/mappa-porte/parser";
 
 const GIORNO = 86_400_000;
 const norm = (s: string | null | undefined) => normalizeMacForStorage(s ?? null);
 const ARP_INUTILE = new Set(["failed", "incomplete"]);
 const RANGO: Record<Confidenza, number> = { certa: 0, spiegata: 1, da_capire: 2, non_so: 3 };
+
+const nomeUguale = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+const CAMPI: ReadonlyArray<keyof RigaPorta> = ["status", "speed", "vlan", "poe_status", "poe_power_mw", "stp_state"];
+
+/**
+ * Le porte con gli strati delle fonti sotto: la riga di `switch_ports` vince dove ha un valore, gli altri strati riempiono i
+ * buchi. Così il PoE del controller o l'uplink restano veri per la mappa anche se il giro SNMP ha appena riscritto la riga,
+ * e `switch_ports`, che legge la Topologia, non cambia. Nomi prima, indice dopo: i nomi del controller li danno le persone
+ * («CAM-185» contro «Slot: 0 Port: 1»). Una porta che solo uno strato conosce entra come riga sua.
+ */
+export function unisciStrati(porte: readonly RigaPorta[], strati: readonly StratoPorta[]): RigaPorta[] {
+  const out = porte.map((p) => ({ ...p }));
+  const perApparato = new Map<number, RigaPorta[]>();
+  for (const p of out) perApparato.set(p.device_id, [...(perApparato.get(p.device_id) ?? []), p]);
+  const ordine = (f: string) => (f === "controller" ? 0 : f === "parser" ? 1 : 2);
+  for (const st of [...strati].sort((a, b) => ordine(a.fonte) - ordine(b.fonte))) {
+    let valori: Record<string, unknown>;
+    try {
+      valori = JSON.parse(st.valori) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const righe = perApparato.get(st.device_id) ?? [];
+    const riga = righe.find((p) => nomeUguale(p.port_name) === nomeUguale(st.port_name)) ?? righe.find((p) => p.port_index === st.port_index);
+    if (!riga) {
+      const nuova: RigaPorta = { device_id: st.device_id, port_index: st.port_index, port_name: st.port_name, status: null, speed: null, vlan: null, poe_status: null, poe_power_mw: null, stp_state: null, is_uplink: 0 };
+      for (const c of CAMPI) if (valori[c] != null) (nuova as unknown as Record<string, unknown>)[c] = valori[c];
+      out.push(nuova);
+      perApparato.set(st.device_id, [...righe, nuova]);
+      continue;
+    }
+    const scrivibile = riga as unknown as Record<string, unknown>;
+    for (const c of CAMPI) if (scrivibile[c] == null && valori[c] != null) scrivibile[c] = valori[c];
+    if (valori.is_uplink) riga.is_uplink = 1;
+  }
+  return out;
+}
 
 /** Multicast, broadcast e tutti zeri non sono oggetti: il bit basso del primo byte dice multicast. */
 function macUtile(m: string | null): m is string {

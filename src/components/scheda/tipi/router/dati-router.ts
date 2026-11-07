@@ -16,7 +16,7 @@ export const leaseDi = (ctx: ContestoScheda) => ctx.device?.dhcp_leases ?? [];
 export const arpDi = (ctx: ContestoScheda) => ctx.device?.arp_entries ?? [];
 
 /** MikroTik raggiungibile in SSH: gli unici per cui la rotta `mikrotik` risponde (lease live, pool, export). */
-export const eMikrotikSsh = (ctx: ContestoScheda): boolean => ctx.device?.vendor === "mikrotik" && ctx.device?.protocol === "ssh";
+export const eMikrotikSsh = (ctx: ContestoScheda): boolean => ctx.device?.vendor === "mikrotik" && (ctx.device?.protocol === "ssh" || (ctx.device?.mikrotik?.bridge ?? 0) > 0);
 
 /** Conteggi regole filter · NAT · mangle dalla scansione; null se nessuno dei tre è noto. */
 export function regoleDi(ctx: ContestoScheda): ConteggiRegole | null {

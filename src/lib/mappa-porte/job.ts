@@ -1,12 +1,14 @@
 /**
  * Ricalcolo della Mappa porte (piano 2026-11-07), avviato da `server.ts`: ogni 30 minuti, cinque minuti dopo il giro SNMP.
- * Non chiede niente agli apparati e tocca solo le tabelle `mappa_porte_*`, per questo non ha una levetta.
+ * Il ricalcolo non chiede niente agli apparati e tocca solo le tabelle `mappa_porte_*`, per questo non ha una levetta.
+ * Il giro dei parser, ogni 6 ore, sta dietro la lettura `mappa_dati`.
  * Stato su globalThis come `trunk/job.ts`: rotte e `server.ts` hanno istanze diverse.
  */
 import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { ricalcolaMappaPorte } from "@/lib/mappa-porte/calcolo";
+import { CRON_PARSER, giroParser } from "@/lib/mappa-porte/giro-parser";
 
 export const CRON_MAPPA_PORTE = "5,35 * * * *";
 
@@ -39,4 +41,5 @@ export function avviaMappaPorte(): void {
   if (s.avviato) return;
   s.avviato = true;
   cron.schedule(CRON_MAPPA_PORTE, ricalcolaTutti);
+  cron.schedule(CRON_PARSER, () => void giroParser());
 }

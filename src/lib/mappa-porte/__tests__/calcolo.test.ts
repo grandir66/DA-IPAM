@@ -31,7 +31,7 @@ test("la migrazione è idempotente", () => {
   const d = getTenantDb(CODICE);
   assert.deepEqual(migrateMappaPorte(d), []);
   assert.deepEqual(migrateMappaPorte(d), []);
-  assert.equal((d.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'mappa_porte_%' AND type = 'table'").get() as { n: number }).n, 4);
+  assert.equal((d.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'mappa_porte_%' AND type = 'table'").get() as { n: number }).n, 7);
 });
 
 test("ricalcolo, filtro, spostamento visto in due calcoli, e tabelle dei MAC vuote che non cancellano la mappa", () => {

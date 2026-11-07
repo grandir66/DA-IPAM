@@ -15,7 +15,12 @@ export interface UnifiRete {
   /** Numero di VLAN della rete; null = rete senza VLAN (vedi `vlanDellaRete`). */
   vlan: number | null;
   vlan_enabled: boolean | null;
+  /** «192.168.1.1/24»: il gateway della rete e la sua maschera. */
+  ip_subnet?: string | null;
 }
+
+/** Una rotta statica scritta nel controller (`rest/routing`). */
+export interface UnifiRotta { destinazione: string; gateway: string | null; distanza: number | null; attiva: boolean }
 
 type Rec = Record<string, unknown>;
 const asRecord = (v: unknown): Rec | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : null);
@@ -48,9 +53,46 @@ export function parseNetworkconfResponse(json: unknown): UnifiRete[] {
       purpose: str(r.purpose),
       vlan: vlanId(r.vlan),
       vlan_enabled: typeof r.vlan_enabled === "boolean" ? r.vlan_enabled : null,
+      ip_subnet: str(r.ip_subnet),
     });
   }
   return out;
+}
+
+/** `rest/routing`, forma misurata il 07/11 su una UCG: `static-route_network`, `static-route_nexthop`, `enabled`, distanza facoltativa. */
+export function parseRoutingResponse(json: unknown): UnifiRotta[] {
+  const root = asRecord(json);
+  if (!root) throw new UnifiResponseError("Risposta del controller senza struttura (atteso un oggetto JSON)");
+  const meta = asRecord(root.meta);
+  if (str(meta?.rc) !== "ok") {
+    const msg = str(meta?.msg);
+    throw new UnifiResponseError(`Il controller ha risposto con un errore${msg ? ` (${msg})` : ""}`, msg);
+  }
+  if (!Array.isArray(root.data)) throw new UnifiResponseError("Risposta del controller senza elenco delle rotte (campo data)");
+  return root.data.flatMap((x) => {
+    const r = asRecord(x);
+    const destinazione = str(r?.["static-route_network"]);
+    if (!r || !destinazione) return [];
+    const d = r["static-route_distance"];
+    return [{ destinazione, gateway: str(r["static-route_nexthop"]), distanza: typeof d === "number" ? d : null, attiva: r.enabled !== false }];
+  });
+}
+
+/**
+ * Le rotte di un gateway del controller per `upsertRoutes`: le statiche scritte nel controller e le connesse, ricavate dalle reti.
+ * `stat/routing` su una UCG risponde vuoto, quindi la tabella viva non si legge: è ciò che il controller dichiara.
+ */
+export function rotteDelGateway(reti: ReadonlyArray<UnifiRete>, statiche: ReadonlyArray<UnifiRotta>): Array<{ destination: string; gateway: string | null; interface_name: string | null; protocol: string; distance?: number; active: boolean }> {
+  const connesse = reti.flatMap((r) => {
+    const m = r.ip_subnet ? /^(\d+)\.(\d+)\.(\d+)\.(\d+)\/(\d+)$/.exec(r.ip_subnet) : null;
+    if (!m) return [];
+    const bit = Number(m[5]);
+    const ip = m.slice(1, 5).reduce((t, x) => t * 256 + Number(x), 0);
+    const base = bit === 0 ? 0 : (ip - (ip % 2 ** (32 - bit)));
+    const rete = [24, 16, 8, 0].map((s) => Math.floor(base / 2 ** s) % 256).join(".");
+    return [{ destination: `${rete}/${bit}`, gateway: null, interface_name: r.nome, protocol: "connected", active: true }];
+  });
+  return [...connesse, ...statiche.map((s) => ({ destination: s.destinazione, gateway: s.gateway, interface_name: null, protocol: "static", ...(s.distanza != null ? { distance: s.distanza } : {}), active: s.attiva }))];
 }
 
 /** Scopi delle reti che una porta di switch può portare; WAN e VPN no. */

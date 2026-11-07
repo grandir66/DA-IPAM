@@ -519,6 +519,20 @@ export const DDL_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   id INTEGER PRIMARY KEY AUTOINCREMENT, chiave TEXT NOT NULL, mac TEXT, nome TEXT, da_apparato TEXT NOT NULL, da_porta TEXT NOT NULL,
   a_apparato TEXT NOT NULL, a_porta TEXT NOT NULL, il TEXT NOT NULL
 )`],
+  // Il registro (Riccardo, 07/11: «evitare che ad ogni iterazione si perdano dati»): `switch_ports` e `arp_entries` si riscrivono
+  // a ogni giro e l'ultimo lettore cancella gli altri. Qui ogni fonte tiene il suo strato, e la mappa li unisce.
+  ["mappa_porte_fonti", `CREATE TABLE mappa_porte_fonti (
+  device_id INTEGER NOT NULL, fonte TEXT NOT NULL, port_index INTEGER NOT NULL, port_name TEXT NOT NULL, valori TEXT NOT NULL, letto_il TEXT NOT NULL,
+  PRIMARY KEY (device_id, fonte, port_index)
+)`],
+  ["mappa_porte_visti", `CREATE TABLE mappa_porte_visti (
+  mac TEXT NOT NULL, ip TEXT NOT NULL, device_id INTEGER NOT NULL, interfaccia TEXT, primo TEXT NOT NULL, ultimo TEXT NOT NULL,
+  PRIMARY KEY (mac, ip, device_id)
+)`],
+  ["mappa_porte_rotte", `CREATE TABLE mappa_porte_rotte (
+  device_id INTEGER NOT NULL, destinazione TEXT NOT NULL, gateway TEXT NOT NULL, interfaccia TEXT, protocollo TEXT NOT NULL, metrica INTEGER, distanza INTEGER,
+  attiva INTEGER NOT NULL, primo TEXT NOT NULL, ultimo TEXT NOT NULL, PRIMARY KEY (device_id, destinazione, gateway, protocollo)
+)`],
   ["mappa_porte_calcolo", `CREATE TABLE mappa_porte_calcolo (
   id INTEGER PRIMARY KEY CHECK (id = 1), il TEXT NOT NULL, durata_ms INTEGER NOT NULL, conteggi TEXT NOT NULL
 )`],
@@ -527,7 +541,7 @@ export const INDICI_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   ["idx_mappa_porte_spostamenti_chiave", "CREATE INDEX idx_mappa_porte_spostamenti_chiave ON mappa_porte_spostamenti(chiave, il)"],
 ];
 export const SEGNO_MAPPA_PORTE = "mappa_porte_v21";
-export const VERSIONE_MAPPA_PORTE = 2;
+export const VERSIONE_MAPPA_PORTE = 3;
 
 /**
  * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):

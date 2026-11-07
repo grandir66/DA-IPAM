@@ -28,7 +28,7 @@ const STESSO_GIRO_MS = 2 * 3_600_000;
 const TIPI_DI_RETE = new Set(["switch", "access_point", "router", "firewall"]);
 const CLASSI_DI_RETE = new Set(["switch", "access_point", "router", "firewall"]);
 const OUI_VM = ["BC:24:11", "00:50:56", "52:54:00"];
-const FONTE: Record<string, string> = { device: "SNMP", unifi: "Controller", librenms: "LibreNMS" };
+const FONTE: Record<string, string> = { device: "SNMP", unifi: "Controller", librenms: "LibreNMS", parser: "Parser" };
 
 const chiaveP = (d: number, k: string) => `${d}|${k}`;
 const norm = (s: string | null | undefined) => normalizeMacForStorage(s ?? null);

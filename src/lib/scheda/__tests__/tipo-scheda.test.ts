@@ -82,12 +82,12 @@ describe("tabDelTipo", () => {
   it("router e firewall MikroTik (SSH): Dispositivi dopo DHCP; VLAN e Bridge solo se c'è almeno un bridge", () => {
     const comuni = ["sicurezza", "gestione", "storico"];
     for (const x of ["router", "firewall"] as const) {
-      assert.deepEqual(tabDelTipo(x, { ...NO, mikrotik: { haBridge: false } }), ["panoramica", "interfacce", "routing", "dhcp", "dispositivi", "configurazione", ...comuni], x);
-      assert.deepEqual(tabDelTipo(x, { ...NO, mikrotik: { haBridge: true } }), ["panoramica", "interfacce", "vlan", "bridge", "routing", "dhcp", "dispositivi", "configurazione", ...comuni], x);
+      assert.deepEqual(tabDelTipo(x, { ...NO, mikrotik: { haBridge: false } }), ["panoramica", "porte", "interfacce", "routing", "dhcp", "dispositivi", "configurazione", ...comuni], x);
+      assert.deepEqual(tabDelTipo(x, { ...NO, mikrotik: { haBridge: true } }), ["panoramica", "porte", "interfacce", "vlan", "bridge", "routing", "dhcp", "dispositivi", "configurazione", ...comuni], x);
     }
   });
   it("un firewall Stormshield (mikrotik null) tiene le tab di oggi, e il bridge non cambia gli altri tipi", () => {
-    assert.deepEqual(tabDelTipo("firewall", NO), ["panoramica", "interfacce", "routing", "dhcp", "configurazione", "sicurezza", "gestione", "storico"]);
+    assert.deepEqual(tabDelTipo("firewall", NO), ["panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", "sicurezza", "gestione", "storico"]);
     assert.deepEqual(tabDelTipo("switch", { ...NO, mikrotik: { haBridge: true } }), ["panoramica", "porte", "vlan", "vicini", "sicurezza", "gestione", "storico"]);
   });
   it("switch: panoramica, porte, vlan, vicini + comuni, senza dettagli (T3)", () => {
@@ -95,7 +95,7 @@ describe("tabDelTipo", () => {
   });
   it("router e firewall: panoramica, interfacce, routing, dhcp, configurazione + comuni, senza dettagli (T4)", () => {
     for (const x of ["router", "firewall"] as const) {
-      assert.deepEqual(tabDelTipo(x, NO), ["panoramica", "interfacce", "routing", "dhcp", "configurazione", "sicurezza", "gestione", "storico"], x);
+      assert.deepEqual(tabDelTipo(x, NO), ["panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", "sicurezza", "gestione", "storico"], x);
     }
   });
   it("storage: panoramica, dischi, volumi, servizi_nas + comuni, senza dettagli (T5)", () => {

@@ -20,6 +20,13 @@
 - Switch: 0 ARP su tutti. `vlanSwitchDaLeggere` vale solo per `device_type = switch`, quindi router e firewall sono esclusi.
 - 21 MAC hanno più IP in `hosts`.
 
+## Scelte aggiunte da Riccardo (07/11, durante il lavoro)
+
+- «Evitare che ad ogni iterazione si perdano dati»: registro per fonte (`mappa_porte_fonti`), ARP e rotte accumulati (`mappa_porte_visti`, `mappa_porte_rotte`). `switch_ports` non cambia, quindi la Topologia non si muove: è il motivo per cui `is_uplink` arriva alla mappa senza i 4 collegamenti falsi misurati sul ramo sospeso.
+- «Per ogni tipologia venga utilizzato il parser»: sull'hub 0 snapshot, i parser partivano solo a mano. Giro ogni 6 ore dietro `mappa_dati`, un adattatore unico dallo schema degli snapshot.
+- «Per gli switch la rappresentazione porte e vlan è perfetta, estendiamola a router e firewall»: stesse tab e stessi componenti.
+- «Non testare nulla su 72729 … per hp usa 70151, solo dopo testeremo 72729»: la misura HP si fa su 70151.
+
 ## Tappe
 
 - [x] **1. Tutti gli oggetti (solo calcolo).** *(Verifica su copia del DB dell'hub: 790 oggetti contro 488, 0 nodi di Topologia assenti contro 26, 0 client di porta assenti contro 6; 199 posizioni fidate su 203 identiche, le altre 4 sono oggetti con più schede.)* Ogni host, apparato e VM ha una riga. Un oggetto fisico raggruppa tutti i suoi MAC e IP (`topology_device_macs`, scansioni Proxmox, `device_interfaces`, ARP, DHCP). Le fonti ARP, DHCP e LibreNMS entrano nel calcolo. Senza porta si dice dove è stato visto (router, VLAN). I vecchi si vedono, col segno. Fatto quando: 0 nodi di Topologia fuori mappa su hub e 79993-ipam-2, confronto col controller non peggiorato.

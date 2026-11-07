@@ -57,7 +57,7 @@ import { spkiPinFromDer } from "@/lib/vuln/scanner-edge-client";
 import { mergeCookieHeader, parseSetCookies } from "./librenms-web-session";
 import { parseStatDeviceResponse, UnifiResponseError, type UnifiDevice } from "./unifi-device";
 import { parseStatStaResponse, type UnifiStaClient } from "./unifi-clients";
-import { parseNetworkconfResponse, type UnifiRete } from "./unifi-reti";
+import { parseNetworkconfResponse, parseRoutingResponse, type UnifiRete, type UnifiRotta } from "./unifi-reti";
 import type { ComponentConfig, UnifiCertPinStore, UnifiKind } from "./types";
 
 // ── Errori ───────────────────────────────────────────────────────────────────
@@ -172,7 +172,8 @@ const ALLOWED_POSTS: ReadonlySet<string> = new Set(["/api/login", "/api/logout",
  * Tutte GET: nessun comando (`cmd/`), mai. `rest/networkconf` è l'UNICO
  * percorso `rest/` ammesso, solo in GET e senza id (piano 2026-10-22
  * accorpamento, Task 13, ok di Riccardo del 22/10): dà i numeri di VLAN delle
- * reti che il `port_table` cita per id.
+ * reti che il `port_table` cita per id. `rest/routing` (piano 2026-11-07, ok di
+ * Riccardo): le rotte statiche del gateway, stessa regola, solo GET e senza id.
  */
 export function isUnifiRequestAllowed(method: string, path: string): boolean {
   if (method === "POST") return ALLOWED_POSTS.has(path);
@@ -212,11 +213,12 @@ export function controllerMsgFromBody(body: string): string | null {
 type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; unifiOs?: boolean; what?: LetturaUnifi };
 
 /** Che cosa si legge: apparati (`stat/device`), client (`stat/sta`), reti (`rest/networkconf`). */
-type LetturaUnifi = "device" | "sta" | "networkconf";
+type LetturaUnifi = "device" | "sta" | "networkconf" | "routing";
 const COSA_LETTA: Record<LetturaUnifi, { art: string; di: string }> = {
   device: { art: "gli apparati", di: "degli apparati" },
   sta: { art: "i client", di: "dei client" },
   networkconf: { art: "le reti", di: "delle reti" },
+  routing: { art: "le rotte", di: "delle rotte" },
 };
 
 export const UNIFI_OS_LOGIN_MESSAGES = {
@@ -749,6 +751,7 @@ function statReader<T>(what: LetturaUnifi, parse: (json: unknown) => T): StatRea
 const statDevice = statReader("device", parseStatDeviceResponse);
 const statSta = statReader("sta", parseStatStaResponse);
 const restNetworkconf = statReader("networkconf", parseNetworkconfResponse);
+const restRouting = statReader("routing", parseRoutingResponse);
 
 /** Apparati e reti del site nella STESSA sessione (un login). */
 export interface UnifiDevicesAndNetworks {
@@ -757,6 +760,8 @@ export interface UnifiDevicesAndNetworks {
   networks: UnifiRete[] | null;
   /** Perché le reti non si sono lette (testo del controller classificato), se non si sono lette. */
   networksError: string | null;
+  /** Le rotte statiche del site; null = non lette, non «nessuna». */
+  routes?: UnifiRotta[] | null;
 }
 
 /**
@@ -766,7 +771,10 @@ export interface UnifiDevicesAndNetworks {
 const statDeviceConReti: StatReader<UnifiDevicesAndNetworks> = async (send, auth, site, timeoutMs) => {
   const devices = await statDevice(send, auth, site, timeoutMs);
   try {
-    return { devices, networks: await restNetworkconf(send, auth, site, timeoutMs), networksError: null };
+    const networks = await restNetworkconf(send, auth, site, timeoutMs);
+    // Stessa sessione: nessun login in più. Un errore qui non costa né gli apparati né le reti.
+    const routes = await restRouting(send, auth, site, timeoutMs).catch(() => null);
+    return { devices, networks, networksError: null, routes };
   } catch (e) {
     const err = toUnifiError(e);
     if (err.reason === "cert") throw err;
@@ -782,7 +790,7 @@ async function statGet<T>(
   what: LetturaUnifi,
   parse: (json: unknown) => T,
 ): Promise<T> {
-  const percorso = what === "networkconf" ? "rest/networkconf" : `stat/${what}`;
+  const percorso = what === "networkconf" ? "rest/networkconf" : what === "routing" ? "rest/routing" : `stat/${what}`;
   const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/${percorso}`, headers: auth.headers(), timeoutMs });
   const ctx: ErrorCtx = { step: "lettura", site, apiKey: auth.apiKey, unifiOs: auth.unifiOs, what };
   if (res.status !== 200) throw httpError(res, ctx);

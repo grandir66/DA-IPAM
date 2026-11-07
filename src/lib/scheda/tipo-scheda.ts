@@ -101,7 +101,8 @@ export interface OpzioniTab {
 export function mikrotikPerTab(d: {
   vendor?: string | null; protocol?: string | null; mikrotik?: { bridge: number; letto_il?: string | null; topologia_accesa: boolean } | null;
 } | null | undefined): { haBridge: boolean } | null {
-  if (d?.vendor !== "mikrotik" || d?.protocol !== "ssh") return null;
+  // Un MikroTik impostato in SNMP e letto via SSH dal giro (`mappa_dati`) ha gli stessi dati: conta quello che c'è, non il protocollo.
+  if (d?.vendor !== "mikrotik" || (d?.protocol !== "ssh" && !(d?.mikrotik && d.mikrotik.bridge > 0))) return null;
   return { haBridge: d.mikrotik?.topologia_accesa === true && d.mikrotik.bridge > 0 };
 }
 
@@ -131,9 +132,10 @@ function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
   if ((t === "router" || t === "firewall") && o.mikrotik) {
     // MikroTik via SSH: VLAN e Bridge solo se l'ultima lettura ha almeno un bridge; Dispositivi (ARP + DHCP + vicini) sempre.
-    return ["panoramica", "interfacce", ...(o.mikrotik.haBridge ? (["vlan", "bridge"] as TabId[]) : []), "routing", "dhcp", "dispositivi", "configurazione", ...TAB_COMUNI];
+    return ["panoramica", "porte", "interfacce", ...(o.mikrotik.haBridge ? (["vlan", "bridge"] as TabId[]) : []), "routing", "dhcp", "dispositivi", "configurazione", ...TAB_COMUNI];
   }
-  if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
+  // Router e firewall hanno porte e VLAN come gli switch (Riccardo, 07/11): stesse tab, stessi componenti.
+  if (t === "router" || t === "firewall") return ["panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "stampante") return ["panoramica", "materiali", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
   if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];

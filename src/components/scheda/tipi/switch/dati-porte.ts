@@ -24,15 +24,19 @@ export interface Vicino {
 export function viciniDi(ctx: ContestoScheda): Vicino[] {
   const visti = new Set<string>();
   const r: Vicino[] = [];
+  // Il controller scrive «eth0» su ogni vicino di uno switch: la porta vera è l'indice.
+  const portaPerIndice = new Map((ctx.device?.switch_ports ?? []).map((p) => [p.port_index, p.port_name]));
   for (const n of ctx.device?.neighbors ?? []) {
     const nome = (n.remote_device_name ?? "").trim() || n.remote_mac || n.remote_ip || "";
     if (!nome) continue;
-    const chiave = `${n.local_port}|${nome}|${n.remote_port ?? ""}`;
+    const indice = (n as { local_port_index?: number | null }).local_port_index;
+    const portaLocale = (indice != null ? portaPerIndice.get(indice) : undefined) ?? n.local_port;
+    const chiave = `${portaLocale}|${nome}|${n.remote_port ?? ""}`;
     if (visti.has(chiave)) continue;
     visti.add(chiave);
     r.push({
       chiave,
-      portaLocale: n.local_port ?? "—",
+      portaLocale: portaLocale ?? "—",
       nome,
       portaRemota: n.remote_port || null,
       protocollo: (n.protocol ?? "").toLowerCase(),

@@ -14,10 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
-import type { StatoCalcolo, VoceSpostamento } from "@/lib/mappa-porte/calcolo";
+import type { StatoCalcolo, VoceRotta, VoceSpostamento } from "@/lib/mappa-porte/calcolo";
 import type { Confidenza, DatoVlan, ModoPorta, OggettoMappa, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
 
-type Scheda = "oggetti" | "porte";
+type Scheda = "oggetti" | "porte" | "rotte";
 interface Risposta<T> { righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[] }
 
 const CONFIDENZE: Record<Confidenza, { segno: string; testo: string; classi: string; spiega: string }> = {
@@ -175,6 +175,7 @@ export function MappaPorteClient() {
   const [pagina, setPagina] = useState(0);
   const [oggetti, setOggetti] = useState<Risposta<OggettoMappa> | null>(null);
   const [porte, setPorte] = useState<Risposta<PortaMappa> | null>(null);
+  const [rotte, setRotte] = useState<Risposta<VoceRotta> | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [scelto, setScelto] = useState<string | null>(null);
   const nextSignal = useLatestRequest();
@@ -194,14 +195,15 @@ export function MappaPorteClient() {
     const metti = (k: string, v: string | boolean) => { if (v === true) u.set(k, "1"); else if (v) u.set(k, v); };
     metti("q", q); metti("apparato", apparato); metti("tipoPorta", tipoPorta);
     if (scheda === "oggetti") { metti("vlan", vlan); metti("confidenza", confidenza); metti("senzaHost", senzaHost); metti("spostati", spostati); metti("recenti", recenti); }
-    else { metti("modo", modo); metti("libere", libere); }
+    else if (scheda === "porte") { metti("modo", modo); metti("libere", libere); }
     try {
-      const r = await fetchJson<Risposta<OggettoMappa & PortaMappa>>(`/api/port-map?${u}`, { signal });
+      const r = await fetchJson<Risposta<OggettoMappa & PortaMappa & VoceRotta>>(`/api/port-map?${u}`, { signal });
       if (signal.aborted) return;
       if (!r.ok) { setErrore(r.message); return; }
       setErrore(null);
       if (scheda === "oggetti") setOggetti(r.data);
-      else setPorte(r.data);
+      else if (scheda === "porte") setPorte(r.data);
+      else setRotte(r.data);
     } catch {
       /* richiesta superata */
     }
@@ -218,8 +220,8 @@ export function MappaPorteClient() {
     window.history.replaceState(null, "", `#${s}`);
   };
 
-  const dati = scheda === "oggetti" ? oggetti : porte;
-  const calcolo = dati?.calcolo ?? oggetti?.calcolo ?? porte?.calcolo ?? null;
+  const dati = scheda === "oggetti" ? oggetti : scheda === "porte" ? porte : rotte;
+  const calcolo = dati?.calcolo ?? oggetti?.calcolo ?? porte?.calcolo ?? rotte?.calcolo ?? null;
   const c = calcolo?.conteggi;
   const apparati = (dati?.apparati ?? []).map((a): [string, string] => [String(a.id), a.nome]);
 
@@ -242,21 +244,22 @@ export function MappaPorteClient() {
         voci={[
           { valore: "oggetti", titolo: "Oggetti", descrizione: "Ogni cosa vista in rete e dove sta" },
           { valore: "porte", titolo: "Porte", descrizione: "Ogni porta, aggregato e cosa ha sopra" },
+          { valore: "rotte", titolo: "Rotte", descrizione: "Le rotte di tutti i router, comprese quelle non più viste" },
         ]}
         scelta={scheda}
         onScegli={cambiaScheda}
       />
       <Pannello
-        titolo={scheda === "oggetti" ? "Oggetti" : "Porte"}
+        titolo={scheda === "oggetti" ? "Oggetti" : scheda === "porte" ? "Porte" : "Rotte"}
         conteggio={dati?.totale}
         corpoClassName="p-0"
         azioni={
           <>
-            <Input aria-label="Cerca" placeholder={scheda === "oggetti" ? "Nome, IP, MAC, porta" : "Porta, apparato, vicino"} value={testo} onChange={(e) => setTesto(e.target.value)} className="h-9 w-52" />
+            <Input aria-label="Cerca" placeholder={scheda === "oggetti" ? "Nome, IP, MAC, porta" : scheda === "porte" ? "Porta, apparato, vicino" : "Destinazione, gateway, interfaccia"} value={testo} onChange={(e) => setTesto(e.target.value)} className="h-9 w-52" />
             <Scelta etichetta="Tutti gli apparati" valore={apparato} onCambia={conFiltro(setApparato)} voci={apparati} />
             {scheda === "oggetti" && <Scelta etichetta="Tutte le VLAN" valore={vlan} onCambia={conFiltro(setVlan)} voci={(dati?.vlan ?? []).map((v) => [String(v), `VLAN ${v}`])} />}
             {scheda === "oggetti" && <Scelta etichetta="Ogni confidenza" valore={confidenza} onCambia={conFiltro(setConfidenza)} voci={(Object.keys(CONFIDENZE) as Confidenza[]).map((k) => [k, CONFIDENZE[k].testo])} />}
-            <Scelta etichetta="Ogni tipo di porta" valore={tipoPorta} onCambia={conFiltro(setTipoPorta)} voci={TIPI_ELENCO} />
+            {scheda !== "rotte" && <Scelta etichetta="Ogni tipo di porta" valore={tipoPorta} onCambia={conFiltro(setTipoPorta)} voci={TIPI_ELENCO} />}
             {scheda === "porte" && <Scelta etichetta="Ogni modo" valore={modo} onCambia={conFiltro(setModo)} voci={Object.entries(MODI)} />}
             {scheda === "oggetti" && <Spunta testo="Senza host" acceso={senzaHost} onCambia={conFiltro(setSenzaHost)} />}
             {scheda === "oggetti" && <Spunta testo="Spostati" acceso={spostati} onCambia={conFiltro(setSpostati)} />}
@@ -275,7 +278,7 @@ export function MappaPorteClient() {
           : dati.righe.length === 0 ? <Vuoto titolo="Nessuna riga" testo="Nessun risultato con questi filtri. Dopo un'installazione nuova serve un giro sugli switch." />
           : (
             <div className="space-y-2 p-3">
-              {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} /> : <TabellaPorte righe={porte?.righe ?? []} />}
+              {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} /> : scheda === "porte" ? <TabellaPorte righe={porte?.righe ?? []} /> : <TabellaRotte righe={rotte?.righe ?? []} />}
               <Paginazione pagina={pagina} totale={dati.totale} dimensione={dati.dimensionePagina} onPagina={setPagina} />
             </div>
           )}
@@ -308,6 +311,29 @@ function TabellaOggetti({ righe, onScegli }: { righe: OggettoMappa[]; onScegli: 
             <TableCell className="font-mono text-[13px]">{o.vlan ?? "—"}</TableCell>
             <TableCell><SegnoConfidenza c={o.confidenza} /></TableCell>
             <TableCell className="hidden font-mono text-[13px] whitespace-nowrap min-[1500px]:table-cell">{quando(o.visto)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function TabellaRotte({ righe }: { righe: VoceRotta[] }) {
+  return (
+    <Table fissa riserva={70}>
+      <TableHeader>
+        <TableRow><TableHead>Apparato</TableHead><TableHead>Destinazione</TableHead><TableHead>Gateway</TableHead><TableHead>Interfaccia</TableHead><TableHead>Protocollo</TableHead><TableHead className="text-right">Metrica</TableHead><TableHead>Stato</TableHead></TableRow>
+      </TableHeader>
+      <TableBody>
+        {righe.map((r) => (
+          <TableRow key={`${r.deviceId}|${r.destinazione}|${r.gateway}|${r.protocollo}`}>
+            <TableCell className="max-w-44 truncate"><Link href={`/devices/${r.deviceId}`} className="hover:underline">{r.apparato}</Link></TableCell>
+            <TableCell className="font-mono text-[13px]">{r.destinazione}</TableCell>
+            <TableCell className="font-mono text-[13px]">{r.gateway || "—"}</TableCell>
+            <TableCell className="font-mono text-[13px]">{r.interfaccia ?? "—"}</TableCell>
+            <TableCell className="text-[13px]">{r.protocollo || "—"}</TableCell>
+            <TableCell className="text-right font-mono text-[13px]">{r.metrica ?? "—"}</TableCell>
+            <TableCell className="text-[13px]" title={`Ultima lettura ${quando(r.ultimo)}`}>{!r.presente ? "◌ non più vista" : r.attiva ? "● attiva" : "○ inattiva"}</TableCell>
           </TableRow>
         ))}
       </TableBody>

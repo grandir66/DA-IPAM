@@ -50,6 +50,9 @@ export function conteggioTab(tipo: TipoScheda, tab: TabId, { device, dipendenze,
     case "router":
     case "firewall":
       if (tab === "routing") return coppia(device.routes?.length ?? 0, device.arp_entries?.length ?? 0);
+      if (tab === "porte") return num(device.switch_ports?.length ?? 0);
+      if (tab === "vlan") return num((device.switch_vlan_n ?? 0) > 0 ? device.switch_vlan_n! : vlanDistinte((device.switch_ports ?? []) as PortaSwitch[]).length);
+      if (tab === "vicini") return coppia(contaVicini(device), device.mac_port_entries?.length ?? 0);
       if (tab === "bridge") return num(device.mikrotik?.bridge ?? 0);
       return null;
     case "hypervisor": {

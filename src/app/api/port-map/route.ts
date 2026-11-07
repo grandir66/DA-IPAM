@@ -4,12 +4,12 @@ import { z } from "zod";
 import { requireAuth } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import {
-  apparatiDellaMappa, cercaOggetti, cercaPorte, dettaglioOggetto, DIMENSIONE_PAGINA, ricalcolaMappaPorte, statoCalcolo, vlanDellaMappa,
+  apparatiDellaMappa, cercaOggetti, cercaPorte, cercaRotte, dettaglioOggetto, DIMENSIONE_PAGINA, ricalcolaMappaPorte, statoCalcolo, vlanDellaMappa,
 } from "@/lib/mappa-porte/calcolo";
 
 const numero = z.coerce.number().int().min(0).optional();
 const Parametri = z.object({
-  vista: z.enum(["oggetti", "porte"]).default("oggetti"),
+  vista: z.enum(["oggetti", "porte", "rotte"]).default("oggetti"),
   q: z.string().trim().max(100).optional(),
   apparato: numero,
   vlan: numero,
@@ -38,7 +38,9 @@ export async function GET(request: Request) {
     }
     // Primo accesso dopo l'aggiornamento: non si aspetta il giro.
     if (statoCalcolo() == null) ricalcolaMappaPorte();
-    const elenco = f.vista === "porte"
+    const elenco = f.vista === "rotte"
+      ? cercaRotte({ q: f.q, deviceId: f.apparato, pagina: f.pagina })
+      : f.vista === "porte"
       ? cercaPorte({ q: f.q, deviceId: f.apparato, tipo: f.tipoPorta, modo: f.modo, libere: f.libere === "1", pagina: f.pagina })
       : cercaOggetti({ q: f.q, deviceId: f.apparato, vlan: f.vlan, confidenza: f.confidenza, tipoPorta: f.tipoPorta, senzaHost: f.senzaHost === "1", spostati: f.spostati === "1", recenti: f.recenti === "1", pagina: f.pagina });
     return NextResponse.json({ ...elenco, dimensionePagina: DIMENSIONE_PAGINA, calcolo: statoCalcolo(), apparati: apparatiDellaMappa(), vlan: vlanDellaMappa() });

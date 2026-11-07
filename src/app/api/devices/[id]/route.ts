@@ -79,7 +79,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const isHypervisor = tipo === "hypervisor" || device.scan_target === "proxmox";
     const arpCapable = networkDeviceUsesArpPoll(device);
     const arpEntries = arpCapable ? getArpEntriesByDevice(Number(id)) : [];
-    const macPortEntries = tipo === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
+    const macPortEntries = tipo === "switch" || tipo === "router" || tipo === "firewall" ? getMacPortEntriesByDevice(Number(id)) : [];
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
     const neighbors = getNeighborsByDevice(Number(id));
     const routes = arpCapable ? getRoutesByDevice(Number(id)) : [];
@@ -116,7 +116,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const proxmox_data = isHypervisor ? parseProxmoxSummary(device.last_proxmox_scan_result) : null;
     // Scheda MikroTik (Task 9): bridge dell'ultima fotografia (una COUNT) e lettura della topologia accesa, solo per i
     // MikroTik in SSH. Da qui la pagina decide le tab VLAN e Bridge; null = schema della scheda sotto il livello 2.
-    const mikrotik = device.vendor === "mikrotik" && device.protocol === "ssh" ? riassuntoMikrotik(Number(id)) : null;
+    const mikrotik = device.vendor === "mikrotik" ? riassuntoMikrotik(Number(id)) : null;
     // Tab VLAN degli switch (piano accorpamento, Task 11): quante VLAN ha l'ultima lettura Q-BRIDGE (una COUNT).
     const switch_vlan_n = isHypervisor ? 0 : contaVlanSwitch(Number(id));
 

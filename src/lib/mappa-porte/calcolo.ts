@@ -8,10 +8,15 @@ import { getLinkStaleDays } from "@/lib/topology/settings";
 import { parseProxmoxScan } from "@/lib/topology/vms";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import { calcolaMappa, trovaSpostamenti } from "@/lib/mappa-porte/regola";
-import type { ConteggiMappa, IngressoMappaPorte, OggettoMappa, PortaMappa, RigaMacApparato, RigaMacPorta, RigaVm } from "@/lib/mappa-porte/tipi";
+import { unisciStrati } from "@/lib/mappa-porte/completa";
+import { dalloSnapshot, type DatiParser, type StratoPorta } from "@/lib/mappa-porte/parser";
+import { leggiPayload } from "@/lib/acquisizione-modulare/archivio";
+import type { ConteggiMappa, IngressoMappaPorte, OggettoMappa, PortaMappa, RigaArp, RigaMacApparato, RigaMacPorta, RigaMkPorta, RigaMkVlan, RigaVicino, RigaVm } from "@/lib/mappa-porte/tipi";
 
 /** Gli spostamenti si conservano 90 giorni (Riccardo, 07/11). */
 export const GIORNI_SPOSTAMENTI = 90;
+/** ARP e rotte restano un anno anche se la fonte non li ha più. */
+const GIORNI_REGISTRO = 365;
 
 function dbTenant(): Database.Database {
   const code = getCurrentTenantCode();
@@ -42,6 +47,17 @@ export function leggiIngresso(nowMs: number = Date.now()): IngressoMappaPorte {
       for (const mac of h.macs) macDegliHypervisor.push({ device_id: nodo, mac });
     }
   }
+  const parser: DatiParser = { macPorte: [], arp: [], vicini: [], mkPorte: [], mkVlan: [], porte: [] };
+  // L'ultimo snapshot buono di ogni apparato: uno scritto dal parser è la lettura più ricca che abbiamo.
+  const ultimi = seCe<{ id: number; device_id: number; finished_at: string }>("acquisition_snapshots", `SELECT s.id, s.device_id, s.finished_at FROM acquisition_snapshots s
+    JOIN (SELECT device_id, MAX(id) AS id FROM acquisition_snapshots WHERE status <> 'error' GROUP BY device_id) u ON u.id = s.id`);
+  for (const u of ultimi) {
+    const l = leggiPayload(u.device_id, u.id);
+    if (!l.ok) continue;
+    const dati = dalloSnapshot(u.device_id, l.snapshot, u.finished_at.slice(0, 19).replace("T", " "));
+    for (const k of Object.keys(parser) as Array<keyof DatiParser>) (parser[k] as unknown[]).push(...dati[k]);
+  }
+  const strati = seCe<StratoPorta>("mappa_porte_fonti", "SELECT device_id, fonte, port_index, port_name, valori, letto_il FROM mappa_porte_fonti WHERE fonte <> 'giro'");
   return {
     nowMs, staleDays: getLinkStaleDays(),
     apparati: tutte("SELECT id, name, device_type, protocol FROM network_devices"),
@@ -51,9 +67,10 @@ export function leggiIngresso(nowMs: number = Date.now()): IngressoMappaPorte {
       ...(esiste(d, "librenms_mac_porta") ? tutte<RigaMacPorta>(`SELECT nd.id AS device_id, m.mac, p.if_name AS port_name, m.vlan_id AS vlan, COALESCE(m.visto_il, m.letto_il) AS timestamp, 'librenms' AS source
         FROM librenms_mac_porta m JOIN librenms_porta p ON p.librenms_device_id = m.librenms_device_id AND p.port_id = m.port_id
         JOIN librenms_apparato a ON a.librenms_device_id = m.librenms_device_id JOIN network_devices nd ON nd.host = a.ip WHERE COALESCE(p.if_name, '') <> ''`) : []),
+      ...parser.macPorte,
     ],
-    porte: tutte("SELECT device_id, port_index, port_name, status, speed, vlan, poe_status, poe_power_mw, stp_state, is_uplink FROM switch_ports"),
-    vicini: tutte("SELECT device_id, local_port, local_port_index, remote_device_name, remote_port, protocol, remote_mac, source FROM device_neighbors"),
+    porte: unisciStrati(tutte("SELECT device_id, port_index, port_name, status, speed, vlan, poe_status, poe_power_mw, stp_state, is_uplink FROM switch_ports"), [...strati, ...parser.porte]),
+    vicini: [...tutte<RigaVicino>("SELECT device_id, local_port, local_port_index, remote_device_name, remote_port, protocol, remote_mac, source FROM device_neighbors"), ...parser.vicini],
     fatti: seCe("topology_port_facts", "SELECT device_id, source, port_name, port_index, lag_group FROM topology_port_facts"),
     macApparati: seCe("topology_device_macs", "SELECT device_id, mac FROM topology_device_macs"),
     hosts: tutte("SELECT id, ip, mac, hostname, custom_name, vendor, classification, status FROM hosts"),
@@ -63,7 +80,9 @@ export function leggiIngresso(nowMs: number = Date.now()): IngressoMappaPorte {
       ...tutte<RigaMacApparato>("SELECT nd.id AS device_id, i.mac FROM device_interfaces i JOIN network_devices nd ON nd.physical_device_id = i.physical_device_id WHERE COALESCE(i.mac, '') <> '' AND i.is_virtual_mac = 0"),
       ...macDegliHypervisor,
     ],
-    arp: tutte("SELECT device_id, mac, ip, interface_name, timestamp, status FROM arp_entries"),
+    // Dal registro, non da `arp_entries`: quella si riscrive a ogni giro e qui non si perde niente.
+    arp: [...seCe<RigaArp>("mappa_porte_visti", "SELECT device_id, mac, NULLIF(ip, '') AS ip, interfaccia AS interface_name, ultimo AS timestamp, NULL AS status FROM mappa_porte_visti"),
+      ...tutte<RigaArp>("SELECT device_id, mac, ip, interface_name, timestamp, status FROM arp_entries"), ...parser.arp],
     lnmsArp: esiste(d, "librenms_arp") ? tutte(`SELECT nd.id AS device_id, r.mac, r.ip, p.if_name, r.letto_il FROM librenms_arp r
       LEFT JOIN librenms_porta p ON p.librenms_device_id = r.librenms_device_id AND p.port_id = r.port_id
       LEFT JOIN librenms_apparato a ON a.librenms_device_id = r.librenms_device_id LEFT JOIN network_devices nd ON nd.host = a.ip`) : [],
@@ -74,8 +93,8 @@ export function leggiIngresso(nowMs: number = Date.now()): IngressoMappaPorte {
     pvid: seCe("switch_porta_pvid", "SELECT device_id, if_index, pvid FROM switch_porta_pvid"),
     nativa: seCe("switch_vlan_nativa", "SELECT device_id, if_index, vlan_id FROM switch_vlan_nativa"),
     vlanLetture: seCe("switch_vlan_lettura", "SELECT device_id, ordine_bit FROM switch_vlan_lettura"),
-    mkPorte: seCe("mikrotik_bridge_port", "SELECT device_id, interface, pvid FROM mikrotik_bridge_port"),
-    mkVlan: seCe("mikrotik_bridge_vlan", "SELECT device_id, vlan_ids, tagged, current_tagged FROM mikrotik_bridge_vlan"),
+    mkPorte: [...seCe<RigaMkPorta>("mikrotik_bridge_port", "SELECT device_id, interface, pvid FROM mikrotik_bridge_port"), ...parser.mkPorte],
+    mkVlan: [...seCe<RigaMkVlan>("mikrotik_bridge_vlan", "SELECT device_id, vlan_ids, tagged, current_tagged FROM mikrotik_bridge_vlan"), ...parser.mkVlan],
   };
 }
 
@@ -118,9 +137,28 @@ export type EsitoCalcolo = { ok: true; conteggi: ConteggiMappa; spostamenti: num
  * Un calcolo intero. Se le tabelle dei MAC sono vuote e prima c'era una mappa non si scrive niente: un ingresso vuoto per un
  * guasto non deve diventare «non c'è più nessuno», e gli spostamenti non devono ripartire da zero.
  */
+/** ARP e rotte si accumulano: una voce uscita dalla tabella del router resta con la sua data, e un giro vuoto non cancella. */
+function aggiornaRegistri(d: Database.Database, il: string): void {
+  const presente = (t: string) => !!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
+  if (!presente("mappa_porte_visti") || !presente("mappa_porte_rotte")) return;
+  d.transaction(() => {
+    d.prepare(`INSERT INTO mappa_porte_visti (mac, ip, device_id, interfaccia, primo, ultimo)
+      SELECT mac, COALESCE(ip, ''), device_id, MAX(interface_name), MIN(COALESCE(timestamp, ?)), MAX(COALESCE(timestamp, ?)) FROM arp_entries
+       WHERE COALESCE(status, '') NOT IN ('failed', 'incomplete') GROUP BY mac, COALESCE(ip, ''), device_id
+      ON CONFLICT(mac, ip, device_id) DO UPDATE SET interfaccia = COALESCE(excluded.interfaccia, interfaccia), ultimo = MAX(ultimo, excluded.ultimo)`).run(il, il);
+    d.prepare(`INSERT INTO mappa_porte_rotte (device_id, destinazione, gateway, interfaccia, protocollo, metrica, distanza, attiva, primo, ultimo)
+      SELECT device_id, destination, COALESCE(gateway, ''), interface_name, COALESCE(protocol, ''), metric, distance, active, ?, ? FROM routing_table WHERE TRUE
+      ON CONFLICT(device_id, destinazione, gateway, protocollo) DO UPDATE SET interfaccia = excluded.interfaccia, metrica = excluded.metrica, distanza = excluded.distanza,
+        attiva = excluded.attiva, ultimo = excluded.ultimo`).run(il, il);
+    d.prepare("DELETE FROM mappa_porte_visti WHERE ultimo < datetime(?, ?)").run(il, `-${GIORNI_REGISTRO} days`);
+    d.prepare("DELETE FROM mappa_porte_rotte WHERE ultimo < datetime(?, ?)").run(il, `-${GIORNI_REGISTRO} days`);
+  })();
+}
+
 export function ricalcolaMappaPorte(nowMs: number = Date.now()): EsitoCalcolo {
   const inizio = Date.now();
   const d = dbTenant();
+  aggiornaRegistri(d, new Date(nowMs).toISOString().slice(0, 19).replace("T", " "));
   const ingresso = leggiIngresso(nowMs);
   const giaScritti = (d.prepare("SELECT COUNT(*) AS n FROM mappa_porte_oggetti").get() as { n: number }).n;
   if (ingresso.macPorte.length === 0 && giaScritti > 0) return { ok: false, motivo: "tabelle dei MAC vuote: tengo l'ultimo calcolo" };
@@ -165,6 +203,7 @@ export function statoCalcolo(): StatoCalcolo | null {
 }
 
 export const DIMENSIONE_PAGINA = 100;
+
 
 export interface FiltriOggetti {
   q?: string; deviceId?: number; vlan?: number; confidenza?: string; tipoPorta?: string; senzaHost?: boolean; spostati?: boolean; recenti?: boolean; pagina: number;
@@ -220,6 +259,28 @@ export function apparatiDellaMappa(): Array<{ id: number; nome: string }> {
 
 export function vlanDellaMappa(): number[] {
   return (dbTenant().prepare("SELECT DISTINCT vlan FROM mappa_porte_oggetti WHERE vlan IS NOT NULL ORDER BY vlan").all() as Array<{ vlan: number }>).map((r) => r.vlan);
+}
+
+export interface VoceRotta {
+  deviceId: number; apparato: string; destinazione: string; gateway: string; interfaccia: string | null; protocollo: string; metrica: number | null; distanza: number | null;
+  attiva: boolean; presente: boolean; ultimo: string;
+}
+
+/** Le rotte di tutti i router, comprese quelle che non si vedono più: `presente` dice se sono nell'ultimo giro dell'apparato. */
+export function cercaRotte(f: { q?: string; deviceId?: number; pagina: number }): { righe: VoceRotta[]; totale: number } {
+  const d = dbTenant();
+  if (!esiste(d, "mappa_porte_rotte")) return { righe: [], totale: 0 };
+  const dove: string[] = [];
+  const val: Array<string | number> = [];
+  if (f.q) { dove.push("(r.destinazione LIKE ? ESCAPE '\\' OR r.gateway LIKE ? ESCAPE '\\' OR r.interfaccia LIKE ? ESCAPE '\\')"); val.push(...Array<string>(3).fill(simile(f.q))); }
+  if (f.deviceId != null) { dove.push("r.device_id = ?"); val.push(f.deviceId); }
+  const w = dove.length > 0 ? `WHERE ${dove.join(" AND ")}` : "";
+  const totale = (d.prepare(`SELECT COUNT(*) AS n FROM mappa_porte_rotte r ${w}`).get(...val) as { n: number }).n;
+  const righe = d.prepare(`SELECT r.device_id AS deviceId, nd.name AS apparato, r.destinazione, r.gateway, r.interfaccia, r.protocollo, r.metrica, r.distanza, r.attiva, r.ultimo,
+      r.ultimo = (SELECT MAX(x.ultimo) FROM mappa_porte_rotte x WHERE x.device_id = r.device_id) AS presente
+    FROM mappa_porte_rotte r JOIN network_devices nd ON nd.id = r.device_id ${w} ORDER BY nd.name COLLATE NOCASE, r.destinazione LIMIT ? OFFSET ?`)
+    .all(...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as Array<Omit<VoceRotta, "attiva" | "presente"> & { attiva: number; presente: number }>;
+  return { righe: righe.map((r) => ({ ...r, attiva: r.attiva === 1, presente: r.presente === 1 })), totale };
 }
 
 export interface VoceSpostamento { daApparato: string; daPorta: string; aApparato: string; aPorta: string; il: string }

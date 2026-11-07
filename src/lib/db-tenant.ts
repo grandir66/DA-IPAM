@@ -6487,7 +6487,23 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
 // SWITCH PORTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[]): void {
+/** Le colonne che una lettura dice su una porta: lo strato di `mappa_porte_fonti` tiene solo quelle non vuote. */
+const CAMPI_FONTE = ["status", "speed", "duplex", "vlan", "poe_status", "poe_power_mw", "stp_state", "trunk_neighbor_name", "trunk_neighbor_port", "is_uplink"] as const;
+
+function strattoDelleFonti(d: Database.Database, deviceId: number, fonte: string, ports: ReadonlyArray<Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">>): void {
+  if (ports.length === 0 || !d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mappa_porte_fonti'").get()) return;
+  d.prepare("DELETE FROM mappa_porte_fonti WHERE device_id = ? AND fonte = ?").run(deviceId, fonte);
+  const ins = d.prepare("INSERT OR REPLACE INTO mappa_porte_fonti (device_id, fonte, port_index, port_name, valori, letto_il) VALUES (?, ?, ?, ?, ?, datetime('now'))");
+  for (const p of ports) {
+    const valori = Object.fromEntries(CAMPI_FONTE.flatMap((c) => {
+      const v = p[c];
+      return v == null || (c === "is_uplink" && !v) ? [] : [[c, v]];
+    }));
+    ins.run(deviceId, fonte, p.port_index, p.port_name, JSON.stringify(valori));
+  }
+}
+
+export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types").SwitchPort, "id" | "device_id" | "timestamp">[], fonte: "giro" | "controller" = "giro"): void {
   const d = db();
 
   // v0.2.645 audit perf DB4:
@@ -6528,6 +6544,7 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
       const trunkDeviceId = p.trunk_primary_device_id != null && validDevices.has(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
       stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null, p.is_uplink ?? 0);
     }
+    strattoDelleFonti(d, deviceId, fonte, items);
   });
 
   replaceAll(ports);

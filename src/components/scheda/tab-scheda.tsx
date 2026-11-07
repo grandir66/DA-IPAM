@@ -69,8 +69,10 @@ export interface VoceTab {
 const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   panoramica: { render: (c) => (eMikrotikSsh(c) ? <PanoramicaMikrotik ctx={c} /> : <PanoramicaRouter ctx={c} />) },
   interfacce: { render: (c) => (eMikrotikSsh(c) ? <InterfacceMikrotik ctx={c} /> : <InterfacceRouter ctx={c} />) },
-  // VLAN e Bridge: `tabDelTipo` le dà solo ai MikroTik in SSH con almeno un bridge, quindi nessun altro router le vede.
-  vlan: { render: (c) => <VlanMikrotik ctx={c} /> },
+  // Porte, VLAN e Vicini sono quelle degli switch (Riccardo, 07/11). Sui MikroTik col bridge la VLAN è quella della stessa matrice.
+  porte: { render: (c) => <PorteSwitch ctx={c} /> },
+  vicini: { render: (c) => <ViciniSwitch ctx={c} /> },
+  vlan: { render: (c) => (c.device?.vendor === "mikrotik" && (c.device.mikrotik?.bridge ?? 0) > 0 ? <VlanMikrotik ctx={c} /> : <VlanSwitch ctx={c} />) },
   bridge: { render: (c) => <BridgeMikrotik ctx={c} /> },
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },

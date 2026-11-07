@@ -431,7 +431,7 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
     stato: "acceso",
     esito: calcoloMappa ? esito("ok", `ultimo calcolo ${calcoloMappa.il}`) : esito("neutro", "non ancora calcolata"),
     dove: { href: "/port-map", etichetta: "Mappa porte ›" },
-    perche: "Gira sempre: non interroga gli apparati e tocca solo le sue tabelle",
+    perche: "Gira sempre: non interroga gli apparati e tocca solo le sue tabelle. I parser sugli apparati, ogni 6 ore, stanno dietro «Tutti i dati per la Mappa porte»",
   });
 
   // Sensore trunk (25/10): levetta per cliente in Opzioni, lettura ogni 2 minuti.

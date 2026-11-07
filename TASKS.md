@@ -37,6 +37,23 @@ Riccardo, 07/11, alternativa: «oppure un sistema di collegamento e trasferiment
 - [x] Approvazione del piano da parte di Riccardo (07/11). La misura del Task 1 l'ha lanciata lui in una sessione a parte
 - [ ] Misurare in laboratorio un'installazione senza Edge, Greenbone, LibreNMS e, se si riesce, Docker. Stima da verificare: 2 vCPU, 4 GB, 40 GB
 - [ ] Verificare come si installa `sensore-trunk` senza Edge: oggi il codice sta nel pacchetto `scanner_edge`
+- [ ] Decisione di Riccardo: Task 2 con pacchetto su Debian invece di un'immagine snella, e cosa fare del Task 1 sospeso
+
+Riccardo, 07/11: «prima di eseguire il piano puoi verificare se questa modalità limitata potrebbe essere installata in una debian senza avere una immagine completa del sistema, per renderla indipendente dai virtualizzatori». Il Task 1 è sospeso per questo. Giro fermato durante lo scarico, nessuna VM creata.
+
+**Esito (sola lettura del codice, nessuna prova su una Debian vera): si può.** L'immagine nasce già da `install.sh --immagine` su una Debian 13 pulita (`costruttore/costruisci.sh`, passo 3): tutto arriva da apt, git e venv, e `da-appliance applica <file>` funziona a mano. DA-IPAM sta in systemd, Zabbix è un pacchetto, `sensore-trunk` è un'unità systemd con venv, NetBird usa lo script ufficiale.
+
+Cosa manca, in ordine di peso:
+- **Aggiornamento e ritorno indietro**: `primo-avvio/aggiorna.sh` conta sull'istantanea dell'host e l'host lo lancia con l'agente QEMU, come Riconfigura. Senza virtualizzatore non c'è né istantanea né host: va ridisegnato, ed è il punto più costoso.
+- **nginx sta in Docker** (`compose/compose.yml`, `modular_ipam_reconcile`): è l'unico pezzo della variante che obbliga a tenere Docker. Serve nginx da apt.
+- **Rete**: `fasi/rete.sh` scrive netplan e il servizio parte da `cloud-init.target`. Su una Debian del cliente la rete è già sua: la fase va saltata e il file d'avvio deve arrivare in un altro modo.
+- **DA-Link** conosce solo Proxmox e vSphere: serve un terzo comando.
+- **`sensore-trunk`**: va staccato dal pacchetto `scanner_edge`, che si porta dietro `gvm-tools` e il resto. La scheda deve stare davvero sul trunk: su un altro virtualizzatore serve la VLAN 4095 o la modalità promiscua, a carico del cliente.
+- **Identità**: `product_uuid` manca nei container e si duplica nei cloni.
+- **`SISTEMI-SUPPORTATI`** ha solo `ubuntu-24.04`, e la via classica porta tutto Docker: Debian 13 va collaudata.
+- **Macchina del cliente**: una Debian non nostra può avere la 443 occupata, un altro firewall e repository diversi. Servono controlli prima di toccarla.
+
+Proposta: invece dell'immagine snella del Task 2, un pacchetto firmato (DA-IPAM già compilato, venv del sensore, script) con un solo comando su Debian 13, e la stessa cosa dentro un'immagine per chi la vuole. I Task 4-16 non cambiano.
 
 Fatti sul collegamento (07/11): `lib/vulcan/coda.ts` è già la coda che serve (gzip, sha256, doppioni, ritentativi, corpo cancellato all'uscita, inventario superato dal più nuovo), con fotografia a lista bianca alle 03:00 verso `POST /api/ipam/inventario`. Dopo 12 tentativi una riga va in `fallito` e riparte solo con «Invia ora»: per cadute lunghe va cambiato. Il segnale a DA-Link parte ogni 5 minuti, il gettone fissa `codcli` e nodo; `dalink/invio.ts` dalla risposta tiene solo due date, di proposito: gli ordini vogliono una chiamata a parte. Livelli `solo_stato` e `stato_inventario`: ne serve un terzo, scelto dall'istanza. `modular-base` di Deploy-Appliance è già DA-IPAM con moduli spenti. Sulla 533: `node_modules` 909 MB, `tenants` 3,6 GB, `backups` 27 GB.
 

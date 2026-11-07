@@ -222,6 +222,8 @@ Verifica: stato a schermo nel centrale, ultima fotografia di oggi, `da-link-veri
 
 ## Registro
 
+- 2026-11-07 — Task 1 sospeso su richiesta di Riccardo (verifica di un'installazione su Debian senza immagine, esito in `TASKS.md`). Stato sul campo: bozza DA-Link 30, nodo `79993-ipam-3`, sede 3, `192.168.99.3/24`, moduli `ipam` e `zabbix`, trunk `condivisa`, comando valido fino all'08/11 17:41. Giro fermato durante lo scarico, nessuna VM creata; sul PX-NAS restano lo scarico parziale in `/ZFS-LARGE/replica/da-appliance-scarico` (5,8 GB, riprende da solo) e il registro `/root/install-79993-ipam-3.log`. Nessuna misura fatta. La RAM della VM sarà 12 GB, minimo di `RAM_MINIMA_VM`, non i 4 GB delle soglie proposte.
+
 ## Misure
 
 ## Consuntivo

@@ -1,6 +1,15 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-07 — Storico MAC-IP che cresce di 43.000 righe al giorno
+
+- [x] Causa misurata sull'hub in sola lettura: nessuna riga ripete l'IP precedente, 772 coppie per 13.658.565 righe. `mac_ip_mapping` tiene un IP per MAC, e un MAC con più IP (arp→arp 5,6 M, host→host 3,5 M, arp↔host 3,9 M) lo cambia a ogni lettura.
+- [x] Correzione: `src/lib/mac-ip-storico.ts`, una coppia al giorno al massimo, con indice `idx_mac_ip_history_coppia`. Prova: `src/lib/__tests__/mac-ip-storico.test.ts`, vista fallire su 3 casi prima della correzione.
+- [ ] Bonifica delle righe esistenti sull'hub (13,6 M → ~21.000, una coppia al giorno), con snapshot e backup: aspetta il sì di Riccardo.
+- [ ] Retention dello storico nel job di pulizia: aspetta il sì di Riccardo (proposta: 365 giorni).
+- [ ] Misurare `mac_ip_history` sulle appliance dei clienti: l'indice si costruisce al primo avvio della versione nuova.
+- [ ] Da decidere: `mac_ip_mapping.ip` e `previous_ip` continuano a oscillare per i MAC con più IP; la tabella ARP mostra l'ultimo visto. La correzione tocca lo storico, non la mappa.
+
 ## 2026-11-07 — Switch port mapper: una tabella che dice cosa c'è e dove sta (idea, in proposta)
 
 Riccardo, 07/11: «avendo acquisito molte informazioni sulla rete, per gestire quanto è emerso da switch, router, access point, controller; usando le acquisizioni degli switch, per porte le loro tabelle host, le conoscenze LLDP e varianti, spanning tree, per costruire un'ulteriore tabella che dice cosa è e dove è presente sulla rete; un nuovo menu nella parte di network». Fase di ragionamento: niente codice prima della sua approvazione.

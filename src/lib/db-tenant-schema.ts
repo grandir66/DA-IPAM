@@ -2560,6 +2560,7 @@ CREATE INDEX IF NOT EXISTS idx_network_devices_product_profile ON network_device
 CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_mac ON mac_ip_mapping(mac_normalized);
 CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_ip ON mac_ip_mapping(ip);
 CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normalized);
+CREATE INDEX IF NOT EXISTS idx_mac_ip_history_coppia ON mac_ip_history(mac_normalized, ip, changed_at);
 
 -- Scheduled Jobs
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);

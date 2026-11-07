@@ -16,6 +16,7 @@ import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
+import { registraCambioIp } from "./mac-ip-storico";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -6188,9 +6189,7 @@ export function upsertMacIpMapping(input: {
       hex
     );
     if (ipChanged) {
-      d.prepare(
-        "INSERT INTO mac_ip_history (mac_normalized, ip, source) VALUES (?, ?, ?)"
-      ).run(hex, input.ip, input.source);
+      registraCambioIp(d, hex, input.ip, input.source);
     }
   } else {
     d.prepare(`

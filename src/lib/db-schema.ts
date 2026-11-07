@@ -265,6 +265,7 @@ CREATE INDEX IF NOT EXISTS idx_network_devices_credential ON network_devices(cre
 CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_mac ON mac_ip_mapping(mac_normalized);
 CREATE INDEX IF NOT EXISTS idx_mac_ip_mapping_ip ON mac_ip_mapping(ip);
 CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normalized);
+CREATE INDEX IF NOT EXISTS idx_mac_ip_history_coppia ON mac_ip_history(mac_normalized, ip, changed_at);
 
 -- Assegnatari asset: elenco persone a cui possono essere assegnati gli asset (diversi dagli utenti di sistema)
 CREATE TABLE IF NOT EXISTS asset_assignees (

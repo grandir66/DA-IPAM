@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-07 · Storico MAC-IP: i cambi, non i passaggi
+
+`mac_ip_mapping` tiene un IP per MAC: un MAC con più IP insieme lo cambiava a ogni lettura e ogni passaggio finiva nello storico. Sull'hub 13,6 milioni di righe per 772 coppie, e la tabella col suo indice pesa 1,1 GB su 2,2.
+
+### Corretto
+- `mac_ip_history`: una coppia MAC/IP già scritta nelle ultime 24 ore non si riscrive (`src/lib/mac-ip-storico.ts`, unica regola per le due copie di `upsertMacIpMapping`). Un IP nuovo si scrive subito. Le righe vecchie restano: la bonifica aspetta il sì di Riccardo.
+- Indice nuovo `idx_mac_ip_history_coppia`: senza, il controllo scorrerebbe tutte le righe del MAC a ogni passaggio. Si costruisce una volta all'apertura del DB (su 13,6 M righe finte, sul Mac, 12 secondi).
+
 ## [Non rilasciato] — 2026-11-07 · Consenso e registro degli impianti
 
 Riccardo: «proprio quegli apparati potrebbero nascondere problemi di security», e il consenso e le attività vanno registrati con l'ora. Una rete con impianti resta bloccata in «Un profilo solo» finché un amministratore non registra un consenso: gli IP vengono dall'inventario, il nome dalla sessione, il riferimento all'autorizzazione del cliente è obbligatorio, 4, 12 o 24 ore. Vale per il lancio immediato, solo Greenbone. Lo applica Edge, DA-IPAM lo rilegge a ogni lancio.

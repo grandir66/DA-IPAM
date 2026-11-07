@@ -28,6 +28,7 @@ import { migraCredenzialiWmi } from "./db-tenant-schema";
 import { canonicalizza, type Canonica } from "./classification/canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
+import { registraCambioIp } from "./mac-ip-storico";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -762,6 +763,9 @@ export function getDb(): Database.Database {
   } catch { /* exists */ }
   try {
     _db.exec("CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normalized)");
+  } catch { /* exists */ }
+  try {
+    _db.exec("CREATE INDEX IF NOT EXISTS idx_mac_ip_history_coppia ON mac_ip_history(mac_normalized, ip, changed_at)");
   } catch { /* exists */ }
 
   // Migrazione: rimuovi vecchi profili nmap default (Quick, Standard, Completo) — ora c'è un solo profilo editabile
@@ -4437,9 +4441,7 @@ export function upsertMacIpMapping(input: {
       hex
     );
     if (ipChanged) {
-      db.prepare(
-        "INSERT INTO mac_ip_history (mac_normalized, ip, source) VALUES (?, ?, ?)"
-      ).run(hex, input.ip, input.source);
+      registraCambioIp(db, hex, input.ip, input.source);
     }
   } else {
     db.prepare(`

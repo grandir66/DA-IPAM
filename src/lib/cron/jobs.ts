@@ -68,7 +68,9 @@ import {
   getTenantSetting,
   setTenantSetting,
   upsertMacPortEntries,
+  cleanupOldMacIpHistory,
   cleanupOldMacPortEntries,
+  MAC_IP_HISTORY_RETENTION_DAYS,
   MAC_PORT_RETENTION_DAYS,
   listHypervisorScanDevices,
   scriviFattiTopologia,
@@ -1678,7 +1680,7 @@ export async function runDnsResolve(
 
 async function runCleanup(configStr: string): Promise<void> {
   // days_until_stale / days_until_delete possono restare nelle config vecchie: si ignorano.
-  let config: { mac_port_retention_days?: number };
+  let config: { mac_port_retention_days?: number; mac_ip_history_retention_days?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
@@ -1702,6 +1704,16 @@ async function runCleanup(configStr: string): Promise<void> {
     }
   } catch (e) {
     console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);
+  }
+
+  const macIpHistoryRetentionDays = config.mac_ip_history_retention_days ?? MAC_IP_HISTORY_RETENTION_DAYS;
+  try {
+    const deleted = cleanupOldMacIpHistory(macIpHistoryRetentionDays);
+    if (deleted > 0) {
+      console.info(`[Cleanup] mac_ip_history: eliminate ${deleted} righe più vecchie di ${macIpHistoryRetentionDays} giorni`);
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] mac_ip_history cleanup fallito:`, e);
   }
 
   // Retention alert Wazuh: elimina solo gli eventi PRESI IN CARICO più vecchi

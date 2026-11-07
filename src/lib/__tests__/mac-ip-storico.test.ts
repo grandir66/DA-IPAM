@@ -10,7 +10,7 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, upsertMacIpMapping, withTenant } from "@/lib/db-tenant";
+import { cleanupOldMacIpHistory, deleteTenantDatabase, getTenantDb, upsertMacIpMapping, withTenant } from "@/lib/db-tenant";
 
 const T = "TESTMACIPSTORICO";
 const db = () => getTenantDb(T);
@@ -78,4 +78,21 @@ test("il controllo non scorre le righe del MAC: su uno storico grande sarebbe un
   const piano = db().prepare(`EXPLAIN QUERY PLAN
     SELECT 1 FROM mac_ip_history WHERE mac_normalized = ? AND ip = ? AND changed_at >= datetime('now', '-1 day')`).all("aa", A) as { detail: string }[];
   assert.match(piano.map((p) => p.detail).join(" "), /idx_mac_ip_history_coppia/);
+});
+
+test("la retention toglie solo le righe oltre l'anno, e dice quante", () => {
+  const scrivi = db().prepare("INSERT INTO mac_ip_history (mac_normalized, ip, source, changed_at) VALUES ('aa0000000001', ?, 'arp', datetime('now', ?))");
+  scrivi.run(A, "-366 days");
+  scrivi.run(B, "-364 days");
+  scrivi.run(C, "-1 day");
+  assert.equal(withTenant(T, () => cleanupOldMacIpHistory()), 1);
+  assert.deepEqual(storico(), [B, C]);
+});
+
+test("la retention si può accorciare dalla configurazione del job", () => {
+  const scrivi = db().prepare("INSERT INTO mac_ip_history (mac_normalized, ip, source, changed_at) VALUES ('aa0000000001', ?, 'arp', datetime('now', ?))");
+  scrivi.run(A, "-40 days");
+  scrivi.run(B, "-20 days");
+  assert.equal(withTenant(T, () => cleanupOldMacIpHistory(30)), 1);
+  assert.deepEqual(storico(), [B]);
 });

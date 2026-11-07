@@ -10,6 +10,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Corretto
 - `mac_ip_history`: una coppia MAC/IP già scritta nelle ultime 24 ore non si riscrive (`src/lib/mac-ip-storico.ts`, unica regola per le due copie di `upsertMacIpMapping`). Un IP nuovo si scrive subito. Le righe vecchie restano: la bonifica aspetta il sì di Riccardo.
+- Retention dello storico: il job di pulizia toglie le righe oltre 365 giorni (`mac_ip_history_retention_days` nella configurazione del job).
 - Indice nuovo `idx_mac_ip_history_coppia`: senza, il controllo scorrerebbe tutte le righe del MAC a ogni passaggio. Si costruisce una volta all'apertura del DB (su 13,6 M righe finte, sul Mac, 12 secondi).
 
 ## [Non rilasciato] — 2026-11-07 · Consenso e registro degli impianti

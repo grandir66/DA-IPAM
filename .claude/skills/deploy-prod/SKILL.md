@@ -8,6 +8,8 @@ description: Deploy DA-INVENT in produzione (VM 533, Proxmox PX-04) — GitOps s
 DA-INVENT gira sulla **VM 533**, dal 19/10 sul nodo `DA-PX-03` (prima `DA-PX-04`, `192.168.40.4`: da lì `pvesh` raggiunge il cluster). SSH diretto: `ssh root@192.168.4.8`.
 A partire dal 2026-05-12 `/opt/da-invent` è un **git repo** (GitOps).
 
+**Dal 25/10 il servizio è `da-ipam`, non `da-invent`** (`/opt/da-invent` è un collegamento a `/opt/da-ipam`). Il timer `da-ipam-update` scarica il ramo `dev` ogni 15 minuti, ricostruisce e riavvia: **un push su `dev` è un deploy sull'hub**. Prima di un lavoro a servizio fermo si ferma il timer (07/11: 0.9.996 è arrivata da sola).
+
 ```text
 Host hub:       192.168.4.8 (VM 533)
 SSH:            ssh -J root@192.168.40.4 root@192.168.4.8

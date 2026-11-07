@@ -218,7 +218,7 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 
 - `Select` ricava `items` dalle `SelectItem`; date del DB con `parseDbDate`; pagine con `timeZone: FUSO_UTENTI`; un caricamento usa `fetchJson` + `LoadError`; admin solo con `eAdmin`/`useEAdmin`.
 - **`db.ts` e `db-tenant.ts` divergono**: guarda da quale importa il chiamante.
-- Scansioni (ADR 0006): `last_run` = fine del giro; lucchetto in memoria. Niente retention sugli storici. `mac_ip_history` registra una coppia MAC/IP al giorno al massimo (dal 07/11): `mac_ip_mapping` tiene un IP per MAC e un MAC con più IP lo cambia a ogni lettura.
+- Scansioni (ADR 0006): `last_run` = fine del giro; lucchetto in memoria. Niente retention sugli storici. `mac_ip_history` registra una coppia MAC/IP al giorno al massimo (dal 07/11): `mac_ip_mapping` tiene un IP per MAC e un MAC con più IP lo cambia a ogni lettura. Retention 365 giorni nel job di pulizia. **Trappola**: sull'hub il timer `da-ipam-update` porta `dev` ogni 15 minuti, e il servizio è `da-ipam`.
 
 ### Consegna integrazione Infoblox (03/11/2026)
 

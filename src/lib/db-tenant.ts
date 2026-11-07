@@ -6381,6 +6381,13 @@ export function upsertMacPortEntries(deviceId: number, entries: MacPortInput[], 
  * porta) aggiornata a ogni giro: il volume non cresce col numero dei giri, e
  * una riga vecchia vuol dire «visto l'ultima volta» — si tiene 30 giorni.
  */
+/** Storico MAC-IP: oltre un anno un IP precedente non aiuta più a riconoscere un host. */
+export const MAC_IP_HISTORY_RETENTION_DAYS = 365;
+
+export function cleanupOldMacIpHistory(retentionDays: number = MAC_IP_HISTORY_RETENTION_DAYS): number {
+  return (db().prepare("DELETE FROM mac_ip_history WHERE changed_at < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
+}
+
 export function cleanupOldMacPortEntries(retentionDays: number = MAC_PORT_RETENTION_DAYS): number {
   return (db().prepare("DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
 }

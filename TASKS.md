@@ -7,7 +7,11 @@
 - [x] `conservaPoeNonLetto` nei giri e in «Aggiorna»; 4 prove viste fallire col sorgente vecchio.
 - [x] 0.9.999 su `dev`, hub aggiornato; snapshot `pre-poe-giro-20261107` (VM 533, DA-PX-03).
 - [ ] Non ancora visto sull'hub: una lettura lanciata a mano da fuori del servizio non parte, perché la voce UniFi sta nel vault di DA-Link (riga 352 fallita nello storico del controller, è quella). Dopo il sync delle 03:00: PoE presente su SW-CED-48POE-242 e SW-ING-ProMax-239 e ancora lì dopo i giri delle 03:30 e seguenti. Se resta vuoto, è il controller a non darlo.
-- [ ] **Stessa causa, non toccato (da decidere):** il giro azzera anche `is_uplink` sui 5 switch UniFi letti via SNMP (SW-CED-48POE-242, SW-CED-16XG-241, SW-ING-ProMax-239, SW-CED-AGG-243, SW-CED-Ent8-245: sull'hub 0 uplink su tutti, mentre gli apparati del solo controller lo hanno). La Mappa porte lo usa per dire «porta di passaggio», e lì oggi regge solo sulle altre prove. Chi legge `is_uplink` va guardato prima di cambiarlo.
+- [!] **`is_uplink` azzerato dal giro: correzione scritta, NON pubblicata, in attesa di Riccardo.** Il commit sta sul ramo `claude/is-uplink-sospeso` (`conservaNonLetto`). Misura del 07/11 su copia del DB dell'hub, con `is_uplink=1` sulle porte di uplink di SW-CED-48POE-242, SW-CED-16XG-241, SW-ING-ProMax-239, SW-CED-AGG-243, SW-CED-Ent8-245:
+  - Mappa porte: 0 oggetti e 0 porte cambiati su 488 e 284. Nessun guadagno.
+  - Topologia (mappa per cavo, quella accesa): stessa radice, stessi padri, ma **4 collegamenti falsi in più** dalla `Port1` di SW-ING-ProMax-239 verso SW-CED-16XG-241, SW-CED-Ent8-245, AP02-104-LAB e AP06-236-SYS.
+  - Causa: `attach.ts` scarta i MAC visti sulle porte di uplink; tolte quelle degli altri switch, per quei MAC resta solo la `Port1` del ProMax, dove l'agente SNMP mette i MAC del LAG 49-50 (il difetto noto in `CONTEXT.md`).
+  - Prima di riprenderla: serve che la Topologia non creda alla `Port1` del ProMax, cioè un cambio in `attach.ts`, che finora non si tocca. Rischio da aggiungere se si riprende: un apparato tolto dal controller tiene il suo uplink per sempre.
 
 ## 2026-11-07 — Storico MAC-IP che cresce di 43.000 righe al giorno
 

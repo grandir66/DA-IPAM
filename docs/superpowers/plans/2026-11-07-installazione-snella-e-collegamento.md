@@ -28,8 +28,8 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
-| S1 | [~] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
-| S2 | [ ] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
+| S1 | [x] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
+| S2 | [~] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
 | S3 | [ ] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
 | S4 | [ ] | Coda comune senza vicolo cieco | implementer, tester | — | 7 giorni di caduta si recuperano da soli | prove della coda |
 | S5 | [ ] | Terzo livello di uscita | implementer | — | `completo` accettato da DA-Link e scelto solo in locale | prove dei due repo |
@@ -60,7 +60,7 @@ Fermate col sì di Riccardo: dopo S1 (soglie), prima di S2 (immagine), prima di 
 
 ## Tappa 1 — Installazione snella
 
-### [~] Task 1 — Misura con l'immagine attuale e moduli spenti
+### [x] Task 1 — Misura con l'immagine attuale e moduli spenti
 
 Nessun codice: serve a sapere il peso vero prima di costruire un'immagine.
 
@@ -71,7 +71,7 @@ Nessun codice: serve a sapere il peso vero prima di costruire un'immagine.
 
 Verifica: tabella delle misure qui sotto, con data e fonte.
 
-### [ ] Task 2 — Immagine snella
+### [~] Task 2 — Immagine snella
 
 - **File (Deploy-Appliance):** `costruttore/costruisci.sh` (nuova opzione `--variante piena|snella`, di base `piena`), `costruttore/elenco-sigillo.txt`, `costruttore/pacchetto-aggiornamento.sh`, `lib/immagine.sh`, `primo-avvio/fasi/moduli.sh`, `primo-avvio/verifica.sh`, prove in `tests/`.
 - **Cosa fare:** con `snella` niente Greenbone, immagini di Edge, LibreNMS e MeshCentral, e niente Docker se il Task 1 lo consente. Elenco di Riccardo, 07/11: «l'immagine deve avere solo ipam, proxy zabbix, gli script per proxmox, mikrotik, 3cx....». Più NetBird, che serve al collegamento. `sensore-trunk` entra e resta acceso (Riccardo, 07/11: «no acceso»). La riga di rilascio è separata da `ULTIMO`: `ULTIMO-SNELLA`, firmata come l'altra.
@@ -271,6 +271,8 @@ Immagine 2026.10.25 (`ULTIMO`), DA-IPAM `8920423`, moduli `ipam`, `zabbix`, trun
 **Lettura, da confermare con le 24 ore.** Riposo sotto 3 GB: rispettato a VM vuota. Disco 40 GB: l'immagine piena fa 66 GB, ma 63 sono Docker; senza restano circa 4 GB più i dati. RAM 4 GB: oggi non si può assegnare, `RAM_MINIMA_VM` e l'installatore impongono 12 GB. Docker costa 250-440 MB e serve solo a nginx.
 
 Seconda lettura: timer una tantum sul PX-NAS, `misura-79993-ipam-3-24h`, 08/11 18:19 CET, scrive `/root/misura-79993-ipam-3-24h.txt`. Nessuna sessione parte: il file si legge a mano. Le soglie si decidono dopo, con Riccardo.
+
+**Soglie decise da Riccardo, 07/11, senza attendere le 24 ore («Sì, parti»):** 4 GB di RAM, 40 GB di disco, niente Docker. Punto di partenza, da rivedere con le misure sulla versione ridotta e una rete vera. La lettura delle 24 ore resta un controllo in più.
 
 ## Consuntivo
 

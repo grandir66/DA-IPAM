@@ -6,8 +6,8 @@
 **Obiettivo:** dai clienti un'installazione DA-IPAM leggera, che manda inventario e config a un DA-IPAM centrale per `codcli` e ne riceve ordini da un elenco chiuso.
 **Architettura:** l'installazione fa tutto il lavoro e apre ogni connessione. Il centrale riceve copie, le mostra e firma ordini; non scansiona e non tiene credenziali degli apparati. Stesso codice di DA-IPAM, con un profilo «centrale» che tiene attive solo le rotte elencate.
 **Spec:** [ADR 0035](../../adr/0035-installazione-snella-e-collegamento.md); sezione del 2026-11-07 in `TASKS.md`.
-**Livello di controllo:** completo (proposto il 2026-11-07, da confermare con l'approvazione del piano).
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-07
+**Livello di controllo:** completo (deciso da Riccardo il 2026-11-07).
+**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-07
 
 ## Vincoli globali
 

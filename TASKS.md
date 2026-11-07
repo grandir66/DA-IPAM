@@ -27,7 +27,7 @@ Riccardo, 07/11, alternativa: «oppure un sistema di collegamento e trasferiment
 **Decisione di Riccardo, 07/11: «Installazione snella».** ADR 0035. La frase sul centrale qui sopra vale per un centrale che solo riceve e ordina: l'installazione DA-IPAM resta dal cliente, snella, e fa tutto il lavoro; il centrale ridotto per `codcli` riceve copie, le mostra e manda ordini da un elenco chiuso. Niente esecutore da scrivere, 12/10 e ADR 0011 restano validi. Si può assottigliare dopo: il centrale non cambia.
 - [x] Risposta di Riccardo: installazione snella col collegamento (07/11)
 - [x] Risposte alle 8 domande (07/11: valgono i consigli) e piano scritto: `docs/superpowers/plans/2026-11-07-installazione-snella-e-collegamento.md`, 16 task, livello completo
-- [ ] Approvazione del piano da parte di Riccardo
+- [x] Approvazione del piano da parte di Riccardo (07/11). La misura del Task 1 l'ha lanciata lui in una sessione a parte
 - [ ] Misurare in laboratorio un'installazione senza Edge, Greenbone, LibreNMS e, se si riesce, Docker. Stima da verificare: 2 vCPU, 4 GB, 40 GB
 - [ ] Verificare come si installa `sensore-trunk` senza Edge: oggi il codice sta nel pacchetto `scanner_edge`
 

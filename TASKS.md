@@ -1,6 +1,15 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-07 — Device UniFi senza dati su 79993-ipam-2 (Riccardo: «le credenziali dovrebbero essere giuste»)
+
+Misurato sull'appliance (VM 963 su PX-NAS, in sola lettura) e nessuna correzione ancora fatta:
+- [ ] SNMP: 161/udp `closed` sugli switch provati, `open` sul MikroTik `.254`. Nessun agente in ascolto: non è la community. Da accendere nel controller (se è lì il freno: da verificare a schermo).
+- [ ] SSH: la TCP si apre e si chiude senza banner, anche dal Proxmox (`read ECONNRESET`). La password non viene mai provata. Probabile «Device SSH Authentication» del controller, non accertato.
+- [ ] Vicini: ci sono, ma su uno switch `local_port` vale sempre `eth0` (`localPortName` in `unifi-map.ts` prende `local_port_name`), e l'indice giusto sta in `local_port_index`. Vanno scritti col nome della porta.
+- [ ] MAC per porta: `mac_count` 0 ovunque, li darebbe solo SNMP o SSH. Tutti gli 11 hanno `enabled=0`: dopo aver aperto l'accesso vanno accesi, il giro li salta (`cron/jobs.ts:1391`).
+- [ ] Offline per il controller, e senza ping: `.88`, `.62`, `.92`.
+
 ## 2026-11-07 — PoE cancellato dal giro SNMP (Riccardo: «Sì, correggi»)
 
 - [x] Misurato sull'hub: sync delle 03:00 su 17 apparati, compresi SW-CED-48POE-242 e il ProMax; i nomi porta del primo non coincidono mai con quelli SNMP, quindi serve l'indice.

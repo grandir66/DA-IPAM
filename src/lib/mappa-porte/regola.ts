@@ -15,9 +15,10 @@
 import { isVirtualMac } from "@/lib/devices/mac-virtuali";
 import { parseDbDate } from "@/lib/db-date";
 import { normalizeMacForStorage } from "@/lib/utils";
+import { completaOggetti } from "@/lib/mappa-porte/completa";
 import { creaIndicePorte } from "@/lib/mappa-porte/nomi-porta";
 import type {
-  Confidenza, ConteggiMappa, DatoVlan, IngressoMappaPorte, ModoPorta, MotivoPassaggio, OggettoMappa, PortaMappa, Prova,
+  Confidenza, ConteggiMappa, DatoVlan, IngressoMappaPorte, ModoPorta, MotivoPassaggio, OggettoGrezzo, OggettoMappa, PortaMappa, Prova,
   RigaHost, RigaMacPorta, RigaPorta, RisultatoMappa, Spostamento, TipoPorta,
 } from "@/lib/mappa-porte/tipi";
 
@@ -27,7 +28,7 @@ const STESSO_GIRO_MS = 2 * 3_600_000;
 const TIPI_DI_RETE = new Set(["switch", "access_point", "router", "firewall"]);
 const CLASSI_DI_RETE = new Set(["switch", "access_point", "router", "firewall"]);
 const OUI_VM = ["BC:24:11", "00:50:56", "52:54:00"];
-const FONTE: Record<string, string> = { device: "SNMP", unifi: "Controller" };
+const FONTE: Record<string, string> = { device: "SNMP", unifi: "Controller", librenms: "LibreNMS" };
 
 const chiaveP = (d: number, k: string) => `${d}|${k}`;
 const norm = (s: string | null | undefined) => normalizeMacForStorage(s ?? null);
@@ -231,7 +232,7 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
 
   const perMac = new Map<string, RigaPos[]>();
   for (const r of righe) perMac.set(r.mac, [...(perMac.get(r.mac) ?? []), r]);
-  const oggetti: OggettoMappa[] = [];
+  const oggetti: OggettoGrezzo[] = [];
 
   for (const [mac, tutte] of perMac) {
     if (macPropri.has(mac)) continue; // gli apparati di rete hanno una riga per apparato, sotto
@@ -361,7 +362,8 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
   }
 
   const porte = costruisciPorte(ing, [...stati.values()], tipi, nomeApparato, nomePorta);
-  const vivi = oggetti.filter((o) => o.categoria === "dispositivo" && !o.vecchio);
+  const tutti = completaOggetti(oggetti, ing, diRete);
+  const vivi = tutti.filter((o) => o.categoria === "dispositivo" && !o.vecchio);
   const quanti = (c: Confidenza) => vivi.filter((o) => o.confidenza === c).length;
   const conTabella = new Set(righe.filter((r) => r.source === "device" && ing.nowMs - r.ms <= soglia).map((r) => r.device_id));
   const soloController = new Set(righe.filter((r) => r.source === "unifi" && ing.nowMs - r.ms <= soglia && !conTabella.has(r.device_id)).map((r) => r.device_id));
@@ -369,8 +371,7 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     certe: quanti("certa"), spiegate: quanti("spiegata"), daCapire: quanti("da_capire"), nonSo: quanti("non_so"),
     senzaHost: vivi.filter((o) => o.senzaHost).length, apparatiConTabella: conTabella.size, apparatiSoloController: soloController.size,
   };
-  oggetti.sort((a, b) => (a.nome ?? "~").localeCompare(b.nome ?? "~", "it") || a.chiave.localeCompare(b.chiave));
-  return { oggetti, porte, conteggi };
+  return { oggetti: tutti, porte, conteggi };
 }
 
 const AGGREGATA = /^link aggregate \d+/i;

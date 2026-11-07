@@ -21,7 +21,7 @@ const vuoto = (): IngressoMappaPorte => ({
   ],
   macPorte: [], porte: [], vicini: [], fatti: [],
   macApparati: [{ device_id: SW1, mac: mac(0xa1) }, { device_id: SW2, mac: mac(0xa2) }, { device_id: AP, mac: mac(0xa3) }, { device_id: RT, mac: mac(0xa4) }, { device_id: HYP, mac: mac(0xa6) }],
-  hosts: [], macIp: [], vm: [], vlanPorte: [], pvid: [], nativa: [], vlanLetture: [], mkPorte: [], mkVlan: [],
+  hosts: [], macIp: [], vm: [], vlanPorte: [], pvid: [], nativa: [], vlanLetture: [], mkPorte: [], mkVlan: [], macNote: [], arp: [], lnmsArp: [], dhcp: [], mkVlanIf: [],
 });
 const riga = (device_id: number, m: string, port_name: string, o: Partial<RigaMacPorta> = {}): RigaMacPorta => ({ device_id, mac: m, port_name, vlan: null, timestamp: qui, source: "device", ...o });
 const porta = (device_id: number, port_index: number, port_name: string, o: Partial<RigaPorta> = {}): RigaPorta => ({
@@ -71,8 +71,9 @@ test("un PC registrato come switch non è un apparato di rete", () => {
   const i = vuoto();
   i.macApparati.push({ device_id: PC_COME_SWITCH, mac: mac(0xa5) });
   i.macPorte = [riga(SW1, mac(0xa5), "Port 3")];
-  assert.equal(dov(i, mac(0xa5)).confidenza, "certa");
-  assert.ok(!calcolaMappa(i).oggetti.some((o) => o.chiave === `dev:${PC_COME_SWITCH}`));
+  // Dal 07/11 ha una riga sua (tutti gli apparati ce l'hanno): conta che la porta resti di bordo, non di passaggio.
+  assert.equal(dov(i, `dev:${PC_COME_SWITCH}`).confidenza, "certa");
+  assert.equal(dov(i, `dev:${PC_COME_SWITCH}`).tipoPorta, "terminale");
 });
 
 test("un vicino LLDP che non è un apparato di rete (telefono, hypervisor) non fa la porta di passaggio", () => {
@@ -92,7 +93,7 @@ test("il MAC di un hypervisor non fa la porta di passaggio: le VM stanno sulla s
   assert.equal(o.nome, "vm-due");
 });
 
-test("la VM accesa che nessuna tabella vede eredita la porta dell'hypervisor, dedotta; quella spenta non c'è", () => {
+test("la VM accesa che nessuna tabella vede eredita la porta dell'hypervisor, dedotta; quella spenta c'è ma è vecchia", () => {
   const i = vuoto();
   i.porte = [porta(SW1, 9, "Port 9")];
   i.vicini = [{ device_id: HYP, local_port: "nic0", local_port_index: null, remote_device_name: "SW-UNO", remote_port: "Port 9", protocol: "lldp", remote_mac: null, source: "host" }];
@@ -101,7 +102,8 @@ test("la VM accesa che nessuna tabella vede eredita la porta dell'hypervisor, de
   assert.equal(o.dedotta, true);
   assert.equal(o.confidenza, "spiegata");
   assert.equal(o.portaChiave, "i:9");
-  assert.ok(!calcolaMappa(i).oggetti.some((x) => x.chiave === mac(3)));
+  assert.equal(dov(i, mac(3)).vecchio, true);
+  assert.equal(dov(i, mac(3)).deviceId, null);
 });
 
 test("telefono + PC è spiegata, più MAC senza motivo è da capire", () => {
@@ -159,7 +161,7 @@ test("solo sul router: non so, col nome del router", () => {
   assert.match(o.ramo ?? "", /RT-UNO/);
 });
 
-test("MAC virtuale fuori; host online senza tabelle: non so; host offline senza tabelle: fuori", () => {
+test("MAC virtuale fuori; host online senza tabelle: non so; host offline senza tabelle: c'è, vecchio", () => {
   const i = vuoto();
   i.hosts = [
     { id: 1, ip: "192.0.2.10", mac: mac(1), hostname: "acceso", custom_name: null, vendor: null, classification: null, status: "online" },
@@ -169,7 +171,7 @@ test("MAC virtuale fuori; host online senza tabelle: non so; host offline senza 
   const r = calcolaMappa(i);
   assert.ok(!r.oggetti.some((o) => o.chiave === "00:00:5E:00:01:01"));
   assert.equal(dov(i, mac(1)).ramo, "Nessuna tabella lo vede");
-  assert.ok(!r.oggetti.some((o) => o.chiave === mac(2)));
+  assert.equal(dov(i, mac(2)).vecchio, true);
 });
 
 test("non visto oltre la soglia: resta nell'elenco, fuori dai conteggi e senza contare sulla porta", () => {
@@ -262,7 +264,7 @@ test("gli apparati di rete hanno una riga, dal vicino che li annuncia", () => {
 
 test("spostamenti: fra posizioni fidate, non da AP ad AP, non da «non so»", () => {
   const o = (chiave: string, deviceId: number | null, portaChiave: string | null, confidenza: OggettoMappa["confidenza"] = "certa"): OggettoMappa => ({
-    chiave, categoria: "dispositivo", mac: chiave, ip: null, nIp: 0, nome: null, tipo: null, hostId: null, apparatoId: null, confidenza, deviceId, apparato: `A${deviceId}`, portaChiave, porta: portaChiave, tipoPorta: null,
+    chiave, categoria: "dispositivo", mac: chiave, macs: [chiave], ips: [], ip: null, nIp: 0, nome: null, tipo: null, hostId: null, apparatoId: null, confidenza, deviceId, apparato: `A${deviceId}`, portaChiave, porta: portaChiave, tipoPorta: null,
     vlan: null, ramo: null, perche: "", fonti: [], prove: [], conflitto: false, dedotta: false, vecchio: false, senzaHost: false, visto: null,
   });
   const s = trovaSpostamenti(
@@ -270,4 +272,115 @@ test("spostamenti: fra posizioni fidate, non da AP ad AP, non da «non so»", ()
     [o("cavo", 2, "i:5"), o("ap", 7, "wifi"), o("ignoto", 1, "i:9"), o("fermo", 1, "i:2"), o("ap2", 1, "i:7")],
   );
   assert.deepEqual(s.map((x) => x.chiave), ["cavo", "ap2"]);
+});
+
+// Riccardo, 07/11: «nella mappa mancano molti oggetti presenti anche in topologia».
+const trova = (i: IngressoMappaPorte, c: string) => calcolaMappa(i).oggetti.find((x) => x.chiave === c);
+const host = (id: number, ip: string, m: string | null, o: Record<string, unknown> = {}) => ({ id, ip, mac: m, hostname: null, custom_name: null, vendor: null, classification: null, status: "online", ...o });
+const arp = (device_id: number, m: string, ip: string, o: Record<string, unknown> = {}) => ({ device_id, mac: m, ip, interface_name: "VL_5", timestamp: qui, status: "reachable", ...o });
+
+test("un hypervisor con due schede è una riga sola, con i due MAC e le due porte fra le prove", () => {
+  const i = vuoto();
+  i.macNote = [{ device_id: HYP, mac: mac(0x10) }, { device_id: HYP, mac: mac(0x11) }];
+  i.macPorte = [riga(SW1, mac(0x10), "Port 3"), riga(SW2, mac(0x11), "Port 4")];
+  const r = calcolaMappa(i).oggetti;
+  const o = r.find((x) => x.chiave === `dev:${HYP}`)!;
+  assert.ok([mac(0x10), mac(0x11)].every((m) => o.macs.includes(m)));
+  assert.equal(o.categoria, "apparato");
+  assert.ok(o.deviceId != null, "ha una posizione");
+  assert.equal(o.prove.length, 2);
+  assert.match(o.perche, /visto anche su/);
+  assert.equal(r.filter((x) => x.mac === mac(0x10) && x.chiave !== `dev:${HYP}`).length, 0, "nessuna riga per scheda");
+});
+
+test("ogni apparato in inventario ha la sua riga, anche se nessuna tabella lo vede", () => {
+  const i = vuoto();
+  i.apparati.push({ id: 7, name: "SRV-SENZA-MAC", device_type: "server", protocol: "winrm" });
+  i.macNote = [{ device_id: PC_COME_SWITCH, mac: mac(0x12) }];
+  assert.match(trova(i, "dev:7")?.ramo ?? "", /Nessun MAC/);
+  assert.equal(trova(i, `dev:${PC_COME_SWITCH}`)?.confidenza, "non_so");
+});
+
+test("l'host di uno switch si fonde nella riga dello switch: niente doppioni", () => {
+  const i = vuoto();
+  i.macNote = [{ device_id: SW1, mac: mac(0x13) }];
+  i.hosts = [host(1, "192.0.2.5", mac(0x13), { classification: "switch" })];
+  const r = calcolaMappa(i).oggetti;
+  assert.equal(r.filter((x) => x.mac === mac(0x13)).length, 0);
+  const o = r.find((x) => x.chiave === `dev:${SW1}`)!;
+  assert.ok(o.macs.includes(mac(0x13)));
+  assert.deepEqual(o.ips, ["192.0.2.5"]);
+  assert.equal(o.hostId, 1);
+});
+
+test("un MAC che sta solo nell'ARP del router c'è, resta «non so» e dice dove è stato visto", () => {
+  const i = vuoto();
+  i.arp = [arp(RT, mac(0x14), "192.0.2.14")];
+  i.mkVlanIf = [{ device_id: RT, name: "VL_5", vlan_id: 5 }];
+  const o = trova(i, mac(0x14))!;
+  assert.equal(o.confidenza, "non_so");
+  assert.equal(o.deviceId, null, "la posizione non si inventa");
+  assert.match(o.ramo ?? "", /RT-UNO · VL_5/);
+  assert.equal(o.vlan, 5);
+  assert.ok(o.fonti.includes("ARP"));
+  assert.equal(o.prove[0].tipo, "vista");
+});
+
+test("ARP fallito, incompleto, multicast, tutti zeri e MAC virtuali non sono oggetti", () => {
+  const i = vuoto();
+  i.arp = [arp(RT, mac(0x15), "192.0.2.15", { status: "failed" }), arp(RT, mac(0x16), "192.0.2.16", { status: "incomplete" }), arp(RT, "01:00:5E:00:00:01", "224.0.0.1"), arp(RT, "00:00:00:00:00:00", "192.0.2.17"), arp(RT, "00:00:5E:00:01:01", "192.0.2.18")];
+  assert.equal(calcolaMappa(i).oggetti.filter((o) => o.categoria === "dispositivo").length, 0);
+});
+
+test("lease DHCP e storico portano nome e IP; più IP sullo stesso MAC si tengono tutti", () => {
+  const i = vuoto();
+  i.dhcp = [{ source_device_id: RT, source_name: null, ip_address: "192.0.2.20", mac_address: mac(0x17), hostname: "stampante", scope_name: "LAN", last_seen: qui, last_synced: qui }];
+  i.macIp = [{ mac_normalized: mac(0x17), ip: "192.0.2.21", hostname: null, vendor: null, last_seen: qui }];
+  i.arp = [arp(RT, mac(0x17), "192.0.2.22")];
+  const o = trova(i, mac(0x17))!;
+  assert.deepEqual(o.ips, ["192.0.2.20", "192.0.2.21", "192.0.2.22"]);
+  assert.equal(o.nIp, 3);
+  assert.equal(o.nome, "stampante");
+  assert.equal(o.senzaHost, true);
+});
+
+test("gli IP dell'ARP arrivano anche a chi ha già una posizione", () => {
+  const i = vuoto();
+  i.macPorte = [riga(SW1, mac(0x18), "Port 5")];
+  i.arp = [arp(RT, mac(0x18), "192.0.2.30"), arp(RT, mac(0x18), "192.0.2.31")];
+  const o = trova(i, mac(0x18))!;
+  assert.ok(o.deviceId != null);
+  assert.equal(o.nIp, 2);
+});
+
+test("un avvistamento vecchio è vecchio, l'host offline c'è, l'host senza MAC c'è", () => {
+  const i = vuoto();
+  i.arp = [arp(RT, mac(0x19), "192.0.2.40", { timestamp: "2026-10-01 10:00:00" })];
+  i.hosts = [host(2, "192.0.2.41", mac(0x1a), { status: "offline" }), host(3, "192.0.2.42", null)];
+  assert.equal(trova(i, mac(0x19))?.vecchio, true);
+  assert.equal(trova(i, mac(0x1a))?.vecchio, true);
+  const m = trova(i, "ip:192.0.2.42")!;
+  assert.equal(m.vecchio, false);
+  assert.deepEqual(m.macs, []);
+});
+
+test("una VM con due schede è una riga sola; una VM spenta c'è ma è vecchia", () => {
+  const i = vuoto();
+  i.vm = [
+    { mac: mac(0x1b), nome: "vm-due", acceso: true, nodo: "px", apparatoScansione: HYP }, { mac: mac(0x1c), nome: "vm-due", acceso: true, nodo: "px", apparatoScansione: HYP },
+    { mac: mac(0x1d), nome: "vm-spenta", acceso: false, nodo: "px", apparatoScansione: HYP },
+  ];
+  i.macPorte = [riga(SW1, mac(0x1b), "Port 6")];
+  const r = calcolaMappa(i).oggetti.filter((o) => o.nome?.startsWith("vm-"));
+  assert.equal(r.length, 2);
+  assert.deepEqual(r.find((o) => o.nome === "vm-due")?.macs, [mac(0x1b), mac(0x1c)]);
+  assert.equal(r.find((o) => o.nome === "vm-spenta")?.vecchio, true);
+});
+
+test("le tabelle di LibreNMS danno posizioni come le altre", () => {
+  const i = vuoto();
+  i.macPorte = [riga(SW1, mac(0x1e), "Port 9", { source: "librenms" })];
+  const o = trova(i, mac(0x1e))!;
+  assert.equal(o.deviceId, SW1);
+  assert.ok(o.fonti.includes("LibreNMS"));
 });

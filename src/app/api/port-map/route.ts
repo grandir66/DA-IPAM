@@ -18,7 +18,7 @@ const Parametri = z.object({
   modo: z.enum(["accesso", "trunk", "non_letto"]).optional(),
   senzaHost: z.literal("1").optional(),
   spostati: z.literal("1").optional(),
-  vecchi: z.literal("1").optional(),
+  recenti: z.literal("1").optional(),
   libere: z.literal("1").optional(),
   pagina: z.coerce.number().int().min(0).default(0),
   dettaglio: z.string().max(40).optional(),
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     if (statoCalcolo() == null) ricalcolaMappaPorte();
     const elenco = f.vista === "porte"
       ? cercaPorte({ q: f.q, deviceId: f.apparato, tipo: f.tipoPorta, modo: f.modo, libere: f.libere === "1", pagina: f.pagina })
-      : cercaOggetti({ q: f.q, deviceId: f.apparato, vlan: f.vlan, confidenza: f.confidenza, tipoPorta: f.tipoPorta, senzaHost: f.senzaHost === "1", spostati: f.spostati === "1", vecchi: f.vecchi === "1", pagina: f.pagina });
+      : cercaOggetti({ q: f.q, deviceId: f.apparato, vlan: f.vlan, confidenza: f.confidenza, tipoPorta: f.tipoPorta, senzaHost: f.senzaHost === "1", spostati: f.spostati === "1", recenti: f.recenti === "1", pagina: f.pagina });
     return NextResponse.json({ ...elenco, dimensionePagina: DIMENSIONE_PAGINA, calcolo: statoCalcolo(), apparati: apparatiDellaMappa(), vlan: vlanDellaMappa() });
   });
 }

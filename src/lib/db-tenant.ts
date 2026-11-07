@@ -1078,6 +1078,13 @@ export function migrateMappaPorte(db: Database.Database): string[] {
     }
     const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
     for (const [n, ddl] of INDICI_MAPPA_PORTE) if (!c.get(n)) db.exec(ddl);
+    // v2: un oggetto ha più MAC e più IP. Dati derivati, si riempiono al prossimo calcolo.
+    const colonne = new Set((db.prepare("PRAGMA table_info(mappa_porte_oggetti)").all() as Array<{ name: string }>).map((r) => r.name));
+    for (const col of ["macs", "ips"]) {
+      if (colonne.has(col)) continue;
+      db.exec(`ALTER TABLE mappa_porte_oggetti ADD COLUMN ${col} TEXT NOT NULL DEFAULT '[]'`);
+      added.push(`mappa_porte_oggetti.${col}`);
+    }
     const chiusa = `:v${VERSIONE_MAPPA_PORTE}`;
     const attuale = leggiSegno(db, SEGNO_MAPPA_PORTE);
     if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {

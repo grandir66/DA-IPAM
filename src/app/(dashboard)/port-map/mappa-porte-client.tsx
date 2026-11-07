@@ -108,7 +108,7 @@ function Dettaglio({ chiave, onChiudi }: { chiave: string | null; onChiudi: () =
         {o && (
           <div className="space-y-3 p-4">
             <SchedaDettaglio
-              etichetta={o.categoria === "apparato" ? "Apparato di rete" : "Oggetto"}
+              etichetta={o.categoria === "apparato" ? "Apparato" : "Oggetto"}
               titolo={o.nome ?? o.mac ?? o.chiave}
               vuoto=""
               azioni={
@@ -123,8 +123,8 @@ function Dettaglio({ chiave, onChiudi }: { chiave: string | null; onChiudi: () =
               <DatoDettaglio nome="Perché" valore={o.perche} />
               <DatoDettaglio nome="Confidenza" valore={<SegnoConfidenza c={o.confidenza} />} />
               <DatoDettaglio nome="Dove" valore={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo} mono />
-              <DatoDettaglio nome="MAC" valore={o.mac} mono />
-              <DatoDettaglio nome="IP" valore={o.ip ? `${o.ip}${o.nIp > 1 ? ` (+${o.nIp - 1})` : ""}` : null} mono />
+              <DatoDettaglio nome={o.macs.length > 1 ? `MAC (${o.macs.length})` : "MAC"} valore={o.macs.length > 0 ? o.macs.join(" · ") : o.mac} mono />
+              <DatoDettaglio nome={o.ips.length > 1 ? `IP (${o.ips.length})` : "IP"} valore={o.ips.length > 0 ? o.ips.join(" · ") : o.ip} mono />
               <DatoDettaglio nome="Fonti" valore={o.fonti.join(" · ") || null} />
               {o.dedotta && <DatoDettaglio nome="Nota" valore="Posizione dedotta dall'hypervisor, nessuna tabella l'ha vista" />}
             </SchedaDettaglio>
@@ -136,7 +136,7 @@ function Dettaglio({ chiave, onChiudi }: { chiave: string | null; onChiudi: () =
                     {o.prove.map((p) => (
                       <TableRow key={`${p.apparato}|${p.porta}`} title={p.visto ? `Visto ${quando(p.visto)}` : undefined}>
                         <TableCell className="font-mono text-[13px] whitespace-normal">{p.apparato} · {p.porta}</TableCell>
-                        <TableCell className="text-[13px]">{TIPI_PORTA[p.tipo]}</TableCell>
+                        <TableCell className="text-[13px]">{p.tipo === "vista" ? "Solo vista" : TIPI_PORTA[p.tipo]}</TableCell>
                         <TableCell className="text-right font-mono text-[13px]">{p.nMac}</TableCell>
                         <TableCell className="text-[13px]">{p.fonte}</TableCell>
                       </TableRow>
@@ -170,7 +170,7 @@ export function MappaPorteClient() {
   const [modo, setModo] = useState("");
   const [senzaHost, setSenzaHost] = useState(false);
   const [spostati, setSpostati] = useState(false);
-  const [vecchi, setVecchi] = useState(false);
+  const [recenti, setRecenti] = useState(false);
   const [libere, setLibere] = useState(false);
   const [pagina, setPagina] = useState(0);
   const [oggetti, setOggetti] = useState<Risposta<OggettoMappa> | null>(null);
@@ -193,7 +193,7 @@ export function MappaPorteClient() {
     const u = new URLSearchParams({ vista: scheda, pagina: String(pagina) });
     const metti = (k: string, v: string | boolean) => { if (v === true) u.set(k, "1"); else if (v) u.set(k, v); };
     metti("q", q); metti("apparato", apparato); metti("tipoPorta", tipoPorta);
-    if (scheda === "oggetti") { metti("vlan", vlan); metti("confidenza", confidenza); metti("senzaHost", senzaHost); metti("spostati", spostati); metti("vecchi", vecchi); }
+    if (scheda === "oggetti") { metti("vlan", vlan); metti("confidenza", confidenza); metti("senzaHost", senzaHost); metti("spostati", spostati); metti("recenti", recenti); }
     else { metti("modo", modo); metti("libere", libere); }
     try {
       const r = await fetchJson<Risposta<OggettoMappa & PortaMappa>>(`/api/port-map?${u}`, { signal });
@@ -205,7 +205,7 @@ export function MappaPorteClient() {
     } catch {
       /* richiesta superata */
     }
-  }, [nextSignal, scheda, pagina, q, apparato, tipoPorta, vlan, confidenza, senzaHost, spostati, vecchi, modo, libere]);
+  }, [nextSignal, scheda, pagina, q, apparato, tipoPorta, vlan, confidenza, senzaHost, spostati, recenti, modo, libere]);
   useEffect(() => {
     void carica();
   }, [carica]);
@@ -260,7 +260,7 @@ export function MappaPorteClient() {
             {scheda === "porte" && <Scelta etichetta="Ogni modo" valore={modo} onCambia={conFiltro(setModo)} voci={Object.entries(MODI)} />}
             {scheda === "oggetti" && <Spunta testo="Senza host" acceso={senzaHost} onCambia={conFiltro(setSenzaHost)} />}
             {scheda === "oggetti" && <Spunta testo="Spostati" acceso={spostati} onCambia={conFiltro(setSpostati)} />}
-            {scheda === "oggetti" && <Spunta testo="Anche i non più visti" acceso={vecchi} onCambia={conFiltro(setVecchi)} />}
+            {scheda === "oggetti" && <Spunta testo="Solo visti di recente" acceso={recenti} onCambia={conFiltro(setRecenti)} />}
             {scheda === "porte" && <Spunta testo="Libere" acceso={libere} onCambia={conFiltro(setLibere)} />}
           </>
         }
@@ -296,9 +296,9 @@ function TabellaOggetti({ righe, onScegli }: { righe: OggettoMappa[]; onScegli: 
           <TableRow key={o.chiave} className="cursor-pointer" onClick={() => onScegli(o.chiave)}>
             <TableCell className="max-w-44 truncate font-medium" title={o.nome ?? undefined}>
               {o.nome ?? <span className="font-normal text-muted-foreground">Sconosciuto</span>}
-              {o.tipo && <span className="block text-[13px] font-normal text-muted-foreground">{o.tipo}</span>}
+              {(o.tipo || o.vecchio) && <span className="block text-[13px] font-normal text-muted-foreground">{[o.tipo, o.vecchio ? "◌ non più visto" : null].filter(Boolean).join(" · ")}</span>}
             </TableCell>
-            <TableCell className="font-mono text-[13px]">{o.mac ?? "—"}</TableCell>
+            <TableCell className="font-mono text-[13px]">{o.mac ?? "—"}{o.macs.length > 1 ? ` +${o.macs.length - 1}` : ""}</TableCell>
             <TableCell className="font-mono text-[13px]">{o.ip ?? "—"}{o.nIp > 1 ? ` +${o.nIp - 1}` : ""}</TableCell>
             <TableCell className="max-w-64 truncate font-mono text-[13px]" title={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo ?? undefined}>
               {o.apparato ? `${o.apparato} · ${o.porta}` : <span className="text-muted-foreground">{o.ramo}</span>}

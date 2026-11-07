@@ -1,6 +1,6 @@
 # Mappa porte: tutti gli oggetti, router trattati come switch, nessun dato perso
 
-**Stato:** proposto, aspetta l'ok di Riccardo. **Livello proposto:** completo (nuove letture sugli apparati dei clienti).
+**Stato:** in corso, ok di Riccardo il 07/11 («Sì, procedi»). **Livello:** completo (nuove letture sugli apparati dei clienti).
 **Richiesta (Riccardo, 07/11):** nella mappa mancano molti oggetti presenti in Topologia; controllare a fondo il match per Ubiquiti, MikroTik e HP; MikroTik deve leggere i dati host dei bridge; ARP e host da tutti gli apparati anche via SNMP; hypervisor e altri apparati hanno più MAC; router e firewall trattati come gli switch per porte e VLAN (MikroTik, UCG, RB5009 e altri); dai router tutte le rotte; non perdere dati.
 
 ## Misure (07/11, copie dei DB, sola lettura)
@@ -22,7 +22,7 @@
 
 ## Tappe
 
-- [ ] **1. Tutti gli oggetti (solo calcolo).** Ogni host, apparato e VM ha una riga. Un oggetto fisico raggruppa tutti i suoi MAC e IP (`topology_device_macs`, scansioni Proxmox, `device_interfaces`, ARP, DHCP). Le fonti ARP, DHCP e LibreNMS entrano nel calcolo. Senza porta si dice dove è stato visto (router, VLAN). I vecchi si vedono, col segno. Fatto quando: 0 nodi di Topologia fuori mappa su hub e 79993-ipam-2, confronto col controller non peggiorato.
+- [x] **1. Tutti gli oggetti (solo calcolo).** *(Verifica su copia del DB dell'hub: 790 oggetti contro 488, 0 nodi di Topologia assenti contro 26, 0 client di porta assenti contro 6; 199 posizioni fidate su 203 identiche, le altre 4 sono oggetti con più schede.)* Ogni host, apparato e VM ha una riga. Un oggetto fisico raggruppa tutti i suoi MAC e IP (`topology_device_macs`, scansioni Proxmox, `device_interfaces`, ARP, DHCP). Le fonti ARP, DHCP e LibreNMS entrano nel calcolo. Senza porta si dice dove è stato visto (router, VLAN). I vecchi si vedono, col segno. Fatto quando: 0 nodi di Topologia fuori mappa su hub e 79993-ipam-2, confronto col controller non peggiorato.
 - [ ] **2. Letture MikroTik e ARP.** SSH quando è valido anche se il protocollo è SNMP: bridge host, porte e VLAN del bridge sui router. ARP via SNMP (`ipNetToMedia`, poi `ipNetToPhysical`) su tutti gli apparati che rispondono. Nessuna scrittura sugli apparati, levette spente di default. Fatto quando: la RB5009 ha MAC per porta e VLAN.
 - [ ] **3. UniFi.** Porte, reti, VLAN e rotte del gateway dal controller, native anche su `ugw`/`udm`; client con `sw_mac`/`sw_port` nel calcolo. Prima una lettura a vuoto degli endpoint sul controller vero. Vicini scritti col nome della porta, non `eth0` (anche il difetto di 79993-ipam-2).
 - [ ] **4. HP.** Match su ProCurve e Comware: FDB, ARP e LLDP dai collector verso la mappa. Da misurare sul 72729, col sì di Riccardo.
@@ -31,4 +31,10 @@
 
 ## Da decidere
 
-Elencate nel resoconto in chat del 07/11; le risposte si scrivono qui.
+Decise il 07/11 coi consigli («Sì, procedi»):
+- SSH sui router impostati come SNMP: sì, se la credenziale è già valida.
+- Oggetti vecchi: si mostrano col segno.
+- 72729: sì a una misura in sola lettura sugli HP.
+- «Regole di routing»: tabella di routing (connected, static, BGP, OSPF). Firewall, NAT e policy routing a un secondo giro.
+- UCG: si parte dal controller; SSH diretto solo se non basta, e allora si chiede la credenziale.
+- `is_uplink`: resta sospeso, questo piano non lo riapre.

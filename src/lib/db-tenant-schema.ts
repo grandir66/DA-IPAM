@@ -507,7 +507,7 @@ export const DDL_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   chiave TEXT PRIMARY KEY, categoria TEXT NOT NULL, mac TEXT, ip TEXT, n_ip INTEGER NOT NULL DEFAULT 0, nome TEXT, tipo TEXT, host_id INTEGER,
   apparato_id INTEGER, confidenza TEXT NOT NULL, device_id INTEGER, apparato TEXT, porta_chiave TEXT, porta TEXT, tipo_porta TEXT, vlan INTEGER,
   ramo TEXT, perche TEXT NOT NULL, fonti TEXT NOT NULL, prove TEXT NOT NULL, conflitto INTEGER NOT NULL DEFAULT 0, dedotta INTEGER NOT NULL DEFAULT 0,
-  vecchio INTEGER NOT NULL DEFAULT 0, senza_host INTEGER NOT NULL DEFAULT 0, visto TEXT
+  vecchio INTEGER NOT NULL DEFAULT 0, senza_host INTEGER NOT NULL DEFAULT 0, visto TEXT, macs TEXT NOT NULL DEFAULT '[]', ips TEXT NOT NULL DEFAULT '[]'
 )`],
   ["mappa_porte_porte", `CREATE TABLE mappa_porte_porte (
   device_id INTEGER NOT NULL, chiave TEXT NOT NULL, apparato TEXT NOT NULL, ordine INTEGER NOT NULL, nome TEXT NOT NULL, membri TEXT NOT NULL,
@@ -527,7 +527,7 @@ export const INDICI_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   ["idx_mappa_porte_spostamenti_chiave", "CREATE INDEX idx_mappa_porte_spostamenti_chiave ON mappa_porte_spostamenti(chiave, il)"],
 ];
 export const SEGNO_MAPPA_PORTE = "mappa_porte_v21";
-export const VERSIONE_MAPPA_PORTE = 1;
+export const VERSIONE_MAPPA_PORTE = 2;
 
 /**
  * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):

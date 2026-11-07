@@ -23,7 +23,11 @@ export interface RigaHost {
   id: number; ip: string; mac: string | null; hostname: string | null; custom_name: string | null; vendor: string | null;
   classification: string | null; status: string | null;
 }
-export interface RigaMacIp { mac_normalized: string; ip: string; hostname: string | null; vendor: string | null }
+export interface RigaMacIp { mac_normalized: string; ip: string; hostname: string | null; vendor: string | null; last_seen: string | null }
+export interface RigaArp { device_id: number; mac: string; ip: string | null; interface_name: string | null; timestamp: string | null; status: string | null }
+export interface RigaArpLibrenms { device_id: number | null; mac: string; ip: string; if_name: string | null; letto_il: string }
+export interface RigaDhcp { source_device_id: number | null; source_name: string | null; ip_address: string; mac_address: string; hostname: string | null; scope_name: string | null; last_seen: string | null; last_synced: string | null }
+export interface RigaVlanInterfaccia { device_id: number; name: string; vlan_id: number }
 export interface RigaVm { mac: string; nome: string; acceso: boolean; nodo: string; apparatoScansione: number }
 export interface RigaVlanPorta { device_id: number; vlan_id: number; if_index: number; egress: number; untagged: number | null }
 export interface RigaPvid { device_id: number; if_index: number; pvid: number }
@@ -41,6 +45,8 @@ export interface IngressoMappaPorte {
   vicini: RigaVicino[];
   fatti: RigaFatto[];
   macApparati: RigaMacApparato[];
+  /** Tutti i MAC noti di ogni apparato: host, scheda, interfacce, scansione Proxmox. */
+  macNote: RigaMacApparato[];
   hosts: RigaHost[];
   macIp: RigaMacIp[];
   vm: RigaVm[];
@@ -50,16 +56,24 @@ export interface IngressoMappaPorte {
   vlanLetture: RigaVlanLettura[];
   mkPorte: RigaMkPorta[];
   mkVlan: RigaMkVlan[];
+  mkVlanIf: RigaVlanInterfaccia[];
+  arp: RigaArp[];
+  lnmsArp: RigaArpLibrenms[];
+  dhcp: RigaDhcp[];
 }
 
 /** Una porta dove il MAC è stato visto: la prova mostrata nel dettaglio. */
-export interface Prova { apparato: string; porta: string; tipo: TipoPorta; nMac: number; fonte: string; visto: string }
+export interface Prova { apparato: string; porta: string; tipo: TipoPorta | "vista"; nMac: number; fonte: string; visto: string }
 
 export interface OggettoMappa {
   chiave: string;
   categoria: Categoria;
   mac: string | null;
+  /** Tutti i MAC dell'oggetto: un hypervisor o un server ne hanno più di uno. */
+  macs: string[];
   ip: string | null;
+  /** Tutti gli IP visti, da inventario, ARP, DHCP e storico. */
+  ips: string[];
   nIp: number;
   nome: string | null;
   tipo: string | null;
@@ -84,6 +98,9 @@ export interface OggettoMappa {
   senzaHost: boolean;
   visto: string | null;
 }
+
+/** Un oggetto prima di `completaOggetti`: un MAC, una riga. */
+export type OggettoGrezzo = Omit<OggettoMappa, "macs" | "ips">;
 
 export interface PortaMappa {
   deviceId: number;

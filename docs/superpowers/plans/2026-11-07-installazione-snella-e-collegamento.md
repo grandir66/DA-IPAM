@@ -11,6 +11,7 @@
 
 ## Vincoli globali
 
+- **Stesso codice (Riccardo, 07/11): «il codice non deve essere diverso da ipam completo, solo avere il modulo per centralizzare i dati e le funzioni aggiuntive spente».** Niente ramo, niente versione a parte di DA-IPAM: la versione ridotta è il DA-IPAM di sempre con il collegamento al centrale e il resto spento. Ciò che cambia sta nell'installazione (Deploy-Appliance), mai nel codice di DA-IPAM.
 - Risposte di Riccardo del 07/11: solo tecnici Domarc nel centrale; config solo lette e archiviate; segreti delle config cifrati per `codcli`, `/etc/pve/priv` escluso; appliance attuali aggiornate senza reinstallare; chi ha la VA tiene Edge; prima prova su PX-NAS; il dato completo esce solo per scelta del cliente.
 - Un'installazione resta un cliente (12/10). Niente DA-Auth sulle installazioni.
 - ADR 0011: ogni connessione la apre l'installazione; nessuna policy unisce due remoti; niente rotte verso la LAN del cliente; niente gruppo `All`.

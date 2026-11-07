@@ -36,7 +36,7 @@ visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-
 
 ## Mappa porte — 07/11/2026
 
-`src/lib/mappa-porte/` (regola pura, `calcolo.ts` per il DB, job ogni 30 minuti che scrive solo `mappa_porte_*`), pagina `/port-map`. Piano: `plans/2026-11-07-mappa-porte.md`. Trappole: `is_trunk` vuol dire «più di un MAC», non 802.1Q; «SFP+ 1» non è l'indice 1, lo dice solo il controller; la stessa porta ha nomi diversi secondo la fonte, si unisce per indice e il LAG si piega sull'aggregato; l'agente SNMP della ProMax mette i MAC del LAG 49-50 sulla porta FDB 1 (lo vede anche LibreNMS), quindi su quella porta vince il controller. Il PoE di SW-CED-48POE-242 e ProMax risulta «non letto»: `upsertSwitchPorts` del giro SNMP riscrive null su ciò che il controller scrive alle 03:00; correzione da decidere con Riccardo.
+`src/lib/mappa-porte/` (regola pura, `calcolo.ts` per il DB, job ogni 30 minuti che scrive solo `mappa_porte_*`), pagina `/port-map`. Piano: `plans/2026-11-07-mappa-porte.md`. Trappole: `is_trunk` vuol dire «più di un MAC», non 802.1Q; «SFP+ 1» non è l'indice 1, lo dice solo il controller; la stessa porta ha nomi diversi secondo la fonte, si unisce per indice e il LAG si piega sull'aggregato; l'agente SNMP della ProMax mette i MAC del LAG 49-50 sulla porta FDB 1 (lo vede anche LibreNMS), quindi su quella porta vince il controller. Dalla 0.9.999 il giro SNMP non cancella il PoE che non legge (`conservaNonLetto`); da vedere sull'hub dopo il sync delle 03:00. Azzera ancora `is_uplink`: è voluto per ora (Riccardo, 07/11), conservarlo crea 4 collegamenti falsi in Topologia dalla `Port1` del ProMax. Ramo `claude/is-uplink-sospeso`, misura in `TASKS.md`.
 
 ## Riconoscimento degli apparati — 06/11/2026
 

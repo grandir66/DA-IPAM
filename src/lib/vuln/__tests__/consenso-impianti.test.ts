@@ -14,7 +14,7 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { encrypt } from "@/lib/crypto";
-import { lanciaSuReti, type Lancio } from "@/lib/vuln/scansioni-va";
+import { lanciaSuReti, reteDaLookup, type Lancio } from "@/lib/vuln/scansioni-va";
 import { cosaCambia, dataRegistro, dettaglioRegistro, testoConsenso, type ConsensoRete, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
 import { daiConsenso, leggiRegistro, registroCsv, revocaConsenso, sincronizzaRegistro } from "@/lib/vuln/registro-impianti";
 import { resetLabNetworkConfig } from "@/lib/lab-config-reset";
@@ -198,4 +198,11 @@ test("registro: copia, non si raddoppia, non si cancella, una sonda rifatta non 
     assert.equal(await sincronizzaRegistro(), 1);
     assert.throws(() => db().exec(`DELETE FROM va_registro_impianti`), /non si cancella/);
   });
+});
+
+test("una rete mai vista dalla sonda non vuol dire sonda vecchia; la chiave assente su una rete nota sì", () => {
+  // VLAN 102 di 79993-ipam-2, 07/11/2026: sonda 0.8.264, «Sonda da aggiornare» al posto di Autorizza.
+  assert.equal(reteDaLookup({ found: false }).consensoNoto, true);
+  assert.equal(reteDaLookup({ found: true, last_scan: null }).consensoNoto, false);
+  assert.equal(reteDaLookup({ found: true, last_scan: null, consenso: null }).consensoNoto, true);
 });

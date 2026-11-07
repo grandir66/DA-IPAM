@@ -66,12 +66,18 @@ interface ReteLetta {
   consensoNoto: boolean;
 }
 
+/** Una rete mai vista dalla sonda non dice niente sulla versione della sonda: la risposta non ha `consenso`
+ *  perché la rete non c'è, e «Sonda da aggiornare» su una sonda aggiornata toglieva il pulsante del consenso
+ *  (VLAN 102 di 79993-ipam-2, 07/11/2026). Se la sonda è davvero vecchia lo dice il POST, con il suo 404. */
+export function reteDaLookup(l: LookupRete): ReteLetta {
+  if (!l.found) return { sonda: "sconosciuta", ultima: null, consenso: null, consensoNoto: true };
+  return { sonda: "nota", ultima: l.last_scan ?? null, consenso: l.consenso ?? null, consensoNoto: "consenso" in l };
+}
+
 /** Tre esiti: la sonda la conosce, non la conosce, non ha risposto. Un guasto non diventa «mai». */
 async function leggiReteSullaSonda(scanner: ScannerAttivo, cidr: string): Promise<ReteLetta> {
   try {
-    const l = await edgeApiGet<LookupRete>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(cidr)}`);
-    if (!l.found) return { sonda: "sconosciuta", ultima: null, consenso: null, consensoNoto: false };
-    return { sonda: "nota", ultima: l.last_scan ?? null, consenso: l.consenso ?? null, consensoNoto: "consenso" in l };
+    return reteDaLookup(await edgeApiGet<LookupRete>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(cidr)}`));
   } catch {
     return { sonda: "errore", ultima: null, consenso: null, consensoNoto: false };
   }

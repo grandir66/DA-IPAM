@@ -4,6 +4,22 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-07 · Mappa porte con tutti i dati, router e firewall come gli switch
+
+Riccardo: nella mappa mancavano oggetti che la Topologia ha, e a ogni giro si perdevano dati. La mappa nasceva solo dalle tabelle MAC per porta, ogni lettore riscriveva la riga degli altri, e i parser di MikroTik, HP, Aruba e QNAP partivano solo a mano: sull'hub 0 snapshot.
+
+### Aggiunto
+- **Una riga per oggetto, con tutti i MAC e gli IP** (`mappa-porte/completa.ts`): ogni apparato, host e VM, più ciò che sta solo in ARP, DHCP o storico. Un hypervisor con più schede è una riga. Senza porta si dice dove è stato visto, la posizione non si inventa. Gli oggetti non più visti si mostrano col segno.
+- **Registro per fonte** (`mappa_porte_fonti`, `_visti`, `_rotte`): ogni lettore ha il suo strato e la mappa li unisce; ARP e rotte si accumulano per un anno. `switch_ports` non cambia, quindi la Topologia non si muove.
+- **I parser a giro** (`mappa-porte/giro-parser.ts`, ogni 6 ore) e un adattatore unico dagli snapshot alla mappa (`mappa-porte/parser.ts`): vale per ogni marca che ha un collector.
+- **Lettura `mappa_dati`, spenta di serie**: ARP via SNMP su tutti gli apparati, VLAN e tabella MAC di router e firewall, bridge dei MikroTik impostati in SNMP che hanno un accesso SSH provato.
+- **Router e firewall hanno le tab Porte, VLAN e Vicini degli switch**. Scheda «Rotte» in Mappa porte. Le rotte del gateway UniFi arrivano dal controller (`rest/routing`, ammesso in sola lettura).
+
+### Corretto
+- La scheda mostra il vicino sulla porta vera: il controller scrive `eth0` su ogni vicino di uno switch.
+- Il gateway UniFi senza host si collega all'host col suo MAC, così apre la scheda nuova. Misurato: nessun collegamento di Topologia cambia.
+- Le tab che vanno a capo non coprono più il pannello.
+
 ## [Non rilasciato] — 2026-11-07 · Il giro SNMP non cancella più il PoE
 
 Il controller scrive il PoE alle 03:00, il giro di ogni 30 minuti riscriveva la riga intera con null dove non lo legge: su SW-CED-48POE-242 e SW-ING-ProMax-239 i watt non si vedevano mai, e la Mappa porte diceva «non letto». Per il giro un PoE vuoto vuol dire «non letto», non «spento».

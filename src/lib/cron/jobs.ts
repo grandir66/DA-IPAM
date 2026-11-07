@@ -37,7 +37,7 @@ import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
 import { getScanIoOverride } from "@/lib/executor";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
-import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
+import { createRouterClient, createSnmpArpClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/devices/switch-client";
 import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
 import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
@@ -81,6 +81,7 @@ import {
   scriviVlanSwitch,
   schemaSwitchVlanCorrente,
   getSwitchPortsByDevice,
+  portaSshProvata,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
@@ -806,6 +807,8 @@ export type RunArpPollOptions = {
   creaWalkSnmp?: typeof creaWalkSnmp;
   /** Solo per le prove: il client dello switch al posto di quello vero. */
   creaClientSwitch?: typeof createSwitchClient;
+  /** Solo per le prove: il lettore ARP via SNMP al posto di quello vero. */
+  creaLettoreArp?: typeof createSnmpArpClient;
 };
 
 /**
@@ -867,6 +870,36 @@ async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): 
  * risponde via SNMP; le tabelle sono della scheda, non toccano i vicini della mappa), non i MikroTik letti via SSH (hanno le
  * loro letture). AP, NAS, server e router no. Chi chiama guarda PRIMA l'interruttore: spenta, nemmeno la credenziale si cerca.
  */
+/**
+ * Un MikroTik impostato in SNMP non dice su quale porta sta un MAC: la bridge host si legge solo via SSH. Sull'appliance
+ * 79993-ipam-2 la RB5009 aveva 0 MAC per porta e 0 VLAN con un accesso SSH provato e funzionante. Con `mappa_dati` accesa
+ * il giro la legge come un MikroTik SSH: l'SNMP resta il ripiego di `createRouterClient`. Nessuna scrittura sull'apparato,
+ * e il record non cambia: scelta del giro, non dell'inventario.
+ */
+export function apparatoDelGiro(device: NetworkDevice): NetworkDevice {
+  if (device.vendor !== "mikrotik" || (device.protocol !== "snmp_v2" && device.protocol !== "snmp_v3")) return device;
+  if (!letturaAccesa("mappa_dati")) return device;
+  const porta = portaSshProvata(device.id);
+  return porta == null ? device : { ...device, protocol: "ssh", port: porta };
+}
+
+/** Router e firewall hanno VLAN come gli switch (Riccardo, 07/11). Il MikroTik SSH ha le sue letture del bridge. */
+export function vlanRouterDaLeggere(device: NetworkDevice): boolean {
+  if (device.device_type !== "router" && device.device_type !== "firewall") return false;
+  return letturaAccesa("mappa_dati") && !(device.vendor === "mikrotik" && device.protocol === "ssh") && deviceHasSnmpSession(device);
+}
+
+/** L'ARP di chi non è nel giro dei router: uno switch L3, un AP, un NAS. Una lettura vuota non cancella quella di prima. */
+async function arpViaSnmp(device: NetworkDevice, options?: RunArpPollOptions): Promise<void> {
+  if (!letturaAccesa("mappa_dati") || !deviceHasSnmpSession(device)) return;
+  try {
+    const voci = await (await (options?.creaLettoreArp ?? createSnmpArpClient)(device)).getArpTable();
+    if (voci.length > 0) upsertArpEntries(device.id, voci);
+  } catch (err) {
+    console.warn(`[ARP Poll] apparato #${device.id}: ARP via SNMP non letto (${erroreSenzaNomi(err, device)})`);
+  }
+}
+
 export function vlanSwitchDaLeggere(device: NetworkDevice): boolean {
   return device.device_type === "switch" && !(device.vendor === "mikrotik" && device.protocol === "ssh") && deviceHasSnmpSession(device);
 }
@@ -985,9 +1018,10 @@ export async function leggiApparatoArp(device: NetworkDevice, ctx: ContestoArp,
   }
 }
 
-async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
+async function corpoApparatoArp(apparato: NetworkDevice, ctx: ContestoArp,
   opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no" }): Promise<void> {
   const options = opzioni;
+  const device = apparatoDelGiro(apparato);
   const { networks, enrichSet, porteNonLette, esitiLetture } = ctx;
   const conVlan = opzioni?.vlan !== "no";
   let mkProvata = false; // la lettura in più del MikroTik di questo giro è partita (B5, revisione del Task 4)
@@ -1191,6 +1225,14 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
         console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
         porteNonLette.push(`${device.name} (${porte.errore})`);
         ctx.porteErrore?.set(device.id, porte.errore);
+      } else if (letturaAccesa("mappa_dati") && deviceHasSnmpSession(device)) {
+        // Un router che fa anche da bridge in SNMP: la sua tabella MAC vale come quella di uno switch.
+        try {
+          const fdb = await (await (options?.creaClientSwitch ?? createSwitchClient)(device)).getMacTable();
+          if (fdb.length > 0) salvaMacPorta(device.id, fdb.map((e) => ({ mac: e.mac, port_name: e.port_name.trim(), vlan: e.vlan, port_status: e.port_status, speed: e.speed })));
+        } catch (err) {
+          console.warn(`[ARP Poll] apparato #${device.id}: tabella MAC non letta (${erroreSenzaNomi(err, device)})`);
+        }
       }
 
       // Scheda MikroTik (Task 3): `/interface print terse` è già stato letto qui sopra (getInterfaceTypes); da quella stessa
@@ -1234,6 +1276,11 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
         }
       }
 
+      // VLAN di router e firewall via SNMP (piano 2026-11-07), con la cadenza e l'esito delle VLAN degli switch.
+      if (conVlan && letturaAccesa("switch_vlan") && vlanRouterDaLeggere(device)) {
+        esitiLetture.push(await letturaVlanSwitch(device, options));
+      }
+
       // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
       if (device.vendor === "mikrotik" && device.protocol === "ssh") {
         mkProvata = true;
@@ -1266,6 +1313,8 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
       if (conVlan && letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
         esitiLetture.push(await letturaVlanSwitch(device, options));
       }
+      // Prima della tabella MAC, che può fallire e fermare il ramo.
+      await arpViaSnmp(device, options);
       const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
       const entries = await client.getMacTable();
       salvaMacPorta(device.id, entries.map((e) => ({

@@ -6090,6 +6090,13 @@ export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh
   return loginApparatoDb(db(), device);
 }
 
+/** La porta dell'accesso SSH riuscito dell'apparato, null se nessuno è stato provato con successo. */
+export function portaSshProvata(deviceId: number): number | null {
+  const r = db().prepare(`SELECT port FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'ssh' AND test_status = 'success'
+    ORDER BY sort_order LIMIT 1`).get(deviceId) as { port: number | null } | undefined;
+  return r ? r.port ?? 22 : null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ARP ENTRIES
 // ═══════════════════════════════════════════════════════════════════════════

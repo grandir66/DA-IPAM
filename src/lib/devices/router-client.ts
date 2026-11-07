@@ -301,7 +301,7 @@ async function createSshClient(
 }
 
 // SNMP-based ARP client (v2c e v3)
-async function createSnmpArpClient(
+export async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");

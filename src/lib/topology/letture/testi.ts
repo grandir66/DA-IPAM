@@ -10,6 +10,12 @@ import type { EsitoApparato, Lettura, StatoInterruttore } from "./interruttori";
 export const NASCE_ACCESA = "Accesa di serie: si spegne da qui, cliente per cliente.";
 
 export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; legge: string; apparati: string; comandi: string }>> = {
+  mappa_dati: {
+    titolo: "Tutti i dati per la Mappa porte",
+    legge: "La tabella ARP di ogni apparato che risponde in SNMP; VLAN e tabella MAC di router e firewall; il bridge dei MikroTik impostati in SNMP che hanno un accesso SSH provato.",
+    apparati: "tutti gli apparati del giro, tranne gli hypervisor",
+    comandi: "IP-MIB (ipNetToMedia, ipNetToPhysical) · Q-BRIDGE-MIB e BRIDGE-MIB · sui MikroTik le letture SSH già in uso, in sola lettura",
+  },
   mikrotik: {
     titolo: "Spanning tree, bridge e fasci dei MikroTik",
     legge: "Per ogni porta: nel bridge o instradata, ruolo e stato nello spanning tree, fascio e partner; i bridge e la radice; sui bridge in MSTP la porta radice e le VLAN di ogni istanza; tutti i MAC dell'apparato. Sugli switch MikroTik anche i vicini.",
@@ -104,6 +110,8 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
     case "mikrotik_scheda":
       // Non serve alla mappa (riempie la scheda del router): niente frase sulla mappa nuova.
       return `Accendere la lettura di VLAN, DNS e utenti sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: questa lettura parte al più una volta l'ora, 4 comandi in sola lettura sul router, su una connessione sua. Riempie la matrice VLAN e il DNS della scheda del router; gli utenti del router (nessuna password) li vede solo un amministratore. Si spegne da qui.`;
+    case "mappa_dati":
+      return "Accendere la lettura completa per la Mappa porte? Nel giro dei router e degli switch si aggiungono l'ARP via SNMP su tutti gli apparati, VLAN e tabella MAC su router e firewall, e l'accesso SSH ai MikroTik che ne hanno uno provato. Solo lettura.";
     case "switch_vlan":
       // Come la scheda MikroTik: riempie la tab VLAN della scheda dello switch, non la mappa.
       return `Accendere la lettura delle VLAN sugli switch di questo cliente? Il giro degli switch parte ${frequenza(c.switch, false)}: questa lettura parte al più una volta l'ora per switch, 7 letture SNMP in sola lettura, 10 secondi al massimo ciascuna; anche «Interroga» sullo switch la fa, finché è accesa. Riempie la matrice VLAN della scheda dello switch. Si spegne da qui.`;

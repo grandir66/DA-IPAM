@@ -10,11 +10,11 @@ import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiV
  *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa.
  *  `librenms` (piano 2026-10-22 LibreNMS, task 4; spec `specs/2026-10-22-librenms-fonte-dati-design.md`): i dati degli
  *  apparati letti dall'API di LibreNMS locale nelle tabelle `librenms_*`, per la scheda e non per la mappa (spec §4.3). */
-export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"] as const;
+export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms", "mappa_dati"] as const;
 export type Lettura = (typeof LETTURE)[number];
 
 /** Le letture che questa versione sa fare. `host` è arrivata col Task 7 del piano di T2, scritta sull'uscita vera T2-b. */
-export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"]);
+export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms", "mappa_dati"]);
 
 export function eLettura(x: unknown): x is Lettura {
   return typeof x === "string" && (LETTURE as readonly string[]).includes(x);
@@ -63,8 +63,11 @@ export function leggiStatoChiave(chiave: string): StatoInterruttore {
  * Eccezione: `librenms` resta SPENTA di serie (unione del 22/10, piano LibreNMS fonte dati). Non legge soltanto: aggiunge
  * a LibreNMS i vicini il cui SNMP risponde, cioè scrive in un servizio del cliente, e nessun automatismo che scrive nasce
  * acceso. Si accende per installazione, da un admin.
+ *
+ * `mappa_dati` (piano 2026-11-07, «tutti i dati») legge soltanto, ma apre SSH e fa walk in più su apparati che finora non li
+ * ricevevano, anche dai clienti: col sì di Riccardo nasce spenta e si accende apparecchio per apparecchio dopo la prima misura.
  */
-const SPENTE_DI_SERIE: ReadonlySet<Lettura> = new Set<Lettura>(["librenms"]);
+const SPENTE_DI_SERIE: ReadonlySet<Lettura> = new Set<Lettura>(["librenms", "mappa_dati"]);
 
 export function leggiInterruttore(l: Lettura): StatoInterruttore {
   const o = oggetto(leggiJson(chiaveLettura(l)));

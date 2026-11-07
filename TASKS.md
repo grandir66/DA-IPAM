@@ -22,6 +22,15 @@ Trappole trovate:
 - 8 PC Windows stanno in `network_devices` con `device_type`=switch: vanno esclusi dagli apparati di rete.
 - `mac_ip_history`: 13,6 milioni di righe per 244 MAC, circa 43.000 al giorno; il DB dell'hub pesa 2,2 GB.
 
+Riccardo, 07/11, aggiunta: «ovviamente gestendo trunk, vlan poe device, device aggregazioni di porte». Un membro di un LAG non deve risultare una porta di accesso a sé: i MAC si contano sull'aggregato.
+
+Da dove viene ogni dato e dove manca (hub, misurato il 07/11; il GS1900 dalla nota del 04/11):
+- [ ] **Trunk 802.1Q**: colonna a sé, dalle VLAN tagged di `switch_vlan_porte`, mai da `is_trunk`. Manca su ProMax (295 righe con `untagged` vuoto), UniFi letti solo dal controller e altri fuori dalla lettura VLAN: lì si scrive «non letto».
+- [ ] **VLAN**: PVID da `switch_porta_pvid`, nativa da `switch_vlan_nativa`, MikroTik dalle `mikrotik_bridge_*`, VLAN del MAC da `mac_port_entries.vlan` (1.214 righe su 1.918 da `device`, 9 su 193 da `unifi`). ProMax: PVID diverso dalla nativa su 6 porte su 14 (5, 9, 10, 11, 13, 16), sugli altri 4 switch 99 su 99 uguali. Nessuna di quelle 6 sta in un LAG (il suo è 49-50): l'ipotesi «forse LAG» non regge sull'hub, resta da rivedere la lettura Q-BRIDGE; finché non è chiaro la VLAN della ProMax si mostra come «dedotta».
+- [ ] **PoE**: `switch_ports.poe_status`/`poe_power_mw`. Via SNMP solo su SW-CED-Ent8-245; dal controller sugli UniFi `api`. SW-CED-48POE-242 e SW-ING-ProMax-239 hanno 0 porte con PoE pur essendo PoE: probabile che il giro SNMP sovrascriva ogni 30 minuti ciò che il controller scrive alle 03:00, da provare. GS1900: PoE assente via SNMP (nota del 04/11).
+- [ ] **Device**: nome e tipo da `hosts`, `network_devices`, VM dalla scansione Proxmox, vicino LLDP/CDP per chi non è host. Senza nome: produttore dal MAC.
+- [ ] **Aggregazioni**: membri da `topology_port_facts.lag_group` (controller: 4 switch, 7 aggregati; `device`: 3 bond del MikroTik; `host`: bond degli hypervisor). L'SNMP dà già i MAC sull'aggregato; il controller sul membro (11 righe su SW-CED-AGG-243): si piegano sull'aggregato, e nel confronto col controller questo ha portato i disaccordi da 12 a 1. Manca su switch SNMP senza controller: `acquisition_snapshots` sull'hub è vuota, GS1900 e simili sono da leggere al 72729.
+
 ## 2026-11-07 — Consenso e registro degli impianti (Riccardo)
 
 Riccardo, 07/11, «Sì, approvata». Lavoro e aperti in `DA-Vul-can/TASKS.md`, sezione «Una VA non deve poter fermare una rete»: qui il lato DA-IPAM.

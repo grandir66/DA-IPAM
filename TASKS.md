@@ -1,6 +1,12 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-07 — Mappa porte: tutti gli oggetti e router come switch (Riccardo, in proposta)
+
+Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come gli switch per porte e VLAN, tutte le rotte, «non perdiamo dati». Misure e tappe in `docs/superpowers/plans/2026-11-07-mappa-porte-tutti-i-dati.md`. Non si parte senza il suo ok.
+
+- [ ] Ok al piano e risposte alle domande aperte.
+
 ## 2026-11-07 — Device UniFi senza dati su 79993-ipam-2 (Riccardo: «le credenziali dovrebbero essere giuste»)
 
 Misurato sull'appliance (VM 963 su PX-NAS, in sola lettura) e nessuna correzione ancora fatta:

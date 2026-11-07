@@ -5,7 +5,13 @@
 
 Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come gli switch per porte e VLAN, tutte le rotte, «non perdiamo dati». Misure e tappe in `docs/superpowers/plans/2026-11-07-mappa-porte-tutti-i-dati.md`. Non si parte senza il suo ok.
 
-- [x] Ok al piano («Sì, procedi»), risposte nel piano. Lavoro in corso: stato nel piano.
+- [x] Ok al piano («Sì, procedi»); chiuso su `dev` 0.9.1001, consuntivo nel piano.
+- [ ] Dopo il sync delle 03:00 sull'hub: strato del controller, rotte della UDM, UDM sulla scheda nuova, PoE dei due switch.
+- [ ] 70151-ipam-2 (VM 104 di PX01) sta su `dev` con `da-ipam-update.timer` spento, Riccardo: «possiamo modificarla». Da riportare su `main` col rilascio (`systemctl enable --now da-ipam-update.timer`, `git checkout main`). Snapshot `pre-mappa-dati-20261107`.
+- [ ] 72729: dopo, quando lo dirà Riccardo («solo dopo testeremo 72729»).
+- [ ] 79993-ipam-2: RB5009 via SSH e UCG, dopo `main`.
+- [ ] Seguire i vicini per i 5.271 «non so» di 70151.
+- [ ] Il `.env.local` di 79993-ipam-2 ha stampato un pezzo di un valore (riga 20) il 07/11: se è un segreto, cambiarlo.
 
 ## 2026-11-07 — Device UniFi senza dati su 79993-ipam-2 (Riccardo: «le credenziali dovrebbero essere giuste»)
 

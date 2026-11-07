@@ -1,0 +1,235 @@
+# Installazione snella e collegamento al centrale — piano di esecuzione
+
+> Si esegue con la skill `subagent-driven-development` oppure in linea
+> (una sessione che esegue i task in ordine). Le caselle `- [ ]` tengono il conto.
+
+**Obiettivo:** dai clienti un'installazione DA-IPAM leggera, che manda inventario e config a un DA-IPAM centrale per `codcli` e ne riceve ordini da un elenco chiuso.
+**Architettura:** l'installazione fa tutto il lavoro e apre ogni connessione. Il centrale riceve copie, le mostra e firma ordini; non scansiona e non tiene credenziali degli apparati. Stesso codice di DA-IPAM, con un profilo «centrale» che tiene attive solo le rotte elencate.
+**Spec:** [ADR 0035](../../adr/0035-installazione-snella-e-collegamento.md); sezione del 2026-11-07 in `TASKS.md`.
+**Livello di controllo:** completo (proposto il 2026-11-07, da confermare con l'approvazione del piano).
+**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-07
+
+## Vincoli globali
+
+- Risposte di Riccardo del 07/11: solo tecnici Domarc nel centrale; config solo lette e archiviate; segreti delle config cifrati per `codcli`, `/etc/pve/priv` escluso; appliance attuali aggiornate senza reinstallare; chi ha la VA tiene Edge; prima prova su PX-NAS; il dato completo esce solo per scelta del cliente.
+- Un'installazione resta un cliente (12/10). Niente DA-Auth sulle installazioni.
+- ADR 0011: ogni connessione la apre l'installazione; nessuna policy unisce due remoti; niente rotte verso la LAN del cliente; niente gruppo `All`.
+- Il livello di uscita lo decide l'installazione, mai il centro. Senza una scelta dichiarata esce solo lo stato.
+- Automatismi nuovi spenti di serie. Sull'installazione spento vuol dire identico a oggi, bit per bit.
+- `main` di DA-IPAM: si tocca solo col sì di Riccardo. Nessuna immagine nuova senza il suo via.
+- Sistemi dei clienti: nessun intervento senza conferma. Laboratorio e VM Domarc: snapshot prima, nome e nodo nel resoconto. Mai la VM 423.
+- DA-IPAM: Node 22, `db-tenant` importato solo staticamente, ogni rotta con guardia e `withTenantFromSession`, schema con `ALTER TABLE` idempotente, niente `any`.
+- Cancello DA-IPAM, letto dal codice di uscita: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`. Poi `npm run version:release -- --staged-only` e `git push origin dev`.
+- Deploy-Appliance e DA-Link: lavoro in worktree da `origin/main`, PR su `main`. Prima di commit si rilegge `origin`, mai `git add -A`.
+- Credenziali solo via `vault-a-stdin`, mai a schermo.
+
+## Passi
+
+| ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
+|---|---|---|---|---|---|---|
+| S1 | [ ] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
+| S2 | [ ] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
+| S3 | [ ] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
+| S4 | [ ] | Coda comune senza vicolo cieco | implementer, tester | — | 7 giorni di caduta si recuperano da soli | prove della coda |
+| S5 | [ ] | Terzo livello di uscita | implementer | — | `completo` accettato da DA-Link e scelto solo in locale | prove dei due repo |
+| S6 | [ ] | Fotografia completa | implementer, tester | S5 | lista bianca provata, peso misurato | prova sui campi, misura su 533 |
+| S7 | [ ] | Profilo centrale | implementer, reviewer | — | senza profilo nulla cambia | prova di equivalenza |
+| S8 | [ ] | Muri del tenant | implementer, reviewer | S7 | nessun ripiego, rotte in elenco | prove viste fallire |
+| S9 | [ ] | Ricezione per `codcli` | implementer, tester, reviewer | S6, S8 | il `codcli` viene solo dal gettone | prove d'attacco |
+| S10 | [ ] | VM del centrale e rete | in linea | S9 | una VM di laboratorio trasmette | `da-link-verifica` verde, riga nel DB |
+| S11 | [ ] | Viste del centrale | implementer | S10 | pagine approvate da Riccardo | resa a 1280 e 1920 |
+| S12 | [ ] | Ordini firmati | implementer, tester, reviewer | S10 | un ordine storto non parte | prove viste fallire |
+| S13 | [ ] | Azioni dell'elenco | implementer, tester | S12 | quattro azioni provate in laboratorio | esiti e giornale |
+| S14 | [ ] | Archivio config MikroTik e Proxmox | implementer, tester, reviewer | S9, S13 | versioni e differenze, segreti cifrati | prove + router e nodo di laboratorio |
+| S15 | [ ] | Config degli switch | implementer | S14 | un produttore alla volta, da campioni veri | prove su campione |
+| S16 | [ ] | Passaggio delle appliance attuali | in linea | S13 | 79993-ipam-2 trasmette dopo l'aggiornamento | stato a schermo |
+
+Fermate col sì di Riccardo: dopo S1 (soglie), prima di S2 (immagine), prima di S11 (interfaccia), prima di S13 per `aggiorna`, prima di S16 (`main`). In parallelo si possono proporre S4 e S5, e S7 dopo S1: niente file in comune.
+
+## Casi da non dimenticare
+
+- NetBird giù per giorni: oggi dopo 12 tentativi la riga si ferma. Coperto da S4.
+- DA-Link vecchio riceve `completo` e rifiuta tutto il segnale con 422. Coperto da S5: prima DA-Link.
+- VM clonata: due nodi con lo stesso gettone. Coperto da S9.
+- Il cliente abbassa il livello: il centrale deve cancellare ciò che ha. Coperto da S9.
+- Un'installazione ripristinata da snapshot perde il progressivo degli ordini: resta la scadenza. Coperto da S12.
+
+---
+
+## Tappa 1 — Installazione snella
+
+### [ ] Task 1 — Misura con l'immagine attuale e moduli spenti
+
+Nessun codice: serve a sapere il peso vero prima di costruire un'immagine.
+
+- **Dove:** una VM nuova del cliente di laboratorio 79993 sul PX-NAS, immagine `ULTIMO`, creata da DA-Link con `ipam`, `zabbix` e `trunk` accesi; `edge`, `meshcentral`, `librenms`, `wazuh`, `proxreporter` spenti. La riga è in `dalink/appliance_immagine.py`, `PREDEFINITI`.
+- **Si misura** subito e dopo 24 ore, in un solo comando: `free -m`, RSS di ogni processo sopra 50 MB, `df -h`, `docker ps`, `du -sh` di `/opt/da-ipam`, `/opt/da-invent/data`, `/var/lib/docker`, `/opt/sensore-trunk`.
+- **Riferimenti:** DA-Link stima base 1,5 GB, DA-IPAM 0,5, Zabbix 0,5. La 533 fa 827 MB con 3,6 GB di tenant. Proxy Zabbix e sensore non vogliono Docker: il primo è un pacchetto Debian, il secondo sta in `/opt/sensore-trunk/venv`.
+- **Soglie proposte, da confermare dopo la misura:** a riposo sotto 3 GB, RAM assegnata 4 GB, disco 40 GB. In questa sede si decide se togliere anche Docker.
+
+Verifica: tabella delle misure qui sotto, con data e fonte.
+
+### [ ] Task 2 — Immagine snella
+
+- **File (Deploy-Appliance):** `costruttore/costruisci.sh` (nuova opzione `--variante piena|snella`, di base `piena`), `costruttore/elenco-sigillo.txt`, `costruttore/pacchetto-aggiornamento.sh`, `lib/immagine.sh`, `primo-avvio/fasi/moduli.sh`, `primo-avvio/verifica.sh`, prove in `tests/`.
+- **Cosa fare:** con `snella` niente Greenbone, immagini di Edge, LibreNMS e MeshCentral, e niente Docker se il Task 1 lo consente. Restano DA-IPAM, `sensore-trunk`, Zabbix, NetBird. La riga di rilascio è separata da `ULTIMO`: `ULTIMO-SNELLA`, firmata come l'altra.
+- **Interfacce:** il file d'avvio `moduli.*` non cambia. Un modulo chiesto e assente nell'immagine fa fallire `avvio.py` con un messaggio chiaro, prima di toccare la macchina.
+- **Prova prima del codice:** chiedere `moduli.edge` a un'immagine snella viene rifiutato.
+
+Verifica: installazione dalla variante snella sul PX-NAS, `da-appliance verifica` verde, trunk e proxy vivi. Commit in PR; il rilascio dell'immagine aspetta il via.
+
+### [ ] Task 3 — Moduli e pesi in DA-Link
+
+- **File (DA-Link):** `dalink/appliance_immagine.py` (`RAM`, scelta della variante in base ai moduli), `dalink/cli_immagine.py`, relative prove.
+- **Cosa fare:** se nella bozza non ci sono Edge, LibreNMS e MeshCentral, la procedura propone la variante snella e i pesi veri del Task 1. Chi aggiunge Edge dopo deve passare alla piena: lo si dice a schermo prima di salvare.
+
+Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
+
+---
+
+## Tappa 2 — Trasferimento
+
+### [ ] Task 4 — Coda comune senza vicolo cieco
+
+- **File:** crea `src/lib/trasferimento/coda.ts` e `src/lib/trasferimento/__tests__/coda.test.ts`; modifica `src/lib/vulcan/coda.ts` perché deleghi; schema in `src/lib/db-tenant-schema.ts` (tabella `centrale_coda`, stessa forma di `vulcan_coda`).
+- **Interfacce:** `creaCoda({ tabella, maxTentativi, backoffS }) → { accoda, prendiProssimi, segnaInviato, segnaRitento, segnaScartato, rilascia, rimettiFalliti, conteggiCoda, puliziaCoda }`. Con `maxTentativi: null` una riga non va mai in `fallito`.
+- **Cosa fare:** il comportamento verso Vulcan resta identico: `MAX_TENTATIVI = 12`, stesse prove, nessuna modificata. La coda verso il centrale usa `maxTentativi: null` e un tetto di attesa di 1 ora. Un inventario nuovo supera quello in attesa, quindi non cresce.
+- **Prova vista fallire:** 7 giorni di errori simulati, al ritorno della rete parte l'ultimo inventario senza un clic.
+
+Verifica: `node --import tsx --test src/lib/trasferimento/__tests__/coda.test.ts` e prove esistenti di `lib/vulcan` senza modifiche.
+
+### [ ] Task 5 — Terzo livello di uscita
+
+Ordine obbligato: **prima DA-Link**, altrimenti il segnale prende 422.
+
+- **DA-Link:** `dalink/segnale.py:87`, `dalink/kit/configurazione.py:80,374`: si aggiunge `completo`. Abbassando il livello si cancellano i dati come già avviene per i numeri.
+- **DA-IPAM:** `src/lib/dalink/stato.ts:16`, `src/app/api/dalink/livello/route.ts`, la pagina che sceglie il livello. In `segnale.ts` `completo` manda gli stessi numeri di `stato_inventario`: il dato vero passa dal Task 6.
+- **Cosa fare:** il livello si sceglie solo in locale, con la frase che dice cosa esce.
+
+Verifica: prove dei due repo; una prova che fallisce se il valore viene da DA-Link o da un ordine.
+
+### [ ] Task 6 — Fotografia completa
+
+- **File:** crea `src/lib/trasferimento/corpo-completo.ts`, `dati-completo.ts`, `job.ts`, con prove; aggancio in `server.ts` accanto al job di Vulcan.
+- **Interfacce:** `costruisciFotografia(dati) → { schema_versione: 1, codcli, nodo, generato_il, reti, host, apparati, porte, vlan, trunk_vlan, trunk_vicini, acquisizioni }`. Funzione pura, oggetti costruiti campo per campo come `corpo-inventario.ts`.
+- **Cosa fare:** alle 03:00 ora italiana, solo con livello `completo` e `CENTRALE_URL` e `CENTRALE_TOKEN` in `oggetto.env`. Mai `mac_ip_history`, credenziali, chiavi, testi d'errore.
+- **Prova:** un dato finto con un campo credenziale in ogni tabella non esce; ogni nome di campo in uscita sta nell'elenco.
+- **Misura:** peso compresso calcolato sui dati dell'hub, in sola lettura. Se supera 50 MB si riapre il formato prima di proseguire.
+
+Verifica: prove verdi, misura scritta qui sotto.
+
+---
+
+## Tappa 3 — Centrale
+
+### [ ] Task 7 — Profilo centrale
+
+- **File:** crea `src/lib/profilo.ts` e prove; modifica `server.ts`, `src/lib/modules/registry.ts`, `src/proxy.ts`.
+- **Interfacce:** `profilo(): "installazione" | "centrale"`, da `DA_PROFILO`. Assente = `installazione`; valore sconosciuto = l'app non parte.
+- **Cosa fare:** con `centrale` non partono scheduler, salvataggi periodici dei job, ricerca dei DC e motori. `src/proxy.ts` risponde 404 a ogni rotta fuori da `ROTTE_CENTRALE`, elenco nel codice.
+- **Prova di equivalenza:** senza variabile, l'elenco dei job avviati e dei moduli è uguale a oggi.
+
+Verifica: prove e cancello.
+
+### [ ] Task 8 — Muri del tenant
+
+- **File:** `src/lib/db.ts` (`getDb`, righe 172-185), `src/lib/api-tenant.ts` (riga 26 e seguenti), `src/lib/permessi/rotte.ts`, `src/lib/crypto.ts`.
+- **Cosa fare:** col profilo centrale, niente contesto = errore, nessun `DEFAULT`, nessun `ipam.db`. Sessione senza `codcli` = 403. In `rotte.ts` ogni rotta di `ROTTE_CENTRALE` si dichiara `tenant` o `hub`, col motivo. Le 8 rotte `system-credentials` restano fuori dall'elenco. `__ALL__` ammesso solo nelle viste aggregate, in sola lettura.
+- **Chiave:** `chiaveDelCliente(codcli)` con HKDF-SHA256 dalla chiave d'installazione, informazione `codcli`.
+- **Prove viste fallire:** rotta senza dichiarazione, accesso senza contesto, una richiesta sul tenant A che chiede una riga di B, un segreto cifrato per A che B non apre.
+
+Verifica: prove e cancello; revisione del passo con `reviewer`.
+
+### [ ] Task 9 — Ricezione per `codcli`
+
+- **File:** crea `src/app/api/centrale/ricevi/route.ts`, `src/lib/centrale/gettoni.ts`, `src/lib/centrale/fotografie.ts`, con prove. Schema: hub `centrale_gettoni` (`sha256`, `codcli`, `nodo`, `revocato_il`); tenant `centrale_fotografie`, `centrale_installazioni`.
+- **Interfacce:** `POST /api/centrale/ricevi` con `Authorization: Bearer`, corpo gzip, massimo 200 MB. `DELETE /api/centrale/ricevi` con lo stesso gettone quando il livello scende.
+- **Cosa fare:** il gettone stabilisce `codcli` e nodo, poi `withTenant`. `codcli` o `nodo` diversi nel corpo = 403 e riga d'audit, come fa già il segnale di DA-Link. Schema Zod chiuso. Doppione per sha256 = 200 senza riscrittura.
+- **Prove d'attacco:** gettone di A con corpo di B; gettone revocato; stesso gettone da due nodi; corpo oltre il tetto; campo in più; cancellazione al calo del livello.
+
+Verifica: prove e cancello; revisione del passo con `reviewer`.
+
+### [ ] Task 10 — VM del centrale e rete
+
+- **Dove:** VM nuova sui Proxmox Domarc, non la 533, con un'unità systemd come `da-invent` e `DA_PROFILO=centrale`. La sede e la RAM le dà Riccardo in questo task.
+- **DA-Link:** gruppo `centro-ipam` in `dalink/rete.py`; `dalink-P13` in `dalink/politiche.py` (`remoto-ipam` → `centro-ipam`, 443); controlli R1–R5 aggiornati; comando `dalink kit centrale <n> [--applica | --stato | --revoca]`, modello `dalink kit vulcan`.
+- **Deploy-Appliance:** blocco `centrale` nel file d'avvio, modello del blocco `vulcan`.
+- **Accesso:** solo tecnici Domarc con l'accesso dell'hub. Regola del 12/10 invariata per le installazioni.
+
+Verifica: `dalink politiche` a vuoto poi `--applica`, `da-link-verifica` verde; la VM del Task 2 trasmette e la fotografia sta nel DB del suo `codcli`. Snapshot prima, nome e nodo qui sotto.
+
+### [ ] Task 11 — Viste del centrale
+
+- **Prima di scrivere:** si propone a Riccardo ogni pagina, oggetto per oggetto (regola di `docs/STILE-UI.md`). Fermata.
+- **File:** pagine sotto `src/app/(dashboard)/centrale/`, con i mattoni di `src/components/shared/console.tsx`.
+- **Contenuto:** elenco dei clienti con età dell'ultima fotografia, livello, versione; scheda del cliente con link alla pagina dell'installazione. Una fotografia vecchia si dice «dati fermi dal…», mai «host spento».
+
+Verifica: `verifica_pagine` e resa a 1280 e 1920 con dati finti.
+
+---
+
+## Tappa 4 — Comandi
+
+### [ ] Task 12 — Ordini firmati
+
+- **File:** crea `src/lib/centrale/ordini.ts` (lato centrale), `src/lib/ordini/verifica.ts`, `src/lib/ordini/giornale.ts`, `src/lib/ordini/job.ts` (lato installazione), `src/app/api/centrale/ordini/route.ts`, con prove.
+- **Interfacce:** ordine `{ id, codcli, nodo, azione, parametri, emesso_da, emesso_il, scade_il, progressivo, firma }`, firma Ed25519. `verificaOrdine(ordine, { codcli, nodo, chiavePubblica, ultimoProgressivo, adesso }) → { ok: true } | { ok: false; motivo }`, funzione pura.
+- **Cosa fare:** l'installazione chiede ogni minuto con `CENTRALE_ORDINI=1` in `oggetto.env`, spento di serie, e rifiuta `codcli` o nodo altrui, firma errata, scaduti, progressivo non crescente, azione sconosciuta, parametri fuori schema. Non c'è testo libero: niente `customArgs`, solo identificativi. Ogni ordine, accettato o no, va in `data/audit/ordini-AAAA-MM-GG.jsonl` con esito e utente, conservazione 365 giorni. La chiave pubblica sta nel blocco del Task 10.
+- **Prove viste fallire:** ogni motivo di rifiuto, più un ordine con un'azione non nell'elenco firmato correttamente.
+
+Verifica: prove e cancello; revisione del passo con `reviewer`.
+
+### [ ] Task 13 — Azioni dell'elenco
+
+- **File:** crea `src/lib/ordini/azioni.ts` con prove.
+- **Azioni:** `lancia_giro { rete_id, tipo }`, `rileggi_apparato { apparato_id }`, `raccogli_config { apparato_id }` (dal Task 14), `aggiorna { versione }`.
+- **Cosa fare:** ogni azione chiama la funzione che usa già il pulsante locale, dentro `withTenant`, rispettando lucchetti, ammessi e protetti. `aggiorna` riusa `src/lib/aggiornamento-servizio.ts` con il numero esatto, e parte solo col sì di Riccardo sul disegno: un aggiornamento fallito senza rete non si recupera dal centro.
+
+Verifica: le azioni su una VM di laboratorio, esiti nel centrale e nel giornale.
+
+---
+
+## Tappa 5 — Config
+
+### [ ] Task 14 — Archivio config MikroTik e Proxmox
+
+- **File:** crea `src/lib/config-apparati/` (`raccogli.ts`, `archivio.ts`, `confronta.ts`, `maschera.ts`), con prove; tabella tenant `config_apparati` (`apparato_id`, `sha256`, `raccolta_il`, `testo_cifrato`).
+- **MikroTik:** `getConfig()` di `src/lib/devices/router-client.ts`, poi `ripulisciExport`. Lettura dell'export riservata all'amministratore, come in `mikrotik-guardia.ts`.
+- **Proxmox:** elenco fisso via SSH: `/etc/pve/storage.cfg`, `/etc/pve/datacenter.cfg`, `/etc/pve/nodes/*/lxc`, `/etc/pve/nodes/*/qemu-server`, `/etc/network/interfaces`. **Mai** `/etc/pve/priv`. Il `backup.py` di ProxReporter non si tocca.
+- **Cosa fare:** si salva una versione solo se lo sha256 cambia. Il testo va al centrale cifrato con `chiaveDelCliente`.
+- **Prove:** config identica = nessuna riga nuova; un percorso `priv` non è raggiungibile; un dato cifrato per A non si apre per B.
+
+Verifica: router e nodo Proxmox di laboratorio; differenza fra due versioni a schermo.
+
+### [ ] Task 15 — Config degli switch
+
+Un produttore per commit, da un campione vero nel vault `collectors/`, mai nel repo.
+
+- **File:** `src/lib/acquisition/comandi.ts`, `src/lib/config-apparati/maschera.ts`.
+- **Ordine:** Comware `display current-configuration`; ProCurve `show running-config`; AOS-CX `show running-config`, che oggi è escluso di proposito (`comandi.ts:22`): si cambia quel commento dicendo perché. Poi gli altri su richiesta.
+- **Cosa fare:** maschera di community SNMP, hash e chiavi, che fallisce chiusa: una riga non riconosciuta sospetta si nasconde.
+
+Verifica: prova su campione per produttore.
+
+### [ ] Task 16 — Passaggio delle appliance attuali
+
+- **Cosa fare:** con il sì di Riccardo al promote, 79993-ipam-2 prende il codice; `dalink kit centrale` gli dà il gettone; il livello si alza a mano sull'installazione. Il cliente vero viene dopo, uno alla volta, con conferma.
+- **Documenti:** `CONTEXT.md`, `docs/scheda-mappa.md`, `CHANGELOG.md`, e nota nell'ADR 0011 per P13 e il terzo livello.
+
+Verifica: stato a schermo nel centrale, ultima fotografia di oggi, `da-link-verifica` verde.
+
+---
+
+## Registro
+
+## Misure
+
+## Consuntivo
+
+### Fatto
+
+### Mancante
+
+### Scostamenti dal piano
+
+### Consigli di sviluppo

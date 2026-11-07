@@ -44,6 +44,7 @@
 | S14 | [ ] | Archivio config MikroTik e Proxmox | implementer, tester, reviewer | S9, S13 | versioni e differenze, segreti cifrati | prove + router e nodo di laboratorio |
 | S15 | [ ] | Config degli switch | implementer | S14 | un produttore alla volta, da campioni veri | prove su campione |
 | S16 | [ ] | Passaggio delle appliance attuali | in linea | S13 | 79993-ipam-2 trasmette dopo l'aggiornamento | stato a schermo |
+| S17 | [ ] | Lettura dei centralini 3CX | implementer, tester | S9 | interni, trunk e versione nel centrale, nulla installato sul centralino | prove + centralino di laboratorio |
 
 Fermate col sì di Riccardo: dopo S1 (soglie), prima di S2 (immagine), prima di S11 (interfaccia), prima di S13 per `aggiorna`, prima di S16 (`main`). In parallelo si possono proporre S4 e S5, e S7 dopo S1: niente file in comune.
 
@@ -211,6 +212,17 @@ Un produttore per commit, da un campione vero nel vault `collectors/`, mai nel r
 - **Cosa fare:** maschera di community SNMP, hash e chiavi, che fallisce chiusa: una riga non riconosciuta sospetta si nasconde.
 
 Verifica: prova su campione per produttore.
+
+### [ ] Task 17 — Lettura dei centralini 3CX
+
+Riccardo, 07/11: «è l'installazione che potrà analizzare gli apparati e trasferire i dati». Sugli apparati non si installa niente: vale per MikroTik, Proxmox, switch e 3CX.
+
+- **File:** crea `src/lib/acquisition/3cx.ts` con prove; il dato esce con la fotografia del Task 6.
+- **Cosa leggere:** quello che oggi legge `agente-3cx` di DA-Zabbix (`zbximport/kpi_3cx.py`): interni, trunk, versione, FQDN. Via SSH con una credenziale dell'apparato, `psql` su `database_single` con l'utente `phonesystem`, solo query fisse in sola lettura. I trunk si provano in TCP sulla porta SIP.
+- **Da verificare prima:** serve sudo verso `phonesystem` sul centralino, che oggi mette l'agente. I 3CX su Windows non sono coperti. Registrazione SIP e chiamate attive stanno in memoria nella console v20: non si leggono neanche oggi.
+- **Prova:** una query fuori elenco non parte; un output inatteso dà «non so», mai zero interni.
+
+Verifica: centralino di laboratorio, valori uguali a quelli di DA-Zabbix.
 
 ### [ ] Task 16 — Passaggio delle appliance attuali
 

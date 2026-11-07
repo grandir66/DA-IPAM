@@ -1,6 +1,27 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-07 — Switch port mapper: una tabella che dice cosa c'è e dove sta (idea, in proposta)
+
+Riccardo, 07/11: «avendo acquisito molte informazioni sulla rete, per gestire quanto è emerso da switch, router, access point, controller; usando le acquisizioni degli switch, per porte le loro tabelle host, le conoscenze LLDP e varianti, spanning tree, per costruire un'ulteriore tabella che dice cosa è e dove è presente sulla rete; un nuovo menu nella parte di network». Fase di ragionamento: niente codice prima della sua approvazione.
+
+- [x] Misure sull'hub 533 (sola lettura, 07/11) e proposta in chat: regola della porta di accesso, interfaccia oggetto per oggetto, dove si materializza il dato, livello di controllo
+- [ ] Approvazione di Riccardo e risposte alle domande
+- [ ] Misura sul 72729 prima del codice, solo col suo sì: l'hub è quasi tutto UniFi, un cliente senza controller non ha un riferimento
+
+Misure (MAC visti negli ultimi 7 giorni, 339, di cui 45 di apparati di rete; ne restano 294): 65 da soli su una porta, 50 in wifi, 141 su porte condivise (8 porte di hypervisor, 3 telefono + PC, 10 senza spiegazione), 35 solo su porte di passaggio, 2 solo sul router, 1 su due porte di bordo. Prova contro il controller, 60 MAC su cavo: «meno MAC» 11 sbagliati, «`is_trunk`=0» 13 sbagliati, regola proposta 1 sbagliato (stesso apparato su due porte) e 10 «non so».
+
+Trappole trovate:
+- `is_trunk` vuol dire «più di un MAC», non 802.1Q: nessuna porta con più MAC ha `is_trunk`=0, quindi hypervisor e PC dietro un telefono risultano trunk.
+- Un vicino LLDP non vuol dire apparato di rete: 25 porte lo hanno verso hypervisor, NAS, telefoni.
+- La stessa porta ha nomi diversi secondo la fonte (77 porte su 150, anche l'alias del controller): si unisce per indice, e il fascio si piega sulla porta logica (`topology_port_facts.lag_group`).
+- «SFP+ N» non è la porta di indice N: su uno switch con 48 porte è la 48+N.
+- SNMP di SW-ING-ProMax-239: 215 MAC su «Port1», dove il controller ne vede uno solo, e nessuno sul fascio 49-50. Lettura da capire nel passo 1: spiega parte dei «non so».
+- Spanning tree: stato assente su 3 dei 5 switch principali, una sola porta bloccata, `edge` solo su MikroTik. Serve come avviso, non come criterio.
+- LibreNMS aggiunge 10 MAC su 491: solo ripiego.
+- 8 PC Windows stanno in `network_devices` con `device_type`=switch: vanno esclusi dagli apparati di rete.
+- `mac_ip_history`: 13,6 milioni di righe per 244 MAC, circa 43.000 al giorno; il DB dell'hub pesa 2,2 GB.
+
 ## 2026-11-07 — Consenso e registro degli impianti (Riccardo)
 
 Riccardo, 07/11, «Sì, approvata». Lavoro e aperti in `DA-Vul-can/TASKS.md`, sezione «Una VA non deve poter fermare una rete»: qui il lato DA-IPAM.

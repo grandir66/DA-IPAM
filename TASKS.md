@@ -23,8 +23,9 @@ Strada superata dalla decisione qui sotto: la proposta iniziale era un'istanza p
 
 Riccardo, 07/11, alternativa: «oppure un sistema di collegamento e trasferimento e comando delle installazioni, pensando a snellire quanto possibile se non è presente edge o altre app».
 
-Stato: scelta aperta fra le due, quindi la decisione sul centrale qui sopra non è ancora definitiva. Consigliata l'alternativa: l'installazione DA-IPAM resta dal cliente, snella, e fa tutto il lavoro; il centrale ridotto per `codcli` riceve copie, le mostra e manda ordini da un elenco chiuso. Niente esecutore da scrivere, 12/10 e ADR 0011 restano validi. Si può assottigliare dopo: il centrale non cambia.
-- [ ] Risposta di Riccardo: installazione snella col collegamento, oppure VM con solo esecutore
+**Decisione di Riccardo, 07/11: «Installazione snella».** ADR 0035. La frase sul centrale qui sopra vale per un centrale che solo riceve e ordina: l'installazione DA-IPAM resta dal cliente, snella, e fa tutto il lavoro; il centrale ridotto per `codcli` riceve copie, le mostra e manda ordini da un elenco chiuso. Niente esecutore da scrivere, 12/10 e ADR 0011 restano validi. Si può assottigliare dopo: il centrale non cambia.
+- [x] Risposta di Riccardo: installazione snella col collegamento (07/11)
+- [ ] Risposte alle 8 domande di dettaglio, poi piano con livello completo
 - [ ] Misurare in laboratorio un'installazione senza Edge, Greenbone, LibreNMS e, se si riesce, Docker. Stima da verificare: 2 vCPU, 4 GB, 40 GB
 - [ ] Verificare come si installa `sensore-trunk` senza Edge: oggi il codice sta nel pacchetto `scanner_edge`
 

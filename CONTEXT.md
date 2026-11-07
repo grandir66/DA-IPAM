@@ -7,7 +7,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (§7). Il tenant **non è un confine di sicurezza**.
 
-> **In discussione dal 2026-11-07 (Riccardo):** un DA-IPAM centrale ridotto, multi-tenant, con dati isolati per `codcli`, oppure un collegamento fra installazioni snelle. Non è deciso quale. Il 12/10 resta valido per le appliance. Niente codice: `TASKS.md`, 2026-11-07.
+> **Decisione 2026-11-07 (Riccardo), ADR 0035:** installazione DA-IPAM snella dal cliente, più un DA-IPAM centrale ridotto che riceve, mostra e ordina, con un DB per `codcli`. Un'installazione resta un cliente: il 12/10 vale ancora. Niente codice ancora: `TASKS.md`, 2026-11-07.
 
 **DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di moduli (`MODULE_DESCRIPTORS` in `src/lib/modules/registry.ts`, `access: native|external`). L'agente Python remoto è tolto (20/10).
 

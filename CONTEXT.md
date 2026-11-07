@@ -7,6 +7,8 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (§7). Il tenant **non è un confine di sicurezza**.
 
+> **Decisione 2026-11-07 (Riccardo):** in progetto un DA-IPAM centrale ridotto, multi-tenant, con dati isolati per `codcli`, comandato verso VM minimali dai clienti. Il 12/10 resta valido per le appliance; nel centrale il tenant dovrà diventare un confine. Niente codice ancora: `TASKS.md`, 2026-11-07.
+
 **DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di moduli (`MODULE_DESCRIPTORS` in `src/lib/modules/registry.ts`, `access: native|external`). L'agente Python remoto è tolto (20/10).
 
 > **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth (niente `DAAUTH_URL` né pulsante Domarc); l'accesso Domarc vale solo per l'hub. `git revert fbca510` per rimetterlo.

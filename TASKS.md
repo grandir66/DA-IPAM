@@ -17,7 +17,19 @@ Riccardo, 07/11: «una vm minimale da installare da un cliente per avere non ipa
 - [x] Proposta in chat con strade a confronto, cosa diventa difficile, domande numerate. Letti CONTEXT, ADR 0011, storia dell'agente, codice; misura in sola lettura su 533
 - [ ] Risposte di Riccardo alle 10 domande: tocca la decisione del 12/10 (un'installazione = un cliente, il tenant non è un confine di sicurezza) e l'ADR 0011 (cosa esce lo decide l'istanza)
 
-Strada consigliata, a tappe: (1) VM con proxy Zabbix, Proxreporter e relay MikroTik, tutti moduli che esistono, senza toccare DA-IPAM; (2) un'istanza DA-IPAM per cliente sui Proxmox Domarc, così il confine resta l'installazione; (3) esecutore in VM, prima `lib/acquisition`, poi le scansioni. Scartato un solo IPAM con tutti i clienti, salvo decisione contraria sul 12/10. Scartata la rotta verso la LAN: ADR 0011, e nessun elenco chiuso possibile. Livello proposto: completo.
+Strada superata dalla decisione qui sotto: la proposta iniziale era un'istanza per cliente. Resta scartata la rotta verso la LAN (ADR 0011, e nessun elenco chiuso possibile). Livello proposto: completo.
+
+**Decisione di Riccardo, 07/11: «un da-ipam ridotto come gestione centralizzata multitenant ed isolamento dei dati per codcli».** Vale per il centrale: un solo DA-IPAM ridotto, un DB per `codcli`. Le appliance restano un'installazione = un cliente (12/10). Il tenant, nel centrale, diventa un confine e va costruito.
+
+Tappe rivedute: (1) centrale ridotto e muri dell'isolamento; (2) VM con proxy Zabbix e `sensore-trunk`; (3) scansione delle reti, motori di `scanner/profili` e `lib/acquisition`; (4) archivio delle config, prima MikroTik e Proxmox, poi switch per produttore; notebook dopo la 3, se serve.
+- [ ] Risposte di Riccardo alle domande rivedute (in chat): clienti nel centrale, config solo in lettura, segreti nelle config, stesso codice con un profilo
+- [ ] ADR nuovo che supera il 12/10 per il centrale e la regola dell'ADR 0011 «cosa esce lo decide l'istanza»
+
+Fatti sul tenant (07/11): `tenants.codice_cliente` è già il `codcli`, un file `data/tenants/<codcli>.db`; `POST /api/inventory/ingest` ha già gettone → tenant. Da chiudere: 93 rotte su 401 senza `withTenantFromSession` (alcune sono dell'hub di proposito: vanno classificate), ripiego su DEFAULT in `getDb()` e in `api-tenant.ts`, 8 rotte `system-credentials` condivise, `ENCRYPTION_KEY` e chiave dei dati uniche per installazione.
+
+Fatti sullo scopo (07/11): `sensore-trunk` è un servizio a sé in DA-Vul-can (1.653 righe di Python, gira con Edge spento, lettura a cursore, 30 giorni di conservazione), ma risponde solo su socket Unix. `scanner/profili/motore.ts` non tocca il DB. Config: MikroTik `getConfig()` legge `/export` su richiesta senza archiviare, il modulo del Manager lo manda via SFTP; Proxmox: `backup.py` di ProxReporter via SFTP, `/etc/pve` compreso; switch: niente, AOS-CX lo esclude apposta; archivio delle configurazioni mai fatto.
+
+Riccardo, 07/11, scopo ristretto: «lo scopo è avere il proxy e dati centralizzati; la scansione delle reti del cliente con il trunk già sviluppato e la scansione dei device con i motori studiati; non le altre funzioni; serve per avere inventario distribuito per i clienti e monitoraggio dei sistemi; config di switch e router e config di proxmox, mikrotik ed eventuali altri prodotti».
 
 Riccardo, 07/11, aggiunta: «anche eventualmente un sistema minimale da installare sui notebook osx, linux o windows dei tecnici per ottenere dati dalle reti dei clienti e trasferirli al collector centrale». È un'opzione, non una cosa decisa.
 

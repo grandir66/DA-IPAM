@@ -29,7 +29,7 @@
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
 | S1 | [x] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
-| S2 | [~] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
+| S2 | [x] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
 | S3 | [ ] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
 | S4 | [ ] | Coda comune senza vicolo cieco | implementer, tester | — | 7 giorni di caduta si recuperano da soli | prove della coda |
 | S5 | [ ] | Terzo livello di uscita | implementer | — | `completo` accettato da DA-Link e scelto solo in locale | prove dei due repo |
@@ -71,7 +71,7 @@ Nessun codice: serve a sapere il peso vero prima di costruire un'immagine.
 
 Verifica: tabella delle misure qui sotto, con data e fonte.
 
-### [~] Task 2 — Immagine snella
+### [x] Task 2 — Immagine snella
 
 - **File (Deploy-Appliance):** `costruttore/costruisci.sh` (nuova opzione `--variante piena|snella`, di base `piena`), `costruttore/elenco-sigillo.txt`, `costruttore/pacchetto-aggiornamento.sh`, `lib/immagine.sh`, `primo-avvio/fasi/moduli.sh`, `primo-avvio/verifica.sh`, prove in `tests/`.
 - **Cosa fare:** con `snella` niente Greenbone, immagini di Edge, LibreNMS e MeshCentral, e niente Docker se il Task 1 lo consente. Elenco di Riccardo, 07/11: «l'immagine deve avere solo ipam, proxy zabbix, gli script per proxmox, mikrotik, 3cx....». Più NetBird, che serve al collegamento. `sensore-trunk` entra e resta acceso (Riccardo, 07/11: «no acceso»). La riga di rilascio è separata da `ULTIMO`: `ULTIMO-SNELLA`, firmata come l'altra.
@@ -84,6 +84,12 @@ Verifica: installazione dalla variante snella sul PX-NAS, `da-appliance verifica
 
 - **File (DA-Link):** `dalink/appliance_immagine.py` (`RAM`, scelta della variante in base ai moduli), `dalink/cli_immagine.py`, relative prove.
 - **Cosa fare:** se nella bozza non ci sono Edge, LibreNMS e MeshCentral, la procedura propone la variante snella e i pesi veri del Task 1. Chi aggiunge Edge dopo deve passare alla piena: lo si dice a schermo prima di salvare.
+
+Da aggiungere, emerso dal Task 2:
+
+- `host/installa-appliance.sh` (Deploy-Appliance) impone 12 GB e `MINIMO_GB=120`: per la snella 4 GB e 40 GB.
+- `dalink immagine rilascia` non deve spostare `ULTIMO` su una versione snella. Riga `ULTIMO-SNELLA`, manifest con la variante.
+- Proxreporter acceso e `aggiorna.sh` si provano qui, con l'installatore vero.
 
 Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
 
@@ -271,6 +277,25 @@ Immagine 2026.10.25 (`ULTIMO`), DA-IPAM `8920423`, moduli `ipam`, `zabbix`, trun
 **Lettura, da confermare con le 24 ore.** Riposo sotto 3 GB: rispettato a VM vuota. Disco 40 GB: l'immagine piena fa 66 GB, ma 63 sono Docker; senza restano circa 4 GB più i dati. RAM 4 GB: oggi non si può assegnare, `RAM_MINIMA_VM` e l'installatore impongono 12 GB. Docker costa 250-440 MB e serve solo a nginx.
 
 Seconda lettura: timer una tantum sul PX-NAS, `misura-79993-ipam-3-24h`, 08/11 18:19 CET, scrive `/root/misura-79993-ipam-3-24h.txt`. Nessuna sessione parte: il file si legge a mano. Le soglie si decidono dopo, con Riccardo.
+
+### Task 2 — Variante snella, VM 107 `79993-ipam-4`, PX-NAS, 07/11 (fonte: `qm guest exec`)
+
+Immagine `2026.11.90`, 4 GB, 2 core, disco 40 GB, `ipam`, `zabbix`, trunk `condivisa`. Dopo 13 minuti, con DA-IPAM aggiornato a `715c4237`. VM vuota.
+
+| Misura | Piena (VM 106) | Snella (VM 107) |
+|---|---|---|
+| Immagine | 20 GB | 1,5 GB |
+| Costruzione | ore, con Greenbone | 7 minuti |
+| Disco usato | 66 GB | 8,3 GB, di cui 4 di swap |
+| RAM usata | 1,6-1,8 GB | 1,06 GB su 3,9 |
+| RAM disponibile | 10,2 GB su 12 | 2,86 GB |
+| cgroup `da-ipam` | 1.138 MB | 690 MB |
+| nginx | contenitore, con Docker 250-440 MB | 3 MB |
+| Primo avvio | circa 2 minuti | circa 1 minuto |
+
+Aggiornamento di DA-IPAM (`next build`) su 4 GB: **senza swap OOM**, picco 2,8 GB, `tentativi: 4`, nessun avviso. **Con 4 GB di swap riuscito**, 100 s, picco 3,4 GB, 274 MB di swap.
+
+Provati: rifiuto di `moduli.edge` (esito 2, macchina intatta), `da-appliance verifica` verde, HTTPS 200 da LAN e da NetBird, HTTP 301, cinque riavvii. Il primo riavvio si è bloccato: causa nel `TASKS.md` di Deploy-Appliance, proxy Zabbix fermato mentre creava il database. `2026.11.91` porta lo swap: accesa una volta, swap attivo da solo. Non provati: `aggiorna.sh`, Riconfigura, Proxreporter acceso, l'installatore vero: la VM è stata ripristinata e il file d'avvio passato con `da-appliance applica`, perché l'installatore vuole un'immagine firmata.
 
 **Soglie decise da Riccardo, 07/11, senza attendere le 24 ore («Sì, parti»):** 4 GB di RAM, 40 GB di disco, niente Docker. Punto di partenza, da rivedere con le misure sulla versione ridotta e una rete vera. La lettura delle 24 ore resta un controllo in più.
 

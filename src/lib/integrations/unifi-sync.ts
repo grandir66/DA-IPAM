@@ -69,6 +69,7 @@ import {
   setNetworkDeviceControllerFacts,
   setUplinkCavi,
   updateNetworkDevice,
+  collegaHostPerMac,
   upsertNeighbors,
   upsertRoutes,
   upsertSwitchPorts,
@@ -494,6 +495,8 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: R
     if (vlanDi) scriviNative(out.device.id, d, vlanDi, result);
     // Il gateway: reti e rotte statiche del controller. Solo connesso, e mai vuote: una lettura mancata non cancella.
     if (rotteGateway.length > 0 && d.state === 1 && mapUnifiDeviceType(d.type) === "router") upsertRoutes(out.device.id, rotteGateway);
+    // Il controller dà l'IP WAN del gateway: senza host resta sulla pagina vecchia, senza porte né VLAN. Si collega l'host col suo MAC.
+    if (mapUnifiDeviceType(d.type) === "router" && d.mac) collegaHostPerMac(out.device.id, d.mac);
     if (out.created) {
       result.added++;
       ctx.existing.byHost.set(out.device.host, out.device);

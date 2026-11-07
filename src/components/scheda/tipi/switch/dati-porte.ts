@@ -6,8 +6,17 @@ import type { SwitchPort } from "@/types";
 import type { ContestoScheda } from "../../contesto";
 import { numeroPorta } from "@/lib/scheda/porte-da-guardare";
 
-export const porteDi = (ctx: ContestoScheda): SwitchPort[] =>
-  [...(ctx.device?.switch_ports ?? [])].sort((a, b) => a.port_index - b.port_index);
+/**
+ * Su un router il giro conta l'ARP per interfaccia, non i MAC per porta: la porta fisica diceva «nessun MAC» con la bridge
+ * host piena. Lì il numero viene dalla tabella MAC, come su uno switch.
+ */
+export const porteDi = (ctx: ContestoScheda): SwitchPort[] => {
+  const porte = [...(ctx.device?.switch_ports ?? [])].sort((a, b) => a.port_index - b.port_index);
+  if (ctx.tipo !== "router" && ctx.tipo !== "firewall") return porte;
+  const conta = new Map<string, number>();
+  for (const m of ctx.device?.mac_port_entries ?? []) conta.set(m.port_name, (conta.get(m.port_name) ?? 0) + 1);
+  return conta.size === 0 ? porte : porte.map((p) => ({ ...p, mac_count: Math.max(p.mac_count, conta.get(p.port_name) ?? 0) }));
+};
 
 export interface Vicino {
   chiave: string;
@@ -69,7 +78,7 @@ export function attaccatoA(p: SwitchPort): Attaccato {
     const dett = [p.single_mac_vendor, p.single_mac_hostname || p.single_mac_ip ? p.single_mac : null].filter(Boolean).join(" · ");
     return { testo: nome, hostId: p.host_id, ...(dett ? { dettaglio: dett } : {}) };
   }
-  if (p.mac_count > 1) return { testo: `${p.mac_count} MAC`, hostId: null };
+  if (p.mac_count >= 1) return { testo: `${p.mac_count} MAC`, hostId: null };
   if (p.status === "up") return { testo: "nessun MAC", hostId: null };
   return { testo: "—", hostId: null };
 }

@@ -883,9 +883,12 @@ export function apparatoDelGiro(device: NetworkDevice): NetworkDevice {
   return porta == null ? device : { ...device, protocol: "ssh", port: porta };
 }
 
-/** Router e firewall hanno VLAN come gli switch (Riccardo, 07/11). Il MikroTik SSH ha le sue letture del bridge. */
+/**
+ * Chi sta nel giro dei router ha VLAN come gli switch (Riccardo, 07/11), qualunque sia il suo `device_type`: il firewall SNS
+ * dell'hub è registrato come `server`. Il MikroTik SSH ha le sue letture del bridge.
+ */
 export function vlanRouterDaLeggere(device: NetworkDevice): boolean {
-  if (device.device_type !== "router" && device.device_type !== "firewall") return false;
+  if (device.device_type === "switch") return false;
   return letturaAccesa("mappa_dati") && !(device.vendor === "mikrotik" && device.protocol === "ssh") && deviceHasSnmpSession(device);
 }
 

@@ -107,7 +107,7 @@ export function VlanSwitch({ ctx }: { ctx: ContestoScheda }) {
           <p className="text-sm text-muted-foreground">Nessuna porta letta per questo switch.</p>
         ) : m.colonne.length === 0 ? (
           <>
-            <p className="text-sm text-muted-foreground">Lo switch non dichiara la VLAN delle porte.</p>
+            <p className="text-sm text-muted-foreground">L'apparato non dichiara la VLAN delle porte.</p>
             {avviso}
           </>
         ) : (

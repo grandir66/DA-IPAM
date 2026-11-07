@@ -21,7 +21,8 @@ export async function giroParserDelTenant(dipendenze?: Pick<DipendenzeEsecuzione
   if (!letturaAccesa("mappa_dati")) return esito;
   const code = getCurrentTenantCode();
   if (!code) throw new Error("Contesto tenant assente");
-  const fonte = dipendenzeDb();
+  // `mappa_dati` accesa vale anche se l'acquisizione modulare manuale è spenta: 70151 non l'ha mai accesa.
+  const fonte = { ...dipendenzeDb(), accesa: () => true };
   // `winrm`: sull'hub 8 PC sono registrati come switch; il parser di rete non è per loro.
   for (const device of getNetworkDevices().filter((d) => d.enabled && TIPI.has(d.device_type) && d.protocol !== "winrm")) {
     const v = valutaFonte(device, fonte);

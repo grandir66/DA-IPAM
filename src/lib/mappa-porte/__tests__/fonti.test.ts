@@ -98,6 +98,18 @@ test("il controller scrive, il giro riscrive: lo strato del controller resta e l
   });
 });
 
+test("il gateway senza host si collega all'host col suo MAC; un collegamento che c'è non si tocca", () => {
+  withTenant(T, () => {
+    d().exec("DELETE FROM hosts; DELETE FROM networks; INSERT INTO networks (id, cidr, name) VALUES (1, '192.0.2.0/24', 'LAN')");
+    d().exec("INSERT INTO hosts (id, network_id, ip, mac, status) VALUES (5, 1, '192.0.2.9', 'A4:F8:FF:20:0E:88', 'online'), (6, 1, '192.0.2.10', '02:00:00:00:70:02', 'online')");
+    tenant.collegaHostPerMac(2, "a4:f8:ff:20:0e:88");
+    assert.equal(tenant.getNetworkDeviceById(2)?.host_id, 5);
+    tenant.collegaHostPerMac(2, "02:00:00:00:70:02");
+    assert.equal(tenant.getNetworkDeviceById(2)?.host_id, 5);
+    d().exec("UPDATE network_devices SET host_id = NULL; DELETE FROM hosts");
+  });
+});
+
 test("un giro vuoto non cancella lo strato", () => {
   withTenant(T, () => {
     tenant.upsertSwitchPorts(1, [riga({ is_uplink: 1 })], "controller");

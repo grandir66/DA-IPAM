@@ -21,6 +21,15 @@ Strada superata dalla decisione qui sotto: la proposta iniziale era un'istanza p
 
 **Decisione di Riccardo, 07/11: «un da-ipam ridotto come gestione centralizzata multitenant ed isolamento dei dati per codcli».** Vale per il centrale: un solo DA-IPAM ridotto, un DB per `codcli`. Le appliance restano un'installazione = un cliente (12/10). Il tenant, nel centrale, diventa un confine e va costruito.
 
+Riccardo, 07/11, alternativa: «oppure un sistema di collegamento e trasferimento e comando delle installazioni, pensando a snellire quanto possibile se non è presente edge o altre app».
+
+Stato: scelta aperta fra le due, quindi la decisione sul centrale qui sopra non è ancora definitiva. Consigliata l'alternativa: l'installazione DA-IPAM resta dal cliente, snella, e fa tutto il lavoro; il centrale ridotto per `codcli` riceve copie, le mostra e manda ordini da un elenco chiuso. Niente esecutore da scrivere, 12/10 e ADR 0011 restano validi. Si può assottigliare dopo: il centrale non cambia.
+- [ ] Risposta di Riccardo: installazione snella col collegamento, oppure VM con solo esecutore
+- [ ] Misurare in laboratorio un'installazione senza Edge, Greenbone, LibreNMS e, se si riesce, Docker. Stima da verificare: 2 vCPU, 4 GB, 40 GB
+- [ ] Verificare come si installa `sensore-trunk` senza Edge: oggi il codice sta nel pacchetto `scanner_edge`
+
+Fatti sul collegamento (07/11): `lib/vulcan/coda.ts` è già la coda che serve (gzip, sha256, doppioni, ritentativi, corpo cancellato all'uscita, inventario superato dal più nuovo), con fotografia a lista bianca alle 03:00 verso `POST /api/ipam/inventario`. Dopo 12 tentativi una riga va in `fallito` e riparte solo con «Invia ora»: per cadute lunghe va cambiato. Il segnale a DA-Link parte ogni 5 minuti, il gettone fissa `codcli` e nodo; `dalink/invio.ts` dalla risposta tiene solo due date, di proposito: gli ordini vogliono una chiamata a parte. Livelli `solo_stato` e `stato_inventario`: ne serve un terzo, scelto dall'istanza. `modular-base` di Deploy-Appliance è già DA-IPAM con moduli spenti. Sulla 533: `node_modules` 909 MB, `tenants` 3,6 GB, `backups` 27 GB.
+
 Tappe rivedute: (1) centrale ridotto e muri dell'isolamento; (2) VM con proxy Zabbix e `sensore-trunk`; (3) scansione delle reti, motori di `scanner/profili` e `lib/acquisition`; (4) archivio delle config, prima MikroTik e Proxmox, poi switch per produttore; notebook dopo la 3, se serve.
 - [ ] Risposte di Riccardo alle domande rivedute (in chat): clienti nel centrale, config solo in lettura, segreti nelle config, stesso codice con un profilo
 - [ ] ADR nuovo che supera il 12/10 per il centrale e la regola dell'ADR 0011 «cosa esce lo decide l'istanza»

@@ -26,6 +26,7 @@ import {
 } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
 import { PerDevice } from "./per-device";
+import { RegistroImpianti, RiquadroConsenso } from "./impianti-consenso";
 import { Stato } from "./stato-va";
 import { ScheduleBuilder, type ScheduleBuilderValue } from "@/components/networks/schedule-builder";
 import { fetchJson } from "@/lib/fetch-json";
@@ -74,13 +75,31 @@ function dataBreve(v: string | null): string {
   return parseDbDate(v).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function ColonnaCambio({ c, onPerDevice }: { c: Cambio; onPerDevice: () => void }) {
+interface ComandiConsenso {
+  /** `null` = chi guarda non può dare il consenso, o non si lancia adesso. */
+  onAutorizza: (() => void) | null;
+  onRevoca: (() => void) | null;
+  daAggiornare: boolean;
+}
+
+function ColonnaCambio({ c, onPerDevice, comandi }: { c: Cambio; onPerDevice: () => void; comandi: ComandiConsenso }) {
   if (c.tono === "nessuno") return <span className="text-[13px] text-muted-foreground">{c.testo}</span>;
   if (c.tono === "impianto") {
     return (
       <span className="inline-flex items-center gap-2">
         <Stato tono="errore">{c.testo}</Stato>
         <button type="button" className="text-sm text-cian-testo hover:underline" onClick={onPerDevice}>Vai a Per device ›</button>
+        {comandi.onAutorizza && (comandi.daAggiornare
+          ? <Stato tono="spento">● Sonda da aggiornare</Stato>
+          : <Button size="sm" variant="outline" onClick={comandi.onAutorizza}>Autorizza gli impianti</Button>)}
+      </span>
+    );
+  }
+  if (c.tono === "consenso") {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Stato tono="avviso">{c.testo}</Stato>
+        {comandi.onRevoca && <Button size="sm" variant="outline" onClick={comandi.onRevoca}>Revoca</Button>}
       </span>
     );
   }
@@ -154,7 +173,8 @@ export function ScansioniVaClient() {
   const [errore, setErrore] = useState<string | null>(null);
   const [caricamento, setCaricamento] = useState(true);
 
-  const [scheda, setScheda] = useState<"device" | "profilo">("device");
+  const [scheda, setScheda] = useState<"device" | "profilo" | "registro">("device");
+  const [perConsenso, setPerConsenso] = useState<ReteScansione | null>(null);
   const [voce, setVoce] = useState<IdVoce>("bilanciato");
   const [ambito, setAmbito] = useState<EdgeTargetingMode>("full_subnet");
   const [modo, setModo] = useState<ModoScansione>("immediata");
@@ -275,6 +295,23 @@ export function ScansioniVaClient() {
     setLanciando(false);
   };
 
+  const revoca = async (r: ReteScansione) => {
+    setRifiuto(null);
+    const esito = await fetchJson("/api/vulnerabilities/consenso-impianti", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ network_id: r.id }),
+    });
+    if (!esito.ok) setRifiuto(esito.message);
+    await leggi();
+  };
+
+  const comandiDi = (r: ReteScansione): ComandiConsenso => ({
+    onAutorizza: amministratore && modo === "immediata" && r.sonda === "nota" ? () => setPerConsenso(r) : null,
+    onRevoca: amministratore ? () => void revoca(r) : null,
+    daAggiornare: r.consensoNoto === false,
+  });
+
   const cambiaRete = (id: number) => {
     setScelte((v) => {
       const n = new Set(v);
@@ -340,10 +377,23 @@ export function ScansioniVaClient() {
         voci={[
           { valore: "device", titolo: "Per device", descrizione: "Un gruppo per tipo di device, anche nella stessa rete." },
           { valore: "profilo", titolo: "Un profilo solo", descrizione: "Lo stesso profilo su più reti." },
+          { valore: "registro", titolo: "Registro impianti", descrizione: "Consensi e scansioni sulle reti con impianti." },
         ]}
       />
 
-      {scheda === "device" ? <PerDevice quadro={quadro} amministratore={amministratore} onRileggi={leggi} /> : (<>
+      {perConsenso && (
+        <RiquadroConsenso
+          rete={perConsenso}
+          nome={session?.user?.name ?? session?.user?.email ?? "te"}
+          onChiudi={() => setPerConsenso(null)}
+          onFatto={() => {
+            setPerConsenso(null);
+            void leggi();
+          }}
+        />
+      )}
+
+      {scheda === "registro" ? <RegistroImpianti /> : scheda === "device" ? <PerDevice quadro={quadro} amministratore={amministratore} onRileggi={leggi} /> : (<>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Reti scelte" valore={scelteValide.length} qualifica={`su ${quadro.reti.length}`} />
         <TesseraNumero
@@ -398,7 +448,7 @@ export function ScansioniVaClient() {
         sottotitolo={`${hostScelti.toLocaleString("it-IT")} host online`}
         corpoClassName="p-0"
         piede={quadro.reti.some((r) => r.impianti > 0)
-          ? "Le reti con PLC, HMI, IoT o apparati di campo non si scansionano da qui, ma da Per device: gli impianti restano fuori."
+          ? "Le reti con PLC, HMI, IoT o apparati di campo si scansionano da Per device, con gli impianti fuori. Da qui solo con un consenso registrato."
           : undefined}
         azioni={
           <>
@@ -449,7 +499,7 @@ export function ScansioniVaClient() {
               </thead>
               <tbody>
                 {visibili.map(({ r, c }) => (
-                  <RigaRete key={r.id} r={r} c={c} scelta={scelte.has(r.id) && !c.blocca} onCambia={() => cambiaRete(r.id)} voci={quadro.voci} onPerDevice={() => setScheda("device")} />
+                  <RigaRete key={r.id} r={r} c={c} scelta={scelte.has(r.id) && !c.blocca} onCambia={() => cambiaRete(r.id)} voci={quadro.voci} onPerDevice={() => setScheda("device")} comandi={comandiDi(r)} />
                 ))}
                 {visibili.length === 0 && (
                   <tr><td colSpan={9} className="px-3 py-4 text-center text-muted-foreground">Nessuna rete corrisponde alla ricerca.</td></tr>
@@ -566,7 +616,7 @@ export function ScansioniVaClient() {
   );
 }
 
-function RigaRete({ r, c, scelta, onCambia, voci, onPerDevice }: { r: ReteScansione; c: Cambio; scelta: boolean; onCambia: () => void; voci: VoceRisolta[]; onPerDevice: () => void }) {
+function RigaRete({ r, c, scelta, onCambia, voci, onPerDevice, comandi }: { r: ReteScansione; c: Cambio; scelta: boolean; onCambia: () => void; voci: VoceRisolta[]; onPerDevice: () => void; comandi: ComandiConsenso }) {
   const profilo = voci.find((v) => v.assessmentId === r.assessmentId)?.moduliNome?.split(",")[0] ?? r.assessmentId ?? "—";
   const ultima = r.sonda === "errore" ? "non letta" : r.ultimaVa ? dataBreve(r.ultimaVa) : "mai";
   return (
@@ -583,7 +633,7 @@ function RigaRete({ r, c, scelta, onCambia, voci, onPerDevice }: { r: ReteScansi
       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{ultima}</td>
       <td className="px-3 py-1.5">{r.piano?.testo ?? "—"}</td>
       <td className="whitespace-nowrap px-3 py-1.5">{profilo}</td>
-      <td className="whitespace-nowrap px-3 py-1.5" title={r.impiantiEsempi.join(" · ") || undefined}><ColonnaCambio c={c} onPerDevice={onPerDevice} /></td>
+      <td className="whitespace-nowrap px-3 py-1.5" title={r.impiantiEsempi.join(" · ") || undefined}><ColonnaCambio c={c} onPerDevice={onPerDevice} comandi={comandi} /></td>
     </tr>
   );
 }

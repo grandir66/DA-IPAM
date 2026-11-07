@@ -35,6 +35,7 @@ import {
   type VulnScannerRow,
 } from "./scanner-edge-client";
 import { allineaReteEdge, pushHostsToEdge } from "./edge-subnet-bridge";
+import { sincronizzaRegistro } from "./registro-impianti";
 
 interface HostMatchRow {
   id: number;
@@ -419,6 +420,13 @@ export async function runVulnSync(): Promise<{
         const msg = credErr instanceof EdgeClientError ? `edge HTTP ${credErr.status}` : "errore sconosciuto";
         console.warn(`[vuln-sync] rete #${net.id} non allineata sulla sonda: ${msg}`);
       }
+    }
+
+    // La copia del registro impianti si fa anche senza aprire la pagina: la sonda può essere rifatta prima.
+    try {
+      await sincronizzaRegistro();
+    } catch (e) {
+      console.warn(`[vuln-sync] registro impianti non copiato: ${e instanceof EdgeClientError ? `edge HTTP ${e.status}` : "errore sconosciuto"}`);
     }
 
     // v0.2.638 audit B7: success → azzera counter consecutive_errors.

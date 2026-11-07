@@ -11,6 +11,7 @@
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
 import type { EdgeScanProfile, EdgeTargetingMode } from "@/lib/vuln/edge-subnet-bridge";
 import { contaModuli, vocePaginaDelProfilo, type VoceScansione } from "@/lib/vuln/profili-assessment-testi";
+import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 
 export type IdVoce = "veloce" | "bilanciato" | "profondo" | "formale";
 export type ModoScansione = "immediata" | "pianificata" | "finestra";
@@ -81,6 +82,16 @@ export interface PianoRete {
   testo: string;
 }
 
+/** Consenso valido a scansionare gli impianti della rete: lo tiene Edge, che applica la scadenza. */
+export interface ConsensoRete {
+  id: number;
+  chi: string;
+  riferimento: string;
+  ips: string[];
+  dato_il: string;
+  scade_il: string;
+}
+
 export interface ReteScansione {
   id: number;
   nome: string;
@@ -98,6 +109,9 @@ export interface ReteScansione {
   /** Host della rete che sono o possono essere impianti: la rete non si scansiona da questa pagina. */
   impianti: number;
   impiantiEsempi: string[];
+  consenso?: ConsensoRete | null;
+  /** La sonda sa del consenso. Falso = versione vecchia: il comando non c'è. */
+  consensoNoto?: boolean;
 }
 
 export interface Scelta {
@@ -106,7 +120,7 @@ export interface Scelta {
   assessmentId: string | null;
 }
 
-export type TonoCambio = "nessuno" | "avviso" | "in_corso" | "impianto";
+export type TonoCambio = "nessuno" | "avviso" | "in_corso" | "impianto" | "consenso";
 
 export interface Cambio {
   tono: TonoCambio;
@@ -122,13 +136,18 @@ export interface Cambio {
  * lo legge dalla sua riga a fine scansione, quindi una pianificazione esistente lo usa dal giro dopo.
  */
 export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
-  if (rete.impianti > 0) {
+  // Il consenso vale per il lancio immediato: una pianificata o una finestra girano senza una persona davanti.
+  const consenso = s.modo === "immediata" ? rete.consenso : null;
+  if (rete.impianti > 0 && !consenso) {
     return { tono: "impianto", testo: `✕ Impianto in rete: ${rete.impianti === 1 ? "1 host" : `${rete.impianti} host`}`, blocca: true, tocca: false };
   }
   if (rete.attivita === "in_corso") return { tono: "in_corso", testo: "▶ In corso", blocca: true, tocca: false };
   if (rete.attivita === "in_coda") return { tono: "in_corso", testo: "… In coda", blocca: true, tocca: false };
 
   const moduliDiversi = !!rete.assessmentId && rete.assessmentId !== s.assessmentId;
+  if (rete.impianti > 0 && consenso) {
+    return { tono: "consenso", testo: testoConsenso(consenso), blocca: false, tocca: moduliDiversi };
+  }
   if (s.modo === "immediata") {
     if (rete.piano?.modo === "finestra") return { tono: "avviso", testo: "▲ Parte fuori dalla finestra", blocca: false, tocca: moduliDiversi };
     if (rete.piano && rete.assessmentId !== s.assessmentId) return { tono: "avviso", testo: "▲ Cambia i moduli del piano attuale", blocca: false, tocca: true };
@@ -140,6 +159,52 @@ export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
     return { tono: "avviso", testo: "▲ Sostituisce il piano: la finestra si annulla", blocca: false, tocca: true };
   }
   return { tono: "avviso", testo: "▲ Sostituisce il piano attuale", blocca: false, tocca: true };
+}
+
+export function oraConsenso(scadeIl: string): string {
+  return parseDbDate(scadeIl).toLocaleTimeString("it-IT", { timeZone: FUSO_UTENTI, hour: "2-digit", minute: "2-digit" });
+}
+
+export function testoConsenso(c: ConsensoRete): string {
+  return `▲ Anche ${c.ips.length === 1 ? "1 impianto" : `${c.ips.length} impianti`}, fino alle ${oraConsenso(c.scade_il)}`;
+}
+
+const EVENTI: Record<string, { nome: string; segno: string; tono: "ok" | "in_corso" | "avviso" | "spento" | "errore" }> = {
+  consenso_dato: { nome: "Consenso dato", segno: "▲", tono: "avviso" },
+  consenso_revocato: { nome: "Consenso revocato", segno: "●", tono: "spento" },
+  scansione_partita: { nome: "Scansione partita", segno: "▶", tono: "in_corso" },
+  scansione_finita: { nome: "Scansione finita", segno: "✓", tono: "ok" },
+  scansione_non_partita: { nome: "Scansione non partita", segno: "●", tono: "spento" },
+  scansione_rifiutata: { nome: "Scansione rifiutata", segno: "●", tono: "spento" },
+  impianto_muto: { nome: "Impianto muto, giro fermato", segno: "✕", tono: "errore" },
+  giro_fermato: { nome: "Giro fermato", segno: "✕", tono: "errore" },
+  rete_sbloccata: { nome: "Rete sbloccata", segno: "●", tono: "ok" },
+};
+
+/** Una parola nuova della sonda si mostra com'è: un evento del registro non si nasconde. */
+export function eventoRegistro(evento: string) {
+  return EVENTI[evento] ?? { nome: evento, segno: "●", tono: "spento" as const };
+}
+
+export function nomeEvento(evento: string): string {
+  return eventoRegistro(evento).nome;
+}
+
+/** Il registro si legge in ora italiana, con i secondi: la sonda scrive UTC. */
+export function dataRegistro(at: string): string {
+  return parseDbDate(at).toLocaleString("it-IT", {
+    timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+const PROFILI: Record<string, string> = { fast: "Veloce", balanced: "Bilanciato", deep: "Profondo" };
+
+export function profiloRegistro(p: string | null): string {
+  return p ? (PROFILI[p] ?? p) : "—";
+}
+
+export function dettaglioRegistro(d: string | null): string {
+  return (d ?? "").replace(/vale fino al (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC/, (_t, q: string) => `vale fino al ${dataRegistro(q)}`);
 }
 
 export interface Conteggi {

@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-07 · Consenso e registro degli impianti
+
+Riccardo: «proprio quegli apparati potrebbero nascondere problemi di security», e il consenso e le attività vanno registrati con l'ora. Una rete con impianti resta bloccata in «Un profilo solo» finché un amministratore non registra un consenso: gli IP vengono dall'inventario, il nome dalla sessione, il riferimento all'autorizzazione del cliente è obbligatorio, 4, 12 o 24 ore. Vale per il lancio immediato, solo Greenbone. Lo applica Edge, DA-IPAM lo rilegge a ogni lancio.
+
+### Aggiunto
+- **Scheda «Registro impianti»**, copia del registro di Edge in `va_registro_impianti`, non cancellabile, con esportazione CSV: resta anche se la sonda viene rifatta. Si aggiorna col giro `vuln_sync` e all'apertura.
+
 ## [Non rilasciato] — 2026-11-06 · Una VA non deve poter fermare una rete
 
 Al 72729 PLC e marcatempo si sono bloccati dentro le scansioni, causa non accertata. Riccardo: «non posso distruggere una rete per una va». Una persona dà il via: Edge tocca solo gli host confermati.

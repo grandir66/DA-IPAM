@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+
+## 2026-11-07 — Consenso e registro degli impianti (Riccardo)
+
+Riccardo, 07/11, «Sì, approvata». Lavoro e aperti in `DA-Vul-can/TASKS.md`, sezione «Una VA non deve poter fermare una rete»: qui il lato DA-IPAM.
+
+- [x] Rotta `/api/vulnerabilities/consenso-impianti`, `registro-impianti.ts`, comandi in «Un profilo solo», scheda «Registro impianti». 9 prove nuove, pagina vista resa a 1920 e 1280
+- [ ] Prova su una sonda vera, su `sim-impianto` del piano `2026-11-07-banco-impianti.md` di DA-Vul-can
+- [ ] `main` di DA-IPAM: resta il sì di Riccardo, è un rilascio alle appliance
+
 ## 2026-11-06 — Una VA non deve poter fermare una rete (Riccardo)
 
 Riccardo (06/11): marcatempo bloccato al 72729, «non posso distruggere una rete per una va». Fatti e proposta in `DA-Vul-can/TASKS.md`, stessa data.

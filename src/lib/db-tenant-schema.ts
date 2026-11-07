@@ -883,6 +883,10 @@ export function assicuraTabelleAcquisizioneModulare(db: Database.Database): void
   for (const [, ddl] of DDL_ACQUISIZIONE_MODULARE) db.exec(ddl);
 }
 
+/** Lo toglie solo il reset per nuovo cliente, che poi lo rimette: i dati del cliente di prima non restano. */
+export const TRIGGER_REGISTRO_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS va_registro_impianti_no_delete BEFORE DELETE ON va_registro_impianti
+BEGIN SELECT RAISE(ABORT, 'il registro degli impianti non si cancella'); END;`;
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2287,6 +2291,28 @@ CREATE TABLE IF NOT EXISTS va_gruppi_lanciati (
   chiuso_messaggio TEXT,
   PRIMARY KEY (network_id, scan_id)
 );
+
+-- Copia del registro impianti di Edge (Riccardo, 07/11/2026): resta anche se la sonda viene rifatta. Si aggiunge e basta.
+-- La chiave comprende ora ed evento: gli id di una sonda rifatta ripartono da 1.
+CREATE TABLE IF NOT EXISTS va_registro_impianti (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sonda TEXT NOT NULL,
+  edge_id INTEGER NOT NULL,
+  cidr TEXT NOT NULL,
+  evento TEXT NOT NULL,
+  chi TEXT NOT NULL,
+  consenso_id INTEGER,
+  scan_id INTEGER,
+  impianti INTEGER NOT NULL DEFAULT 0,
+  ips TEXT NOT NULL DEFAULT '',
+  profilo TEXT,
+  dettaglio TEXT,
+  at TEXT NOT NULL,
+  UNIQUE (sonda, edge_id, at, evento)
+);
+${TRIGGER_REGISTRO_NO_DELETE}
+CREATE TRIGGER IF NOT EXISTS va_registro_impianti_no_update BEFORE UPDATE ON va_registro_impianti
+BEGIN SELECT RAISE(ABORT, 'il registro degli impianti non si cambia'); END;
 
 -- ============================================================================
 -- MeshCentral RMM (modulo opt-in; tabelle vivono anche se feature OFF, vuote)

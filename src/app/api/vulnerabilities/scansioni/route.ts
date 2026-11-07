@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const esito = await lanciaSuReti(parsed.data);
+    const esito = await lanciaSuReti(parsed.data, adminCheck.user.name || adminCheck.user.email || `utente ${adminCheck.user.id ?? "?"}`);
     if (!esito.ok) return NextResponse.json({ ok: false, error: esito.error }, { status: esito.status });
     return NextResponse.json(esito);
   });

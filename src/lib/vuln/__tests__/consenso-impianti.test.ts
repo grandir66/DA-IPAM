@@ -1,0 +1,192 @@
+/**
+ * Anche sugli impianti, col consenso (Riccardo, 07/11/2026): rete bloccata senza consenso, consenso solo
+ * per il lancio immediato, copia del registro che non si cancella. Edge è finto: le sue regole stanno in
+ * `tests/test_consenso_impianti.py` del repo DA-Vul-can.
+ */
+process.env.ENCRYPTION_KEY ||= "test-encryption-key-consenso";
+import "./support/dati-isolati";
+
+import { test, before, after, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
+import { closeHubDb } from "@/lib/db-hub";
+import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
+import { encrypt } from "@/lib/crypto";
+import { lanciaSuReti, type Lancio } from "@/lib/vuln/scansioni-va";
+import { cosaCambia, dataRegistro, dettaglioRegistro, testoConsenso, type ConsensoRete, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
+import { daiConsenso, leggiRegistro, registroCsv, revocaConsenso, sincronizzaRegistro } from "@/lib/vuln/registro-impianti";
+import { resetLabNetworkConfig } from "@/lib/lab-config-reset";
+import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
+
+const CONSENSO: ConsensoRete = { id: 7, chi: "riccardo", riferimento: "Mail", ips: ["10.5.0.2", "10.5.0.3"], dato_il: "2026-11-07 10:00:00", scade_il: "2026-11-07 14:00:00" };
+const rete = (x: Partial<ReteScansione> = {}): ReteScansione => ({
+  id: 1, nome: "Produzione", cidr: "10.5.0.0/24", vlan: null, hostOnline: 0, sonda: "nota", ultimaVa: null, ultimaVaStato: null,
+  attivita: null, piano: null, assessmentId: null, impianti: 2, impiantiEsempi: [], ...x,
+});
+
+test("cosa cambia: senza consenso resta bloccata; il consenso sblocca solo il lancio immediato", () => {
+  assert.equal(cosaCambia(rete(), { modo: "immediata", assessmentId: "x" }).blocca, true);
+  const c = cosaCambia(rete({ consenso: CONSENSO }), { modo: "immediata", assessmentId: "x" });
+  assert.deepEqual([c.tono, c.blocca], ["consenso", false]);
+  assert.equal(c.testo, "▲ Anche 2 impianti, fino alle 15:00");
+  for (const modo of ["pianificata", "finestra"] as const) {
+    const p = cosaCambia(rete({ consenso: CONSENSO }), { modo, assessmentId: "x" });
+    assert.deepEqual([p.tono, p.blocca], ["impianto", true], modo);
+  }
+  assert.equal(cosaCambia(rete({ consenso: CONSENSO, attivita: "in_corso" }), { modo: "immediata", assessmentId: "x" }).blocca, true);
+});
+
+test("il registro si legge in ora italiana, coi secondi", () => {
+  assert.equal(dataRegistro("2026-11-07 17:40:12"), "07/11/2026, 18:40:12");
+  assert.equal(dettaglioRegistro("Mail · vale fino al 2026-11-07 21:40:00 UTC"), "Mail · vale fino al 07/11/2026, 22:40:00");
+  assert.equal(testoConsenso({ ...CONSENSO, ips: ["10.5.0.2"] }), "▲ Anche 1 impianto, fino alle 15:00");
+});
+
+test("il CSV non fa partire una formula in Excel", () => {
+  const riga = { id: 1, at: "2026-11-07 17:40:12", cidr: "10.5.0.0/24", rete: "Produzione", evento: "consenso_dato", chi: "r", scan_id: null, impianti: 2, ips: "", profilo: null, dettaglio: '=HYPERLINK("x");1' };
+  const csv = registroCsv([riga]);
+  assert.match(csv, /"'=HYPERLINK\(""x""\);1"/);
+  assert.match(csv, /Consenso dato/);
+});
+
+const TENANT = "CONSENSO";
+const ID = ["completo", "interno"].join("-");
+const p = (id: string): EdgeAssessmentProfile => ({ id, label: id, image: null, requires_authorization: false, steps: ["a"] });
+let server: Server;
+let porta = 0;
+let lookup: Record<string, unknown>;
+let corpi: Array<{ url: string; body: Record<string, unknown> }>;
+let righeEdge: Array<Record<string, unknown>>;
+let rifiutaConsenso = false;
+
+function db() {
+  return getTenantDb(TENANT);
+}
+
+const LANCIO = { modo: "immediata", voce: "bilanciato", ambito: "full_subnet", reti: [1], assessment_id: ID } as unknown as Lancio;
+const riga = (id: number, x: Record<string, unknown> = {}) => ({
+  id, cidr: "10.5.0.0/24", evento: "consenso_dato", chi: "r", consenso_id: 7, scan_id: null, impianti: 2, ips: "10.5.0.2", profilo: null,
+  dettaglio: "x", at: `2026-11-07 10:00:${String(id).padStart(2, "0")}`, ...x,
+});
+
+before(async () => {
+  server = createServer((req, res) => {
+    let testo = "";
+    req.on("data", (d) => (testo += d));
+    req.on("end", () => {
+      const url = req.url ?? "";
+      const invia = (o: unknown, status = 200) => {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(o));
+      };
+      if (req.method === "POST") corpi.push({ url, body: testo ? JSON.parse(testo) : {} });
+      if (url.startsWith("/api/v1/profiles")) return invia({ profiles: [p(ID)], total: 1 });
+      if (url.startsWith("/api/v1/networks/lookup")) return invia(lookup);
+      if (url.startsWith("/api/v1/registro-impianti")) {
+        const dopo = Number(new URL(url, "http://x").searchParams.get("dopo"));
+        return invia({ righe: righeEdge.filter((r) => Number(r.id) > dopo) });
+      }
+      if (url.endsWith("/networks/ensure")) return invia({ ok: true, network_id: 9, host_count: 2 });
+      if (url.endsWith("/consenso/revoca")) return "consenso" in lookup ? invia({ ok: true }) : invia({ detail: "Not Found" }, 404);
+      if (url.endsWith("/consenso")) return rifiutaConsenso ? invia({ detail: "Non sono impianti di questa rete: 10.5.0.2" }, 409) : invia({ ok: true, id: 7, consenso: CONSENSO });
+      if (url.endsWith("/scan")) return invia({ ok: true, scan_id: 5 });
+      return invia({ ok: true });
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  porta = (server.address() as AddressInfo).port;
+  withTenant(TENANT, () => {
+    const d = db();
+    d.prepare("INSERT INTO vuln_scanners (name, base_url, token_encrypted, enabled) VALUES ('edge', ?, ?, 1)").run(`http://127.0.0.1:${porta}`, encrypt("t"));
+    d.prepare("INSERT INTO networks (id, cidr, name) VALUES (1, '10.5.0.0/24', 'Produzione')").run();
+    for (const [ip, classification] of [["10.5.0.2", "plc"], ["10.5.0.3", "hmi"], ["10.5.0.1", "workstation"]]) {
+      d.prepare("INSERT INTO hosts (network_id, ip, classification, status) VALUES (1, ?, ?, 'online')").run(ip, classification);
+    }
+  });
+});
+
+after(async () => {
+  await new Promise((r) => server.close(r));
+  closeHubDb();
+  deleteTenantDatabase(TENANT);
+  removeTestHubDb();
+});
+
+beforeEach(() => {
+  corpi = [];
+  righeEdge = [];
+  rifiutaConsenso = false;
+  lookup = { found: true, network_id: 9, last_scan: null, consenso: null, protetti: ["10.5.0.2", "10.5.0.3"] };
+});
+
+test("lancio: senza consenso la rete con impianti si salta e non parte niente", async () => {
+  await withTenant(TENANT, async () => {
+    const r = await lanciaSuReti(LANCIO, "riccardo");
+    assert.equal(r.ok && r.esiti[0].esito, "saltata");
+    assert.equal(corpi.some((c) => c.url.endsWith("/scan")), false);
+  });
+});
+
+test("lancio: col consenso letto da Edge parte con anche_impianti e il nome", async () => {
+  lookup.consenso = CONSENSO;
+  await withTenant(TENANT, async () => {
+    const r = await lanciaSuReti(LANCIO, "riccardo");
+    assert.equal(r.ok && r.esiti[0].esito, "avviata");
+    const scan = corpi.find((c) => c.url.endsWith("/scan"));
+    assert.equal(scan?.body.anche_impianti, true);
+    assert.equal(scan?.body.chi, "riccardo");
+  });
+});
+
+test("lancio: pianificata mai, anche col consenso", async () => {
+  lookup.consenso = CONSENSO;
+  await withTenant(TENANT, async () => {
+    const l = { ...LANCIO, modo: "pianificata", frequency: "daily", at_time: "02:00" } as unknown as Lancio;
+    const r = await lanciaSuReti(l, "riccardo");
+    assert.equal(r.ok && r.esiti[0].esito, "saltata");
+  });
+});
+
+test("consenso: gli IP vengono dall'inventario, il rifiuto di Edge arriva con il suo motivo", async () => {
+  await withTenant(TENANT, async () => {
+    const ok = await daiConsenso(1, { chi: "riccardo", riferimento: "Mail", ore: 4 });
+    assert.equal(ok.ok, true);
+    const c = corpi.find((x) => x.url.endsWith("/consenso"));
+    assert.deepEqual(c?.body.ips, ["10.5.0.2", "10.5.0.3"]);
+    rifiutaConsenso = true;
+    const no = await daiConsenso(1, { chi: "r", riferimento: "Mail", ore: 4 });
+    assert.equal(!no.ok && no.error, "Non sono impianti di questa rete: 10.5.0.2");
+  });
+});
+
+test("consenso: una sonda vecchia dice di aggiornarsi", async () => {
+  lookup = { found: true, network_id: 9 };
+  await withTenant(TENANT, async () => {
+    const r = await revocaConsenso(1, "r");
+    assert.equal(!r.ok && r.daAggiornare, true);
+  });
+});
+
+test("registro: copia, non si raddoppia, non si cancella, una sonda rifatta non si perde", async () => {
+  await withTenant(TENANT, async () => {
+    righeEdge = [riga(1), riga(2)];
+    assert.equal(await sincronizzaRegistro(), 2);
+    assert.equal(await sincronizzaRegistro(), 0);
+    assert.equal(leggiRegistro()[0].rete, "Produzione");
+    assert.throws(() => db().exec(`DELETE FROM va_registro_impianti`), /non si cancella/);
+    assert.throws(() => db().exec(`UPDATE va_registro_impianti SET chi='x'`), /non si cambia/);
+    // Sonda rifatta, con già più righe di quelle ricordate.
+    righeEdge = [1, 2, 3].map((i) => riga(i, { at: `2026-11-08 09:00:0${i}` }));
+    assert.equal(await sincronizzaRegistro(), 3);
+    assert.equal(leggiRegistro().length, 5);
+    assert.equal(await sincronizzaRegistro(), 0);
+    // Il reset per nuovo cliente lo svuota, e il blocco torna.
+    resetLabNetworkConfig(TENANT);
+    assert.equal(leggiRegistro().length, 0);
+    righeEdge = [riga(1)];
+    assert.equal(await sincronizzaRegistro(), 1);
+    assert.throws(() => db().exec(`DELETE FROM va_registro_impianti`), /non si cancella/);
+  });
+});

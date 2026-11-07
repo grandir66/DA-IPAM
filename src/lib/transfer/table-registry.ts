@@ -161,6 +161,8 @@ export const HUB_TABLES: TableSpec[] = [
 export const EXCLUDED_TENANT_TABLES: string[] = [
   // Id locali della sonda (ripartono da 1), validi solo su questa istanza e solo per il riquadro dei gruppi aperti.
   "va_gruppi_lanciati",
+  // Copia del registro di questa sonda, che non si riscrive: un import farebbe DELETE e i trigger lo rifiutano.
+  "va_registro_impianti",
   "network_host_credentials",
   "host_detect_credential",
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra

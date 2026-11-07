@@ -22,6 +22,7 @@ import {
   attivitaDaScansione,
   profiliFuoriDalleVoci,
   risolviVoci,
+  type ConsensoRete,
   type EsitoRete,
   type PianoRete,
   type QuadroScansioni,
@@ -54,15 +55,25 @@ async function aGruppi<A, B>(voci: readonly A[], limite: number, fn: (v: A) => P
 interface LookupRete {
   found: boolean;
   last_scan?: EdgeSubnetLastScan | null;
+  /** La chiave manca su una sonda che non sa del consenso. */
+  consenso?: ConsensoRete | null;
+}
+
+interface ReteLetta {
+  sonda: ReteScansione["sonda"];
+  ultima: EdgeSubnetLastScan | null;
+  consenso: ConsensoRete | null;
+  consensoNoto: boolean;
 }
 
 /** Tre esiti: la sonda la conosce, non la conosce, non ha risposto. Un guasto non diventa «mai». */
-async function leggiReteSullaSonda(scanner: ScannerAttivo, cidr: string): Promise<{ sonda: ReteScansione["sonda"]; ultima: EdgeSubnetLastScan | null }> {
+async function leggiReteSullaSonda(scanner: ScannerAttivo, cidr: string): Promise<ReteLetta> {
   try {
     const l = await edgeApiGet<LookupRete>(scanner, `/api/v1/networks/lookup?cidr=${encodeURIComponent(cidr)}`);
-    return l.found ? { sonda: "nota", ultima: l.last_scan ?? null } : { sonda: "sconosciuta", ultima: null };
+    if (!l.found) return { sonda: "sconosciuta", ultima: null, consenso: null, consensoNoto: false };
+    return { sonda: "nota", ultima: l.last_scan ?? null, consenso: l.consenso ?? null, consensoNoto: "consenso" in l };
   } catch {
-    return { sonda: "errore", ultima: null };
+    return { sonda: "errore", ultima: null, consenso: null, consensoNoto: false };
   }
 }
 
@@ -160,10 +171,12 @@ export async function leggiQuadroScansioni(): Promise<QuadroScansioni> {
   }
 
   const lette = await aGruppi(base, LETTURE_INSIEME, async (r): Promise<ReteScansione> => {
-    const { sonda, ultima } = await leggiReteSullaSonda(scanner, r.cidr);
+    const { sonda, ultima, consenso, consensoNoto } = await leggiReteSullaSonda(scanner, r.cidr);
     return {
       ...r,
       sonda,
+      consenso,
+      consensoNoto,
       ultimaVa: ultima?.finished_at ?? ultima?.started_at ?? null,
       ultimaVaStato: ultima?.status ?? null,
       attivita: attivitaDaScansione(ultima),
@@ -233,26 +246,31 @@ function reteLibera(ultima: EdgeSubnetLastScan | null): boolean {
   return attivitaDaScansione(ultima) === null;
 }
 
-async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fast" | "balanced" | "deep", networkId: number): Promise<EsitoRete> {
+async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fast" | "balanced" | "deep", networkId: number, chi?: string): Promise<EsitoRete> {
   const rete = getNetworkById(networkId);
   if (!rete) return { id: networkId, nome: `#${networkId}`, esito: "errore", motivo: "Rete non trovata" };
   const nome = rete.name || rete.cidr;
-  // Prima di ogni chiamata alla sonda, in tutti e tre i modi: il controllo in pagina non basta.
-  if (impiantiDellaRete(getHostsByNetwork(rete.id)).host > 0) {
+  // Il controllo in pagina non basta. Pianificata e finestra si fermano prima di ogni chiamata alla sonda;
+  // il lancio immediato passa solo con un consenso che si rilegge da Edge, non da ciò che manda il client.
+  const conImpianti = impiantiDellaRete(getHostsByNetwork(rete.id)).host > 0;
+  if (conImpianti && l.modo !== "immediata") {
     return { id: rete.id, nome, esito: "saltata", motivo: MOTIVO_IMPIANTO };
   }
   const comuneRete = { assessmentEnabled: true, assessmentProfileId: l.assessment_id, targetingMode: l.ambito };
 
   if (l.modo === "immediata") {
     // Edge non rifiuta una seconda scansione sulla stessa rete: la metterebbe in coda.
-    const { sonda, ultima } = await leggiReteSullaSonda(scanner, rete.cidr);
+    const { sonda, ultima, consenso } = await leggiReteSullaSonda(scanner, rete.cidr);
     if (sonda === "errore") return { id: rete.id, nome, esito: "errore", motivo: "La sonda non ha risposto" };
+    if (conImpianti && !consenso) return { id: rete.id, nome, esito: "saltata", motivo: MOTIVO_IMPIANTO };
     if (!reteLibera(ultima)) return { id: rete.id, nome, esito: "saltata", motivo: "Scansione già in corso o in coda" };
     const r = await triggerSubnetEdgeScan(rete.id, {
       ...comuneRete,
       profile: greenbone,
       syncHosts: l.sync_hosts,
       syncCredentials: l.sync_credentials,
+      ancheImpianti: conImpianti,
+      chi,
     });
     return r.ok ? { id: rete.id, nome, esito: "avviata" } : { id: rete.id, nome, esito: "errore", motivo: r.error };
   }
@@ -298,7 +316,7 @@ async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fa
   return { id: rete.id, nome, esito: "errore", motivo: corpo.daAggiornare ? SONDA_DA_AGGIORNARE : corpo.error };
 }
 
-export async function lanciaSuReti(l: Lancio): Promise<EsitoLancio> {
+export async function lanciaSuReti(l: Lancio, chi?: string): Promise<EsitoLancio> {
   const scanner = getActiveEdgeScanner();
   if (!scanner || scanner.enabled !== 1) {
     return { ok: false, status: 409, error: "Scanner-Edge non configurato o disabilitato" };
@@ -323,7 +341,7 @@ export async function lanciaSuReti(l: Lancio): Promise<EsitoLancio> {
   // Una rete alla volta: ognuna spinge host e credenziali alla sonda.
   for (const id of l.reti) {
     try {
-      esiti.push(await lanciaSuUnaRete(scanner, l, voce.greenbone, id));
+      esiti.push(await lanciaSuUnaRete(scanner, l, voce.greenbone, id, chi));
     } catch (e) {
       esiti.push({ id, nome: getNetworkById(id)?.name ?? `#${id}`, esito: "errore", motivo: messaggio(e) });
     }

@@ -38,7 +38,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     const id = await rete(params);
     if (id === null) return NextResponse.json(NON_TROVATA, { status: 404 });
     try {
-      await sbloccaReteEdge(id);
+      await sbloccaReteEdge(id, adminCheck.user.name || adminCheck.user.email || `utente ${adminCheck.user.id ?? "?"}`);
       return NextResponse.json({ ok: true });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : "La sonda non risponde" }, { status: 502 });

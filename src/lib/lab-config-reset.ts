@@ -12,6 +12,7 @@
  */
 import { setSetting, setTenantOnboardingCompleted } from "./db-hub";
 import { getTenantDb, withTenant } from "./db-tenant";
+import { TRIGGER_REGISTRO_NO_DELETE } from "./db-tenant-schema";
 import { invalidateModulesHealth } from "./modules/health";
 import { chiaveProgresso } from "./onboarding/progresso";
 
@@ -51,12 +52,16 @@ export function resetLabNetworkConfig(tenantCode: string): LabConfigResetResult 
     db.pragma("foreign_keys = OFF");
     try {
       db.transaction(() => {
+        // Il registro degli impianti non si cancella dall'uso: qui si passa a un altro cliente, e la regola
+        // del 19/10 è che i suoi dati non restano. Il blocco torna subito dopo.
+        db.exec("DROP TRIGGER IF EXISTS va_registro_impianti_no_delete");
         for (const t of tabelle) {
           const n = (db.prepare(`SELECT COUNT(*) AS n FROM "${t}"`).get() as { n: number }).n;
           if (n === 0) continue;
           db.prepare(`DELETE FROM "${t}"`).run();
           cleared.push(`${t}(${n})`);
         }
+        db.exec(TRIGGER_REGISTRO_NO_DELETE);
       })();
     } finally {
       db.pragma("foreign_keys = ON");

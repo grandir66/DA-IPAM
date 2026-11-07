@@ -433,7 +433,7 @@ export async function leggiBloccoRete(networkId: number): Promise<BloccoRete | n
 }
 
 /** Riapre una rete fermata dalla sentinella: solo da una persona, dal pulsante della scheda. */
-export async function sbloccaReteEdge(networkId: number): Promise<void> {
+export async function sbloccaReteEdge(networkId: number, chi?: string): Promise<void> {
   const scanner = getActiveEdgeScanner();
   const network = getNetworkById(networkId);
   if (!scanner || scanner.enabled !== 1 || !network) throw new Error("Sonda non configurata o disabilitata");
@@ -442,7 +442,7 @@ export async function sbloccaReteEdge(networkId: number): Promise<void> {
     `/api/v1/networks/lookup?cidr=${encodeURIComponent(network.cidr)}`,
   );
   if (!lookup.found || lookup.network_id == null) throw new Error("La sonda non conosce questa rete");
-  await edgeApiPost<{ ok: boolean }>(scanner, `/api/v1/networks/${lookup.network_id}/sblocca`, {}, { timeoutMs: 30000 });
+  await edgeApiPost<{ ok: boolean }>(scanner, `/api/v1/networks/${lookup.network_id}/sblocca`, chi ? { chi } : {}, { timeoutMs: 30000 });
 }
 
 /**
@@ -485,6 +485,10 @@ export async function triggerSubnetEdgeScan(
     assessmentEnabled?: boolean;
     /** Id già controllato sull'edge (`resolveAssessmentForNetwork`). */
     assessmentProfileId?: string | null;
+    /** La scansione usa il consenso valido della rete: lo decide il server, mai il client. */
+    ancheImpianti?: boolean;
+    /** Chi la lancia, per il registro impianti. */
+    chi?: string;
   } = {},
 ): Promise<{
   ok: boolean;
@@ -543,6 +547,8 @@ export async function triggerSubnetEdgeScan(
         profile,
         run_arp: opts.runArp === true,
         ...(opts.targetingMode != null ? { targeting_mode: opts.targetingMode } : {}),
+        ...(opts.ancheImpianti ? { anche_impianti: true } : {}),
+        ...(opts.chi ? { chi: opts.chi } : {}),
       },
       { timeoutMs: 120000 },
     );

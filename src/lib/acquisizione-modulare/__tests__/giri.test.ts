@@ -14,7 +14,7 @@ import * as tenant from "@/lib/db-tenant";
 import { snapshotSchema, type AcquisitionSnapshot, type DeviceInterface } from "@/lib/acquisition/schema";
 import { applicaSnapshot } from "@/lib/acquisizione-modulare/applica";
 import { salvaSnapshot } from "@/lib/acquisizione-modulare/archivio";
-import { scriviPorteDelGiro, type PortaDelGiro } from "@/lib/acquisizione-modulare/giri";
+import { conservaPoeNonLetto, scriviPorteDelGiro, type PortaDelGiro } from "@/lib/acquisizione-modulare/giri";
 
 const T = "TESTACQGIRI";
 const { withTenant, getTenantDb, deleteTenantDatabase } = tenant;
@@ -124,6 +124,84 @@ describe("giri pianificati e colonne del collector (decisione a)", () => {
       assert.equal(uno.vlan, 20);
       assert.equal(uno.stp_state, "blocking", "spanning tree non letto: lo scrive il giro");
     });
+  });
+});
+
+/**
+ * Incidente 2026-11-07, misurato sull'hub: il controller scrive il PoE alle 03:00, il giro SNMP di mezz'ora dopo
+ * riscrive la riga intera con null dove non lo legge. Su due switch PoE i watt non si vedevano mai, e la mappa porte
+ * diceva «non letto». Su uno dei due i nomi non coincidono mai: «CAM-185» dal controller, «Slot: 0 Port: 1» da SNMP.
+ */
+describe("il giro non cancella il PoE che non ha letto", () => {
+  const dalController = (o: Partial<PortaDelGiro> = {}): PortaDelGiro => ({ ...giro()[0], port_index: 5, port_name: "CAM-185", poe_status: "delivering", poe_power_mw: 4200, ...o });
+  const dalGiro = (o: Partial<PortaDelGiro> = {}): PortaDelGiro => ({ ...giro()[0], port_index: 5, port_name: "Slot: 0 Port: 5 Gigabit - Level", ...o });
+  const poe = (nome: string) => d().prepare("SELECT poe_status, poe_power_mw FROM switch_ports WHERE device_id = ? AND port_name = ?").get(dev, nome);
+
+  before(() => {
+    withTenant(T, () => {
+      dev = Number(d().prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port) VALUES ('sw-poe', '192.0.2.61', 'switch', 'ubiquiti', 'snmp_v2', 161)").run().lastInsertRowid);
+    });
+  });
+  after(() => deleteTenantDatabase(T));
+  beforeEach(() => {
+    withTenant(T, () => {
+      d().prepare("DELETE FROM switch_ports WHERE device_id = ?").run(dev);
+      tenant.impostaAcquisizioneModulare(false);
+      tenant.upsertSwitchPorts(dev, [dalController()]);
+    });
+  });
+
+  it("nomi diversi, stesso indice: il PoE del controller resta e il resto è del giro", () => {
+    withTenant(T, () => {
+      scriviPorteDelGiro(device(), [dalGiro({ speed: "1000" })]);
+      assert.deepEqual({ ...poe("Slot: 0 Port: 5 Gigabit - Level") as object }, { poe_status: "delivering", poe_power_mw: 4200 });
+      assert.equal(poe("CAM-185"), undefined, "il nome della riga è quello del giro");
+    });
+  });
+
+  it("resta anche dopo più giri di fila", () => {
+    withTenant(T, () => {
+      for (let i = 0; i < 3; i++) scriviPorteDelGiro(device(), [dalGiro()]);
+      assert.deepEqual({ ...poe("Slot: 0 Port: 5 Gigabit - Level") as object }, { poe_status: "delivering", poe_power_mw: 4200 });
+    });
+  });
+
+  it("una lettura vera del giro vince, anche uno zero", () => {
+    withTenant(T, () => {
+      scriviPorteDelGiro(device(), [dalGiro({ poe_status: "searching", poe_power_mw: 0 })]);
+      assert.deepEqual({ ...poe("Slot: 0 Port: 5 Gigabit - Level") as object }, { poe_status: "searching", poe_power_mw: 0 });
+    });
+  });
+
+  it("stato e potenza vanno in coppia: non si mescolano due letture", () => {
+    const [r] = conservaPoeNonLetto([dalGiro({ poe_status: "off" })], [{ ...dalController(), id: 1, device_id: dev, timestamp: AT }]);
+    assert.deepEqual([r.poe_status, r.poe_power_mw], ["off", null]);
+  });
+
+  it("una porta nuova per il giro non eredita niente, e l'elenco delle porte resta quello del giro", () => {
+    withTenant(T, () => {
+      scriviPorteDelGiro(device(), [dalGiro({ port_index: 6, port_name: "Slot: 0 Port: 6 Gigabit - Level" })]);
+      assert.deepEqual({ ...poe("Slot: 0 Port: 6 Gigabit - Level") as object }, { poe_status: null, poe_power_mw: null });
+      assert.equal(nomi().length, 1);
+    });
+  });
+
+  it("vale anche con un collector che non legge il PoE", () => {
+    withTenant(T, () => {
+      tenant.impostaAcquisizioneModulare(true);
+      d().prepare("UPDATE network_devices SET vendor = 'hp', vendor_subtype = 'procurve', protocol = 'ssh', port = 22 WHERE id = ?").run(dev);
+      d().prepare("DELETE FROM switch_ports WHERE device_id = ?").run(dev);
+      salvaEApplica(snap());
+      d().prepare("UPDATE switch_ports SET poe_status = 'delivering', poe_power_mw = 4200 WHERE device_id = ? AND port_name = '1'").run(dev);
+      scriviPorteDelGiro(device(), giro());
+      assert.deepEqual({ ...poe("1") as object }, { poe_status: "delivering", poe_power_mw: 4200 });
+    });
+  });
+
+  it("il pulsante «Aggiorna» dell'apparato segue la stessa regola", () => {
+    const src = readFileSync(join(process.cwd(), "src/app/api/devices/[id]/query/route.ts"), "utf8");
+    assert.equal((src.match(/upsertSwitchPorts\(deviceId, conservaPoeNonLetto\(switchPorts, getSwitchPortsByDevice\(deviceId\)\)\)/g) ?? []).length, 2);
+    assert.equal((src.match(/\bupsertSwitchPorts\s*\(/g) ?? []).length, 2);
   });
 });
 

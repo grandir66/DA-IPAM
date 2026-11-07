@@ -11,6 +11,8 @@
  * - riga che il giro non ritrova: resta se il collector la conosce (l'elenco delle sue porte è suo), altrimenti va via
  *   come oggi;
  * - porta del giro che non ritrova nessuna riga: entra come oggi, se il suo indice è libero.
+ *
+ * Con o senza collector, un PoE che il giro non ha letto non cancella quello già scritto (`conservaPoeNonLetto`).
  */
 import { collectorPossibili } from "@/lib/acquisition/riconosci";
 import { campiDelCollectorPerPorta, nomePorta, type CampoPorta } from "@/lib/acquisition/proiezioni";
@@ -53,8 +55,8 @@ function senzaChiavi(r: SwitchPort): PortaDelGiro {
   return copia as PortaDelGiro;
 }
 
-/** L'unione pura del giro con le righe di adesso (regole in testa al file). */
-export function unisciPorteDelGiro(giro: readonly PortaDelGiro[], attuali: readonly SwitchPort[], campi: ReadonlyMap<string, readonly CampoPorta[]>): PortaDelGiro[] {
+/** Ogni porta del giro con la sua riga: per nome normalizzato, poi per indice fra le rimaste (come `proiettaPorte`). */
+function abbinaAlleRighe(giro: readonly PortaDelGiro[], attuali: readonly SwitchPort[]): Map<PortaDelGiro, SwitchPort> {
   const perNome = new Map(attuali.map((r) => [nomePorta(r.port_name), r]));
   const abbinate = new Map<PortaDelGiro, SwitchPort>();
   const prese = new Set<number>();
@@ -68,6 +70,29 @@ export function unisciPorteDelGiro(giro: readonly PortaDelGiro[], attuali: reado
     const r = perIndice.get(g.port_index);
     if (r && !prese.has(r.port_index)) { abbinate.set(g, r); prese.add(r.port_index); }
   }
+  return abbinate;
+}
+
+/**
+ * Per il giro SNMP un PoE vuoto vuol dire «non letto», non «spento»: l'indirizzo PoE passa dal bridge port e su diversi
+ * agenti non si risolve. Riscrivendo la riga intera, il giro di ogni 30 minuti cancellava ciò che il controller scrive
+ * alle 03:00 (incidente 2026-11-07, in `__tests__/giri.test.ts`). Stato e potenza si tengono insieme: se il giro ne
+ * legge uno, la lettura è sua. Il ripiego sull'indice serve: dal controller i nomi delle porte sono quelli dati dalle
+ * persone, e su uno switch non ne coincide nessuno.
+ */
+export function conservaPoeNonLetto(giro: PortaDelGiro[], attuali: readonly SwitchPort[]): PortaDelGiro[] {
+  const abbinate = abbinaAlleRighe(giro, attuali);
+  return giro.map((g) => {
+    const r = abbinate.get(g);
+    if (!r || g.poe_status !== null || g.poe_power_mw !== null) return g;
+    return { ...g, poe_status: r.poe_status, poe_power_mw: r.poe_power_mw };
+  });
+}
+
+/** L'unione pura del giro con le righe di adesso (regole in testa al file). */
+export function unisciPorteDelGiro(giro: readonly PortaDelGiro[], attuali: readonly SwitchPort[], campi: ReadonlyMap<string, readonly CampoPorta[]>): PortaDelGiro[] {
+  const abbinate = abbinaAlleRighe(giro, attuali);
+  const prese = new Set([...abbinate.values()].map((r) => r.port_index));
 
   const out: PortaDelGiro[] = [];
   const usati = new Set<number>();
@@ -96,14 +121,14 @@ export function unisciPorteDelGiro(giro: readonly PortaDelGiro[], attuali: reado
 /** Il posto dei giri pianificati dove prima c'era `upsertSwitchPorts(device.id, ports)`. */
 export function scriviPorteDelGiro(device: NetworkDevice, ports: PortaDelGiro[]): void {
   const campi = campiDelCollectorApparato(device);
-  if (!campi) {
-    upsertSwitchPorts(device.id, ports);
-    return;
-  }
-  // Lettura delle righe e scrittura nella stessa transazione: un'acquisizione modulare che applica nel frattempo non
-  // si perde a metà (`upsertSwitchPorts` apre la sua, qui annidata).
+  // Lettura delle righe e scrittura nella stessa transazione: un'acquisizione modulare o la sincronizzazione del
+  // controller che scrive nel frattempo non si perde a metà (`upsertSwitchPorts` apre la sua, qui annidata).
   const code = getCurrentTenantCode();
   if (!code) throw new Error("Contesto tenant assente");
   const d = getTenantDb(code);
-  d.transaction(() => upsertSwitchPorts(device.id, unisciPorteDelGiro(ports, getSwitchPortsByDevice(device.id), campi)))();
+  d.transaction(() => {
+    const attuali = getSwitchPortsByDevice(device.id);
+    const conPoe = conservaPoeNonLetto(ports, attuali);
+    upsertSwitchPorts(device.id, campi ? unisciPorteDelGiro(conPoe, attuali, campi) : conPoe);
+  })();
 }

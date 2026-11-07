@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-07 · Il giro SNMP non cancella più il PoE
+
+Il controller scrive il PoE alle 03:00, il giro di ogni 30 minuti riscriveva la riga intera con null dove non lo legge: su SW-CED-48POE-242 e SW-ING-ProMax-239 i watt non si vedevano mai, e la Mappa porte diceva «non letto». Per il giro un PoE vuoto vuol dire «non letto», non «spento».
+
+### Corretto
+- `conservaPoeNonLetto` (`acquisizione-modulare/giri.ts`): se il giro non legge né stato né potenza, restano quelli della riga; una lettura vera vince, anche uno zero. Vale per i giri pianificati, per la scansione dalla pagina Reti e per «Aggiorna» dell'apparato. L'abbinamento è quello dell'unione col collector, nome e poi indice: i nomi dati nel controller non coincidono con quelli SNMP.
+
 ## [Non rilasciato] — 2026-11-07 · Storico MAC-IP: i cambi, non i passaggi
 
 `mac_ip_mapping` tiene un IP per MAC: un MAC con più IP insieme lo cambiava a ogni lettura e ogni passaggio finiva nello storico. Sull'hub 13,6 milioni di righe per 772 coppie, e la tabella col suo indice pesa 1,1 GB su 2,2.

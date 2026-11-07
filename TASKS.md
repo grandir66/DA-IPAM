@@ -1,6 +1,13 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-07 — PoE cancellato dal giro SNMP (Riccardo: «Sì, correggi»)
+
+- [x] Misurato sull'hub: sync delle 03:00 su 17 apparati, compresi SW-CED-48POE-242 e il ProMax; i nomi porta del primo non coincidono mai con quelli SNMP, quindi serve l'indice.
+- [x] `conservaPoeNonLetto` nei giri e in «Aggiorna»; 4 prove viste fallire col sorgente vecchio.
+- [ ] Dopo il sync delle 03:00 sull'hub: PoE ancora presente sui due switch dopo i giri delle 03:30 e seguenti.
+- [ ] **Stessa causa, non toccato (da decidere):** il giro azzera anche `is_uplink` sui 7 apparati SNMP gestiti dal controller (sull'hub 0 uplink su tutti). La Mappa porte lo usa per dire «porta di passaggio», e lì oggi regge solo sulle altre prove. Chi legge `is_uplink` va guardato prima di cambiarlo.
+
 ## 2026-11-07 — Storico MAC-IP che cresce di 43.000 righe al giorno
 
 - [x] Causa misurata sull'hub in sola lettura: nessuna riga ripete l'IP precedente, 772 coppie per 13.658.565 righe. `mac_ip_mapping` tiene un IP per MAC, e un MAC con più IP (arp→arp 5,6 M, host→host 3,5 M, arp↔host 3,9 M) lo cambia a ogni lettura.

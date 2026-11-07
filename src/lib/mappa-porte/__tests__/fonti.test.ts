@@ -110,6 +110,19 @@ test("il gateway senza host si collega all'host col suo MAC; un collegamento che
   });
 });
 
+test("LibreNMS dà posizioni solo per gli apparati che il giro non legge", () => {
+  withTenant(T, () => {
+    d().exec(`DELETE FROM librenms_apparato; DELETE FROM librenms_porta; DELETE FROM librenms_mac_porta;
+      INSERT INTO librenms_apparato (librenms_device_id, ip, letto_il) VALUES (1, '192.0.2.1', datetime('now')), (2, '192.0.2.2', datetime('now'));
+      INSERT INTO librenms_porta (librenms_device_id, port_id, if_name, letto_il) VALUES (1, 1, '0/5', datetime('now')), (2, 2, 'ether2', datetime('now'));
+      INSERT INTO librenms_mac_porta (librenms_device_id, port_id, mac, letto_il) VALUES (1, 1, '02:00:00:00:71:01', datetime('now')), (2, 2, '02:00:00:00:71:02', datetime('now'));
+      INSERT INTO mac_port_entries (device_id, mac, port_name, timestamp, source) VALUES (1, '02:00:00:00:71:03', 'Port 1', datetime('now'), 'device');`);
+    const r = leggiIngresso().macPorte.filter((m) => m.source === "librenms").map((m) => [m.device_id, m.port_name]);
+    assert.deepEqual(r, [[2, "ether2"]]);
+    d().exec("DELETE FROM librenms_apparato; DELETE FROM librenms_porta; DELETE FROM librenms_mac_porta");
+  });
+});
+
 test("un giro vuoto non cancella lo strato", () => {
   withTenant(T, () => {
     tenant.upsertSwitchPorts(1, [riga({ is_uplink: 1 })], "controller");

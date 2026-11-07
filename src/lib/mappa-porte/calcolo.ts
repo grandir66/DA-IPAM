@@ -61,12 +61,14 @@ export function leggiIngresso(nowMs: number = Date.now()): IngressoMappaPorte {
   return {
     nowMs, staleDays: getLinkStaleDays(),
     apparati: tutte("SELECT id, name, device_type, protocol FROM network_devices"),
-    // LibreNMS legge anche apparati che il giro non legge: le sue tabelle MAC valgono come le altre, se l'apparato è censito.
+    // LibreNMS solo per gli apparati che il giro non legge: dove c'è la nostra tabella, i suoi nomi di porta («0/5») e le sue voci
+    // vecchie mettevano lo stesso MAC «nello stesso giro» su due switch. Misurato sull'hub il 07/11: da capire da 32 a 83.
     macPorte: [
       ...tutte<RigaMacPorta>("SELECT device_id, mac, port_name, vlan, timestamp, source FROM mac_port_entries"),
       ...(esiste(d, "librenms_mac_porta") ? tutte<RigaMacPorta>(`SELECT nd.id AS device_id, m.mac, p.if_name AS port_name, m.vlan_id AS vlan, COALESCE(m.visto_il, m.letto_il) AS timestamp, 'librenms' AS source
         FROM librenms_mac_porta m JOIN librenms_porta p ON p.librenms_device_id = m.librenms_device_id AND p.port_id = m.port_id
-        JOIN librenms_apparato a ON a.librenms_device_id = m.librenms_device_id JOIN network_devices nd ON nd.host = a.ip WHERE COALESCE(p.if_name, '') <> ''`) : []),
+        JOIN librenms_apparato a ON a.librenms_device_id = m.librenms_device_id JOIN network_devices nd ON nd.host = a.ip WHERE COALESCE(p.if_name, '') <> ''
+        AND nd.id NOT IN (SELECT device_id FROM mac_port_entries WHERE timestamp >= datetime('now', '-2 days'))`) : []),
       ...parser.macPorte,
     ],
     porte: unisciStrati(tutte("SELECT device_id, port_index, port_name, status, speed, vlan, poe_status, poe_power_mw, stp_state, is_uplink FROM switch_ports"), [...strati, ...parser.porte]),

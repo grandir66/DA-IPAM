@@ -19,6 +19,7 @@ Riccardo: nella mappa mancavano oggetti che la Topologia ha, e a ogni giro si pe
 - La scheda mostra il vicino sulla porta vera: il controller scrive `eth0` su ogni vicino di uno switch.
 - Il gateway UniFi senza host si collega all'host col suo MAC, così apre la scheda nuova. Misurato: nessun collegamento di Topologia cambia.
 - Le tab che vanno a capo non coprono più il pannello.
+- LibreNMS dà posizioni solo per gli apparati che il giro non legge: i suoi nomi di porta e le sue voci vecchie mettevano lo stesso MAC su due switch, e la confidenza cambiava con l'ora della sua lettura.
 
 ## [Non rilasciato] — 2026-11-07 · Il giro SNMP non cancella più il PoE
 

@@ -73,7 +73,7 @@ Verifica: tabella delle misure qui sotto, con data e fonte.
 ### [ ] Task 2 — Immagine snella
 
 - **File (Deploy-Appliance):** `costruttore/costruisci.sh` (nuova opzione `--variante piena|snella`, di base `piena`), `costruttore/elenco-sigillo.txt`, `costruttore/pacchetto-aggiornamento.sh`, `lib/immagine.sh`, `primo-avvio/fasi/moduli.sh`, `primo-avvio/verifica.sh`, prove in `tests/`.
-- **Cosa fare:** con `snella` niente Greenbone, immagini di Edge, LibreNMS e MeshCentral, e niente Docker se il Task 1 lo consente. Restano DA-IPAM, `sensore-trunk`, Zabbix, NetBird. La riga di rilascio è separata da `ULTIMO`: `ULTIMO-SNELLA`, firmata come l'altra.
+- **Cosa fare:** con `snella` niente Greenbone, immagini di Edge, LibreNMS e MeshCentral, e niente Docker se il Task 1 lo consente. Elenco di Riccardo, 07/11: «l'immagine deve avere solo ipam, proxy zabbix, gli script per proxmox, mikrotik, 3cx....». Più NetBird, che serve al collegamento. `sensore-trunk` non è nell'elenco: da confermare (`TASKS.md`). La riga di rilascio è separata da `ULTIMO`: `ULTIMO-SNELLA`, firmata come l'altra.
 - **Interfacce:** il file d'avvio `moduli.*` non cambia. Un modulo chiesto e assente nell'immagine fa fallire `avvio.py` con un messaggio chiaro, prima di toccare la macchina.
 - **Prova prima del codice:** chiedere `moduli.edge` a un'immagine snella viene rifiutato.
 

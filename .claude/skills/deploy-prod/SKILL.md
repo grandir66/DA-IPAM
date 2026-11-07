@@ -14,7 +14,7 @@ A partire dal 2026-05-12 `/opt/da-invent` è un **git repo** (GitOps).
 Host hub:       192.168.4.8 (VM 533)
 SSH:            ssh -J root@192.168.40.4 root@192.168.4.8
 App path:       /opt/da-invent  (git repo, branch feature/remote-agents o main)
-Service:        systemctl status da-invent
+Service:        systemctl status da-ipam
 DB tenant:      /opt/da-invent/data/tenants/<tenantId>.db
 DB hub:         /opt/da-invent/data/hub.db
 .env:           /opt/da-invent/.env.local  (contiene ENCRYPTION_KEY — NON commitato)
@@ -26,7 +26,7 @@ Backup safety:  /opt/da-invent.pre-gitops/  (snapshot pre-conversione GitOps, ri
 
 ```bash
 ssh -J root@192.168.40.4 root@192.168.4.8 \
-  "cd /opt/da-invent && git fetch && git reset --hard origin/\$(git rev-parse --abbrev-ref HEAD) && npm ci && npm run build && systemctl restart da-invent"
+  "cd /opt/da-invent && git fetch && git reset --hard origin/\$(git rev-parse --abbrev-ref HEAD) && npm ci && npm run build && systemctl restart da-ipam"
 ```
 
 Spiegazione:
@@ -42,14 +42,14 @@ Spiegazione:
 ## Comando rapido (solo restart, senza build)
 
 ```bash
-ssh -J root@192.168.40.4 root@192.168.4.8 "systemctl restart da-invent && sleep 4 && systemctl is-active da-invent"
+ssh -J root@192.168.40.4 root@192.168.4.8 "systemctl restart da-ipam && sleep 4 && systemctl is-active da-ipam"
 ```
 
 ## Verifica post-deploy
 
 ```bash
 ssh -J root@192.168.40.4 root@192.168.4.8 \
-  "curl -fsSk https://localhost/api/version && echo && systemctl is-active da-invent && cd /opt/da-invent && git log --oneline -3"
+  "curl -fsSk https://localhost/api/version && echo && systemctl is-active da-ipam && cd /opt/da-invent && git log --oneline -3"
 ```
 
 Output atteso: `{"version":"0.2.X","name":"da-invent"}` + `active` + 3 commit più recenti.
@@ -58,14 +58,14 @@ Output atteso: `{"version":"0.2.X","name":"da-invent"}` + `active` + 3 commit pi
 
 ```bash
 ssh -J root@192.168.40.4 root@192.168.4.8 \
-  "cd /opt/da-invent && git fetch && git checkout feature/remote-agents && git reset --hard origin/feature/remote-agents && npm ci && npm run build && systemctl restart da-invent"
+  "cd /opt/da-invent && git fetch && git checkout feature/remote-agents && git reset --hard origin/feature/remote-agents && npm ci && npm run build && systemctl restart da-ipam"
 ```
 
 ## Deploy a tag specifico (rollback / pinning)
 
 ```bash
 ssh -J root@192.168.40.4 root@192.168.4.8 \
-  "cd /opt/da-invent && git fetch --tags && git checkout v0.2.426 && npm ci && npm run build && systemctl restart da-invent"
+  "cd /opt/da-invent && git fetch --tags && git checkout v0.2.426 && npm ci && npm run build && systemctl restart da-ipam"
 ```
 
 ## Comandi diagnostici frequenti
@@ -75,7 +75,7 @@ ssh -J root@192.168.40.4 root@192.168.4.8 \
 ssh -J root@192.168.40.4 root@192.168.4.8
 
 # Log servizio in tempo reale
-ssh -J root@192.168.40.4 root@192.168.4.8 "journalctl -u da-invent -n 100 --no-pager -f"
+ssh -J root@192.168.40.4 root@192.168.4.8 "journalctl -u da-ipam -n 100 --no-pager -f"
 
 # Stato git produzione
 ssh -J root@192.168.40.4 root@192.168.4.8 "cd /opt/da-invent && git log --oneline -10 && git status -sb"

@@ -5,8 +5,9 @@
 
 - [x] Misurato sull'hub: sync delle 03:00 su 17 apparati, compresi SW-CED-48POE-242 e il ProMax; i nomi porta del primo non coincidono mai con quelli SNMP, quindi serve l'indice.
 - [x] `conservaPoeNonLetto` nei giri e in «Aggiorna»; 4 prove viste fallire col sorgente vecchio.
-- [ ] Dopo il sync delle 03:00 sull'hub: PoE ancora presente sui due switch dopo i giri delle 03:30 e seguenti.
-- [ ] **Stessa causa, non toccato (da decidere):** il giro azzera anche `is_uplink` sui 7 apparati SNMP gestiti dal controller (sull'hub 0 uplink su tutti). La Mappa porte lo usa per dire «porta di passaggio», e lì oggi regge solo sulle altre prove. Chi legge `is_uplink` va guardato prima di cambiarlo.
+- [x] 0.9.999 su `dev`, hub aggiornato; snapshot `pre-poe-giro-20261107` (VM 533, DA-PX-03).
+- [ ] Non ancora visto sull'hub: una lettura lanciata a mano da fuori del servizio non parte, perché la voce UniFi sta nel vault di DA-Link (riga 352 fallita nello storico del controller, è quella). Dopo il sync delle 03:00: PoE presente su SW-CED-48POE-242 e SW-ING-ProMax-239 e ancora lì dopo i giri delle 03:30 e seguenti. Se resta vuoto, è il controller a non darlo.
+- [ ] **Stessa causa, non toccato (da decidere):** il giro azzera anche `is_uplink` sui 5 switch UniFi letti via SNMP (SW-CED-48POE-242, SW-CED-16XG-241, SW-ING-ProMax-239, SW-CED-AGG-243, SW-CED-Ent8-245: sull'hub 0 uplink su tutti, mentre gli apparati del solo controller lo hanno). La Mappa porte lo usa per dire «porta di passaggio», e lì oggi regge solo sulle altre prove. Chi legge `is_uplink` va guardato prima di cambiarlo.
 
 ## 2026-11-07 — Storico MAC-IP che cresce di 43.000 righe al giorno
 

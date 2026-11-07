@@ -10,6 +10,25 @@
 - [ ] Misurare `mac_ip_history` sulle appliance dei clienti: l'indice si costruisce al primo avvio della versione nuova.
 - [ ] Da decidere: `mac_ip_mapping.ip` e `previous_ip` continuano a oscillare per i MAC con più IP; la tabella ARP mostra l'ultimo visto. La correzione tocca lo storico, non la mappa.
 
+## 2026-11-07 — VM minimale dai clienti comandata dall'IPAM centrale (idea, in ragionamento)
+
+Riccardo, 07/11: «una vm minimale da installare da un cliente per avere non ipam o edge, ma un sistema controllato dal ipam centrale di domarc che comandi gestione delle subnet, acquisizioni, proxy zabbix, script proxreporter mikrotik e altro comandati dal sistema centrale... il proxy remoto sarà collegato via netbird ed isolato per cliente». Fase di ragionamento: niente codice, niente rilasci, nessun intervento su appliance o VM dei clienti.
+
+- [x] Proposta in chat con strade a confronto, cosa diventa difficile, domande numerate. Letti CONTEXT, ADR 0011, storia dell'agente, codice; misura in sola lettura su 533
+- [ ] Risposte di Riccardo alle 10 domande: tocca la decisione del 12/10 (un'installazione = un cliente, il tenant non è un confine di sicurezza) e l'ADR 0011 (cosa esce lo decide l'istanza)
+
+Strada consigliata, a tappe: (1) VM con proxy Zabbix, Proxreporter e relay MikroTik, tutti moduli che esistono, senza toccare DA-IPAM; (2) un'istanza DA-IPAM per cliente sui Proxmox Domarc, così il confine resta l'installazione; (3) esecutore in VM, prima `lib/acquisition`, poi le scansioni. Scartato un solo IPAM con tutti i clienti, salvo decisione contraria sul 12/10. Scartata la rotta verso la LAN: ADR 0011, e nessun elenco chiuso possibile. Livello proposto: completo.
+
+Fatti trovati:
+- L'agente Python è stato tolto il 20/10 perché nessuno lo usava (una riga sull'hub, mai collegata; decisione 26 del 14/10), non per un difetto. Era in ingresso, una chiamata per operazione: non regge una caduta di rete.
+- ADR 0011 già scrive: un comando dal centro deve viaggiare come risposta a una chiamata dell'istanza. Fa eccezione solo Vulcan → Edge, P3: 22 e 6443.
+- DA-Link non comanda le appliance: prepara blocchi che il tecnico incolla. Un canale di comando oggi non esiste.
+- `lib/acquisition`: nessun file tocca il DB, contratto JSON 1.0, CLI già pronta. `lib/scanner`: 10 file su ~30 lo toccano. `lib/executor` copre solo ping, nmap e DNS e lo usano 2 file; `ssh2` e `net-snmp` sono usati diretti in 20 file. Il lavoro vero è qui, più `cron/jobs.ts` (1.878 righe).
+- `NmapPortScanOptions.customArgs` è testo libero: sulla VM solo profili per id, o l'elenco chiuso non vale.
+- Il centro non deve leggere «niente dati» come «host spento»: tre esiti, stessa regola di `offline-guard`.
+- Misure: nodo di 533, 827 MB di RSS; appliance oggi 16 GB (32 con altri moduli), immagine ~15 GB di cui Greenbone ~11. Dimensioni della VM stimate, da misurare: 2 vCPU, 2 GB, 20 GB; 4 GB e 40 GB col proxy.
+- Da verificare: se Proxreporter accoda report ed esiti quando manca la rete.
+
 ## 2026-11-07 — Switch port mapper: una tabella che dice cosa c'è e dove sta (idea, in proposta)
 
 Riccardo, 07/11: «avendo acquisito molte informazioni sulla rete, per gestire quanto è emerso da switch, router, access point, controller; usando le acquisizioni degli switch, per porte le loro tabelle host, le conoscenze LLDP e varianti, spanning tree, per costruire un'ulteriore tabella che dice cosa è e dove è presente sulla rete; un nuovo menu nella parte di network». Fase di ragionamento: niente codice prima della sua approvazione.

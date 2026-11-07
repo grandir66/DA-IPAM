@@ -7,7 +7,7 @@ import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { updateHostIfExists, getNetworks, upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork, getCurrentTenantCode } from "@/lib/db";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { dipendenzeDb, testoDubbio, valutaFonte, type ValutazioneFonte } from "@/lib/acquisizione-modulare/fonte";
-import { conservaPoeNonLetto } from "@/lib/acquisizione-modulare/giri";
+import { conservaNonLetto } from "@/lib/acquisizione-modulare/giri";
 import { DIPENDENZE_VERE, eseguiAcquisizioneModulare, lasciaLucchetto, prendiLucchetto } from "@/lib/acquisizione-modulare/esegui";
 import { lettoreDb } from "@/lib/acquisizione-modulare/richiesta";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -232,7 +232,7 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
         trunk_primary_device_id, trunk_primary_name, stp_state: port.stp_state ?? null,
       };
     });
-    upsertSwitchPorts(deviceId, conservaPoeNonLetto(switchPorts, getSwitchPortsByDevice(deviceId)));
+    upsertSwitchPorts(deviceId, conservaNonLetto(switchPorts, getSwitchPortsByDevice(deviceId)));
     plog(p, `✓ ${portInfos.length} porte switch`);
   } else {
     plog(p, "— Nessuna porta SNMP");
@@ -319,7 +319,7 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
         trunk_primary_device_id, trunk_primary_name, stp_state: port.stp_state ?? null,
       };
     });
-    upsertSwitchPorts(deviceId, conservaPoeNonLetto(switchPorts, getSwitchPortsByDevice(deviceId)));
+    upsertSwitchPorts(deviceId, conservaNonLetto(switchPorts, getSwitchPortsByDevice(deviceId)));
     plog(p, `✓ ${portInfos.length} porte switch`);
   }
 

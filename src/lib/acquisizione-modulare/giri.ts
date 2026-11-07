@@ -12,7 +12,7 @@
  *   come oggi;
  * - porta del giro che non ritrova nessuna riga: entra come oggi, se il suo indice è libero.
  *
- * Con o senza collector, un PoE che il giro non ha letto non cancella quello già scritto (`conservaPoeNonLetto`).
+ * Con o senza collector, PoE e uplink che il giro non ha letto non cancellano quelli già scritti (`conservaNonLetto`).
  */
 import { collectorPossibili } from "@/lib/acquisition/riconosci";
 import { campiDelCollectorPerPorta, nomePorta, type CampoPorta } from "@/lib/acquisition/proiezioni";
@@ -74,18 +74,25 @@ function abbinaAlleRighe(giro: readonly PortaDelGiro[], attuali: readonly Switch
 }
 
 /**
- * Per il giro SNMP un PoE vuoto vuol dire «non letto», non «spento»: l'indirizzo PoE passa dal bridge port e su diversi
- * agenti non si risolve. Riscrivendo la riga intera, il giro di ogni 30 minuti cancellava ciò che il controller scrive
- * alle 03:00 (incidente 2026-11-07, in `__tests__/giri.test.ts`). Stato e potenza si tengono insieme: se il giro ne
- * legge uno, la lettura è sua. Il ripiego sull'indice serve: dal controller i nomi delle porte sono quelli dati dalle
- * persone, e su uno switch non ne coincide nessuno.
+ * Il giro riscrive la riga intera, ma due cose non le sa. Per lui un PoE vuoto vuol dire «non letto», non «spento»:
+ * l'indirizzo PoE passa dal bridge port e su diversi agenti non si risolve. `is_uplink` non lo legge proprio: lo dice
+ * solo il controller. Così il giro di ogni 30 minuti cancellava ciò che il controller scrive alle 03:00 (incidente
+ * 2026-11-07, in `__tests__/giri.test.ts`). Stato e potenza si tengono insieme: se il giro ne legge uno, la lettura è
+ * sua. Il ripiego sull'indice serve: dal controller i nomi delle porte sono quelli dati dalle persone, e su uno switch
+ * non ne coincide nessuno.
  */
-export function conservaPoeNonLetto(giro: PortaDelGiro[], attuali: readonly SwitchPort[]): PortaDelGiro[] {
+export function conservaNonLetto(giro: PortaDelGiro[], attuali: readonly SwitchPort[]): PortaDelGiro[] {
   const abbinate = abbinaAlleRighe(giro, attuali);
   return giro.map((g) => {
     const r = abbinate.get(g);
-    if (!r || g.poe_status !== null || g.poe_power_mw !== null) return g;
-    return { ...g, poe_status: r.poe_status, poe_power_mw: r.poe_power_mw };
+    if (!r) return g;
+    const poeLetto = g.poe_status !== null || g.poe_power_mw !== null;
+    return {
+      ...g,
+      is_uplink: g.is_uplink ?? r.is_uplink,
+      poe_status: poeLetto ? g.poe_status : r.poe_status,
+      poe_power_mw: poeLetto ? g.poe_power_mw : r.poe_power_mw,
+    };
   });
 }
 
@@ -128,7 +135,7 @@ export function scriviPorteDelGiro(device: NetworkDevice, ports: PortaDelGiro[])
   const d = getTenantDb(code);
   d.transaction(() => {
     const attuali = getSwitchPortsByDevice(device.id);
-    const conPoe = conservaPoeNonLetto(ports, attuali);
-    upsertSwitchPorts(device.id, campi ? unisciPorteDelGiro(conPoe, attuali, campi) : conPoe);
+    const conservate = conservaNonLetto(ports, attuali);
+    upsertSwitchPorts(device.id, campi ? unisciPorteDelGiro(conservate, attuali, campi) : conservate);
   })();
 }

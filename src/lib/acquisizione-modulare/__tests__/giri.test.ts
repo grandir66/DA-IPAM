@@ -14,7 +14,7 @@ import * as tenant from "@/lib/db-tenant";
 import { snapshotSchema, type AcquisitionSnapshot, type DeviceInterface } from "@/lib/acquisition/schema";
 import { applicaSnapshot } from "@/lib/acquisizione-modulare/applica";
 import { salvaSnapshot } from "@/lib/acquisizione-modulare/archivio";
-import { conservaPoeNonLetto, scriviPorteDelGiro, type PortaDelGiro } from "@/lib/acquisizione-modulare/giri";
+import { conservaNonLetto, scriviPorteDelGiro, type PortaDelGiro } from "@/lib/acquisizione-modulare/giri";
 
 const T = "TESTACQGIRI";
 const { withTenant, getTenantDb, deleteTenantDatabase } = tenant;
@@ -132,7 +132,7 @@ describe("giri pianificati e colonne del collector (decisione a)", () => {
  * riscrive la riga intera con null dove non lo legge. Su due switch PoE i watt non si vedevano mai, e la mappa porte
  * diceva «non letto». Su uno dei due i nomi non coincidono mai: «CAM-185» dal controller, «Slot: 0 Port: 1» da SNMP.
  */
-describe("il giro non cancella il PoE che non ha letto", () => {
+describe("il giro non cancella ciò che non ha letto: PoE e uplink", () => {
   const dalController = (o: Partial<PortaDelGiro> = {}): PortaDelGiro => ({ ...giro()[0], port_index: 5, port_name: "CAM-185", poe_status: "delivering", poe_power_mw: 4200, ...o });
   const dalGiro = (o: Partial<PortaDelGiro> = {}): PortaDelGiro => ({ ...giro()[0], port_index: 5, port_name: "Slot: 0 Port: 5 Gigabit - Level", ...o });
   const poe = (nome: string) => d().prepare("SELECT poe_status, poe_power_mw FROM switch_ports WHERE device_id = ? AND port_name = ?").get(dev, nome);
@@ -173,8 +173,19 @@ describe("il giro non cancella il PoE che non ha letto", () => {
     });
   });
 
+  it("l'uplink lo dice solo il controller: il giro non lo azzera, ma nemmeno lo regala a una porta nuova", () => {
+    withTenant(T, () => {
+      tenant.upsertSwitchPorts(dev, [dalController({ is_uplink: 1 })]);
+      scriviPorteDelGiro(device(), [dalGiro(), dalGiro({ port_index: 6, port_name: "Slot: 0 Port: 6 Gigabit - Level" })]);
+      const up = () => d().prepare("SELECT port_index FROM switch_ports WHERE device_id = ? AND is_uplink = 1").all(dev);
+      assert.deepEqual(up().map((r) => ({ ...(r as object) })), [{ port_index: 5 }]);
+      scriviPorteDelGiro(device(), [dalGiro()]);
+      assert.equal(up().length, 1, "resta anche al giro dopo");
+    });
+  });
+
   it("stato e potenza vanno in coppia: non si mescolano due letture", () => {
-    const [r] = conservaPoeNonLetto([dalGiro({ poe_status: "off" })], [{ ...dalController(), id: 1, device_id: dev, timestamp: AT }]);
+    const [r] = conservaNonLetto([dalGiro({ poe_status: "off" })], [{ ...dalController(), id: 1, device_id: dev, timestamp: AT }]);
     assert.deepEqual([r.poe_status, r.poe_power_mw], ["off", null]);
   });
 
@@ -200,7 +211,7 @@ describe("il giro non cancella il PoE che non ha letto", () => {
 
   it("il pulsante «Aggiorna» dell'apparato segue la stessa regola", () => {
     const src = readFileSync(join(process.cwd(), "src/app/api/devices/[id]/query/route.ts"), "utf8");
-    assert.equal((src.match(/upsertSwitchPorts\(deviceId, conservaPoeNonLetto\(switchPorts, getSwitchPortsByDevice\(deviceId\)\)\)/g) ?? []).length, 2);
+    assert.equal((src.match(/upsertSwitchPorts\(deviceId, conservaNonLetto\(switchPorts, getSwitchPortsByDevice\(deviceId\)\)\)/g) ?? []).length, 2);
     assert.equal((src.match(/\bupsertSwitchPorts\s*\(/g) ?? []).length, 2);
   });
 });

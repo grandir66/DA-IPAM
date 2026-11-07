@@ -25,9 +25,15 @@ correzione a mano e colonna in Discovery rimandate; correzione del PoE sovrascri
 | 4 | Job ogni 30 minuti da `server.ts` | [x] | Riga in Schedulazioni: la prova di completezza l'ha pretesa |
 | 5 | API `GET /api/port-map` | [x] | Provata dalla pagina coi dati dell'hub |
 | 6 | Pagina e voce di menu | [x] | Vista resa a 1280 e 1920 coi dati dell'hub, in locale |
-| 7 | Cancello, resa a 1280 e 1920, release su `dev`, confronto col controller sull'hub | [~] | Cancello verde (esito 0, 7515 prove). Confronto sui dati dell'hub, in locale: 48 giuste, 1 stesso apparato su due porte, 7 «non so» |
-| 8 | Consuntivo, `TASKS.md`, `CONTEXT.md`, `CHANGELOG.md`, `docs/scheda-mappa.md` | [ ] | |
+| 7 | Cancello, resa a 1280 e 1920, release su `dev`, confronto col controller sull'hub | [x] | Cancello verde (esito 0, 7515 prove). 0.9.998 sull'hub, primo giro 13:35 UTC del 07/11 in 77 ms. Confronto sui dati dell'hub esportati (calcolo in locale): 48 giuste, 1 stesso apparato su due porte, 7 «non so» |
+| 8 | Consuntivo, `TASKS.md`, `CONTEXT.md`, `CHANGELOG.md`, `docs/scheda-mappa.md` | [x] | |
 
 ## Consuntivo
 
-(a fine lavoro)
+**Fatto.** Pagina `/port-map` con schede Oggetti e Porte, regola pura, quattro tabelle `mappa_porte_*`, ricalcolo ogni 30 minuti (riga in Schedulazioni). Sull'hub: 102 certe, 88 spiegate, 34 da capire, 68 non so, 72 senza host noto, 284 porte.
+
+**Mancante.** Pagina vista a schermo solo in locale, coi dati dell'hub: sull'hub serve il login di Riccardo. Mai misurata su una rete senza controller (72729 non toccato). `main` fermo: serve il sì.
+
+**Scostamenti.** I 10 «non so» del 07/11 sono scesi a 7. Colonna Tipo sotto il nome, colonna Visto solo da 1500 px: a 1280 la tabella usciva dal pannello. Non è stato scritto un ADR: la scelta della tabella calcolata è in questo piano.
+
+**Consigli.** Correggere il PoE sovrascritto dal giro SNMP (`conservaColonneNonDelController` al contrario, sul lato SNMP). Usare `local_port_index` anche in `attach.ts`, dove la stessa porta conta MAC separati per nome. Scendere il ramo dei «non so» lungo i vicini: 29 oggetti dicono solo «su 6 porte di passaggio».

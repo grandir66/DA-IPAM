@@ -24,6 +24,7 @@ import { etichettaFrequenza, frequenzaDaJob, leggiConfig, prossimaEsecuzione } f
 import { listEdgeSchedules } from "@/lib/vuln/edge-schedule-store";
 import { describeCron, describeFinestra, type Frequency } from "@/lib/vuln/cron-builder";
 import { ultimoBackup } from "@/lib/backup/engine";
+import { statoCalcolo } from "@/lib/mappa-porte/calcolo";
 import { getNotificationConfig } from "@/lib/notifications/config";
 import { leggiConfigDalink } from "@/lib/dalink/config";
 import { statoSegnale } from "@/lib/dalink/stato";
@@ -298,6 +299,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/dalink/segnale-job": "timer.dalink",
   "./src/lib/assegnatari/job": "timer.accessi_pc",
   "./src/lib/trunk/job": "timer.sensore_trunk",
+  "./src/lib/mappa-porte/job": "timer.mappa_porte",
   "./src/lib/scanner/profili/sconosciuti-job": "timer.riconoscimento",
   "./src/lib/security/eventi-dc/job": "timer.eventi_dc",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
@@ -409,6 +411,28 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       cambio: { tipo: "opzione", id: accessi.id },
     });
   }
+
+  // Mappa porte (07/11): ricalcolo dalle tabelle già lette, non interroga gli apparati. Sempre acceso, tocca solo le sue tabelle.
+  const prossimaMappa = prossimoOgniMinuti(30, adesso);
+  prossimaMappa.setMinutes(prossimaMappa.getMinutes() + 5);
+  let calcoloMappa: ReturnType<typeof statoCalcolo> = null;
+  try {
+    calcoloMappa = statoCalcolo();
+  } catch {
+    /* tabelle assenti (migrazione fallita) o nessun contesto: la riga resta, senza ultimo calcolo */
+  }
+  righe.push({
+    ...base,
+    id: "timer.mappa_porte",
+    nome: "Mappa porte",
+    su: "le tabelle già lette",
+    quando: "ogni 30 minuti",
+    prossimo: dataSqlite(prossimaMappa),
+    stato: "acceso",
+    esito: calcoloMappa ? esito("ok", `ultimo calcolo ${calcoloMappa.il}`) : esito("neutro", "non ancora calcolata"),
+    dove: { href: "/port-map", etichetta: "Mappa porte ›" },
+    perche: "Gira sempre: non interroga gli apparati e tocca solo le sue tabelle",
+  });
 
   // Sensore trunk (25/10): levetta per cliente in Opzioni, lettura ogni 2 minuti.
   const trunk = catalogo().find((o) => o.id === "modulo.sensore_trunk");

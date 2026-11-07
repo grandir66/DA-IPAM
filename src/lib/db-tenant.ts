@@ -23,7 +23,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
 import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { MOTIVI, motivoDaPosizione, type StradaAccesso } from "./credentials/motivi-accesso";
-import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
+import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_MAPPA_PORTE, INDICI_MAPPA_PORTE, SEGNO_MAPPA_PORTE, VERSIONE_MAPPA_PORTE, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1062,6 +1062,28 @@ export function migrateSwitchVlanNativa(db: Database.Database): string[] {
     }
   })();
   SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
+}
+
+/**
+ * Mappa porte (piano 2026-11-07): le tabelle di DDL_MAPPA_PORTE solo se mancano. Additiva, idempotente, in UNA transazione; segno
+ * `done:<data>:v1` una volta sola. Dati derivati: se fallisce il tenant si apre lo stesso e la pagina dice che non c'è un calcolo.
+ */
+export function migrateMappaPorte(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_MAPPA_PORTE)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+    for (const [n, ddl] of INDICI_MAPPA_PORTE) if (!c.get(n)) db.exec(ddl);
+    const chiusa = `:v${VERSIONE_MAPPA_PORTE}`;
+    const attuale = leggiSegno(db, SEGNO_MAPPA_PORTE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_MAPPA_PORTE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
   return added;
 }
 
@@ -3033,6 +3055,21 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
+  }
+
+  // Mappa porte (piano 2026-11-07): quattro tabelle di dati derivati, solo se mancano. Se fallisce il tenant si apre lo stesso.
+  try {
+    const added = migrateMappaPorte(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: mappa porte, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione mappa porte fallita (ROLLBACK), la pagina resta senza dati:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_MAPPA_PORTE, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_MAPPA_PORTE}, segno non scritto:`, e2);
     }
   }
 

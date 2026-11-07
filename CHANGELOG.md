@@ -12,6 +12,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - `mac_ip_history`: una coppia MAC/IP già scritta nelle ultime 24 ore non si riscrive (`src/lib/mac-ip-storico.ts`, unica regola per le due copie di `upsertMacIpMapping`). Un IP nuovo si scrive subito. Le righe vecchie restano: la bonifica aspetta il sì di Riccardo.
 - Retention dello storico: il job di pulizia toglie le righe oltre 365 giorni (`mac_ip_history_retention_days` nella configurazione del job).
 - Indice nuovo `idx_mac_ip_history_coppia`: senza, il controllo scorrerebbe tutte le righe del MAC a ogni passaggio. Si costruisce una volta all'apertura del DB (su 13,6 M righe finte, sul Mac, 12 secondi).
+## [Non rilasciato] — 2026-11-07 · Mappa porte
+
+Riccardo voleva una tabella unica che dica cosa c'è sulla rete e dove sta. Le regole a portata di mano davano posizioni false: sui MAC via cavo dell'hub, confrontati col controller, «la porta con meno MAC» sbagliava 11 volte su 60 e `is_trunk`=0 13. La nuova regola sbaglia 1 volta (lo stesso apparato su due porte) e dove non può sapere lo dice.
+
+### Aggiunto
+- **Pagina Network → Mappa porte** (`/port-map`), schede «Oggetti» e «Porte»: ogni MAC con posizione, confidenza (certa, spiegata, da capire, non so), fonti e prove; ogni porta o aggregato con modo, PVID, VLAN tagged, PoE, spanning tree e vicino. I membri di un LAG non sono porte a sé: i MAC si contano sull'aggregato.
+- **Ricalcolo ogni 30 minuti** (`mappa-porte/job.ts`): non interroga gli apparati e scrive solo nelle sue quattro tabelle `mappa_porte_*`. Gli spostamenti restano 90 giorni, perché dalle sole tabelle dei MAC non si ricostruiscono.
 
 ## [Non rilasciato] — 2026-11-07 · Consenso e registro degli impianti
 

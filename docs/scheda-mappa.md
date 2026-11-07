@@ -15,4 +15,6 @@ nota: nessun framework di migrazioni — gli schemi si evolvono con `ALTER TABLE
 
 Trappola corrente: le righe MAC dei router vengono solo dalla bridge host (non dall'ARP) e i router si leggono con un job senza rete (`arp_poll`, oggi sull'hub il job `apparati_scelti` #25), perché l'avvio dello scheduler spegne la scansione veloce sulle reti da /22 in su (ADR 0010).
 
+Mappa porte (`/port-map`): cosa c'è in rete e su quale porta, con confidenza e fonti; aggregati e VLAN per porta. Fra porte di passaggio non sceglie: dice «non so».
+
 Acquisizione modulare: collector dedicato Aruba AOS-CX, collaudato su 6100; limiti espliciti e sezioni parziali nel manuale di acquisizione.

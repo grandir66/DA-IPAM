@@ -195,6 +195,14 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Mappa porte (07/11/2026): ricalcolo ogni 30 minuti dalle tabelle già lette. Non interroga gli apparati.
+    import("./src/lib/mappa-porte/job").then(({ avviaMappaPorte }) => {
+      avviaMappaPorte();
+      console.log("> Mappa porte: ricalcolo ogni 30 minuti");
+    }).catch((error) => {
+      console.error("WARNING: ricalcolo della mappa porte non avviato:", error);
+    });
+
     // Riconoscimento degli host unknown (06/11/2026): giro notturno con -O, spento di serie, si accende per cliente in
     // Opzioni (automatismo.riconoscimento).
     import("./src/lib/scanner/profili/sconosciuti-job").then(({ avviaGiroSconosciuti }) => {

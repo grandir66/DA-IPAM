@@ -10,6 +10,7 @@ import { useGiri } from "./giri-context";
 import {
   Activity,
   Cable,
+  EthernetPort,
   LayoutDashboard,
   ArrowUpFromLine,
   Network,
@@ -93,6 +94,7 @@ const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
   { href: "/topology", label: "Topologia", icon: Workflow },
+  { href: "/port-map", label: "Mappa porte", icon: EthernetPort },
   { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
   { href: "/credentials", label: "Credenziali", icon: Key, divider: "Credenziali" },

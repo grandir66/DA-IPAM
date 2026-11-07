@@ -34,6 +34,10 @@ tempo per host, campi riempiti e classi, e si decide il giro largo; è anche la 
 per **guardare a schermo** la tab «Rilievi» e la colonna «Da rivedere», che nessuno ha ancora
 visto. Contesto e numeri: `docs/revisione/2026-11-05-popolare-ip-e-apparati-dai-profili.md`.
 
+## Mappa porte — 07/11/2026
+
+`src/lib/mappa-porte/` (regola pura, `calcolo.ts` per il DB, job ogni 30 minuti che scrive solo `mappa_porte_*`), pagina `/port-map`. Piano: `plans/2026-11-07-mappa-porte.md`. Trappole: `is_trunk` vuol dire «più di un MAC», non 802.1Q; «SFP+ 1» non è l'indice 1, lo dice solo il controller; la stessa porta ha nomi diversi secondo la fonte, si unisce per indice e il LAG si piega sull'aggregato; l'agente SNMP della ProMax mette i MAC del LAG 49-50 sulla porta FDB 1 (lo vede anche LibreNMS), quindi su quella porta vince il controller. Il PoE di SW-CED-48POE-242 e ProMax risulta «non letto»: `upsertSwitchPorts` del giro SNMP riscrive null su ciò che il controller scrive alle 03:00; correzione da decidere con Riccardo.
+
 ## Riconoscimento degli apparati — 06/11/2026
 
 `main` = `dev` = `3f0a991e` = **0.9.985**, col sì di Riccardo; visto sul 72729: .52 e .53 riconosciuti. Annunci CDP/LLDP del trunk: `trunk/apparati-dal-trunk.ts` riempie modello e firmware, `attribution/annunci.ts` dà la categoria alle tre facciate dei segnali. Giro notturno `-O` sugli `unknown`: `scanner/profili/sconosciuti.ts`, levetta `automatismo.riconoscimento`, spenta. Vicini SNMP: levetta `automatismo.vicini_snmp`, spenta. Trappole: il filtro `NEIGHBORS_MODEL_SOURCES_SQL` è un freno voluto (ADR 0018), non una svista; le capacità non sono autoritative perché `lldpd` su Linux annuncia bridge e router; `-O` non va mai su stampanti e apparati di campo. Piano: `docs/superpowers/plans/2026-11-06-riconoscere-apparati.md`.

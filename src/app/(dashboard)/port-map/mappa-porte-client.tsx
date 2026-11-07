@@ -1,0 +1,347 @@
+"use client";
+/** Mappa porte (piano 2026-11-07): cosa c'è sulla rete e su quale porta sta, con quanta certezza e perché. */
+import Link from "next/link";
+import { EthernetPort } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { BarraStato, DatoDettaglio, Etichetta, IntestazionePagina, Pannello, SchedaDettaglio, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { LoadError } from "@/components/shared/load-error";
+import { SkeletonTable } from "@/components/shared/skeleton-table";
+import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import type { StatoCalcolo, VoceSpostamento } from "@/lib/mappa-porte/calcolo";
+import type { Confidenza, DatoVlan, ModoPorta, OggettoMappa, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
+
+type Scheda = "oggetti" | "porte";
+interface Risposta<T> { righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[] }
+
+const CONFIDENZE: Record<Confidenza, { segno: string; testo: string; classi: string; spiega: string }> = {
+  certa: { segno: "●", testo: "Certa", classi: STILE_STATO.ok.classi, spiega: "Lo dice il controller, oppure è l'unico MAC sulla porta" },
+  spiegata: { segno: "◐", testo: "Spiegata", classi: STILE_STATO.da_verificare.classi, spiega: "Porta condivisa con un motivo: hypervisor, telefono + PC" },
+  da_capire: { segno: "○", testo: "Da capire", classi: STILE_STATO.attenzione.classi, spiega: "Più MAC senza motivo, forse uno switch non gestito, o due porte insieme" },
+  non_so: { segno: "✕", testo: "Non so", classi: STILE_STATO.grigio.classi, spiega: "Visto solo su porte di passaggio: si dice il ramo, non si indovina la porta" },
+};
+const TIPI_PORTA: Record<TipoPorta, string> = {
+  passaggio: "Di passaggio", hypervisor: "Hypervisor", terminale: "Terminale", telefono_pc: "Telefono + PC", condivisa: "Condivisa", wifi: "Wifi", vuota: "Vuota",
+};
+const MODI: Record<ModoPorta, string> = { accesso: "Accesso", trunk: "Trunk", non_letto: "Non letto" };
+const TIPI_ELENCO = Object.entries(TIPI_PORTA) as Array<[TipoPorta, string]>;
+const CLASSE_SCELTA = "h-9 rounded-md border bg-background px-2 text-sm";
+
+const quando = (s: string | null | undefined): string => (s ? parseDbDate(s).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—");
+const conDedotto = (testo: string, dato: DatoVlan) => (dato === "dedotto" ? `${testo} ≈` : testo);
+
+function SegnoConfidenza({ c }: { c: Confidenza }) {
+  const v = CONFIDENZE[c];
+  return (
+    <span title={v.spiega} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] leading-none font-semibold whitespace-nowrap ${v.classi}`}>
+      <span aria-hidden>{v.segno}</span>
+      {v.testo}
+    </span>
+  );
+}
+
+function Scelta({ valore, onCambia, etichetta, voci }: { valore: string; onCambia: (v: string) => void; etichetta: string; voci: Array<[string, string]> }) {
+  return (
+    <select aria-label={etichetta} value={valore} onChange={(e) => onCambia(e.target.value)} className={CLASSE_SCELTA}>
+      <option value="">{etichetta}</option>
+      {voci.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+    </select>
+  );
+}
+
+function Spunta({ acceso, onCambia, testo }: { acceso: boolean; onCambia: (v: boolean) => void; testo: string }) {
+  return (
+    <label className="flex items-center gap-1.5 text-sm">
+      <input type="checkbox" checked={acceso} onChange={(e) => onCambia(e.target.checked)} />
+      {testo}
+    </label>
+  );
+}
+
+function Paginazione({ pagina, totale, dimensione, onPagina }: { pagina: number; totale: number; dimensione: number; onPagina: (p: number) => void }) {
+  const da = totale === 0 ? 0 : pagina * dimensione + 1;
+  const a = Math.min(totale, (pagina + 1) * dimensione);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="font-mono text-[13px] text-muted-foreground">{da.toLocaleString("it-IT")}–{a.toLocaleString("it-IT")} di {totale.toLocaleString("it-IT")}</span>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" disabled={pagina === 0} onClick={() => onPagina(pagina - 1)}>Precedenti</Button>
+        <Button variant="outline" size="sm" disabled={a >= totale} onClick={() => onPagina(pagina + 1)}>Successivi</Button>
+      </div>
+    </div>
+  );
+}
+
+function Dettaglio({ chiave, onChiudi }: { chiave: string | null; onChiudi: () => void }) {
+  const [dati, setDati] = useState<{ oggetto: OggettoMappa; spostamenti: VoceSpostamento[] } | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+  const nextSignal = useLatestRequest();
+  useEffect(() => {
+    if (!chiave) return;
+    const signal = nextSignal();
+    void (async () => {
+      setDati(null);
+      setErrore(null);
+      try {
+        const r = await fetchJson<{ oggetto: OggettoMappa; spostamenti: VoceSpostamento[] }>(`/api/port-map?dettaglio=${encodeURIComponent(chiave)}`, { signal });
+        if (signal.aborted) return;
+        if (r.ok) setDati(r.data);
+        else setErrore(r.message);
+      } catch {
+        /* richiesta superata */
+      }
+    })();
+  }, [chiave, nextSignal]);
+  const o = dati?.oggetto;
+  return (
+    <Sheet open={chiave != null} onOpenChange={(v) => { if (!v) onChiudi(); }}>
+      <SheetContent className="w-full overflow-y-auto data-[side=right]:sm:max-w-xl">
+        <SheetTitle className="sr-only">Dettaglio della posizione</SheetTitle>
+        {errore && <LoadError what="il dettaglio" message={errore} />}
+        {!errore && !o && <div className="p-4"><SkeletonTable rows={4} columns={2} /></div>}
+        {o && (
+          <div className="space-y-3 p-4">
+            <SchedaDettaglio
+              etichetta={o.categoria === "apparato" ? "Apparato di rete" : "Oggetto"}
+              titolo={o.nome ?? o.mac ?? o.chiave}
+              vuoto=""
+              azioni={
+                <div className="flex flex-wrap gap-2">
+                  {o.hostId != null && <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/hosts/${o.hostId}`} />}>Scheda host</Button>}
+                  {o.apparatoId != null && <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/devices/${o.apparatoId}`} />}>Scheda apparato</Button>}
+                  {o.deviceId != null && <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/devices/${o.deviceId}`} />}>{o.apparato}</Button>}
+                  <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/topology" />}>Topologia</Button>
+                </div>
+              }
+            >
+              <DatoDettaglio nome="Perché" valore={o.perche} />
+              <DatoDettaglio nome="Confidenza" valore={<SegnoConfidenza c={o.confidenza} />} />
+              <DatoDettaglio nome="Dove" valore={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo} mono />
+              <DatoDettaglio nome="MAC" valore={o.mac} mono />
+              <DatoDettaglio nome="IP" valore={o.ip ? `${o.ip}${o.nIp > 1 ? ` (+${o.nIp - 1})` : ""}` : null} mono />
+              <DatoDettaglio nome="Fonti" valore={o.fonti.join(" · ") || null} />
+              {o.dedotta && <DatoDettaglio nome="Nota" valore="Posizione dedotta dall'hypervisor, nessuna tabella l'ha vista" />}
+            </SchedaDettaglio>
+            <Pannello titolo="Prove" conteggio={o.prove.length} sottotitolo="Ogni porta dove è stato visto" corpoClassName="p-0">
+              {o.prove.length === 0 ? <p className="p-3 text-[13px] text-muted-foreground">Nessuna riga nelle tabelle degli apparati.</p> : (
+                <Table>
+                  <TableHeader><TableRow><TableHead>Apparato · porta</TableHead><TableHead>Tipo</TableHead><TableHead className="text-right">MAC</TableHead><TableHead>Fonte</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {o.prove.map((p) => (
+                      <TableRow key={`${p.apparato}|${p.porta}`} title={p.visto ? `Visto ${quando(p.visto)}` : undefined}>
+                        <TableCell className="font-mono text-[13px] whitespace-normal">{p.apparato} · {p.porta}</TableCell>
+                        <TableCell className="text-[13px]">{TIPI_PORTA[p.tipo]}</TableCell>
+                        <TableCell className="text-right font-mono text-[13px]">{p.nMac}</TableCell>
+                        <TableCell className="text-[13px]">{p.fonte}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </Pannello>
+            {dati.spostamenti.length > 0 && (
+              <Pannello titolo="Spostamenti" conteggio={dati.spostamenti.length} sottotitolo="Ultimi 90 giorni">
+                <ul className="space-y-1.5 font-mono text-[13px]">
+                  {dati.spostamenti.map((s) => <li key={`${s.il}|${s.aPorta}`}>{quando(s.il)}: {s.daApparato} · {s.daPorta} → {s.aApparato} · {s.aPorta}</li>)}
+                </ul>
+              </Pannello>
+            )}
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function MappaPorteClient() {
+  const [scheda, setScheda] = useState<Scheda>("oggetti");
+  const [testo, setTesto] = useState("");
+  const [q, setQ] = useState("");
+  const [apparato, setApparato] = useState("");
+  const [vlan, setVlan] = useState("");
+  const [confidenza, setConfidenza] = useState("");
+  const [tipoPorta, setTipoPorta] = useState("");
+  const [modo, setModo] = useState("");
+  const [senzaHost, setSenzaHost] = useState(false);
+  const [spostati, setSpostati] = useState(false);
+  const [vecchi, setVecchi] = useState(false);
+  const [libere, setLibere] = useState(false);
+  const [pagina, setPagina] = useState(0);
+  const [oggetti, setOggetti] = useState<Risposta<OggettoMappa> | null>(null);
+  const [porte, setPorte] = useState<Risposta<PortaMappa> | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+  const [scelto, setScelto] = useState<string | null>(null);
+  const nextSignal = useLatestRequest();
+
+  useEffect(() => {
+    const h = window.location.hash.slice(1);
+    if (h === "porte") setScheda("porte");
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => { setQ(testo.trim()); setPagina(0); }, 300);
+    return () => clearTimeout(t);
+  }, [testo]);
+
+  const carica = useCallback(async () => {
+    const signal = nextSignal();
+    const u = new URLSearchParams({ vista: scheda, pagina: String(pagina) });
+    const metti = (k: string, v: string | boolean) => { if (v === true) u.set(k, "1"); else if (v) u.set(k, v); };
+    metti("q", q); metti("apparato", apparato); metti("tipoPorta", tipoPorta);
+    if (scheda === "oggetti") { metti("vlan", vlan); metti("confidenza", confidenza); metti("senzaHost", senzaHost); metti("spostati", spostati); metti("vecchi", vecchi); }
+    else { metti("modo", modo); metti("libere", libere); }
+    try {
+      const r = await fetchJson<Risposta<OggettoMappa & PortaMappa>>(`/api/port-map?${u}`, { signal });
+      if (signal.aborted) return;
+      if (!r.ok) { setErrore(r.message); return; }
+      setErrore(null);
+      if (scheda === "oggetti") setOggetti(r.data);
+      else setPorte(r.data);
+    } catch {
+      /* richiesta superata */
+    }
+  }, [nextSignal, scheda, pagina, q, apparato, tipoPorta, vlan, confidenza, senzaHost, spostati, vecchi, modo, libere]);
+  useEffect(() => {
+    void carica();
+  }, [carica]);
+
+  const conFiltro = <T,>(f: (v: T) => void) => (v: T) => { f(v); setPagina(0); };
+  const cambiaScheda = (s: Scheda) => {
+    setScheda(s);
+    setPagina(0);
+    setTipoPorta("");
+    window.history.replaceState(null, "", `#${s}`);
+  };
+
+  const dati = scheda === "oggetti" ? oggetti : porte;
+  const calcolo = dati?.calcolo ?? oggetti?.calcolo ?? porte?.calcolo ?? null;
+  const c = calcolo?.conteggi;
+  const apparati = (dati?.apparati ?? []).map((a): [string, string] => [String(a.id), a.nome]);
+
+  return (
+    <div className="space-y-4">
+      <IntestazionePagina titolo="Mappa porte" sottotitolo="Cosa c'è sulla rete e su quale porta sta." />
+      <BarraStato
+        acceso={calcolo != null}
+        titolo="Calcolo"
+        dettagli={calcolo ? [`ultimo ${quando(calcolo.il)}`, `${c?.apparatiConTabella ?? 0} apparati con tabella`, `${c?.apparatiSoloController ?? 0} solo dal controller`, `${c?.senzaHost ?? 0} senza host noto`] : []}
+      />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <TesseraNumero titolo="Certe" valore={c?.certe ?? null} nota="Controller, o unico MAC sulla porta" />
+        <TesseraNumero titolo="Spiegate" valore={c?.spiegate ?? null} nota="Hypervisor, telefono + PC" />
+        <TesseraNumero titolo="Da capire" valore={c?.daCapire ?? null} nota="Più MAC senza motivo" />
+        <TesseraNumero titolo="Non so" valore={c?.nonSo ?? null} nota="Solo porte di passaggio" icona={<EthernetPort />} />
+      </div>
+      <SchedePagina<Scheda>
+        etichetta="Viste della mappa"
+        voci={[
+          { valore: "oggetti", titolo: "Oggetti", descrizione: "Ogni cosa vista in rete e dove sta" },
+          { valore: "porte", titolo: "Porte", descrizione: "Ogni porta, aggregato e cosa ha sopra" },
+        ]}
+        scelta={scheda}
+        onScegli={cambiaScheda}
+      />
+      <Pannello
+        titolo={scheda === "oggetti" ? "Oggetti" : "Porte"}
+        conteggio={dati?.totale}
+        corpoClassName="p-0"
+        azioni={
+          <>
+            <Input aria-label="Cerca" placeholder={scheda === "oggetti" ? "Nome, IP, MAC, porta" : "Porta, apparato, vicino"} value={testo} onChange={(e) => setTesto(e.target.value)} className="h-9 w-52" />
+            <Scelta etichetta="Tutti gli apparati" valore={apparato} onCambia={conFiltro(setApparato)} voci={apparati} />
+            {scheda === "oggetti" && <Scelta etichetta="Tutte le VLAN" valore={vlan} onCambia={conFiltro(setVlan)} voci={(dati?.vlan ?? []).map((v) => [String(v), `VLAN ${v}`])} />}
+            {scheda === "oggetti" && <Scelta etichetta="Ogni confidenza" valore={confidenza} onCambia={conFiltro(setConfidenza)} voci={(Object.keys(CONFIDENZE) as Confidenza[]).map((k) => [k, CONFIDENZE[k].testo])} />}
+            <Scelta etichetta="Ogni tipo di porta" valore={tipoPorta} onCambia={conFiltro(setTipoPorta)} voci={TIPI_ELENCO} />
+            {scheda === "porte" && <Scelta etichetta="Ogni modo" valore={modo} onCambia={conFiltro(setModo)} voci={Object.entries(MODI)} />}
+            {scheda === "oggetti" && <Spunta testo="Senza host" acceso={senzaHost} onCambia={conFiltro(setSenzaHost)} />}
+            {scheda === "oggetti" && <Spunta testo="Spostati" acceso={spostati} onCambia={conFiltro(setSpostati)} />}
+            {scheda === "oggetti" && <Spunta testo="Anche i non più visti" acceso={vecchi} onCambia={conFiltro(setVecchi)} />}
+            {scheda === "porte" && <Spunta testo="Libere" acceso={libere} onCambia={conFiltro(setLibere)} />}
+          </>
+        }
+        piede={
+          scheda === "oggetti"
+            ? <div className="flex flex-wrap gap-3">{(Object.keys(CONFIDENZE) as Confidenza[]).map((k) => <span key={k} className="flex items-center gap-1.5"><SegnoConfidenza c={k} />{CONFIDENZE[k].spiega}</span>)}</div>
+            : <span>≈ dato dedotto: lo switch non dichiara le VLAN in modo completo. «Non letto»: l&apos;apparato non dà quel dato.</span>
+        }
+      >
+        {errore ? <LoadError what="la mappa" message={errore} onRetry={() => void carica()} />
+          : !dati ? <div className="p-3"><SkeletonTable rows={8} columns={7} /></div>
+          : dati.righe.length === 0 ? <Vuoto titolo="Nessuna riga" testo="Nessun risultato con questi filtri. Dopo un'installazione nuova serve un giro sugli switch." />
+          : (
+            <div className="space-y-2 p-3">
+              {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} /> : <TabellaPorte righe={porte?.righe ?? []} />}
+              <Paginazione pagina={pagina} totale={dati.totale} dimensione={dati.dimensionePagina} onPagina={setPagina} />
+            </div>
+          )}
+      </Pannello>
+      <Dettaglio chiave={scelto} onChiudi={() => setScelto(null)} />
+    </div>
+  );
+}
+
+function TabellaOggetti({ righe, onScegli }: { righe: OggettoMappa[]; onScegli: (k: string) => void }) {
+  return (
+    <Table fissa riserva={70}>
+      <TableHeader>
+        <TableRow><TableHead>Oggetto</TableHead><TableHead>MAC</TableHead><TableHead>IP</TableHead><TableHead>Dove</TableHead><TableHead>VLAN</TableHead><TableHead>Confidenza</TableHead><TableHead className="hidden min-[1500px]:table-cell">Visto</TableHead></TableRow>
+      </TableHeader>
+      <TableBody>
+        {righe.map((o) => (
+          <TableRow key={o.chiave} className="cursor-pointer" onClick={() => onScegli(o.chiave)}>
+            <TableCell className="max-w-44 truncate font-medium" title={o.nome ?? undefined}>
+              {o.nome ?? <span className="font-normal text-muted-foreground">Sconosciuto</span>}
+              {o.tipo && <span className="block text-[13px] font-normal text-muted-foreground">{o.tipo}</span>}
+            </TableCell>
+            <TableCell className="font-mono text-[13px]">{o.mac ?? "—"}</TableCell>
+            <TableCell className="font-mono text-[13px]">{o.ip ?? "—"}{o.nIp > 1 ? ` +${o.nIp - 1}` : ""}</TableCell>
+            <TableCell className="max-w-64 truncate font-mono text-[13px]" title={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo ?? undefined}>
+              {o.apparato ? `${o.apparato} · ${o.porta}` : <span className="text-muted-foreground">{o.ramo}</span>}
+              {o.dedotta && o.apparato ? " ≈" : ""}
+              {o.conflitto ? " ▲" : ""}
+            </TableCell>
+            <TableCell className="font-mono text-[13px]">{o.vlan ?? "—"}</TableCell>
+            <TableCell><SegnoConfidenza c={o.confidenza} /></TableCell>
+            <TableCell className="hidden font-mono text-[13px] whitespace-nowrap min-[1500px]:table-cell">{quando(o.visto)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function TabellaPorte({ righe }: { righe: PortaMappa[] }) {
+  return (
+    <Table fissa riserva={70}>
+      <TableHeader>
+        <TableRow><TableHead>Apparato</TableHead><TableHead>Porta</TableHead><TableHead>Stato</TableHead><TableHead>Tipo</TableHead><TableHead>Modo</TableHead><TableHead>PVID</TableHead><TableHead>Tagged</TableHead><TableHead>Velocità</TableHead><TableHead>PoE</TableHead><TableHead>Vicino</TableHead><TableHead className="text-right">MAC</TableHead></TableRow>
+      </TableHeader>
+      <TableBody>
+        {righe.map((p) => (
+          <TableRow key={`${p.deviceId}|${p.chiave}`}>
+            <TableCell className="max-w-44 truncate"><Link href={`/devices/${p.deviceId}`} className="hover:underline">{p.apparato}</Link></TableCell>
+            <TableCell className="max-w-56 font-mono text-[13px] whitespace-normal">
+              {p.nome}
+              {p.membri.length > 0 && <span className="block text-muted-foreground">{p.membri.join(", ")}</span>}
+              {p.stp === "blocking" && <span className={`ml-1 inline-flex rounded-md border px-1.5 py-0.5 text-[13px] leading-none font-semibold ${STILE_STATO.guasto.classi}`}>✕ STP bloccata</span>}
+            </TableCell>
+            <TableCell className="text-[13px]">{p.stato ?? "—"}</TableCell>
+            <TableCell className="text-[13px]" title={p.motivi.join(", ") || undefined}>{TIPI_PORTA[p.tipo]}</TableCell>
+            <TableCell>{p.modo === "trunk" ? <Etichetta tono="marca" mono={false}>{conDedotto(MODI.trunk, p.datoVlan)}</Etichetta> : <span className="text-[13px]">{conDedotto(MODI[p.modo], p.datoVlan)}</span>}</TableCell>
+            <TableCell className="font-mono text-[13px]">{p.pvid ?? "—"}</TableCell>
+            <TableCell className="max-w-40 truncate font-mono text-[13px]" title={p.vlanTagged.join(", ") || undefined}>{p.vlanTagged.join(", ") || "—"}</TableCell>
+            <TableCell className="font-mono text-[13px] whitespace-nowrap">{p.velocita ?? "—"}</TableCell>
+            <TableCell className="font-mono text-[13px] whitespace-nowrap">{p.poeStato ? `${p.poeStato}${p.poeMw != null ? ` ${(p.poeMw / 1000).toLocaleString("it-IT", { maximumFractionDigits: 1 })} W` : ""}` : <span className="font-sans text-muted-foreground">non letto</span>}</TableCell>
+            <TableCell className="max-w-44 truncate text-[13px]" title={p.vicino ?? undefined}>{p.vicino ?? "—"}</TableCell>
+            <TableCell className="text-right font-mono text-[13px]">{p.nMac}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}

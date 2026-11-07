@@ -66,7 +66,11 @@ Fatti trovati:
 Riccardo, 07/11: «avendo acquisito molte informazioni sulla rete, per gestire quanto è emerso da switch, router, access point, controller; usando le acquisizioni degli switch, per porte le loro tabelle host, le conoscenze LLDP e varianti, spanning tree, per costruire un'ulteriore tabella che dice cosa è e dove è presente sulla rete; un nuovo menu nella parte di network». Fase di ragionamento: niente codice prima della sua approvazione.
 
 - [x] Misure sull'hub 533 (sola lettura, 07/11) e proposta in chat: regola della porta di accesso, interfaccia oggetto per oggetto, dove si materializza il dato, livello di controllo
-- [ ] Approvazione di Riccardo e risposte alle domande
+- [x] Approvazione di Riccardo (07/11, «Sì, procedi», livello completo). Piano: `docs/superpowers/plans/2026-11-07-mappa-porte.md`
+- [x] Pagina Mappa porte, regola, tabelle, ricalcolo ogni 30 minuti
+- [ ] Riccardo: decidere la correzione del PoE sovrascritto dal giro SNMP (cambia un dato letto da altre pagine)
+- [ ] Riccardo: sì per `main`, è un rilascio alle appliance
+- [ ] Rimandate: correzione a mano, colonna «Dove sta» in Discovery
 - [ ] Misura sul 72729 prima del codice, solo col suo sì: l'hub è quasi tutto UniFi, un cliente senza controller non ha un riferimento
 
 Misure (MAC visti negli ultimi 7 giorni, 339, di cui 45 di apparati di rete; ne restano 294): 65 da soli su una porta, 50 in wifi, 141 su porte condivise (8 porte di hypervisor, 3 telefono + PC, 10 senza spiegazione), 35 solo su porte di passaggio, 2 solo sul router, 1 su due porte di bordo. Prova contro il controller, 60 MAC su cavo: «meno MAC» 11 sbagliati, «`is_trunk`=0» 13 sbagliati, regola proposta 1 sbagliato (stesso apparato su due porte) e 10 «non so».

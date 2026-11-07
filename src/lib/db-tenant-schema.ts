@@ -497,6 +497,39 @@ export const SEGNO_SWITCH_VLAN_NATIVA = "switch_vlan_nativa_v21";
 export const VERSIONE_SWITCH_VLAN_NATIVA = 1;
 
 /**
+ * Mappa porte (piano 2026-11-07): il risultato della regola, ricalcolato ogni 30 minuti dalle tabelle già lette
+ * (`mappa-porte/calcolo.ts`), più gli spostamenti, che dalle sole tabelle dei MAC non si ricostruiscono. Dati derivati: nessuna
+ * FOREIGN KEY, nessun CHECK, si riscrivono interi in una transazione. Come le altre: CREATE solo nella migrazione
+ * (`migrateMappaPorte`), senza `IF NOT EXISTS`.
+ */
+export const DDL_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
+  ["mappa_porte_oggetti", `CREATE TABLE mappa_porte_oggetti (
+  chiave TEXT PRIMARY KEY, categoria TEXT NOT NULL, mac TEXT, ip TEXT, n_ip INTEGER NOT NULL DEFAULT 0, nome TEXT, tipo TEXT, host_id INTEGER,
+  apparato_id INTEGER, confidenza TEXT NOT NULL, device_id INTEGER, apparato TEXT, porta_chiave TEXT, porta TEXT, tipo_porta TEXT, vlan INTEGER,
+  ramo TEXT, perche TEXT NOT NULL, fonti TEXT NOT NULL, prove TEXT NOT NULL, conflitto INTEGER NOT NULL DEFAULT 0, dedotta INTEGER NOT NULL DEFAULT 0,
+  vecchio INTEGER NOT NULL DEFAULT 0, senza_host INTEGER NOT NULL DEFAULT 0, visto TEXT
+)`],
+  ["mappa_porte_porte", `CREATE TABLE mappa_porte_porte (
+  device_id INTEGER NOT NULL, chiave TEXT NOT NULL, apparato TEXT NOT NULL, ordine INTEGER NOT NULL, nome TEXT NOT NULL, membri TEXT NOT NULL,
+  stato TEXT, velocita TEXT, modo TEXT NOT NULL, pvid INTEGER, vlan_tagged TEXT NOT NULL, dato_vlan TEXT NOT NULL, poe_stato TEXT, poe_mw INTEGER,
+  stp TEXT, tipo TEXT NOT NULL, vicino TEXT, n_mac INTEGER NOT NULL, motivi TEXT NOT NULL,
+  PRIMARY KEY (device_id, chiave)
+)`],
+  ["mappa_porte_spostamenti", `CREATE TABLE mappa_porte_spostamenti (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, chiave TEXT NOT NULL, mac TEXT, nome TEXT, da_apparato TEXT NOT NULL, da_porta TEXT NOT NULL,
+  a_apparato TEXT NOT NULL, a_porta TEXT NOT NULL, il TEXT NOT NULL
+)`],
+  ["mappa_porte_calcolo", `CREATE TABLE mappa_porte_calcolo (
+  id INTEGER PRIMARY KEY CHECK (id = 1), il TEXT NOT NULL, durata_ms INTEGER NOT NULL, conteggi TEXT NOT NULL
+)`],
+];
+export const INDICI_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
+  ["idx_mappa_porte_spostamenti_chiave", "CREATE INDEX idx_mappa_porte_spostamenti_chiave ON mappa_porte_spostamenti(chiave, il)"],
+];
+export const SEGNO_MAPPA_PORTE = "mappa_porte_v21";
+export const VERSIONE_MAPPA_PORTE = 1;
+
+/**
  * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):
  * la fotografia dell'ultima lettura buona di ogni parte dell'API di LibreNMS locale (apparati, porte, vicini, VLAN, MAC per
  * porta, ARP, sensori, inventario), come ADR 0027/0029, più `librenms_lettura` (come è andata ogni parte) e

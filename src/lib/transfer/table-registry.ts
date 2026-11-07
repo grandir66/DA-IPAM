@@ -159,6 +159,8 @@ export const HUB_TABLES: TableSpec[] = [
  * le toglie, e l'import di un bundle di prima le converte in memoria.
  */
 export const EXCLUDED_TENANT_TABLES: string[] = [
+  // Mappa porte (07/11): dati derivati, si ricalcolano da soli in 30 minuti dalle tabelle che viaggiano.
+  "mappa_porte_oggetti", "mappa_porte_porte", "mappa_porte_spostamenti", "mappa_porte_calcolo",
   // Id locali della sonda (ripartono da 1), validi solo su questa istanza e solo per il riquadro dei gruppi aperti.
   "va_gruppi_lanciati",
   // Copia del registro di questa sonda, che non si riscrive: un import farebbe DELETE e i trigger lo rifiutano.

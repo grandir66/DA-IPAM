@@ -56,6 +56,7 @@ Riccardo, 07/11, alternativa: «oppure un sistema di collegamento e trasferiment
 - [x] Risposte alle 8 domande (07/11: valgono i consigli) e piano scritto: `docs/superpowers/plans/2026-11-07-installazione-snella-e-collegamento.md`, 16 task, livello completo
 - [x] Approvazione del piano da parte di Riccardo (07/11). La misura del Task 1 l'ha lanciata lui in una sessione a parte
 - [ ] Misurare in laboratorio un'installazione senza Edge, Greenbone, LibreNMS e, se si riesce, Docker. Stima da verificare: 2 vCPU, 4 GB, 40 GB
+  - 07/11: prima misura fatta su VM 106 `79993-ipam-3`, VM vuota: 1,6-1,8 GB di RAM, 66 GB di disco di cui 63 Docker, acceso solo nginx. Tabella nel piano. Manca la lettura delle 24 ore: `/root/misura-79993-ipam-3-24h.txt` sul PX-NAS dalle 18:19 dell'08/11, poi soglie con Riccardo
 - [ ] Verificare come si installa `sensore-trunk` senza Edge: oggi il codice sta nel pacchetto `scanner_edge`
 - [ ] Decisione di Riccardo: Task 2 con pacchetto su Debian invece di un'immagine snella, e cosa fare del Task 1 sospeso
 

@@ -27,7 +27,7 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
-| S1 | [ ] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
+| S1 | [~] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
 | S2 | [ ] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
 | S3 | [ ] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
 | S4 | [ ] | Coda comune senza vicolo cieco | implementer, tester | — | 7 giorni di caduta si recuperano da soli | prove della coda |
@@ -58,7 +58,7 @@ Fermate col sì di Riccardo: dopo S1 (soglie), prima di S2 (immagine), prima di 
 
 ## Tappa 1 — Installazione snella
 
-### [ ] Task 1 — Misura con l'immagine attuale e moduli spenti
+### [~] Task 1 — Misura con l'immagine attuale e moduli spenti
 
 Nessun codice: serve a sapere il peso vero prima di costruire un'immagine.
 
@@ -223,8 +223,41 @@ Verifica: stato a schermo nel centrale, ultima fotografia di oggi, `da-link-veri
 ## Registro
 
 - 2026-11-07 — Task 1 sospeso su richiesta di Riccardo (verifica di un'installazione su Debian senza immagine, esito in `TASKS.md`). Stato sul campo: bozza DA-Link 30, nodo `79993-ipam-3`, sede 3, `192.168.99.3/24`, moduli `ipam` e `zabbix`, trunk `condivisa`, comando valido fino all'08/11 17:41. Giro fermato durante lo scarico, nessuna VM creata; sul PX-NAS restano lo scarico parziale in `/ZFS-LARGE/replica/da-appliance-scarico` (5,8 GB, riprende da solo) e il registro `/root/install-79993-ipam-3.log`. Nessuna misura fatta. La RAM della VM sarà 12 GB, minimo di `RAM_MINIMA_VM`, non i 4 GB delle soglie proposte.
+- 2026-11-07 — Riccardo: «Riprendi la misura». VM 106 `79993-ipam-3` creata sul PX-NAS, esito 0, prima misura qui sotto. Nessuno snapshot: VM nuova. Decisione sul pacchetto Debian ancora aperta in `TASKS.md`.
 
 ## Misure
+
+### Task 1 — VM 106 `79993-ipam-3`, PX-NAS, 07/11 18:18-18:20 (fonte: `qm guest exec` sulla VM)
+
+Immagine 2026.10.25 (`ULTIMO`), DA-IPAM `8920423`, moduli `ipam`, `zabbix`, trunk `condivisa`. VM da 12 GB (`RAM_MINIMA_VM`), 4 core, disco 160 GB su `ZFS-LARGE`. Installazione: 10 minuti dalla ripresa dello scarico, esito 0. **VM vuota e accesa da 2-3 minuti**: wizard non fatto, nessuna rete, nessuna scansione. Vale come pavimento, non come consumo in esercizio.
+
+| Misura | Subito (2 min) | Dopo 1 min | 24 ore |
+|---|---|---|---|
+| RAM usata (`free -m`, su 11.967 MB) | 1.812 MB | 1.615 MB | da leggere |
+| RAM disponibile | 10.154 MB | 10.352 MB | da leggere |
+| RSS `node` | 710 MB | 723 MB | da leggere |
+| RSS `npm` (avvio) | 430 MB | 58 MB | da leggere |
+| `dockerd` + `containerd` RSS | 169 MB | 180 MB | da leggere |
+| `netbird` RSS | 71 MB | 72 MB | da leggere |
+| `sensore-trunk` RSS | 64 MB | 64 MB | da leggere |
+| cgroup `da-ipam` | 1.092 MB | 1.138 MB | da leggere |
+| cgroup `docker` + `containerd` | 252 MB | 437 MB | da leggere |
+| cgroup `zabbix-proxy` + `zabbix-agent2` | 99 MB | 104 MB | da leggere |
+
+| Disco | Valore |
+|---|---|
+| Usato su `/` | 66 GB su 158 |
+| `/var/lib/docker/volumes` | 39 GB |
+| `/var/lib/containerd` (immagini) | 24 GB |
+| `/opt/da-ipam` | 1,7 GB (`node_modules` 909 MB, `.next` 686 MB, `data` 41 MB) |
+| `/opt/sensore-trunk` | 113 MB |
+| `/usr` | 1,8 GB |
+
+`docker ps`: acceso solo `appliance-nginx`. 28 immagini, 8 volumi, tutti fermi. `/opt/da-invent/data` non esiste su questa VM: i dati stanno in `/opt/da-ipam/data`. Nessuna unità fallita.
+
+**Lettura, da confermare con le 24 ore.** Riposo sotto 3 GB: rispettato a VM vuota. Disco 40 GB: l'immagine piena fa 66 GB, ma 63 sono Docker; senza restano circa 4 GB più i dati. RAM 4 GB: oggi non si può assegnare, `RAM_MINIMA_VM` e l'installatore impongono 12 GB. Docker costa 250-440 MB e serve solo a nginx.
+
+Seconda lettura: timer una tantum sul PX-NAS, `misura-79993-ipam-3-24h`, 08/11 18:19 CET, scrive `/root/misura-79993-ipam-3-24h.txt`. Nessuna sessione parte: il file si legge a mano. Le soglie si decidono dopo, con Riccardo.
 
 ## Consuntivo
 

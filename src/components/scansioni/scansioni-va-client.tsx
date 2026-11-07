@@ -91,7 +91,7 @@ function ColonnaCambio({ c, onPerDevice, comandi }: { c: Cambio; onPerDevice: ()
         <button type="button" className="text-sm text-cian-testo hover:underline" onClick={onPerDevice}>Vai a Per device ›</button>
         {comandi.onAutorizza && (comandi.daAggiornare
           ? <Stato tono="spento">● Sonda da aggiornare</Stato>
-          : <Button size="sm" variant="outline" onClick={comandi.onAutorizza}>Autorizza gli impianti</Button>)}
+          : <Button size="sm" variant="outline" className="text-foreground" onClick={comandi.onAutorizza}>Autorizza gli impianti</Button>)}
       </span>
     );
   }
@@ -307,7 +307,7 @@ export function ScansioniVaClient() {
   };
 
   const comandiDi = (r: ReteScansione): ComandiConsenso => ({
-    onAutorizza: amministratore && modo === "immediata" && r.sonda === "nota" ? () => setPerConsenso(r) : null,
+    onAutorizza: amministratore && modo === "immediata" && r.sonda !== "errore" ? () => setPerConsenso(r) : null,
     onRevoca: amministratore ? () => void revoca(r) : null,
     daAggiornare: r.consensoNoto === false,
   });

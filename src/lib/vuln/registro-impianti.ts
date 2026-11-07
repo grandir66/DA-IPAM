@@ -9,7 +9,7 @@
 import { getDb, getNetworkById, getNetworks } from "@/lib/db";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { EdgeClientError, edgeApiGet, edgeApiPost } from "@/lib/vuln/scanner-edge-client";
-import { allineaReteEdge, ipImpiantiDellaRete } from "@/lib/vuln/edge-subnet-bridge";
+import { allineaReteEdge, buildEdgeEnsureBody, ipImpiantiDellaRete } from "@/lib/vuln/edge-subnet-bridge";
 import { SONDA_DA_AGGIORNARE } from "@/lib/vuln/finestra";
 import { dataRegistro, dettaglioRegistro, nomeEvento, profiloRegistro, type ConsensoRete } from "@/lib/vuln/scansioni-va-regole";
 
@@ -65,9 +65,14 @@ export async function daiConsenso(networkId: number, d: { chi: string; riferimen
   if (ips.length === 0) return { ok: false, status: 409, error: "Su questa rete non risultano impianti" };
   try {
     // L'elenco degli impianti deve essere arrivato alla sonda: lei rifiuta un IP che non conosce come impianto.
-    await allineaReteEdge(networkId);
-    const id = await idSullaSonda(rete.cidr);
-    if (id === null) return { ok: false, status: 409, error: "La sonda non conosce questa rete" };
+    // Su una rete che la sonda non ha mai visto non c'è niente da allineare: si registra. Banco, 07/11: Edge
+    // impara una rete al primo lancio, e con un impianto il lancio è proprio ciò che il consenso deve sbloccare.
+    let id = await idSullaSonda(rete.cidr);
+    if (id === null) {
+      id = (await edgeApiPost<{ network_id: number }>(s, "/api/v1/networks/ensure", buildEdgeEnsureBody(networkId, { syncHosts: false, syncCredentials: false }), { timeoutMs: 120000 })).network_id;
+    } else {
+      await allineaReteEdge(networkId);
+    }
     const r = await edgeApiPost<{ consenso: ConsensoRete }>(s, `/api/v1/networks/${id}/consenso`, { chi: d.chi, riferimento: d.riferimento, ore: d.ore, ips });
     await sincronizzaRegistro().catch(() => undefined);
     return { ok: true, dati: r.consenso };

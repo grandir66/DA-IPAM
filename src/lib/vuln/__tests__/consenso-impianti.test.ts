@@ -161,6 +161,15 @@ test("consenso: gli IP vengono dall'inventario, il rifiuto di Edge arriva con il
   });
 });
 
+test("consenso: una rete che la sonda non ha mai visto si registra prima", async () => {
+  lookup = { found: false };
+  await withTenant(TENANT, async () => {
+    const r = await daiConsenso(1, { chi: "riccardo", riferimento: "Mail", ore: 4 });
+    assert.equal(r.ok, true);
+    assert.equal(corpi.some((c) => c.url.endsWith("/networks/ensure")), true);
+  });
+});
+
 test("consenso: una sonda vecchia dice di aggiornarsi", async () => {
   lookup = { found: true, network_id: 9 };
   await withTenant(TENANT, async () => {

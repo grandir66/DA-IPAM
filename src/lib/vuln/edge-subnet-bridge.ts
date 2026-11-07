@@ -287,7 +287,7 @@ function rememberAssessmentAcceptedByEdge(
   });
 }
 
-function buildEdgeEnsureBody(
+export function buildEdgeEnsureBody(
   networkId: number,
   opts: {
     syncHosts?: boolean;

@@ -19,6 +19,17 @@ Riccardo, 07/11: «una vm minimale da installare da un cliente per avere non ipa
 
 Strada consigliata, a tappe: (1) VM con proxy Zabbix, Proxreporter e relay MikroTik, tutti moduli che esistono, senza toccare DA-IPAM; (2) un'istanza DA-IPAM per cliente sui Proxmox Domarc, così il confine resta l'installazione; (3) esecutore in VM, prima `lib/acquisition`, poi le scansioni. Scartato un solo IPAM con tutti i clienti, salvo decisione contraria sul 12/10. Scartata la rotta verso la LAN: ADR 0011, e nessun elenco chiuso possibile. Livello proposto: completo.
 
+Riccardo, 07/11, aggiunta: «anche eventualmente un sistema minimale da installare sui notebook osx, linux o windows dei tecnici per ottenere dati dalle reti dei clienti e trasferirli al collector centrale». È un'opzione, non una cosa decisa.
+
+Proposta sul notebook: seconda forma dello stesso sistema, parte comune e due modi di portarla (VM fissa, notebook di passaggio). Conviene per rilievi di passaggio, solo dopo la tappa 3 sulle acquisizioni; non sostituisce la VM.
+- [ ] Risposte di Riccardo alle domande 11-14 (se e quando, chi possiede i notebook, primo sistema operativo, clienti senza istanza)
+- Sessione aperta prima, firmata: cliente, reti ammesse, tecnico, scadenza. Ogni dato porta la sessione; un dato che non torna va in quarantena, non in un cliente.
+- Il cliente non si deduce mai dall'IP: 192.168.1.0/24 sta da molti clienti. Si controlla l'impronta della rete (MAC del gateway, dominio).
+- Dati in coda cifrati verso la chiave dell'istanza del cliente: il notebook non rilegge ciò che ha raccolto. Credenziali solo in memoria.
+- Il notebook non entra in `cli-<codcli>`. Trappola già viva: un notebook in `admins` dentro la LAN di un cliente raggiunge gli oggetti di tutti (P5, porte 22, 443 e 6443).
+- Una sessione non dice mai che un host è spento e non alimenta `pulizia_host`.
+- Livello comune senza privilegi: TCP connect, SNMP, SSH, API. `ping.ts` distingue solo macOS e Linux; WinRM passa da Python; su Windows nmap vuole Npcap, licenza da verificare.
+
 Fatti trovati:
 - L'agente Python è stato tolto il 20/10 perché nessuno lo usava (una riga sull'hub, mai collegata; decisione 26 del 14/10), non per un difetto. Era in ingresso, una chiamata per operazione: non regge una caduta di rete.
 - ADR 0011 già scrive: un comando dal centro deve viaggiare come risposta a una chiamata dell'istanza. Fa eccezione solo Vulcan → Edge, P3: 22 e 6443.

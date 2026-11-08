@@ -13,9 +13,11 @@ Riccardo, 08/11: «proviamo a sviluppare l'installer pulito su debian e la possi
   - [x] Ricognizione misurata (08/11): il codice a tenant funziona e isola; un tenant nuovo non ha job fino al riavvio; superadmin con più tenant entra su `__ALL__` (409 ovunque); creazione e cambio di tenant **oggi sono già accesi per il superadmin su ogni installazione** (hub 533: 2 tenant). Numeri nel piano, «Misure».
   - [x] ADR 0037 (lo 0036 è delle CVE potenziali): tipo `tecnico` da `DA_PROFILO` (variabile del servizio, la stessa del profilo «centrale» del Task 7 del piano 07/11), disco cifrato LUKS invece di DB cifrato, invio al centrale solo previsto.
   - [x] Piano `docs/superpowers/plans/2026-11-08-installazione-tecnico.md` (7 task, uno bloccato dalle tappe 2-3 del 07/11)
-  - [ ] Piano approvato da Riccardo, con la decisione D1 (chiudere creazione e cambio di tenant sulle installazioni non «tecnico»?)
-  - [ ] Task 1 — interruttore `DA_PROFILO` con prova di equivalenza
-  - [ ] Proposta d'interfaccia (selettore e pagina dei profili) presentata a Riccardo
+  - [x] Piano approvato da Riccardo (08/11: «Sì, D1 com'è oggi»): creazione e cambio di tenant restano come oggi sulle installazioni non «tecnico»
+  - [x] Task 1 — interruttore `DA_PROFILO` con prova di equivalenza (cancello verde)
+  - [x] Proposta d'interfaccia (selettore e pagina dei profili) scritta nel piano, Task 5
+  - [ ] Riccardo approva la proposta d'interfaccia oggetto per oggetto
+  - [ ] Task 2-4 (freno della cifratura, profilo pronto senza riavvio, ingresso senza `DEFAULT`), poi Task 5-6
 
 ## 2026-11-08 — FDB del collector: misura su 70151 e proposta (Riccardo: «FDB del collector»)
 

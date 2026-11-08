@@ -7,7 +7,7 @@
 **Architettura:** un tipo d'installazione dichiarato da `DA_PROFILO` (assente = `installazione`, com'è oggi; `tecnico`). Il codice a tenant esistente fa da contenitore dei profili; `tecnico` aggiunge il freno della cifratura, un profilo nuovo pronto senza riavvio e un ingresso senza `DEFAULT`. L'invio al centrale arriva con le tappe 2-3 del piano del 07/11.
 **Spec:** [ADR 0037](../../adr/0037-installazione-tecnico-multi-profilo.md); decisioni di Riccardo dell'08/11 in `TASKS.md`, sezione «2026-11-08 — Installer pulito su Debian e modalità tecnico multi-profilo».
 **Livello di controllo:** completo (deciso da Riccardo l'08/11: tocca accesso e tenant).
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-08
+**Stato:** in corso (approvato da Riccardo l'08/11, D1 com'è oggi) · **Ultimo aggiornamento:** 2026-11-08
 
 ## Vincoli globali
 
@@ -21,7 +21,7 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
-| S1 | [ ] | Interruttore `DA_PROFILO` | in linea | — | senza variabile nulla cambia; valore sconosciuto blocca l'avvio | prova `profilo.test.ts` vista fallire + cancello |
+| S1 | [x] | Interruttore `DA_PROFILO` | in linea | — | senza variabile nulla cambia; valore sconosciuto blocca l'avvio | prova `profilo.test.ts` vista fallire + cancello |
 | S2 | [ ] | Freno della cifratura | in linea | S1 | `tecnico` non parte su disco in chiaro | prova con comandi finti + misura su una VM Debian con LUKS |
 | S3 | [ ] | Profilo nuovo pronto senza riavvio | in linea | S1 | in `tecnico` un profilo creato ha i job di serie e lo scheduler li carica subito | prova vista fallire |
 | S4 | [ ] | Ingresso del tecnico senza `DEFAULT` | in linea, reviewer | S1 | in `tecnico` nessuna sessione ricade su `DEFAULT`; ingresso sull'ultimo profilo | prove viste fallire + revisione |
@@ -39,11 +39,11 @@
 
 ## Decisione aperta (per Riccardo)
 
-**D1 — Creazione e cambio di tenant sulle installazioni non «tecnico».** Oggi sono accesi per il superadmin ovunque, utente di servizio compreso (misura dell'08/11); sull'hub 533 ci sono 2 tenant. Il piano li lascia così (spento = com'è oggi). Chiuderli sulle installazioni dai clienti è un passo a parte, dopo aver dichiarato il profilo dell'hub 533.
+**D1 — Creazione e cambio di tenant sulle installazioni non «tecnico».** Riccardo, 08/11: «com'è oggi». Oggi sono accesi per il superadmin ovunque, utente di servizio compreso (misura dell'08/11); sull'hub 533 ci sono 2 tenant. Il piano li lascia così (spento = com'è oggi). Chiuderli sulle installazioni dai clienti è un passo a parte, dopo aver dichiarato il profilo dell'hub 533.
 
 ---
 
-### [ ] Task 1 — Interruttore `DA_PROFILO`
+### [x] Task 1 — Interruttore `DA_PROFILO`
 
 - **File:** crea `src/lib/profilo.ts`, `src/lib/__tests__/profilo.test.ts`; modifica `server.ts` (controllo all'avvio, prima di aprire l'hub).
 - **Interfacce:**
@@ -57,7 +57,7 @@
 - **Cosa fare:** `leggiProfilo` legge `DA_PROFILO`, toglie gli spazi; vuoto o assente = `installazione`. `server.ts` chiama `leggiProfilo()` per prima cosa: con `ok: false` scrive `console.error` col valore e i valori ammessi ed esce con `process.exit(1)`; con `tecnico` scrive una riga d'avvio `[Profilo] tecnico`. Nessun altro file legge `process.env.DA_PROFILO`.
 - **Prova vista fallire:** assente/vuoto/spazi → `installazione`; `tecnico` → `tecnico`; `centrale`, `TECNICO`, `pippo` → `ok: false`; una prova che scorre `src/` e `server.ts` e fallisce se `DA_PROFILO` compare fuori da `profilo.ts` (stile `no-dynamic-db-tenant-import.test.ts`): è la prova di equivalenza, perché senza lettori nessun comportamento può cambiare.
 
-Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` e cancello.
+Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` vista rossa prima di `profilo.ts` (esito 1), verde dopo; `DA_PROFILO=pippo npx tsx server.ts` → esito 1, nessun file creato; cancello `lint=0 tsc=0 test=0 build=0` (7636 prove, 0 fallite), 08/11.
 
 ### [ ] Task 2 — Freno della cifratura
 
@@ -98,6 +98,15 @@ Verifica: prove, cancello, revisione `reviewer` del passo.
 
 Verifica: Playwright con dati finti a 1280 px, in `tecnico` e senza variabile.
 
+**Proposta dell'08/11 (da approvare oggetto per oggetto; solo in `tecnico`):**
+
+1. **Selettore del profilo, in cima alla barra** sotto il nome utente, al posto della riga «Istanza» di oggi: un pulsante a tutta larghezza alto 40 px, fondo `bg-primary/10` e bordo `border-primary/25`, icona edificio, ragione sociale in grassetto 14 px e sotto il `codcli` in monospazio 13 px, freccia ▾. Il clic apre un elenco a discesa con i profili (ragione sociale + `codcli`), il corrente col segno ✓ e il fondo `bg-selezione`, una casella «Cerca cliente» se sono più di 8, in fondo «Gestisci profili →». Il cambio è immediato, poi `toast` «Ora lavori su <ragione sociale>». Barra compressa: solo l'icona con il `codcli` nel `title`.
+2. **Fascia del profilo in cima a ogni pagina** (alta 32 px, fondo navy, testo bianco 13 px): «Profilo: <ragione sociale> · <codcli>». Serve a non scrivere sul cliente sbagliato; si distingue per posizione e luminanza, non per colore.
+3. **Vista «Tutti i profili»** (oggi `__ALL__`): resta sceglibile in fondo all'elenco, ma la fascia diventa gialla piena con testo navy e il segno ▲ «Vista di tutti i profili: sola lettura».
+4. **Pagina «Profili»** (la voce «Istanze» si chiama così in `tecnico`): `IntestazionePagina` «Profili cliente» con «Nuovo profilo» (pulsante pieno); tre `TesseraNumero` (profili, host in tutti i profili, ultimo invio al centrale «—» finché non c'è il Task 7); un `Pannello` con la tabella: `codcli` (mono, grassetto), ragione sociale, host, ultima scansione, stato invio (● «non ancora previsto» grigio), azioni a destra «Apri» e «Modifica».
+5. **Nuovo profilo**: finestra con due campi soli, `codcli` (solo cifre, 3-8, controllato mentre si scrive con la frase «Il codice cliente del gestionale») e ragione sociale. Alla conferma il profilo è pronto (job di serie, Task 3) e si apre.
+6. **Cancellare un profilo**: non in questa tappa. Cancella un DB intero di un cliente sul PC del tecnico: si decide dopo, con l'invio al centrale.
+
 ### [ ] Task 6 — Deploy-Appliance: profilo e volume cifrato
 
 - **Dove:** repo Deploy-Appliance, coordinato con la sessione dell'installer Debian (nota nella cartella condivisa).
@@ -112,6 +121,9 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 ---
 
 ## Registro
+- 2026-11-08 Piano approvato da Riccardo («Sì, D1 com'è oggi»)
+- 2026-11-08 Task 1 → [x] (verifica: profilo.test.ts rossa poi verde; cancello verde)
+- 2026-11-08 Task 5: proposta d'interfaccia scritta sotto il task, da approvare
 
 ## Misure
 

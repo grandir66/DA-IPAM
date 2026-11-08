@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Tipo d'installazione «tecnico» (interruttore)
+
+ADR 0037, piano `2026-11-08-installazione-tecnico.md`, Task 1. Riccardo (08/11) vuole usare DA-IPAM come tecnico con più profili cliente sullo stesso PC: è un'eccezione voluta alla decisione del 12/10, valida solo per quel tipo d'installazione. Serve un solo posto che dica che tipo d'installazione è, prima di accendere qualsiasi cosa.
+
+### Aggiunto
+- **`DA_PROFILO`, variabile del servizio** letta solo da `src/lib/profilo.ts`: assente = `installazione`, cioè com'è oggi; `tecnico` = PC del tecnico. Un valore sconosciuto ferma l'avvio in `server.ts` con un messaggio che dice il valore e quelli ammessi (provato: esce con 1 senza creare file). Ancora nessun comportamento dipende da `tecnico`. La prova di equivalenza fallisce se la variabile viene letta fuori da `profilo.ts`: finché nessuno la legge, le installazioni di oggi non cambiano.
+
 ## [Non rilasciato] — 2026-11-08 · Comware: i MAC per porta trovano la porta
 
 Misurato su 70151: i 5 Comware avevano 0 porte con MAC in `switch_ports` contro 800-1.100 MAC nella tabella per apparato. Il percorso storico scrive le porte coi nomi lunghi («GigabitEthernet1/0/8», «Bridge-Aggregation109»), la tabella MAC di Comware usa quelli corti («GE1/0/8», «BAGG109»), e il confronto toglieva solo spazi e maiuscole.

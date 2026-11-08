@@ -5,6 +5,18 @@ import next from "next";
 import { ensureEnvSecrets, assertContainerSecretsConfigured } from "./src/lib/env-secrets";
 import { logEncryptionKeyHealthAtBoot } from "./src/lib/encryption-key-health";
 import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
+import { leggiProfilo, messaggioProfiloNonValido } from "./src/lib/profilo";
+
+// ── Tipo d'installazione (ADR 0037): prima dei segreti, di Next e dello scheduler.
+// Assente = installazione com'è oggi; un valore sconosciuto non parte.
+const tipoInstallazione = leggiProfilo();
+if (!tipoInstallazione.ok) {
+  console.error(`FATAL ${messaggioProfiloNonValido(tipoInstallazione.letto)}`);
+  process.exit(1);
+}
+if (tipoInstallazione.profilo !== "installazione") {
+  console.info(`[Profilo] ${tipoInstallazione.profilo}`);
+}
 
 // ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──
 assertContainerSecretsConfigured();

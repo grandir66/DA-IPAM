@@ -25,6 +25,7 @@ Piano `daipam-cve-locali`, deciso da Riccardo il 07/09. Molti clienti non hanno 
 
 ### Corretto
 - **I CPE arrivano davvero in `hosts.open_ports`.** Il fix del parser del 07/09 li leggeva, ma i cinque giri di discovery ricopiavano le porte con soli porta/protocollo/servizio/versione: sulla VM 533 nessun host aveva un CPE. Ora passano da `portaDaSalvare` (anche prodotto e versione separati).
+- **…e sopravvivono alla fusione con le porte già salvate.** `parsePortsJson` (in `db-tenant.ts` e nel facade `db.ts`) ricopiava anche lei quattro campi: la prima scansione nmap sulla 533 (LAN Storage, 08/11) ha salvato «OpenSSH 10.5» ma nessun CPE. Gli `scripts` dei profili restano fuori come prima.
 ## [Non rilasciato] — 2026-11-08 · Collector: giro 7 recuperato, i giri non si riscrivono più le porte
 
 Il giro 7 dei collector (22/10) non era mai entrato in `dev`: l'unione di `collector-modulari` si era fermata al giro 6 e il 03/11 il ramo è finito solo nel tag `archivio/collector-modulari-20261103`. Riportato con il sì di Riccardo dell'08/11. Nello stesso giro, misurato su 70151, il buco di C5 del piano `recupero-dadude3-mknet`.

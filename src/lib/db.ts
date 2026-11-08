@@ -2868,14 +2868,33 @@ export function getHostById(id: number): HostDetail | undefined {
   };
 }
 
-type PortEntry = { port: number; protocol: string; service?: string | null; version?: string | null };
+type PortEntry = {
+  port: number;
+  protocol: string;
+  service?: string | null;
+  version?: string | null;
+  product?: string;
+  product_version?: string;
+  cpes?: string[];
+};
 
+/**
+ * Le porte salvate, normalizzate per la fusione. Prodotto, versione separata e CPE si tengono
+ * (08/11/2026): fino ad allora questa funzione li toglieva a ogni fusione, e una scansione nmap
+ * sulla VM 533 salvava «OpenSSH 10.5» ma nessun CPE. Gli `scripts` dei profili restano fuori.
+ */
 function parsePortsJson(json: string | null): PortEntry[] {
   if (!json) return [];
   try {
-    const arr = JSON.parse(json) as Array<{ port: number; protocol?: string; service?: string | null; version?: string | null }>;
+    const arr = JSON.parse(json) as Array<Omit<PortEntry, "protocol"> & { protocol?: string }>;
     if (Array.isArray(arr)) {
-      return arr.map((p) => ({ port: p.port, protocol: p.protocol || "tcp", service: p.service, version: p.version }));
+      return arr.map((p) => {
+        const out: PortEntry = { port: p.port, protocol: p.protocol || "tcp", service: p.service, version: p.version };
+        if (typeof p.product === "string" && p.product) out.product = p.product;
+        if (typeof p.product_version === "string" && p.product_version) out.product_version = p.product_version;
+        if (Array.isArray(p.cpes) && p.cpes.length > 0) out.cpes = p.cpes.filter((c): c is string => typeof c === "string");
+        return out;
+      });
     }
   } catch { /* ignore */ }
   return [];

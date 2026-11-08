@@ -440,3 +440,16 @@ allora `dev` ha cambiato Opzioni e il riquadro, quindi riportarlo è un lavoro, 
 
 **C6 — da fare.** Nessuna tabella né profilo `*-config` nel codice.
 
+### Aggiornamento dell'08/11 sera (v0.9.1002 su `dev`)
+
+- [x] **Giro 7 riportato su `dev`** dal tag d'archivio (5 commit; conflitti solo in TASKS e Opzioni). Riga in Opzioni,
+  Proxmox dal pulsante. La condizione del 22/10 (parità) è stata misurata sull'hub: la scansione storica ha
+  l'hardware di 2 nodi su 5, il collector legge il DMI di ogni nodo-apparato. `proxmox-ve` ora è agganciato.
+- [x] **C5, buco chiuso**: `campiDelCollectorApparato` protegge anche con `mappa_dati` accesa. Misura su 70151 prima
+  del codice: 2.658 cambi di duplex e 3.174 di PoE in un giorno, sempre gli stessi valori. Prova vista rossa.
+- [x] **C5, confronto delle colonne sugli HP**: il collector scrive 9 campi per porta, non i MAC per porta. Il giro
+  storico non si spegne. **Il prossimo passo di C5 è una proiezione della sezione `forwarding`** (MAC per porta dal
+  collector); solo dopo il giro SNMP sugli HP può smettere di leggere.
+- [ ] Da guardare con Riccardo: su MK-CORE (apparato 4 di 70151) il vicino di ether1 e sfp28-2 è «MK-CORE-2-ARM-D»
+  per SNMP e «GAMOfas8080a-01» (NetApp, e0k) per il collector; ora vince il collector.
+

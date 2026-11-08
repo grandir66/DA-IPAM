@@ -9,6 +9,14 @@ Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come
 - [x] Dopo il sync delle 03:00 sull'hub (verifica 08/11 12:25, sola lettura sul DB): strato del controller scritto alle 03:00:03 (11 apparati, 211 porte); rotte UDM Beast 9, MK-RTR-CORE 25, SNS EVA2 32; PoE ancora presente dopo il giro delle 11:15 (SW-CED-48POE-242 48 porte, 10 erogano; SW-ING-ProMax-239 48, 23); UDM 14 porte. Calcolo della domenica: certe 93, spiegate 58, da capire 31, non so 91 (venerdì 115/73/33/106): meno apparati accesi, probabile ma non dimostrato. UDM sulla scheda nuova non vista a schermo.
 - [x] **Su `main` col sì di Riccardo** (08/11, «Porta su main lo stesso»): fast-forward `git push origin 737ae0ed:refs/heads/main`, `origin/main` = `origin/dev` = `737ae0ed` = **0.9.1001**, verificato con `git ls-remote`. Dentro anche 0.9.993-0.9.997 (consenso impianti VA, storico MAC-IP).
 - [x] 70151-ipam-2 (VM 104 di PX01, si entra con `qm guest exec 104` da `root@172.20.40.191`, che è PX01) riportata su `main` il 08/11: `main...origin/main` a `737ae0ed`, `da-ipam-update.timer` enabled e active, `/api/health` ok alla 0.9.1001. Snapshot `pre-mappa-dati-20261107` da togliere fra qualche giorno.
+- [ ] **Buchi nella raccolta, censimento dell'08/11 sull'hub** (Riccardo: «sei stato in grado di ottenere tutti i dati disponibili?»; risposta: no). Sola lettura sul DB, apparato per apparato:
+  - [ ] Il giro dei parser (`mappa-porte/giro-parser.ts`) prende solo `switch`, `router`, `firewall`, `access_point` **abilitati**. Restano fuori: i 5 Proxmox (SSH ok, collector `proxmox-ve` esistente, mai girato: niente bridge, FDB e ARP delle VM), SNS EVA2 (registrato `server`), UDM, i 6 switch UniFi solo da controller, i 4 AP e SW-UFLEX-RG-10GB (tutti `enabled=0`; 3 UFLEX e 4 AP hanno l'SNMP provato «success»).
+  - [ ] Il collector `unifi-controller` non gira mai: la UDM ha 0 VLAN e 0 ARP, solo 14 porte e 9 rotte dal sync.
+  - [ ] Stormshield: nessun collector. Il giro SSH dà 12 porte, 34 ARP, 32 rotte; niente VLAN, niente interfacce logiche.
+  - [ ] `ubiquiti-device` via solo SNMP: `vlans`, `forwarding`, `neighbors`, `spanning_tree`, `aggregation`, `poe` saltati (servono SSH), `inventory` in errore su tutti e 6. Il giro SNMP copre MAC, 13 VLAN e vicini; STP e LAG di dettaglio no.
+  - [ ] `mikrotik-routeros` su MK-RTR-CORE: `vlans`, `network`, `identity`, `inventory` parziali.
+  - [ ] Dati sbagliati: 8 PC Windows registrati come `switch`; SW-UFLEX-RG-10GB con 54 porte vecchie che nessuno legge; da-invent con SSH fallito.
+  - [ ] Da fare lo stesso censimento su 70151 (parser HP: 39 ok, 6 parziali, 2 errori; hypervisor probabilmente esclusi allo stesso modo).
 - [ ] 72729: dopo, quando lo dirà Riccardo («solo dopo testeremo 72729»).
 - [ ] 79993-ipam-2: RB5009 via SSH e UCG, dopo `main`.
 - [ ] Seguire i vicini per i 5.271 «non so» di 70151.

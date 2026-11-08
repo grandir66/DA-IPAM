@@ -8,7 +8,14 @@ Riccardo, 08/11: «proviamo a sviluppare l'installer pulito su debian e la possi
 - **Avvio**: con un comando da DA-Link, come per Proxmox (bozza, comando da incollare da root, file d'avvio, esiti e credenziali a DA-Link).
 - **Modalità tecnico: «Sì, solo per il tecnico»**. È un'**eccezione voluta alla decisione del 12/10** («un'installazione = un cliente»), valida solo per un tipo di installazione «tecnico» (superadmin, un tenant per cliente, cambio profilo). Le installazioni dai clienti restano a un cliente. Va scritta in un ADR nuovo, senza riscrivere il 12/10.
 - **Dati dei profili**: restano sul PC del tecnico (cifrati) **e** si mandano al centrale del loro `codcli`. L'invio dipende dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamento.md`.
-- [ ] Piano da approvare (in chat 08/11): A = installer Debian (Deploy-Appliance + DA-Link), B = modalità tecnico (DA-IPAM, ADR)
+- [x] Piano da approvare (in chat 08/11): A = installer Debian (Deploy-Appliance + DA-Link), B = modalità tecnico (DA-IPAM, ADR) — Riccardo: «Sì, due sessioni»
+- B (modalità tecnico), livello completo:
+  - [x] Ricognizione misurata (08/11): il codice a tenant funziona e isola; un tenant nuovo non ha job fino al riavvio; superadmin con più tenant entra su `__ALL__` (409 ovunque); creazione e cambio di tenant **oggi sono già accesi per il superadmin su ogni installazione** (hub 533: 2 tenant). Numeri nel piano, «Misure».
+  - [x] ADR 0037 (lo 0036 è delle CVE potenziali): tipo `tecnico` da `DA_PROFILO` (variabile del servizio, la stessa del profilo «centrale» del Task 7 del piano 07/11), disco cifrato LUKS invece di DB cifrato, invio al centrale solo previsto.
+  - [x] Piano `docs/superpowers/plans/2026-11-08-installazione-tecnico.md` (7 task, uno bloccato dalle tappe 2-3 del 07/11)
+  - [ ] Piano approvato da Riccardo, con la decisione D1 (chiudere creazione e cambio di tenant sulle installazioni non «tecnico»?)
+  - [ ] Task 1 — interruttore `DA_PROFILO` con prova di equivalenza
+  - [ ] Proposta d'interfaccia (selettore e pagina dei profili) presentata a Riccardo
 
 ## 2026-11-08 — FDB del collector: misura su 70151 e proposta (Riccardo: «FDB del collector»)
 

@@ -14,9 +14,11 @@ import assert from "node:assert/strict";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import {
-  decisione, istanteRoma, leggiPianificazione, prossimaEsecuzione, riassuntoEsito, salvaPianificazione, scadute, spegniPianificazione,
+  decisione, finestreDevice, istanteRoma, leggiPianificazione, prossimaEsecuzione, riassuntoEsito, salvaFinestraDevice, salvaPianificazione, scadute, spegniPianificazione,
 } from "@/lib/vuln/proposta/pianificazione";
-import { eseguiScadute } from "@/lib/vuln/proposta/pianificazione-job";
+import { allineaFinestre, eseguiScadute } from "@/lib/vuln/proposta/pianificazione-job";
+import { quandoInParole } from "@/lib/vuln/proposta/pianificazione-parole";
+import type { GruppoFinestra } from "@/lib/vuln/proposta/finestra-device";
 import { descriviUnProfilo } from "@/lib/vuln/proposta/pianificazione-rete";
 import type { EsitoLancio } from "@/lib/vuln/proposta/lancio";
 import type { EdgeScheduleConfig } from "@/lib/vuln/edge-schedule-store";
@@ -152,5 +154,83 @@ test("pagina Schedulazioni: la pianificazione è una riga «device.<rete>» con 
     assert.equal(riga.prossimo, "2026-11-15 01:00:00");
     assert.equal(riga.stato, "acceso");
     assert.match(riga.cosa, /^Rete, Linux e server · /);
+  });
+});
+
+// Tappa 2 (08/11/2026): con un consenso che copre l'ora gli impianti entrano anche nella pianificazione; senza, restano
+// fuori e l'esito lo dice. La sonda lo ricontrolla comunque al lancio.
+test("pianificata con gli impianti: entrano solo col consenso in vigore, altrimenti l'esito lo dice", async () => {
+  await withTenant(T, async () => {
+    rete(20);
+    salvaPianificazione({ network_id: 20, famiglie: ["rete", "impianti"], frequenza: "giornaliera", giorno: null, ora: "02:00", chi: "r" }, new Date("2026-11-07T12:00:00Z"));
+    const chieste: string[][] = [];
+    const lancia = async (id: number, f: readonly string[]) => {
+      if (id === 20) chieste.push([...f]);
+      return { gruppi: [gruppo("rete", lanciato(5))], tolti: [], avvisi: [], errore: null, fermato: false };
+    };
+    await eseguiScadute(new Date("2026-11-08T01:00:30Z"), { lancia, consenso: async () => false });
+    assert.deepEqual(chieste[0], ["rete"]);
+    assert.match(leggiPianificazione(20)!.ultimo_esito ?? "", /IoT e OT fuori: nessun consenso/);
+    assert.equal(leggiPianificazione(20)!.ultimo_tono, "ok", "gli impianti senza consenso sono la regola, non un guasto");
+    getTenantDb(T).prepare("UPDATE va_pianificazioni_device SET prossima_il = '2026-11-09T01:00:00.000Z' WHERE network_id = 20").run();
+    await eseguiScadute(new Date("2026-11-09T01:00:30Z"), { lancia, consenso: async () => true });
+    assert.deepEqual(chieste[1], ["rete", "impianti"]);
+  });
+});
+
+// Tappa 3 (08/11/2026, tavola oggetto 43): la finestra «Per device» la esegue la sonda; DA-IPAM le manda i gruppi
+// confermati e li rimanda quando cambiano. Il giro dei minuti non la lancia.
+test("finestra per device: salvata non si lancia all'ora, si descrive con la fascia", () => {
+  withTenant(T, () => {
+    rete(21);
+    const p = salvaFinestraDevice({ network_id: 21, famiglie: ["rete", "linux"], chi: "r", fascia: { giorni: [6, 0], dalle: "22:00", alle: "06:00" }, firma: "x" });
+    assert.equal(p.modo, "finestra");
+    assert.deepEqual(p.fascia, { giorni: [0, 6], dalle: "22:00", alle: "06:00" });
+    assert.equal(quandoInParole(p), "a finestra, sab, dom dalle 22:00 alle 06:00");
+    assert.equal(scadute(new Date("2030-01-01T00:00:00Z")).some((x) => x.network_id === 21), false);
+    assert.equal(finestreDevice().some((x) => x.network_id === 21), true);
+    const orario = salvaPianificazione({ network_id: 21, famiglie: ["rete"], frequenza: "giornaliera", giorno: null, ora: "02:00", chi: "r" });
+    assert.equal(orario.modo, "orario", "una sola pianificazione per rete: l'orario prende il posto della finestra");
+    assert.equal(orario.fascia, null);
+  });
+});
+
+test("finestra per device: i gruppi vanno alla sonda solo quando cambiano", async () => {
+  await withTenant(T, async () => {
+    rete(22);
+    salvaFinestraDevice({ network_id: 22, famiglie: ["rete"], chi: "r", fascia: { giorni: [0], dalle: "22:00", alle: "06:00" }, firma: "vecchia" });
+    let gruppi: GruppoFinestra[] = [{ nome: "rete", profile: "fast", ips: ["10.80.22.1"], impianti: false }];
+    const inviati: GruppoFinestra[][] = [];
+    const deps = {
+      gruppi: async () => gruppi,
+      invia: async (n: number, _f: unknown, g: GruppoFinestra[]) => { if (n === 22) inviati.push(g); return { ok: true as const }; },
+    };
+    await allineaFinestre(deps);
+    await allineaFinestre(deps);
+    assert.equal(inviati.length, 1, "stessi gruppi: niente di nuovo da mandare");
+    gruppi = [{ nome: "rete", profile: "fast", ips: ["10.80.22.1", "10.80.22.2"], impianti: false }];
+    await allineaFinestre(deps);
+    assert.equal(inviati.length, 2);
+    assert.deepEqual(inviati[1][0].ips, ["10.80.22.1", "10.80.22.2"]);
+  });
+});
+
+test("finestra per device: la sonda che non risponde si scrive nell'esito, e si riprova", async () => {
+  await withTenant(T, async () => {
+    rete(23);
+    salvaFinestraDevice({ network_id: 23, famiglie: ["rete"], chi: "r", fascia: { giorni: [0], dalle: "22:00", alle: "06:00" }, firma: "vecchia" });
+    let tentativi = 0;
+    const deps = {
+      gruppi: async (): Promise<GruppoFinestra[]> => [{ nome: "rete", profile: "fast", ips: ["10.80.23.1"], impianti: false }],
+      invia: async (n: number) => { if (n === 23) tentativi++; return { ok: false as const, error: "sonda giù" }; },
+      adesso: () => new Date("2026-11-08T10:00:00Z"),
+    };
+    await allineaFinestre(deps);
+    assert.match(leggiPianificazione(23)!.ultimo_esito ?? "", /sonda giù/);
+    assert.equal(leggiPianificazione(23)!.firma_gruppi, "vecchia");
+    await allineaFinestre(deps);
+    assert.equal(tentativi, 1, "non si martella la sonda a ogni minuto");
+    await allineaFinestre({ ...deps, adesso: () => new Date("2026-11-08T10:11:00Z") });
+    assert.equal(tentativi, 2);
   });
 });

@@ -16,7 +16,11 @@ import type { EsitoLancio } from "./lancio";
 import { parolaEsito } from "./testi-esito";
 export { quandoInParole } from "./pianificazione-parole";
 
-export const FAMIGLIE_PIANIFICABILI = ["rete", "windows", "linux", "web", "periferiche", "da_chiarire"] as const;
+// Tappa 2 (Riccardo, 08/11/2026): con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e
+// nelle finestre. Senza consenso restano fuori e l'esito lo dice: decide la sonda, che lo ricontrolla al lancio.
+export const FAMIGLIE_PIANIFICABILI = ["rete", "windows", "linux", "web", "periferiche", "da_chiarire", "impianti"] as const;
+export type ModoPianificazione = "orario" | "finestra";
+export interface FasciaDevice { giorni: number[]; dalle: string; alle: string }
 export type FamigliaPianificabile = (typeof FAMIGLIE_PIANIFICABILI)[number];
 export type Frequenza = "giornaliera" | "settimanale" | "mensile";
 export type Tono = "ok" | "avviso" | "errore" | "spento";
@@ -39,6 +43,11 @@ export interface Pianificazione {
   ultimo_tono: Tono | null;
   chi: string;
   aggiornata_il: string;
+  /** Tappa 3: «orario» = DA-IPAM lancia all'ora fissata; «finestra» = la sonda lavora nella fascia, gruppo per gruppo. */
+  modo: ModoPianificazione;
+  fascia: FasciaDevice | null;
+  /** Gli ultimi gruppi mandati alla sonda (solo «finestra»): si rimandano quando cambiano. */
+  firma_gruppi: string | null;
 }
 
 const ZONA = "Europe/Rome";
@@ -94,7 +103,9 @@ export function riassuntoEsito(e: EsitoLancio, chieste: readonly Famiglia[]): { 
   const partiti = e.gruppi.filter((g) => g.esito.stato === "lanciato").length;
   const parti: string[] = [`${partiti} ${partiti === 1 ? "gruppo" : "gruppi"} su ${chieste.length} partiti`];
   const presenti = new Set(e.gruppi.map((g) => g.famiglia));
-  const saltate = chieste.filter((f) => !presenti.has(f));
+  // Impianti chiesti e assenti dai gruppi: nessun consenso copriva l'ora del giro (il resto dell'esito lo dice la sonda).
+  if (chieste.includes("impianti") && !presenti.has("impianti")) parti.push("IoT e OT fuori: nessun consenso che copra quest'ora");
+  const saltate = chieste.filter((f) => f !== "impianti" && !presenti.has(f));
   if (saltate.length) parti.push(`${saltate.map((f) => ETICHETTE_FAMIGLIA[f]).join(", ")} ${saltate.length === 1 ? "saltato" : "saltati"}: nessun device confermato`);
   const gia = e.gruppi.filter((g) => g.esito.stato === "gia_in_corso").map((g) => ETICHETTE_FAMIGLIA[g.famiglia]);
   if (gia.length) parti.push(`${gia.join(", ")}: giro precedente ancora in corso`);
@@ -113,12 +124,19 @@ export function riassuntoEsito(e: EsitoLancio, chieste: readonly Famiglia[]): { 
 interface Riga {
   network_id: number; famiglie: string; frequenza: Frequenza; giorno: number | null; ora: string; attiva: number;
   prossima_il: string | null; ultima_il: string | null; ultimo_esito: string | null; ultimo_tono: string | null; chi: string; aggiornata_il: string;
+  modo?: string | null; fascia_giorni?: string | null; fascia_dalle?: string | null; fascia_alle?: string | null; firma_gruppi?: string | null;
 }
 
 function daRiga(r: Riga): Pianificazione {
   const famiglie = r.famiglie.split(",").filter((f): f is FamigliaPianificabile => (FAMIGLIE_PIANIFICABILI as readonly string[]).includes(f));
   const tono = (["ok", "avviso", "errore", "spento"] as const).find((x) => x === r.ultimo_tono) ?? null;
-  return { ...r, famiglie, attiva: r.attiva === 1, ultimo_tono: tono };
+  const modo: ModoPianificazione = r.modo === "finestra" ? "finestra" : "orario";
+  const fascia = modo === "finestra" && r.fascia_dalle && r.fascia_alle
+    ? { giorni: (r.fascia_giorni ?? "").split(",").filter((g) => g !== "").map(Number), dalle: r.fascia_dalle, alle: r.fascia_alle }
+    : null;
+  return {
+    network_id: r.network_id, frequenza: r.frequenza, giorno: r.giorno, ora: r.ora, prossima_il: r.prossima_il, ultima_il: r.ultima_il,
+    ultimo_esito: r.ultimo_esito, chi: r.chi, aggiornata_il: r.aggiornata_il, famiglie, attiva: r.attiva === 1, ultimo_tono: tono, modo, fascia, firma_gruppi: r.firma_gruppi ?? null };
 }
 
 export function leggiPianificazione(networkId: number): Pianificazione | null {
@@ -136,12 +154,42 @@ export function salvaPianificazione(
 ): Pianificazione {
   const prossima = prossimaEsecuzione(p, adesso).toISOString();
   getDb().prepare(
-    `INSERT INTO va_pianificazioni_device (network_id, famiglie, frequenza, giorno, ora, attiva, prossima_il, chi, aggiornata_il)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, datetime('now'))
+    `INSERT INTO va_pianificazioni_device (network_id, famiglie, frequenza, giorno, ora, attiva, prossima_il, chi, aggiornata_il, modo)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, datetime('now'), 'orario')
      ON CONFLICT(network_id) DO UPDATE SET famiglie = excluded.famiglie, frequenza = excluded.frequenza, giorno = excluded.giorno,
-       ora = excluded.ora, attiva = 1, prossima_il = excluded.prossima_il, chi = excluded.chi, aggiornata_il = datetime('now')`,
+       ora = excluded.ora, attiva = 1, prossima_il = excluded.prossima_il, chi = excluded.chi, aggiornata_il = datetime('now'),
+       modo = 'orario', firma_gruppi = NULL`,
   ).run(p.network_id, p.famiglie.join(","), p.frequenza, p.giorno, p.ora, prossima, p.chi);
   return leggiPianificazione(p.network_id)!;
+}
+
+/**
+ * Tappa 3: salva la finestra «Per device». Niente prossima esecuzione (il giro dei minuti non la lancia): la sonda
+ * lavora nella fascia coi gruppi che DA-IPAM le manda, e la `firma` dice quali le sono arrivati.
+ */
+export function salvaFinestraDevice(
+  p: Pick<Pianificazione, "network_id" | "famiglie" | "chi"> & { fascia: FasciaDevice; firma: string },
+): Pianificazione {
+  const giorni = [...p.fascia.giorni].sort((a, b) => a - b).join(",");
+  getDb().prepare(
+    `INSERT INTO va_pianificazioni_device (network_id, famiglie, frequenza, giorno, ora, attiva, prossima_il, chi, aggiornata_il,
+       modo, fascia_giorni, fascia_dalle, fascia_alle, firma_gruppi)
+     VALUES (?, ?, 'giornaliera', NULL, ?, 1, NULL, ?, datetime('now'), 'finestra', ?, ?, ?, ?)
+     ON CONFLICT(network_id) DO UPDATE SET famiglie = excluded.famiglie, frequenza = 'giornaliera', giorno = NULL, ora = excluded.ora,
+       attiva = 1, prossima_il = NULL, chi = excluded.chi, aggiornata_il = datetime('now'), modo = 'finestra',
+       fascia_giorni = excluded.fascia_giorni, fascia_dalle = excluded.fascia_dalle, fascia_alle = excluded.fascia_alle,
+       firma_gruppi = excluded.firma_gruppi`,
+  ).run(p.network_id, p.famiglie.join(","), p.fascia.dalle, p.chi, giorni, p.fascia.dalle, p.fascia.alle, p.firma);
+  return leggiPianificazione(p.network_id)!;
+}
+
+/** Finestre «Per device» accese: il giro dei minuti ne riallinea i gruppi sulla sonda. */
+export function finestreDevice(): Pianificazione[] {
+  return (getDb().prepare(`SELECT * FROM va_pianificazioni_device WHERE attiva = 1 AND modo = 'finestra' LIMIT 500`).all() as Riga[]).map(daRiga);
+}
+
+export function registraFirma(networkId: number, firma: string): void {
+  getDb().prepare(`UPDATE va_pianificazioni_device SET firma_gruppi = ? WHERE network_id = ?`).run(firma, networkId);
 }
 
 /** Spegne senza cancellare: «Modifica» ripropone l'ultima. `motivo` va nell'ultimo esito se c'è. */
@@ -168,6 +216,6 @@ export function registraEsito(networkId: number, il: Date, testo: string, tono: 
 /** Pianificazioni accese da guardare adesso: la prossima è già passata. */
 export function scadute(adesso: Date): Pianificazione[] {
   return (getDb().prepare(
-    `SELECT * FROM va_pianificazioni_device WHERE attiva = 1 AND prossima_il IS NOT NULL AND prossima_il <= ? LIMIT 100`,
+    `SELECT * FROM va_pianificazioni_device WHERE attiva = 1 AND modo = 'orario' AND prossima_il IS NOT NULL AND prossima_il <= ? LIMIT 100`,
   ).all(adesso.toISOString()) as Riga[]).map(daRiga);
 }

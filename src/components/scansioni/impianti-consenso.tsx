@@ -13,26 +13,45 @@ import { Input } from "@/components/ui/input";
 import { Pannello, Vuoto } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
-import { dataRegistro, dettaglioRegistro, eventoRegistro, profiloRegistro, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
+import { dataRegistro, dettaglioRegistro, eventoRegistro, giornoOraConsenso, profiloRegistro, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
+import { cn } from "@/lib/utils";
 import type { RigaRegistro } from "@/lib/vuln/registro-impianti";
 import { Stato } from "./stato-va";
 
 const INDIRIZZO = "/api/vulnerabilities/consenso-impianti";
-const ORE = [4, 12, 24];
 
-export function RiquadroConsenso({ rete, nome, onChiudi, onFatto }: { rete: ReteScansione; nome: string; onChiudi: () => void; onFatto: () => void }) {
-  const [ips, setIps] = useState<string[] | null>(null);
+type Durata = "ore" | "finestra" | "definitivo";
+interface InfoRete {
+  ips: string[];
+  prossima_finestra: { dal: string; al: string } | null;
+  definibili: string[];
+  info_letta: boolean;
+}
+
+/**
+ * Tavola oggetto 42 (tappa 2, approvata l'08/11/2026): un riquadro solo. Gli impianti sono quelli selezionati
+ * (`scelti`; assente = tutti quelli della rete, come dalla scheda «Un profilo solo»). Tre durate: 4 ore, la prossima
+ * finestra della rete, definitiva (solo per impianti già passati da un giro senza danni). La regola la applica la sonda.
+ */
+export function RiquadroConsenso({ rete, nome, scelti, onChiudi, onFatto }: {
+  rete: ReteScansione;
+  nome: string;
+  scelti?: readonly string[];
+  onChiudi: () => void;
+  onFatto: () => void;
+}) {
+  const [info, setInfo] = useState<InfoRete | null>(null);
   const [riferimento, setRiferimento] = useState("");
-  const [ore, setOre] = useState(4);
+  const [durata, setDurata] = useState<Durata>("ore");
   const [sa, setSa] = useState(false);
   const [occupato, setOccupato] = useState(false);
   const [errore, setErrore] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    void fetchJson<{ ips: string[] }>(`${INDIRIZZO}?rete=${rete.id}`).then((r) => {
+    void fetchJson<InfoRete>(`${INDIRIZZO}?rete=${rete.id}`).then((r) => {
       if (!vivo) return;
-      if (r.ok) setIps(r.data.ips);
+      if (r.ok) setInfo(r.data);
       else setErrore(r.message);
     });
     return () => {
@@ -40,45 +59,57 @@ export function RiquadroConsenso({ rete, nome, onChiudi, onFatto }: { rete: Rete
     };
   }, [rete.id]);
 
+  const ips = info ? (scelti ? info.ips.filter((ip) => scelti.includes(ip)) : info.ips) : null;
+  const definibile = !!ips?.length && !!info && ips.every((ip) => info.definibili.includes(ip));
+  const finestra = info?.prossima_finestra ?? null;
+
   const registra = async () => {
     setOccupato(true);
     setErrore(null);
     const r = await fetchJson(INDIRIZZO, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ network_id: rete.id, riferimento, ore, consapevole: sa }),
+      body: JSON.stringify({ network_id: rete.id, riferimento, durata, ore: 4, consapevole: sa, ...(scelti ? { ips } : {}) }),
     });
     setOccupato(false);
     if (r.ok) onFatto();
     else setErrore(r.message);
   };
 
-  const pronto = !!ips?.length && riferimento.trim().length >= 3 && sa && !occupato;
+  const pronto = !!ips?.length && riferimento.trim().length >= 3 && sa && !occupato
+    && (durata !== "finestra" || !!finestra) && (durata !== "definitivo" || definibile);
   return (
     <Dialog open onOpenChange={(v) => !v && onChiudi()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Consenso per {rete.nome}</DialogTitle>
+          <DialogTitle>Autorizza gli impianti di {rete.nome}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 text-sm">
-          <p>Una scansione può fermare PLC e HMI. Se un impianto smette di rispondere, Edge ferma il giro e blocca la rete. Vale solo per il lancio immediato, e solo Greenbone: nuclei e moduli restano fuori dagli impianti.</p>
+          <p>Una scansione può fermare PLC e HMI. Se un impianto smette di rispondere, Edge ferma il giro e blocca la rete. Solo Greenbone: nuclei e moduli restano fuori dagli impianti. Mentre il consenso vale, gli impianti entrano anche nelle pianificazioni e nelle finestre.</p>
           <div>
             <strong>Impianti{ips ? ` (${ips.length})` : ""}:</strong>
             {ips ? (
               <div className="mt-1 max-h-28 overflow-auto rounded-md bg-muted px-2 py-1 font-mono text-[13px]">{ips.join(", ") || "nessuno"}</div>
             ) : !errore && <Loader2 className="ml-2 inline size-4 animate-spin" />}
           </div>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
-            <label className="flex flex-col gap-1">
-              Autorizzazione scritta del cliente
-              <Input value={riferimento} maxLength={500} placeholder="Mail, ticket o firma: chi e quando" onChange={(e) => setRiferimento(e.target.value)} />
+          <label className="flex flex-col gap-1">
+            Autorizzazione scritta del cliente
+            <Input value={riferimento} maxLength={500} placeholder="Mail, ticket o firma: chi e quando" onChange={(e) => setRiferimento(e.target.value)} />
+          </label>
+          <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Quanto vale">
+            <label className="flex items-center gap-2">
+              <input type="radio" name="durata" checked={durata === "ore"} onChange={() => setDurata("ore")} /> 4 ore da adesso
             </label>
-            <label className="flex flex-col gap-1">
-              Vale per
-              <select className="h-9 rounded-md border bg-background px-2.5 text-sm" value={ore} onChange={(e) => setOre(Number(e.target.value))}>
-                {ORE.map((o) => <option key={o} value={o}>{o} ore</option>)}
-              </select>
+            <label className={cn("flex items-center gap-2", !finestra && "text-muted-foreground")}>
+              <input type="radio" name="durata" disabled={!finestra} checked={durata === "finestra"} onChange={() => setDurata("finestra")} />
+              {finestra ? `Per la prossima finestra: ${giornoOraConsenso(finestra.dal)} – ${giornoOraConsenso(finestra.al)}` : "Per la prossima finestra — la rete non ha una finestra accesa"}
             </label>
+            <label className={cn("flex items-center gap-2", !definibile && "text-muted-foreground")}>
+              <input type="radio" name="durata" disabled={!definibile} checked={durata === "definitivo"} onChange={() => setDurata("definitivo")} />
+              Definitiva
+              <span className="text-muted-foreground">— {definibile ? "già scansionati senza danni con un consenso" : "solo dopo un giro col consenso finito senza che la sentinella intervenisse"}</span>
+            </label>
+            {info && !info.info_letta && <span className="text-muted-foreground">La sonda non ha risposto: finestra e definitiva non si possono scegliere.</span>}
           </div>
           <label className="flex items-center gap-2">
             <Checkbox checked={sa} onCheckedChange={(v) => setSa(v === true)} />
@@ -89,7 +120,7 @@ export function RiquadroConsenso({ rete, nome, onChiudi, onFatto }: { rete: Rete
             <span className="text-muted-foreground">Registrato a nome di {nome}</span>
             <Button variant="outline" onClick={onChiudi}>Annulla</Button>
             <Button disabled={!pronto} className="bg-[#8E1B20] text-white hover:bg-[#8E1B20]/90" onClick={() => void registra()}>
-              {occupato && <Loader2 className="size-4 animate-spin" />} Registra il consenso
+              {occupato && <Loader2 className="size-4 animate-spin" />} Autorizza
             </Button>
           </div>
         </div>

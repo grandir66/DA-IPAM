@@ -191,6 +191,29 @@ export function assicuraColonneForzate(db: Database.Database): string[] {
   return aggiunte;
 }
 
+/**
+ * Finestra «Per device» (tappa 3 dei profili per device, 08/11/2026): la pianificazione della rete può essere
+ * `orario` (DA-IPAM lancia all'ora fissata, com'era) o `finestra` (la sonda lavora dentro una fascia, gruppo per
+ * gruppo). `firma_gruppi` = gli ultimi gruppi mandati alla sonda: si rimandano solo quando cambiano.
+ */
+export function assicuraColonneFinestraDevice(db: Database.Database): string[] {
+  const colonne = new Set((db.prepare(`PRAGMA table_info(va_pianificazioni_device)`).all() as Array<{ name: string }>).map((c) => c.name));
+  if (colonne.size === 0) return [];
+  const aggiunte: string[] = [];
+  for (const [nome, ddl] of [
+    ["modo", "modo TEXT NOT NULL DEFAULT 'orario'"],
+    ["fascia_giorni", "fascia_giorni TEXT"],
+    ["fascia_dalle", "fascia_dalle TEXT"],
+    ["fascia_alle", "fascia_alle TEXT"],
+    ["firma_gruppi", "firma_gruppi TEXT"],
+  ] as const) {
+    if (colonne.has(nome)) continue;
+    db.exec(`ALTER TABLE va_pianificazioni_device ADD COLUMN ${ddl}`);
+    aggiunte.push(`va_pianificazioni_device.${nome}`);
+  }
+  return aggiunte;
+}
+
 /** Aggiunge le due colonne `campi_da_rivedere` dove mancano. Additiva e ripetibile. */
 export function assicuraColonneDaRivedere(db: Database.Database): string[] {
   const aggiunte: string[] = [];
@@ -228,6 +251,12 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     if (forzate.length > 0) console.info(`${chi}: ${forzate.join(", ")} aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione va_proposte forzate fallita:`, e);
+  }
+  try {
+    const finestra = assicuraColonneFinestraDevice(db);
+    if (finestra.length > 0) console.info(`${chi}: ${finestra.join(", ")} aggiunto`);
+  } catch (e) {
+    console.error(`${chi}: migrazione finestra per device fallita:`, e);
   }
   try {
     // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.
@@ -2384,7 +2413,12 @@ CREATE TABLE IF NOT EXISTS va_pianificazioni_device (
   ultimo_esito TEXT,
   ultimo_tono TEXT,
   chi TEXT NOT NULL,
-  aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
+  aggiornata_il TEXT NOT NULL DEFAULT (datetime('now')),
+  modo TEXT NOT NULL DEFAULT 'orario',
+  fascia_giorni TEXT,
+  fascia_dalle TEXT,
+  fascia_alle TEXT,
+  firma_gruppi TEXT
 );
 
 -- Copia del registro impianti di Edge (Riccardo, 07/11/2026): resta anche se la sonda viene rifatta. Si aggiunge e basta.

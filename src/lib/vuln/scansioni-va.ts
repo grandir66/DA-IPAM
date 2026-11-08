@@ -63,6 +63,7 @@ interface ReteLetta {
   sonda: ReteScansione["sonda"];
   ultima: EdgeSubnetLastScan | null;
   consenso: ConsensoRete | null;
+  consensoFuturo?: ConsensoRete | null;
   consensoNoto: boolean;
 }
 
@@ -71,7 +72,10 @@ interface ReteLetta {
  *  (VLAN 102 di 79993-ipam-2, 07/11/2026). Se la sonda è davvero vecchia lo dice il POST, con il suo 404. */
 export function reteDaLookup(l: LookupRete): ReteLetta {
   if (!l.found) return { sonda: "sconosciuta", ultima: null, consenso: null, consensoNoto: true };
-  return { sonda: "nota", ultima: l.last_scan ?? null, consenso: l.consenso ?? null, consensoNoto: "consenso" in l };
+  // Tappa 2: la sonda manda anche il consenso che comincia più tardi; `consenso` resta «quello che vale adesso».
+  const c = l.consenso ?? null;
+  const futuro = c !== null && c.in_vigore === false;
+  return { sonda: "nota", ultima: l.last_scan ?? null, consenso: futuro ? null : c, consensoFuturo: futuro ? c : null, consensoNoto: "consenso" in l };
 }
 
 /** Tre esiti: la sonda la conosce, non la conosce, non ha risposto. Un guasto non diventa «mai». */
@@ -177,11 +181,12 @@ export async function leggiQuadroScansioni(): Promise<QuadroScansioni> {
   }
 
   const lette = await aGruppi(base, LETTURE_INSIEME, async (r): Promise<ReteScansione> => {
-    const { sonda, ultima, consenso, consensoNoto } = await leggiReteSullaSonda(scanner, r.cidr);
+    const { sonda, ultima, consenso, consensoFuturo, consensoNoto } = await leggiReteSullaSonda(scanner, r.cidr);
     return {
       ...r,
       sonda,
       consenso,
+      consensoFuturo: consensoFuturo ?? null,
       consensoNoto,
       ultimaVa: ultima?.finished_at ?? ultima?.started_at ?? null,
       ultimaVaStato: ultima?.status ?? null,

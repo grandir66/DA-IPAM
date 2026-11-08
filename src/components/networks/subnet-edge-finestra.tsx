@@ -590,6 +590,7 @@ const STATI: Record<StatoIp, InfoStato> = {
   non_risponde: { segno: "▲", nome: "Non risponde", plurale: "Non rispondono", classi: STILE_STATO.attenzione.classi },
   assente: { segno: "✕", nome: "Assente", plurale: "Assenti", classi: "border-muted-foreground bg-muted-foreground text-card" },
   non_finito: { segno: "◐", nome: "Non finito", plurale: "Non finiti", classi: "border-foreground/50 bg-warning/20 text-foreground" },
+  escluso: { segno: "●", nome: "Escluso", plurale: "Esclusi", classi: STILE_STATO.da_verificare.classi },
 };
 
 function Chip({ stato }: { stato: StatoIp }) {
@@ -610,6 +611,7 @@ function conteggio(p: PassaggioSonda, stato: StatoIp): number {
     case "non_risponde": return p.non_rispondono;
     case "assente": return p.assenti;
     case "non_finito": return p.non_finiti;
+    case "escluso": return p.esclusi ?? 0;
   }
 }
 

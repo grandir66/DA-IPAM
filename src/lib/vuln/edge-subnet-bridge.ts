@@ -951,6 +951,50 @@ export async function saveEdgeSubnetFinestra(
   }
 }
 
+/**
+ * Tappa 3 dei profili per device (08/11/2026, tavola oggetto 43): la finestra «Per device». La sonda riceve i gruppi
+ * per tipo di device, ognuno col suo profilo, e lavora nella fascia; a fine fascia si ferma e alla fascia dopo
+ * riprende. Niente host né credenziali da sincronizzare qui oltre a `ensure`: gli IP sono quelli dei gruppi.
+ * La memoria locale «Un profilo solo» (`edge_scan_schedules`) non si tocca: questa finestra è di «Per device».
+ */
+export async function saveEdgeFinestraDevice(
+  networkId: number,
+  fascia: { giorni: number[]; dalle: string; alle: string },
+  gruppi: ReadonlyArray<{ nome: string; profile: string; ips: string[]; impianti: boolean }>,
+): Promise<{ ok: true; avviso?: string | null } | { ok: false; error: string; status: number; daAggiornare?: boolean }> {
+  const pronta = sondaPronta();
+  if (!pronta.ok) return { ok: false, error: pronta.error, status: 409 };
+  const network = getNetworkById(networkId);
+  if (!network) return { ok: false, error: "Rete non trovata", status: 404 };
+  try {
+    const ensured = await edgeApiPost<{ ok: boolean; network_id: number }>(
+      pronta.scanner,
+      "/api/v1/networks/ensure",
+      buildEdgeEnsureBody(networkId, { syncHosts: false, syncCredentials: true }),
+      { timeoutMs: 120000 },
+    );
+    try {
+      const r = await edgeApiPut<{ avviso?: string | null; finestra?: { gruppi?: unknown } | null }>(
+        pronta.scanner,
+        `/api/v1/networks/${ensured.network_id}/finestra`,
+        { enabled: true, giorni: fascia.giorni, dalle: fascia.dalle, alle: fascia.alle, ripeti: "settimana", gruppi },
+        { timeoutMs: 60000 },
+      );
+      // Una sonda di prima ignora `gruppi` e salva una finestra con un profilo solo su tutta la rete: non si accetta.
+      if (!Array.isArray(r?.finestra?.gruppi)) {
+        await cancellaFinestraDellaSonda(pronta.scanner, network).catch(() => undefined);
+        return { ok: false, error: SONDA_DA_AGGIORNARE, status: 409, daAggiornare: true };
+      }
+      return { ok: true, avviso: typeof r?.avviso === "string" ? r.avviso : null };
+    } catch (e) {
+      if (eSondaSenzaFinestra(e)) return { ok: false, error: SONDA_DA_AGGIORNARE, status: 409, daAggiornare: true };
+      return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
+    }
+  } catch (e) {
+    return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
+  }
+}
+
 type EsitoCancellazione =
   | { esito: "cancellata" }
   /** La sonda non ha la finestra (o non la conosce neppure): lo stato voluto c'è già. */

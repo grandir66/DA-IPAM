@@ -15,6 +15,15 @@ import { dataRegistro, dettaglioRegistro, nomeEvento, profiloRegistro, type Cons
 
 export const ORE_CONSENSO = [4, 12, 24] as const;
 export type OreConsenso = (typeof ORE_CONSENSO)[number];
+/** Tappa 2 (Riccardo, 08/11/2026, tavola oggetto 42): 4 ore da adesso, la prossima finestra, definitivo. */
+export const DURATE_CONSENSO = ["ore", "finestra", "definitivo"] as const;
+export type DurataConsenso = (typeof DURATE_CONSENSO)[number];
+
+/** Quello che serve al riquadro del consenso, dalla sonda: la fascia «prossima finestra» e gli impianti per il definitivo. */
+export interface InfoConsenso {
+  prossima_finestra: { dal: string; al: string } | null;
+  definibili: string[];
+}
 
 const PAGINA = 500;
 const RIGHE_A_SCHERMO = 300;
@@ -57,12 +66,20 @@ async function idSullaSonda(cidr: string): Promise<number | null> {
   return l.found ? (l.network_id ?? null) : null;
 }
 
-export async function daiConsenso(networkId: number, d: { chi: string; riferimento: string; ore: OreConsenso }): Promise<Esito<ConsensoRete>> {
+export async function daiConsenso(
+  networkId: number,
+  d: { chi: string; riferimento: string; ore?: OreConsenso; durata?: DurataConsenso; ips?: readonly string[] },
+): Promise<Esito<ConsensoRete>> {
   const s = sonda();
   const rete = getNetworkById(networkId);
   if (!s || !rete) return { ok: false, status: 409, error: "Sonda non configurata o rete non trovata" };
-  const ips = ipImpiantiDellaRete(networkId);
-  if (ips.length === 0) return { ok: false, status: 409, error: "Su questa rete non risultano impianti" };
+  const impianti = ipImpiantiDellaRete(networkId);
+  if (impianti.length === 0) return { ok: false, status: 409, error: "Su questa rete non risultano impianti" };
+  // Tappa 2: solo gli impianti scelti. L'elenco del client si confronta con l'inventario di oggi: un IP che non è
+  // (più) un impianto si rifiuta qui, prima di disturbare la sonda (che lo rifiuterebbe comunque).
+  const ips = d.ips ? [...new Set(d.ips)] : impianti;
+  const fuori = ips.filter((ip) => !impianti.includes(ip));
+  if (fuori.length > 0 || ips.length === 0) return { ok: false, status: 409, error: `Non sono impianti di questa rete: ${fuori.join(", ") || "elenco vuoto"}` };
   try {
     // L'elenco degli impianti deve essere arrivato alla sonda: lei rifiuta un IP che non conosce come impianto.
     // Su una rete che la sonda non ha mai visto non c'è niente da allineare: si registra. Banco, 07/11: Edge
@@ -73,11 +90,48 @@ export async function daiConsenso(networkId: number, d: { chi: string; riferimen
     } else {
       await allineaReteEdge(networkId);
     }
-    const r = await edgeApiPost<{ consenso: ConsensoRete }>(s, `/api/v1/networks/${id}/consenso`, { chi: d.chi, riferimento: d.riferimento, ore: d.ore, ips });
+    // Una sonda di prima ignora `durata` e darebbe 4 ore in silenzio: per finestra e definitivo si chiede prima se le conosce.
+    if ((d.durata ?? "ore") !== "ore") {
+      const letto = await edgeApiGet<Record<string, unknown>>(s, `/api/v1/networks/${id}/consenso`);
+      if (!("definibili" in letto)) return { ok: false, status: 409, error: SONDA_DA_AGGIORNARE, daAggiornare: true };
+    }
+    const r = await edgeApiPost<{ consenso: ConsensoRete }>(s, `/api/v1/networks/${id}/consenso`, {
+      chi: d.chi, riferimento: d.riferimento, ore: d.ore ?? 4, ips, durata: d.durata ?? "ore",
+    });
     await sincronizzaRegistro().catch(() => undefined);
     return { ok: true, dati: r.consenso };
   } catch (e) {
     return rifiuto(e);
+  }
+}
+
+/** La fascia «prossima finestra» e gli impianti che possono avere il definitivo, letti dalla sonda. `null` = non si sa. */
+export async function infoConsenso(networkId: number): Promise<InfoConsenso | null> {
+  const s = sonda();
+  const rete = getNetworkById(networkId);
+  if (!s || !rete) return null;
+  try {
+    const id = await idSullaSonda(rete.cidr);
+    if (id === null) return { prossima_finestra: null, definibili: [] };
+    const r = await edgeApiGet<Partial<InfoConsenso>>(s, `/api/v1/networks/${id}/consenso`);
+    return { prossima_finestra: r.prossima_finestra ?? null, definibili: Array.isArray(r.definibili) ? r.definibili : [] };
+  } catch {
+    return null;
+  }
+}
+
+/** Un consenso copre ADESSO gli impianti della rete? Per le pianificazioni: non so = no (gli impianti restano fuori). */
+export async function consensoInVigore(networkId: number): Promise<boolean> {
+  const s = sonda();
+  const rete = getNetworkById(networkId);
+  if (!s || !rete) return false;
+  try {
+    const id = await idSullaSonda(rete.cidr);
+    if (id === null) return false;
+    const r = await edgeApiGet<{ consenso: ConsensoRete | null }>(s, `/api/v1/networks/${id}/consenso`);
+    return !!r.consenso && r.consenso.in_vigore !== false;
+  } catch {
+    return false;
   }
 }
 

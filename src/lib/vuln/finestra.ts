@@ -119,6 +119,8 @@ export interface PassaggioSonda {
   non_rispondono: number;
   assenti: number;
   non_finiti: number;
+  /** Finestra «Per device»: IP tolti dai gruppi o impianti senza consenso. Assente su una sonda di prima. */
+  esclusi?: number;
   gruppi_fatti: number;
   rapporti_inviati: number;
   rapporti_in_coda: number;
@@ -326,7 +328,8 @@ export function eNelFuturo(sql: string | null | undefined, adesso: Date = new Da
 
 // ── Elenco degli indirizzi ─────────────────────────────────────────────────────────────────────
 
-export const STATI_IP = ["da_fare", "in_prova", "finito", "non_risponde", "assente", "non_finito"] as const;
+// «escluso» (08/11/2026): finestra «Per device», IP tolto dai gruppi o impianto senza consenso: non parte.
+export const STATI_IP = ["da_fare", "in_prova", "finito", "non_risponde", "assente", "non_finito", "escluso"] as const;
 export type StatoIp = (typeof STATI_IP)[number];
 
 export interface IpFinestra {

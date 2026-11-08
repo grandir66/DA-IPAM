@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Consenso agli impianti scelti, finestra «Per device»
+
+Riccardo (08/11): l'autorizzazione degli impianti deve poter valere «per tutta la finestra successiva» o essere definitiva dopo un giro senza danni, e «la pianificazione per device non ha la finestra». Tavola oggetti 42-43 approvata; tappe 2 e 3. Vuole la sonda 0.8.271 o seguente.
+
+### Aggiunto
+- **«Includi impianti…» autorizza solo gli impianti selezionati**, con tre durate: 4 ore, la prossima finestra della rete (la fascia la dice la sonda), definitiva (si sceglie solo per impianti già scansionati senza danni con un consenso; la sentinella la revoca se interviene). Il server confronta gli IP scelti con l'inventario di oggi. La riga di ogni impianto dice fino a quando è incluso e chi l'ha autorizzato.
+- **«A finestra» nel pannello «Quando»**, accanto ad «Adesso» e «A orario»: dalle, alle, giorni. DA-IPAM manda alla sonda i gruppi dei device inclusi, ognuno col suo profilo, e li rimanda quando cambiano (giro di ogni minuto, una sonda che non risponde si riprova dopo 10 minuti); a fine fascia la sonda si ferma e alla fascia dopo riprende. Una sola pianificazione per rete resta la regola: passare da finestra a orario, o spegnere, toglie la finestra dalla sonda. Solo Greenbone: nuclei e moduli nella finestra non partono.
+
+### Cambiato
+- **Con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e nelle finestre** (prima solo «Adesso»). Senza, restano fuori e l'esito della pianificazione lo dice; la sonda lo ricontrolla comunque al lancio.
 ## [Non rilasciato] — 2026-11-08 · Sonda trunk sul Mac del tecnico: accesa e azzerata a ogni cliente
 
 Riccardo (08/11): la sonda trunk sul Mac del tecnico deve essere «abilitata per default» e «l'acquisizione deve essere da resettare e riabilitare ad ogni cambio cliente». Il Mac passa da un cliente all'altro, la sonda no.

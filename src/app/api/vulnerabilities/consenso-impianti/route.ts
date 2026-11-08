@@ -9,8 +9,10 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getNetworkById } from "@/lib/db";
 import { ipImpiantiDellaRete } from "@/lib/vuln/edge-subnet-bridge";
 import {
+  DURATE_CONSENSO,
   ORE_CONSENSO,
   daiConsenso,
+  infoConsenso,
   leggiRegistro,
   registroCsv,
   revocaConsenso,
@@ -20,7 +22,10 @@ import {
 const dai = z.object({
   network_id: z.number().int().positive(),
   riferimento: z.string().trim().min(3, "Scrivi il riferimento all'autorizzazione del cliente").max(500),
-  ore: z.union([z.literal(ORE_CONSENSO[0]), z.literal(ORE_CONSENSO[1]), z.literal(ORE_CONSENSO[2])]),
+  ore: z.union([z.literal(ORE_CONSENSO[0]), z.literal(ORE_CONSENSO[1]), z.literal(ORE_CONSENSO[2])]).default(4),
+  // Tappa 2 (08/11/2026): quanto vale e a quali impianti (assente = tutti, come prima). Il server li confronta con l'inventario.
+  durata: z.enum(DURATE_CONSENSO).default("ore"),
+  ips: z.array(z.string().trim().min(1)).min(1).max(1000).optional(),
   consapevole: z.literal(true, { message: "Serve la conferma che il cliente sa che la produzione può fermarsi" }),
 });
 const revoca = z.object({ network_id: z.number().int().positive() });
@@ -37,7 +42,9 @@ export async function GET(req: Request) {
     const rete = Number(url.searchParams.get("rete"));
     if (url.searchParams.has("rete")) {
       if (!Number.isInteger(rete) || rete <= 0 || !getNetworkById(rete)) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
-      return NextResponse.json({ ips: ipImpiantiDellaRete(rete) });
+      // La fascia «prossima finestra» e gli impianti per il definitivo li sa la sonda; se non risponde, il riquadro lo dice.
+      const info = await infoConsenso(rete);
+      return NextResponse.json({ ips: ipImpiantiDellaRete(rete), prossima_finestra: info?.prossima_finestra ?? null, definibili: info?.definibili ?? [], info_letta: info !== null });
     }
     // Sonda spenta o vecchia: si mostra la copia che c'è, e lo si dice.
     let avviso: string | null = null;
@@ -62,7 +69,8 @@ export async function POST(req: Request) {
     const parsed = dai.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
     if (!getNetworkById(parsed.data.network_id)) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
-    const r = await daiConsenso(parsed.data.network_id, { chi: chi(adminCheck), riferimento: parsed.data.riferimento, ore: parsed.data.ore });
+    const { network_id, riferimento, ore, durata, ips } = parsed.data;
+    const r = await daiConsenso(network_id, { chi: chi(adminCheck), riferimento, ore, durata, ips });
     return r.ok ? NextResponse.json({ consenso: r.dati }) : NextResponse.json({ error: r.error, daAggiornare: r.daAggiornare }, { status: r.status });
   });
 }

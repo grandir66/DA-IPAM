@@ -23,7 +23,7 @@ import type { RigaFamiglia } from "@/lib/vuln/proposta/quadro";
 import type { Famiglia } from "@/lib/vuln/proposta/regole";
 import type { ContoProposte, RigaProposta } from "@/lib/vuln/proposta/store";
 import { parolaEsito, type TonoStato } from "@/lib/vuln/proposta/testi-esito";
-import type { QuadroScansioni, ReteScansione } from "@/lib/vuln/scansioni-va-regole";
+import { scadenzaConsenso, type ConsensoRete, type QuadroScansioni, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
 import { Stato } from "./stato-va";
 import { QuandoDevice } from "./quando-device";
 import { RiquadroConsenso } from "./impianti-consenso";
@@ -178,8 +178,10 @@ function firma(r: RigaProposta): string {
   return [r.confermata_da, r.confermata_il ? dataBreve(r.confermata_il) : null].filter(Boolean).join(", ");
 }
 
-function RigaDevice({ r, amministratore, profonditaFissa, occupato, scelto, onSeleziona, onVoce, onTogli }: {
+function RigaDevice({ r, consenso, amministratore, profonditaFissa, occupato, scelto, onSeleziona, onVoce, onTogli }: {
   r: RigaProposta;
+  /** Il consenso della rete (in vigore o futuro), se copre questo impianto. */
+  consenso: ConsensoRete | null;
   amministratore: boolean;
   profonditaFissa: boolean;
   occupato: boolean;
@@ -217,7 +219,9 @@ function RigaDevice({ r, amministratore, profonditaFissa, occupato, scelto, onSe
       </td>
       <td className="px-3 py-1.5">
         <span className="flex flex-wrap items-center gap-1.5">
-          {impianto ? (
+          {impianto && consenso ? (
+            <span title={consenso.riferimento}><Stato tono="avviso">▲ Incluso col consenso {scadenzaConsenso(consenso)} · {consenso.chi}, {consenso.riferimento}</Stato></span>
+          ) : impianto ? (
             <Stato tono="errore">✕ Impianto, escluso di serie</Stato>
           ) : escluso ? (
             <span title={r.forzata_nota ?? undefined}><Stato tono="spento">✕ Escluso{firma(r) ? ` · ${firma(r)}` : ""}{r.forzata_nota ? ` · «${r.forzata_nota}»` : ""}</Stato></span>
@@ -261,7 +265,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const [apertiDetto, setApertiDetto] = useState<string | null>(null);
   const [blocco, setBlocco] = useState<BloccoRete | null>(null);
   const [erroreConti, setErroreConti] = useState<string | null>(null);
-  const [perConsenso, setPerConsenso] = useState(false);
+  // Riquadro del consenso: false = chiuso, null = tutti gli impianti della rete, elenco = solo quelli selezionati (tavola 42).
+  const [perConsenso, setPerConsenso] = useState<readonly string[] | null | false>(false);
   const [selezionati, setSelezionati] = useState<Set<number>>(new Set());
   const [includiCome, setIncludiCome] = useState<Famiglia | "proposta">("proposta");
   const [notaScelta, setNotaScelta] = useState("");
@@ -358,7 +363,10 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   // Passo 9: gli impianti si lanciano solo col consenso valido della rete (lo ricontrolla la sonda al lancio).
   // La sonda manda solo il consenso valido (non revocato, non scaduto) e lo ricontrolla al lancio.
   const consenso = rete?.consenso ?? null;
+  // Tappa 2: un consenso che comincia più tardi (prossima finestra) non fa partire niente adesso, ma conta per orario e finestra.
+  const consensoDato = consenso ?? rete?.consensoFuturo ?? null;
   const inLancio = famiglie.filter((f) => (f.famiglia === "impianti" ? !!consenso : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia));
+  const inPiano = famiglie.filter((f) => (f.famiglia === "impianti" ? !!consensoDato : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia));
   const nInLancio = inLancio.reduce((t, f) => t + (f.famiglia === "impianti" ? f.device : f.confermati), 0);
   const somma = (k: "esclusi" | "inAttesa" | "daRivedere") => famiglie.reduce((t, f) => t + f[k], 0);
   const conteggio = (f: Famiglia) => famiglie.find((x) => x.famiglia === f)?.device ?? 0;
@@ -570,8 +578,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                         <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             aria-label={`Lancia il gruppo ${f.nome}`}
-                            checked={(f.famiglia === "impianti" ? !!consenso : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia)}
-                            disabled={!amministratore || (f.famiglia === "impianti" ? !consenso : !!f.fuori || f.confermati === 0)}
+                            checked={(f.famiglia === "impianti" ? !!consensoDato : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia)}
+                            disabled={!amministratore || (f.famiglia === "impianti" ? !consensoDato : !!f.fuori || f.confermati === 0)}
                             onCheckedChange={(v) => setSpente((p) => {
                               const n = new Set(p);
                               if (v === true) n.delete(f.famiglia);
@@ -587,16 +595,16 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                         <td className="whitespace-nowrap px-3 py-1.5">{f.nuclei}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.moduli}</td>
                         <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
-                          {f.famiglia === "impianti" && consenso ? (
+                          {f.famiglia === "impianti" && (consenso || rete?.consensoFuturo) ? (
                             <span className="flex items-center gap-2">
-                              <Stato tono="avviso">▲ Consenso fino alle {parseDbDate(consenso.scade_il).toLocaleTimeString("it-IT", { timeZone: FUSO_UTENTI, hour: "2-digit", minute: "2-digit" })} · solo Greenbone</Stato>
+                              <Stato tono="avviso">▲ {(consenso ?? rete!.consensoFuturo!).ips.length} con consenso {scadenzaConsenso(consenso ?? rete!.consensoFuturo!)} · solo Greenbone</Stato>
                               {amministratore && <Button size="sm" variant="outline" disabled={occupato} onClick={() => void revocaConsenso()}>Revoca</Button>}
                             </span>
                           ) : (
                             <span className="flex items-center gap-2">
                               <Stato tono={s.tono}>{s.testo}</Stato>
                               {f.famiglia === "impianti" && amministratore && rete?.consensoNoto !== false && quadro.edge.stato === "acceso" && (
-                                <Button size="sm" variant="outline" disabled={occupato} onClick={() => setPerConsenso(true)}>Autorizza gli impianti</Button>
+                                <Button size="sm" variant="outline" disabled={occupato} onClick={() => setPerConsenso(null)}>Autorizza gli impianti</Button>
                               )}
                             </span>
                           )}
@@ -650,7 +658,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
               {sceltiImpianti.length > 0 && (
                 <>
                   <span className="text-muted-foreground">{sceltiImpianti.length === 1 ? "1 impianto" : `${sceltiImpianti.length} impianti`}: si includono solo col consenso</span>
-                  <Button size="sm" className="bg-[#8E1B20] text-white hover:bg-[#8E1B20]/90" disabled={occupato || quadro.edge.stato !== "acceso"} onClick={() => setPerConsenso(true)}>Includi impianti…</Button>
+                  <Button size="sm" className="bg-[#8E1B20] text-white hover:bg-[#8E1B20]/90" disabled={occupato || quadro.edge.stato !== "acceso"} onClick={() => setPerConsenso(sceltiImpianti.map((r) => r.ip))}>Includi impianti…</Button>
                 </>
               )}
               <span className="flex-1" />
@@ -678,6 +686,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                   <RigaDevice
                     key={r.host_id}
                     r={r}
+                    consenso={[consenso, rete?.consensoFuturo ?? null].find((c) => c && c.ips.includes(r.ip)) ?? null}
                     amministratore={amministratore}
                     profonditaFissa={r.famiglia === "periferiche"}
                     occupato={occupato}
@@ -702,6 +711,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
           reteId={rete.id}
           nomeRete={rete.nome}
           scelte={inLancio.map((f) => f.famiglia)}
+          sceltePiano={inPiano.map((f) => f.famiglia)}
           nomiFamiglie={Object.fromEntries(famiglie.map((f) => [f.famiglia, f.nome]))}
           nDevice={nInLancio}
           amministratore={amministratore}
@@ -718,9 +728,10 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
         />
       )}
 
-      {perConsenso && rete && (
+      {perConsenso !== false && rete && (
         <RiquadroConsenso
           rete={rete}
+          scelti={perConsenso ?? undefined}
           nome="te"
           onChiudi={() => setPerConsenso(false)}
           onFatto={() => {

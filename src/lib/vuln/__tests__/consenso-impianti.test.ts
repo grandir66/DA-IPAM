@@ -15,7 +15,7 @@ import { closeHubDb } from "@/lib/db-hub";
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { encrypt } from "@/lib/crypto";
 import { lanciaSuReti, reteDaLookup, type Lancio } from "@/lib/vuln/scansioni-va";
-import { cosaCambia, dataRegistro, dettaglioRegistro, testoConsenso, type ConsensoRete, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
+import { cosaCambia, dataRegistro, dettaglioRegistro, scadenzaConsenso, testoConsenso, type ConsensoRete, type ReteScansione } from "@/lib/vuln/scansioni-va-regole";
 import { daiConsenso, leggiRegistro, registroCsv, revocaConsenso, sincronizzaRegistro } from "@/lib/vuln/registro-impianti";
 import { resetLabNetworkConfig } from "@/lib/lab-config-reset";
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
@@ -48,6 +48,13 @@ test("il registro si legge in ora italiana, coi secondi", () => {
   assert.equal(testoConsenso({ ...CONSENSO, ips: ["10.5.0.2"] }), "▲ Anche 1 impianto, fino alle 15:00");
 });
 
+test("quanto vale un consenso, in poche parole (tappa 2)", () => {
+  assert.equal(scadenzaConsenso(CONSENSO), "fino a sab 15:00");
+  assert.equal(scadenzaConsenso({ ...CONSENSO, valido_dal: "2026-11-08 21:00:00", scade_il: "2026-11-09 05:00:00", in_vigore: false }), "dal dom 22:00 al lun 06:00");
+  assert.equal(scadenzaConsenso({ ...CONSENSO, definitivo: true, scade_il: "9999-12-31 23:59:59" }), "definitivo");
+  assert.equal(testoConsenso({ ...CONSENSO, definitivo: true, scade_il: "9999-12-31 23:59:59" }), "▲ Anche 2 impianti, consenso definitivo");
+});
+
 test("il CSV non fa partire una formula in Excel", () => {
   const riga = { id: 1, at: "2026-11-07 17:40:12", cidr: "10.5.0.0/24", rete: "Produzione", evento: "consenso_dato", chi: "r", scan_id: null, impianti: 2, ips: "", profilo: null, dettaglio: '=HYPERLINK("x");1' };
   const csv = registroCsv([riga]);
@@ -64,6 +71,7 @@ let lookup: Record<string, unknown>;
 let corpi: Array<{ url: string; body: Record<string, unknown> }>;
 let righeEdge: Array<Record<string, unknown>>;
 let rifiutaConsenso = false;
+let sondaVecchia = false;
 
 function db() {
   return getTenantDb(TENANT);
@@ -94,6 +102,7 @@ before(async () => {
       }
       if (url.endsWith("/networks/ensure")) return invia({ ok: true, network_id: 9, host_count: 2 });
       if (url.endsWith("/consenso/revoca")) return "consenso" in lookup ? invia({ ok: true }) : invia({ detail: "Not Found" }, 404);
+      if (url.endsWith("/consenso") && req.method === "GET") return sondaVecchia ? invia({ consenso: null }) : invia({ consenso: null, prossima_finestra: null, definibili: [] });
       if (url.endsWith("/consenso")) return rifiutaConsenso ? invia({ detail: "Non sono impianti di questa rete: 10.5.0.2" }, 409) : invia({ ok: true, id: 7, consenso: CONSENSO });
       if (url.endsWith("/scan")) return invia({ ok: true, scan_id: 5 });
       return invia({ ok: true });
@@ -122,6 +131,7 @@ beforeEach(() => {
   corpi = [];
   righeEdge = [];
   rifiutaConsenso = false;
+  sondaVecchia = false;
   lookup = { found: true, network_id: 9, last_scan: null, consenso: null, protetti: ["10.5.0.2", "10.5.0.3"] };
 });
 
@@ -187,6 +197,42 @@ test("consenso: una sonda vecchia dice di aggiornarsi", async () => {
   });
 });
 
+// Tappa 2 (Riccardo, 08/11/2026, tavola oggetto 42): il consenso va solo agli impianti selezionati, con una durata.
+test("consenso: solo gli impianti scelti, con la durata scelta", async () => {
+  await withTenant(TENANT, async () => {
+    const r = await daiConsenso(1, { chi: "riccardo", riferimento: "Mail", durata: "finestra", ips: ["10.5.0.3"] });
+    assert.equal(r.ok, true);
+    const c = corpi.find((x) => x.url.endsWith("/consenso"));
+    assert.deepEqual(c?.body.ips, ["10.5.0.3"]);
+    assert.equal(c?.body.durata, "finestra");
+  });
+});
+
+test("consenso: una sonda che non conosce le durate non riceve «finestra» (darebbe 4 ore in silenzio)", async () => {
+  sondaVecchia = true;
+  await withTenant(TENANT, async () => {
+    const r = await daiConsenso(1, { chi: "riccardo", riferimento: "Mail", durata: "finestra", ips: ["10.5.0.3"] });
+    assert.equal(!r.ok && r.daAggiornare, true);
+    assert.equal(corpi.some((x) => x.url.endsWith("/consenso")), false);
+  });
+});
+
+test("consenso: un IP scelto che non è un impianto non arriva nemmeno alla sonda", async () => {
+  await withTenant(TENANT, async () => {
+    const r = await daiConsenso(1, { chi: "riccardo", riferimento: "Mail", durata: "ore", ips: ["10.5.0.3", "10.5.0.1"] });
+    assert.equal(!r.ok && r.error, "Non sono impianti di questa rete: 10.5.0.1");
+    assert.equal(corpi.some((x) => x.url.endsWith("/consenso")), false);
+  });
+});
+
+test("un consenso che comincia più tardi non vale per il lancio, ma si vede", () => {
+  const futuro = { ...CONSENSO, valido_dal: "2030-11-04 21:00:00", in_vigore: false };
+  const letta = reteDaLookup({ found: true, consenso: futuro });
+  assert.equal(letta.consenso, null);
+  assert.equal(letta.consensoFuturo?.valido_dal, "2030-11-04 21:00:00");
+  assert.equal(reteDaLookup({ found: true, consenso: CONSENSO }).consenso?.id, 7, "senza in_vigore (sonda di prima) vale");
+});
+
 test("registro: copia, non si raddoppia, non si cancella, una sonda rifatta non si perde", async () => {
   await withTenant(TENANT, async () => {
     righeEdge = [riga(1), riga(2)];
@@ -215,3 +261,4 @@ test("una rete mai vista dalla sonda non vuol dire sonda vecchia; la chiave asse
   assert.equal(reteDaLookup({ found: true, last_scan: null }).consensoNoto, false);
   assert.equal(reteDaLookup({ found: true, last_scan: null, consenso: null }).consensoNoto, true);
 });
+

@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Pannello 4 «Quando» della scheda «Per device» (Passo 6, tavola oggetti 27-29 approvata l'08/11/2026).
- * Adesso = il lancio di sempre. Pianificata = DA-IPAM lancia all'ora fissata i gruppi spuntati nella colonna
- * «Lancia», con i device confermati in quel momento. Una sola pianificazione per rete: se c'è quella «Un profilo
- * solo» si dice prima di salvare, e si salva solo spegnendola.
+ * Pannello 4 «Quando» della scheda «Per device» (Passo 6, tavola oggetti 27-29 approvata l'08/11/2026; tappa 3,
+ * oggetto 43). Adesso = il lancio di sempre. A orario = DA-IPAM lancia all'ora fissata i gruppi spuntati nella colonna
+ * «Lancia», con i device confermati in quel momento. A finestra = la sonda lavora nella fascia, ogni gruppo col suo
+ * profilo; a fine fascia si ferma e alla fascia dopo riprende. Una sola pianificazione per rete: se c'è quella
+ * «Un profilo solo» si dice prima di salvare, e si salva solo spegnendola.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -20,6 +21,10 @@ import { Stato } from "./stato-va";
 
 const campo = "h-8 rounded-md border bg-background px-2 text-sm";
 const GIORNI = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
+/** Lunedì primo, come li legge chi lavora in Italia; il valore resta 0 = domenica. */
+const GIORNI_FASCIA = [1, 2, 3, 4, 5, 6, 0];
+type Modo = "adesso" | "orario" | "finestra";
+const NOMI_MODO: Record<Modo, string> = { adesso: "Adesso", orario: "A orario", finestra: "A finestra" };
 
 interface Risposta {
   pianificazione: Pianificazione | null;
@@ -31,11 +36,13 @@ function istante(iso: string): string {
   return new Date(iso).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, amministratore, manca, occupato, onAdesso, fuori }: {
+export function QuandoDevice({ reteId, nomeRete, scelte, sceltePiano, nomiFamiglie, nDevice, amministratore, manca, occupato, onAdesso, fuori }: {
   reteId: number;
   nomeRete: string;
-  /** I gruppi spuntati nella colonna «Lancia», con almeno un device confermato. */
+  /** I gruppi spuntati nella colonna «Lancia» che partono adesso (gli impianti solo col consenso che vale ora). */
   scelte: Famiglia[];
+  /** Gli stessi per orario e finestra: gli impianti ci sono anche con un consenso che comincia più tardi. */
+  sceltePiano: Famiglia[];
   /** Il nome di ogni famiglia, dalla scheda (le regole delle proposte stanno sul server). */
   nomiFamiglie: Record<string, string>;
   nDevice: number;
@@ -46,7 +53,10 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
   onAdesso: () => void;
   fuori: React.ReactNode;
 }) {
-  const [modo, setModo] = useState<"adesso" | "pianificata">("adesso");
+  const [modo, setModo] = useState<Modo>("adesso");
+  const [giorni, setGiorni] = useState<number[]>([6, 0]);
+  const [dalle, setDalle] = useState("22:00");
+  const [alle, setAlle] = useState("06:00");
   const [dati, setDati] = useState<Risposta | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [frequenza, setFrequenza] = useState<Frequenza>("settimanale");
@@ -66,10 +76,16 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
     setDati(r.data);
     const p = r.data.pianificazione;
     if (p) {
-      setFrequenza(p.frequenza);
-      setGiorno(p.giorno ?? (p.frequenza === "mensile" ? 1 : 0));
-      setOra(p.ora);
-      if (p.attiva) setModo("pianificata");
+      if (p.modo === "finestra" && p.fascia) {
+        setGiorni(p.fascia.giorni);
+        setDalle(p.fascia.dalle);
+        setAlle(p.fascia.alle);
+      } else {
+        setFrequenza(p.frequenza);
+        setGiorno(p.giorno ?? (p.frequenza === "mensile" ? 1 : 0));
+        setOra(p.ora);
+      }
+      if (p.attiva) setModo(p.modo === "finestra" ? "finestra" : "orario");
     }
   }, [reteId]);
 
@@ -87,7 +103,9 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
     const r = await fetchJson<Risposta & { un_profilo?: string }>(`/api/networks/${reteId}/pianificazione-device`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ famiglie: scelteP, frequenza, giorno: frequenza === "giornaliera" ? null : giorno, ora, sostituisci }),
+      body: JSON.stringify(modo === "finestra"
+        ? { modo, famiglie: scelteP, giorni, dalle, alle, sostituisci }
+        : { modo: "orario", famiglie: scelteP, frequenza, giorno: frequenza === "giornaliera" ? null : giorno, ora, sostituisci }),
     });
     setLavoro(false);
     if (!r.ok) {
@@ -98,7 +116,8 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
     }
     setConflitto(null);
     setDati(r.data);
-    setNota(r.data.spenta ? `Salvata. Spenta la pianificazione «Un profilo solo» (${r.data.spenta}).` : "Salvata.");
+    const cosa = modo === "finestra" ? "Finestra salvata sulla sonda" : "Salvata";
+    setNota(r.data.spenta ? `${cosa}. Spenta la pianificazione «Un profilo solo» (${r.data.spenta}).` : `${cosa}.`);
   };
 
   const spegni = async () => {
@@ -112,20 +131,25 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
   };
 
   const p = dati?.pianificazione ?? null;
-  // Passo 9, tavola oggetto 36: gli impianti partono solo con «Adesso», il consenso scade e la pianificazione no.
-  const scelteP = scelte.filter((f) => f !== "impianti");
+  // Tappa 2 (08/11/2026): gli impianti entrano anche in orario e finestra, ma solo quando un consenso copre quell'ora.
+  const scelteP = sceltePiano;
   const nomiP = scelteP.map((f) => (nomiFamiglie[f] ?? f)).join(", ");
-  const conImpianti = scelte.length !== scelteP.length;
+  const conImpianti = scelteP.includes("impianti");
+  const fasciaOk = giorni.length > 0 && /^\d{2}:\d{2}$/.test(dalle) && /^\d{2}:\d{2}$/.test(alle) && dalle !== alle;
   const gruppi = scelte.length === 1 ? "1 gruppo" : `${scelte.length} gruppi`;
 
   return (
     <Pannello
       numero={4}
       titolo="Quando"
-      sottotitolo={modo === "adesso" ? "Parte adesso. Edge fa un gruppo alla volta, gli altri restano in coda." : "All'ora fissata DA-IPAM lancia i gruppi con i device confermati in quel momento."}
+      sottotitolo={modo === "adesso"
+        ? "Parte adesso. Edge fa un gruppo alla volta, gli altri restano in coda."
+        : modo === "orario"
+          ? "All'ora fissata DA-IPAM lancia i gruppi con i device confermati in quel momento."
+          : "Ogni gruppo col suo profilo; a fine fascia la sonda si ferma e alla fascia dopo riprende da dove era."}
       azioni={
         <span className="flex gap-2" role="group" aria-label="Quando lanciare">
-          {(["adesso", "pianificata"] as const).map((m) => (
+          {(["adesso", "orario", "finestra"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -133,7 +157,7 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
               onClick={() => setModo(m)}
               className={cn("min-h-8 rounded-md border-2 border-foreground px-3 text-sm font-semibold", modo === m ? "bg-foreground text-background" : "bg-card")}
             >
-              {m === "adesso" ? "Adesso" : "Pianificata"}
+              {NOMI_MODO[m]}
             </button>
           ))}
         </span>
@@ -143,7 +167,7 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
         {errore && <p className="text-sm">Pianificazione non letta: {errore}</p>}
         {p && (
           <div className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2">
-            {p.attiva ? <Stato tono="ok">✓ Pianificata</Stato> : <Stato tono="spento">● Spenta</Stato>}
+            {p.attiva ? <Stato tono="ok">✓ {p.modo === "finestra" ? "A finestra" : "Pianificata"}</Stato> : <Stato tono="spento">● Spenta</Stato>}
             <span className="text-[15px]">{quandoInParole(p)} · {p.famiglie.map((f) => (nomiFamiglie[f] ?? f)).join(", ")}</span>
             <span className="text-sm text-muted-foreground">
               {p.attiva && p.prossima_il ? `prossima: ${istante(p.prossima_il)}` : null}
@@ -167,6 +191,35 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
             <Button size="lg" disabled={manca !== null || occupato} title={manca ?? undefined} onClick={onAdesso}>
               {occupato && <Loader2 className="size-4 animate-spin" />}
               {manca ?? `Avvia ${gruppi} su ${nomeRete}`}
+            </Button>
+          </div>
+        ) : modo === "finestra" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">dalle
+              <input type="time" aria-label="dalle" className={cn(campo, "font-mono")} value={dalle} disabled={!amministratore} onChange={(e) => setDalle(e.target.value)} />
+            </label>
+            <label className="flex items-center gap-2 text-sm">alle
+              <input type="time" aria-label="alle" className={cn(campo, "font-mono")} value={alle} disabled={!amministratore} onChange={(e) => setAlle(e.target.value)} />
+            </label>
+            <span className="flex flex-wrap gap-1.5" role="group" aria-label="Giorni della finestra">
+              {GIORNI_FASCIA.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  aria-pressed={giorni.includes(g)}
+                  disabled={!amministratore}
+                  onClick={() => setGiorni((x) => (x.includes(g) ? x.filter((y) => y !== g) : [...x, g]))}
+                  className={cn("min-h-8 rounded-md border px-2.5 text-sm", giorni.includes(g) ? "border-2 border-foreground bg-foreground font-semibold text-background" : "border-muted-foreground bg-card")}
+                >
+                  {GIORNI[g].slice(0, 3)}
+                </button>
+              ))}
+            </span>
+            <span className="flex-1" />
+            <span className="text-[15px]"><strong>{scelteP.length === 1 ? "1 gruppo" : `${scelteP.length} gruppi`}</strong>{nomiP ? ` · ${nomiP}` : ""}</span>
+            <Button size="lg" disabled={manca !== null || lavoro || scelteP.length === 0 || !fasciaOk} title={manca ?? undefined} onClick={() => void salva(false)}>
+              {lavoro && <Loader2 className="size-4 animate-spin" />}
+              {manca ?? `Salva la finestra su ${nomeRete}`}
             </Button>
           </div>
         ) : (
@@ -207,12 +260,16 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
                 {manca ?? `Salva la pianificazione su ${nomeRete}`}
               </Button>
             </div>
-            {conImpianti && (
-              <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 text-sm">
-                <Stato tono="avviso">▲ Impianti</Stato>
-                <span>Gli impianti partono solo con «Adesso»: il consenso scade, la pianificazione no. Nel giro pianificato restano fuori.</span>
-              </div>
-            )}
+          </>
+        )}
+        {modo !== "adesso" && conImpianti && (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 text-sm">
+            <Stato tono="avviso">▲ Impianti</Stato>
+            <span>Gli impianti entrano solo se il loro consenso copre {modo === "finestra" ? "la fascia" : "l'ora del giro"}; altrimenti restano fuori e l&apos;esito lo dice. Solo Greenbone.</span>
+          </div>
+        )}
+        {modo !== "adesso" && (
+          <>
             {conflitto && (
               <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-foreground bg-[#FFF6CC] px-3 py-2 text-sm text-[#0D2537]" role="alert">
                 <Stato tono="avviso">▲ Attenzione</Stato>

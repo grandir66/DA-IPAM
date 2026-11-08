@@ -90,6 +90,12 @@ export interface ConsensoRete {
   ips: string[];
   dato_il: string;
   scade_il: string;
+  /** Tappa 2 (08/11/2026): «per la prossima finestra» vale da qui (UTC); null o assente = da subito. */
+  valido_dal?: string | null;
+  /** Senza scadenza, finché la sentinella non interviene. */
+  definitivo?: boolean;
+  /** Vale adesso. Assente = sonda di prima, dove un consenso letto valeva sempre. */
+  in_vigore?: boolean;
 }
 
 export interface ReteScansione {
@@ -109,7 +115,10 @@ export interface ReteScansione {
   /** Host della rete che sono o possono essere impianti: la rete non si scansiona da questa pagina. */
   impianti: number;
   impiantiEsempi: string[];
+  /** Il consenso che vale ADESSO: solo lui fa partire gli impianti. */
   consenso?: ConsensoRete | null;
+  /** Un consenso dato che comincia più tardi (prossima finestra): si mostra, non fa partire niente adesso. */
+  consensoFuturo?: ConsensoRete | null;
   /** La sonda sa del consenso. Falso = versione vecchia: il comando non c'è. */
   consensoNoto?: boolean;
 }
@@ -167,7 +176,20 @@ export function oraConsenso(scadeIl: string): string {
 }
 
 export function testoConsenso(c: ConsensoRete): string {
-  return `▲ Anche ${c.ips.length === 1 ? "1 impianto" : `${c.ips.length} impianti`}, fino alle ${oraConsenso(c.scade_il)}`;
+  const quanti = c.ips.length === 1 ? "1 impianto" : `${c.ips.length} impianti`;
+  return c.definitivo ? `▲ Anche ${quanti}, consenso definitivo` : `▲ Anche ${quanti}, fino alle ${oraConsenso(c.scade_il)}`;
+}
+
+/** «lun 06:00» in ora italiana, da un istante UTC del database. Pura. */
+export function giornoOraConsenso(sql: string): string {
+  return parseDbDate(sql).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Tappa 2: quanto vale un consenso, in poche parole («fino a lun 06:00», «dal dom 22:00 al lun 06:00», «definitivo»). Pura. */
+export function scadenzaConsenso(c: ConsensoRete): string {
+  if (c.definitivo) return "definitivo";
+  if (c.in_vigore === false && c.valido_dal) return `dal ${giornoOraConsenso(c.valido_dal)} al ${giornoOraConsenso(c.scade_il)}`;
+  return `fino a ${giornoOraConsenso(c.scade_il)}`;
 }
 
 const EVENTI: Record<string, { nome: string; segno: string; tono: "ok" | "in_corso" | "avviso" | "spento" | "errore" }> = {

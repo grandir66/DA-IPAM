@@ -22,6 +22,8 @@ import { listControllerViews } from "@/lib/controllers/service";
 import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import { etichettaFrequenza, frequenzaDaJob, leggiConfig, prossimaEsecuzione } from "@/lib/apparati-scelti/regole";
 import { listEdgeSchedules } from "@/lib/vuln/edge-schedule-store";
+import { elencoPianificazioni, quandoInParole } from "@/lib/vuln/proposta/pianificazione";
+import { ETICHETTE_FAMIGLIA as ETICHETTE_FAMIGLIE_VA } from "@/lib/vuln/proposta/regole";
 import { describeCron, describeFinestra, type Frequency } from "@/lib/vuln/cron-builder";
 import { ultimoBackup } from "@/lib/backup/engine";
 import { statoCalcolo } from "@/lib/mappa-porte/calcolo";
@@ -34,7 +36,7 @@ export type StatoRiga = "acceso" | "spento" | "da_configurare";
 export type Cambio = { tipo: "opzione"; id: string } | { tipo: "job"; id: number };
 
 export interface RigaSchedulazione {
-  /** `job.<id>` · `controller.<id>` · `controller.nessuno` · `edge.<rete>` · `timer.<nome>`. */
+  /** `job.<id>` · `controller.<id>` · `controller.nessuno` · `edge.<rete>` · `device.<rete>` · `timer.<nome>`. */
   id: string;
   famiglia: Famiglia;
   nome: string;
@@ -287,6 +289,29 @@ function righeEdge(reti: Map<number, string>): RigaSchedulazione[] {
   });
 }
 
+// ── Scansioni «Per device» (Passo 6, 08/11/2026, tavola oggetto 30) ─────────
+
+const ESITO_TONO: Record<string, TipoEsito> = { ok: "ok", avviso: "attenzione", errore: "errore", spento: "neutro" };
+
+function righeDevice(reti: Map<number, string>): RigaSchedulazione[] {
+  return elencoPianificazioni().map((p) => ({
+    id: `device.${p.network_id}`,
+    famiglia: "reti",
+    nome: "Scansione VA per device",
+    cosa: `${p.famiglie.map((f) => ETICHETTE_FAMIGLIE_VA[f]).join(", ")} · la lancia DA-IPAM con i device confermati`,
+    su: reti.get(p.network_id) ?? `rete n. ${p.network_id}`,
+    quando: quandoInParole(p),
+    prossimo: p.attiva && p.prossima_il ? dataSqlite(new Date(p.prossima_il)) : null,
+    stato: p.attiva ? "acceso" : "spento",
+    fisso: false,
+    esito: p.ultimo_esito ? esito(ESITO_TONO[p.ultimo_tono ?? ""] ?? "neutro", taglia(p.ultimo_esito)) : esito("neutro", "non è ancora partita"),
+    dove: { href: "/vulnerabilities/scansioni", etichetta: "Scansioni VA ›" },
+    cambio: null,
+    jobId: null,
+    perche: "Si accende e si spegne dalla scheda «Per device» della pagina Scansioni VA",
+  }) satisfies RigaSchedulazione);
+}
+
 // ── Timer dell'appliance (server.ts) ─────────────────────────────────────────
 
 /** I moduli che `server.ts` avvia, con la riga che li mostra o il perché non c'è (prova di completezza). */
@@ -303,6 +328,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/mappa-porte/job": "timer.mappa_porte",
   "./src/lib/scanner/profili/sconosciuti-job": "timer.riconoscimento",
   "./src/lib/security/eventi-dc/job": "timer.eventi_dc",
+  "./src/lib/vuln/proposta/pianificazione-job": "fuori: è il giro delle pianificazioni «Per device», le sue righe sono le pianificazioni (device.<rete>)",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
@@ -574,6 +600,7 @@ export async function elencoSchedulazioni(adesso: Date = new Date()): Promise<Ri
     ...(await sicuro("job", () => jobs.map((j) => rigaJob(j, reti, nomiController, adesso)))),
     ...(await sicuro("controller", () => righeController(jobs))),
     ...(await sicuro("Edge", () => righeEdge(reti))),
+    ...(await sicuro("Per device", () => righeDevice(reti))),
     ...(await sicuro("appliance", () => righeTimer(adesso))),
   ];
   return righe.sort(ordina);

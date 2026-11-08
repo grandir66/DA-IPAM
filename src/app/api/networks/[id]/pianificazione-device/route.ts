@@ -1,0 +1,86 @@
+/**
+ * Pianificazione «Per device» della rete (Passo 6, 08/11/2026, tavola oggetti 27-29).
+ * GET: la pianificazione e, se c'è, quella «Un profilo solo» che salvando si spegnerebbe.
+ * PUT: salva (solo l'amministratore). Se la rete ha una pianificazione «Un profilo solo» accesa risponde 409
+ * con la sua descrizione, finché la richiesta non porta `sostituisci: true` (decisione di Riccardo: una sola
+ * pianificazione per rete). Se la sonda non toglie quella vecchia, la nuova non si salva.
+ * DELETE: spegne, senza cancellare (Modifica ripropone l'ultima).
+ */
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { withTenantFromSession } from "@/lib/api-tenant";
+import { getNetworkById } from "@/lib/db";
+import { FAMIGLIE_PIANIFICABILI, leggiPianificazione, salvaPianificazione, spegniPianificazione } from "@/lib/vuln/proposta/pianificazione";
+import { pianificazioneUnProfilo, togliUnProfilo } from "@/lib/vuln/proposta/pianificazione-rete";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+const Corpo = z
+  .object({
+    famiglie: z.array(z.enum(FAMIGLIE_PIANIFICABILI)).min(1, "Scegli almeno un gruppo"),
+    frequenza: z.enum(["giornaliera", "settimanale", "mensile"]),
+    giorno: z.number().int().nullable(),
+    ora: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Ora non valida (HH:MM)"),
+    sostituisci: z.boolean().optional(),
+  })
+  .superRefine((c, ctx) => {
+    if (c.frequenza === "settimanale" && (c.giorno === null || c.giorno < 0 || c.giorno > 6)) ctx.addIssue({ code: "custom", message: "Scegli il giorno della settimana" });
+    if (c.frequenza === "mensile" && (c.giorno === null || c.giorno < 1 || c.giorno > 28)) ctx.addIssue({ code: "custom", message: "Il giorno del mese va da 1 a 28" });
+  });
+
+function rete(id: string): number | null {
+  const n = Number(id);
+  return Number.isInteger(n) && n > 0 && getNetworkById(n) ? n : null;
+}
+
+export async function GET(_req: Request, { params }: Ctx) {
+  const check = await requireAuth();
+  if (isAuthError(check)) return check;
+  return withTenantFromSession(async () => {
+    const n = rete((await params).id);
+    if (n === null) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
+    return NextResponse.json({ pianificazione: leggiPianificazione(n), un_profilo: pianificazioneUnProfilo(n) });
+  });
+}
+
+export async function PUT(req: Request, { params }: Ctx) {
+  const check = await requireAdmin();
+  if (isAuthError(check)) return check;
+  return withTenantFromSession(async () => {
+    const n = rete((await params).id);
+    if (n === null) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
+    let grezzo: unknown;
+    try {
+      grezzo = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON non valido" }, { status: 400 });
+    }
+    const parsed = Corpo.safeParse(grezzo);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
+    const c = parsed.data;
+    const vecchia = pianificazioneUnProfilo(n);
+    if (vecchia && !c.sostituisci) {
+      return NextResponse.json({ error: "La rete ha già una pianificazione «Un profilo solo»", un_profilo: vecchia }, { status: 409 });
+    }
+    if (vecchia) {
+      const tolta = await togliUnProfilo(n);
+      if (!tolta.ok) return NextResponse.json({ error: `Pianificazione «Un profilo solo» non spenta: ${tolta.error}. Nessuna modifica salvata.` }, { status: 502 });
+    }
+    const chi = check.user?.name ?? check.user?.email ?? "amministratore";
+    const giorno = c.frequenza === "giornaliera" ? null : c.giorno;
+    const p = salvaPianificazione({ network_id: n, famiglie: c.famiglie, frequenza: c.frequenza, giorno, ora: c.ora, chi });
+    return NextResponse.json({ pianificazione: p, un_profilo: null, spenta: vecchia });
+  });
+}
+
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const check = await requireAdmin();
+  if (isAuthError(check)) return check;
+  return withTenantFromSession(async () => {
+    const n = rete((await params).id);
+    if (n === null) return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
+    spegniPianificazione(n);
+    return NextResponse.json({ pianificazione: leggiPianificazione(n) });
+  });
+}

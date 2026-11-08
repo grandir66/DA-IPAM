@@ -167,6 +167,9 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   "va_gruppi_lanciati",
   // Copia del registro di questa sonda, che non si riscrive: un import farebbe DELETE e i trigger lo rifiutano.
   "va_registro_impianti",
+  // Pianificazione «Per device» (08/11): copiata su un'altra installazione lancerebbe scansioni da sola, mentre un
+  // automatismo nasce spento. Sull'installazione nuova la salva di nuovo un amministratore.
+  "va_pianificazioni_device",
   "network_host_credentials",
   "host_detect_credential",
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra

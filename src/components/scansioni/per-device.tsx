@@ -2,12 +2,12 @@
 
 /**
  * Scheda «Per device» della pagina Scansioni VA (tavola approvata il 06/11/2026, oggetti 2-22):
- * 1 Rete → 2 Famiglie → 3 Device → 4 Lancio. Qui non si decide niente: famiglie, profili e conferme
+ * 1 Rete → 2 Famiglie → 3 Device → 4 Quando (adesso o pianificata, Passo 6 dell'08/11). Qui non si decide niente: famiglie, profili e conferme
  * vengono dal server, e il lancio rilegge tutto dal database. Le rotte sono `proposte-va` della rete.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import type { ContoProposte, RigaProposta } from "@/lib/vuln/proposta/store";
 import { parolaEsito, type TonoStato } from "@/lib/vuln/proposta/testi-esito";
 import type { QuadroScansioni, ReteScansione } from "@/lib/vuln/scansioni-va-regole";
 import { Stato } from "./stato-va";
+import { QuandoDevice } from "./quando-device";
 
 interface RispostaProposte {
   proposte: RigaProposta[];
@@ -588,9 +589,18 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
         </Pannello>
       )}
 
-      {famiglie.length > 0 && (
-        <Pannello numero={4} titolo="Lancio" sottotitolo="Parte adesso. Edge fa un gruppo alla volta, gli altri restano in coda.">
-          <div className="flex flex-wrap items-center gap-3">
+      {famiglie.length > 0 && rete && (
+        <QuandoDevice
+          reteId={rete.id}
+          nomeRete={rete.nome}
+          scelte={inLancio.map((f) => f.famiglia)}
+          nomiFamiglie={Object.fromEntries(famiglie.map((f) => [f.famiglia, f.nome]))}
+          nDevice={nInLancio}
+          amministratore={amministratore}
+          manca={manca}
+          occupato={occupato}
+          onAdesso={() => void lancia(inLancio.map((f) => f.famiglia))}
+          fuori={
             <span className="flex flex-wrap items-center gap-2 text-sm">
               Restano fuori:
               {conteggio("impianti") > 0 && <Stato tono="errore">✕ {conteggio("impianti")} impianti</Stato>}
@@ -599,14 +609,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
               {somma("esclusi") > 0 && <Stato tono="spento">● {somma("esclusi")} esclusi</Stato>}
               {somma("inAttesa") > 0 && <Stato tono="spento">● {somma("inAttesa")} non confermati</Stato>}
             </span>
-            <span className="flex-1" />
-            <span className="text-[15px]"><strong>{inLancio.length === 1 ? "1 gruppo" : `${inLancio.length} gruppi`}</strong> · {nInLancio} device</span>
-            <Button size="lg" disabled={manca !== null || occupato} title={manca ?? undefined} onClick={() => void lancia(inLancio.map((f) => f.famiglia))}>
-              {occupato && <Loader2 className="size-4 animate-spin" />}
-              {manca ?? `Avvia ${inLancio.length === 1 ? "1 gruppo" : `${inLancio.length} gruppi`} su ${rete?.nome ?? ""}`}
-            </Button>
-          </div>
-        </Pannello>
+          }
+        />
       )}
 
       {esito && <EsitoGruppi esito={esito} nomeRete={rete?.nome ?? ""} nomi={Object.fromEntries(famiglie.map((f) => [f.famiglia, f.nome]))} occupato={occupato} onRiprova={(f) => void lancia(f)} />}

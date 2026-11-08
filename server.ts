@@ -205,6 +205,15 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Pianificazioni «Per device» (08/11/2026, piano profili per device, Passo 6): ogni minuto si lanciano i gruppi
+    // confermati delle reti arrivate all'ora fissata. Nessuna pianificazione nasce da sola: la salva un amministratore.
+    import("./src/lib/vuln/proposta/pianificazione-job").then(({ avviaPianificazioniDevice }) => {
+      avviaPianificazioniDevice();
+      console.log("> Pianificazioni Per device: controllo ogni minuto");
+    }).catch((error) => {
+      console.error("WARNING: pianificazioni Per device non avviate:", error);
+    });
+
     // Mappa porte (07/11/2026): ricalcolo ogni 30 minuti dalle tabelle già lette. Non interroga gli apparati.
     import("./src/lib/mappa-porte/job").then(({ avviaMappaPorte }) => {
       avviaMappaPorte();

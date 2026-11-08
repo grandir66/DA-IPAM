@@ -2339,6 +2339,23 @@ CREATE TABLE IF NOT EXISTS va_gruppi_lanciati (
   PRIMARY KEY (network_id, scan_id)
 );
 
+-- Pianificazione «Per device» (Passo 6, 08/11/2026): all'ora fissata DA-IPAM lancia i gruppi confermati in quel
+-- momento. Una per rete; esclude la pianificazione «Un profilo solo» della stessa rete (decisione di Riccardo).
+CREATE TABLE IF NOT EXISTS va_pianificazioni_device (
+  network_id INTEGER PRIMARY KEY REFERENCES networks(id) ON DELETE CASCADE,
+  famiglie TEXT NOT NULL,
+  frequenza TEXT NOT NULL CHECK (frequenza IN ('giornaliera','settimanale','mensile')),
+  giorno INTEGER,
+  ora TEXT NOT NULL,
+  attiva INTEGER NOT NULL DEFAULT 1,
+  prossima_il TEXT,
+  ultima_il TEXT,
+  ultimo_esito TEXT,
+  ultimo_tono TEXT,
+  chi TEXT NOT NULL,
+  aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Copia del registro impianti di Edge (Riccardo, 07/11/2026): resta anche se la sonda viene rifatta. Si aggiunge e basta.
 -- La chiave comprende ora ed evento: gli id di una sonda rifatta ripartono da 1.
 CREATE TABLE IF NOT EXISTS va_registro_impianti (

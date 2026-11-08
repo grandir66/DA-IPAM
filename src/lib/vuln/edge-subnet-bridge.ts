@@ -2,6 +2,7 @@
  * Bridge subnet DA-IPAM → scanner-edge (ensure network + trigger Greenbone scan).
  */
 
+import { spegniPianificazione } from "@/lib/vuln/proposta/pianificazione";
 import {
   getNetworkById,
   getHostsByNetwork,
@@ -574,6 +575,20 @@ export async function triggerSubnetEdgeScan(
   }
 }
 
+/**
+ * Una sola pianificazione per rete (Riccardo, 08/11/2026): salvare «Un profilo solo» spegne quella «Per device».
+ * La frase torna nell'esito del salvataggio, così chi salva lo vede. Un guasto qui non annulla il salvataggio.
+ */
+function spegniPerDevice(networkId: number): string | null {
+  try {
+    return spegniPianificazione(networkId, "Spenta: sulla rete è stata salvata una pianificazione «Un profilo solo»")
+      ? "Spenta la pianificazione «Per device» di questa rete: ne vale una sola."
+      : null;
+  } catch (e) {
+    return `Pianificazione «Per device» non spenta: ${e instanceof Error ? e.message : "errore"}.`;
+  }
+}
+
 export async function saveEdgeSubnetSchedule(
   networkId: number,
   opts: {
@@ -679,7 +694,8 @@ export async function saveEdgeSubnetSchedule(
       enabled: opts.enabled,
     });
 
-    return { ok: true, degraded, warning };
+    const spenta = opts.enabled ? spegniPerDevice(networkId) : null;
+    return { ok: true, degraded, warning: [warning, spenta].filter(Boolean).join(" ") || undefined };
   } catch (e) {
     const msg =
       e instanceof EdgeClientError
@@ -928,7 +944,8 @@ export async function saveEdgeSubnetFinestra(
       const locale = `Finestra salvata sulla sonda, memoria locale non aggiornata: ${e instanceof Error ? e.message : "errore sconosciuto"}.`;
       return { ok: true, avviso: dellaSonda ? `${dellaSonda} ${locale}` : locale };
     }
-    return { ok: true, avviso: dellaSonda };
+    const spenta = f.enabled ? spegniPerDevice(networkId) : null;
+    return { ok: true, avviso: [dellaSonda, spenta].filter(Boolean).join(" ") || null };
   } catch (e) {
     return { ok: false, error: motivoEdge(e), status: statoRifiuto(e) };
   }

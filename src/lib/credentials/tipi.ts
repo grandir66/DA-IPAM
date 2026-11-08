@@ -283,11 +283,12 @@ export function valePerAccesso(tipo: string | null | undefined): boolean {
  * registrate vanno aggiunte da sole; una credenziale nuova va agganciata anche alle reti esistenti»). Si accodano in
  * fondo alla lista, dopo quelle scelte a mano: l'ordine scelto non cambia.
  *
- * `windows` NON c'è finché Riccardo non decide: il freno anti-blocco conta 3 logon rifiutati per account in ogni giro,
- * e i giri sono per rete. Una password Windows sbagliata che LDAP non sa verificare (account locale, nessuna
- * integrazione AD) su 7 reti fa 21 logon rifiutati per giro invece di 3: è il blocco dell'account di dominio.
+ * `windows` c'è per decisione di Riccardo (08/11/2026, «Sì, anche Windows»), sapendo il rischio: il freno anti-blocco
+ * conta 3 logon rifiutati per account in ogni giro, e i giri sono per rete. Una password Windows sbagliata che LDAP non
+ * sa verificare (account locale, nessuna integrazione AD) su 7 reti può fare 21 logon rifiutati per giro invece di 3.
+ * Con la password giusta, o sbagliata ma verificata via LDAP, non cambia niente. AD, UniFi e Omada non entrano mai.
  */
-export const TIPI_AUTOMATICI_SU_RETE: readonly TipoCredenziale[] = ["ssh", "snmp", "snmp_v3", "api"];
+export const TIPI_AUTOMATICI_SU_RETE: readonly TipoCredenziale[] = ["ssh", "snmp", "snmp_v3", "windows", "api"];
 
 /** La voce si aggancia da sola alle reti? */
 export function siAgganciaDaSola(tipo: string | null | undefined): boolean {

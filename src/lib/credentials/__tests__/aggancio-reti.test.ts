@@ -3,8 +3,7 @@
  * già registrate vanno aggiunte da sole alla rete; quando si aggiunge una credenziale nuova va agganciata anche alle
  * reti esistenti». Sull'hub 533, quel giorno: 7 reti, 13 voci d'accesso registrate, 5 agganciate.
  *
- * Le voci Windows restano fuori finché Riccardo non decide (`TIPI_AUTOMATICI_SU_RETE`): il freno anti-blocco conta
- * per giro, e i giri sono per rete.
+ * Anche le voci Windows, per decisione di Riccardo dello stesso giorno («Sì, anche Windows»); AD resta fuori.
  *
  * Run: node --import tsx --test src/lib/credentials/__tests__/aggancio-reti.test.ts
  */
@@ -16,6 +15,7 @@ import { encrypt } from "@/lib/crypto";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { creaRete } from "@/lib/networks/salva-rete";
 import { creaVoceDb } from "../archivio";
+import { agganciaATutteLeRetiDb } from "../lista-rete";
 
 const T = "TESTAGGANCIORETI";
 const dbt = () => getTenantDb(T);
@@ -40,10 +40,10 @@ before(() => withTenant(T, () => {
 after(() => deleteTenantDatabase(T));
 
 describe("rete nuova", () => {
-  it("senza una lista scelta nasce con le voci registrate SSH/SNMP/API, non Windows né AD", () => withTenant(T, () => {
+  it("senza una lista scelta nasce con le voci registrate SSH/SNMP/Windows/API, non AD", () => withTenant(T, () => {
     const r = creaRete({ cidr: "10.81.1.0/24", name: "auto", description: "", location: "" });
-    assert.deepEqual(lista(r.id), [ssh, snmp]);
-    assert.ok(!lista(r.id).includes(win) && !lista(r.id).includes(ad));
+    assert.deepEqual(lista(r.id), [ssh, snmp, win]);
+    assert.ok(!lista(r.id).includes(ad));
   }));
 
   it("con una lista scelta (anche vuota) vale quella: chi ne toglie una la toglie", () => withTenant(T, () => {
@@ -65,11 +65,17 @@ describe("credenziale nuova", () => {
     reti.forEach((r, i) => assert.deepEqual(lista(r), [...prima[i], id]));
   }));
 
-  it("Windows: non si aggancia da sola", () => withTenant(T, () => {
+  it("Windows: si aggancia anche lei a ogni rete", () => withTenant(T, () => {
+    const reti = (dbt().prepare(`SELECT COUNT(*) AS n FROM networks`).get() as { n: number }).n;
     const esito = creaVoceDb(dbt(), { name: "win nuova", credential_type: "windows", username: "DOM\\u", password: "p" });
     assert.ok(esito.ok, esito.ok ? "" : esito.errore);
-    assert.equal(esito.reti_agganciate, 0);
-    const n = dbt().prepare(`SELECT COUNT(*) AS n FROM network_credentials WHERE credential_id = ?`).get(esito.vista.id) as { n: number };
+    assert.equal(esito.reti_agganciate, reti);
+  }));
+
+  it("AD: non si aggancia mai", () => withTenant(T, () => {
+    const id = voce("ad nuova", "ad");
+    assert.equal(agganciaATutteLeRetiDb(dbt(), id, "ad"), 0);
+    const n = dbt().prepare(`SELECT COUNT(*) AS n FROM network_credentials WHERE credential_id = ?`).get(id) as { n: number };
     assert.equal(n.n, 0);
   }));
 });

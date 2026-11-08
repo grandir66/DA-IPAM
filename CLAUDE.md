@@ -29,7 +29,7 @@ npm run dev:server        # tsx watch server.ts (con cron)
 npm run lint              # ESLint
 npx tsc --noEmit          # type-check (manuale, non c'è script dedicato)
 npm run build             # build produzione
-npm run version:release   # bump patch + commit "release: vX.Y.Z" (OBBLIGATORIO post-modifica)
+npm run version:release -- --staged-only   # bump patch + commit "release: vX.Y.Z" (OBBLIGATORIO post-modifica)
 git push origin <branch>  # senza push, il server in produzione non vede la nuova versione
 ```
 
@@ -42,7 +42,7 @@ git push origin <branch>  # senza push, il server in produzione non vede la nuov
 
 ## Regole anti-regressione (CRITICHE — violazione = bug latente)
 
-1. **Versioning obbligatorio**: ogni modifica al codice → `npm run version:release` + `git push`. Nessun commit "wip" senza bump.
+1. **Versioning obbligatorio**: ogni modifica al codice → `npm run version:release` + `git push`. Nessun commit "wip" senza bump. **Sempre con `-- --staged-only`**: senza, lo script fa `git add -A` e l'08/11/2026 ha messo nel commit di rilascio `.worktrees/giro7`, il worktree di un'altra sessione (tolto prima del push).
 2. **Auth check su ogni endpoint**: GET sensibili → `requireAuth()`; POST/PUT/DELETE → `requireAdmin()` da `src/lib/api-auth.ts`. Eccezioni: `/api/auth/*`, `/api/setup`, `/api/health`, `/api/version`.
 3. **Mai `decrypt()` nudo nei path non-critici**: usare `safeDecrypt()` da `src/lib/crypto.ts`.
 4. **JSON.parse SEMPRE in try-catch** in codice server-side (cron, API).

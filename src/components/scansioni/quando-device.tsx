@@ -87,7 +87,7 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
     const r = await fetchJson<Risposta & { un_profilo?: string }>(`/api/networks/${reteId}/pianificazione-device`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ famiglie: scelte, frequenza, giorno: frequenza === "giornaliera" ? null : giorno, ora, sostituisci }),
+      body: JSON.stringify({ famiglie: scelteP, frequenza, giorno: frequenza === "giornaliera" ? null : giorno, ora, sostituisci }),
     });
     setLavoro(false);
     if (!r.ok) {
@@ -112,7 +112,10 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
   };
 
   const p = dati?.pianificazione ?? null;
-  const nomi = scelte.map((f) => (nomiFamiglie[f] ?? f)).join(", ");
+  // Passo 9, tavola oggetto 36: gli impianti partono solo con «Adesso», il consenso scade e la pianificazione no.
+  const scelteP = scelte.filter((f) => f !== "impianti");
+  const nomiP = scelteP.map((f) => (nomiFamiglie[f] ?? f)).join(", ");
+  const conImpianti = scelte.length !== scelteP.length;
   const gruppi = scelte.length === 1 ? "1 gruppo" : `${scelte.length} gruppi`;
 
   return (
@@ -198,12 +201,18 @@ export function QuandoDevice({ reteId, nomeRete, scelte, nomiFamiglie, nDevice, 
                 <input type="time" className={cn(campo, "font-mono")} value={ora} disabled={!amministratore} onChange={(e) => setOra(e.target.value)} />
               </label>
               <span className="flex-1" />
-              <span className="text-[15px]"><strong>{gruppi}</strong>{nomi ? ` · ${nomi}` : ""} · {nDevice} device oggi</span>
-              <Button size="lg" disabled={manca !== null || lavoro || !/^\d{2}:\d{2}$/.test(ora)} title={manca ?? undefined} onClick={() => void salva(false)}>
+              <span className="text-[15px]"><strong>{scelteP.length === 1 ? "1 gruppo" : `${scelteP.length} gruppi`}</strong>{nomiP ? ` · ${nomiP}` : ""}</span>
+              <Button size="lg" disabled={manca !== null || lavoro || scelteP.length === 0 || !/^\d{2}:\d{2}$/.test(ora)} title={manca ?? undefined} onClick={() => void salva(false)}>
                 {lavoro && <Loader2 className="size-4 animate-spin" />}
                 {manca ?? `Salva la pianificazione su ${nomeRete}`}
               </Button>
             </div>
+            {conImpianti && (
+              <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 text-sm">
+                <Stato tono="avviso">▲ Impianti</Stato>
+                <span>Gli impianti partono solo con «Adesso»: il consenso scade, la pianificazione no. Nel giro pianificato restano fuori.</span>
+              </div>
+            )}
             {conflitto && (
               <div className="flex flex-wrap items-center gap-3 rounded-md border-2 border-foreground bg-[#FFF6CC] px-3 py-2 text-sm text-[#0D2537]" role="alert">
                 <Stato tono="avviso">▲ Attenzione</Stato>

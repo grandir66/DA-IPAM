@@ -26,6 +26,7 @@ import { parolaEsito, type TonoStato } from "@/lib/vuln/proposta/testi-esito";
 import type { QuadroScansioni, ReteScansione } from "@/lib/vuln/scansioni-va-regole";
 import { Stato } from "./stato-va";
 import { QuandoDevice } from "./quando-device";
+import { RiquadroConsenso } from "./impianti-consenso";
 
 interface RispostaProposte {
   proposte: RigaProposta[];
@@ -285,6 +286,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const [apertiDetto, setApertiDetto] = useState<string | null>(null);
   const [blocco, setBlocco] = useState<BloccoRete | null>(null);
   const [erroreConti, setErroreConti] = useState<string | null>(null);
+  const [perConsenso, setPerConsenso] = useState(false);
   const reteCorrente = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inLettura = useRef(false);
@@ -368,10 +370,28 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     return proposte.filter((r) => r.famiglia === famigliaVista?.famiglia && (!q || `${r.ip} ${r.nome ?? ""}`.toLowerCase().includes(q)));
   }, [proposte, famigliaVista, cerca]);
 
-  const inLancio = famiglie.filter((f) => !f.fuori && f.confermati > 0 && !spente.has(f.famiglia));
-  const nInLancio = inLancio.reduce((t, f) => t + f.confermati, 0);
+  // Passo 9: gli impianti si lanciano solo col consenso valido della rete (lo ricontrolla la sonda al lancio).
+  // La sonda manda solo il consenso valido (non revocato, non scaduto) e lo ricontrolla al lancio.
+  const consenso = rete?.consenso ?? null;
+  const inLancio = famiglie.filter((f) => (f.famiglia === "impianti" ? !!consenso : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia));
+  const nInLancio = inLancio.reduce((t, f) => t + (f.famiglia === "impianti" ? f.device : f.confermati), 0);
   const somma = (k: "esclusi" | "inAttesa" | "daRivedere") => famiglie.reduce((t, f) => t + f[k], 0);
   const conteggio = (f: Famiglia) => famiglie.find((x) => x.famiglia === f)?.device ?? 0;
+
+  /** Passo 9: revoca il consenso degli impianti della rete (stessa rotta della scheda «Un profilo solo»). */
+  const revocaConsenso = async () => {
+    if (!rete) return;
+    setOccupato(true);
+    setRifiuto(null);
+    const r = await fetchJson("/api/vulnerabilities/consenso-impianti", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ network_id: rete.id }),
+    });
+    if (!r.ok) setRifiuto(r.message);
+    await onRileggi();
+    setOccupato(false);
+  };
 
   /** Passo 9: forza o toglie la forzatura di un host «da chiarire»; il quadro torna dal server. */
   const forzatura = async (metodo: "POST" | "DELETE", corpo: Record<string, unknown>) => {
@@ -553,8 +573,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                         <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             aria-label={`Lancia il gruppo ${f.nome}`}
-                            checked={!f.fuori && f.confermati > 0 && !spente.has(f.famiglia)}
-                            disabled={!amministratore || !!f.fuori || f.confermati === 0}
+                            checked={(f.famiglia === "impianti" ? !!consenso : !f.fuori && f.confermati > 0) && !spente.has(f.famiglia)}
+                            disabled={!amministratore || (f.famiglia === "impianti" ? !consenso : !!f.fuori || f.confermati === 0)}
                             onCheckedChange={(v) => setSpente((p) => {
                               const n = new Set(p);
                               if (v === true) n.delete(f.famiglia);
@@ -566,10 +586,24 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                         <td className="whitespace-nowrap px-3 py-1.5 font-semibold"><button type="button" className="font-semibold hover:underline" aria-pressed={vista} onClick={() => setFamiglia(f.famiglia)}>{f.nome}</button></td>
                         <td className="px-3 py-1.5 font-mono text-[13px]">{f.device}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{f.fuori ? "—" : f.confermati}{f.forzati ? <span className="font-sans text-muted-foreground"> · {f.forzati === 1 ? "1 forzato" : `${f.forzati} forzati`}</span> : null}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5">{f.greenbone}{f.scesa ? " ▼" : ""}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5">{f.famiglia === "impianti" && consenso ? "Veloce, solo col consenso" : f.greenbone}{f.scesa ? " ▼" : ""}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.nuclei}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.moduli}</td>
-                        <td className="px-3 py-1.5"><Stato tono={s.tono}>{s.testo}</Stato></td>
+                        <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                          {f.famiglia === "impianti" && consenso ? (
+                            <span className="flex items-center gap-2">
+                              <Stato tono="avviso">▲ Consenso fino alle {parseDbDate(consenso.scade_il).toLocaleTimeString("it-IT", { timeZone: FUSO_UTENTI, hour: "2-digit", minute: "2-digit" })} · solo Greenbone</Stato>
+                              {amministratore && <Button size="sm" variant="outline" disabled={occupato} onClick={() => void revocaConsenso()}>Revoca</Button>}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <Stato tono={s.tono}>{s.testo}</Stato>
+                              {f.famiglia === "impianti" && amministratore && rete?.consensoNoto !== false && quadro.edge.stato === "acceso" && (
+                                <Button size="sm" variant="outline" disabled={occupato} onClick={() => setPerConsenso(true)}>Autorizza gli impianti</Button>
+                              )}
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -674,6 +708,18 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
               {somma("inAttesa") > 0 && <Stato tono="spento">● {somma("inAttesa")} non confermati</Stato>}
             </span>
           }
+        />
+      )}
+
+      {perConsenso && rete && (
+        <RiquadroConsenso
+          rete={rete}
+          nome="te"
+          onChiudi={() => setPerConsenso(false)}
+          onFatto={() => {
+            setPerConsenso(false);
+            void onRileggi();
+          }}
         />
       )}
 

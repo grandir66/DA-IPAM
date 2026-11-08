@@ -256,6 +256,11 @@ test("senza famiglie la rotta rifiuta: una richiesta incompleta non diventa «tu
   const lancio = src.indexOf("lanciaGruppiConfermati(n");
   assert.ok(controllo > 0 && lancio > controllo, "prima il controllo, poi il lancio");
   assert.match(src, /famiglie: parsed\.data/);
-  assert.doesNotMatch(src, /\bimpianti\b.*z\.enum|z\.enum.*\bimpianti\b/, "IoT e OT non sono mai lanciabili");
+  // Regola cambiata da Riccardo l'08/11/2026 (Passo 9, decisione 2): «IoT e OT non sono mai lanciabili» è diventato
+  // «solo col consenso valido, e solo Greenbone». La rotta li accetta, ma il lancio li manda soltanto come gruppo
+  // `anche_impianti` col nome di chi lancia, e la sonda senza consenso risponde 409 (test_gruppi_consenso.py).
+  assert.match(src, /chi\s*\}/, "la rotta passa chi lancia");
+  const lancioSrc = readFileSync(join(process.cwd(), "src/lib/vuln/proposta/lancio.ts"), "utf8");
+  assert.match(lancioSrc, /anche_impianti: true, chi: opzioni\.chi/, "gli impianti partono solo come gruppo col consenso");
   assert.doesNotMatch(src, /z\.enum.*da_chiarire/);
 });

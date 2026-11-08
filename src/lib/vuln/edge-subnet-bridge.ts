@@ -1130,6 +1130,8 @@ export async function avviaGruppoEdge(networkId: number, gruppo: GruppoPerEdge):
         profile: gruppo.profile,
         nuclei_profilo: gruppo.nuclei_profilo,
         assessment_profile_id: gruppo.assessment_profile_id,
+        // Solo se chiesto: una sonda vecchia non conosce i campi, e un gruppo senza impianti non deve cambiare.
+        ...(gruppo.anche_impianti ? { anche_impianti: true, chi: gruppo.chi ?? "IPAM" } : {}),
       },
       { timeoutMs: 120000 },
     );

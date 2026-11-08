@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Impianti in «Per device», solo col consenso
+
+Piano profili per device, Passo 9, seconda parte (tavola oggetti 35-36). Riccardo l'08/11 ha cambiato la regola «Per device resta senza impianti»: si scansionano col consenso scritto del cliente, a tempo, solo con Greenbone.
+
+### Aggiunto
+- Riga «IoT e OT»: «Autorizza gli impianti» apre il consenso di sempre; col consenso valido la riga si lancia, con la scadenza e «Revoca». Il gruppo parte Veloce, senza nuclei né moduli, col nome di chi lancia; il consenso lo ricontrolla la sonda (senza: 409, riga nel registro impianti).
+- Il pannello «Quando» tiene gli impianti fuori dalla pianificazione e lo dice: il consenso scade, la pianificazione no.
+
+### Cambiato
+- La prova `lancio.test.ts` che diceva «IoT e OT non sono mai lanciabili» ora verifica la regola nuova (solo come gruppo col consenso e con chi lancia).
+
 ## [Non rilasciato] — 2026-11-08 · Scansione forzata dei device «Da chiarire»
 
 Riccardo, sulla LAN Base dell'hub: «con l'autorizzazione di un operatore devono essere scansionabili». Piano profili per device, Passo 9, prima parte (tavola oggetti 32-34 e 37 approvata).

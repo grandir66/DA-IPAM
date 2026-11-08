@@ -14,7 +14,7 @@
  */
 import { getHostsByNetwork } from "@/lib/db";
 import type { EdgeAssessmentProfile } from "@/lib/vuln/edge-profiles";
-import { avviaGruppoEdge } from "@/lib/vuln/edge-subnet-bridge";
+import { avviaGruppoEdge, ipImpiantiDellaRete } from "@/lib/vuln/edge-subnet-bridge";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { listEdgeProfiles } from "@/lib/vuln/scanner-edge-client";
 import type { EsitoGruppoEdge, GruppoPerEdge } from "@/lib/vuln/gruppi-edge";
@@ -33,6 +33,8 @@ export interface DipendenzeLancio {
   avvia: (networkId: number, gruppo: GruppoPerEdge) => Promise<EsitoGruppoEdge>;
   /** Ricorda quale scansione è quale gruppo, per l'avanzamento gruppo per gruppo. */
   registra: (networkId: number, gruppi: Array<Pick<GruppoLanciato, "scan_id" | "famiglia" | "device">>, il: string) => void;
+  /** Passo 9: gli impianti della rete; la sonda tiene solo quelli del consenso valido. */
+  impianti: (networkId: number) => string[];
 }
 
 export type EsitoGruppoLancio = EsitoGruppoEdge | { stato: "non_tentato"; messaggio: string };
@@ -66,6 +68,7 @@ const REALI: DipendenzeLancio = {
   catalogo: catalogoDaEdge,
   avvia: avviaGruppoEdge,
   registra: registraGruppiLanciati,
+  impianti: ipImpiantiDellaRete,
 };
 
 /** Dopo questi esiti si va avanti col gruppo dopo: è andato, o Edge ha rifiutato proprio quel gruppo. */
@@ -75,7 +78,7 @@ const CONTINUA = new Set<EsitoGruppoEdge["stato"]>(["lanciato", "non_partito", "
 export async function lanciaGruppiConfermati(
   networkId: number,
   deps: Partial<DipendenzeLancio> = {},
-  opzioni: { famiglie?: readonly Famiglia[] } = {},
+  opzioni: { famiglie?: readonly Famiglia[]; chi?: string } = {},
 ): Promise<EsitoLancio> {
   const d = { ...REALI, ...deps };
   const confermate = d.proposte(networkId).filter((r) => r.stato === "confermato");
@@ -92,8 +95,18 @@ export async function lanciaGruppiConfermati(
     if (cat.avviso) avvisi.push(cat.avviso);
     if (profili.length === 0) avvisi.push("Il catalogo dei profili assessment della sonda è vuoto: i gruppi partono senza assessment.");
   }
-  const gruppi = gruppiDaConfermate(buone, profili);
+  const gruppi: Array<GruppoDaLanciare & { anche_impianti?: boolean }> = gruppiDaConfermate(buone, profili);
   for (const g of gruppi) if (g.avviso) avvisi.push(`${ETICHETTE_FAMIGLIA[g.famiglia]}: ${g.avviso}`);
+  // Passo 9 (Riccardo, 08/11/2026): gli impianti partono solo se chiesti, col consenso valido della rete, e solo con
+  // Greenbone Veloce. Il consenso lo controlla la sonda (`consensi.richiesto`): senza, risponde 409 e il gruppo non parte.
+  if (opzioni.famiglie?.includes("impianti")) {
+    const ips = d.impianti(networkId);
+    if (ips.length > 0) {
+      gruppi.push({ famiglia: "impianti", ips, profile: "fast", nuclei_profilo: null, assessment_profile_id: null, avviso: null, anche_impianti: true });
+    } else {
+      avvisi.push("IoT e OT: nessun impianto in questa rete.");
+    }
+  }
   if (gruppi.length === 0) avvisi.push("Nessuna proposta confermata da lanciare.");
 
   const esiti: EsitoLancio["gruppi"] = [];
@@ -105,6 +118,7 @@ export async function lanciaGruppiConfermati(
     }
     const perEdge: GruppoPerEdge = {
       ips: g.ips, profile: g.profile, nuclei_profilo: g.nuclei_profilo, assessment_profile_id: g.assessment_profile_id,
+      ...(g.anche_impianti ? { anche_impianti: true, chi: opzioni.chi ?? "IPAM" } : {}),
     };
     // Un'eccezione qui non deve perdere i gruppi già partiti: si ferma il giro e si dice che non si sa.
     const esito: EsitoGruppoEdge = await d.avvia(networkId, perEdge).catch((e: unknown) => ({

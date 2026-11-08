@@ -14,6 +14,9 @@ export interface GruppoPerEdge {
   profile: EdgeScanProfile;
   nuclei_profilo: string | null;
   assessment_profile_id: string | null;
+  /** Passo 9: gruppo di impianti, solo col consenso valido della rete (lo decide la sonda) e con chi lo lancia. */
+  anche_impianti?: boolean;
+  chi?: string;
 }
 
 export interface RispostaGruppo {

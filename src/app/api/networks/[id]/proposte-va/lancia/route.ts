@@ -14,7 +14,8 @@ import { lanciaGruppiConfermati } from "@/lib/vuln/proposta/lancio";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const Famiglie = z.array(z.enum(["rete", "windows", "linux", "web", "periferiche"])).min(1, "Scegli almeno un gruppo");
+// «impianti» (Passo 9): parte solo col consenso valido della rete, che controlla la sonda.
+const Famiglie = z.array(z.enum(["rete", "windows", "linux", "web", "periferiche", "impianti"])).min(1, "Scegli almeno un gruppo");
 
 export async function POST(req: Request, { params }: Ctx) {
   const adminCheck = await requireAdmin();
@@ -25,7 +26,8 @@ export async function POST(req: Request, { params }: Ctx) {
     const scelte = (new URL(req.url).searchParams.get("famiglie") ?? "").split(",").filter(Boolean);
     const parsed = Famiglie.safeParse(scelte);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Famiglie non valide" }, { status: 400 });
-    const esito = await lanciaGruppiConfermati(n, {}, { famiglie: parsed.data });
+    const chi = adminCheck.user?.name ?? adminCheck.user?.email ?? "amministratore";
+    const esito = await lanciaGruppiConfermati(n, {}, { famiglie: parsed.data, chi });
     return NextResponse.json(esito.errore ? { ...esito, error: esito.errore } : esito, { status: esito.errore ? 502 : 200 });
   });
 }

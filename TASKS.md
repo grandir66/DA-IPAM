@@ -1,6 +1,21 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — recupero-dadude3-mknet: giro 7 su dev e C5 ridotto (leggero)
+
+Riccardo (08/11): «Sì, in quest'ordine». Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` §8. Worktree `.worktrees/giro7`, ramo `claude/giro7-su-dev`.
+
+- [x] Giro 7 riportato dal tag `archivio/collector-modulari-20261103` (5 commit): conflitti in TASKS (tenuto `dev`) e in Opzioni (import e prove: tenute entrambe, quella del vault resta (e), la riga dei collector diventa (f)).
+- [x] Condizione di Riccardo del 22/10 (Proxmox sul pulsante solo alla parità) misurata sull'hub l'08/11: la scansione storica ha modello e seriale di 2 nodi su 5 (DA-PX-01, -02); ogni nodo è un apparato e il collector legge il DMI del nodo a cui si collega, quindi non legge meno. IP delle VM: stessa fonte (agent) per tutti e due.
+- [x] Cancello del giro 7: lint 0 (0 errori), tsc 0, test 0 (7574, 0 rosse), build 0 (la prima build era rossa per `node_modules` collegato fuori dal worktree: Turbopack non lo segue; clonato con `cp -c`).
+- [x] Misura C5 su 70151 (VM 104 di PX01, via `qm guest exec`: in ssh la VM rifiuta la chiave), sola lettura: interruttore assente (spento), `mappa_dati` accesa dal 07/11; 188 snapshot HP e MikroTik in un giorno e mezzo; in `acquisition_changes` 2.658 cambi di duplex e 3.174 di PoE l'08/11, sulla stessa porta sempre `vuoto > full`: il giro SNMP cancellava, il giro dei parser rimetteva.
+- [x] C5: `campiDelCollectorApparato` protegge anche con `mappa_dati` accesa. Prova vista rossa (1 fail su 15), poi verde 15/15.
+- [x] C5 punto 3, confronto delle colonne: il collector scrive 9 campi per porta (`CAMPI_PORTA`), non i MAC per porta (`mac_count`, `single_mac*`, host), che vengono solo dal giro SNMP. Il giro storico sugli HP **non si può spegnere** finché la tabella FDB del collector (`forwarding`) non ha una proiezione. Nessun interruttore nuovo.
+- [ ] Da sapere, visto nella misura: su MK-CORE (apparato 4, porte ether1 e sfp28-2) SNMP dice vicino «MK-CORE-2-ARM-D», il collector «GAMOfas8080a-01» porta `e0k` (NetApp). Ora vince il collector (decisione a). Quale sia giusto si vede sul cablaggio: **da guardare con Riccardo**.
+- [ ] Rilascio su `dev`, poi sull'hub: riga in Opzioni accesa (l'hub l'aveva accesa il 22/10), «Aggiorna» su un nodo Proxmox con credenziale SSH.
+- [ ] Su 70151 dopo il rilascio (arriva con `main`, non con `dev`): i cambi di duplex e PoE in `acquisition_changes` devono scendere a quasi zero.
+- [ ] Prossimo: proiezione della tabella FDB del collector (MAC per porta), poi C5 vero per gli HP; oppure C6.
+
 ## 2026-11-07 — Mappa porte: tutti gli oggetti e router come switch (Riccardo, in proposta)
 
 Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come gli switch per porte e VLAN, tutte le rotte, «non perdiamo dati». Misure e tappe in `docs/superpowers/plans/2026-11-07-mappa-porte-tutti-i-dati.md`. Non si parte senza il suo ok.

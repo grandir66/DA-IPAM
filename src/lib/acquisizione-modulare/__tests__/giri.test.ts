@@ -15,6 +15,7 @@ import { snapshotSchema, type AcquisitionSnapshot, type DeviceInterface } from "
 import { applicaSnapshot } from "@/lib/acquisizione-modulare/applica";
 import { salvaSnapshot } from "@/lib/acquisizione-modulare/archivio";
 import { conservaPoeNonLetto, scriviPorteDelGiro, type PortaDelGiro } from "@/lib/acquisizione-modulare/giri";
+import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
 
 const T = "TESTACQGIRI";
 const { withTenant, getTenantDb, deleteTenantDatabase } = tenant;
@@ -92,6 +93,29 @@ describe("giri pianificati e colonne del collector (decisione a)", () => {
       assert.equal(porta("1")?.speed, "100/1000T");
       assert.equal(porta("1")?.vlan, 1);
       assert.deepEqual(nomi(), ["1", "2"]);
+    });
+  });
+
+  /**
+   * Incidente 2026-11-08, misurato su 70151: interruttore spento, `mappa_dati` accesa. Il giro dei parser della Mappa porte
+   * (ogni 6 ore) applica i collector senza guardare l'interruttore, il giro SNMP riscriveva la riga intera: 2.658 cambi di
+   * duplex e 3.174 di PoE in un giorno, sempre gli stessi valori avanti e indietro.
+   */
+  it("interruttore spento ma `mappa_dati` accesa: il giro non riscrive i campi del collector", () => {
+    withTenant(T, () => {
+      salvaEApplica(snap());
+      tenant.impostaAcquisizioneModulare(false);
+      scriviInterruttore("mappa_dati", true, "test");
+      try {
+        scriviPorteDelGiro(device(), giro());
+        const uno = porta("1")!;
+        assert.equal(uno.speed, "1000 Mbps", "velocità del collector");
+        assert.equal(uno.duplex, "full");
+        assert.equal(uno.vlan, 20);
+        assert.equal(uno.mac_count, 1, "i MAC per porta li scrive ancora il giro");
+      } finally {
+        scriviInterruttore("mappa_dati", false, "test");
+      }
     });
   });
 

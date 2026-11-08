@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Collector: giro 7 recuperato, i giri non si riscrivono più le porte
+
+Il giro 7 dei collector (22/10) non era mai entrato in `dev`: l'unione di `collector-modulari` si era fermata al giro 6 e il 03/11 il ramo è finito solo nel tag `archivio/collector-modulari-20261103`. Riportato con il sì di Riccardo dell'08/11. Nello stesso giro, misurato su 70151, il buco di C5 del piano `recupero-dadude3-mknet`.
+
+### Aggiunto
+- **Riga «Acquisizione con i collector» in Opzioni**, spenta di serie, stessa impostazione di prima (`acquisizione_modulare.attiva`); in Impostazioni → Sistema resta un rimando.
+- **Proxmox dal pulsante col collector** quando l'interruttore è acceso e c'è una credenziale SSH: modello, seriale e produttore del nodo dal DMI, VM accese senza agent senza avviso. Senza chiave SSH il pulsante resta alla scansione di oggi. Sull'hub la scansione storica ha l'hardware di 2 nodi su 5 (misura dell'08/11): ogni nodo è un apparato e il collector legge il DMI del nodo a cui si collega.
+
+### Corretto
+- **Il giro SNMP non riscrive i campi del collector quando è accesa `mappa_dati`**, anche a interruttore spento (`acquisizione-modulare/giri.ts`). Il giro dei parser della Mappa porte applica i collector ogni 6 ore senza guardare l'interruttore, e il giro SNMP gli rimetteva sotto la riga intera: su 70151 l'08/11, 2.658 cambi di duplex e 3.174 di PoE in un giorno, sempre gli stessi valori avanti e indietro. Prova vista rossa in `giri.test.ts`.
+
 ## [Non rilasciato] — 2026-11-07 · Mappa porte con tutti i dati, router e firewall come gli switch
 
 Riccardo: nella mappa mancavano oggetti che la Topologia ha, e a ogni giro si perdevano dati. La mappa nasceva solo dalle tabelle MAC per porta, ogni lettore riscriveva la riga degli altri, e i parser di MikroTik, HP, Aruba e QNAP partivano solo a mano: sull'hub 0 snapshot.

@@ -2,7 +2,8 @@
  * Le porte scritte dai giri pianificati (`cron/jobs.ts`) quando l'apparato ha un collector (decisione a di fine giro 2,
  * anticipo di C5). Con l'interruttore acceso, un collector per il prodotto e uno snapshot non in errore che ha scritto
  * le porte, il giro non riscrive le colonne che quel collector fornisce: continua a scrivere i MAC per porta e ciò che il
- * collector non legge. In ogni altro caso (interruttore spento, «classica» scelta, nessun collector, nessuno snapshot
+ * collector non legge. Vale anche con l'interruttore spento se `mappa_dati` è accesa (il giro dei parser applica i
+ * collector). In ogni altro caso (interruttore e `mappa_dati` spenti, «classica» scelta, nessun collector, nessuno snapshot
  * usabile) il giro scrive come oggi: `upsertSwitchPorts`, riga intera.
  *
  * L'unione:
@@ -14,6 +15,7 @@
  *
  * Con o senza collector, un PoE che il giro non ha letto non cancella quello già scritto (`conservaPoeNonLetto`).
  */
+import { letturaAccesa } from "@/lib/topology/letture/interruttori";
 import { collectorPossibili } from "@/lib/acquisition/riconosci";
 import { campiDelCollectorPerPorta, nomePorta, type CampoPorta } from "@/lib/acquisition/proiezioni";
 import {
@@ -27,10 +29,12 @@ export type PortaDelGiro = Omit<SwitchPort, "id" | "device_id" | "timestamp">;
 
 /**
  * Per porta (nome normalizzato) i campi che il collector dell'apparato fornisce; null = nessun collector che governi le
- * porte, il giro scrive come oggi. Con l'interruttore spento non legge altro che l'interruttore.
+ * porte, il giro scrive come oggi. Con l'interruttore e `mappa_dati` spenti non legge altro che quei due.
  */
 export function campiDelCollectorApparato(device: NetworkDevice): Map<string, CampoPorta[]> | null {
-  if (!acquisizioneModulareAccesa()) return null;
+  // Il giro dei parser della Mappa porte applica i collector anche a interruttore spento, quando `mappa_dati` è accesa
+  // (`mappa-porte/giro-parser.ts`): stessa regola qui, altrimenti i due giri si riscrivono le stesse colonne (70151, 08/11).
+  if (!acquisizioneModulareAccesa() && !letturaAccesa("mappa_dati")) return null;
   const scelta = sceltaFonteAcquisizione(device.id);
   if (scelta?.scelta === SCELTA_CLASSICA) return null;
   const possibili: string[] = collectorPossibili(device);

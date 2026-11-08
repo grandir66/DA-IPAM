@@ -8,7 +8,7 @@ import { PageTransition } from "./page-transition";
 import { UpdateChecker } from "./update-checker";
 import { GiriProvider } from "./giri-context";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, fascia }: { children: React.ReactNode; fascia?: React.ReactNode }) {
   const router = useRouter();
   const [onboardingGateReady, setOnboardingGateReady] = useState(false);
 
@@ -61,13 +61,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <GiriProvider>
-        <AppShellInner>{children}</AppShellInner>
+        <AppShellInner fascia={fascia}>{children}</AppShellInner>
       </GiriProvider>
     </SidebarProvider>
   );
 }
 
-function AppShellInner({ children }: { children: React.ReactNode }) {
+function AppShellInner({ children, fascia }: { children: React.ReactNode; fascia?: React.ReactNode }) {
   const { collapsed } = useSidebar();
   return (
     <div className="min-h-screen bg-background">
@@ -77,6 +77,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </Suspense>
         <main className={`${collapsed ? "md:ml-16" : "md:ml-64"} min-h-screen flex flex-col transition-[margin] duration-200`}>
+          {/* Installazione «tecnico» (ADR 0037): su quale profilo cliente si scrive. Altrove non c'è. */}
+          {fascia}
           {/* Niente barra in alto (Riccardo, 20/10): tema e utente stanno in fondo al menu, la
               ricerca nelle tabelle che la chiedono. Sul telefono 3,5rem in alto per il pulsante del menu. */}
           <div className="flex-1 overflow-auto px-2 pt-14 pb-2 md:px-3 md:py-3">

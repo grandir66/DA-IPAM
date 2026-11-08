@@ -17,7 +17,10 @@ Riccardo, 08/11: «proviamo a sviluppare l'installer pulito su debian e la possi
   - [x] Task 1 — interruttore `DA_PROFILO` con prova di equivalenza (cancello verde)
   - [x] Proposta d'interfaccia (selettore e pagina dei profili) scritta nel piano, Task 5
   - [x] Riccardo approva la proposta d'interfaccia (08/11: «Sì, tutta»)
-  - [ ] Task 2-4 (freno della cifratura, profilo pronto senza riavvio, ingresso senza `DEFAULT`), poi Task 5-6
+  - [x] Task 3-5 (profilo pronto senza riavvio, ingresso senza `DEFAULT`, selettore e pagina «Profili»), revisione fatta e difetti corretti, resa a 1280 vista (08/11)
+  - [~] Task 2 freno della cifratura: codice e prove sì; **manca la misura su Debian 13 con contenitore LUKS** (con l'installer)
+  - [ ] Task 6 in Deploy-Appliance (`profilo: tecnico` → `DA_PROFILO`, contenitore LUKS): nota nella cartella condivisa per la sessione dell'installer Debian
+  - [ ] Tema scuro di fascia e selettore da guardare
 - [x] **A — installer Debian** (Riccardo: «Sì, due sessioni»), 08/11: Deploy-Appliance PR #78 (`host/installa-debian.sh`: componenti firmati + preparazione della VM modello sulla Debian, IP in ifupdown, primo avvio di sempre) e DA-Link PR #87 («Dove si installa: Debian già installata», solo la ridotta). Cancelli verdi. Prova vera sul PX-NAS, VM 110 Debian 13 netinst: file d'avvio vero di DA-Link (bozza 34 `79993-ipam-6`), `da-appliance verifica` verde anche dopo un riavvio. Trovato e corretto: umask 077 fermava la sonda trunk
 - [ ] A, ultimo passo, col sì di Riccardo: unire #78 e #87, pubblicare `debian/installa-debian.sh` nella 2026.11.92 e firmarla, DA-Link in produzione, poi la prova dal comando per Debian (VM 110 dallo snapshot `pre-installa-debian-20261108`). Riconfigura/Aggiorna per Debian: non ci sono ancora
 

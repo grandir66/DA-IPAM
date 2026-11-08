@@ -14,7 +14,7 @@ import "@/lib/__tests__/support/data-dir-isolata";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { istanzaIniziale } from "@/lib/accesso/sessione";
-import { resolveSessionTenant } from "@/lib/api-tenant";
+import { modoTenant, resolveSessionTenant } from "@/lib/api-tenant";
 
 const DUE = [
   { code: "70001", name: "Primo", role: "superadmin" },
@@ -60,5 +60,16 @@ test("vista aggregata e profilo esplicito: uguali con i due profili", () => {
   for (const tecnico of [true, false]) {
     assert.deepEqual(resolveSessionTenant("__ALL__", tecnico), { ok: false });
     assert.deepEqual(resolveSessionTenant("70001", tecnico), { ok: true, tenant: "70001" });
+  }
+});
+
+test("modo delle liste (getTenantMode): tecnico senza profilo → aggregato; installazione → DEFAULT come oggi", () => {
+  for (const vuoto of [null, undefined, ""]) {
+    assert.deepEqual(modoTenant(vuoto, "superadmin", true), { mode: "all" });
+    assert.deepEqual(modoTenant(vuoto, "superadmin", false), { mode: "single", tenantCode: "DEFAULT" });
+  }
+  for (const tecnico of [true, false]) {
+    assert.deepEqual(modoTenant("__ALL__", "superadmin", tecnico), { mode: "all" });
+    assert.deepEqual(modoTenant("70001", "admin", tecnico), { mode: "single", tenantCode: "70001" });
   }
 });

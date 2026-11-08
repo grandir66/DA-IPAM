@@ -54,6 +54,8 @@ Cosa accende `tecnico` lo dice il piano `docs/superpowers/plans/2026-11-08-insta
 - Il tenant non è un confine di sicurezza (12/10): sul PC del tecnico l'isolamento fra profili è di comodo, non di sicurezza. Se un giorno un'installazione «tecnico» servisse più persone con clienti diversi, servono i muri del Task 8 del piano 07/11 (niente `DEFAULT`, chiave per cliente con HKDF).
 - Creazione e cambio di tenant restano accesi per il superadmin anche sulle installazioni dai clienti, come oggi. Chiuderli lì richiede prima di dichiarare il profilo dell'hub 533, che ne usa 2.
 - Un portatile che lavora offline accumula dati di più clienti: l'invio al centrale deve sapere da quale profilo viene ogni riga, e una cancellazione locale va propagata (già scritto nell'ADR 0035).
+- Il primo profilo nasce dalla pagina di prima configurazione (`/api/setup`), che oggi accetta qualsiasi codice: su un'installazione «tecnico» va dato un `codcli`, o il superadmin entrerà su un profilo che il centrale non riconosce. All'ingresso il «primo profilo» è il primo per ragione sociale.
+- Il controllo della cifratura dà «non so» (e l'app non parte) su ZFS, volumi su più dischi e cartelle fuori dal volume di sistema su macOS: è voluto, ma un tecnico con quelle configurazioni va aiutato a mano.
 - Su Debian installata senza LUKS il contenitore a file è l'unica via: la sua dimensione si sceglie all'installazione e ingrandirlo è un'operazione da root.
 
 ## Riferimenti

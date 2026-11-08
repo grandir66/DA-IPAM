@@ -21,6 +21,8 @@ if (tipoInstallazione.profilo !== "installazione") {
 }
 // Sul PC del tecnico stanno i dati di più clienti: senza volume cifrato non si parte, e
 // nemmeno se il controllo non sa rispondere (contenitore LUKS non aperto, comandi assenti).
+// DA_INVENT_DATA_DIR deve stare nell'unità systemd, non in `.env.local`: quello lo carica
+// Next dentro `next()`, dopo questo controllo, che guarderebbe un'altra cartella.
 if (tipoInstallazione.profilo === "tecnico") {
   const cartellaDati = resolveDataDir();
   const cifratura = cifraturaCartella(cartellaDati);

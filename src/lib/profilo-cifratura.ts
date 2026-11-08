@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { risolvi } from "@/lib/percorsi";
 
 export type EsitoCifratura =
   | { stato: "cifrato"; come: string }
@@ -18,25 +19,49 @@ type Esegui = (cmd: string, args: string[]) => string;
 const eseguiVero: Esegui = (cmd, args) =>
   execFileSync(cmd, args, { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] });
 
-/** La prima cartella esistente risalendo da `dir` (alla prima installazione la cartella dati può non esserci). */
-function cartellaEsistente(dir: string): string {
-  let d = path.resolve(dir);
-  while (!fs.existsSync(d)) {
+/**
+ * La prima cartella esistente risalendo da `dir` (alla prima installazione la cartella dati può
+ * non esserci), coi collegamenti risolti. Un collegamento spezzato lungo la strada (cartella dati
+ * che punta a un volume non montato) dà null: il genitore può stare su un altro disco.
+ */
+function cartellaEsistente(dir: string): string | null {
+  let d = risolvi(dir);
+  for (;;) {
+    let link = false;
+    try { link = fs.lstatSync(d).isSymbolicLink(); } catch { /* non c'è nemmeno il nome */ }
+    if (fs.existsSync(d)) return fs.realpathSync(d);
+    if (link) return null;
     const su = path.dirname(d);
-    if (su === d) break;
+    if (su === d) return null;
     d = su;
   }
-  return d;
+}
+
+/** macOS: FileVault cifra il volume di avvio e quello dei dati utente; un disco esterno no. */
+function sulVolumeDiSistemaVero(dir: string): boolean {
+  try {
+    const dev = fs.statSync(dir).dev;
+    return ["/", "/System/Volumes/Data"].some((v) => {
+      try { return fs.statSync(v).dev === dev; } catch { return false; }
+    });
+  } catch {
+    return false;
+  }
 }
 
 export function cifraturaCartella(
   dir: string,
-  opz: { piattaforma?: NodeJS.Platform; esegui?: Esegui } = {},
+  opz: { piattaforma?: NodeJS.Platform; esegui?: Esegui; sulVolumeDiSistema?: (dir: string) => boolean } = {},
 ): EsitoCifratura {
   const piattaforma = opz.piattaforma ?? process.platform;
   const esegui = opz.esegui ?? eseguiVero;
 
+  const cartella = cartellaEsistente(dir);
+  if (!cartella) return { stato: "non_so", motivo: `${dir}: collegamento spezzato o cartella irraggiungibile (volume non montato?)` };
+
   if (piattaforma === "darwin") {
+    const sistema = opz.sulVolumeDiSistema ?? sulVolumeDiSistemaVero;
+    if (!sistema(cartella)) return { stato: "non_so", motivo: `${cartella} non sta sul volume di sistema: FileVault non dice niente di lei` };
     let out: string;
     try { out = esegui("fdesetup", ["status"]); } catch { return { stato: "non_so", motivo: "fdesetup status non risponde" }; }
     if (/FileVault is On\./.test(out)) return { stato: "cifrato", come: "FileVault acceso" };
@@ -46,7 +71,6 @@ export function cifraturaCartella(
 
   if (piattaforma !== "linux") return { stato: "non_so", motivo: `sistema ${piattaforma} non controllato` };
 
-  const cartella = cartellaEsistente(dir);
   let sorgente: string;
   try {
     sorgente = esegui("findmnt", ["-no", "SOURCE", "--target", cartella]).trim().split("\n")[0].replace(/\[.*\]$/, "");
@@ -64,5 +88,9 @@ export function cifraturaCartella(
   }
   if (tipi.length === 0) return { stato: "non_so", motivo: `lsblk non elenca ${sorgente}` };
   const catena = `${sorgente} (${tipi.join(" → ")})`;
+  // Volume su più dischi (RAID, LV esteso su più PV): un ramo crypt non dice che lo sono tutti.
+  if (tipi.filter((t) => t === "disk").length > 1) {
+    return { stato: "non_so", motivo: `${catena}: il volume sta su più dischi, non so se lo sono tutti cifrati` };
+  }
   return tipi.includes("crypt") ? { stato: "cifrato", come: catena } : { stato: "in_chiaro", come: catena };
 }

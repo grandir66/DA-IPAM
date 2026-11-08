@@ -27,6 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Pencil, Trash2, Building2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { useTecnico } from "@/components/profili/profilo-tecnico";
+import { PaginaProfili } from "@/components/profili/pagina-profili";
 
 interface Tenant {
   id: number;
@@ -79,7 +81,7 @@ const emptyForm: TenantForm = {
   active: true,
 };
 
-export default function TenantsPage() {
+function PaginaIstanze() {
   const router = useRouter();
   const { data: session, update: updateSession } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -501,4 +503,10 @@ export default function TenantsPage() {
       </Card>
     </div>
   );
+}
+
+/** Installazione «tecnico» (ADR 0037): la pagina «Profili»; altrove «Istanze» com'è oggi. */
+export default function TenantsPage() {
+  const tecnico = useTecnico();
+  return tecnico ? <PaginaProfili /> : <PaginaIstanze />;
 }

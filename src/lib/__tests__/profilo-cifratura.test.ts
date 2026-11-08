@@ -14,7 +14,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { cifraturaCartella } from "@/lib/profilo-cifratura";
 
 type Risposte = Record<string, string | Error>;
@@ -75,11 +77,30 @@ test("Linux, comandi che falliscono o sorgente non da blocco: non so", () => {
 test("cartella che non esiste ancora: si guarda la prima cartella che c'è sopra", () => {
   const { esegui, chiamate } = finto({ findmnt: "/dev/mapper/x\n", lsblk: "crypt\n" });
   cifraturaCartella(`${DIR}/non-esiste-${process.pid}/dati`, { piattaforma: "linux", esegui });
-  assert.ok(chiamate[0].endsWith(`--target ${DIR}`), chiamate[0]);
+  assert.ok(chiamate[0].endsWith(`--target ${fs.realpathSync(DIR)}`), chiamate[0]);
+});
+
+test("Linux, volume su più dischi (RAID, LV esteso): non so, anche se un ramo è crypt", () => {
+  const { esegui } = finto({ findmnt: "/dev/mapper/vg-dati\n", lsblk: "lvm\ncrypt\npart\ndisk\npart\ndisk\n" });
+  assert.equal(cifraturaCartella(DIR, { piattaforma: "linux", esegui }).stato, "non_so");
+});
+
+test("collegamento simbolico spezzato (volume non montato): non so", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "cifr-"));
+  const link = path.join(base, "dati");
+  fs.symlinkSync(path.join(base, "non-montato"), link);
+  const { esegui } = finto({ findmnt: "/dev/mapper/x\n", lsblk: "crypt\npart\ndisk\n" });
+  assert.equal(cifraturaCartella(path.join(link, "tenants"), { piattaforma: "linux", esegui }).stato, "non_so");
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
+test("macOS: cartella fuori dal volume di sistema (disco esterno): non so, anche con FileVault acceso", () => {
+  const { esegui } = finto({ fdesetup: "FileVault is On.\n" });
+  assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui, sulVolumeDiSistema: () => false }).stato, "non_so");
 });
 
 test("macOS: FileVault acceso, spento, risposta strana", () => {
-  assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui: finto({ fdesetup: "FileVault is On.\n" }).esegui }).stato, "cifrato");
+  assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui: finto({ fdesetup: "FileVault is On.\n" }).esegui, sulVolumeDiSistema: () => true }).stato, "cifrato");
   assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui: finto({ fdesetup: "FileVault is Off.\n" }).esegui }).stato, "in_chiaro");
   assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui: finto({ fdesetup: "Encryption in progress\n" }).esegui }).stato, "non_so");
   assert.equal(cifraturaCartella(DIR, { piattaforma: "darwin", esegui: finto({ fdesetup: new Error("x") }).esegui }).stato, "non_so");

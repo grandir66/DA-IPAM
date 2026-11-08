@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { IstanzaCorrente } from "./tenant-switcher";
+import { SelettoreProfilo, useTecnico } from "@/components/profili/profilo-tecnico";
 import { useSidebar } from "./sidebar-context";
 import { useGiri } from "./giri-context";
 import {
@@ -372,6 +373,7 @@ export function Sidebar() {
   const { data: session } = useSession();
   const { collapsed, toggle } = useSidebar();
   const { inCorso } = useGiri();
+  const tecnico = useTecnico();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = userRole === "superadmin";
   const isAdmin = isSuperadmin || userRole === "admin";
@@ -507,7 +509,10 @@ export function Sidebar() {
         <div className={cn("px-2 pb-2", collapsed && "md:px-0")}>
           <UserMenu compresso={collapsed} />
           {/* Su quale istanza si lavora; la scelta è in Impostazioni → Istanza (Riccardo, 23/10). */}
-          <IstanzaCorrente compresso={collapsed} onNavigate={closeMobile} />
+          {/* Installazione «tecnico» (ADR 0037): il profilo si cambia da qui, con un clic. */}
+          {tecnico
+            ? <SelettoreProfilo compresso={collapsed} onNavigate={closeMobile} />
+            : <IstanzaCorrente compresso={collapsed} onNavigate={closeMobile} />}
         </div>
       </div>
 
@@ -516,7 +521,7 @@ export function Sidebar() {
         {/* ═══ GESTIONE ISTANZE (solo superadmin) ═══ */}
         {/* «URL dell'hub» è in Impostazioni → Sistema dal 23/10 (Riccardo: quasi inutile qui). */}
         {isSuperadmin && (
-          <NavItem href="/tenants" icon={Building2} label="Istanze" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
+          <NavItem href="/tenants" icon={Building2} label={tecnico ? "Profili" : "Istanze"} active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* ═══ SEPARATORE DATI ISTANZA (nascosto se collassato); la scelta è in Impostazioni ═══ */}

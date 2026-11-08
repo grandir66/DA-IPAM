@@ -22,10 +22,10 @@
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
 | S1 | [x] | Interruttore `DA_PROFILO` | in linea | — | senza variabile nulla cambia; valore sconosciuto blocca l'avvio | prova `profilo.test.ts` vista fallire + cancello |
-| S2 | [ ] | Freno della cifratura | in linea | S1 | `tecnico` non parte su disco in chiaro | prova con comandi finti + misura su una VM Debian con LUKS |
-| S3 | [ ] | Profilo nuovo pronto senza riavvio | in linea | S1 | in `tecnico` un profilo creato ha i job di serie e lo scheduler li carica subito | prova vista fallire |
-| S4 | [ ] | Ingresso del tecnico senza `DEFAULT` | in linea, reviewer | S1 | in `tecnico` nessuna sessione ricade su `DEFAULT`; ingresso sull'ultimo profilo | prove viste fallire + revisione |
-| S5 | [ ] | Selettore e pagina dei profili | in linea | S3, S4, proposta approvata | interfaccia approvata oggetto per oggetto, resa a 1280 | Playwright con dati finti |
+| S2 | [~] | Freno della cifratura | in linea | S1 | `tecnico` non parte su disco in chiaro | prova con comandi finti + misura su una VM Debian con LUKS |
+| S3 | [x] | Profilo nuovo pronto senza riavvio | in linea | S1 | in `tecnico` un profilo creato ha i job di serie e lo scheduler li carica subito | prova vista fallire |
+| S4 | [x] | Ingresso del tecnico senza `DEFAULT` | in linea, reviewer | S1 | in `tecnico` nessuna sessione ricade su `DEFAULT`; ingresso sull'ultimo profilo | prove viste fallire + revisione |
+| S5 | [x] | Selettore e pagina dei profili | in linea | S3, S4, proposta approvata | interfaccia approvata oggetto per oggetto, resa a 1280 | Playwright con dati finti |
 | S6 | [ ] | Deploy-Appliance: profilo e volume cifrato | sessione di Deploy-Appliance | S1, S2 | `config.yaml` `profilo: tecnico` scrive la variabile e prepara il contenitore LUKS | installazione su VM Debian di prova |
 | S7 | [!] | Invio di ogni profilo al suo centrale | — | tappe 2-3 piano 07/11 | ogni profilo va al centrale del suo `codcli` | da scrivere con le tappe 2-3 |
 
@@ -59,7 +59,7 @@
 
 Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` vista rossa prima di `profilo.ts` (esito 1), verde dopo; `DA_PROFILO=pippo npx tsx server.ts` → esito 1, nessun file creato; cancello `lint=0 tsc=0 test=0 build=0` (7636 prove, 0 fallite), 08/11.
 
-### [ ] Task 2 — Freno della cifratura
+### [~] Task 2 — Freno della cifratura (codice e prove fatti; manca la misura su una Debian con LUKS)
 
 - **File:** crea `src/lib/profilo-cifratura.ts`, `src/lib/__tests__/profilo-cifratura.test.ts`; modifica `server.ts`.
 - **Interfacce:**
@@ -71,32 +71,32 @@ Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` vista ros
 - **Prova vista fallire:** uscite finte con la forma vera di `findmnt`/`lsblk` (partizione LUKS, contenitore a file `loop` sotto `crypt`, disco in chiaro, comando che fallisce), `fdesetup` acceso e spento.
 - **Misura:** su una VM Debian 13 di prova con contenitore LUKS a file montato sulla cartella dati: parte; smontato: non parte e non crea `hub.db`.
 
-Verifica: prova verde, misura scritta in «Misure».
+Verifica: prova verde, misura scritta in «Misure». — 08/11: `profilo-cifratura.test.ts` 12 verdi (3 casi aggiunti dopo la revisione visti rossi: più dischi, collegamento spezzato, macOS fuori dal volume di sistema); avvio `tecnico` su questo Mac con FileVault: parte. **Manca** la misura su Debian 13 con contenitore LUKS (aperto parte, chiuso non parte e non crea `hub.db`): da fare con l'installer Debian (Task 6).
 
-### [ ] Task 3 — Profilo nuovo pronto senza riavvio
+### [x] Task 3 — Profilo nuovo pronto senza riavvio
 
 - **File:** modifica `src/app/api/tenants/route.ts` (POST), `src/lib/cron/scheduler.ts` (esporta la ricarica di un tenant, oggi alle righe ~255-273); crea `src/lib/profili/nuovo-profilo.ts` e prova.
 - **Interfacce:** `preparaProfilo(codice: string): { jobSeminati: number; jobCaricati: number }` — apre il DB del tenant, applica `applyTenantSchedulerDefaults` e `seminaJobDiSerie` dentro `withTenant`, poi ricarica lo scheduler di quel tenant.
 - **Cosa fare:** in `tecnico` il POST valida `codice_cliente` con `CODCLI` (400 con frase italiana se no) e chiama `preparaProfilo`. In `installazione` il POST resta com'è (equivalenza: la prova chiama il POST senza variabile e confronta con il comportamento di oggi: niente job dopo la creazione).
 - **Prova vista fallire:** in `tecnico`, dopo il POST il DB del profilo ha i 5 job di serie (misura dell'08/11) e lo scheduler ha le chiavi del tenant.
 
-Verifica: prova e cancello.
+Verifica: prova e cancello. — 08/11: `nuovo-profilo.test.ts` vista rossa poi 4 verdi; a schermo (server `tecnico`, dati finti) profilo 70001 creato dalla finestra, log «Tenant 70001: 3 job ricaricati» senza riavvio; `CLIENTE-A` → 400 con la frase.
 
-### [ ] Task 4 — Ingresso del tecnico senza `DEFAULT`
+### [x] Task 4 — Ingresso del tecnico senza `DEFAULT`
 
 - **File:** `src/lib/accesso/sessione.ts` (`istanzaIniziale`), `src/lib/api-tenant.ts` (`resolveSessionTenant`, `getServerTenantCode`), prove in `src/lib/accesso/__tests__/`.
 - **Cosa fare:** solo con `isTecnico()`: all'ingresso il superadmin va sull'ultimo profilo usato, poi sul primo; mai `__ALL__` di serie (la vista aggregata resta sceglibile). Sessione senza tenant → 409 «Scegli un profilo», non `DEFAULT`. Con `installazione` le funzioni rispondono come oggi: la prova le chiama con gli stessi ingressi e confronta.
 - **Prove viste fallire:** superadmin con due profili e ultima istanza vuota → primo profilo in `tecnico`, `__ALL__` in `installazione`; `resolveSessionTenant(null)` → errore in `tecnico`, `DEFAULT` in `installazione`.
 
-Verifica: prove, cancello, revisione `reviewer` del passo.
+Verifica: prove, cancello, revisione `reviewer` del passo. — 08/11: `ingresso-tecnico.test.ts` vista rossa poi 8 verdi; prove esistenti `sessione.test.ts` e `resolve-session-tenant.test.ts` verdi senza modifiche. Revisione: nessuna differenza col profilo `installazione`; corretti i tre difetti medi (ripiego su `DEFAULT` in `getTenantMode`/`getServerTenantCode`, falso «cifrato» su più dischi, FileVault del volume sbagliato) e i minori (collegamento spezzato, commento sull'ordine in `server.ts`, note nell'ADR).
 
-### [ ] Task 5 — Selettore e pagina dei profili
+### [x] Task 5 — Selettore e pagina dei profili
 
 - **Prima di scrivere:** proposta oggetto per oggetto a Riccardo (regola 15, `docs/STILE-UI.md`); si scrive solo la proposta approvata.
 - **File (previsti):** `src/components/shared/tenant-switcher.tsx`, `src/components/shared/sidebar.tsx`, `src/app/(dashboard)/tenants/page.tsx`; mattoni da `src/components/shared/console.tsx`.
 - **Cosa fare:** in `tecnico` il selettore del profilo sta in alto nella barra e cambia profilo con un clic; la pagina «Profili» elenca i profili. In `installazione` barra e pagina «Istanze» restano come oggi.
 
-Verifica: Playwright con dati finti a 1280 px, in `tecnico` e senza variabile.
+Verifica: Playwright con dati finti a 1280 px, in `tecnico` e senza variabile. — 08/11, browser dell'app a 1280×800, tema chiaro, server locale con cartella dati finta: senza profilo la dashboard rimanda a «Profili» con la fascia gialla «Nessun profilo scelto»; codice `70A` → ▲ e pulsante spento; profilo creato e aperto (fascia navy); cambio dal selettore con messaggio; profilo creato da un'altra scheda compare riaprendo il selettore; «Tutti i profili» → fascia gialla, `/networks` rimanda a «Profili». Stesso server **senza** variabile: «Istanze» e barra come oggi, nessuna fascia. Tema scuro non guardato.
 
 **Proposta dell'08/11, approvata da Riccardo l'08/11 («Sì, tutta»); solo in `tecnico`:**
 
@@ -124,6 +124,7 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 - 2026-11-08 Piano approvato da Riccardo («Sì, D1 com'è oggi»)
 - 2026-11-08 Task 1 → [x] (verifica: profilo.test.ts rossa poi verde; cancello verde)
 - 2026-11-08 Task 5: proposta d'interfaccia approvata da Riccardo («Sì, tutta»)
+- 2026-11-08 Task 2 → [~], Task 3 → [x], Task 4 → [x] (revisione fatta, difetti corretti), Task 5 → [x] (resa a 1280)
 
 ## Misure
 
@@ -137,6 +138,13 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 
 ## Consuntivo
 ### Fatto
+Task 1, 3, 4, 5; Task 2 nel codice.
 ### Mancante
+Misura del Task 2 su Debian con LUKS; Task 6 (Deploy-Appliance, nota lasciata alla sessione dell'installer); Task 7 bloccato dalle tappe 2-3 del 07/11.
 ### Scostamenti dal piano
+- Task 4 tocca anche `getTenantMode` e `getServerTenantCode` (revisione): in `tecnico` senza profilo le liste mostrano l'aggregato e le pagine di un profilo rimandano a «Profili».
+- Il selettore, all'apertura, fa ricaricare all'hub l'elenco dei profili: un profilo creato altrove non compariva fino al cambio.
+- Ogni profilo nuovo passa dalla configurazione guidata (`onboarding_completed:<codice>`, comportamento già esistente per tenant).
 ### Consigli di sviluppo
+- `/api/setup` in modalità `multi` crea il superadmin senza profili: va bene per `tecnico`; la modalità `single` accetta qualsiasi codice, da limitare a `CODCLI` quando l'installer Debian userà `tecnico`.
+- Guardare la fascia e il selettore anche in tema scuro.

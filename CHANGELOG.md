@@ -11,6 +11,18 @@ ADR 0037, piano `2026-11-08-installazione-tecnico.md`, Task 1. Riccardo (08/11) 
 ### Aggiunto
 - **`DA_PROFILO`, variabile del servizio** letta solo da `src/lib/profilo.ts`: assente = `installazione`, cioè com'è oggi; `tecnico` = PC del tecnico. Un valore sconosciuto ferma l'avvio in `server.ts` con un messaggio che dice il valore e quelli ammessi (provato: esce con 1 senza creare file). Ancora nessun comportamento dipende da `tecnico`. La prova di equivalenza fallisce se la variabile viene letta fuori da `profilo.ts`: finché nessuno la legge, le installazioni di oggi non cambiano.
 
+## [Non rilasciato] — 2026-11-08 · Installazione «tecnico»: profili cliente
+
+Piano `2026-11-08-installazione-tecnico.md`, Task 2-5. Tutto vale solo con `DA_PROFILO=tecnico`; ogni regola nuova ha la sua prova coi due profili, e senza variabile risponde come oggi. La variabile resta letta solo in `profilo.ts`; le regole chiedono `isTecnico()`.
+
+### Aggiunto
+- **Freno della cifratura** (`profilo-cifratura.ts`): l'app non parte se la cartella dati non sta su un volume cifrato (LUKS, anche contenitore a file; FileVault su macOS se la cartella è sul volume di sistema), né se il controllo non sa rispondere. I dati di più clienti stanno sul PC del tecnico.
+- **Profilo pronto subito**: in `POST /api/tenants` il codice deve essere un `codcli` del gestionale, e i job di serie partono senza riavvio. Prima un tenant nuovo restava senza job fino al riavvio (misura dell'08/11: 0 job).
+- **Selettore del profilo** in cima alla barra, **fascia** del profilo in cima a ogni pagina (navy; gialla con ▲ per «Tutti i profili» o senza scelta), **pagina «Profili»** al posto di «Istanze», col nuovo profilo in due campi. Proposta approvata da Riccardo l'08/11.
+
+### Cambiato
+- In `tecnico` il superadmin entra sul primo profilo invece che sulla vista «tutte» (dove ogni pagina rispondeva 409), e senza profilo scelto nessuna rotta o pagina ricade su `DEFAULT`: le rotte rispondono 409 «Scegli un profilo», le liste mostrano l'aggregato e le pagine rimandano a «Profili».
+
 ## [Non rilasciato] — 2026-11-08 · Comware: i MAC per porta trovano la porta
 
 Misurato su 70151: i 5 Comware avevano 0 porte con MAC in `switch_ports` contro 800-1.100 MAC nella tabella per apparato. Il percorso storico scrive le porte coi nomi lunghi («GigabitEthernet1/0/8», «Bridge-Aggregation109»), la tabella MAC di Comware usa quelli corti («GE1/0/8», «BAGG109»), e il confronto toglieva solo spazi e maiuscole.

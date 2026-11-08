@@ -15,6 +15,7 @@
  * ultima istanza, solo il controllo dell'istanza (è superadmin).
  */
 import { getActiveTenants, getHubDb, getTenantByCode, getUserTenantAccess, type HubUser } from "@/lib/db-hub";
+import { isTecnico } from "@/lib/profilo";
 
 /** La vista aggregata del superadmin: non è un'istanza. */
 export const VISTA_TUTTE = "__ALL__";
@@ -37,17 +38,24 @@ export function istanzaAmmessa(userId: number | null, ruolo: string | undefined,
   return getUserTenantAccess(userId).some((a) => a.codice_cliente === richiesta);
 }
 
-/** L'istanza con cui si entra: l'unica, poi l'ultima usata se è ancora ammessa, poi come prima. */
+/**
+ * L'istanza con cui si entra: l'unica, poi l'ultima usata se è ancora ammessa, poi come prima.
+ * Installazione «tecnico» (ADR 0037): il superadmin entra sul primo profilo invece che sulla
+ * vista «tutte», dove ogni pagina di un profilo risponde 409; la vista resta sceglibile.
+ */
 export function istanzaIniziale(
   user: Pick<HubUser, "role"> & { ultima_istanza?: string | null },
   lista: IstanzaInSessione[],
+  tecnico: boolean = isTecnico(),
 ): string | null {
   if (lista.length === 1) return lista[0].code;
   const ultima = user.ultima_istanza;
   if (ultima) {
     if (ultima === VISTA_TUTTE ? user.role === "superadmin" : lista.some((t) => t.code === ultima)) return ultima;
   }
-  return user.role === "superadmin" ? VISTA_TUTTE : null;
+  if (user.role !== "superadmin") return null;
+  if (tecnico) return lista[0]?.code ?? null;
+  return VISTA_TUTTE;
 }
 
 export function segnaUltimaIstanza(userId: number, codice: string): void {

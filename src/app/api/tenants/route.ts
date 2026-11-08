@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getTenants, createTenant, getUserTenantAccess } from "@/lib/db-hub";
 import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
+import { profilo } from "@/lib/profilo";
+import { preparaProfilo, regolaCreazioneProfilo } from "@/lib/profili/nuovo-profilo";
 
 const TenantCreateSchema = z.object({
   codice_cliente: z.string().min(1, "Codice cliente obbligatorio"),
@@ -68,8 +70,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
+    // Installazione «tecnico» (ADR 0037): il codice è il codcli e il profilo è pronto subito.
+    // Sulle altre installazioni la regola risponde «crea come oggi, senza preparare» (D1, 08/11).
+    const regola = regolaCreazioneProfilo(profilo(), parsed.data.codice_cliente);
+    if (!regola.ok) {
+      return NextResponse.json({ error: regola.errore }, { status: 400 });
+    }
+    const codice = regola.prepara ? parsed.data.codice_cliente.trim() : parsed.data.codice_cliente;
+
     const tenant = createTenant({
       ...parsed.data,
+      codice_cliente: codice,
       indirizzo: parsed.data.indirizzo ?? null,
       citta: parsed.data.citta ?? null,
       provincia: parsed.data.provincia ?? null,
@@ -82,6 +93,20 @@ export async function POST(request: Request) {
       note: parsed.data.note ?? null,
       active: 1,
     });
+
+    if (regola.prepara) {
+      try {
+        const preparazione = preparaProfilo(codice);
+        return NextResponse.json({ ...tenant, preparazione }, { status: 201 });
+      } catch (e) {
+        // Il profilo c'è: lo dice, insieme al perché non è pronto (al riavvio l'avvio lo prepara comunque).
+        console.error(`[Profili] ${codice}: preparazione fallita:`, e instanceof Error ? e.message : e);
+        return NextResponse.json(
+          { ...tenant, avviso: "Profilo creato, ma i job di serie partiranno solo al prossimo riavvio del servizio." },
+          { status: 201 },
+        );
+      }
+    }
 
     return NextResponse.json(tenant, { status: 201 });
   } catch (error) {

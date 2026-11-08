@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withTenant, queryAllTenants } from "@/lib/db-tenant";
+import { isTecnico } from "@/lib/profilo";
 
 interface TenantSession {
   user: {
@@ -38,8 +39,11 @@ export async function getTenantMode(): Promise<
  */
 export function resolveSessionTenant(
   tenantCode: string | null | undefined,
-): { ok: true; tenant: string } | { ok: false } {
+  tecnico: boolean = isTecnico(),
+): { ok: true; tenant: string } | { ok: false; motivo?: "nessuna" } {
   if (tenantCode === "__ALL__") return { ok: false };
+  // Installazione «tecnico» (ADR 0037): più profili cliente, nessun ripiego muto su DEFAULT.
+  if (!tenantCode && tecnico) return { ok: false, motivo: "nessuna" };
   return { ok: true, tenant: tenantCode || "DEFAULT" };
 }
 
@@ -53,7 +57,11 @@ export async function withTenantFromSession<T>(
   const resolved = resolveSessionTenant(session.user.tenantCode);
   if (!resolved.ok) {
     return NextResponse.json(
-      { error: "Vista aggregata attiva: seleziona un tenant specifico per questa operazione." },
+      {
+        error: resolved.motivo === "nessuna"
+          ? "Scegli un profilo cliente prima di questa operazione."
+          : "Vista aggregata attiva: seleziona un tenant specifico per questa operazione.",
+      },
       { status: 409 },
     );
   }

@@ -98,7 +98,7 @@ Verifica: prove, cancello, revisione `reviewer` del passo.
 
 Verifica: Playwright con dati finti a 1280 px, in `tecnico` e senza variabile.
 
-**Proposta dell'08/11 (da approvare oggetto per oggetto; solo in `tecnico`):**
+**Proposta dell'08/11, approvata da Riccardo l'08/11 («Sì, tutta»); solo in `tecnico`:**
 
 1. **Selettore del profilo, in cima alla barra** sotto il nome utente, al posto della riga «Istanza» di oggi: un pulsante a tutta larghezza alto 40 px, fondo `bg-primary/10` e bordo `border-primary/25`, icona edificio, ragione sociale in grassetto 14 px e sotto il `codcli` in monospazio 13 px, freccia ▾. Il clic apre un elenco a discesa con i profili (ragione sociale + `codcli`), il corrente col segno ✓ e il fondo `bg-selezione`, una casella «Cerca cliente» se sono più di 8, in fondo «Gestisci profili →». Il cambio è immediato, poi `toast` «Ora lavori su <ragione sociale>». Barra compressa: solo l'icona con il `codcli` nel `title`.
 2. **Fascia del profilo in cima a ogni pagina** (alta 32 px, fondo navy, testo bianco 13 px): «Profilo: <ragione sociale> · <codcli>». Serve a non scrivere sul cliente sbagliato; si distingue per posizione e luminanza, non per colore.
@@ -123,7 +123,7 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 ## Registro
 - 2026-11-08 Piano approvato da Riccardo («Sì, D1 com'è oggi»)
 - 2026-11-08 Task 1 → [x] (verifica: profilo.test.ts rossa poi verde; cancello verde)
-- 2026-11-08 Task 5: proposta d'interfaccia scritta sotto il task, da approvare
+- 2026-11-08 Task 5: proposta d'interfaccia approvata da Riccardo («Sì, tutta»)
 
 ## Misure
 

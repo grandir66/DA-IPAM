@@ -6,6 +6,8 @@ import { ensureEnvSecrets, assertContainerSecretsConfigured } from "./src/lib/en
 import { logEncryptionKeyHealthAtBoot } from "./src/lib/encryption-key-health";
 import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
 import { leggiProfilo, messaggioProfiloNonValido } from "./src/lib/profilo";
+import { cifraturaCartella } from "./src/lib/profilo-cifratura";
+import { resolveDataDir } from "./src/lib/data-dir";
 
 // ── Tipo d'installazione (ADR 0037): prima dei segreti, di Next e dello scheduler.
 // Assente = installazione com'è oggi; un valore sconosciuto non parte.
@@ -16,6 +18,18 @@ if (!tipoInstallazione.ok) {
 }
 if (tipoInstallazione.profilo !== "installazione") {
   console.info(`[Profilo] ${tipoInstallazione.profilo}`);
+}
+// Sul PC del tecnico stanno i dati di più clienti: senza volume cifrato non si parte, e
+// nemmeno se il controllo non sa rispondere (contenitore LUKS non aperto, comandi assenti).
+if (tipoInstallazione.profilo === "tecnico") {
+  const cartellaDati = resolveDataDir();
+  const cifratura = cifraturaCartella(cartellaDati);
+  if (cifratura.stato !== "cifrato") {
+    const perche = cifratura.stato === "in_chiaro" ? `è in chiaro: ${cifratura.come}` : `non so dire se è cifrata: ${cifratura.motivo}`;
+    console.error(`FATAL installazione «tecnico»: la cartella dati ${cartellaDati} ${perche}. Aprire o creare il volume cifrato e riavviare.`);
+    process.exit(1);
+  }
+  console.info(`[Profilo] cartella dati su volume cifrato: ${cifratura.come}`);
 }
 
 // ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──

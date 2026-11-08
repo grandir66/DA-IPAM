@@ -104,7 +104,15 @@ Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
   - DA-Link in produzione al `5ebe6f1`, con snapshot `pre-snella-20261108` della VM 109 su DA-PX-02.
   - Ridotta **2026.11.92** costruita dal `main` di Deploy-Appliance e pubblicata. Firmata da DA-Link: `ULTIMO-SNELLA` punta alla 2026.11.92, `ULTIMO` resta 2026.10.25. La «Prova» delle due origini è ok su tutte e due le righe.
   - Difetto trovato pubblicando: la pulizia dello specchio proteggeva solo `ULTIMO` e ha tolto la 2026.10.24. Corretto in Deploy-Appliance #77, unita.
-- Resta: una bozza vera per 79993 con l'installatore vero, e lì Proxreporter acceso e `aggiorna.sh`.
+- **Installazione vera, 08/11 (Riccardo: «Sì, installa»).** Bozza 32 di DA-Link, `79993-ipam-5`, preparata con le funzioni della pagina: variante ridotta, 2026.11.92, installatore della sua immagine, 4 GB. Comando incollato sul PX-NAS così come lo dà DA-Link. Esito della VM 108:
+  - Download, impronta, ripristino, primo avvio, NetBird e credenziali a DA-Link tutti ok.
+  - **Proxreporter acceso**: «raccoglie da 1 host».
+  - `da-appliance verifica` dice «Tutto ciò che è acceso funziona».
+  - Senza Docker; 4 GB di RAM con 4 di swap, 1,2 GB usati; 8,9 GB su 40 di disco.
+  - Nei primi minuti DA-IPAM ha risposto 502 perché l'aggiornamento automatico di DA-IPAM ricompilava (5 minuti, 700 MB di swap al picco), poi verde. **Da sapere**: chi apre l'appliance subito dopo l'installazione può trovare un 502 per qualche minuto.
+  - L'installatore ha proposto lo storage `ZFS-LARGE-replica-replica`, il primo dell'elenco con più spazio: è una scelta della ricognizione, non della ridotta. Da guardare se è il disco giusto per il PX-NAS.
+- **`aggiorna.sh` sulla ridotta non è ancora provato**: serve una ridotta più nuova della 2026.11.92 da pubblicare. Il rifiuto di un cambio di variante è coperto dalle prove, non sul vero.
+- Prove sul PX-NAS da togliere quando lo dice Riccardo: VM 106 (`79993-ipam-3`) e 107 (`79993-ipam-4`), con le loro registrazioni in DA-Link. **La VM 963 (`79993-ipam-2`) è vera e resta** (Riccardo, 08/11).
 
 ---
 

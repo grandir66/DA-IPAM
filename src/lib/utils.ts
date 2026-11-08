@@ -79,7 +79,11 @@ export function subnetMaskFromPrefix(prefix: number): string {
 }
 
 export function normalizeMac(mac: string): string {
-  return mac.replace(/[:-]/g, "").toUpperCase().replace(/(.{2})/g, "$1:").slice(0, -1);
+  // macOS (`arp -a`) scrive i byte senza zero davanti: «0:50:56:a5:4b:ab». Coi separatori si
+  // completa ogni gruppo prima di unirli; senza, resta il taglio a coppie di sempre.
+  const gruppi = mac.split(/[:-]/);
+  const hex = gruppi.length === 6 ? gruppi.map((g) => g.padStart(2, "0")).join("") : mac.replace(/[:-]/g, "");
+  return hex.toUpperCase().replace(/(.{2})/g, "$1:").slice(0, -1);
 }
 
 /** Canonical hex-only form per confronto MAC (ignora : - .) */

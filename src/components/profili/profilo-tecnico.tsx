@@ -122,7 +122,7 @@ export function SelettoreProfilo({ compresso = false, onNavigate }: { compresso?
         onClick={() => {
           // All'apertura l'hub ricarica l'elenco dei profili (callback jwt): un profilo creato
           // da un'altra scheda compare senza uscire e rientrare.
-          if (!aperto && corrente) void update({ tenantCode: corrente });
+          if (!aperto) void update(corrente ? { tenantCode: corrente } : {});
           setAperto((v) => !v);
         }}
         disabled={cambio}

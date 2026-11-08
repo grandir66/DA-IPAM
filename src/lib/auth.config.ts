@@ -68,6 +68,22 @@ export const authConfig: NextAuthConfig = {
       }
       // Cambio d'istanza dal browser: solo verso le istanze dell'utente, «tutte» solo al
       // superadmin (prima passava qualsiasi codice, 23/10). Rifiutato = resta dov'era.
+      // Installazione «tecnico» (ADR 0037): un aggiornamento senza profilo chiesto rinfresca
+      // l'elenco dei profili del superadmin. Serve a chi è entrato prima di averne: altrimenti il
+      // selettore resta vuoto finché non esce e rientra. Altrove non succede niente di nuovo.
+      if (trigger === "update" && !session?.tenantCode && token.role === "superadmin") {
+        const { isTecnico } = await import("./profilo");
+        if (isTecnico()) {
+          try {
+            const { getActiveTenants } = await import("./db-hub");
+            token.tenants = getActiveTenants().map((t: { codice_cliente: string; ragione_sociale: string }) => ({
+              code: t.codice_cliente,
+              name: t.ragione_sociale,
+              role: "superadmin",
+            }));
+          } catch { /* fallback: mantieni lista esistente */ }
+        }
+      }
       if (trigger === "update" && session?.tenantCode) {
         const { istanzaAmmessa, segnaUltimaIstanza } = await import("./accesso/sessione");
         const richiesta = String(session.tenantCode);

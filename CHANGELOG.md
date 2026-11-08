@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · DA-IPAM «tecnico» su un Mac
+
+Riccardo (08/11): il tecnico può avere macOS o Windows, e vuole «qualcosa che fosse funzionante». Su macOS DA-IPAM gira nativo: provato da questo Mac sulla rete dell'ufficio 192.168.15.0/24 contro l'hub (40 IP vivi in comune su 41, 37 MAC uguali, porte uguali sull'elenco della scoperta rapida). L'installazione la fa `host/installa-tecnico-mac.sh` di Deploy-Appliance.
+
+### Corretto
+- **MAC da `arp -a` su macOS** (`normalizeMac`): macOS scrive i byte senza zero davanti (`0:50:56:a5:4b:ab`) e diventavano `05:05:6A:54:BA:`. Ora ogni gruppo si completa prima di unirli; le forme di Linux danno lo stesso risultato di prima (prova con le due forme).
+- **Selettore del profilo vuoto** in `tecnico` per chi è entrato prima di avere profili: all'apertura l'hub rinfresca l'elenco anche senza un profilo scelto (callback `jwt`, solo con `DA_PROFILO=tecnico`).
+
+### Aggiunto
+- **`DA_ASCOLTO`**: indirizzo su cui ascolta `server.ts`. Sul Mac del tecnico `127.0.0.1`, perché il portatile sta nella LAN del cliente; senza variabile `0.0.0.0` come sempre.
+
 ## [Non rilasciato] — 2026-11-08 · Impianti in «Per device», solo col consenso
 
 Piano profili per device, Passo 9, seconda parte (tavola oggetti 35-36). Riccardo l'08/11 ha cambiato la regola «Per device resta senza impianti»: si scansionano col consenso scritto del cliente, a tempo, solo con Greenbone.

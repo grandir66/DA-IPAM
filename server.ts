@@ -8,6 +8,7 @@ import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
 import { leggiProfilo, messaggioProfiloNonValido } from "./src/lib/profilo";
 import { cifraturaCartella } from "./src/lib/profilo-cifratura";
 import { resolveDataDir } from "./src/lib/data-dir";
+import { indirizzoAscolto } from "./src/lib/ascolto";
 
 // ── Tipo d'installazione (ADR 0037): prima dei segreti, di Next e dello scheduler.
 // Assente = installazione com'è oggi; un valore sconosciuto non parte.
@@ -48,7 +49,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "0.0.0.0";
+const hostname = indirizzoAscolto();
 const port = parseInt(process.env.PORT || "3001", 10);
 
 const app = next({ dev, hostname, port });
@@ -100,7 +101,7 @@ app.prepare().then(() => {
     });
     attachSshTerminalWs(httpServer); // terminale SSH web (/ws/ssh)
     httpServer.listen(port, hostname, () => {
-      console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
+      console.log(`> DA-INVENT ready on http://${hostname}:${port} (anche http://localhost:${port})`);
       avviaInizializzazioni();
     });
   }

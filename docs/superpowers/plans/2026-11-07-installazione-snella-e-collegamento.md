@@ -7,7 +7,7 @@
 **Architettura:** l'installazione fa tutto il lavoro e apre ogni connessione. Il centrale riceve copie, le mostra e firma ordini; non scansiona e non tiene credenziali degli apparati. Stesso codice di DA-IPAM, con un profilo «centrale» che tiene attive solo le rotte elencate.
 **Spec:** [ADR 0035](../../adr/0035-installazione-snella-e-collegamento.md); sezione del 2026-11-07 in `TASKS.md`.
 **Livello di controllo:** completo (deciso da Riccardo il 2026-11-07).
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-07
+**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-08
 
 ## Vincoli globali
 
@@ -30,7 +30,7 @@
 |---|---|---|---|---|---|---|
 | S1 | [x] | Misura con l'immagine attuale e moduli spenti | in linea | — | peso vero scritto nel piano, soglie decise | misure 24 h sulla VM di prova |
 | S2 | [x] | Immagine snella | implementer | S1 | installazione senza Docker sul PX-NAS | `da-appliance verifica` verde |
-| S3 | [ ] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
+| S3 | [~] | Moduli e pesi in DA-Link | implementer | S2 | la procedura propone la variante | prove DA-Link + una bozza vera |
 | S4 | [ ] | Coda comune senza vicolo cieco | implementer, tester | — | 7 giorni di caduta si recuperano da soli | prove della coda |
 | S5 | [ ] | Terzo livello di uscita | implementer | — | `completo` accettato da DA-Link e scelto solo in locale | prove dei due repo |
 | S6 | [ ] | Fotografia completa | implementer, tester | S5 | lista bianca provata, peso misurato | prova sui campi, misura su 533 |
@@ -80,7 +80,7 @@ Verifica: tabella delle misure qui sotto, con data e fonte.
 
 Verifica: installazione dalla variante snella sul PX-NAS, `da-appliance verifica` verde, trunk e proxy vivi. Commit in PR; il rilascio dell'immagine aspetta il via.
 
-### [ ] Task 3 — Moduli e pesi in DA-Link
+### [~] Task 3 — Moduli e pesi in DA-Link
 
 - **File (DA-Link):** `dalink/appliance_immagine.py` (`RAM`, scelta della variante in base ai moduli), `dalink/cli_immagine.py`, relative prove.
 - **Cosa fare:** se nella bozza non ci sono Edge, LibreNMS e MeshCentral, la procedura propone la variante snella e i pesi veri del Task 1. Chi aggiunge Edge dopo deve passare alla piena: lo si dice a schermo prima di salvare.
@@ -92,6 +92,14 @@ Da aggiungere, emerso dal Task 2:
 - Proxreporter acceso e `aggiorna.sh` si provano qui, con l'installatore vero.
 
 Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
+
+**Stato 08/11/2026 (Riccardo: «procedi»).** Codice fatto in due PR aperte:
+[Deploy-Appliance #76](https://github.com/grandir66/Deploy-Appliance/pull/76), da unire per prima, e
+[DA-Link #86](https://github.com/grandir66/DA-Link/pull/86).
+- Deploy-Appliance: `"variante"` nell'elenco firmato; `installa-appliance.sh --variante`, con la snella a 4 GB e 40 GB e i moduli della piena rifiutati prima di toccare l'host. Un elenco di un'altra variante non viene ripristinato. `aggiorna.sh` rifiuta il cambio di variante. Cancello verde, 54 gruppi.
+- DA-Link: rilascio su `ULTIMO-SNELLA`; «Prova» delle due righe, con `ULTIMO` su una snella segnato rosso. La bozza sceglie la ridotta dai moduli solo se ce n'è una provata, quindi senza una ridotta pubblicata nulla cambia. La variante installata resta nella bozza per Riconfigura, Aggiorna, trunk e «Riusa». Pagina guardata coi dati finti. Cancello verde, 3138 prove.
+- Scelta fatta: niente casella «piena anche senza Edge». La variante segue i moduli, e chi aggiunge Edge dopo reinstalla con la piena, come deciso.
+- Resta: unire le PR (prima Deploy-Appliance), portare DA-Link in produzione, **pubblicare e firmare la `2026.11.91` su `ULTIMO-SNELLA` (via di Riccardo)**, poi una bozza vera per 79993 con l'installatore vero. Proxreporter acceso e `aggiorna.sh` si provano lì.
 
 ---
 

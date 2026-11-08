@@ -19,6 +19,7 @@
  * (`ricevePorteDaSwitch`): le interfacce di un NAS, di un server, di un hypervisor, di un controller o di un access point
  * restano nello snapshot e non diventano porte di uno switch.
  */
+import { normalizePortNameForMatch } from "@/lib/utils";
 import { ricevePorteDaSwitch } from "../catalogo";
 import type { LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 import type { AcquisitionSnapshot, DeviceInterface } from "../schema";
@@ -96,7 +97,10 @@ export interface ModifichePorte {
   togli: Array<{ port_index: number; port_name: string }>;
 }
 
-export const nomePorta = (nome: string): string => nome.replace(/\s+/g, "").toLowerCase();
+/** Chiave per abbinare i nomi di porta: la stessa del giro (`normalizePortNameForMatch`), con le due forme Comware. */
+export const nomePorta = (nome: string): string => normalizePortNameForMatch(nome);
+/** Chiave salvata in `topology_port_facts.port_key` («n:…»): resta quella di sempre, per non lasciare righe orfane. */
+const chiaveSalvata = (nome: string): string => nome.replace(/\s+/g, "").toLowerCase();
 
 const CIST = new Set(["", "0", "cist", "mst0", "common"]);
 const eCist = (istanza: string | null): boolean => CIST.has((istanza ?? "").trim().toLowerCase());
@@ -268,7 +272,7 @@ export function proiettaFatti(snapshot: AcquisitionSnapshot): FattoPortaProietta
     const s = stp ? snapshot.spanning_tree.data.ports.find((x) => eCist(x.instance) && nomePorta(x.port) === nomePorta(i.name)) : undefined;
     const oper = i.oper_status?.toLowerCase();
     return {
-      port_key: i.if_index !== null ? `i:${i.if_index}` : `n:${nomePorta(i.name)}`,
+      port_key: i.if_index !== null ? `i:${i.if_index}` : `n:${chiaveSalvata(i.name)}`,
       port_name: i.name,
       port_index: i.if_index,
       if_kind: i.kind === "aggregate" ? "lag" : "physical",

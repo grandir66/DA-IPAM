@@ -97,8 +97,28 @@ export function normalizeMacForStorage(mac: string | null | undefined): string |
 }
 
 /** Normalizza nome porta per match (es. "Port 1" e "Port1" → "port1") */
+/**
+ * Comware scrive la stessa porta in due forme: lunga (ifName SNMP, `display interface`) e corta (`display mac-address`,
+ * LLDP). La chiave usa la corta, come `comwarePort` dei collector. Incidente 2026-11-08 su 70151: 0 porte con MAC su 5
+ * Comware perché «gigabitethernet1/0/8» non trovava «ge1/0/8». Ancorata all'inizio e seguita da una cifra: «ge-0/0/0»
+ * (Juniper) e «Gi0/1» (Cisco) non cambiano.
+ */
+const FORME_COMWARE: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^ten-gigabitethernet(?=\d)/, "xge"],
+  [/^twenty-fivegige(?=\d)/, "wge"],
+  [/^m-gigabitethernet(?=\d)/, "mge"],
+  [/^gigabitethernet(?=\d)/, "ge"],
+  [/^fortygige(?=\d)/, "fge"],
+  [/^hundredgige(?=\d)/, "hge"],
+  [/^bridge-aggregation(?=\d)/, "bagg"],
+  [/^route-aggregation(?=\d)/, "ragg"],
+];
+
+/** Chiave per confrontare nomi di porta letti da fonti diverse. Solo per abbinare: il nome mostrato resta quello letto. */
 export function normalizePortNameForMatch(name: string): string {
-  return (name || "").replace(/\s+/g, "").toLowerCase();
+  const base = (name || "").replace(/\s+/g, "").toLowerCase();
+  for (const [lunga, corta] of FORME_COMWARE) if (lunga.test(base)) return base.replace(lunga, corta);
+  return base;
 }
 
 export function formatIpSort(ip: string): string {

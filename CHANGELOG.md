@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Comware: i MAC per porta trovano la porta
+
+Misurato su 70151: i 5 Comware avevano 0 porte con MAC in `switch_ports` contro 800-1.100 MAC nella tabella per apparato. Il percorso storico scrive le porte coi nomi lunghi («GigabitEthernet1/0/8», «Bridge-Aggregation109»), la tabella MAC di Comware usa quelli corti («GE1/0/8», «BAGG109»), e il confronto toglieva solo spazi e maiuscole.
+
+### Corretto
+- **Una chiave di confronto che conosce le due forme Comware** (`normalizePortNameForMatch` in `utils.ts`, usata anche da `nomePorta` dei collector): GE, XGE, FGE, HGE, WGE, MGE, BAGG, RAGG. Serve solo ad abbinare; il nome mostrato resta quello letto, e `topology_port_facts.port_key` resta calcolato come prima per non lasciare righe orfane. Prova con i nomi veri di 70151, vista rossa. Misura dei collegamenti sulla copia del DB di 70151: impronta del modello e della mappa dei cavi identiche prima e dopo.
+
 ## [Non rilasciato] — 2026-11-08 · Scansioni «Per device» pianificate
 
 Piano profili per device, Passo 6. Riccardo (08/11, «Sì a tutte»): all'ora fissata è DA-IPAM a lanciare i gruppi confermati in quel momento, una pianificazione per rete con le famiglie spuntate, una sola pianificazione per rete. Copiare gli elenchi di IP sulla sonda li avrebbe fatti invecchiare a ogni tipo cambiato.

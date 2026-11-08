@@ -262,7 +262,8 @@ async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fa
   if (!rete) return { id: networkId, nome: `#${networkId}`, esito: "errore", motivo: "Rete non trovata" };
   const nome = rete.name || rete.cidr;
   // 08/11/2026 (Riccardo, tavola 40-44): una rete con impianti si scansiona, e gli impianti li toglie la sonda (freno
-  // `protetti` ed elenco degli ammessi). Solo il lancio immediato con un consenso valido, riletto da Edge, li include.
+  // `protetti` ed elenco degli ammessi). Il lancio immediato li include col consenso valido riletto da Edge; pianificata
+  // e finestra li includono da sole sulla sonda quando il consenso copre il giro (08/11/2026).
   const conImpianti = impiantiDellaRete(getHostsByNetwork(rete.id)).host > 0;
   const comuneRete = { assessmentEnabled: true, assessmentProfileId: l.assessment_id, targetingMode: l.ambito };
 

@@ -145,8 +145,9 @@ export interface Cambio {
  * lo legge dalla sua riga a fine scansione, quindi una pianificazione esistente lo usa dal giro dopo.
  */
 export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
-  // Il consenso vale per il lancio immediato: una pianificata o una finestra girano senza una persona davanti.
-  const consenso = s.modo === "immediata" ? rete.consenso : null;
+  // Riccardo, 08/11/2026 («Sì, estendilo»): il consenso vale anche per pianificata e finestra, quando copre l'ora del giro;
+  // per loro conta anche quello che comincia più tardi. Il lancio immediato vuole quello che vale adesso.
+  const consenso = s.modo === "immediata" ? rete.consenso : (rete.consenso ?? rete.consensoFuturo ?? null);
   if (rete.attivita === "in_corso") return { tono: "in_corso", testo: "▶ In corso", blocca: true, tocca: false };
   if (rete.attivita === "in_coda") return { tono: "in_corso", testo: "… In coda", blocca: true, tocca: false };
   // 08/11/2026 (Riccardo, tavola 40-44): una rete con impianti si scansiona, con gli impianti esclusi dalla sonda.
@@ -155,8 +156,13 @@ export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
   }
 
   const moduliDiversi = !!rete.assessmentId && rete.assessmentId !== s.assessmentId;
-  if (rete.impianti > 0 && consenso) {
+  if (rete.impianti > 0 && consenso && s.modo === "immediata") {
     return { tono: "consenso", testo: testoConsenso(consenso), blocca: false, tocca: moduliDiversi };
+  }
+  if (rete.impianti > 0 && consenso) {
+    const base = cosaCambia({ ...rete, impianti: 0, consenso: null, consensoFuturo: null }, s);
+    const quanti = consenso.ips.length === 1 ? "1 impianto" : `${consenso.ips.length} impianti`;
+    return { ...base, tono: "consenso", testo: `▲ Anche ${quanti} se il giro cade nel consenso (${scadenzaConsenso(consenso)}) · ${base.testo.replace(/^▲\s*/, "")}` };
   }
   if (s.modo === "immediata") {
     if (rete.piano?.modo === "finestra") return { tono: "avviso", testo: "▲ Parte fuori dalla finestra", blocca: false, tocca: moduliDiversi };

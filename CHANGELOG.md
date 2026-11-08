@@ -20,7 +20,7 @@ Riccardo (08/11): l'autorizzazione degli impianti deve poter valere «per tutta 
 - **«A finestra» nel pannello «Quando»**, accanto ad «Adesso» e «A orario»: dalle, alle, giorni. DA-IPAM manda alla sonda i gruppi dei device inclusi, ognuno col suo profilo, e li rimanda quando cambiano (giro di ogni minuto, una sonda che non risponde si riprova dopo 10 minuti); a fine fascia la sonda si ferma e alla fascia dopo riprende. Una sola pianificazione per rete resta la regola: passare da finestra a orario, o spegnere, toglie la finestra dalla sonda. Solo Greenbone: nuclei e moduli nella finestra non partono.
 
 ### Cambiato
-- **Con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e nelle finestre** (prima solo «Adesso»). Senza, restano fuori e l'esito della pianificazione lo dice; la sonda lo ricontrolla comunque al lancio.
+- **Con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e nelle finestre** (prima solo «Adesso»), in «Per device» e anche in «Un profilo solo» (Riccardo: «Sì, estendilo»; lo decide la sonda al giro, la colonna «Cosa cambia» lo dice). Senza, restano fuori e l'esito della pianificazione lo dice; la sonda lo ricontrolla comunque al lancio.
 
 ## [Non rilasciato] — 2026-11-08 · Sonda trunk sul Mac del tecnico: accesa e azzerata a ogni cliente
 

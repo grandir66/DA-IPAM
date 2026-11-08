@@ -35,10 +35,17 @@ test("cosa cambia: senza consenso si sceglie con gli impianti esclusi; il consen
   const c = cosaCambia(rete({ consenso: CONSENSO }), { modo: "immediata", assessmentId: "x" });
   assert.deepEqual([c.tono, c.blocca], ["consenso", false]);
   assert.equal(c.testo, "▲ Anche 2 impianti, fino alle 15:00");
+  // Riccardo, 08/11/2026 («Sì, estendilo»): anche pianificata e finestra portano gli impianti quando il consenso copre il
+  // giro (prima: mai). Prova riscritta sulla regola nuova; senza consenso restano esclusi come prima.
   for (const modo of ["pianificata", "finestra"] as const) {
     const p = cosaCambia(rete({ consenso: CONSENSO }), { modo, assessmentId: "x" });
-    assert.deepEqual([p.tono, p.blocca], ["impianto", false], modo);
+    assert.deepEqual([p.tono, p.blocca], ["consenso", false], modo);
+    assert.match(p.testo, /^▲ Anche 2 impianti se il giro cade nel consenso \(fino a sab 15:00\)/, modo);
+    assert.equal(cosaCambia(rete(), { modo, assessmentId: "x" }).tono, "impianto", modo);
+    const futuro = cosaCambia(rete({ consensoFuturo: { ...CONSENSO, in_vigore: false, valido_dal: "2026-11-08 21:00:00", scade_il: "2026-11-09 05:00:00" } }), { modo, assessmentId: "x" });
+    assert.equal(futuro.tono, "consenso", `${modo}: un consenso per la prossima finestra conta per il giro`);
   }
+  assert.equal(cosaCambia(rete({ consensoFuturo: CONSENSO }), { modo: "immediata", assessmentId: "x" }).tono, "impianto", "adesso vale solo il consenso in vigore");
   assert.equal(cosaCambia(rete({ consenso: CONSENSO, attivita: "in_corso" }), { modo: "immediata", assessmentId: "x" }).blocca, true);
 });
 

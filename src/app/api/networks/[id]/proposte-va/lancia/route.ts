@@ -15,7 +15,7 @@ import { lanciaGruppiConfermati } from "@/lib/vuln/proposta/lancio";
 type Ctx = { params: Promise<{ id: string }> };
 
 // «impianti» (Passo 9): parte solo col consenso valido della rete, che controlla la sonda.
-const Famiglie = z.array(z.enum(["rete", "windows", "linux", "web", "periferiche", "impianti"])).min(1, "Scegli almeno un gruppo");
+const Famiglie = z.array(z.enum(["rete", "windows", "linux", "web", "periferiche", "da_chiarire", "impianti"])).min(1, "Scegli almeno un gruppo");
 
 export async function POST(req: Request, { params }: Ctx) {
   const adminCheck = await requireAdmin();

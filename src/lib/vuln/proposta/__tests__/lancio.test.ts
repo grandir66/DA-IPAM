@@ -149,10 +149,11 @@ test("un modulo ignoto nel profilo di Rete o Windows: il gruppo parte senza asse
   assert.ok(e.avvisi.some((a) => /assessment/i.test(a)));
 });
 
-test("tipo cambiato dopo la conferma: l'host resta fuori e compare in tolti, la riga non si riscrive", async () => {
+// Regola rovesciata da Riccardo l'08/11/2026: una scelta vale fino a modifica manuale. Prima un tipo cambiato toglieva
+// l'host dal lancio; ora resta dentro (la pagina mostra l'avviso). Esce solo chi oggi risulta un impianto.
+test("tipo cambiato dopo la conferma: l'host resta nel lancio, la riga non si riscrive", async () => {
   const { rete } = await preparaRete();
   await withTenant(T, async () => {
-    // il PC Windows confermato ora non ha più né sistema né tipo noti; il server Linux è diventato conteso
     getTenantDb(T).prepare("UPDATE hosts SET classification='unknown', os_info=NULL, vendor=NULL WHERE ip='10.7.0.11' AND network_id=?").run(rete);
   });
   const conteso = await withTenant(T, async () => Number((getTenantDb(T).prepare("SELECT id FROM hosts WHERE ip='10.7.0.21' AND network_id=?").get(rete) as { id: number }).id));
@@ -160,9 +161,9 @@ test("tipo cambiato dopo la conferma: l'host resta fuori e compare in tolti, la 
   const { f, chiamate } = avviaFinto();
   const e = await withTenant(T, () =>
     lanciaGruppiConfermati(rete, { avvia: f, catalogo, contesi: () => new Set([conteso]) }));
-  assert.deepEqual(chiamate.flatMap((g) => g.ips), ["10.7.0.1"], "parte solo il router");
-  const cambiati = e.tolti.filter((t) => /tipo cambiato, da rivedere/.test(t.motivo)).map((t) => t.ip).sort();
-  assert.deepEqual(cambiati, ["10.7.0.11", "10.7.0.21"]);
+  const partiti = chiamate.flatMap((g) => g.ips);
+  assert.ok(partiti.includes("10.7.0.11") && partiti.includes("10.7.0.21"), "i due col tipo cambiato restano dentro");
+  assert.deepEqual(e.tolti.filter((t) => /tipo cambiato/.test(t.motivo)), []);
   const dopo = await withTenant(T, async () => getTenantDb(T).prepare("SELECT host_id, famiglia, stato FROM va_proposte ORDER BY host_id").all());
   assert.deepEqual(dopo, prima, "il lancio non riscrive va_proposte");
 });
@@ -262,5 +263,6 @@ test("senza famiglie la rotta rifiuta: una richiesta incompleta non diventa «tu
   assert.match(src, /chi\s*\}/, "la rotta passa chi lancia");
   const lancioSrc = readFileSync(join(process.cwd(), "src/lib/vuln/proposta/lancio.ts"), "utf8");
   assert.match(lancioSrc, /anche_impianti: true, chi: opzioni\.chi/, "gli impianti partono solo come gruppo col consenso");
-  assert.doesNotMatch(src, /z\.enum.*da_chiarire/);
+  // 08/11/2026 sera: i «da chiarire» partono col profilo prudente, quindi la rotta li accetta (prima no).
+  assert.match(src, /z\.enum\(\[[^\]]*"da_chiarire"/);
 });

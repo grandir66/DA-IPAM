@@ -81,7 +81,7 @@ export async function lanciaGruppiConfermati(
   opzioni: { famiglie?: readonly Famiglia[]; chi?: string } = {},
 ): Promise<EsitoLancio> {
   const d = { ...REALI, ...deps };
-  const confermate = d.proposte(networkId).filter((r) => r.stato === "confermato");
+  const confermate = d.proposte(networkId).filter((r) => r.stato !== "escluso");
   const host = new Map(d.host(networkId).map((h) => [h.id, h]));
 
   const { buone, tolti } = valutaConfermate(confermate, host, d.contesi(networkId), opzioni.famiglie);

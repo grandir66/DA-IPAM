@@ -63,26 +63,28 @@ test("più host della stessa famiglia stanno in un gruppo solo, senza doppioni",
   assert.deepEqual(g[0].ips, ["10.0.1.5", "10.0.1.6"]);
 });
 
-test("IoT/OT e Da chiarire non producono mai un gruppo, nemmeno se risultano confermati", () => {
-  const righe = [
-    riga("impianti", { voce: null }), riga("impianti", { voce: "bilanciato" }),
-    riga("da_chiarire", { voce: null }), riga("da_chiarire", { voce: "bilanciato" }),
-  ];
-  assert.deepEqual(gruppiDaConfermate(righe, CATALOGO), []);
-  // e non contaminano un gruppo vero: gli IP dell'impianto non ci finiscono
-  const g = gruppiDaConfermate([...righe, riga("rete", { ip: "10.0.2.1" })], CATALOGO);
-  assert.deepEqual(g.map((x) => x.ips), [["10.0.2.1"]]);
-  assert.ok(!g.flatMap((x) => x.ips).some((ip) => righe.some((r) => r.ip === ip)));
+// Regole rovesciate da Riccardo l'08/11/2026 (tavola 40-44): un «da chiarire» parte col profilo prudente (Veloce,
+// senza nuclei né moduli) e una proposta non rivista o con il tipo cambiato parte; esce solo chi è escluso a mano.
+// Gli impianti restano fuori dai gruppi per tipo: partono solo come gruppo a parte col consenso (lancio.ts).
+test("IoT/OT non producono mai un gruppo; i «da chiarire» un gruppo prudente, senza contaminare gli altri", () => {
+  const impianti = [riga("impianti", { voce: null, ip: "10.0.9.1" }), riga("impianti", { voce: "bilanciato", ip: "10.0.9.2" })];
+  const dubbi = [riga("da_chiarire", { voce: null, ip: "10.0.8.1" }), riga("da_chiarire", { voce: "bilanciato", ip: "10.0.8.2" })];
+  assert.deepEqual(gruppiDaConfermate(impianti, CATALOGO), []);
+  const g = gruppiDaConfermate([...impianti, ...dubbi, riga("rete", { ip: "10.0.2.1" })], CATALOGO);
+  assert.deepEqual(g.map((x) => [x.famiglia, x.ips]), [["rete", ["10.0.2.1"]], ["da_chiarire", ["10.0.8.1", "10.0.8.2"]]]);
+  const prudente = g.find((x) => x.famiglia === "da_chiarire")!;
+  assert.deepEqual([prudente.profile, prudente.nuclei_profilo, prudente.assessment_profile_id], ["fast", null, null]);
+  assert.ok(!g.flatMap((x) => x.ips).some((ip) => impianti.some((r) => r.ip === ip)));
 });
 
-test("proposte non confermate, escluse e da rivedere non partono", () => {
+test("parte tutto ciò che non è escluso: proposte non riviste e tipi cambiati compresi; IP vuoto no", () => {
   const g = gruppiDaConfermate([
-    riga("rete", { stato: "proposto" }),
-    riga("windows", { stato: "escluso" }),
-    riga("linux", { da_rivedere: 1 }),
+    riga("rete", { stato: "proposto", ip: "10.0.3.1" }),
+    riga("windows", { stato: "escluso", ip: "10.0.3.2" }),
+    riga("linux", { da_rivedere: 1, ip: "10.0.3.3" }),
     riga("web", { ip: "" }),
   ], CATALOGO);
-  assert.deepEqual(g, []);
+  assert.deepEqual(g.map((x) => [x.famiglia, x.ips]), [["rete", ["10.0.3.1"]], ["linux", ["10.0.3.3"]]]);
 });
 
 test("nel dubbio si scende: una scelta più bassa vale, una più alta no", () => {

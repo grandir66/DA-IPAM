@@ -38,7 +38,8 @@ test("un «da chiarire» forzato entra nel gruppo scelto, negli ammessi e nel co
   withTenant(T, () => {
     const { dubbio } = prepara();
     assert.equal(riga(dubbio).famiglia, "da_chiarire");
-    assert.deepEqual(ipAmmessiDellaRete(1), []);
+    // Dall'08/11 sera un «da chiarire» è incluso di serie col profilo prudente; l'impianto no.
+    assert.deepEqual(ipAmmessiDellaRete(1), ["10.90.0.41"]);
     assert.deepEqual(forzaProposta(1, { hostId: dubbio, famiglia: "linux", chi: "riccardo", nota: "NAS dell'ufficio" }, no), { ok: true });
     const r = riga(dubbio);
     assert.equal(r.famiglia, "linux");
@@ -53,7 +54,7 @@ test("un «da chiarire» forzato entra nel gruppo scelto, negli ammessi e nel co
   });
 });
 
-test("la rigenerazione non lo tocca finché resta «da chiarire»; se il tipo cambia torna da rivedere ed esce", () => {
+test("la rigenerazione non lo tocca finché resta «da chiarire»; se il tipo cambia c'è l'avviso ma resta dentro", () => {
   withTenant(T, () => {
     const { dubbio } = prepara();
     forzaProposta(1, { hostId: dubbio, famiglia: "linux", chi: "r" }, no);
@@ -61,13 +62,15 @@ test("la rigenerazione non lo tocca finché resta «da chiarire»; se il tipo ca
     assert.equal(riga(dubbio).da_rivedere, 0);
     assert.equal(riga(dubbio).famiglia, "linux");
     getTenantDb(T).prepare("UPDATE hosts SET classification='switch', classification_manual=1 WHERE id=?").run(dubbio);
-    assert.deepEqual(ipAmmessiDellaRete(1), [], "tipo cambiato: fuori dal lancio anche prima della rigenerazione");
+    // Riccardo, 08/11/2026: la scelta vale fino a modifica manuale; il tipo cambiato è solo un avviso.
+    assert.deepEqual(ipAmmessiDellaRete(1), ["10.90.0.41"]);
     rigeneraProposte(1);
     assert.equal(riga(dubbio).da_rivedere, 1);
+    assert.deepEqual(ipAmmessiDellaRete(1), ["10.90.0.41"]);
   });
 });
 
-test("un impianto non si forza, e nemmeno un host che non è «da chiarire»", () => {
+test("un impianto non si forza da qui", () => {
   withTenant(T, () => {
     const { dubbio, plc } = prepara();
     const r1 = forzaProposta(1, { hostId: plc, famiglia: "linux", chi: "r" }, no);
@@ -78,14 +81,15 @@ test("un impianto non si forza, e nemmeno un host che non è «da chiarire»", (
   });
 });
 
-test("«Togli» lo rimette «da chiarire», proposto, fuori dagli ammessi", () => {
+test("«Togli» lo rimette «da chiarire», proposto, di nuovo col profilo prudente", () => {
   withTenant(T, () => {
     const { dubbio } = prepara();
     forzaProposta(1, { hostId: dubbio, famiglia: "windows", chi: "r" }, no);
     assert.deepEqual(togliForzatura(1, dubbio), { ok: true });
     const r = riga(dubbio);
     assert.deepEqual([r.famiglia, r.stato, r.forzata_da_famiglia ?? null], ["da_chiarire", "proposto", null]);
-    assert.deepEqual(ipAmmessiDellaRete(1), []);
+    assert.deepEqual(ipAmmessiDellaRete(1), ["10.90.0.41"]);
+    assert.equal(gruppiDaConfermate(leggiProposte(1)).find((g) => g.famiglia === "da_chiarire")?.profile, "fast");
     assert.equal(togliForzatura(1, dubbio).ok, false);
   });
 });

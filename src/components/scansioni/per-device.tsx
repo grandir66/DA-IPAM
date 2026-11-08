@@ -55,19 +55,11 @@ function statoRete(r: ReteScansione, c: ContoProposte | undefined): { testo: str
 function statoFamiglia(f: RigaFamiglia): { testo: string; tono: TonoStato } {
   if (f.fuori === "mai") return { testo: "✕ Mai scansionati", tono: "errore" };
   if (f.fuori === "chiarire") return { testo: "▲ Fuori finché non si chiarisce", tono: "avviso" };
-  if (f.confermati === 0) return { testo: "● Da confermare", tono: "spento" };
+  if (f.confermati === 0) return { testo: "● Tutti esclusi", tono: "spento" };
   if (f.confermati < f.device) return { testo: `▲ ${f.confermati} su ${f.device}`, tono: "avviso" };
-  return { testo: "✓ Pronto", tono: "ok" };
+  return { testo: f.famiglia === "da_chiarire" ? "✓ Profilo prudente" : "✓ Pronto", tono: "ok" };
 }
 
-function statoDevice(r: RigaProposta): { testo: string; tono: TonoStato } {
-  if (r.famiglia === "impianti") return { testo: "✕ Fuori", tono: "errore" };
-  if (r.famiglia === "da_chiarire") return { testo: "▲ Da chiarire", tono: "avviso" };
-  if (r.da_rivedere) return { testo: "▲ Da rivedere", tono: "avviso" };
-  if (r.stato === "confermato") return { testo: "✓ Confermato", tono: "ok" };
-  if (r.stato === "escluso") return { testo: "● Escluso", tono: "spento" };
-  return { testo: "● Proposto", tono: "spento" };
-}
 
 const PAROLE_APERTO: Record<GruppoAperto["stato"], { testo: string; tono: TonoStato }> = {
   in_corso: { testo: "▶ In corso", tono: "in_corso" },
@@ -177,40 +169,44 @@ function EsitoGruppi({ esito, nomeRete, nomi, occupato, onRiprova }: { esito: Es
   );
 }
 
-/** Le famiglie con cui si può forzare un «da chiarire» (Passo 9, tavola oggetto 34). */
-const FAMIGLIE_FORZA: Array<[Famiglia, string]> = [["linux", "Linux e server"], ["rete", "Rete"], ["windows", "Windows"], ["web", "Web e applicazioni"], ["periferiche", "Periferiche"]];
+/** Le famiglie con cui si include un device (tavola oggetto 40, 08/11/2026). */
+const FAMIGLIE_FORZA: Array<[Famiglia, string]> = [["linux", "Linux e server"], ["rete", "Rete"], ["windows", "Windows"], ["web", "Web e applicazioni"], ["periferiche", "Periferiche"], ["da_chiarire", "Da chiarire (profilo prudente)"]];
 const nomeForza = (f: Famiglia | null | undefined) => FAMIGLIE_FORZA.find(([k]) => k === f)?.[1] ?? f ?? "";
 
-function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, onRiapri, onVoce, onForza, onTogli }: {
+/** La firma di una scelta: chi e quando. */
+function firma(r: RigaProposta): string {
+  return [r.confermata_da, r.confermata_il ? dataBreve(r.confermata_il) : null].filter(Boolean).join(", ");
+}
+
+function RigaDevice({ r, amministratore, profonditaFissa, occupato, scelto, onSeleziona, onVoce, onTogli }: {
   r: RigaProposta;
   amministratore: boolean;
   profonditaFissa: boolean;
   occupato: boolean;
-  onScegli: (stato: "confermato" | "escluso") => void;
-  onRiapri: () => void;
+  scelto: boolean;
+  onSeleziona: (v: boolean) => void;
   onVoce: (voce: "veloce" | "bilanciato") => void;
-  onForza: (famiglia: Famiglia, nota: string) => void;
   onTogli: () => void;
 }) {
-  const [forza, setForza] = useState(false);
-  const [scelta, setScelta] = useState<Famiglia>("linux");
-  const [nota, setNota] = useState("");
-  const s = statoDevice(r);
-  const attiva = r.famiglia !== "impianti" && r.famiglia !== "da_chiarire";
-  const bottone = (acceso: boolean) => cn("min-h-7 rounded border px-2.5 text-[13px] font-semibold", acceso ? "border-[#0D2537] bg-[#0D2537] text-white" : "border-muted-foreground bg-card");
+  const impianto = r.famiglia === "impianti";
+  const escluso = r.stato === "escluso";
+  const attiva = !impianto && !escluso && r.famiglia !== "da_chiarire";
+  const avviso = r.da_rivedere ? r.motivo.replace(/^Ora risulterebbe:\s*/, "") : null;
   return (
-    <>
-    <tr className={cn("border-b", !attiva && "bg-muted/40")}>
+    <tr className={cn("border-b", scelto && "bg-selezione", !scelto && (impianto || escluso) && "bg-muted/40")}>
+      <td className="px-3 py-1.5">
+        {amministratore && <Checkbox aria-label={`Seleziona ${r.ip}`} checked={scelto} disabled={occupato} onCheckedChange={(v) => onSeleziona(v === true)} />}
+      </td>
       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{r.ip}</td>
       <td className="whitespace-nowrap px-3 py-1.5 font-semibold">{r.nome ?? "—"}</td>
-      <td className="min-w-56 px-3 py-1.5">{r.motivo}</td>
+      <td className="min-w-56 px-3 py-1.5">{r.da_rivedere ? "Scelto da una persona" : r.motivo}</td>
       <td className="px-3 py-1.5">{r.con_web ? "✓" : "—"}</td>
       <td className="whitespace-nowrap px-3 py-1.5">
-        {!attiva ? "—" : profonditaFissa || !amministratore ? (r.voce === "veloce" ? "Veloce" : "Bilanciato") : (
+        {!attiva ? (r.famiglia === "da_chiarire" && !escluso ? "Veloce" : "—") : profonditaFissa || !amministratore ? (r.voce === "veloce" ? "Veloce" : "Bilanciato") : (
           <select
             aria-label={`Profondità di ${r.ip}`}
             className={campo}
-            disabled={occupato || !!r.da_rivedere}
+            disabled={occupato}
             value={r.voce === "veloce" ? "veloce" : "bilanciato"}
             onChange={(e) => onVoce(e.target.value === "veloce" ? "veloce" : "bilanciato")}
           >
@@ -219,54 +215,33 @@ function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, on
           </select>
         )}
       </td>
-      <td className="px-3 py-1.5"><Stato tono={s.tono}>{s.testo}</Stato></td>
+      <td className="px-3 py-1.5">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {impianto ? (
+            <Stato tono="errore">✕ Impianto, escluso di serie</Stato>
+          ) : escluso ? (
+            <span title={r.forzata_nota ?? undefined}><Stato tono="spento">✕ Escluso{firma(r) ? ` · ${firma(r)}` : ""}{r.forzata_nota ? ` · «${r.forzata_nota}»` : ""}</Stato></span>
+          ) : r.forzata_da_famiglia ? (
+            <span className="inline-flex items-center rounded border-2 border-dashed border-[#0D2537] bg-card px-2 py-0.5 text-[13px] font-semibold text-[#0D2537]" title={r.forzata_nota ?? undefined}>
+              ✓ Incluso come {nomeForza(r.famiglia)}{firma(r) ? ` · ${firma(r)}` : ""}
+            </span>
+          ) : r.stato === "confermato" ? (
+            <Stato tono="ok">✓ Confermato{firma(r) ? ` · ${firma(r)}` : ""}</Stato>
+          ) : (
+            <Stato tono="ok">{r.famiglia === "da_chiarire" ? "✓ Incluso, profilo prudente" : "✓ Incluso"}</Stato>
+          )}
+          {avviso && <span className="text-[13px] text-muted-foreground">il sistema oggi lo vede come: {avviso}</span>}
+        </span>
+      </td>
       <td className="whitespace-nowrap px-3 py-1.5">
         <span className="flex items-center gap-1.5">
-          {attiva && amministratore && (r.da_rivedere ? (
-            <button type="button" disabled={occupato} className={bottone(false)} onClick={onRiapri}>Prendi il nuovo tipo</button>
-          ) : (
-            <>
-              <button type="button" disabled={occupato} aria-pressed={r.stato === "confermato"} className={bottone(r.stato === "confermato")} onClick={() => onScegli("confermato")}>Conferma</button>
-              <button type="button" disabled={occupato} aria-pressed={r.stato === "escluso"} className={bottone(r.stato === "escluso")} onClick={() => onScegli("escluso")}>Escludi</button>
-            </>
-          ))}
-          {r.forzata_da_famiglia && (
-            <>
-              <span className="inline-flex items-center rounded border-2 border-dashed border-[#0D2537] bg-card px-2 py-0.5 text-[13px] font-semibold text-[#0D2537]" title={r.forzata_nota ?? undefined}>
-                ▲ Forzato come {nomeForza(r.famiglia)}{r.confermata_da ? ` · ${r.confermata_da}` : ""}{r.confermata_il ? `, ${dataBreve(r.confermata_il)}` : ""}
-              </span>
-              {amministratore && <button type="button" disabled={occupato} className={bottone(false)} onClick={onTogli}>Togli</button>}
-            </>
-          )}
-          {r.famiglia === "da_chiarire" && amministratore && (
-            <button type="button" disabled={occupato} aria-expanded={forza} className={bottone(forza)} onClick={() => setForza((v) => !v)}>Forza come…</button>
+          {r.forzata_da_famiglia && amministratore && (
+            <button type="button" disabled={occupato} className="min-h-7 rounded border border-muted-foreground bg-card px-2.5 text-[13px] font-semibold" onClick={onTogli}>Togli</button>
           )}
           <Link href={`/hosts/${r.host_id}`} className="text-[13px] text-cian-testo hover:underline">Cambia tipo ›</Link>
         </span>
       </td>
     </tr>
-    {forza && (
-      <tr className="border-b bg-[#FFF6CC] text-[#0D2537]">
-        <td colSpan={7} className="px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span><strong className="font-mono">{r.ip}</strong> {r.nome ?? ""} · da chiarire: {r.motivo}</span>
-            <label className="flex items-center gap-2">Scansiona come
-              <select className={campo} value={scelta} onChange={(e) => setScelta(e.target.value as Famiglia)}>
-                {FAMIGLIE_FORZA.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-              </select>
-            </label>
-            <label className="flex items-center gap-2">Nota (facoltativa)
-              <input className={cn(campo, "w-72")} maxLength={300} value={nota} onChange={(e) => setNota(e.target.value)} />
-            </label>
-            <span className="text-muted-foreground">Riceve il profilo di quella famiglia; registrato a nome tuo, con l&apos;ora.</span>
-            <span className="flex-1" />
-            <Button size="sm" variant="outline" onClick={() => setForza(false)}>Annulla</Button>
-            <Button size="sm" disabled={occupato} onClick={() => { setForza(false); onForza(scelta, nota); }}>Forza la scansione</Button>
-          </div>
-        </td>
-      </tr>
-    )}
-    </>
   );
 }
 
@@ -287,6 +262,9 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const [blocco, setBlocco] = useState<BloccoRete | null>(null);
   const [erroreConti, setErroreConti] = useState<string | null>(null);
   const [perConsenso, setPerConsenso] = useState(false);
+  const [selezionati, setSelezionati] = useState<Set<number>>(new Set());
+  const [includiCome, setIncludiCome] = useState<Famiglia | "proposta">("proposta");
+  const [notaScelta, setNotaScelta] = useState("");
   const reteCorrente = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inLettura = useRef(false);
@@ -339,6 +317,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     reteCorrente.current = reteId;
     setDati(null);
     setFamiglia(null);
+    setSelezionati(new Set());
     setSpente(new Set());
     setEsito(null);
     setGruppiAperti([]);
@@ -363,12 +342,18 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
 
   const rete = quadro.reti.find((r) => r.id === reteId) ?? null;
   const famiglie = useMemo(() => dati?.famiglie ?? [], [dati]);
-  const famigliaVista = famiglie.find((f) => f.famiglia === famiglia) ?? famiglie[0] ?? null;
+  // Tavola 40 (08/11/2026): di serie il pannello 3 mostra i device a rischio; una famiglia si apre dalla tabella sopra.
+  const famigliaVista = famiglia === null ? null : famiglie.find((f) => f.famiglia === famiglia) ?? null;
   const proposte = useMemo(() => dati?.proposte ?? [], [dati]);
+  const aRischio = (r: RigaProposta) => r.famiglia === "impianti" || r.famiglia === "da_chiarire" || r.stato === "escluso";
   const device = useMemo(() => {
     const q = cerca.trim().toLowerCase();
-    return proposte.filter((r) => r.famiglia === famigliaVista?.famiglia && (!q || `${r.ip} ${r.nome ?? ""}`.toLowerCase().includes(q)));
+    return proposte.filter((r) => (famigliaVista ? r.famiglia === famigliaVista.famiglia : r.famiglia === "impianti" || r.famiglia === "da_chiarire" || r.stato === "escluso")
+      && (!q || `${r.ip} ${r.nome ?? ""}`.toLowerCase().includes(q)));
   }, [proposte, famigliaVista, cerca]);
+  const senzaRischio = proposte.filter((r) => !aRischio(r)).length;
+  const sceltiRighe = proposte.filter((r) => selezionati.has(r.host_id));
+  const sceltiImpianti = sceltiRighe.filter((r) => r.famiglia === "impianti");
 
   // Passo 9: gli impianti si lanciano solo col consenso valido della rete (lo ricontrolla la sonda al lancio).
   // La sonda manda solo il consenso valido (non revocato, non scaduto) e lo ricontrolla al lancio.
@@ -410,6 +395,18 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     }
     await leggiConti();
     setOccupato(false);
+  };
+
+  /** Barra della selezione (tavola 40): escludi o includi i device scelti, con firma e nota. */
+  const scegli = async (azione: "escludi" | "includi") => {
+    const ids = sceltiRighe.filter((r) => r.famiglia !== "impianti").map((r) => r.host_id);
+    if (ids.length === 0) return;
+    const nota = notaScelta.trim() || null;
+    if (azione === "escludi") await dopoScelta({ host_ids: ids, stato: "escluso", nota });
+    else if (includiCome === "proposta") await dopoScelta({ host_ids: ids, stato: "confermato", nota });
+    else await forzatura("POST", { host_ids: ids, famiglia: includiCome, nota });
+    setSelezionati(new Set());
+    setNotaScelta("");
   };
 
   const dopoScelta = async (corpo: Record<string, unknown>) => {
@@ -496,14 +493,14 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
     setOccupato(false);
   };
 
-  const manca = !amministratore ? "Solo lettura" : quadro.edge.stato !== "acceso" ? "Edge non risponde" : inLancio.length === 0 ? "Conferma almeno un device" : null;
+  const manca = !amministratore ? "Solo lettura" : quadro.edge.stato !== "acceso" ? "Edge non risponde" : inLancio.length === 0 ? "Nessun device incluso" : null;
   const senzaProposta = dati !== null && dati.proposte.length === 0;
 
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Device online" valore={dati ? proposte.length : null} qualifica={rete?.nome} />
-        <TesseraNumero titolo="Confermati" valore={dati ? nInLancio : null} />
+        <TesseraNumero titolo="Inclusi" valore={dati ? nInLancio : null} />
         <TesseraNumero titolo="Restano fuori" valore={dati ? proposte.length - nInLancio : null} />
         <TesseraNumero titolo="Gruppi aperti" valore={gruppiAperti.filter((g) => g.stato === "in_corso" || g.stato === "in_coda").length} nota="Edge fa una scansione alla volta" />
       </div>
@@ -562,7 +559,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead className="bg-muted text-left text-[13px]">
-                  <tr>{["Lancia", "Famiglia", "Device", "Confermati", "Greenbone", "Nuclei", "Moduli", "Stato"].map((t) => <th key={t} className="whitespace-nowrap px-3 py-2 font-semibold">{t}</th>)}</tr>
+                  <tr>{["Lancia", "Famiglia", "Device", "Inclusi", "Greenbone", "Nuclei", "Moduli", "Stato"].map((t) => <th key={t} className="whitespace-nowrap px-3 py-2 font-semibold">{t}</th>)}</tr>
                 </thead>
                 <tbody>
                   {famiglie.map((f) => {
@@ -617,42 +614,18 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
       {nota && <p className="text-sm"><Stato tono="ok">● {nota}</Stato></p>}
       {rifiuto && <p role="alert" className="text-sm"><Stato tono="avviso">▲ {rifiuto}</Stato></p>}
 
-      {famigliaVista && (
+      {dati && (
         <Pannello
           numero={3}
-          titolo={`Device di ${famigliaVista.nome}`}
-          conteggio={`${famigliaVista.device}`}
-          sottotitolo={famigliaVista.fuori === "mai"
-            ? "Si elencano per sapere chi è rimasto fuori. Nessun pacchetto da Greenbone, nuclei o moduli."
-            : famigliaVista.fuori === "chiarire"
-              ? "Non partono finché non si dice cosa sono."
-              : `${famigliaVista.confermati} confermati`}
+          titolo={famigliaVista ? `Device di ${famigliaVista.nome}` : "Device a rischio"}
+          conteggio={`${device.length}`}
+          sottotitolo={famigliaVista
+            ? `${famigliaVista.confermati} inclusi su ${famigliaVista.device}`
+            : "Di serie si scansiona tutto: qui gli impianti, i «da chiarire» e gli esclusi, con Includi o Escludi."}
           corpoClassName="p-0"
           azioni={
             <>
-              {amministratore && !famigliaVista.fuori && famigliaVista.daRivedere > 1 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={occupato}
-                  onClick={() => void dopoScelta({ host_ids: proposte.filter((r) => r.famiglia === famigliaVista.famiglia && r.da_rivedere).map((r) => r.host_id), stato: "riapri" })}
-                >
-                  Prendi i {famigliaVista.daRivedere} nuovi tipi
-                </Button>
-              )}
-              {amministratore && !famigliaVista.fuori && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={occupato}
-                  onClick={() => {
-                    const ids = proposte.filter((r) => r.famiglia === famigliaVista.famiglia && r.stato !== "escluso" && !r.da_rivedere).map((r) => r.host_id);
-                    if (ids.length > 0) void dopoScelta({ host_ids: ids, stato: "confermato" });
-                  }}
-                >
-                  Conferma tutti
-                </Button>
-              )}
+              {famigliaVista && <Button size="sm" variant="outline" onClick={() => { setFamiglia(null); setSelezionati(new Set()); }}>‹ A rischio</Button>}
               <span className="relative">
                 <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                 <Input aria-label="Cerca un device" placeholder="Cerca IP o nome" className="h-9 w-52 pl-8" value={cerca} onChange={(e) => setCerca(e.target.value)} />
@@ -660,10 +633,45 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
             </>
           }
         >
-          <div className="max-h-[340px] overflow-auto">
+          {amministratore && selezionati.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 border-y-2 border-foreground bg-[#FFF6CC] px-4 py-2.5 text-sm text-[#0D2537]">
+              <strong>{selezionati.size === 1 ? "1 selezionato" : `${selezionati.size} selezionati`}</strong>
+              <label className="flex items-center gap-2">Nota
+                <input className={cn(campo, "w-56")} maxLength={300} value={notaScelta} onChange={(e) => setNotaScelta(e.target.value)} placeholder="facoltativa" />
+              </label>
+              <Button size="sm" variant="outline" disabled={occupato || sceltiRighe.length === sceltiImpianti.length} onClick={() => void scegli("escludi")}>Escludi</Button>
+              <Button size="sm" disabled={occupato || sceltiRighe.length === sceltiImpianti.length} onClick={() => void scegli("includi")}>Includi</Button>
+              <label className="flex items-center gap-2">come
+                <select className={campo} value={includiCome} onChange={(e) => setIncludiCome(e.target.value as Famiglia | "proposta")}>
+                  <option value="proposta">la famiglia proposta</option>
+                  {FAMIGLIE_FORZA.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                </select>
+              </label>
+              {sceltiImpianti.length > 0 && (
+                <>
+                  <span className="text-muted-foreground">{sceltiImpianti.length === 1 ? "1 impianto" : `${sceltiImpianti.length} impianti`}: si includono solo col consenso</span>
+                  <Button size="sm" className="bg-[#8E1B20] text-white hover:bg-[#8E1B20]/90" disabled={occupato || quadro.edge.stato !== "acceso"} onClick={() => setPerConsenso(true)}>Includi impianti…</Button>
+                </>
+              )}
+              <span className="flex-1" />
+              <Button size="sm" variant="outline" onClick={() => setSelezionati(new Set())}>Annulla</Button>
+            </div>
+          )}
+          <div className="max-h-[420px] overflow-auto">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-left text-[13px]">
-                <tr>{["IP", "Nome", "Perché questa famiglia", "Web", "Profondità", "Stato", "Azioni"].map((t) => <th key={t} className="whitespace-nowrap px-3 py-2 font-semibold">{t}</th>)}</tr>
+                <tr>
+                  <th className="w-10 px-3 py-2">
+                    {amministratore && (
+                      <Checkbox
+                        aria-label="Seleziona tutti quelli in elenco"
+                        checked={device.length > 0 && device.every((r) => selezionati.has(r.host_id))}
+                        onCheckedChange={(v) => setSelezionati(v === true ? new Set(device.map((r) => r.host_id)) : new Set())}
+                      />
+                    )}
+                  </th>
+                  {["IP", "Nome", "Perché questa famiglia", "Web", "Profondità", "Stato e firma", "Azioni"].map((h) => <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>)}
+                </tr>
               </thead>
               <tbody>
                 {device.map((r) => (
@@ -673,14 +681,16 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                     amministratore={amministratore}
                     profonditaFissa={r.famiglia === "periferiche"}
                     occupato={occupato}
-                    onScegli={(stato) => void dopoScelta({ host_ids: [r.host_id], stato })}
-                    onRiapri={() => void dopoScelta({ host_ids: [r.host_id], stato: "riapri" })}
+                    scelto={selezionati.has(r.host_id)}
+                    onSeleziona={(v) => setSelezionati((p) => { const n = new Set(p); if (v) n.add(r.host_id); else n.delete(r.host_id); return n; })}
                     onVoce={(voce) => void dopoScelta({ host_ids: [r.host_id], stato: r.stato === "escluso" ? "escluso" : "confermato", voce })}
-                    onForza={(f, nota) => void forzatura("POST", { host_id: r.host_id, famiglia: f, nota: nota || null })}
                     onTogli={() => void forzatura("DELETE", { host_id: r.host_id })}
                   />
                 ))}
-                {device.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">Nessun device corrisponde alla ricerca.</td></tr>}
+                {device.length === 0 && <tr><td colSpan={8} className="px-3 py-4 text-center text-muted-foreground">{famigliaVista || cerca ? "Nessun device corrisponde alla ricerca." : "Nessun device a rischio in questa rete."}</td></tr>}
+                {!famigliaVista && senzaRischio > 0 && (
+                  <tr><td colSpan={8} className="bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">Altri {senzaRischio} device senza rischio: inclusi, ognuno col profilo della sua famiglia. Si aprono dalla tabella delle famiglie.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -702,10 +712,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
             <span className="flex flex-wrap items-center gap-2 text-sm">
               Restano fuori:
               {conteggio("impianti") > 0 && <Stato tono="errore">✕ {conteggio("impianti")} impianti</Stato>}
-              {conteggio("da_chiarire") > 0 && <Stato tono="avviso">▲ {conteggio("da_chiarire")} da chiarire</Stato>}
-              {somma("daRivedere") > 0 && <Stato tono="avviso">▲ {somma("daRivedere")} da rivedere</Stato>}
               {somma("esclusi") > 0 && <Stato tono="spento">● {somma("esclusi")} esclusi</Stato>}
-              {somma("inAttesa") > 0 && <Stato tono="spento">● {somma("inAttesa")} non confermati</Stato>}
             </span>
           }
         />

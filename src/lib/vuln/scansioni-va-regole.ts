@@ -138,11 +138,12 @@ export interface Cambio {
 export function cosaCambia(rete: ReteScansione, s: Scelta): Cambio {
   // Il consenso vale per il lancio immediato: una pianificata o una finestra girano senza una persona davanti.
   const consenso = s.modo === "immediata" ? rete.consenso : null;
-  if (rete.impianti > 0 && !consenso) {
-    return { tono: "impianto", testo: `✕ Impianto in rete: ${rete.impianti === 1 ? "1 host" : `${rete.impianti} host`}`, blocca: true, tocca: false };
-  }
   if (rete.attivita === "in_corso") return { tono: "in_corso", testo: "▶ In corso", blocca: true, tocca: false };
   if (rete.attivita === "in_coda") return { tono: "in_corso", testo: "… In coda", blocca: true, tocca: false };
+  // 08/11/2026 (Riccardo, tavola 40-44): una rete con impianti si scansiona, con gli impianti esclusi dalla sonda.
+  if (rete.impianti > 0 && !consenso) {
+    return { tono: "impianto", testo: `▲ ${rete.impianti === 1 ? "1 impianto escluso" : `${rete.impianti} impianti esclusi`}`, blocca: false, tocca: false };
+  }
 
   const moduliDiversi = !!rete.assessmentId && rete.assessmentId !== s.assessmentId;
   if (rete.impianti > 0 && consenso) {

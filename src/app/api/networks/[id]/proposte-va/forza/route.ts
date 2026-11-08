@@ -17,8 +17,9 @@ import { forzaProposta, leggiProposte, togliForzatura, ultimaProposta } from "@/
 type Ctx = { params: Promise<{ id: string }> };
 
 const Forza = z.object({
-  host_id: z.number().int().positive(),
-  famiglia: z.enum(["rete", "windows", "linux", "web", "periferiche"]),
+  /** Uno o più host (08/11/2026: selezione multipla). */
+  host_ids: z.array(z.number().int().positive()).min(1).max(2000),
+  famiglia: z.enum(["rete", "windows", "linux", "web", "periferiche", "da_chiarire"]),
   nota: z.string().max(300).optional().nullable(),
 });
 const Togli = z.object({ host_id: z.number().int().positive() });
@@ -43,10 +44,14 @@ export async function POST(req: Request, { params }: Ctx) {
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
     const host = new Map((getHostsByNetwork(id) as Array<HostPerProposta & { id: number }>).map((h) => [h.id, h]));
     const chi = check.user?.name ?? check.user?.email ?? "amministratore";
-    const esito = forzaProposta(id, { hostId: parsed.data.host_id, famiglia: parsed.data.famiglia, chi, nota: parsed.data.nota },
-      (hostId) => { const h = host.get(hostId); return !h || eImpianto(h); });
-    if (!esito.ok) return NextResponse.json({ error: esito.motivo }, { status: 409 });
-    return NextResponse.json(risposta(id));
+    const rifiutati: Array<{ host_id: number; motivo: string }> = [];
+    for (const hostId of parsed.data.host_ids) {
+      const esito = forzaProposta(id, { hostId, famiglia: parsed.data.famiglia, chi, nota: parsed.data.nota },
+        (x) => { const h = host.get(x); return !h || eImpianto(h); });
+      if (!esito.ok) rifiutati.push({ host_id: hostId, motivo: esito.motivo });
+    }
+    // Chi non passa lo si dice, gli altri restano scelti: una selezione mista non si butta tutta.
+    return NextResponse.json({ ...risposta(id), rifiutati });
   });
 }
 
@@ -63,3 +68,4 @@ export async function DELETE(req: Request, { params }: Ctx) {
     return NextResponse.json(risposta(id));
   });
 }
+

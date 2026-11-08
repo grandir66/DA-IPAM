@@ -87,8 +87,8 @@ function ColonnaCambio({ c, onPerDevice, comandi }: { c: Cambio; onPerDevice: ()
   if (c.tono === "impianto") {
     return (
       <span className="inline-flex items-center gap-2">
-        <Stato tono="errore">{c.testo}</Stato>
-        <button type="button" className="text-sm text-cian-testo hover:underline" onClick={onPerDevice}>Vai a Per device ›</button>
+        <Stato tono="avviso">{c.testo}</Stato>
+        <button type="button" className="text-sm text-cian-testo hover:underline" onClick={onPerDevice}>Rivedi ›</button>
         {comandi.onAutorizza && (comandi.daAggiornare
           ? <Stato tono="spento">● Sonda da aggiornare</Stato>
           : <Button size="sm" variant="outline" className="text-foreground" onClick={comandi.onAutorizza}>Autorizza gli impianti</Button>)}

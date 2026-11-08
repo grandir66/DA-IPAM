@@ -94,11 +94,15 @@ test("cosa cambia: salvare sostituisce il piano, e da finestra a orario lo dice"
   assert.equal(cosaCambia(finestra, { modo: "pianificata", assessmentId: "x" }).testo, "▲ Sostituisce il piano: la finestra si annulla");
 });
 
-test("cosa cambia: una rete con un impianto non si sceglie, in nessun modo", () => {
+// Rovesciata da Riccardo l'08/11/2026 (tavola 40-44, «anche nel profilo solo»): una rete con impianti si sceglie e si
+// scansiona con gli impianti esclusi (li toglie la sonda); la colonna lo dice. Una rete occupata resta bloccata.
+test("cosa cambia: una rete con impianti si sceglie, con gli impianti esclusi; occupata no", () => {
   for (const modo of ["immediata", "pianificata", "finestra"] as const) {
-    const c = cosaCambia(rete({ impianti: 3, attivita: "in_corso" }), { modo, assessmentId: "x" });
-    assert.equal(c.blocca, true);
-    assert.equal(c.testo, "✕ Impianto in rete: 3 host");
+    const c = cosaCambia(rete({ impianti: 3 }), { modo, assessmentId: "x" });
+    assert.equal(c.blocca, false);
+    assert.equal(c.tono, "impianto");
+    assert.equal(c.testo, "▲ 3 impianti esclusi");
+    assert.equal(cosaCambia(rete({ impianti: 3, attivita: "in_corso" }), { modo, assessmentId: "x" }).blocca, true);
   }
 });
 
@@ -262,24 +266,24 @@ test("catalogo cambiato o profilo assente: ci si ferma prima di scrivere", async
   });
 });
 
-test("freno: una rete con un impianto non si lancia né si pianifica, e le altre partono (72729, 06/11)", async () => {
+// Rovesciata da Riccardo l'08/11/2026: la rete con un impianto parte, e alla sonda non si chiede di includerlo (lo toglie
+// il freno `protetti`); prima non partiva niente per quella rete.
+test("freno: una rete con un impianto parte senza chiedere gli impianti, e anche si pianifica (08/11)", async () => {
   await withTenant(T, async () => {
     const db = getTenantDb(T);
     db.prepare("INSERT INTO hosts(network_id,ip,classification) VALUES(1,'10.0.0.77','plc')").run();
     try {
       const r = await lanciaSuReti(immediata({ reti: [1, 2] }));
       assert.ok(r.ok);
-      assert.deepEqual(r.esiti.map((e) => e.esito), ["saltata", "avviata"]);
-      assert.match(r.esiti[0].motivo ?? "", /impianto/i);
-      assert.ok(!seen.some((s) => s.body.includes("10.0.0.0/24")), "alla sonda non arriva niente per quella rete");
+      assert.deepEqual(r.esiti.map((e) => e.esito), ["avviata", "avviata"]);
+      assert.ok(!seen.some((s) => s.body.includes("\"anche_impianti\":true")), "gli impianti non si chiedono");
       seen = [];
       const f = await lanciaSuReti({
         modo: "pianificata", voce: "bilanciato", ambito: "full_subnet", reti: [1], assessment_id: ID_COMPLETO,
         frequency: "weekly", at_time: "02:00", days_of_week: [0],
       });
       assert.ok(f.ok);
-      assert.equal(f.esiti[0].esito, "saltata");
-      assert.deepEqual(chiamate(), []);
+      assert.notEqual(f.esiti[0].esito, "saltata");
     } finally {
       db.prepare("DELETE FROM hosts WHERE network_id=1").run();
     }

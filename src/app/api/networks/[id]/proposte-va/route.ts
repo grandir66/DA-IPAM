@@ -51,6 +51,8 @@ const Scelta = z.object({
   /** `riapri`: si accetta il tipo nuovo di un host «da rivedere», che torna proposto nella famiglia giusta. */
   stato: z.enum(["confermato", "escluso", "riapri"]),
   voce: z.enum(["veloce", "bilanciato", "profondo", "formale"]).optional(),
+  /** La nota della scelta, firmata con chi e quando (08/11/2026). */
+  nota: z.string().max(300).optional().nullable(),
 });
 
 export async function PATCH(req: Request, { params }: Ctx) {
@@ -63,7 +65,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Body JSON non valido" }, { status: 400 });
     if (parsed.data.stato === "riapri") return NextResponse.json({ ...riapriProposte(id, parsed.data.host_ids), ...risposta(id) });
     const chi = adminCheck.user?.name ?? adminCheck.user?.email ?? "amministratore";
-    const esito = confermaProposte(id, { hostIds: parsed.data.host_ids, stato: parsed.data.stato, voce: parsed.data.voce, chi });
+    const esito = confermaProposte(id, { hostIds: parsed.data.host_ids, stato: parsed.data.stato, voce: parsed.data.voce, chi, nota: parsed.data.nota });
     return NextResponse.json({ ...esito, ...risposta(id) });
   });
 }

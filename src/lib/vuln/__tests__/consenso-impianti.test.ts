@@ -26,14 +26,18 @@ const rete = (x: Partial<ReteScansione> = {}): ReteScansione => ({
   attivita: null, piano: null, assessmentId: null, impianti: 2, impiantiEsempi: [], ...x,
 });
 
-test("cosa cambia: senza consenso resta bloccata; il consenso sblocca solo il lancio immediato", () => {
-  assert.equal(cosaCambia(rete(), { modo: "immediata", assessmentId: "x" }).blocca, true);
+// 08/11/2026 (Riccardo, tavola 40-44): senza consenso la rete si sceglie lo stesso, con gli impianti esclusi; il
+// consenso li include solo nel lancio immediato. Prima la rete senza consenso era bloccata.
+test("cosa cambia: senza consenso si sceglie con gli impianti esclusi; il consenso li include solo nel lancio immediato", () => {
+  const senza = cosaCambia(rete(), { modo: "immediata", assessmentId: "x" });
+  assert.deepEqual([senza.tono, senza.blocca], ["impianto", false]);
+  assert.match(senza.testo, /impiant[oi] esclus[oi]/);
   const c = cosaCambia(rete({ consenso: CONSENSO }), { modo: "immediata", assessmentId: "x" });
   assert.deepEqual([c.tono, c.blocca], ["consenso", false]);
   assert.equal(c.testo, "▲ Anche 2 impianti, fino alle 15:00");
   for (const modo of ["pianificata", "finestra"] as const) {
     const p = cosaCambia(rete({ consenso: CONSENSO }), { modo, assessmentId: "x" });
-    assert.deepEqual([p.tono, p.blocca], ["impianto", true], modo);
+    assert.deepEqual([p.tono, p.blocca], ["impianto", false], modo);
   }
   assert.equal(cosaCambia(rete({ consenso: CONSENSO, attivita: "in_corso" }), { modo: "immediata", assessmentId: "x" }).blocca, true);
 });
@@ -121,11 +125,14 @@ beforeEach(() => {
   lookup = { found: true, network_id: 9, last_scan: null, consenso: null, protetti: ["10.5.0.2", "10.5.0.3"] };
 });
 
-test("lancio: senza consenso la rete con impianti si salta e non parte niente", async () => {
+// 08/11/2026: senza consenso la rete parte con gli impianti esclusi (non chiede anche_impianti); prima si saltava.
+test("lancio: senza consenso la rete con impianti parte senza chiedere gli impianti", async () => {
   await withTenant(TENANT, async () => {
     const r = await lanciaSuReti(LANCIO, "riccardo");
-    assert.equal(r.ok && r.esiti[0].esito, "saltata");
-    assert.equal(corpi.some((c) => c.url.endsWith("/scan")), false);
+    assert.equal(r.ok && r.esiti[0].esito, "avviata");
+    const scan = corpi.find((c) => c.url.endsWith("/scan"));
+    assert.ok(scan, "la scansione parte");
+    assert.notEqual(scan?.body.anche_impianti, true);
   });
 });
 
@@ -140,12 +147,14 @@ test("lancio: col consenso letto da Edge parte con anche_impianti e il nome", as
   });
 });
 
-test("lancio: pianificata mai, anche col consenso", async () => {
+// 08/11/2026: una pianificata non si salta più, ma non porta mai il consenso: gli impianti restano fuori.
+test("lancio: pianificata non si salta, e non chiede mai gli impianti anche col consenso", async () => {
   lookup.consenso = CONSENSO;
   await withTenant(TENANT, async () => {
     const l = { ...LANCIO, modo: "pianificata", frequency: "daily", at_time: "02:00" } as unknown as Lancio;
     const r = await lanciaSuReti(l, "riccardo");
-    assert.equal(r.ok && r.esiti[0].esito, "saltata");
+    assert.notEqual(r.ok && r.esiti[0].esito, "saltata");
+    assert.equal(corpi.some((c) => c.body?.anche_impianti === true), false);
   });
 });
 

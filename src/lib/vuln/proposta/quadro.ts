@@ -31,7 +31,8 @@ const NOMI_NUCLEI: Record<NucleiGruppo, string> = { gestione: "Solo web di gesti
 
 export function quadroFamiglie(righe: readonly RigaProposta[]): RigaFamiglia[] {
   const gruppi = gruppiDaConfermate(righe);
-  const famiglie: Famiglia[] = [...ORDINE, "impianti", "da_chiarire"];
+  // «da_chiarire» è anche in ORDINE (gruppo prudente, 08/11/2026): in tabella resta l'ultima riga, una volta sola.
+  const famiglie: Famiglia[] = [...ORDINE.filter((f) => f !== "da_chiarire"), "impianti", "da_chiarire"];
   return famiglie.flatMap((famiglia): RigaFamiglia[] => {
     const sue = righe.filter((r) => r.famiglia === famiglia);
     if (sue.length === 0) return [];
@@ -49,10 +50,11 @@ export function quadroFamiglie(righe: readonly RigaProposta[]): RigaFamiglia[] {
     const moduli = scheda.moduli === "completi" && profilo === "fast" ? "base" : scheda.moduli;
     return [{
       ...comuni,
-      confermati: sue.filter((r) => r.stato === "confermato" && !r.da_rivedere).length,
+      // Inclusione di serie (08/11/2026): «confermati» conta chi parte, cioè ogni riga non esclusa.
+      confermati: sue.filter((r) => r.stato !== "escluso").length,
       daRivedere: sue.filter((r) => r.da_rivedere).length,
-      esclusi: sue.filter((r) => r.stato === "escluso" && !r.da_rivedere).length,
-      inAttesa: sue.filter((r) => r.stato === "proposto" && !r.da_rivedere).length,
+      esclusi: sue.filter((r) => r.stato === "escluso").length,
+      inAttesa: sue.filter((r) => r.stato === "proposto").length,
       greenbone: NOMI_GREENBONE[profilo],
       scesa: profilo !== scheda.profile,
       nuclei: scheda.nuclei ? NOMI_NUCLEI[scheda.nuclei] : "Nessuno",

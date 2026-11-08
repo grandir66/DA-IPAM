@@ -16,7 +16,7 @@ import type { EsitoLancio } from "./lancio";
 import { parolaEsito } from "./testi-esito";
 export { quandoInParole } from "./pianificazione-parole";
 
-export const FAMIGLIE_PIANIFICABILI = ["rete", "windows", "linux", "web", "periferiche"] as const;
+export const FAMIGLIE_PIANIFICABILI = ["rete", "windows", "linux", "web", "periferiche", "da_chiarire"] as const;
 export type FamigliaPianificabile = (typeof FAMIGLIE_PIANIFICABILI)[number];
 export type Frequenza = "giornaliera" | "settimanale" | "mensile";
 export type Tono = "ok" | "avviso" | "errore" | "spento";

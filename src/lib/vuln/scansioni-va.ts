@@ -17,7 +17,7 @@ import { assessmentProfileIdSchema, type EdgeAssessmentProfile } from "@/lib/vul
 import { buildCron, describeCron, describeFinestra, slugifyJobName, type Frequency } from "@/lib/vuln/cron-builder";
 import { salvaFinestraRotta, finestraSchema } from "@/lib/vuln/finestra-rotte";
 import { SONDA_DA_AGGIORNARE } from "@/lib/vuln/finestra";
-import { MOTIVO_IMPIANTO, impiantiDellaRete, impiantiPerRete, type ImpiantiRete } from "@/lib/vuln/impianti-in-rete";
+import { impiantiDellaRete, impiantiPerRete, type ImpiantiRete } from "@/lib/vuln/impianti-in-rete";
 import {
   attivitaDaScansione,
   profiliFuoriDalleVoci,
@@ -256,26 +256,22 @@ async function lanciaSuUnaRete(scanner: ScannerAttivo, l: Lancio, greenbone: "fa
   const rete = getNetworkById(networkId);
   if (!rete) return { id: networkId, nome: `#${networkId}`, esito: "errore", motivo: "Rete non trovata" };
   const nome = rete.name || rete.cidr;
-  // Il controllo in pagina non basta. Pianificata e finestra si fermano prima di ogni chiamata alla sonda;
-  // il lancio immediato passa solo con un consenso che si rilegge da Edge, non da ciò che manda il client.
+  // 08/11/2026 (Riccardo, tavola 40-44): una rete con impianti si scansiona, e gli impianti li toglie la sonda (freno
+  // `protetti` ed elenco degli ammessi). Solo il lancio immediato con un consenso valido, riletto da Edge, li include.
   const conImpianti = impiantiDellaRete(getHostsByNetwork(rete.id)).host > 0;
-  if (conImpianti && l.modo !== "immediata") {
-    return { id: rete.id, nome, esito: "saltata", motivo: MOTIVO_IMPIANTO };
-  }
   const comuneRete = { assessmentEnabled: true, assessmentProfileId: l.assessment_id, targetingMode: l.ambito };
 
   if (l.modo === "immediata") {
     // Edge non rifiuta una seconda scansione sulla stessa rete: la metterebbe in coda.
     const { sonda, ultima, consenso } = await leggiReteSullaSonda(scanner, rete.cidr);
     if (sonda === "errore") return { id: rete.id, nome, esito: "errore", motivo: "La sonda non ha risposto" };
-    if (conImpianti && !consenso) return { id: rete.id, nome, esito: "saltata", motivo: MOTIVO_IMPIANTO };
     if (!reteLibera(ultima)) return { id: rete.id, nome, esito: "saltata", motivo: "Scansione già in corso o in coda" };
     const r = await triggerSubnetEdgeScan(rete.id, {
       ...comuneRete,
       profile: greenbone,
       syncHosts: l.sync_hosts,
       syncCredentials: l.sync_credentials,
-      ancheImpianti: conImpianti,
+      ancheImpianti: conImpianti && !!consenso,
       chi,
     });
     return r.ok ? { id: rete.id, nome, esito: "avviata" } : { id: rete.id, nome, esito: "errore", motivo: r.error };

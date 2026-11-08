@@ -20,7 +20,9 @@ after(() => {
   closeHubDb();
 });
 
-test("solo chi è confermato; un impianto e uno sconosciuto mai, nemmeno confermati", async () => {
+// Regola rovesciata da Riccardo l'08/11/2026 (tavola 40-44): prima entrava solo chi era confermato; ora entrano
+// tutti tranne gli impianti, e chi una persona esclude. Il marcatempo del 72729 (campo) resta fuori in ogni caso.
+test("di serie tutti dentro tranne gli impianti; chi è escluso a mano esce; un impianto non entra nemmeno confermato", async () => {
   await withTenant(T, async () => {
     const d = getTenantDb(T);
     const n = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.6.0.0/24', 'x')").run().lastInsertRowid);
@@ -30,12 +32,13 @@ test("solo chi è confermato; un impianto e uno sconosciuto mai, nemmeno conferm
     const marcatempo = Number(h.run(n, "10.6.0.41", "unknown", "Kronotech Srl", JSON.stringify([{ port: 3000 }])).lastInsertRowid);
     const ignoto = Number(h.run(n, "10.6.0.50", "unknown", null, null).lastInsertRowid);
     rigeneraProposte(n);
+    const ordinati = () => [...ipAmmessiDellaRete(n)].sort();
 
-    assert.deepEqual(ipAmmessiDellaRete(n), [], "senza conferme non si tocca nessuno");
-
-    confermaProposte(n, { hostIds: [pc, marcatempo, ignoto], stato: "confermato", chi: "prova" });
-    assert.deepEqual(ipAmmessiDellaRete(n), ["10.6.0.1"]);
-    assert.ok(altro > 0);
+    assert.deepEqual(ordinati(), ["10.6.0.1", "10.6.0.2", "10.6.0.50"], "di serie tutti, tranne l'impianto");
+    confermaProposte(n, { hostIds: [marcatempo], stato: "confermato", chi: "prova" });
+    confermaProposte(n, { hostIds: [altro], stato: "escluso", chi: "prova", nota: "server in manutenzione" });
+    assert.deepEqual(ordinati(), ["10.6.0.1", "10.6.0.50"]);
+    assert.ok(pc > 0 && ignoto > 0);
   });
 });
 

@@ -20,26 +20,29 @@ const riga = (famiglia: Famiglia, x: Partial<RigaProposta> = {}): RigaProposta =
   motivo: "prova", stato: "confermato", da_rivedere: 0, confermata_da: null, confermata_il: null, ...x,
 });
 
-test("impianti e da chiarire ci sono ma non sono lanciabili, anche se confermati per errore", () => {
+// Regole rovesciate da Riccardo l'08/11/2026 (tavola 40-44): conta chi parte, cioè ogni riga non esclusa; i «da
+// chiarire» sono un gruppo prudente; gli impianti restano «mai» finché non c'è il consenso (lo decide la pagina).
+test("gli impianti non sono lanciabili da qui; i «da chiarire» sì, col profilo prudente", () => {
   const q = quadroFamiglie([riga("impianti"), riga("impianti", { stato: "proposto" }), riga("da_chiarire"), riga("rete")]);
-  assert.deepEqual(q.map((f) => [f.famiglia, f.fuori, f.confermati]), [["rete", null, 1], ["impianti", "mai", 0], ["da_chiarire", "chiarire", 0]]);
+  assert.deepEqual(q.map((f) => [f.famiglia, f.fuori, f.confermati]), [["rete", null, 1], ["impianti", "mai", 0], ["da_chiarire", null, 1]]);
+  assert.equal(q.filter((f) => f.famiglia === "da_chiarire").length, 1, "una riga sola");
   assert.equal(q[1].greenbone, "mai");
-  assert.equal(q[2].device, 1);
+  assert.deepEqual([q[2].greenbone, q[2].nuclei, q[2].moduli], ["Veloce", "Nessuno", "Nessuno"]);
 });
 
-test("i conti non si sovrappongono: un da rivedere confermato non conta come confermato", () => {
+test("i conti: parte chi non è escluso, anche se non rivisto o col tipo cambiato", () => {
   const [f] = quadroFamiglie([
     riga("windows"), riga("windows", { stato: "proposto" }), riga("windows", { stato: "escluso" }),
     riga("windows", { da_rivedere: 1 }),
   ]);
-  assert.deepEqual([f.device, f.confermati, f.inAttesa, f.esclusi, f.daRivedere], [4, 1, 1, 1, 1]);
+  assert.deepEqual([f.device, f.confermati, f.inAttesa, f.esclusi, f.daRivedere], [4, 3, 1, 1, 1]);
 });
 
 test("un device più basso abbassa il gruppo, si vede ▼, e il giro completo scende col profilo", () => {
   const [f] = quadroFamiglie([riga("linux"), riga("linux", { voce: "veloce" })]);
   assert.deepEqual([f.greenbone, f.scesa, f.moduli], ["Veloce", true, "Giro minimo"]);
-  const [g] = quadroFamiglie([riga("linux"), riga("linux", { voce: "veloce", stato: "proposto" })]);
-  assert.deepEqual([g.greenbone, g.scesa, g.moduli], ["Bilanciato", false, "Giro completo"], "chi non è confermato non conta");
+  const [g] = quadroFamiglie([riga("linux"), riga("linux", { voce: "veloce", stato: "escluso" })]);
+  assert.deepEqual([g.greenbone, g.scesa, g.moduli], ["Bilanciato", false, "Giro completo"], "chi è escluso non conta");
 });
 
 test("le colonne dicono la tabella approvata", () => {

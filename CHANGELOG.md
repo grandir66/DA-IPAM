@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Tutti inclusi, a rischio da escludere, scelta firmata
+
+Riccardo (08/11): «teoricamente vale il contrario: mostrare i device a rischio con un'opzione per escluderli o inserirli, e la scelta verrà memorizzata con la firma di autorizzazione; i device IoT partono disabilitati», e un sistema «easy da gestire». Tavola oggetti 40-44 approvata; prima tappa.
+
+### Cambiato
+- **Di serie entrano tutti** i device della proposta tranne quelli esclusi a mano; gli impianti restano fuori finché non c'è il consenso. È anche l'elenco degli host che la sonda può toccare. Prima entrava solo chi una persona aveva confermato (regola del 06/11, rovesciata da Riccardo).
+- I «da chiarire» partono col profilo prudente: Greenbone Veloce, senza nuclei né moduli.
+- Una scelta vale finché una persona non la cambia: un tipo rilevato diverso mostra solo l'avviso «il sistema oggi lo vede come…».
+- «Un profilo solo»: una rete con impianti si sceglie e si scansiona con gli impianti esclusi (li toglie la sonda); prima era bloccata senza consenso.
+- Prove esistenti riscritte sulla regola nuova, ognuna col rimando alla decisione: `ammessi`, `gruppi`, `quadro`, `lancio`, `forzatura`, `scansioni-va`, `consenso-impianti`.
+
+### Aggiunto
+- Pannello 3 «Device a rischio» di serie, con caselle e barra: «Escludi», «Includi come [famiglia]», «Includi impianti…»; firma (chi, quando, nota) su ogni scelta.
+
 ## [Non rilasciato] — 2026-11-08 · DA-IPAM «tecnico» su un Mac
 
 Riccardo (08/11): il tecnico può avere macOS o Windows, e vuole «qualcosa che fosse funzionante». Su macOS DA-IPAM gira nativo: provato da questo Mac sulla rete dell'ufficio 192.168.15.0/24 contro l'hub (40 IP vivi in comune su 41, 37 MAC uguali, porte uguali sull'elenco della scoperta rapida). L'installazione la fa `host/installa-tecnico-mac.sh` di Deploy-Appliance.

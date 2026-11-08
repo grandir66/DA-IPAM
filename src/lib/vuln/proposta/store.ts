@@ -219,14 +219,17 @@ export function forzaProposta(
   if (!voce) return { ok: false, motivo: `«${ETICHETTE_FAMIGLIA[f.famiglia]}» non è una famiglia che si scansiona` };
   const r = leggiProposte(networkId).find((x) => x.host_id === f.hostId);
   if (!r) return { ok: false, motivo: "host senza proposta in questa rete" };
+  // 08/11/2026: «Includi come» vale per ogni famiglia tranne gli impianti, che passano dal consenso.
   const di = r.forzata_da_famiglia ?? r.famiglia;
-  if (di !== "da_chiarire") return { ok: false, motivo: `si forzano solo gli host «Da chiarire», questo è «${ETICHETTE_FAMIGLIA[r.famiglia]}»` };
+  if (di === "impianti" || r.famiglia === "impianti") return { ok: false, motivo: "è un impianto: si autorizza col consenso" };
   if (eImpiantoOggi(f.hostId)) return { ok: false, motivo: "è un impianto: si autorizza col consenso, non si forza" };
   const nota = f.nota?.trim().slice(0, 300) || null;
+  // Stessa famiglia della proposta: è una conferma, senza il segno di famiglia scelta.
+  const forzata = f.famiglia === di ? null : di;
   getDb().prepare(
-    `UPDATE va_proposte SET famiglia=?, voce=?, stato='confermato', da_rivedere=0, forzata_da_famiglia='da_chiarire',
+    `UPDATE va_proposte SET famiglia=?, voce=?, stato='confermato', da_rivedere=0, forzata_da_famiglia=?,
        forzata_nota=?, confermata_da=?, confermata_il=datetime('now'), aggiornata_il=datetime('now') WHERE host_id=?`,
-  ).run(f.famiglia, voce, nota, f.chi, f.hostId);
+  ).run(f.famiglia, voce, forzata, nota, f.chi, f.hostId);
   return { ok: true };
 }
 
@@ -235,7 +238,7 @@ export function togliForzatura(networkId: number, hostId: number): EsitoForzatur
   const r = leggiProposte(networkId).find((x) => x.host_id === hostId);
   if (!r?.forzata_da_famiglia) return { ok: false, motivo: "questo host non è forzato" };
   getDb().prepare(
-    `UPDATE va_proposte SET famiglia='da_chiarire', voce=NULL, stato='proposto', da_rivedere=0, forzata_da_famiglia=NULL,
+    `UPDATE va_proposte SET famiglia=forzata_da_famiglia, voce=NULL, stato='proposto', da_rivedere=0, forzata_da_famiglia=NULL,
        forzata_nota=NULL, confermata_da=NULL, confermata_il=NULL, aggiornata_il=datetime('now') WHERE host_id=?`,
   ).run(hostId);
   rigeneraProposte(networkId, undefined, new Set([hostId]));
@@ -247,6 +250,8 @@ export interface Conferma {
   stato: "confermato" | "escluso";
   voce?: IdVoce;
   chi: string;
+  /** La nota della scelta (08/11/2026: «la scelta verrà memorizzata con la firma»). */
+  nota?: string | null;
 }
 
 /** Una persona conferma o esclude. Un impianto o un host da chiarire non si conferma su un profilo. */
@@ -255,7 +260,7 @@ export function confermaProposte(networkId: number, c: Conferma): { aggiornate: 
   const righe = new Map(leggiProposte(networkId).map((r) => [r.host_id, r]));
   const scrivi = db.prepare(
     `UPDATE va_proposte SET stato=?, voce=COALESCE(?, voce), da_rivedere=0, confermata_da=?, confermata_il=datetime('now'),
-       aggiornata_il=datetime('now') WHERE host_id=?`,
+       forzata_nota=COALESCE(?, forzata_nota), aggiornata_il=datetime('now') WHERE host_id=?`,
   );
   const rifiutate: number[] = [];
   let aggiornate = 0;
@@ -266,11 +271,11 @@ export function confermaProposte(networkId: number, c: Conferma): { aggiornate: 
         rifiutate.push(id);
         continue;
       }
-      if (c.stato === "confermato" && (r.famiglia === "impianti" || (r.voce === null && !c.voce))) {
+      if (c.stato === "confermato" && (r.famiglia === "impianti" || (r.voce === null && !c.voce && r.famiglia !== "da_chiarire"))) {
         rifiutate.push(id);
         continue;
       }
-      scrivi.run(c.stato, c.voce ?? null, c.chi, id);
+      scrivi.run(c.stato, c.voce ?? null, c.chi, c.nota?.trim().slice(0, 300) || null, id);
       aggiornate++;
     }
   })();

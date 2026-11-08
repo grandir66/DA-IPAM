@@ -56,16 +56,18 @@ const SCHEDE: Partial<Record<Famiglia, Scheda>> = {
   linux: { profile: "balanced", nuclei: "standard", moduli: "completi", soloModuliAmmessi: false },
   web: { profile: "balanced", nuclei: "standard", moduli: null, soloModuliAmmessi: false },
   periferiche: { profile: "fast", nuclei: "gestione", moduli: "base", soloModuliAmmessi: false },
+  // Riccardo, 08/11/2026 (tavola 40-44): di serie si scansiona tutto; un «da chiarire» parte col profilo prudente.
+  da_chiarire: { profile: "fast", nuclei: null, moduli: null, soloModuliAmmessi: false },
 };
 
-/** La riga della tabella per una famiglia; `null` per impianti e «da chiarire», che non partono mai. */
+/** La riga della tabella per una famiglia; `null` per gli impianti, che partono solo col consenso. */
 export function schedaDiFamiglia(f: Famiglia): { profile: EdgeScanProfile; nuclei: NucleiGruppo | null; moduli: "base" | "completi" | null } | null {
   const s = SCHEDE[f];
   return s ? { profile: s.profile, nuclei: s.nuclei, moduli: s.moduli } : null;
 }
 
-/** Ordine di lancio: quello della tabella del piano. Chi non c'è qui (impianti, da_chiarire) non parte. */
-export const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche"];
+/** Ordine di lancio: quello della tabella del piano, poi i «da chiarire». Gli impianti non sono qui: gruppo a parte col consenso. */
+export const ORDINE: Famiglia[] = ["rete", "windows", "linux", "web", "periferiche", "da_chiarire"];
 
 /**
  * Per Rete e Windows si elencano i moduli AMMESSI, non quelli esclusi: una lista di esclusi fallisce
@@ -127,7 +129,8 @@ export function gruppiDaConfermate(
   for (const famiglia of ORDINE) {
     const scheda = SCHEDE[famiglia];
     if (!scheda) continue;
-    const sue = righe.filter((r) => r.famiglia === famiglia && r.stato === "confermato" && !r.da_rivedere && r.ip.trim() !== "");
+    // Inclusione di serie (08/11/2026): parte ogni riga che una persona non ha escluso; un tipo cambiato è solo un avviso.
+    const sue = righe.filter((r) => r.famiglia === famiglia && r.stato !== "escluso" && r.ip.trim() !== "");
     if (sue.length === 0) continue;
     const ips = [...new Set(sue.map((r) => r.ip.trim()))];
     let profile = scheda.profile;

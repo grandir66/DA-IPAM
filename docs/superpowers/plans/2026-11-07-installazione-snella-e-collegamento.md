@@ -112,6 +112,10 @@ Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
   - Nei primi minuti DA-IPAM ha risposto 502 perché l'aggiornamento automatico di DA-IPAM ricompilava (5 minuti, 700 MB di swap al picco), poi verde. **Da sapere**: chi apre l'appliance subito dopo l'installazione può trovare un 502 per qualche minuto.
   - L'installatore ha proposto lo storage `ZFS-LARGE-replica-replica`, il primo dell'elenco con più spazio: è una scelta della ricognizione, non della ridotta. Da guardare se è il disco giusto per il PX-NAS.
 - **`aggiorna.sh` sulla ridotta non è ancora provato**: serve una ridotta più nuova della 2026.11.92 da pubblicare. Il rifiuto di un cambio di variante è coperto dalle prove, non sul vero.
+- **Ridotta su una Debian già installata, 08/11 (piano A, Riccardo: «Sì, due sessioni»).** Deploy-Appliance PR #78 e DA-Link PR #87, non ancora unite.
+  - L'installatore (`host/installa-debian.sh`) prende l'elenco firmato della ridotta e tutti i componenti del pacchetto d'aggiornamento, poi lancia sulla Debian la preparazione della VM modello col codice della versione. Così va già con la 2026.11.92.
+  - Prova vera sul PX-NAS: VM 110 `79993-debian-prova`, Debian 13 netinst (ifupdown, senza `curl` né netplan), file d'avvio vero di DA-Link. Bozza 34 `79993-ipam-6`: DA-IPAM, Zabbix, sonda condivisa, IP cambiato da `.61` a `.7`. `da-appliance verifica` verde, anche dopo un riavvio. 9,1 GB su 38 di disco, niente Docker.
+  - Il comando per Debian di DA-Link non è ancora provato: serve `debian/installa-debian.sh` nell'elenco firmato della 2026.11.92 e DA-Link in produzione (sì di Riccardo).
 - Prove sul PX-NAS da togliere quando lo dice Riccardo: VM 106 (`79993-ipam-3`) e 107 (`79993-ipam-4`), con le loro registrazioni in DA-Link. **La VM 963 (`79993-ipam-2`) è vera e resta** (Riccardo, 08/11).
 
 ---

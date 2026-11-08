@@ -61,4 +61,4 @@ Decise il 07/11 coi consigli («Sì, procedi»):
 
 **Scostamenti.** Su richiesta di Riccardo si sono aggiunti registro per fonte e parser a giro. HP su 70151 invece che sul 72729, mai toccato. Un `.env.local` di 79993-ipam-2 caricato con la shell ha stampato un pezzo di un valore; la console UCG ha risposto 429 per troppi login di una sonda.
 
-**Consigli.** Seguire i vicini per i «non so» di 70151. `arpViaSnmp` su server Linux va in timeout a ogni giro: limitarlo agli apparati di rete se pesa. Il rientro di 70151 su `main` va deciso: ora sta su `dev` con `da-ipam-update.timer` spento.
+**Consigli.** Seguire i vicini per i «non so» di 70151. `arpViaSnmp` su server Linux va in timeout a ogni giro: limitarlo agli apparati di rete se pesa. 70151 è tornata su `main` col timer acceso l'08/11, quando `main` è salito alla 0.9.1001.

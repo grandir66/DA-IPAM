@@ -6,8 +6,9 @@
 Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come gli switch per porte e VLAN, tutte le rotte, «non perdiamo dati». Misure e tappe in `docs/superpowers/plans/2026-11-07-mappa-porte-tutti-i-dati.md`. Non si parte senza il suo ok.
 
 - [x] Ok al piano («Sì, procedi»); chiuso su `dev` 0.9.1001, consuntivo nel piano.
-- [ ] Dopo il sync delle 03:00 sull'hub: strato del controller, rotte della UDM, UDM sulla scheda nuova, PoE dei due switch.
-- [ ] 70151-ipam-2 (VM 104 di PX01) sta su `dev` con `da-ipam-update.timer` spento, Riccardo: «possiamo modificarla». Da riportare su `main` col rilascio (`systemctl enable --now da-ipam-update.timer`, `git checkout main`). Snapshot `pre-mappa-dati-20261107`.
+- [x] Dopo il sync delle 03:00 sull'hub (verifica 08/11 12:25, sola lettura sul DB): strato del controller scritto alle 03:00:03 (11 apparati, 211 porte); rotte UDM Beast 9, MK-RTR-CORE 25, SNS EVA2 32; PoE ancora presente dopo il giro delle 11:15 (SW-CED-48POE-242 48 porte, 10 erogano; SW-ING-ProMax-239 48, 23); UDM 14 porte. Calcolo della domenica: certe 93, spiegate 58, da capire 31, non so 91 (venerdì 115/73/33/106): meno apparati accesi, probabile ma non dimostrato. UDM sulla scheda nuova non vista a schermo.
+- [x] **Su `main` col sì di Riccardo** (08/11, «Porta su main lo stesso»): fast-forward `git push origin 737ae0ed:refs/heads/main`, `origin/main` = `origin/dev` = `737ae0ed` = **0.9.1001**, verificato con `git ls-remote`. Dentro anche 0.9.993-0.9.997 (consenso impianti VA, storico MAC-IP).
+- [x] 70151-ipam-2 (VM 104 di PX01, si entra con `qm guest exec 104` da `root@172.20.40.191`, che è PX01) riportata su `main` il 08/11: `main...origin/main` a `737ae0ed`, `da-ipam-update.timer` enabled e active, `/api/health` ok alla 0.9.1001. Snapshot `pre-mappa-dati-20261107` da togliere fra qualche giorno.
 - [ ] 72729: dopo, quando lo dirà Riccardo («solo dopo testeremo 72729»).
 - [ ] 79993-ipam-2: RB5009 via SSH e UCG, dopo `main`.
 - [ ] Seguire i vicini per i 5.271 «non so» di 70151.
@@ -41,7 +42,7 @@ Misurato sull'appliance (VM 963 su PX-NAS, in sola lettura) e nessuna correzione
 - [x] Bonifica sull'hub, 07/11 con il sì di Riccardo: 13.659.094 → 21.007 righe, 772 coppie invariate, ultima data di ogni coppia invariata, `quick_check` ok, DB da 3,0 GB (2,2 prima dell'indice) a 1,07 GB. Fermo circa 1 minuto. In 17 minuti dopo 0.9.996 nessuna riga nuova, con `mac_ip_mapping` che continua ad aggiornarsi.
 - [ ] Da togliere fra qualche giorno, se l'hub resta sano: snapshot `pre-bonifica-macip-20261107` di VM 533 su DA-PX-03 e `/var/tmp/da-ipam-bonifica-20261107` sull'hub (2,9 GB).
 - [x] Retention di 365 giorni nel job di pulizia (0.9.997, `cleanupOldMacIpHistory`): prova vista fallire. Sull'hub non toglie ancora nulla, la riga più vecchia è di aprile 2026.
-- [ ] Misurare `mac_ip_history` sulle appliance dei clienti prima del promote su `main`: l'indice si costruisce al primo avvio, e lì lo storico vecchio resta finché non si bonifica.
+- [-] Misurare `mac_ip_history` sulle appliance dei clienti prima del promote su `main`: saltato, Riccardo (08/11) ha scelto di promuovere lo stesso. Unico dato: 70151 aveva 433.292 righe e l'indice si è costruito senza danni. 72729 e le appliance da immagine lo costruiscono al primo avvio dopo il pull: guardare che il servizio sia tornato su e quante righe hanno; lo storico vecchio resta finché non si bonifica.
 - [ ] Da decidere: `mac_ip_mapping.ip` e `previous_ip` continuano a oscillare per i MAC con più IP; la tabella ARP mostra l'ultimo visto. La correzione tocca lo storico, non la mappa.
 
 ## 2026-11-07 — VM minimale dai clienti comandata dall'IPAM centrale (idea, in ragionamento)

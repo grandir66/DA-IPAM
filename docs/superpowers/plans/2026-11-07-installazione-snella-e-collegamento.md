@@ -99,7 +99,12 @@ Verifica: prove DA-Link verdi, una bozza vera preparata per il cliente 79993.
 - Deploy-Appliance: `"variante"` nell'elenco firmato; `installa-appliance.sh --variante`, con la snella a 4 GB e 40 GB e i moduli della piena rifiutati prima di toccare l'host. Un elenco di un'altra variante non viene ripristinato. `aggiorna.sh` rifiuta il cambio di variante. Cancello verde, 54 gruppi.
 - DA-Link: rilascio su `ULTIMO-SNELLA`; «Prova» delle due righe, con `ULTIMO` su una snella segnato rosso. La bozza sceglie la ridotta dai moduli solo se ce n'è una provata, quindi senza una ridotta pubblicata nulla cambia. La variante installata resta nella bozza per Riconfigura, Aggiorna, trunk e «Riusa». Pagina guardata coi dati finti. Cancello verde, 3138 prove.
 - Scelta fatta: niente casella «piena anche senza Edge». La variante segue i moduli, e chi aggiunge Edge dopo reinstalla con la piena, come deciso.
-- Resta: unire le PR (prima Deploy-Appliance), portare DA-Link in produzione, **pubblicare e firmare la `2026.11.91` su `ULTIMO-SNELLA` (via di Riccardo)**, poi una bozza vera per 79993 con l'installatore vero. Proxreporter acceso e `aggiorna.sh` si provano lì.
+- 08/11, fatto con i sì di Riccardo:
+  - PR unite: Deploy-Appliance #76 e DA-Link #86.
+  - DA-Link in produzione al `5ebe6f1`, con snapshot `pre-snella-20261108` della VM 109 su DA-PX-02.
+  - Ridotta **2026.11.92** costruita dal `main` di Deploy-Appliance e pubblicata. Firmata da DA-Link: `ULTIMO-SNELLA` punta alla 2026.11.92, `ULTIMO` resta 2026.10.25. La «Prova» delle due origini è ok su tutte e due le righe.
+  - Difetto trovato pubblicando: la pulizia dello specchio proteggeva solo `ULTIMO` e ha tolto la 2026.10.24. Corretto in Deploy-Appliance #77, unita.
+- Resta: una bozza vera per 79993 con l'installatore vero, e lì Proxreporter acceso e `aggiorna.sh`.
 
 ---
 

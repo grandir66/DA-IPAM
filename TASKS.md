@@ -1,6 +1,16 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Menu: voci grigie senza i loro moduli, Sicurezza del dominio unita (Riccardo)
+
+Viste sulla ridotta `79993-ipam-7`. Riccardo, 08/11: Vulnerabilità, Scansioni VA, Inventario e Applicativi grigie senza Edge e senza NIS2; Alert sicurezza grigia senza Wazuh; «Sicurezza del Dominio» e «Health Active Directory» unite su tutte le installazioni, senza perdere informazioni. Livello leggero.
+- [x] Resa proposta oggetto per oggetto (testo spento + lucchetto + motivo); Riccardo: NIS2 «si spegne da Opzioni» (resta acceso di serie)
+- [x] Prove viste fallire: `src/lib/modules/__tests__/voci-condizionate.test.ts`, `src/lib/menu/__tests__/sicurezza-dominio-unita.test.ts`
+- [x] Menu (`shared/sidebar.tsx`), pagina unita a due schede, rimando da `/active-directory?tab=health`
+- [ ] Sulla `79993-ipam-7`: spegnere NIS2 da Opzioni e guardare il menu grigio (dopo il rilascio su `main`, che decide Riccardo)
+- [ ] Riccardo (08/11), da decidere: NIS2 spento di serie sulla ridotta (oggi acceso di serie, si spegne a mano); serve che DA-IPAM sappia di essere una ridotta o che l'installatore lo spenga (Deploy-Appliance)
+- [ ] Da decidere: chiudere anche le pagine (oggi grigie solo nel menu, raggiungibili dall'indirizzo)
+
 ## 2026-11-08 — Discovery con i numeri veri e credenziali agganciate da sole alle reti (Riccardo)
 
 - [x] Misura sull'hub (sola lettura): scanner già all'ultima scansione; numeri gonfiati da Wazuh e dal conteggio per righe. Da 70.637 righe a 51.925 CVE per host

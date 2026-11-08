@@ -364,9 +364,9 @@ function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi 
           tono={k.healthAd.critici > 0 ? "guasto" : k.healthAd.alti > 0 || k.healthAd.giorni > 7 || k.healthAd.ultimoFallito ? "attenzione" : "ok"}
           titolo="Health AD" valore={`${k.healthAd.critici} critici · ${k.healthAd.alti} alti`}
           nota={`${k.healthAd.giorni === 0 ? "oggi" : `${k.healthAd.giorni} g fa`}${k.healthAd.ultimoFallito ? " · ultimo tentativo fallito" : ""}`}
-          href="/active-directory?tab=health" title={`Ultima Health riuscita, punteggio globale ${k.healthAd.punteggio ?? "—"}. Oltre 7 giorni è da rifare.${k.healthAd.ultimoFallito ? " L'ultimo tentativo è fallito." : ""}`} />
+          href="/sicurezza-dominio?tab=health" title={`Ultima Health riuscita, punteggio globale ${k.healthAd.punteggio ?? "—"}. Oltre 7 giorni è da rifare.${k.healthAd.ultimoFallito ? " L'ultimo tentativo è fallito." : ""}`} />
       ) : (
-        <CardSicurezza tono="grigio" titolo="Health AD" valore="mai eseguita" href="/active-directory?tab=health" />
+        <CardSicurezza tono="grigio" titolo="Health AD" valore="mai eseguita" href="/sicurezza-dominio?tab=health" />
       )}
     </div>
   );

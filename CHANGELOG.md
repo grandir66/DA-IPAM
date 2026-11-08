@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Menu: voci grigie senza i loro moduli · Sicurezza del dominio e Health AD in una voce
+
+Sulla ridotta `79993-ipam-7` (niente Edge, Greenbone, Wazuh nell'appliance) Riccardo ha visto voci attive che portano a pagine vuote.
+
+### Modificato
+- **Voci grigie quando manca chi le alimenta.** Riccardo (08/11): «se installata senza edge e senza nis2 la pagina Security Vulnerabilità e Scansioni VA devono essere grige e il menù inventario anche lui e anche applicativi». Senza Scanner-Edge registrato **e** con NIS2 spento, «Vulnerabilità», «Scansioni VA» e i gruppi «Inventario» e «Applicativi» sono grigi, con un lucchetto (doppio segnale, non solo il colore) e il motivo nel suggerimento; non si aprono. «Alert sicurezza» segue Wazuh: grigia se l'integrazione Wazuh non è configurata (nell'appliance, in una VM sua o del cliente: conta la configurazione). Regola in `src/lib/modules/voci-condizionate.ts`. **NIS2 resta acceso di serie**: sulla ridotta si spegne da Opzioni → «Modulo NIS2» (decisione di Riccardo dell'08/11), solo allora le voci diventano grigie. Solo il menu: le pagine restano raggiungibili dall'indirizzo.
+- **«Sicurezza del dominio» e «Health Active Directory» sono una voce sola, su tutte le installazioni.** Riccardo (08/11): «i due menù … dovrebbero essere collassati, mantenendo le informazioni». La pagina `/sicurezza-dominio` ha due schede: «Eventi dei DC» (la pagina di prima, tale e quale) e «Health AD» (la scheda che stava nella pagina Active Directory, spostata in `src/components/ad/health-active-directory.tsx` senza togliere niente, col selettore del dominio quando ce n'è più d'uno). La pagina Active Directory resta con Computer, Utenti, Gruppi e DHCP; il vecchio indirizzo `/active-directory?tab=health` (link salvati) rimanda a `/sicurezza-dominio?tab=health`, e così il riquadro «Health AD» del cruscotto. La prova `src/lib/menu/__tests__/sicurezza-dominio-unita.test.ts` cade se una sezione delle due pagine sparisce o se torna la voce doppia.
+
 ## [Non rilasciato] — 2026-11-08 · Discovery: CVE vere per host · credenziali agganciate da sole alle reti
 
 ### Corretto

@@ -9,7 +9,7 @@
  * completo degli eventi a tutta larghezza, paginato dal server).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { BookOpen, RefreshCw, Search } from "lucide-react";
@@ -99,7 +99,8 @@ function tonoEvento(e: EventoDto): { tono: ToniStato; parola: string } {
   return { tono: "da_verificare", parola: "fallito" };
 }
 
-export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
+/** `schede`: le schede della pagina unita (Eventi dei DC, Health AD), sotto l'intestazione. */
+export function SicurezzaDominioClient({ admin, schede }: { admin: boolean; schede?: ReactNode }) {
   const [dati, setDati] = useState<Risposta | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [caricando, setCaricando] = useState(true);
@@ -205,6 +206,7 @@ export function SicurezzaDominioClient({ admin }: { admin: boolean }) {
           </>
         }
       />
+      {schede}
 
       {l && (
         <BarraStato

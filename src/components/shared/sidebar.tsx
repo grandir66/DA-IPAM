@@ -48,12 +48,12 @@ import {
   Bug,
   History,
   LayoutGrid,
-  HeartPulse,
   ShieldHalf,
   Globe,
   Wifi,
   PanelLeftClose,
   PanelLeftOpen,
+  Lock,
   type LucideIcon,
   SlidersHorizontal, CalendarClock,
 } from "lucide-react";
@@ -61,6 +61,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
 import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
+import { motivoBlocco, presenzeDaModuli, type Presenze, type VoceCondizionata } from "@/lib/modules/voci-condizionate";
 import { Button } from "@/components/ui/button";
 
 type SubItem = {
@@ -73,6 +74,10 @@ type SubItem = {
   esterno?: boolean;
   /** Numero rosso accanto alla voce (es. allarmi gravi della rete osservata). */
   badge?: number;
+  /** Voce che dipende da un modulo (08/11): la regola sta in `voci-condizionate.ts`. */
+  condizione?: VoceCondizionata;
+  /** Motivo per cui la voce è grigia e non si apre; lo mette il menu dalla condizione. */
+  bloccata?: string | null;
 };
 
 const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
@@ -106,16 +111,17 @@ const networkSubItems: readonly SubItem[] = [
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ];
 
-// Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. La Health
-// di Active Directory è la scheda della pagina AD, aperta già lì. «Reti dal trunk» qui
-// dal 25/10 (Riccardo): con i rilievi della sonda passiva è una pagina di sicurezza.
+// Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. «Reti dal trunk»
+// qui dal 25/10 (Riccardo): con i rilievi della sonda passiva è una pagina di sicurezza.
+// Dall'08/11 (Riccardo) la Health di Active Directory è una scheda di «Sicurezza del dominio»:
+// una voce sola, su tutte le installazioni. Vulnerabilità, Scansioni VA e Alert sicurezza
+// diventano grigie senza il modulo che le alimenta (`condizione`).
 const sicurezzaSubItems: readonly SubItem[] = [
-  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
-  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch },
-  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
+  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert, condizione: "vulnerabilita" },
+  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch, condizione: "scansioni_va" },
+  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
   { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
   { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
-  { href: "/active-directory?tab=health", label: "Health Active Directory", icon: HeartPulse },
 ];
 
 const networkServicesSubItems: readonly SubItem[] = [
@@ -182,6 +188,26 @@ function NavItem({
   );
 }
 
+/**
+ * Voce grigia (08/11, Riccardo): manca il modulo che la alimenta. Doppio segnale, testo spento e
+ * lucchetto; non si clicca; il motivo nel suggerimento e per i lettori di schermo.
+ */
+function VoceBloccata({ label, icon: Icon, motivo }: { label: string; icon: LucideIcon; motivo: string }) {
+  return (
+    <div
+      role="link"
+      aria-disabled="true"
+      aria-label={`${label}: non disponibile. ${motivo}`}
+      title={motivo}
+      className="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-sidebar-foreground/40 cursor-not-allowed select-none"
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1">{label}</span>
+      <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+    </div>
+  );
+}
+
 /** Lista di sottovoci (riusata sia inline sia nel flyout). */
 function SubList({
   items,
@@ -195,7 +221,7 @@ function SubList({
   // Attiva solo la voce più precisa: su /patch-management/cve non anche «Panoramica»
   // (/patch-management), su /inventory/assignees non anche «Asset» (19/10).
   const migliore = items
-    .filter((i) => !i.esterno && isActive(i.href))
+    .filter((i) => !i.esterno && !i.bloccata && isActive(i.href))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   const perBrowser = useUrlPerBrowser();
   return (
@@ -209,7 +235,9 @@ function SubList({
               </p>
             </div>
           )}
-          {item.esterno ? (
+          {item.bloccata ? (
+            <VoceBloccata label={item.label} icon={item.icon} motivo={item.bloccata} />
+          ) : item.esterno ? (
             <a
               href={perBrowser(item.href)}
               target="_blank"
@@ -268,10 +296,13 @@ function NavGroup({
   collapsed,
   isActive,
   onNavigate,
+  bloccato,
 }: {
   icon: LucideIcon;
   label: string;
   items: readonly SubItem[];
+  /** Gruppo grigio (08/11): manca il modulo che lo alimenta; non si apre, mostra il motivo. */
+  bloccato?: string | null;
   open: boolean;
   setOpen: (fn: (o: boolean) => boolean) => void;
   collapsed: boolean;
@@ -292,6 +323,30 @@ function NavGroup({
   };
   const hideFlyout = () => setFlyout(null);
   const flyoutDesktop = () => collapsed && typeof window !== "undefined" && window.innerWidth >= 768;
+
+  if (bloccato) {
+    return (
+      <div className="pt-1">
+        <div
+          role="button"
+          aria-disabled="true"
+          aria-label={`${label}: non disponibile. ${bloccato}`}
+          title={collapsed ? `${label}: ${bloccato}` : bloccato}
+          className={cn(
+            ITEM_BASE,
+            "w-full text-sidebar-foreground/40 cursor-not-allowed select-none",
+            collapsed && "md:justify-center md:px-0"
+          )}
+        >
+          <span className={cn(collapsed && "md:hidden")}>
+            <Lock className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className={cn("flex-1 text-left", collapsed && "md:hidden")}>{label}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -388,8 +443,7 @@ export function Sidebar() {
     !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk"].some((h) => pathname.startsWith(h)) ||
-      (pathname === "/active-directory" && searchParams.get("tab") === "health")
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk"].some((h) => pathname.startsWith(h))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
@@ -399,9 +453,15 @@ export function Sidebar() {
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [allarmiRete, setAllarmiRete] = useState(0);
+  // Edge, NIS2 e Wazuh per le voci grigie (08/11); null = non ancora letti: niente grigio.
+  const [presenze, setPresenze] = useState<Presenze | null>(null);
   const sicurezzaItems = useMemo<SubItem[]>(
-    () => sicurezzaSubItems.map((v) => (v.href === "/arp-table/trunk" ? { ...v, badge: allarmiRete } : v)),
-    [allarmiRete],
+    () => sicurezzaSubItems.map((v) => ({
+      ...v,
+      ...(v.href === "/arp-table/trunk" ? { badge: allarmiRete } : {}),
+      ...(v.condizione ? { bloccata: motivoBlocco(v.condizione, presenze) } : {}),
+    })),
+    [allarmiRete, presenze],
   );
   // Moduli abilitati: fonte unica = registry (/api/modules). Ogni voce di menu
   // dei moduli compare SOLO se il modulo è enabled per il tenant.
@@ -423,6 +483,7 @@ export function Sidebar() {
       setEnabledModules(new Set());
       setModuliMenu([]);
       setPannelloZabbix(false);
+      setPresenze(null);
       return;
     }
     fetch("/api/modules", { cache: "no-store" })
@@ -432,6 +493,7 @@ export function Sidebar() {
         setPannelloZabbix(d?.pannelli?.zabbix === true);
         setEnabledModules(new Set(mods.filter((m) => m.enabled).map((m) => m.key)));
         setModuliMenu(mods);
+        setPresenze(d ? presenzeDaModuli(mods) : null);
       })
       .catch(() => { /* moduli off come default */ });
   }, [tenantCode]);
@@ -464,8 +526,6 @@ export function Sidebar() {
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     if (href.includes("?")) return attivaConQuery(href);
-    // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
-    if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
     // Su Scansioni VA non si accende anche «Vulnerabilità».
     if (href === "/vulnerabilities" && pathname.startsWith("/vulnerabilities/scansioni")) return false;
     // Sulle Reti dal trunk non si accende anche «Tabella ARP».
@@ -553,7 +613,7 @@ export function Sidebar() {
         {/* Sicurezza (Riccardo, 19/10 sera): Vulnerabilità, Alert sicurezza, Health AD */}
         <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
-        <NavGroup icon={Package} label="Inventario" items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        <NavGroup icon={Package} label="Inventario" bloccato={motivoBlocco("inventario", presenze)} items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
         {/* Network Services — DNS / DHCP / bridge (solo se il modulo è abilitato) */}
         {enabledModules.has("network_services") && (
@@ -561,7 +621,7 @@ export function Sidebar() {
         )}
         {/* Applicativi (Riccardo, 19/10): al posto del Launchpad a tessere e delle voci sparse
             dei moduli. Ogni prodotto con le sue pagine interne e la sua console. */}
-        <NavGroup icon={LayoutGrid} label="Applicativi" items={applicativiItems} open={applicativiOpen} setOpen={setApplicativiOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        <NavGroup icon={LayoutGrid} label="Applicativi" bloccato={motivoBlocco("applicativi", presenze)} items={applicativiItems} open={applicativiOpen} setOpen={setApplicativiOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
 
         {/* Anomalie */}

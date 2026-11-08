@@ -1,12 +1,15 @@
 import { auth } from "@/lib/auth";
-import { SicurezzaDominioClient } from "./sicurezza-dominio-client";
+import { SicurezzaDominioSchede } from "./sicurezza-dominio-schede";
 
 export const metadata = {
   title: "Sicurezza del dominio",
 };
 
-/** Eventi di sicurezza letti dai domain controller via WinRM, senza Wazuh (Riccardo, 29/10/2026). */
+/**
+ * Eventi letti dai domain controller via WinRM, senza Wazuh (Riccardo, 29/10/2026), e Health di
+ * Active Directory, scheda unita qui dalla pagina AD (Riccardo, 08/11/2026).
+ */
 export default async function SicurezzaDominioPage() {
   const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
-  return <SicurezzaDominioClient admin={ruolo === "admin" || ruolo === "superadmin"} />;
+  return <SicurezzaDominioSchede admin={ruolo === "admin" || ruolo === "superadmin"} />;
 }

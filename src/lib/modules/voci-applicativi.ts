@@ -12,6 +12,8 @@ export interface ModuloPerMenu {
   key: string;
   label: string;
   enabled: boolean;
+  /** Registrato anche se spento (per Edge: una riga in `vuln_scanners`). */
+  installed?: boolean;
   uiUrl: string | null;
   uiIsInternal: boolean;
   externalUiUrl?: string | null;

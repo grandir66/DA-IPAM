@@ -60,5 +60,7 @@ test("le famiglie collaudate in locale dicono il vero: collaudato con modelli; l
         if (d.collaudo === "collaudato") assert.ok(d.collaudati.length > 0, `${d.id}: collaudato senza modelli`);
         else assert.equal(d.collaudati.length, 0, d.id);
     }
-    assert.equal(CATALOGO.filter(d => (d.collaudo as string) === "non_collaudato").length, 0, "dopo i collaudi del 22/10 ogni famiglia ha un apparato provato");
+    // Dopo i collaudi del 22/10 ogni famiglia ha un apparato provato; `stormshield-sns` (08/11) aspetta il primo giro sull'hub:
+    // la lettura di prova fuori dal servizio non parte (credenziale nel vault di DA-Link).
+    assert.deepEqual(CATALOGO.filter(d => (d.collaudo as string) === "non_collaudato").map(d => d.id), ["stormshield-sns"]);
 });

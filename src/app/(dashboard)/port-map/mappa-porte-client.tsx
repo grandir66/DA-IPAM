@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { EthernetPort } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { BarraStato, DatoDettaglio, Etichetta, IntestazionePagina, Pannello, SchedaDettaglio, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { BarraStato, DatoDettaglio, IntestazionePagina, Pannello, SchedaDettaglio, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { LoadError } from "@/components/shared/load-error";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
@@ -15,7 +15,8 @@ import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import type { StatoCalcolo, VoceRotta, VoceSpostamento } from "@/lib/mappa-porte/calcolo";
-import type { Confidenza, DatoVlan, ModoPorta, OggettoMappa, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
+import type { Confidenza, OggettoMappa, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
+import { MODI, TabellaPorte, TIPI_PORTA } from "@/components/mappa-porte/tabella-porte";
 
 type Scheda = "oggetti" | "porte" | "rotte";
 interface Risposta<T> { righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[] }
@@ -26,15 +27,10 @@ const CONFIDENZE: Record<Confidenza, { segno: string; testo: string; classi: str
   da_capire: { segno: "○", testo: "Da capire", classi: STILE_STATO.attenzione.classi, spiega: "Più MAC senza motivo, forse uno switch non gestito, o due porte insieme" },
   non_so: { segno: "✕", testo: "Non so", classi: STILE_STATO.grigio.classi, spiega: "Visto solo su porte di passaggio: si dice il ramo, non si indovina la porta" },
 };
-const TIPI_PORTA: Record<TipoPorta, string> = {
-  passaggio: "Di passaggio", hypervisor: "Hypervisor", terminale: "Terminale", telefono_pc: "Telefono + PC", condivisa: "Condivisa", wifi: "Wifi", vuota: "Vuota",
-};
-const MODI: Record<ModoPorta, string> = { accesso: "Accesso", trunk: "Trunk", non_letto: "Non letto" };
 const TIPI_ELENCO = Object.entries(TIPI_PORTA) as Array<[TipoPorta, string]>;
 const CLASSE_SCELTA = "h-9 rounded-md border bg-background px-2 text-sm";
 
 const quando = (s: string | null | undefined): string => (s ? parseDbDate(s).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—");
-const conDedotto = (testo: string, dato: DatoVlan) => (dato === "dedotto" ? `${testo} ≈` : testo);
 
 function SegnoConfidenza({ c }: { c: Confidenza }) {
   const v = CONFIDENZE[c];
@@ -334,37 +330,6 @@ function TabellaRotte({ righe }: { righe: VoceRotta[] }) {
             <TableCell className="text-[13px]">{r.protocollo || "—"}</TableCell>
             <TableCell className="text-right font-mono text-[13px]">{r.metrica ?? "—"}</TableCell>
             <TableCell className="text-[13px]" title={`Ultima lettura ${quando(r.ultimo)}`}>{!r.presente ? "◌ non più vista" : r.attiva ? "● attiva" : "○ inattiva"}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function TabellaPorte({ righe }: { righe: PortaMappa[] }) {
-  return (
-    <Table fissa riserva={70}>
-      <TableHeader>
-        <TableRow><TableHead>Apparato</TableHead><TableHead>Porta</TableHead><TableHead>Stato</TableHead><TableHead>Tipo</TableHead><TableHead>Modo</TableHead><TableHead>PVID</TableHead><TableHead>Tagged</TableHead><TableHead>Velocità</TableHead><TableHead>PoE</TableHead><TableHead>Vicino</TableHead><TableHead className="text-right">MAC</TableHead></TableRow>
-      </TableHeader>
-      <TableBody>
-        {righe.map((p) => (
-          <TableRow key={`${p.deviceId}|${p.chiave}`}>
-            <TableCell className="max-w-44 truncate"><Link href={`/devices/${p.deviceId}`} className="hover:underline">{p.apparato}</Link></TableCell>
-            <TableCell className="max-w-56 font-mono text-[13px] whitespace-normal">
-              {p.nome}
-              {p.membri.length > 0 && <span className="block text-muted-foreground">{p.membri.join(", ")}</span>}
-              {p.stp === "blocking" && <span className={`ml-1 inline-flex rounded-md border px-1.5 py-0.5 text-[13px] leading-none font-semibold ${STILE_STATO.guasto.classi}`}>✕ STP bloccata</span>}
-            </TableCell>
-            <TableCell className="text-[13px]">{p.stato ?? "—"}</TableCell>
-            <TableCell className="text-[13px]" title={p.motivi.join(", ") || undefined}>{TIPI_PORTA[p.tipo]}</TableCell>
-            <TableCell>{p.modo === "trunk" ? <Etichetta tono="marca" mono={false}>{conDedotto(MODI.trunk, p.datoVlan)}</Etichetta> : <span className="text-[13px]">{conDedotto(MODI[p.modo], p.datoVlan)}</span>}</TableCell>
-            <TableCell className="font-mono text-[13px]">{p.pvid ?? "—"}</TableCell>
-            <TableCell className="max-w-40 truncate font-mono text-[13px]" title={p.vlanTagged.join(", ") || undefined}>{p.vlanTagged.join(", ") || "—"}</TableCell>
-            <TableCell className="font-mono text-[13px] whitespace-nowrap">{p.velocita ?? "—"}</TableCell>
-            <TableCell className="font-mono text-[13px] whitespace-nowrap">{p.poeStato ? `${p.poeStato}${p.poeMw != null ? ` ${(p.poeMw / 1000).toLocaleString("it-IT", { maximumFractionDigits: 1 })} W` : ""}` : <span className="font-sans text-muted-foreground">non letto</span>}</TableCell>
-            <TableCell className="max-w-44 truncate text-[13px]" title={p.vicino ?? undefined}>{p.vicino ?? "—"}</TableCell>
-            <TableCell className="text-right font-mono text-[13px]">{p.nMac}</TableCell>
           </TableRow>
         ))}
       </TableBody>

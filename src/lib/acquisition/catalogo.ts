@@ -6,7 +6,7 @@
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
 import { SCRIPT_WINDOWS } from "./windows-script";
-import { ARUBA_CX_COMMANDS, QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_DSM_COMMANDS, UBIQUITI_DEVICE_COMMANDS, PROXMOX_VE_COMMANDS } from "./comandi";
+import { ARUBA_CX_COMMANDS, QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_DSM_COMMANDS, UBIQUITI_DEVICE_COMMANDS, STORMSHIELD_SNS_COMMANDS, PROXMOX_VE_COMMANDS } from "./comandi";
 
 /** Le credenziali che l'archivio dell'app sa assegnare a un apparato. */
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
@@ -105,6 +105,9 @@ export const CATALOGO = [
         id: "mikrotik-routeros", versione: "1.1.0", famiglia: "router", motore: "inventario", prodotti: ["MikroTik RouterOS 7 (router e switch CRS)"],
         credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
         sezioni: ["identity", "interfaces", "vlans", "forwarding", "neighbors", "spanning_tree", "aggregation", "poe", "network", "resources", "inventory"], comandi: MIKROTIK_ROUTEROS_COMMANDS, ssh_modo: "exec",
+        // 08/11, misurato su 70151: `/interface bridge host print` dei CRS di core supera i 4 s di serie (`SSH_EXEC_TIMEOUT` su 3 di 7),
+        // e la tabella MAC del collector restava in errore a ogni giro.
+        limiti: { timeout_ms: 15000, total_timeout_ms: 180000 },
         collaudo: "collaudato", collaudati: [{ modello: "MikroTik router (12 interfacce) e switch (7 interfacce)", firmware: "RouterOS 7, versione non registrata nel repo", nota: "SwOS e access point radio non collaudati; PoE, FDB e STP per porta non ancora provati" }],
     },
     {
@@ -139,8 +142,19 @@ export const CATALOGO = [
         // Collaudato in locale (22/10): un cluster Proxmox VE di 4 nodi (88 risorse). Nell'app solo credenziali `ssh` dell'archivio; `local_ssh` è per la CLI.
         id: "proxmox-ve", versione: "1.0.0", famiglia: "hypervisor", motore: "inventario", prodotti: ["Proxmox VE (nodo e cluster visibile)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
-        sezioni: ["identity", "interfaces", "network", "resources", "inventory", "guests", "storage_pools", "cluster_nodes"], comandi: PROXMOX_VE_COMMANDS, ssh_modo: "exec",
+        sezioni: ["identity", "interfaces", "network", "resources", "inventory", "guests", "storage_pools", "cluster_nodes", "forwarding", "vlans", "aggregation"], comandi: PROXMOX_VE_COMMANDS, ssh_modo: "exec",
+        // 08/11: la tabella MAC di un nodo con molte VM e un secondo giro per ogni VM accesa non stanno nei 4 s / 90 s di serie.
+        limiti: { timeout_ms: 15000, total_timeout_ms: 240000 },
         collaudo: "collaudato", collaudati: [{ modello: "Proxmox VE, cluster di 4 nodi visibili e 88 risorse", firmware: "versione non registrata nel repo" }],
+    },
+    {
+        // Riccardo, 08/11: «gli stormshield devono essere rilevati come tali e acquisiti con porte, tabella arp, tabelle di routing,
+        // vlan». Famiglia `firewall`: niente proiezione su `switch_ports` (la Topologia non si muove), la mappa legge lo snapshot.
+        // Non collaudato: la lettura di prova dell'08/11 sull'hub non è partita fuori dal servizio (credenziale nel vault di DA-Link).
+        id: "stormshield-sns", versione: "1.0.0", famiglia: "firewall", motore: "inventario", prodotti: ["Stormshield SNS (NS-BSD)"],
+        credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
+        sezioni: ["identity", "interfaces", "network", "vlans", "aggregation"], comandi: STORMSHIELD_SNS_COMMANDS, ssh_modo: "exec",
+        collaudo: "non_collaudato", collaudati: [],
     },
     {
         // Collaudato in locale (22/10): due console UniFi OS con API key (17 e 11 apparati). Resta separato dai device diretti.

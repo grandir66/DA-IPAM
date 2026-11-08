@@ -45,6 +45,7 @@ import { canonicalizza, type Canonica } from "./classification/canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
 import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
+import { convertiStormshieldFirewall, SEGNO_STORMSHIELD_FIREWALL } from "./devices/migra-stormshield-firewall";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
@@ -2805,6 +2806,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V21} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // Ogni Stormshield è un firewall (08/11): una volta sola, elenco per nome nel log prima di scrivere.
+  try {
+    const esito = convertiStormshieldFirewall(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (esito.eseguita && esito.convertiti > 0) console.info(`[db-tenant] ${tenantCode}: ${SEGNO_STORMSHIELD_FIREWALL}, corretti ${esito.convertiti} apparati`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_STORMSHIELD_FIREWALL} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
   }
 
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
@@ -6491,6 +6499,19 @@ export function getControllerDevicePortNames(): {
       )
       .all() as Array<{ device_id: number; port_index: number; port_name: string }>,
   };
+}
+
+/**
+ * Client del controller visti dal loro gateway (08/11): nel registro della Mappa porte come una voce ARP, che si accumula e
+ * non si perde (stessa regola di `aggiornaRegistri`). Schema senza il registro: niente scritto, la lettura dei client va avanti.
+ */
+export function registraVistiMappaPorte(righe: ReadonlyArray<{ device_id: number; mac: string; ip: string; interfaccia: string | null }>, quando: string): number {
+  const d = db();
+  if (righe.length === 0 || !d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mappa_porte_visti'").get()) return 0;
+  const ins = d.prepare(`INSERT INTO mappa_porte_visti (mac, ip, device_id, interfaccia, primo, ultimo) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(mac, ip, device_id) DO UPDATE SET interfaccia = COALESCE(excluded.interfaccia, interfaccia), ultimo = MAX(ultimo, excluded.ultimo)`);
+  for (const r of righe) ins.run(r.mac, r.ip, r.device_id, r.interfaccia, quando, quando);
+  return righe.length;
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {

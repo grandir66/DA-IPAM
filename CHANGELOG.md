@@ -13,6 +13,21 @@ Piano profili per device, Passo 6. Riccardo (08/11, «Sì a tutte»): all'ora fi
 - **Una sola pianificazione per rete**: salvare «Per device» su una rete con «Un profilo solo» chiede di spegnere quella; salvare «Un profilo solo» spegne «Per device» e lo dice nell'esito.
 - Le pianificazioni compaiono in Schedulazioni. Non viaggiano con l'esportazione: su un'altra installazione partirebbero da sole.
 
+## [Non rilasciato] — 2026-11-08 · Mappa porte: hypervisor come switch, Stormshield come firewall, tutto ciò che sa il controller
+
+Riccardo ha chiesto se la mappa prendesse tutti i dati che gli accessi già configurati permettono. Il censimento sull'hub ha detto di no: i Proxmox, lo SNS EVA2 (registrato `server`) e la UDM restavano fuori dal giro dei parser, e degli switch letti solo dal controller si usava la VLAN nativa ma non le tagged. Durante il lavoro ha aggiunto: «gli hypervisor devono essere trattati come switch per le porte», «gli stormshield devono essere rilevati come tali e acquisiti con porte, tabella arp, tabelle di routing, vlan», «acquisire dai controller anche i client collegati e dove sono collegati».
+
+### Aggiunto
+- **Proxmox come uno switch.** Il collector `proxmox-ve` legge anche la tabella MAC dei bridge (`bridge -j fdb show`), le VLAN (`bridge -j vlan show`, interfacce `bond0.40`, `tag=` delle VM) e l'ARP del nodo (`ip -j neigh show`), tutti in sola lettura. L'interno del firewall di Proxmox (`fwbr`, `fwln`) non si mostra: la VM sta sulla sua porta `fwprNNNpM` o `tapNNNiM`. Il giro dei parser prende gli hypervisor. Nella mappa la VM su quella porta è «certa»; la porta dello switch verso il nodo resta «hypervisor», perché i MAC del nodo non ne fanno un passaggio.
+- **Tab «Porte» nella scheda dell'hypervisor**, dalla Mappa porte e non da `switch_ports`: la Topologia non riceve le porte del nodo. La tabella delle porte è un componente unico, condiviso con la pagina `/port-map`.
+- **Collector `stormshield-sns`** (non collaudato): porte, VLAN col padre, aggregati `lagg` e ARP da `ifconfig -a` e `arp -an` di FreeBSD; l'indice di porta e il ripiego restano a SNMP. Famiglia `firewall`, nessuna proiezione su `switch_ports`. Le rotte le dava già il giro SNMP.
+- **Dal controller UniFi**, senza un login in più: la matrice VLAN degli switch letti solo dal controller (nativa e tagged da `tagged_vlan_mgmt`/`excluded_networkconf_ids`), scritta solo dove SNMP, collector o MikroTik non hanno una fotografia; i client col loro IP diventano l'ARP visto dal gateway, nel registro della mappa; un client cablato senza `sw_mac` si colloca con `last_uplink_mac`/`last_uplink_remote_port`; il resoconto della lettura dice perché un client non ha trovato posto.
+
+### Cambiato
+- **Ogni Stormshield è un firewall.** Conversione una tantum (`device_type_stormshield`, elenco per nome nel log prima di scrivere) e `firewall` alla creazione col profilo Stormshield. Il giro dei parser prende uno Stormshield qualunque tipo abbia.
+- **MikroTik: ARP via SSH quando quello via SNMP è a metà** (MK-RTR-CORE sull'hub andava in `SNMP_TIMEOUT` a ogni giro).
+- **MikroTik e Proxmox: 15 s per comando invece di 4.** Su 70151 la tabella MAC del collector andava in `SSH_EXEC_TIMEOUT` su 3 MikroTik di core su 7; un nodo Proxmox con molte VM fa un secondo giro per ognuna.
+
 ## [Non rilasciato] — 2026-11-08 · CVE potenziali dalle versioni dei servizi (spente di serie)
 
 Piano `daipam-cve-locali`, deciso da Riccardo il 07/09. Molti clienti non hanno Greenbone, ma nmap legge già quale software gira sulle porte: le CVE note si deducono in casa, senza mandare l'inventario software dei clienti a terzi (ADR 0036).

@@ -87,7 +87,8 @@ test("lettura riuscita: cablato sulla porta dello switch, wireless sull'AP («wi
 
   const r = await w(() => syncUnifiClientsForController(v.id, "manual", { clientOptions: { transportFactory: factory } }));
 
-  assert.deepEqual(r, { ok: true, clients: 3, saved: 2, unmatched: 1, failure: null });
+  // 08/11: il resoconto dice anche perché un client non ha trovato posto, e quanti sono stati visti dal gateway.
+  assert.deepEqual(r, { ok: true, clients: 3, saved: 2, unmatched: 1, failure: null, motivi: { "cablato senza apparato UniFi a monte": 1 }, visti: 0 });
   assert.deepEqual(
     calls.map((c) => `${c.method} ${c.path}`),
     ["GET /proxy/network/api/s/default/stat/sta"],

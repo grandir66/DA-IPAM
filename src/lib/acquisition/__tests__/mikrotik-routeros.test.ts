@@ -110,3 +110,18 @@ test("router senza PoE (collaudo CCR): «non presente», non formato non riconos
     const e1 = s.interfaces.data.find(i => i.name === "ether1")!;
     assert.deepEqual([e1.speed_bps, e1.duplex, e1.oper_status], [1e9, "full", "up"]);
 });
+
+test("ARP via SNMP a metà (timeout): vince quello via SSH, gli indirizzi restano di SNMP (MK-RTR-CORE sull'hub, 08/11)", async () => {
+    const ok = <T>(data: T) => ({ status: "ok" as const, data, warnings: [] as string[] });
+    const t: AcquisitionTransports = {
+        get: async () => ok([{ oid: "1.3.6.1.2.1.1.5.0", type: "OctetString", value: "rtr-lab" }]),
+        walk: async (oid) => oid === "1.3.6.1.2.1.4.22.1" ? { status: "partial" as const, data: [], warnings: ["SNMP_TIMEOUT"] }
+            : oid === "1.3.6.1.2.1.4.20.1" ? ok([{ oid: "1.3.6.1.2.1.4.20.1.1.192.0.2.2", type: "IpAddress", value: "192.0.2.2" }, { oid: "1.3.6.1.2.1.4.20.1.2.192.0.2.2", type: "Integer", value: 3 }]) : ok([]),
+        shell: async c => Object.fromEntries(c.map(x => [x, ok(MIKROTIK_USCITE[x] ?? "")])),
+    };
+    const s = await collectDevice({ ...FIXTURE["mikrotik-routeros"].richiesta, snmp: { community: "lab", version: "2c", port: 161 } }, t);
+    assert.deepEqual(s.network.data.ipv4_addresses.map(a => a.address), ["192.0.2.2"]);
+    assert.deepEqual(s.network.data.arp.map(a => [a.address, a.mac]), [["192.0.2.50", "02:00:00:00:30:01"]]);
+    assert.ok(s.network.warnings.includes("ARP_FROM_SSH_SNMP_INCOMPLETE") && !s.network.warnings.includes("SNMP_TIMEOUT"));
+    assert.ok(s.network.sources.includes("ssh:/ip arp print terse without-paging"));
+});

@@ -146,3 +146,12 @@ test("una voce ARP uscita dal router resta in mappa; una rotta sparita resta col
     assert.deepEqual(r.map((x) => [x.destinazione, x.presente]), [["198.51.100.0/24", false], ["203.0.113.0/24", true]]);
   });
 });
+
+test("il giro prende anche hypervisor e Stormshield registrato come server; non gli spenti né i PC in winrm", async () => {
+  const { daLeggereNelGiro } = await import("@/lib/mappa-porte/giro-parser");
+  assert.equal(daLeggereNelGiro({ enabled: 1, device_type: "hypervisor", vendor: "proxmox", protocol: "ssh" }), true);
+  assert.equal(daLeggereNelGiro({ enabled: 1, device_type: "server", vendor: "stormshield", protocol: "ssh" }), true);
+  assert.equal(daLeggereNelGiro({ enabled: 0, device_type: "switch", vendor: "ubiquiti", protocol: "api" }), false);
+  assert.equal(daLeggereNelGiro({ enabled: 1, device_type: "switch", vendor: "windows", protocol: "winrm" }), false);
+  assert.equal(daLeggereNelGiro({ enabled: 1, device_type: "server", vendor: "linux", protocol: "ssh" }), false);
+});

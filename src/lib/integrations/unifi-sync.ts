@@ -66,6 +66,8 @@ import {
   schemaCaviPresente,
   scriviFattiTopologia,
   scriviVlanNativaSwitch,
+  scriviVlanSwitch,
+  leggiVlanSwitchDb,
   setNetworkDeviceControllerFacts,
   setUplinkCavi,
   updateNetworkDevice,
@@ -80,7 +82,7 @@ import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
 import type { UnifiDevice } from "./unifi-device";
 import type { UnifiDevicesAndNetworks } from "./unifi-api";
-import { rotteDelGateway, vlanDelleReti, vlanNativePorte } from "./unifi-reti";
+import { fotografiaVlanController, rotteDelGateway, vlanDelleReti, vlanNativePorte, type UnifiRete } from "./unifi-reti";
 import { mapUnifiDeviceType } from "./unifi-map";
 import {
   buildUnifiMacIndex,
@@ -435,9 +437,28 @@ function scriviNative(deviceId: number, d: UnifiDevice, vlanDi: ReadonlyMap<stri
   }
 }
 
+/**
+ * 08/11 (Riccardo: gli switch che non rispondono a SNMP né a SSH «sono dentro al controller, che ha le informazioni»): la
+ * matrice VLAN dell'apparato dal `port_table`, native e tagged (`fotografiaVlanController`), nella stessa fotografia di SNMP
+ * con `tabella = controller`. Solo dove nessun'altra fonte ha già una fotografia (SNMP, collector, MikroTik): quella vince
+ * e il controller non la riscrive a ogni giro. Solo apparati connessi, mai gli AP.
+ */
+function scriviVlanController(deviceId: number, d: UnifiDevice, reti: ReadonlyArray<UnifiRete>, result: UnifiSyncResult): void {
+  if (d.type === "uap" || d.state !== 1) return;
+  try {
+    const tabella = leggiVlanSwitchDb(deviceId).lettura?.tabella ?? null;
+    if (tabella !== null && tabella !== "controller" && tabella !== "nessuna") return;
+    const f = fotografiaVlanController(d, reti);
+    if (!f) return;
+    scriviVlanSwitch(deviceId, { ...f, tabella: "controller", mappa_porte: "ifindex", ordine_bit: "standard", porte_senza_mappa: 0, letture: 1, riuscite: 1, codice: null, codici: {}, esito: "letto" });
+  } catch (e) {
+    result.errors.push(`apparato #${deviceId}: VLAN del controller non scritte (${codiceErrore(e)})`);
+  }
+}
+
 type RotteGateway = ReturnType<typeof rotteDelGateway>;
 
-function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: ReadonlyMap<string, number> | null = null, rotteGateway: RotteGateway = []): void {
+function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: ReadonlyMap<string, number> | null = null, rotteGateway: RotteGateway = [], reti: ReadonlyArray<UnifiRete> | null = null): void {
   // T2: l'interruttore e lo schema si leggono una volta per giro, lo stesso valore per tutti gli apparati. Accesa senza
   // lo schema nuovo non si scrive niente di nuovo, e il resoconto lo dice (spec §13.5.7, «Se la migrazione non riesce»).
   const accesa = letturaAccesa("controller");
@@ -493,6 +514,7 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: R
 
     claimed.add(out.device.id);
     if (vlanDi) scriviNative(out.device.id, d, vlanDi, result);
+    if (vlanDi && reti) scriviVlanController(out.device.id, d, reti, result);
     // Il gateway: reti e rotte statiche del controller. Solo connesso, e mai vuote: una lettura mancata non cancella.
     if (rotteGateway.length > 0 && d.state === 1 && mapUnifiDeviceType(d.type) === "router") upsertRoutes(out.device.id, rotteGateway);
     // Il controller dà l'IP WAN del gateway: senza host resta sulla pagina vecchia, senza porte né VLAN. Si collega l'host col suo MAC.
@@ -554,6 +576,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
   let devices: UnifiDevice[];
   let vlanDi: Map<string, number> | null = null;
   let rotteGateway: RotteGateway = [];
+  let reti: UnifiRete[] | null = null;
   try {
     if (conReti) {
       const r = await source.listDevicesWithNetworks!();
@@ -561,7 +584,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
       if (r.networks) rotteGateway = rotteDelGateway(r.networks, r.routes ?? []);
       // Un elenco vuoto, o senza nessuna rete di porta, è un «non so» come un errore: scriverlo cancellerebbe le native.
       const mappa = r.networks && r.networks.length > 0 ? vlanDelleReti(r.networks) : null;
-      if (mappa && mappa.size > 0) vlanDi = mappa;
+      if (mappa && mappa.size > 0) { vlanDi = mappa; reti = r.networks ?? null; }
       else {
         const motivo = r.networks ? "elenco delle reti vuoto o senza reti di porta" : (r.networksError ?? "motivo ignoto");
         result.errors.push(`Reti del controller non lette: VLAN native degli switch non aggiornate (${motivo})`);
@@ -587,7 +610,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
   }
 
   try {
-    writeDevices(devices, result, vlanDi, rotteGateway);
+    writeDevices(devices, result, vlanDi, rotteGateway, reti);
   } catch (e) {
     result.errors.push(`Sync UniFi interrotta: ${errorMessage(e)}`);
   }

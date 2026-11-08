@@ -62,6 +62,7 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
   // Un hypervisor Linux senza indizi di Proxmox resta all'acquisizione di sempre: qui sarebbe un server qualunque.
   if (vendor === "linux") return a.device_type === "hypervisor" ? [] : ["linux"];
   if (vendor === "synology") return ["synology-dsm"];
+  if (vendor === "stormshield" || profilo === "stormshield_firewall") return ["stormshield-sns"];
   if (vendor === "mikrotik") return profilo === "mikrotik_other" || /\bSwOS\b/i.test(testo) ? [] : ["mikrotik-routeros"];
   if (vendor === "ubiquiti") return ["ubiquiti_access_point", "ubiquiti_switch_managed", "ubiquiti_switch_base"].includes(profilo) ? ["ubiquiti-device"] : [];
   if (/\bnetapp\b|\bontap\b/i.test(testo)) return ["netapp-ontap"];

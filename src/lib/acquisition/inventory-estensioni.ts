@@ -17,6 +17,8 @@ import { parseInfoPacchetti, parseSynoshareEnum } from "./synology-nas-parsers";
 import { COMANDI_DMI, cmdAbbonamentoNodo, cmdAgentVm, cmdReportNodo, cmdStatoNodo, nodoLocale, nomeNodoValido, parseAbbonamentoNodo, parseConfigurazioniGuest, parseDmi, parseIpAgent, parseReportNodo, parseRisorseCluster, parseStatoNodo } from "./proxmox-parsers";
 import { parseArp, parseIndirizzi, parseMonitorEthernet, parseMonitorPoe } from "./mikrotik-routeros-parsers";
 import type { AcquisitionSnapshot, ReadResult } from "./schema";
+import { parseArpFreebsd, parseIfconfigFreebsd } from "./stormshield-parsers";
+import { aggregatiProxmox, interfacceProxmox, parseFdbProxmox, parseLinkProxmox, parseNeighProxmox, vlanProxmox } from "./proxmox-rete";
 
 export type Lettore = (comando: string) => ReadResult<string>;
 const testo = (r: ReadResult<string>) => (r.status === "ok" ? r.data : "");
@@ -102,6 +104,16 @@ export function estendiMikrotik(s: AcquisitionSnapshot, leggi: Lettore): void {
         s.network = sez({ ipv4_addresses: indV.dati.map(a => ({ address: a.address, netmask: a.netmask, if_index: null })), arp: arpV.dati.map(a => ({ address: a.address, mac: a.mac, if_index: null, type: a.type })) },
             indV.capita && arpV.capita ? "ok" : indV.capita || arpV.capita ? "partial" : statoLettura(ind, false),
             [fonte("/ip address print terse without-paging"), fonte("/ip arp print terse without-paging")], [...ind.warnings, ...arp.warnings, ...ignoto(ind, indV.capita), ...ignoto(arp, arpV.capita), "INTERFACE_NAMES_NOT_INDEXED"]);
+    } else if (s.network.status !== "ok") {
+        // L'ARP via SNMP a metà (MK-RTR-CORE sull'hub, 08/11: `SNMP_TIMEOUT` a ogni giro): quello via SSH, se letto, lo sostituisce.
+        // Gli indirizzi restano quelli di SNMP.
+        const arp = r("/ip arp print terse without-paging"), arpV = voci(arp, parseArp);
+        if (arpV.capita && arpV.dati.length > 0) {
+            const indice = new Map(s.interfaces.data.map(i => [i.name, i.if_index]));
+            s.network = sez({ ipv4_addresses: s.network.data.ipv4_addresses, arp: arpV.dati.map(a => ({ address: a.address, mac: a.mac, if_index: a.interfaccia ? indice.get(a.interfaccia) ?? null : null, type: a.type })) },
+                s.network.data.ipv4_addresses.length ? "ok" : "partial", [...s.network.sources.filter(x => !x.includes("ipNetToMedia")), fonte("/ip arp print terse without-paging")],
+                [...s.network.warnings.filter(w => w !== "SNMP_TIMEOUT"), "ARP_FROM_SSH_SNMP_INCOMPLETE"]);
+        }
     }
 
     // Velocità e duplex dal monitor ethernet, PVID dalle porte del bridge: solo dove l'interfaccia non li ha già.
@@ -244,5 +256,73 @@ export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Let
         // Agent spento o non installato è normale: non declassa la sezione, ma si dichiara.
         if (senza || acceso.length > MAX_VM_AGENT) guests.warnings.push("GUEST_IP_ADDRESSES_PARTIAL");
         guests.sources = [...guests.sources, fonte("pvesh get /nodes/<nodo>/qemu/<vmid>/agent/network-get-interfaces")];
+    }
+}
+
+const CMD_LINK = "ip -d -j link show", CMD_FDB = "bridge -j fdb show", CMD_VLAN = "bridge -j vlan show", CMD_NEIGH = "ip -j neigh show";
+/**
+ * Proxmox come uno switch (Riccardo, 08/11): porte dei bridge senza l'interno del firewall, aggregati, tabella MAC, VLAN e
+ * ARP del nodo (`proxmox-rete.ts`). Va chiamata dopo `estendiProxmox`: il `tag=` delle VM sta nei guest. Una lettura mancata
+ * lascia la sezione com'era, dichiarata, mai «vuota e ok».
+ */
+export function estendiReteProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
+    const lr = leggi(CMD_LINK), link = lr.status === "ok" ? parseLinkProxmox(lr.data) : null;
+    if (!link) return;
+    s.interfaces = sez(interfacceProxmox(link), "partial", [fonte(CMD_LINK)], [...lr.warnings, "SPEED_NOT_COLLECTED", "FIREWALL_BRIDGE_INTERNALS_OMITTED"]);
+    s.aggregation = sez(aggregatiProxmox(link), "ok", [fonte(CMD_LINK)], ["BOND_MODE_NOT_COLLECTED"]);
+    const fr = leggi(CMD_FDB), fdb = fr.status === "ok" ? parseFdbProxmox(fr.data, link) : null;
+    s.forwarding = fdb ? sez(fdb, "ok", [fonte(CMD_FDB)], fr.warnings) : sez([], fr.status === "ok" ? "partial" : fr.status, [fonte(CMD_FDB)], [...fr.warnings, ...(fr.status === "ok" ? ["FORMAT_UNRECOGNIZED_OR_EMPTY"] : [])]);
+    const vr = leggi(CMD_VLAN);
+    s.vlans = sez(vlanProxmox(link, vr.status === "ok" ? vr.data : "", s.guests), vr.status === "ok" ? "ok" : "partial", [fonte(CMD_VLAN), fonte(CMD_LINK), fonte(CMD_QEMU), fonte(CMD_LXC)], [...vr.warnings, ...(vr.status === "ok" ? [] : ["BRIDGE_VLAN_NOT_READ"])]);
+    const nr = leggi(CMD_NEIGH), arp = nr.status === "ok" ? parseNeighProxmox(nr.data, link) : null;
+    if (arp) s.network = sez({ ipv4_addresses: s.network.data.ipv4_addresses, arp }, s.network.data.ipv4_addresses.length ? "ok" : "partial", [...s.network.sources, fonte(CMD_NEIGH)], s.network.warnings.filter((w) => w !== "ARP_NOT_COLLECTED"));
+    else s.network.warnings = [...s.network.warnings, ...nr.warnings, "ARP_NOT_READ"];
+}
+
+const CMD_IFCONFIG = "ifconfig -a", CMD_ARP_BSD = "arp -an";
+const SISTEMA_BSD = /^(?:lo|pflog|pfsync|enc|gif|stf)\d*$/;
+/**
+ * Stormshield SNS (Riccardo, 08/11): porte, VLAN, aggregati e ARP da `ifconfig -a` e `arp -an` (`stormshield-parsers.ts`).
+ * L'SNMP resta dov'è: l'indice di porta viene da lì (stesso nome), e se SSH non risponde la sezione SNMP non si tocca.
+ */
+export function estendiStormshield(s: AcquisitionSnapshot, leggi: Lettore): void {
+    const ir = leggi(CMD_IFCONFIG), ifs = ir.status === "ok" ? parseIfconfigFreebsd(ir.data) : null;
+    if (ifs) {
+        const daSnmp = new Map(s.interfaces.data.map((i) => [i.name, i]));
+        const visibili = ifs.filter((i) => !SISTEMA_BSD.test(i.nome));
+        s.interfaces = sez(visibili.map((i) => {
+            const x = daSnmp.get(i.nome);
+            const kind: "physical" | "aggregate" | "other" = /^lagg\d+$/.test(i.nome) ? "aggregate" : i.vlanId != null || /^(?:bridge|tun|gre|vlan|ipsec|sslvpn)/.test(i.nome) ? "other" : "physical";
+            return {
+                name: i.nome, if_index: x?.if_index ?? null, description: i.descrizione ?? x?.description ?? null, kind, admin_status: i.su ? "up" : "down",
+                oper_status: i.collegata === null ? (x?.oper_status ?? null) : i.collegata ? "up" : "down", speed_bps: i.velocitaBps ?? x?.speed_bps ?? null,
+                reported_speed_bps: i.velocitaBps ?? x?.reported_speed_bps ?? null, duplex: i.duplex ?? x?.duplex ?? null, mtu: i.mtu, mac: i.mac ?? x?.mac ?? null, counters: x?.counters ?? {}, pvid: null,
+            };
+        }), "partial", [fonte(CMD_IFCONFIG), ...s.interfaces.sources], ["SYSTEM_INTERFACES_OMITTED", ...(daSnmp.size ? [] : ["IF_INDEX_FROM_SNMP_ONLY"])]);
+        const perVlan = new Map<number, { padri: Set<string>; nomi: string[] }>();
+        for (const i of visibili) {
+            if (i.vlanId == null || i.vlanId < 1 || i.vlanId > 4094) continue;
+            const v = perVlan.get(i.vlanId) ?? { padri: new Set<string>(), nomi: [] };
+            if (i.padre) v.padri.add(i.padre);
+            v.nomi.push(i.descrizione ?? i.nome);
+            perVlan.set(i.vlanId, v);
+        }
+        s.vlans = sez([...perVlan.entries()].sort((a, b) => a[0] - b[0]).map(([id, v]) => ({ id, name: v.nomi.join(", "), description: null, tagged_ports: [...v.padri].sort(), untagged_ports: [], forbidden_ports: [] })),
+            "ok", [fonte(CMD_IFCONFIG)], ["VLAN_FROM_LOGICAL_INTERFACES"]);
+        s.aggregation = sez(visibili.filter((i) => /^lagg\d+$/.test(i.nome)).map((i) => ({ name: i.nome, protocol: null, admin_status: i.su ? "up" : "down", oper_status: null, members: i.membri })), "ok", [fonte(CMD_IFCONFIG)], []);
+        if (!s.network.data.ipv4_addresses.length) {
+            s.network = sez({ ipv4_addresses: visibili.flatMap((i) => i.indirizzi.map((a) => ({ address: a.ip, netmask: a.maschera, if_index: daSnmp.get(i.nome)?.if_index ?? null }))), arp: s.network.data.arp }, "partial", [...s.network.sources, fonte(CMD_IFCONFIG)], s.network.warnings);
+        }
+    } else if (ir.status !== "ok" || ir.data.trim()) {
+        s.interfaces.warnings = [...s.interfaces.warnings, ...ir.warnings, "IFCONFIG_NOT_READ"];
+    }
+    // ARP via SSH col nome dell'interfaccia; se non c'è resta quello di SNMP.
+    const ar = leggi(CMD_ARP_BSD), arp = ar.status === "ok" ? parseArpFreebsd(ar.data) : null;
+    if (arp && arp.length > 0) {
+        const indice = new Map(s.interfaces.data.map((i) => [i.name, i.if_index]));
+        s.network = sez({ ipv4_addresses: s.network.data.ipv4_addresses, arp: arp.map((a) => ({ address: a.ip, mac: a.mac, if_index: a.interfaccia ? indice.get(a.interfaccia) ?? null : null, type: a.permanente ? "permanent" : "dynamic" })) },
+            s.network.data.ipv4_addresses.length ? "ok" : "partial", [...s.network.sources.filter((x) => !x.includes("ipNetToMedia")), fonte(CMD_ARP_BSD)], s.network.warnings.filter((w) => w !== "ARP_NOT_COLLECTED"));
+    } else if (!arp) {
+        s.network.warnings = [...s.network.warnings, ...ar.warnings, "ARP_SSH_NOT_READ"];
     }
 }

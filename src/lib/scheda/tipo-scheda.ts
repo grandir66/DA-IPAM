@@ -138,7 +138,8 @@ function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
   if (t === "router" || t === "firewall") return ["panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "stampante") return ["panoramica", "materiali", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
-  if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];
+  // Porte come uno switch (Riccardo, 08/11): dalla Mappa porte, dopo la Rete del nodo.
+  if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", "porte", ...TAB_COMUNI];
   if (t === "server_windows") {
     return [
       "panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti",

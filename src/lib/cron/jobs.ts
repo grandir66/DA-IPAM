@@ -930,7 +930,8 @@ export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<Ru
     // fotografia del collector, che le VLAN le ha lette via SSH (70151, 22/10). Una lettura con le tabelle sì.
     if (l.tabella === "nessuna") {
       const c = leggiVlanSwitchDb(device.id);
-      if (c.lettura?.tabella === "collector") {
+      // Lo stesso per la fotografia del controller UniFi (08/11): native e tagged dal `port_table`, che SNMP senza tabelle non ha.
+      if (c.lettura?.tabella === "collector" || c.lettura?.tabella === "controller") {
         return { valore: c.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
       }
     }

@@ -49,6 +49,7 @@ import { VmHypervisor } from "./tipi/hypervisor/vm";
 import { NodiHypervisor } from "./tipi/hypervisor/nodi";
 import { StorageHypervisor } from "./tipi/hypervisor/storage";
 import { ReteHypervisor } from "./tipi/hypervisor/rete";
+import { PorteHypervisor } from "./tipi/hypervisor/porte";
 import { PanoramicaWindows } from "./tipi/server/panoramica-windows";
 import { PanoramicaLinux } from "./tipi/server/panoramica-linux";
 import { SistemaServer } from "./tipi/server/sistema";
@@ -115,6 +116,7 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
     nodi: { render: (c) => <NodiHypervisor ctx={c} /> },
     storage_px: { render: (c) => <StorageHypervisor ctx={c} /> },
     rete_px: { render: (c) => <ReteHypervisor ctx={c} /> },
+    porte: { render: (c) => <PorteHypervisor ctx={c} /> },
   },
   server_windows: {
     ...TAB_SERVER,

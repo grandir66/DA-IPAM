@@ -101,8 +101,9 @@ describe("tabDelTipo", () => {
   it("storage: panoramica, dischi, volumi, servizi_nas + comuni, senza dettagli (T5)", () => {
     assert.deepEqual(tabDelTipo("storage", NO), ["panoramica", "dischi", "volumi", "servizi_nas", "sicurezza", "gestione", "storico"]);
   });
-  it("hypervisor: panoramica, vm, nodi, storage_px, rete_px + comuni, senza dettagli (T6)", () => {
-    assert.deepEqual(tabDelTipo("hypervisor", NO), ["panoramica", "vm", "nodi", "storage_px", "rete_px", "sicurezza", "gestione", "storico"]);
+  // 08/11: «Porte» come gli switch (Riccardo: «gli hypervisor devono essere trattati come switch per le porte»).
+  it("hypervisor: panoramica, vm, nodi, storage_px, rete_px, porte + comuni, senza dettagli (T6)", () => {
+    assert.deepEqual(tabDelTipo("hypervisor", NO), ["panoramica", "vm", "nodi", "storage_px", "rete_px", "porte", "sicurezza", "gestione", "storico"]);
   });
   it("server Windows: sistema, servizi, aggiornamenti, software, utenti + comuni, senza dettagli (T7)", () => {
     assert.deepEqual(tabDelTipo("server_windows", NO), ["panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti", "sicurezza", "gestione", "storico"]);

@@ -33,6 +33,8 @@ const FONTE: Record<string, string> = { device: "SNMP", unifi: "Controller", lib
 const chiaveP = (d: number, k: string) => `${d}|${k}`;
 const norm = (s: string | null | undefined) => normalizeMacForStorage(s ?? null);
 const eVm = (m: string) => OUI_VM.some((o) => m.toUpperCase().startsWith(o));
+/** La porta di una VM nel bridge di Proxmox: `tap100i0`, `fwpr101p0` (firewall acceso), `veth200i0` (container). */
+const PORTA_VM = /^(?:tap|fwpr|veth)\d+[ip]\d+$/;
 
 interface StatoPorta {
   deviceId: number; chiave: string; macs: Set<string>; clienti: Set<string>; motivi: Set<MotivoPassaggio>;
@@ -89,6 +91,10 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     return !!a && TIPI_DI_RETE.has(a.device_type) && a.protocol !== "winrm"; // 8 PC sull'hub sono registrati come switch
   };
   const haPortediBordo = (id: number) => { const t = apparati.get(id)?.device_type; return t === "switch" || t === "access_point"; };
+  // Gli hypervisor come gli switch per le porte (Riccardo, 08/11): le loro porte e la loro tabella MAC entrano, ma i loro MAC non
+  // fanno di una porta di switch un «passaggio» (la porta verso un Proxmox resta «hypervisor») e i loro vicini non contano.
+  const eHypervisor = (id: number) => apparati.get(id)?.device_type === "hypervisor";
+  const conPorte = (id: number): boolean => diRete(id) || eHypervisor(id);
   const indice = creaIndicePorte(ing.porte, ing.fatti);
 
   const macPropri = new Map<string, Set<number>>();
@@ -130,7 +136,7 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     return s;
   };
   for (const r of ing.porte) {
-    if (!diRete(r.device_id)) continue;
+    if (!conPorte(r.device_id)) continue;
     const k = indice.chiave(r.device_id, r.port_name, AGGREGATA.test(r.port_name) ? null : r.port_index);
     if (!k) continue;
     const s = stato(r.device_id, k);
@@ -141,7 +147,7 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
   const righe: RigaPos[] = [];
   for (const r of ing.macPorte) {
     const mac = norm(r.mac);
-    if (!mac || isVirtualMac(mac) || !diRete(r.device_id)) continue;
+    if (!mac || isVirtualMac(mac) || !conPorte(r.device_id)) continue;
     const chiave = indice.chiave(r.device_id, r.port_name);
     if (!chiave) continue;
     const ms = parseDbDate(r.timestamp).getTime();
@@ -269,6 +275,18 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
       continue;
     }
 
+    // La porta della sua VM nel bridge del nodo (`tap100i0`, `fwpr101p0`, `veth200i0`) con un solo MAC: è la VM, e il nodo lo dice.
+    const portaVm = recenti.filter((r) => eHypervisor(r.device_id) && PORTA_VM.test(r.port_name) && tipi.get(chiaveP(r.device_id, r.chiave)) === "terminale")
+      .sort((a, b) => b.ms - a.ms)[0];
+    if (portaVm && ultimo - portaVm.ms <= STESSO_GIRO_MS) {
+      const s = stati.get(chiaveP(portaVm.device_id, portaVm.chiave))!;
+      oggetti.push({
+        ...base, confidenza: "certa", deviceId: portaVm.device_id, apparato: nomeApparato(portaVm.device_id), portaChiave: portaVm.chiave, porta: nomePorta(s), tipoPorta: "terminale",
+        vlan: conVlan(recenti), ramo: null, conflitto: false, dedotta: false, perche: `È sulla porta della sua macchina virtuale nel bridge di ${nomeApparato(portaVm.device_id)}: lo dice la tabella MAC del nodo.`,
+      });
+      continue;
+    }
+
     const cedeAlController = (r: RigaPos): boolean => {
       if (r.source !== "unifi") return false;
       const s = stati.get(chiaveP(r.device_id, r.chiave))!;
@@ -304,8 +322,8 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     const senzaSwitch = bordo.length === 0;
     oggetti.push({
       ...base, confidenza: "non_so", deviceId: null, apparato: null, portaChiave: null, porta: null, tipoPorta: null, vlan: conVlan(recenti), conflitto: false, dedotta: false,
-      ramo: ramo ? `A valle di ${nomeApparato(ramo.deviceId)} · ${nomePorta(ramo)}` : senzaSwitch ? `Solo sul router ${nomeApparato(recenti[0].device_id)}` : `Solo su porte di passaggio (${prove.length})`,
-      perche: senzaSwitch ? "Lo vede solo un router: nessuno switch dice su quale porta sta." : "Lo vedono solo porte che portano ad altri apparati: scegliere fra queste darebbe una posizione falsa.",
+      ramo: ramo ? `A valle di ${nomeApparato(ramo.deviceId)} · ${nomePorta(ramo)}` : senzaSwitch ? `Solo ${eHypervisor(recenti[0].device_id) ? "sull'hypervisor" : "sul router"} ${nomeApparato(recenti[0].device_id)}` : `Solo su porte di passaggio (${prove.length})`,
+      perche: senzaSwitch ? `Lo vede solo ${eHypervisor(recenti[0].device_id) ? "un hypervisor" : "un router"}: nessuno switch dice su quale porta sta.` : "Lo vedono solo porte che portano ad altri apparati: scegliere fra queste darebbe una posizione falsa.",
     });
   }
 

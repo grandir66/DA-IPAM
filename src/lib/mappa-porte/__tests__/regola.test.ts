@@ -384,3 +384,38 @@ test("le tabelle di LibreNMS danno posizioni come le altre", () => {
   assert.equal(o.deviceId, SW1);
   assert.ok(o.fonti.includes("LibreNMS"));
 });
+
+// Hypervisor come gli switch per le porte (Riccardo, 08/11): la tabella MAC del bridge di Proxmox dice su quale porta sta la VM.
+test("hypervisor: la VM sulla porta della sua scheda nel bridge è certa, e la porta dello switch verso il nodo resta «hypervisor»", () => {
+  const i = vuoto();
+  const vm1 = "BC:24:11:00:01:00", vm2 = "BC:24:11:00:01:01";
+  i.vm = [{ mac: vm1, nome: "vm-uno", acceso: true, nodo: "PX-UNO", apparatoScansione: HYP }, { mac: vm2, nome: "vm-due", acceso: true, nodo: "PX-UNO", apparatoScansione: HYP }];
+  i.macPorte = [
+    riga(SW1, vm1, "Port 5"), riga(SW1, vm2, "Port 5"), riga(SW1, mac(0xa6), "Port 5"),
+    riga(HYP, vm1, "tap100i0", { source: "parser" }), riga(HYP, vm2, "fwpr101p0", { source: "parser" }), riga(HYP, mac(9), "bond0", { source: "parser" }), riga(HYP, mac(10), "bond0", { source: "parser" }),
+  ];
+  const r = calcolaMappa(i);
+  const uno = r.oggetti.find((o) => o.chiave === vm1)!;
+  assert.equal(uno.confidenza, "certa");
+  assert.equal(uno.apparato, "PX-UNO.dominio.test");
+  assert.equal(uno.porta, "tap100i0");
+  assert.equal(r.oggetti.find((o) => o.chiave === vm2)!.porta, "fwpr101p0");
+  const p5 = r.porte.find((p) => p.deviceId === SW1 && p.chiave === "i:5");
+  assert.equal(p5?.tipo, "hypervisor", "il MAC del nodo non fa della porta un passaggio");
+  assert.ok(r.porte.some((p) => p.deviceId === HYP && p.nome === "bond0"), "le porte del nodo sono nella scheda Porte");
+});
+
+test("hypervisor: un MAC visto solo sull'uplink del nodo è «non so», detto come hypervisor e non come router", () => {
+  const i = vuoto();
+  i.macPorte = [riga(HYP, mac(9), "bond0", { source: "parser" }), riga(HYP, mac(10), "bond0", { source: "parser" })];
+  const o = dov(i, mac(9));
+  assert.equal(o.confidenza, "non_so");
+  assert.match(o.ramo ?? "", /Solo sull'hypervisor PX-UNO/);
+});
+
+test("hypervisor: una porta non da VM con un solo MAC non ruba la posizione", () => {
+  const i = vuoto();
+  i.macPorte = [riga(HYP, mac(9), "bond0", { source: "parser" }), riga(SW1, mac(9), "Port 9")];
+  const o = dov(i, mac(9));
+  assert.equal(o.apparato, "SW-UNO");
+});

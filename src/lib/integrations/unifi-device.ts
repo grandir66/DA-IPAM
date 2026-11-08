@@ -71,6 +71,9 @@ export interface UnifiPort {
   stp_pathcost?: number | null;
   /** Task 13 (22/10): id della rete nativa (untagged) della porta in `rest/networkconf`; assente sulle porte col profilo di default. */
   native_networkconf_id?: string | null;
+  /** 08/11: quali VLAN passano tagged. «auto» = tutte le reti, «block_all» = nessuna, «custom» = tutte tranne `excluded_networkconf_ids`. */
+  tagged_vlan_mgmt?: string | null;
+  excluded_networkconf_ids?: string[];
 }
 
 /**
@@ -207,6 +210,8 @@ function parsePort(raw: unknown): UnifiPort | null {
     lag_idx: int(r.lag_idx),
     stp_pathcost: int(r.stp_pathcost),
     native_networkconf_id: str(r.native_networkconf_id),
+    tagged_vlan_mgmt: str(r.tagged_vlan_mgmt),
+    excluded_networkconf_ids: Array.isArray(r.excluded_networkconf_ids) ? r.excluded_networkconf_ids.filter((x): x is string => typeof x === "string") : [],
   };
 }
 

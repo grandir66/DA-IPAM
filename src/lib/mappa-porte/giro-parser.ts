@@ -12,7 +12,17 @@ import { lettoreDb } from "@/lib/acquisizione-modulare/richiesta";
 import { letturaAccesa } from "@/lib/topology/letture/interruttori";
 
 export const CRON_PARSER = "25 */6 * * *";
-const TIPI = new Set(["switch", "router", "firewall", "access_point"]);
+const TIPI = new Set(["switch", "router", "firewall", "access_point", "hypervisor"]);
+
+/**
+ * Chi entra nel giro. Gli hypervisor come gli switch per le porte e ogni Stormshield come firewall qualunque tipo abbia in
+ * anagrafica (Riccardo, 08/11: sull'hub SNS EVA2 è registrato `server` e restava fuori). Spenti no: gli apparati del controller
+ * UniFi nascono spenti apposta e i loro dati vengono dal controller. `winrm`: sull'hub 8 PC sono registrati come switch.
+ */
+export function daLeggereNelGiro(d: { enabled: number | boolean; device_type: string; vendor?: string | null; protocol: string }): boolean {
+  if (!d.enabled || d.protocol === "winrm") return false;
+  return TIPI.has(d.device_type) || (d.vendor ?? "").toLowerCase() === "stormshield";
+}
 
 export interface EsitoGiroParser { letti: number; saltati: number; falliti: number }
 
@@ -23,8 +33,7 @@ export async function giroParserDelTenant(dipendenze?: Pick<DipendenzeEsecuzione
   if (!code) throw new Error("Contesto tenant assente");
   // `mappa_dati` accesa vale anche se l'acquisizione modulare manuale è spenta: 70151 non l'ha mai accesa.
   const fonte = { ...dipendenzeDb(), accesa: () => true };
-  // `winrm`: sull'hub 8 PC sono registrati come switch; il parser di rete non è per loro.
-  for (const device of getNetworkDevices().filter((d) => d.enabled && TIPI.has(d.device_type) && d.protocol !== "winrm")) {
+  for (const device of getNetworkDevices().filter(daLeggereNelGiro)) {
     const v = valutaFonte(device, fonte);
     if (v.esito !== "pronta") { esito.saltati++; continue; }
     if (!prendiLucchetto(device.id)) { esito.saltati++; continue; }

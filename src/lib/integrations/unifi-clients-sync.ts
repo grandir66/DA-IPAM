@@ -24,13 +24,14 @@ import {
   getControllerDevicePortNames,
   getNetworkController,
   recordControllerRun,
+  registraVistiMappaPorte,
   runInTenantTransaction,
   upsertMacPortEntries,
 } from "@/lib/db-tenant";
 import { controllerClientOf, migrateLegacyUnifiConfig } from "@/lib/controllers/service";
 import type { ControllerRunTrigger } from "@/lib/controllers/types";
 import type { UnifiClientOptions } from "./unifi-api";
-import { mapClientsToPorts, type UnifiStaClient } from "./unifi-clients";
+import { mapClientsToPorts, vistiDalGateway, type UnifiStaClient } from "./unifi-clients";
 
 /** Chi fornisce i client collegati: il client del controller, o un finto nelle prove. */
 export interface UnifiClientSource {
@@ -47,6 +48,10 @@ export interface UnifiClientsSyncResult {
   unmatched: number;
   /** Perché il giro è fallito; null se è andato. */
   failure: string | null;
+  /** 08/11: perché i non abbinati non hanno trovato posto, con quanti. */
+  motivi?: Record<string, number>;
+  /** 08/11: client col loro IP scritti come visti dal gateway (registro della Mappa porte). */
+  visti?: number;
 }
 
 function errorMessage(e: unknown): string {
@@ -67,7 +72,8 @@ async function readAndSave(source: UnifiClientSource): Promise<UnifiClientsSyncR
   }
   const { devices, ports } = getControllerDevicePortNames();
   const portNames = new Map(ports.map((p) => [`${p.device_id}|${p.port_index}`, p.port_name] as const));
-  const { byDevice, unmatched } = mapClientsToPorts(clients, devices, portNames);
+  const { byDevice, unmatched, motivi } = mapClientsToPorts(clients, devices, portNames);
+  const visti = vistiDalGateway(clients, devices);
   try {
     // Tutto il giro o niente: un errore a metà non lascia metà dei client nuovi.
     const saved = runInTenantTransaction(() => {
@@ -80,9 +86,10 @@ async function readAndSave(source: UnifiClientSource): Promise<UnifiClientsSyncR
         );
         n += list.length;
       }
+      registraVistiMappaPorte(visti, nowSql());
       return n;
     });
-    return { ok: true, clients: clients.length, saved, unmatched, failure: null };
+    return { ok: true, clients: clients.length, saved, unmatched, failure: null, motivi, visti: visti.length };
   } catch (e) {
     return { ok: false, clients: clients.length, saved: 0, unmatched, failure: `Scrittura non riuscita: ${errorMessage(e)}` };
   }
@@ -111,7 +118,7 @@ export async function syncUnifiClientsForController(
 
   const message =
     "Lettura client: " +
-    (result.failure ?? `${result.clients} letti, ${result.saved} salvati, ${result.unmatched} non abbinati`);
+    (result.failure ?? `${result.clients} letti, ${result.saved} salvati, ${result.unmatched} non abbinati${result.visti ? `, ${result.visti} visti dal gateway` : ""}`);
   try {
     recordControllerRun(
       {
@@ -129,7 +136,7 @@ export async function syncUnifiClientsForController(
         neighbors: 0,
         message,
         errors_json: JSON.stringify(result.failure ? [result.failure] : []),
-        skipped_reasons_json: "[]",
+        skipped_reasons_json: JSON.stringify(Object.entries(result.motivi ?? {}).map(([motivo, n]) => `${motivo}: ${n}`)),
         offline_json: "[]",
       },
       { summary: false },

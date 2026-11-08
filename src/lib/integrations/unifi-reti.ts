@@ -129,3 +129,41 @@ export function vlanNativePorte(d: UnifiDevice, vlanDi: ReadonlyMap<string, numb
   }
   return out;
 }
+
+/** Le VLAN di uno switch o del gateway lette dal controller, nella forma della fotografia SNMP (`scriviVlanSwitch`). */
+export interface FotografiaVlanController {
+  vlan: Array<{ vlan_id: number; nome: string | null }>;
+  porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
+  pvid: Array<{ if_index: number; pvid: number }>;
+}
+
+/**
+ * Riccardo, 08/11: gli switch che non rispondono né a SNMP né a SSH (79993-ipam-2) «sono dentro al controller, che ha le
+ * informazioni». Dal `port_table`: la nativa (`native_networkconf_id`) untagged e PVID; le tagged secondo `tagged_vlan_mgmt`
+ * («auto» tutte le reti, «custom» tutte tranne le escluse, «block_all» nessuna). Senza `tagged_vlan_mgmt` le tagged non si
+ * sanno: solo la nativa, mai un «tutte» inventato. Le VLAN dell'apparato sono quelle delle reti con un numero: sul gateway
+ * sono le reti che instrada. null = niente da dire (nessuna rete tradotta o nessuna porta).
+ */
+export function fotografiaVlanController(d: UnifiDevice, reti: ReadonlyArray<UnifiRete>): FotografiaVlanController | null {
+  const vlanDi = vlanDelleReti(reti);
+  if (vlanDi.size === 0 || d.port_table.length === 0) return null;
+  const nomi = new Map<number, string | null>();
+  for (const r of reti) {
+    const v = vlanDi.get(r.id);
+    if (v !== undefined && !nomi.has(v)) nomi.set(v, r.nome);
+  }
+  const tutte = [...nomi.keys()].sort((a, b) => a - b);
+  const out: FotografiaVlanController = { vlan: tutte.map((v) => ({ vlan_id: v, nome: nomi.get(v) ?? null })), porte: [], pvid: [] };
+  for (const p of d.port_table) {
+    const nativa = p.native_networkconf_id ? vlanDi.get(p.native_networkconf_id) : undefined;
+    if (nativa !== undefined) {
+      out.pvid.push({ if_index: p.port_idx, pvid: nativa });
+      out.porte.push({ vlan_id: nativa, if_index: p.port_idx, egress: true, untagged: true });
+    }
+    const modo = p.tagged_vlan_mgmt ?? null;
+    if (modo !== "auto" && modo !== "custom") continue;
+    const escluse = new Set((modo === "custom" ? p.excluded_networkconf_ids ?? [] : []).map((id) => vlanDi.get(id)).filter((v): v is number => v !== undefined));
+    for (const v of tutte) if (v !== nativa && !escluse.has(v)) out.porte.push({ vlan_id: v, if_index: p.port_idx, egress: true, untagged: false });
+  }
+  return out;
+}

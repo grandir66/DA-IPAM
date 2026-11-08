@@ -18,7 +18,8 @@ test("parser: tiene cablati e wireless, scarta le voci senza MAC", () => {
 
 test("parser: MAC normalizzati, porta dello switch e AP letti, campi assenti a null", () => {
   const [cablato, wireless, senzaSwitch] = parseStatStaResponse(fixture);
-  assert.deepEqual(cablato, { mac: "02:00:00:00:10:01", isWired: true, swMac: "02:00:00:00:00:A1", swPort: 5, apMac: null, lastSeen: 1791818864 });
+  // 08/11: anche IP, nome, gateway e rete (la fixture ha IP e hostname, non gateway e rete).
+  assert.deepEqual(cablato, { mac: "02:00:00:00:10:01", isWired: true, swMac: "02:00:00:00:00:A1", swPort: 5, apMac: null, lastSeen: 1791818864, ip: "192.0.2.21", nome: "client-1", gwMac: null, rete: null });
   assert.equal(wireless.apMac, "02:00:00:00:00:B1");
   assert.equal(senzaSwitch.swMac, null);
   assert.equal(senzaSwitch.swPort, null);

@@ -265,6 +265,29 @@ export const PROXMOX_USCITE: Record<string, string> = {
     "ip -d -j link show": linkJson("vmbr0", "02:00:00:00:90:01"), "ip -j address show": addrJson("vmbr0", "192.0.2.90"), "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:         1000000 kB\n",
     "lsblk -b -J -o NAME,TYPE,SIZE,MODEL,SERIAL,ROTA": '{"blockdevices":[]}',
 };
+export const STORMSHIELD_USCITE: Record<string, string> = {
+    "hostname": `sns-${SEGRETO}\n`, "uname -sr": "FreeBSD 12.4-RELEASE-p3\n",
+    "ifconfig -a": [
+        "ix0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500",
+        "\tdescription: out", "\toptions=e53fbb<RXCSUM,TXCSUM>", "\tether 02:00:00:00:95:01", "\tinet 192.0.2.95 netmask 0xffffff00 broadcast 192.0.2.255",
+        "\tmedia: Ethernet autoselect (1000baseT <full-duplex>)", "\tstatus: active",
+        "ix1: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500", "\tdescription: in", "\tether 02:00:00:00:95:02",
+        "\tmedia: Ethernet autoselect (10Gbase-SR <full-duplex>)", "\tstatus: active",
+        "lagg0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500", "\tether 02:00:00:00:95:03", "\tlaggproto lacp lagghash l2,l3,l4",
+        "\tlaggport: ix2 flags=1c<ACTIVE,COLLECTING,DISTRIBUTING>", "\tlaggport: ix3 flags=1c<ACTIVE,COLLECTING,DISTRIBUTING>",
+        "vlan0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500", "\tdescription: voip", "\tether 02:00:00:00:95:02",
+        "\tinet 198.51.100.1 netmask 0xffffff00 broadcast 198.51.100.255", "\tvlan: 40 vlanpcp: 0 parent interface: ix1", "\tgroups: vlan",
+        "lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> metric 0 mtu 16384", "\tinet 127.0.0.1 netmask 0xff000000",
+        "pflog0: flags=0<> metric 0 mtu 33160", "",
+    ].join("\n"),
+    "arp -an": [
+        "? (192.0.2.1) at 02:00:00:00:a5:01 on ix0 expires in 1180 seconds [ethernet]",
+        "? (192.0.2.95) at 02:00:00:00:95:01 on ix0 permanent [ethernet]",
+        "? (198.51.100.9) at (incomplete) on vlan0 expired [vlan]",
+        "? (198.51.100.20) at 02:00:00:00:a5:20 on vlan0 expires in 600 seconds [vlan]", "",
+    ].join("\n"),
+};
+const stormshieldReq: AcquisitionRequest = { collector: "stormshield-sns", host: "192.0.2.95", ssh: { username: "lab", password: SEGRETO } };
 const proxmoxReq: AcquisitionRequest = { collector: "proxmox-ve", host: "192.0.2.90", ssh: { username: "lab", password: SEGRETO } };
 
 // UniFi controller: client finto (nessuna rete), un apparato offline che resta inventario.
@@ -304,6 +327,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "synology-dsm": perExecSynology(),
     "ubiquiti-device": perExec(ubiquitiReq, c => ubiquitiUscite[c] ?? "", ["hostname", "cat /etc/version"]),
     "proxmox-ve": perExec(proxmoxReq, c => PROXMOX_USCITE[c] ?? "", ["pveversion", "hostname"]),
+    "stormshield-sns": perExec(stormshieldReq, c => STORMSHIELD_USCITE[c] ?? "", ["hostname"]),
     "unifi-controller": unifiFixture(),
     "netapp-ontap": {
         richiesta: ontapReq,

@@ -28,6 +28,7 @@ const IMPLEMENTAZIONI: Record<CollectorId, Collect> = {
     "synology-dsm": collectInventoryDevice,
     "ubiquiti-device": collectInventoryDevice,
     "proxmox-ve": collectInventoryDevice,
+    "stormshield-sns": collectInventoryDevice,
     "unifi-controller": (request: AcquisitionRequest) => collectUnifiController(request),
     "windows": collectWindows,
     "linux": collectLinux,

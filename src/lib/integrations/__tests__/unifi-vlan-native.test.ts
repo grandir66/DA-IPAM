@@ -22,6 +22,7 @@ import {
   migrateSwitchVlanNativa,
   schemaSwitchVlanNativaPresente,
   scriviVlanNativaSwitch,
+  scriviVlanSwitch,
   withTenant,
 } from "@/lib/db-tenant";
 import { DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
@@ -203,5 +204,24 @@ test("sync accesa, switch connesso ma senza port_table: le native di prima resta
     const r = await syncUnifiForTenant({ source: s });
     assert.equal(r.vlanNativeScritte, 0);
     assert.equal((leggiVlanSwitchDb(idProMax()).nativa ?? []).length, 22);
+  });
+});
+
+// 08/11 (Riccardo: gli switch che non rispondono né a SNMP né a SSH «sono dentro al controller, che ha le informazioni»):
+// la matrice VLAN dal `port_table`, nativa e tagged, dove nessun'altra fonte ha una fotografia; quella SNMP non si tocca.
+test("sync accesa, switch senza lettura SNMP: la fotografia VLAN del controller con le tagged; con una lettura SNMP resta quella", async () => {
+  await withTenant(T, async () => {
+    scriviInterruttore("switch_vlan", true, "prova");
+    getTenantDb(T).prepare("DELETE FROM switch_vlan_lettura WHERE device_id = ?").run(idProMax());
+    await syncUnifiForTenant({ source: sorgente(RETI()) });
+    const v = leggiVlanSwitchDb(idProMax());
+    assert.equal(v.lettura?.tabella, "controller");
+    assert.ok(v.vlan.length > 1, "le VLAN dell'apparato sono le reti con un numero");
+    assert.ok(v.porte.some((p) => p.untagged === false), "le porte «auto» portano le tagged");
+    scriviVlanSwitch(idProMax(), { vlan: [{ vlan_id: 1, nome: null }], porte: [{ vlan_id: 1, if_index: 1, egress: true, untagged: true }], pvid: [], tabella: "static", mappa_porte: "ifindex", ordine_bit: "standard", porte_senza_mappa: 0, letture: 1, riuscite: 1, codice: null, codici: {}, esito: "letto" });
+    await syncUnifiForTenant({ source: sorgente(RETI()) });
+    const dopo = leggiVlanSwitchDb(idProMax());
+    assert.equal(dopo.lettura?.tabella, "static");
+    assert.equal(dopo.porte.length, 1);
   });
 });

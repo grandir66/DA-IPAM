@@ -247,6 +247,8 @@ export function resolveDeviceTypeForCreate(input: {
   device_type?: NetworkDevice["device_type"];
   classification?: string | null;
 }): NetworkDevice["device_type"] {
+  // Ogni Stormshield è un firewall (Riccardo, 08/11): sull'hub SNS EVA2 era «server» e restava fuori da scheda e giro.
+  if (input.product_profile === "stormshield_firewall") return "firewall";
   if (input.classification === "router") return "router";
   if (input.classification === "firewall") return "firewall";
   if (input.classification === "hypervisor") return "hypervisor";

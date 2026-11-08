@@ -7,7 +7,8 @@ Viste sulla ridotta `79993-ipam-7`. Riccardo, 08/11: Vulnerabilità, Scansioni V
 - [x] Resa proposta oggetto per oggetto (testo spento + lucchetto + motivo); Riccardo: NIS2 «si spegne da Opzioni» (resta acceso di serie)
 - [x] Prove viste fallire: `src/lib/modules/__tests__/voci-condizionate.test.ts`, `src/lib/menu/__tests__/sicurezza-dominio-unita.test.ts`
 - [x] Menu (`shared/sidebar.tsx`), pagina unita a due schede, rimando da `/active-directory?tab=health`
-- [ ] Riccardo (08/11): «SI» a portare su `main` e guardare il menu sulla `79993-ipam-7`
+- [x] Riccardo (08/11): «Sì, promuovi». `main` = `dev` = `0349ea2f` = 0.9.1022 (fast-forward da `a7030de8`). **Supera la scelta «Fino alla 0.9.1014»** fatta in un'altra sessione lo stesso giorno: entrano anche le credenziali agganciate da sole alle reti (0.9.1015-1016, Windows compreso), la 0.9.1017-1021 e la 0.9.1022 (Passo 9, impianti in «Per device»). Riccardo, avvisato della contraddizione: «Lascia la 1022»
+- [ ] Guardare il menu sulla `79993-ipam-7` dopo l'aggiornamento a 0.9.1022, e 70151 alla 0.9.1022 (`/api/health`)
 - [x] Riccardo (08/11): «SI» a NIS2 spento di serie sulla ridotta (`src/lib/modules/nis2.ts`, prova `nis2-di-serie.test.ts` vista fallire). Segnale già presente: `/etc/da-appliance/versione.json` con `"variante": "snella"` (lo scrive Deploy-Appliance e lo rinnova a ogni aggiornamento), quindi Deploy-Appliance non cambia; una scelta in Opzioni vince sempre
 - [-] Chiudere anche le pagine: no. Riccardo (08/11): «BASTA GRIGIO» — solo il menu
 

@@ -1,7 +1,7 @@
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { getNetworks } from "@/lib/db";
-import { getTrunkMatrice, getTrunkOsservazioniPaginated, getTrunkVlan, getTrunkUltimoEsito, getTrunkVlanProtocolli, statoSonda, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
+import { getTrunkAppartenenza, getTrunkMatrice, getTrunkOsservazioniPaginated, getTrunkVlan, getTrunkUltimoEsito, getTrunkVlanProtocolli, statoSonda, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { getRiepilogoRilievi, getRilieviPaginated } from "@/lib/trunk/rilievi";
 import { auth } from "@/lib/auth";
 import { TrunkClient } from "./trunk-client";
@@ -17,6 +17,7 @@ export default async function TrunkPage() {
       riepilogo: trunkRiepilogo(),
       vlanProtocolli: getTrunkVlanProtocolli(),
       ...getTrunkOsservazioniPaginated({ limit: 100 }),
+      appartenenza: getTrunkAppartenenza(),
       retiIpam: getNetworks().map((n) => n.cidr),
       ultimoEsito: getTrunkUltimoEsito(),
       rilievi: { rilievi: rilievi.righe, totale: rilievi.totale, riepilogo: getRiepilogoRilievi() },

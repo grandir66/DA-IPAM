@@ -8,7 +8,9 @@ import { z } from "zod";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { setTenantSetting } from "@/lib/db-tenant";
+import { TAG_APPARTENENZA, type FiltroAppartenenza } from "@/lib/trunk/appartenenza";
 import {
+  getTrunkAppartenenza,
   getTrunkOsservazioniPaginated,
   getTrunkVlan,
   sincronizzaTrunk,
@@ -27,10 +29,11 @@ export async function GET(request: Request) {
       cidr: ((c) => (c && /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c) ? c : null))(searchParams.get("cidr")),
       q: searchParams.get("q") ?? undefined,
       metodo: ((m) => (m === "ascolto" || m === "giro" || m === "entrambi" ? m : null))(searchParams.get("metodo")),
+      appartenenza: ((a): FiltroAppartenenza => (a === "tutti" || a === "altri" || (TAG_APPARTENENZA as readonly string[]).includes(a) ? (a as FiltroAppartenenza) : ""))(searchParams.get("appartenenza") ?? ""),
       limit: Number(searchParams.get("limit")) || 100,
       offset: Number(searchParams.get("offset")) || 0,
     });
-    return NextResponse.json({ attiva: trunkLetturaAttiva(), vlan: getTrunkVlan(), osservazioni: righe, totale });
+    return NextResponse.json({ attiva: trunkLetturaAttiva(), vlan: getTrunkVlan(), osservazioni: righe, totale, appartenenza: getTrunkAppartenenza() });
   });
 }
 

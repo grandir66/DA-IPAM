@@ -14,6 +14,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { assicuraColonnaServerDhcpTrunk } from "@/lib/db-tenant-schema";
 import { isIpInCidr, macToHex } from "@/lib/utils";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
+import { deduciVlanNativa } from "@/lib/trunk/appartenenza";
 import { TIPI_RILIEVO, type CategoriaRilievo, type GravitaRilievo, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
 
 export { TIPI_RILIEVO, type CategoriaRilievo, type GravitaRilievo, type TipoRilievo };
@@ -58,6 +59,8 @@ export interface IngressoRegole {
   /** IP dei server DHCP noti: sorgenti DHCP e apparati di rete censiti. */
   serverDhcpNoti: Set<string>;
   retiIpam: Array<{ cidr: string; vlan_id: number | null; gateway: string | null }>;
+  /** La VLAN dei pacchetti senza tag (VID 0), se nota: le sue reti valgono anche per la VID 0 (08/11). */
+  vlanNativa?: number | null;
 }
 
 export interface Rilievo {
@@ -184,6 +187,8 @@ export function calcolaRilievi(x: IngressoRegole): Rilievo[] {
   const aggiungiRete = (vid: number, cidr: string) => retiDi.set(vid, [...new Set([...(retiDi.get(vid) ?? []), cidr])]);
   for (const v of x.vlan) for (const r of v.reti) if (r.fonte === "dhcp") aggiungiRete(v.vid, r.cidr);
   for (const n of x.retiIpam) if (n.vlan_id != null) aggiungiRete(n.vlan_id, n.cidr);
+  // Senza questo ogni IP della nativa (VID 0) risultava «fuori rete» rispetto alla VLAN dichiarata in DA-IPAM.
+  if (x.vlanNativa != null) for (const n of x.retiIpam) if (n.vlan_id === x.vlanNativa) aggiungiRete(0, n.cidr);
   for (const o of recenti) {
     if (!o.ip || macGateway.has(macToHex(o.mac))) continue;
     if ((retiDi.get(o.vid) ?? []).some((c) => isIpInCidr(o.ip, c))) continue;
@@ -343,7 +348,11 @@ export function ingressoDalDb(adesso = new Date()): IngressoRegole {
     serverDhcpNoti.add(r.ip);
   }
   const retiIpam = d.prepare("SELECT cidr, vlan_id, gateway FROM networks").all() as IngressoRegole["retiIpam"];
-  return { adesso, osservazioni, vlan, vicini, macInventario, serverDhcpNoti, retiIpam };
+  // La VLAN nativa come la legge la pagina della sonda: la scelta salvata, altrimenti quella dedotta.
+  const scelta = ((d.prepare("SELECT value FROM tenant_settings WHERE key = 'trunk_vlan_nativa'").get() as { value: string } | undefined)?.value ?? "").trim();
+  const vlanNativa = scelta === "nessuna" ? null : /^\d{1,4}$/.test(scelta) ? Number(scelta)
+    : deduciVlanNativa(osservazioni.filter((o) => o.vid === 0 && o.ip).map((o) => o.ip as string), retiIpam)?.vid ?? null;
+  return { adesso, osservazioni, vlan, vicini, macInventario, serverDhcpNoti, retiIpam, vlanNativa };
 }
 
 /**

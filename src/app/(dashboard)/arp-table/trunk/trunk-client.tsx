@@ -14,8 +14,9 @@ import {
 } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
+import { ETICHETTA_APPARTENENZA, type Appartenenza, type FiltroAppartenenza, type TagAppartenenza } from "@/lib/trunk/appartenenza";
 import type {
-  TrunkEsitoLettura, TrunkMetodo, TrunkOsservazioneRiga, TrunkStatoSonda, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
+  TrunkAppartenenzaQuadro, TrunkEsitoLettura, TrunkMetodo, TrunkOsservazioneRiga, TrunkStatoSonda, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
 } from "@/lib/trunk/sensore-trunk";
 import type { TrunkMaschera } from "@/lib/trunk/reti";
 import { TIPI_RILIEVO, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
@@ -45,6 +46,36 @@ interface Dati {
   sonda: TrunkStatoSonda;
   ultimoEsito: TrunkEsitoLettura | null;
   rilievi: DatiRilievi;
+  appartenenza: TrunkAppartenenzaQuadro;
+}
+
+/** Il filtro «appartenenza»: di serie tutto tranne gli instradati, che non sono host della VLAN (08/11). */
+const FILTRI_APPARTENENZA: Array<{ id: FiltroAppartenenza; etichetta: string; tag?: TagAppartenenza[] }> = [
+  { id: "", etichetta: "Tutti" },
+  { id: "ufficiale", etichetta: "✓ Ufficiali", tag: ["ufficiale"] },
+  { id: "altri", etichetta: "Altri", tag: ["altra_vlan", "fuori_rete", "vlan_non_ipam", "pubblico", "link_local"] },
+  { id: "altra_vlan", etichetta: "▲ Altra VLAN", tag: ["altra_vlan"] },
+  { id: "vlan_non_ipam", etichetta: "● VLAN non in DA-IPAM", tag: ["vlan_non_ipam"] },
+  { id: "link_local", etichetta: "● 169.254", tag: ["link_local"] },
+  { id: "instradato", etichetta: "– Instradati", tag: ["instradato"] },
+];
+
+const CLASSE_TONO: Record<"ok" | "attenzione" | "neutro" | "tratteggio", string> = {
+  ok: "bg-[#1F7A4D] text-white border-[#1F7A4D]",
+  attenzione: "bg-[#FFD400] text-[#0D2537] border-[#C9A800]",
+  neutro: "bg-[#5B6B77] text-white border-[#5B6B77]",
+  tratteggio: "border-dashed border-muted-foreground text-muted-foreground",
+};
+
+function BadgeAppartenenza({ a }: { a: Appartenenza | null }) {
+  if (!a) return <span className="text-muted-foreground">—</span>;
+  const e = ETICHETTA_APPARTENENZA[a.tag];
+  const dove = a.tag === "altra_vlan" && a.rete ? ` · ${a.rete} è ${a.vlan != null ? `la VLAN ${a.vlan}` : "senza VLAN"} in DA-IPAM` : "";
+  return (
+    <span title={e.spiega} className={cn("inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[13px]", CLASSE_TONO[e.tono])}>
+      {e.segno} {e.testo}{dove}
+    </span>
+  );
 }
 
 /** Segno breve dei rilievi aperti su un indirizzo, nell'elenco: il dettaglio sta nel pannello in alto. */
@@ -116,6 +147,11 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
   const [retiIpam, setRetiIpam] = useState<string[]>(iniziale.retiIpam);
+  const [quadro, setQuadro] = useState<TrunkAppartenenzaQuadro>(iniziale.appartenenza);
+  const [filtroApp, setFiltroApp] = useState<FiltroAppartenenza>("");
+  const nativa = quadro.nativa.usata;
+  const etichettaVlan = (v: number) => (v === 0 && nativa != null ? `Nativa · VLAN ${nativa}` : nomeVlan(v));
+  const numeriVlan = useMemo(() => new Map(quadro.perVlan.map((x) => [x.vid, x])), [quadro.perVlan]);
   // Due schede (Riccardo, 25/10: in una pagina sola diventava troppo lunga). La scheda sta nell'indirizzo
   // (#sicurezza, #reti), così il badge del menu e un collegamento aprono quella giusta.
   const [scheda, setScheda] = useState<Scheda>("sicurezza");
@@ -143,29 +179,47 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   const reteScelta = matrice.reti.find((x) => chiaveRete(x) === rete) ?? null;
   const reteDi = (o: { vid: number; ip: string }) => (retiPerVid.get(o.vid) ?? []).find((x) => o.ip && ipInCidr(o.ip, x.cidr));
 
-  const carica = useCallback(async (filtro: { vid: number | null; rete: TrunkReteMatrice | null; metodo: TrunkMetodo | ""; q: string; off: number }) => {
+  const carica = useCallback(async (filtro: { vid: number | null; rete: TrunkReteMatrice | null; metodo: TrunkMetodo | ""; q: string; off: number; app: FiltroAppartenenza }) => {
     const p = new URLSearchParams({ limit: String(PAGINA), offset: String(filtro.off) });
+    if (filtro.app) p.set("appartenenza", filtro.app);
     if (filtro.vid != null) p.set("vid", String(filtro.vid));
     if (filtro.rete) p.set("cidr", filtro.rete.cidr);
     if (filtro.metodo) p.set("metodo", filtro.metodo);
     if (filtro.q.trim()) p.set("q", filtro.q.trim());
-    const res = await fetchJson<{ osservazioni: TrunkOsservazioneRiga[]; totale: number }>(`/api/trunk?${p.toString()}`);
+    const res = await fetchJson<{ osservazioni: TrunkOsservazioneRiga[]; totale: number; appartenenza: TrunkAppartenenzaQuadro }>(`/api/trunk?${p.toString()}`);
     if (!res.ok) {
       setErrore(res.message);
       return;
     }
     setErrore(null);
+    setQuadro(res.data.appartenenza);
     setRighe(res.data.osservazioni);
     setTotale(res.data.totale);
     setOffset(filtro.off);
   }, []);
 
-  const filtra = (cambi: Partial<{ vid: number | null; rete: string | null; metodo: TrunkMetodo | ""; q: string; off: number }>) => {
-    const nuovo = { vid, rete, metodo, q, off: 0, ...cambi };
+  const filtra = (cambi: Partial<{ vid: number | null; rete: string | null; metodo: TrunkMetodo | ""; q: string; off: number; app: FiltroAppartenenza }>) => {
+    const nuovo = { vid, rete, metodo, q, off: 0, app: filtroApp, ...cambi };
     setVid(nuovo.vid);
     setRete(nuovo.rete);
     setMetodo(nuovo.metodo);
+    setFiltroApp(nuovo.app);
     void carica({ ...nuovo, rete: matrice.reti.find((x) => chiaveRete(x) === nuovo.rete) ?? null });
+  };
+
+  /** La VLAN dei pacchetti senza tag: confermata da chi usa la pagina (numero, «nessuna», o null = torna alla dedotta). */
+  const salvaNativa = async (scelta: number | "nessuna" | null) => {
+    const res = await fetchJson<{ appartenenza: TrunkAppartenenzaQuadro }>("/api/trunk/vlan-nativa", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vid: scelta }),
+    });
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    setQuadro(res.data.appartenenza);
+    toast.success(scelta == null ? "Si torna alla VLAN nativa dedotta" : scelta === "nessuna" ? "Nessuna VLAN nativa" : `VLAN nativa: ${scelta}`);
+    filtra({ off: 0 });
+    router.refresh();
   };
 
   const portaInIpam = async (x: TrunkReteMatrice) => {
@@ -292,9 +346,48 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
               nota={`+${matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nuovi in 7 giorni, senza leggere il router`} />
           </div>
 
+          {/* VLAN nativa: i pacchetti senza tag arrivano come VID 0, in DA-IPAM la stessa rete ha la sua VLAN (08/11). */}
+          {quadro.nativa.confermata == null && (quadro.nativa.dedotta || numeriVlan.has(0)) && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#C9A800] bg-[#FFD400] px-3 py-2.5 text-[13px] text-[#0D2537]">
+              <span className="font-semibold">▲ VLAN nativa da confermare</span>
+              <span className="min-w-[220px] flex-1">
+                {quadro.nativa.dedotta
+                  ? <>I pacchetti senza tag sono la <strong>VLAN {quadro.nativa.dedotta.vid}</strong>? {quadro.nativa.dedotta.dentro} IP senza tag su {quadro.nativa.dedotta.totale} stanno in {quadro.nativa.dedotta.rete}. Intanto la pagina li legge così.</>
+                  : <>Gli IP senza tag non stanno in nessuna rete con VLAN di DA-IPAM: la pagina li tiene a parte.</>}
+              </span>
+              {admin && quadro.nativa.dedotta && (
+                <Button size="sm" variant="outline" className="bg-card" onClick={() => void salvaNativa(quadro.nativa.dedotta?.vid ?? null)}>
+                  Sì, è la VLAN {quadro.nativa.dedotta.vid}
+                </Button>
+              )}
+              {admin && (
+                <Button size="sm" variant="outline" className="bg-card" onClick={() => {
+                  const v = window.prompt("Numero della VLAN nativa del trunk (1-4094), oppure vuoto per «nessuna»:", "");
+                  if (v == null) return;
+                  const n = Number(v.trim());
+                  if (v.trim() === "") void salvaNativa("nessuna");
+                  else if (Number.isInteger(n) && n >= 1 && n <= 4094) void salvaNativa(n);
+                  else toast.error("Scrivi un numero da 1 a 4094");
+                }}>
+                  È un&apos;altra
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* 1. Tutte le VLAN in poco spazio: si confrontano a colpo d'occhio. */}
           <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN: sotto le sue reti"
-            azioni={<Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>}>
+            azioni={
+              <>
+                {quadro.nativa.confermata != null && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                    Senza tag = {quadro.nativa.confermata === "nessuna" ? "nessuna VLAN" : `VLAN ${quadro.nativa.confermata}`}
+                    {admin && <Button size="sm" variant="ghost" className="h-7 px-2 text-[13px]" onClick={() => void salvaNativa(null)}>Cambia</Button>}
+                  </span>
+                )}
+                <Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>
+              </>
+            }>
             {iniziale.vlan.length === 0 ? (
               <Vuoto titolo="Nessuna VLAN letta finora" testo="Il sensore manda le VLAN alla prima lettura, entro un paio di minuti dall'accensione." />
             ) : (
@@ -308,13 +401,19 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                       <VoceSelezionabile key={v.vid} scelta={vid === v.vid} className={cn("flex flex-col gap-1.5 p-2.5", !v.vista && "border-dashed")}
                         onScegli={() => filtra({ vid: vid === v.vid ? null : v.vid, rete: null })}>
                         <div className="flex items-baseline justify-between gap-1.5">
-                          <span className="font-mono font-semibold">{nomeVlan(v.vid)}</span>
+                          <span className="font-mono font-semibold">{etichettaVlan(v.vid)}</span>
                           <span className="font-mono text-[13px] text-muted-foreground">{ip ? `${ip} IP` : v.mac ? `${v.mac} MAC` : "mai vista"}</span>
                         </div>
                         <div className="truncate text-[13px] text-muted-foreground">
                           {!v.dichiarata ? "▲ non dichiarata" : rr.length > 1 ? `${rr.length} reti` : rr.length === 1 ? rr[0].cidr : "nessuna rete"}
                         </div>
                         <Barra ascolto={ip - sil} silenziosi={sil} />
+                        {numeriVlan.has(v.vid) && (
+                          <div className="text-[13px]">
+                            <span title="IP nella rete dichiarata in DA-IPAM per questa VLAN">✓ {numeriVlan.get(v.vid)?.ufficiali ?? 0} ufficiali</span>
+                            <span className="text-muted-foreground" title="IP fuori dalla rete della VLAN (gli instradati non contano)"> · {numeriVlan.get(v.vid)?.altri ?? 0} altri</span>
+                          </div>
+                        )}
                       </VoceSelezionabile>
                     );
                   })}
@@ -403,6 +502,22 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
               </>
             }>
             <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Appartenenza">
+                <span className="mr-1 text-[13px] text-muted-foreground">Appartenenza:</span>
+                {FILTRI_APPARTENENZA.map((f) => {
+                  const n = f.tag ? f.tag.reduce((a, t) => a + (quadro.totali[t] ?? 0), 0) : null;
+                  return (
+                    <button key={f.id || "tutti"} type="button" aria-pressed={filtroApp === f.id} onClick={() => filtra({ app: f.id })}
+                      className={cn("min-h-8 rounded-lg border px-2.5 text-[13px]", filtroApp === f.id ? "border-primary bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50",
+                        f.id === "instradato" && filtroApp !== f.id && "border-dashed")}>
+                      {f.etichetta}{n != null ? ` ${n}` : ""}
+                    </button>
+                  );
+                })}
+                {filtroApp === "" && (quadro.totali.instradato ?? 0) > 0 && (
+                  <span className="text-[13px] text-muted-foreground">· {quadro.totali.instradato} instradati nascosti</span>
+                )}
+              </div>
               {errore && <LoadError what="gli indirizzi del trunk" message={errore} onRetry={() => filtra({ off: offset })} />}
               <div className="overflow-x-auto">
                 <Table>
@@ -412,6 +527,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                       <TableHead>MAC</TableHead>
                       <TableHead>Produttore</TableHead>
                       <TableHead>VLAN · rete</TableHead>
+                      <TableHead>Appartenenza</TableHead>
                       <TableHead>Come è stato trovato</TableHead>
                       <TableHead>Nome e protocolli</TableHead>
                       <TableHead>Ultimo visto</TableHead>
@@ -419,7 +535,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                   </TableHeader>
                   <TableBody>
                     {righe.length === 0 && (
-                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Nessun indirizzo con questi filtri.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Nessun indirizzo con questi filtri.</TableCell></TableRow>
                     )}
                     {righe.map((o) => {
                       const sub = reteDi(o);
@@ -437,9 +553,10 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                           <TableCell className="font-mono text-[13px]">{o.mac_display}</TableCell>
                           <TableCell className="max-w-44 truncate" title={o.vendor ?? undefined}>{o.vendor ?? <span className="text-muted-foreground">sconosciuto</span>}</TableCell>
                           <TableCell className="whitespace-nowrap font-mono text-[13px]">
-                            <span className="text-cian-testo">{nomeVlan(o.vid)}</span>
+                            <span className="text-cian-testo">{etichettaVlan(o.vid)}</span>
                             {sub && ` · ${sub.cidr}`}
                           </TableCell>
+                          <TableCell><BadgeAppartenenza a={o.appartenenza} /></TableCell>
                           <TableCell className="whitespace-nowrap text-[13px] font-medium"><Come passivo={o.passivo} attivo={o.attivo} /></TableCell>
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-1">

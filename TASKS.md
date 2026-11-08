@@ -1,6 +1,16 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Sonda trunk: IP ufficiali e altri, VLAN nativa (Riccardo, leggero)
+
+Riccardo (08/11): «troppi IP fuori da quelli ufficiali», sull'hub e su DTS. Approvato «Sì, come consigli».
+- [x] Misura in sola lettura: DTS 73/1.002 ufficiali, hub 225/488; causa principale VID 0 = nativa ma rete dichiarata VLAN 1
+- [x] `lib/trunk/appartenenza.ts` + 11 prove (il cancello ha preso un difetto: righe senza protocolli nascoste come «instradate»; ora restano della VLAN); rilievo «fuori rete» con la nativa (+1 prova in `rilievi.test.ts`)
+- [x] Pagina: domanda sulla VLAN nativa, «ufficiali · altri» per VLAN, colonna e filtri; `/api/trunk/vlan-nativa`
+- [x] Regola sui dati veri esportati: nativa dedotta VLAN 1 su tutti e due; DTS 672 ufficiali, 98 altra VLAN, 80 VLAN non in DA-IPAM, 74 169.254, 49 fuori rete, 20 instradati, 9 pubblici; hub 293/488
+- [ ] Guardata a schermo
+- [ ] DTS: 172.17.16.0/20 è dichiarata VLAN 16, il trunk la vede sulla VLAN 10 (da confermare con Riccardo; poi correggere la rete in DA-IPAM o lo switch)
+
 ## 2026-11-08 — Script che prepara il dominio: account, gruppi, WinRM (Riccardo, completo)
 
 Riccardo (08/11): «aggiungere la parte per abilitare WinRM e creare un utente con i diritti corretti». Approvato «Sì, come consigli»: script separato, OU obbligatorie, IP di DA-IPAM, livello completo.

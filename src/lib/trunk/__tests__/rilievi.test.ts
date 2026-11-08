@@ -210,3 +210,17 @@ test("ingresso dal DB: inventario da host, reti e server DHCP da trunk_vlan", ()
     assert.equal(r.filter((y) => y.tipo === "dhcp_non_previsto").length, 0, "il gateway della rete in DA-IPAM è previsto");
   });
 });
+
+test("VLAN nativa nota: un IP senza tag nella rete della nativa non è «fuori rete» (08/11)", () => {
+  const base = {
+    vlan: [{ vid: 0, vista: true, dichiarata: true, reti: [], server_dhcp: [] }, { vid: 11, vista: true, dichiarata: true, reti: [], server_dhcp: [] }],
+    retiIpam: [{ cidr: "172.20.0.0/17", vlan_id: 1, gateway: null }, { cidr: "172.21.0.0/22", vlan_id: 11, gateway: null }],
+    osservazioni: [oss({ mac: "AA:00:00:00:00:31", vid: 0, ip: "172.21.0.9" }), oss({ mac: "AA:00:00:00:00:32", vid: 0, ip: "172.20.1.4" })],
+    macInventario: new Set(["AA0000000031", "AA0000000032"]),
+  };
+  // Senza nativa la VID 0 non ha reti sue: tutti e due finiscono «fuori rete» (il difetto misurato).
+  const senza = calcolaRilievi(ingresso(base)).filter((x) => x.tipo === "fuori_rete").map((x) => x.ip).sort();
+  assert.deepEqual(senza, ["172.20.1.4", "172.21.0.9"]);
+  const con = calcolaRilievi(ingresso({ ...base, vlanNativa: 1 })).filter((x) => x.tipo === "fuori_rete").map((x) => x.ip);
+  assert.deepEqual(con, ["172.21.0.9"], "con la nativa 1, solo l'IP della rete della VLAN 11 è fuori posto");
+});

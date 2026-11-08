@@ -26,6 +26,10 @@ import { getTipiRilievoPerMac, valutaRilievi, type TipoRilievo } from "@/lib/tru
 import { portaHostDalTrunk } from "@/lib/trunk/host-dal-trunk";
 import { portaApparatiDalTrunk } from "@/lib/trunk/apparati-dal-trunk";
 import { esiste } from "@/lib/percorsi";
+import {
+  appartenenzaIp, deduciVlanNativa, passaFiltroAppartenenza, TAG_APPARTENENZA,
+  type Appartenenza, type FiltroAppartenenza, type NativaDedotta, type ReteDichiarata, type TagAppartenenza,
+} from "@/lib/trunk/appartenenza";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -543,6 +547,59 @@ export interface TrunkOsservazioneRiga {
   ultima_vista: string;
   /** Rilievi di sicurezza aperti su questo MAC (LLMNR, non in inventario…). */
   rilievi: TipoRilievo[];
+  /** Ufficiale o no rispetto alle reti di DA-IPAM, col perché (08/11). Null per le righe senza IP. */
+  appartenenza: Appartenenza | null;
+}
+
+/** Impostazione del tenant: la VLAN dei pacchetti senza tag. Vuota = non confermata, «nessuna» = nessuna. */
+export const CHIAVE_VLAN_NATIVA = "trunk_vlan_nativa";
+
+export interface TrunkVlanNativa {
+  /** Scelta di chi usa la pagina: un numero, «nessuna», o null se non l'ha ancora confermata. */
+  confermata: number | "nessuna" | null;
+  /** Quella che DA-IPAM propone dagli IP senza tag. */
+  dedotta: NativaDedotta | null;
+  /** Quella con cui si leggono adesso le righe senza tag: la confermata, altrimenti la dedotta. */
+  usata: number | null;
+}
+
+function retiDichiarate(): ReteDichiarata[] {
+  return getNetworks().map((n) => ({ cidr: n.cidr, vlan_id: n.vlan_id ?? null }));
+}
+
+export function getTrunkVlanNativa(reti: ReteDichiarata[] = retiDichiarate()): TrunkVlanNativa {
+  const v = (getTenantSetting(CHIAVE_VLAN_NATIVA) ?? "").trim();
+  const confermata: TrunkVlanNativa["confermata"] = v === "nessuna" ? "nessuna" : /^\d{1,4}$/.test(v) ? Number(v) : null;
+  const senzaTag = (db().prepare("SELECT DISTINCT ip FROM trunk_osservazioni WHERE vid = 0 AND ip != ''").all() as Array<{ ip: string }>).map((r) => r.ip);
+  const dedotta = deduciVlanNativa(senzaTag, reti);
+  const usata = confermata === "nessuna" ? null : confermata ?? dedotta?.vid ?? null;
+  return { confermata, dedotta, usata };
+}
+
+export interface TrunkAppartenenzaQuadro {
+  nativa: TrunkVlanNativa;
+  /** Per VLAN vista: righe con IP ufficiali, altre (instradati esclusi), instradate. */
+  perVlan: Array<{ vid: number; ufficiali: number; altri: number; instradati: number }>;
+  totali: Record<TagAppartenenza, number>;
+}
+
+/** I numeri della pagina: quanti IP ufficiali e quanti no, per VLAN e per motivo. */
+export function getTrunkAppartenenza(): TrunkAppartenenzaQuadro {
+  const reti = retiDichiarate();
+  const nativa = getTrunkVlanNativa(reti);
+  const righe = db().prepare("SELECT vid, ip, protocolli, attivo FROM trunk_osservazioni WHERE ip != ''").all() as Array<{ vid: number; ip: string; protocolli: string | null; attivo: number }>;
+  const totali = Object.fromEntries(TAG_APPARTENENZA.map((t) => [t, 0])) as Record<TagAppartenenza, number>;
+  const per = new Map<number, { vid: number; ufficiali: number; altri: number; instradati: number }>();
+  for (const r of righe) {
+    const { tag } = appartenenzaIp({ ip: r.ip, vid: r.vid, protocolli: protocolliDa(r.protocolli), attivo: r.attivo }, reti, nativa.usata);
+    totali[tag]++;
+    const c = per.get(r.vid) ?? { vid: r.vid, ufficiali: 0, altri: 0, instradati: 0 };
+    if (tag === "ufficiale") c.ufficiali++;
+    else if (tag === "instradato") c.instradati++;
+    else c.altri++;
+    per.set(r.vid, c);
+  }
+  return { nativa, perVlan: [...per.values()].sort((a, b) => a.vid - b.vid), totali };
 }
 
 /** Come è stato trovato: solo in ascolto, solo col giro ARP (host silenzioso), con entrambi. */
@@ -550,6 +607,8 @@ export type TrunkMetodo = "ascolto" | "giro" | "entrambi";
 
 export function getTrunkOsservazioniPaginated(opts: {
   vid?: number | null; cidr?: string | null; q?: string; metodo?: TrunkMetodo | null; limit?: number; offset?: number;
+  /** Di serie tutte tranne le instradate (08/11). */
+  appartenenza?: FiltroAppartenenza;
 }): { righe: TrunkOsservazioneRiga[]; totale: number } {
   const where: string[] = [];
   const par: Array<string | number> = [];
@@ -570,18 +629,33 @@ export function getTrunkOsservazioniPaginated(opts: {
   const offset = Math.max(opts.offset ?? 0, 0);
   const d = db();
   const colonne = "id, vid, mac_display, ip, nome, fonte_nome, protocolli, passivo, attivo, ultima_vista";
-  type Grezza = Omit<TrunkOsservazioneRiga, "vendor" | "protocolli" | "rilievi"> & { protocolli: string | null };
+  type Grezza = Omit<TrunkOsservazioneRiga, "vendor" | "protocolli" | "rilievi" | "appartenenza"> & { protocolli: string | null };
+  const reti = retiDichiarate();
+  const nativa = getTrunkVlanNativa(reti).usata;
+  const filtro = opts.appartenenza ?? "";
+  const di = (r: Grezza): Appartenenza | null =>
+    r.ip ? appartenenzaIp({ ip: r.ip, vid: r.vid, protocolli: protocolliDa(r.protocolli), attivo: r.attivo }, reti, nativa) : null;
+  const passa = (r: Grezza) => {
+    const a = di(r);
+    return a ? passaFiltroAppartenenza(filtro, a.tag) : filtro === "" || filtro === "tutti";
+  };
   const completa = (grezze: Grezza[]): TrunkOsservazioneRiga[] => {
     const rilievi = getTipiRilievoPerMac(grezze.map((r) => r.mac_display));
     return grezze.map((r) => ({
       ...r, protocolli: protocolliDa(r.protocolli), vendor: lookupVendorSync(r.mac_display), rilievi: rilievi.get(r.mac_display) ?? [],
+      appartenenza: di(r),
     }));
   };
   if (opts.cidr) {
     // Una subnet non si filtra in SQL: si leggono le righe della VLAN (poche centinaia) e si taglia qui.
     const tutte = (d.prepare(`SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ip`).all(...par) as Grezza[])
-      .filter((r) => r.ip && isIpInCidr(r.ip, opts.cidr as string));
+      .filter((r) => r.ip && isIpInCidr(r.ip, opts.cidr as string) && passa(r));
     tutte.sort((a, b) => ordinaIp(a.ip) - ordinaIp(b.ip));
+    return { righe: completa(tutte.slice(offset, offset + limit)), totale: tutte.length };
+  }
+  if (filtro !== "tutti") {
+    // L'appartenenza dipende dalle reti di DA-IPAM: si calcola qui, sulle righe (qualche migliaio al massimo).
+    const tutte = (d.prepare(`SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC`).all(...par) as Grezza[]).filter(passa);
     return { righe: completa(tutte.slice(offset, offset + limit)), totale: tutte.length };
   }
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM trunk_osservazioni ${w}`).get(...par) as { n: number }).n;

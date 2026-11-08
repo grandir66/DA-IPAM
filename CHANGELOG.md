@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Sonda trunk: IP ufficiali e gli altri, con il perché
+
+Riccardo (08/11): «troppi IP fuori da quelli ufficiali… un'indicazione per gli IP ufficiali della VLAN e una per tutto il resto con i tag». Misura in sola lettura: su un'appliance solo 73 IP su 1.002 cadevano nella rete dichiarata della loro VLAN. La causa principale: i pacchetti senza tag arrivano come VID 0, la stessa rete in DA-IPAM è la VLAN 1.
+
+### Corretto
+- **VLAN nativa**: la VID 0 si legge come la VLAN nativa, dedotta dalla rete di DA-IPAM che contiene almeno metà degli IP senza tag e confermata una volta dalla pagina (`/api/trunk/vlan-nativa`, impostazione `trunk_vlan_nativa`). Con la nativa gli ufficiali diventano 672 su 1.002 e 293 su 488 sull'hub. Vale anche per il rilievo «fuori rete», che segnalava ogni IP senza tag.
+
+### Aggiunto
+- **Appartenenza di ogni IP** (`lib/trunk/appartenenza.ts`, prove): ufficiale, altra VLAN (con la rete e la VLAN dove DA-IPAM la mette), fuori rete, VLAN non in DA-IPAM, pubblico, 169.254, instradato (visto solo dentro un pacchetto IP: è il MAC del router). Nella pagina: numeri «ufficiali · altri» per VLAN, colonna «Appartenenza» e filtri nell'elenco; gli instradati sono nascosti di serie.
+
 ## [Non rilasciato] — 2026-11-08 · Script che prepara il dominio: account, gruppi e WinRM
 
 Riccardo (08/11): allo script dell'audit va aggiunta «la parte per abilitare WinRM e creare un utente con i diritti corretti». Scelte approvate: script separato, OU obbligatorie, WinRM e WMI solo dall'IP di DA-IPAM.

@@ -74,6 +74,10 @@ export interface UnifiPort {
   /** 08/11: quali VLAN passano tagged. «auto» = tutte le reti, «block_all» = nessuna, «custom» = tutte tranne `excluded_networkconf_ids`. */
   tagged_vlan_mgmt?: string | null;
   excluded_networkconf_ids?: string[];
+  /** 08/11: «all» (profilo di default: tutte le reti, nativa la LAN di default), «native», «customize», «disabled». */
+  forward?: string | null;
+  /** Profilo di porta (`rest/portconf`, non letto): se c'è, è lui a decidere le VLAN. */
+  portconf_id?: string | null;
 }
 
 /**
@@ -212,6 +216,8 @@ function parsePort(raw: unknown): UnifiPort | null {
     native_networkconf_id: str(r.native_networkconf_id),
     tagged_vlan_mgmt: str(r.tagged_vlan_mgmt),
     excluded_networkconf_ids: Array.isArray(r.excluded_networkconf_ids) ? r.excluded_networkconf_ids.filter((x): x is string => typeof x === "string") : [],
+    forward: str(r.forward),
+    portconf_id: str(r.portconf_id),
   };
 }
 

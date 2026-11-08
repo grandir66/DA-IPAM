@@ -141,7 +141,9 @@ export interface FotografiaVlanController {
  * Riccardo, 08/11: gli switch che non rispondono né a SNMP né a SSH (79993-ipam-2) «sono dentro al controller, che ha le
  * informazioni». Dal `port_table`: la nativa (`native_networkconf_id`) untagged e PVID; le tagged secondo `tagged_vlan_mgmt`
  * («auto» tutte le reti, «custom» tutte tranne le escluse, «block_all» nessuna). Senza `tagged_vlan_mgmt` le tagged non si
- * sanno: solo la nativa, mai un «tutte» inventato. Le VLAN dell'apparato sono quelle delle reti con un numero: sul gateway
+ * sanno: solo la nativa, mai un «tutte» inventato. Eccezione dichiarata dal controller: `forward: "all"` senza nativa né profilo
+ * di porta è il profilo di default, cioè la LAN di default (VLAN 1) nativa e tutte le altre tagged (su 79993-ipam-2 l'08/11 quasi
+ * tutte le porte erano così e restavano «non letto»). Le VLAN dell'apparato sono quelle delle reti con un numero: sul gateway
  * sono le reti che instrada. null = niente da dire (nessuna rete tradotta o nessuna porta).
  */
 export function fotografiaVlanController(d: UnifiDevice, reti: ReadonlyArray<UnifiRete>): FotografiaVlanController | null {
@@ -154,13 +156,15 @@ export function fotografiaVlanController(d: UnifiDevice, reti: ReadonlyArray<Uni
   }
   const tutte = [...nomi.keys()].sort((a, b) => a - b);
   const out: FotografiaVlanController = { vlan: tutte.map((v) => ({ vlan_id: v, nome: nomi.get(v) ?? null })), porte: [], pvid: [] };
+  const predefinita = nomi.has(1) ? 1 : undefined;
   for (const p of d.port_table) {
-    const nativa = p.native_networkconf_id ? vlanDi.get(p.native_networkconf_id) : undefined;
+    const tutteDiDefault = !p.native_networkconf_id && !p.portconf_id && !p.tagged_vlan_mgmt && p.forward === "all";
+    const nativa = p.native_networkconf_id ? vlanDi.get(p.native_networkconf_id) : tutteDiDefault ? predefinita : undefined;
     if (nativa !== undefined) {
       out.pvid.push({ if_index: p.port_idx, pvid: nativa });
       out.porte.push({ vlan_id: nativa, if_index: p.port_idx, egress: true, untagged: true });
     }
-    const modo = p.tagged_vlan_mgmt ?? null;
+    const modo = p.tagged_vlan_mgmt ?? (tutteDiDefault ? "auto" : null);
     if (modo !== "auto" && modo !== "custom") continue;
     const escluse = new Set((modo === "custom" ? p.excluded_networkconf_ids ?? [] : []).map((id) => vlanDi.get(id)).filter((v): v is number => v !== undefined));
     for (const v of tutte) if (v !== nativa && !escluse.has(v)) out.porte.push({ vlan_id: v, if_index: p.port_idx, egress: true, untagged: false });

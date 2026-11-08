@@ -27,6 +27,8 @@ test("controller: nativa untagged, «auto» tutte le altre tagged, «custom» me
     porta(2, { native_networkconf_id: "voip", tagged_vlan_mgmt: "block_all" }),
     porta(3, { native_networkconf_id: "lan", tagged_vlan_mgmt: "custom", excluded_networkconf_ids: ["ospiti"] }),
     porta(4, {}),
+    porta(5, { forward: "all" }),
+    porta(6, { forward: "all", portconf_id: "profilo-x" }),
   ]), reti)!;
   assert.deepEqual(f.vlan, [{ vlan_id: 1, nome: "Default" }, { vlan_id: 40, nome: "Voce" }, { vlan_id: 50, nome: "Ospiti" }]);
   const di = (i: number) => f.porte.filter((p) => p.if_index === i).map((p) => [p.vlan_id, p.untagged]);
@@ -34,7 +36,9 @@ test("controller: nativa untagged, «auto» tutte le altre tagged, «custom» me
   assert.deepEqual(di(2), [[40, true]]);
   assert.deepEqual(di(3), [[1, true], [40, false]]);
   assert.deepEqual(di(4), [], "senza nativa né modo: non so, niente inventato");
-  assert.deepEqual(f.pvid, [{ if_index: 1, pvid: 1 }, { if_index: 2, pvid: 40 }, { if_index: 3, pvid: 1 }]);
+  assert.deepEqual(di(5), [[1, true], [40, false], [50, false]], "forward «all» senza nativa né profilo = profilo di default: LAN nativa, tutte tagged");
+  assert.deepEqual(di(6), [], "con un profilo di porta decide il profilo, che non leggiamo");
+  assert.deepEqual(f.pvid, [{ if_index: 1, pvid: 1 }, { if_index: 2, pvid: 40 }, { if_index: 3, pvid: 1 }, { if_index: 5, pvid: 1 }]);
   assert.equal(fotografiaVlanController(switchDi([]), reti), null);
   assert.equal(fotografiaVlanController(switchDi([porta(1, {})]), []), null);
 });

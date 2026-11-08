@@ -43,6 +43,7 @@ import type { SortDirection } from "@/lib/table-sort";
 import { Plus, Trash2, Network, Key, Scan, X, Search, Router, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { NetworkWithStats } from "@/types";
+import { siAgganciaDaSola } from "@/lib/credentials/tipi";
 
 interface NetworkWithRouter extends NetworkWithStats {
   router_id?: number | null;
@@ -601,7 +602,8 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
             setDialogOpen(open);
             if (open) {
               setNewNetworkRouterId("");
-              setNetworkCredentialIds([]);
+              // Le credenziali registrate che si agganciano da sole, già proposte (08/11/2026): si tolgono qui.
+              setNetworkCredentialIds(credentials.filter((c) => siAgganciaDaSola(c.credential_type)).map((c) => c.id));
             }
           }}
         >

@@ -15,7 +15,7 @@
  * Modulo con l'handle del DB esplicito: non importa né `db.ts` né `db-tenant.ts`.
  */
 import type Database from "better-sqlite3";
-import { erroreVocePerRete } from "./tipi";
+import { erroreVocePerRete, siAgganciaDaSola } from "./tipi";
 
 /** Una voce che non vale per la lista della rete: le rotte rispondono 400 col messaggio. */
 export class CredenzialeNonAmmessa extends Error {
@@ -93,6 +93,31 @@ export function copiaListaReteDb(dbh: Database.Database, sourceNetworkId: number
     for (const id of daCopiare) {
       ins.run(targetNetworkId, id, ordine++);
       aggiunte++;
+    }
+  })();
+  return aggiunte;
+}
+
+/** Le voci registrate che si agganciano da sole (`siAgganciaDaSola`), in ordine di creazione. */
+export function vociAutomaticheDb(dbh: Database.Database): number[] {
+  const voci = dbh.prepare(`SELECT id, credential_type FROM credentials ORDER BY id`).all() as Array<{ id: number; credential_type: string }>;
+  return voci.filter((v) => siAgganciaDaSola(v.credential_type)).map((v) => v.id);
+}
+
+/**
+ * Credenziale nuova: in coda alla lista di ogni rete esistente, se il suo tipo si aggancia da solo. Restituisce a
+ * quante reti è stata aggiunta (0 per un tipo che non si aggancia).
+ */
+export function agganciaATutteLeRetiDb(dbh: Database.Database, credentialId: number, tipo: string): number {
+  if (!siAgganciaDaSola(tipo)) return 0;
+  const reti = dbh.prepare(`SELECT id FROM networks ORDER BY id`).all() as Array<{ id: number }>;
+  let aggiunte = 0;
+  dbh.transaction(() => {
+    const max = dbh.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`);
+    const ins = dbh.prepare(`INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`);
+    for (const r of reti) {
+      const { m } = max.get(r.id) as { m: number };
+      aggiunte += ins.run(r.id, credentialId, m + 1).changes;
     }
   })();
   return aggiunte;

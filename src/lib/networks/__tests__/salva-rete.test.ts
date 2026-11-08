@@ -134,7 +134,8 @@ describe("PUT della rete (aggiornaRete)", () => {
 
   it("una voce che non esiste più → rifiuto dichiarato, non un errore di vincolo", () => {
     withTenant(T, () => {
-      const r = creaRete({ cidr: "10.71.4.0/24", name: "fantasma", description: "", location: "" });
+      // Lista vuota scelta: dall'08/11 una rete senza lista nasce con le voci automatiche (`TIPI_AUTOMATICI_SU_RETE`).
+      const r = creaRete({ cidr: "10.71.4.0/24", name: "fantasma", description: "", location: "", credential_ids: [] });
       assert.throws(
         () => aggiornaRete(r.id, { credential_ids: [SSH, 999_999] }),
         (e: unknown) => e instanceof CredenzialiReteNonValide && /non esiste/.test(e.message),

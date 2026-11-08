@@ -38,7 +38,7 @@ import {
   getNetworkCredentials,
   type NetworkCredentialRow,
 } from "@/lib/db";
-import { CredenzialeNonAmmessa } from "@/lib/credentials/lista-rete";
+import { CredenzialeNonAmmessa, vociAutomaticheDb } from "@/lib/credentials/lista-rete";
 import { etichettaTipo, tipiPerRuoloVecchio } from "@/lib/credentials/tipi";
 
 /** Una credenziale della richiesta non vale per la rete: la rotta risponde 400. */
@@ -164,7 +164,10 @@ export function creaRete(dati: DatiCreazione): ReteCreata {
   const rete = getDb().transaction(() => {
     const rete = createNetwork(datiRete);
     if (router_id) setNetworkRouter(rete.id, router_id);
-    const tutte = [...(credential_ids ?? [])];
+    // Senza una lista scelta (né `credential_ids` né campi vecchi) la rete nasce con le voci registrate che si
+    // agganciano da sole (08/11/2026, `TIPI_AUTOMATICI_SU_RETE`). Il form le propone già: chi ne toglie una la toglie.
+    const scelta = credential_ids !== undefined || vecchi.ids.length > 0;
+    const tutte = scelta ? [...(credential_ids ?? [])] : vociAutomaticheDb(getDb());
     for (const id of vecchi.ids) if (!tutte.includes(id)) tutte.push(id);
     if (tutte.length > 0) lista(rete.id, tutte);
     return rete;

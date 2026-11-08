@@ -278,6 +278,23 @@ export function valePerAccesso(tipo: string | null | undefined): boolean {
   return t != null && TIPI_D_ACCESSO.includes(t);
 }
 
+/**
+ * Tipi che si agganciano da soli a tutte le reti (Riccardo, 08/11/2026: «quando si crea una network le credenziali già
+ * registrate vanno aggiunte da sole; una credenziale nuova va agganciata anche alle reti esistenti»). Si accodano in
+ * fondo alla lista, dopo quelle scelte a mano: l'ordine scelto non cambia.
+ *
+ * `windows` NON c'è finché Riccardo non decide: il freno anti-blocco conta 3 logon rifiutati per account in ogni giro,
+ * e i giri sono per rete. Una password Windows sbagliata che LDAP non sa verificare (account locale, nessuna
+ * integrazione AD) su 7 reti fa 21 logon rifiutati per giro invece di 3: è il blocco dell'account di dominio.
+ */
+export const TIPI_AUTOMATICI_SU_RETE: readonly TipoCredenziale[] = ["ssh", "snmp", "snmp_v3", "api"];
+
+/** La voce si aggancia da sola alle reti? */
+export function siAgganciaDaSola(tipo: string | null | undefined): boolean {
+  const t = normalizzaTipo(tipo);
+  return t != null && TIPI_AUTOMATICI_SU_RETE.includes(t);
+}
+
 interface VoceConTipo {
   name: string;
   credential_type: string;

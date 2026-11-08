@@ -123,6 +123,7 @@ import type {
 } from "@/types";
 import { unisci, risolvi } from "./percorsi";
 import { ripulisciRilieviControlli } from "./vuln/rilievi-controlli";
+import { kernelSuperati, type PacchettoKernel } from "./vuln/riepilogo-host";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT CONTEXT (AsyncLocalStorage)
@@ -9475,8 +9476,8 @@ export function queryAllTenantsScalar<T>(
 
 
 /**
- * Per ogni host con findings CVE archiviati: severità peggiore + conteggi
- * Critical/High/Medium dell'ultima scan_run su quell'host.
+ * Per ogni host: severità peggiore e CVE distinte Critical/High/Medium di oggi (scanner all'ultima
+ * scansione + Wazuh), una volta sola per host.
  *
  * Usato in /discovery per la colonna "Vulnerabilità". O(N) con index su
  * vuln_findings(host_id, scanned_at DESC) — già presente.
@@ -9511,34 +9512,46 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
   const cached = vulnSummaryCache.get(tenant);
   if (cached && cached.expires > Date.now()) return cached.data;
 
-  // Aggregazione SU TUTTE le scan_run + Wazuh: per ogni host conta findings
-  // per severità da entrambe le fonti (scanner-edge `vuln_findings` e Wazuh
-  // `wazuh_vuln` joinato via wazuh_agent.host_id). Per discovery interessa
-  // Dal 27/10/2026 «ne ha ora» (vista vuln_findings_attuali, ultima scansione di ogni rete): le CVE
-  // superate restano solo nello storico (Riccardo). Le due fonti possono sovrapporsi sullo stesso CVE: i conteggi
-  // si sommano (UNION ALL) — accettiamo possibile inflazione perché l'obiettivo
-  // della discovery è triage rapido, non analisi puntuale.
+  // Lo stato di oggi, in CVE e non in righe (08/11/2026, Riccardo: «i numeri non sono realistici»). Scanner: la vista
+  // vuln_findings_attuali (ultima scansione buona di ogni IP, dal 27/10). Wazuh: VALID, agente vivo, senza i kernel
+  // superati (`kernelSuperati`). Una CVE (o l'NVT, se lo scanner non dà la CVE) conta UNA volta per host anche se sta su
+  // più porte, più pacchetti o in tutte e due le fonti, con la gravità più alta vista. Sull'hub 533 prima si contavano
+  // 70.637 righe, le CVE vere per host erano 51.925.
+  const superati = [...kernelSuperati(
+    db().prepare(
+      `SELECT DISTINCT agent_id, package_name, package_version FROM wazuh_vuln
+        WHERE status = 'VALID' AND package_name LIKE 'linux-image-%'`
+    ).all() as PacchettoKernel[]
+  )];
   const rows = db()
     .prepare(
-      `SELECT host_id, severity, SUM(n) AS n FROM (
-         SELECT host_id, severity, COUNT(*) AS n
-           FROM vuln_findings_attuali
-          WHERE host_id IS NOT NULL
-            AND severity IN ('Critical','High','Medium','Low')
-          GROUP BY host_id, severity
-         UNION ALL
-         SELECT wa.host_id AS host_id, wv.severity AS severity, COUNT(*) AS n
-           FROM wazuh_vuln wv
-           JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
-          WHERE wa.host_id IS NOT NULL
-            AND wv.status = 'VALID'
-            AND wv.severity IN ('Critical','High','Medium','Low')
-            AND ${wazuhAgenteVivo("wa")}
-          GROUP BY wa.host_id, wv.severity
-       )
-       GROUP BY host_id, severity`
+      `SELECT host_id,
+              CASE MIN(rango) WHEN 0 THEN 'Critical' WHEN 1 THEN 'High' WHEN 2 THEN 'Medium' ELSE 'Low' END AS severity,
+              COUNT(*) AS n
+         FROM (
+           SELECT host_id, chiave, MIN(rango) AS rango FROM (
+             SELECT host_id, COALESCE(NULLIF(cve_id, ''), 'nvt:' || nvt_oid) AS chiave,
+                    CASE severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END AS rango
+               FROM vuln_findings_attuali
+              WHERE host_id IS NOT NULL
+                AND severity IN ('Critical','High','Medium','Low')
+             UNION ALL
+             SELECT wa.host_id, wv.cve,
+                    CASE wv.severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END
+               FROM wazuh_vuln wv
+               JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+              WHERE wa.host_id IS NOT NULL
+                AND wv.status = 'VALID'
+                AND wv.severity IN ('Critical','High','Medium','Low')
+                AND ${wazuhAgenteVivo("wa")}
+                AND (wv.agent_id || '|' || COALESCE(wv.package_name, '')) NOT IN (SELECT value FROM json_each(?))
+           )
+           WHERE chiave IS NOT NULL
+           GROUP BY host_id, chiave
+         )
+        GROUP BY host_id, rango`
     )
-    .all() as Array<{ host_id: number; severity: string; n: number }>;
+    .all(JSON.stringify(superati)) as Array<{ host_id: number; severity: string; n: number }>;
 
   const rank: Record<string, number> = {
     Critical: 0, High: 1, Medium: 2, Low: 3, Unknown: 5,

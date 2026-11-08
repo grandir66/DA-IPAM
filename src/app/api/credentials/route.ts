@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       }
       const esito = creaVoceDb(getDb(), parsed.data);
       if (!esito.ok) return NextResponse.json({ error: esito.errore }, { status: esito.stato });
-      return NextResponse.json(esito.vista, { status: esito.stato });
+      return NextResponse.json({ ...esito.vista, reti_agganciate: esito.reti_agganciate ?? 0 }, { status: esito.stato });
     } catch (error) {
       console.error("Error creating credential:", error);
       return NextResponse.json({ error: "Errore nella creazione della credenziale" }, { status: 500 });

@@ -42,6 +42,7 @@ import {
   type TipoCredenziale,
 } from "./tipi";
 import { descriviUsi, totaleUsi, usiCredenzialeDb, type UsiCredenziale } from "./usi";
+import { agganciaATutteLeRetiDb } from "./lista-rete";
 
 /** Le colonne scrivibili di una voce; i segreti già cifrati. */
 export interface ColonneCredenziale {
@@ -146,7 +147,7 @@ export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolea
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
 export type EsitoVoce =
-  | { ok: true; stato: 200 | 201; vista: CredenzialeVista }
+  | { ok: true; stato: 200 | 201; vista: CredenzialeVista; reti_agganciate?: number }
   | { ok: false; stato: 400 | 404 | 409; errore: string; usi?: UsiCredenziale };
 
 export type EsitoElimina = { ok: true } | { ok: false; stato: 404 | 409; errore: string; usi?: UsiCredenziale };
@@ -260,8 +261,12 @@ export function creaVoceDb(dbh: Database.Database, dati: DatiCredenziale): Esito
   // Un campo che il metodo non ha (lo username di una community dalla
   // creazione rapida) non si scrive.
   for (const col of c.daSvuotare) (colonne as Riga)[col] = null;
-  const voce = creaCredenzialeDb(dbh, colonne);
-  return { ok: true, stato: 201, vista: mascheraCredenziale(voce, 0) };
+  // Voce e aggancio alle reti esistenti insieme (08/11/2026, `TIPI_AUTOMATICI_SU_RETE`).
+  return dbh.transaction((): EsitoVoce => {
+    const voce = creaCredenzialeDb(dbh, colonne);
+    const reti = agganciaATutteLeRetiDb(dbh, voce.id, voce.credential_type);
+    return { ok: true, stato: 201, vista: mascheraCredenziale(voce, reti), reti_agganciate: reti };
+  })();
 }
 
 /**

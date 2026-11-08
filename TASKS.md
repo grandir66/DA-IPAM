@@ -1,6 +1,15 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Discovery con i numeri veri e credenziali agganciate da sole alle reti (Riccardo)
+
+- [x] Misura sull'hub (sola lettura): scanner già all'ultima scansione; numeri gonfiati da Wazuh e dal conteggio per righe. Da 70.637 righe a 51.925 CVE per host
+- [x] Discovery conta CVE distinte per host, kernel superati fuori; prova `src/lib/vuln/__tests__/riepilogo-discovery.test.ts` vista fallire (10 righe contro 5 CVE)
+- [x] Credenziali SSH/SNMP/API agganciate da sole a reti nuove e reti esistenti; prova `src/lib/credentials/__tests__/aggancio-reti.test.ts` vista fallire con la regola spenta
+- [ ] **Decide Riccardo (Sì/No): agganciare in automatico anche le credenziali Windows?** Rischio: 3 logon rifiutati per account in ogni giro, giri per rete → su 7 reti fino a 21 per giro con una password che LDAP non sa verificare. Se sì: aggiungere `windows` a `TIPI_AUTOMATICI_SU_RETE` in `src/lib/credentials/tipi.ts` (e aggiornare la prova)
+- [ ] Le credenziali già registrate e non agganciate restano come sono (sull'hub 8 voci su 13): l'aggancio vale da qui in avanti. Se Riccardo le vuole su tutte le reti, si fa dalla tabella della rete («copia da un'altra rete») o con un giro una tantum da decidere
+- [ ] Wazuh dichiara per i Windows migliaia di CVE per sistema operativo (es. 1.703 su un Windows Server 2019 aggiornato): resta nei numeri della Discovery. Da valutare se mostrare Wazuh in una colonna a parte
+
 ## 2026-11-08 — Installer pulito su Debian e modalità tecnico multi-profilo (Riccardo, decisioni da piano)
 
 Riccardo, 08/11: «proviamo a sviluppare l'installer pulito su debian e la possibilità di usare il sistema come tecnico memorizzando localmente più profili cliente, pensando alla modalità superadmin e multitenant». Risposte del 08/11:

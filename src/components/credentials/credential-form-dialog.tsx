@@ -154,7 +154,8 @@ function ModuloVoce({
         toast.error(esito.message);
         return;
       }
-      toast.success(editingId ? "Credenziale aggiornata" : "Credenziale creata");
+      const reti = (esito.data as { reti_agganciate?: number }).reti_agganciate ?? 0;
+      toast.success(editingId ? "Credenziale aggiornata" : reti > 0 ? `Credenziale creata e aggiunta a ${reti} ${reti === 1 ? "rete" : "reti"}` : "Credenziale creata");
       onSalvata(esito.data);
     } finally {
       setSalvando(false);

@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Discovery: CVE vere per host · credenziali agganciate da sole alle reti
+
+### Corretto
+- **Discovery, colonne «CVE» e «CVE C/H/M»: si contano CVE, non righe.** Riccardo (08/11): «i numeri non sono realistici, sembra tutto lo storico». Misurato sull'hub: lo scanner era già all'ultima scansione (1.623 rilievi attuali su 14.947 in archivio); il gonfiore veniva da Wazuh e dal conteggio per righe: la stessa CVE su più porte, più pacchetti o in tutte e due le fonti contava più volte, e il kernel Linux vecchio rimasto installato accanto al nuovo portava le sue CVE. Ora una CVE vale una volta per host con la gravità più alta, e per ogni agente Wazuh conta solo il `linux-image-*` più recente (`src/lib/vuln/riepilogo-host.ts`). Sull'hub: da 70.637 righe (4.611 Critical, 37.080 High) a 51.925 CVE (3.334 Critical, 27.253 High). Il resto è quello che Wazuh dichiara per i Windows: migliaia di CVE per sistema operativo, da guardare a parte.
+
+### Aggiunto
+- **Credenziali agganciate da sole alle reti.** Riccardo (08/11): una rete nuova nasce con le credenziali già registrate; una credenziale nuova va in coda alla lista di ogni rete esistente. Vale per SSH, SNMP e API; le voci scelte a mano restano in testa e il form di creazione le propone già, quindi chi ne toglie una la toglie. **Windows resta fuori finché Riccardo non decide**: il freno anti-blocco conta 3 logon rifiutati per account in ogni giro, e i giri sono per rete; una password sbagliata che LDAP non sa verificare su 7 reti farebbe 21 tentativi per giro.
+
 ## [Non rilasciato] — 2026-11-08 · Tipo d'installazione «tecnico» (interruttore)
 
 ADR 0037, piano `2026-11-08-installazione-tecnico.md`, Task 1. Riccardo (08/11) vuole usare DA-IPAM come tecnico con più profili cliente sullo stesso PC: è un'eccezione voluta alla decisione del 12/10, valida solo per quel tipo d'installazione. Serve un solo posto che dica che tipo d'installazione è, prima di accendere qualsiasi cosa.

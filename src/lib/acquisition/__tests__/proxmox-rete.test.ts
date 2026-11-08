@@ -16,7 +16,7 @@ export const LINK = JSON.stringify([
     { ifindex: 3, ifname: "eno2", mtu: 1500, operstate: "UP", master: "vmbr0", address: "02:00:00:00:91:01", linkinfo: {} },
     { ifindex: 4, ifname: "bond0", mtu: 1500, operstate: "UP", master: "vmbr0", address: "02:00:00:00:91:01", linkinfo: { info_kind: "bond", info_data: { mode: "802.3ad" } } },
     { ifindex: 5, ifname: "vmbr0", mtu: 1500, operstate: "UP", address: "02:00:00:00:91:01", linkinfo: { info_kind: "bridge", info_data: { vlan_filtering: 1 } } },
-    { ifindex: 6, ifname: "tap100i0", mtu: 1500, operstate: "UNKNOWN", master: "vmbr0", address: "02:00:00:00:91:10", linkinfo: { info_kind: "tun" } },
+    { ifindex: 6, ifname: "tap100i0", flags: ["BROADCAST", "MULTICAST", "PROMISC", "UP", "LOWER_UP"], mtu: 1500, operstate: "UNKNOWN", master: "vmbr0", address: "02:00:00:00:91:10", linkinfo: { info_kind: "tun" } },
     { ifindex: 7, ifname: "tap101i0", mtu: 1500, operstate: "UNKNOWN", master: "fwbr101i0", address: "02:00:00:00:91:11", linkinfo: { info_kind: "tun" } },
     { ifindex: 8, ifname: "fwbr101i0", mtu: 1500, operstate: "UP", address: "02:00:00:00:91:12", linkinfo: { info_kind: "bridge", info_data: { vlan_filtering: 0 } } },
     { ifindex: 9, ifname: "fwln101i0", mtu: 1500, operstate: "UP", master: "fwbr101i0", address: "02:00:00:00:91:13", linkinfo: { info_kind: "veth" } },
@@ -54,6 +54,9 @@ test("proxmox-rete: porte senza l'interno del firewall, la VM si vede dalla port
     const nomi = interfacceProxmox(link).map((i) => [i.name, i.kind]);
     assert.deepEqual(nomi, [["eno1", "physical"], ["eno2", "physical"], ["bond0", "aggregate"], ["vmbr0", "other"], ["tap100i0", "other"], ["fwpr101p0", "other"], ["veth200i0", "other"]]);
     assert.equal(interfacceProxmox(link).find((i) => i.name === "fwpr101p0")?.description, "VM 101 scheda net0");
+    // La tap della VM accesa è UNKNOWN col collegamento su (LOWER_UP): su, non giù; lo stato senza LOWER_UP resta «non so».
+    assert.equal(interfacceProxmox(link).find((i) => i.name === "tap100i0")?.oper_status, "up");
+    assert.equal(interfacceProxmox(link).find((i) => i.name === "lo"), undefined);
     assert.deepEqual(aggregatiProxmox(link), [{ name: "bond0", protocol: null, admin_status: null, oper_status: "up", members: ["eno1"] }]);
 });
 

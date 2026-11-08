@@ -46,8 +46,13 @@ export function parseLinkProxmox(testo: string): LinkProxmox[] | null {
         const info = (r.linkinfo && typeof r.linkinfo === "object" ? r.linkinfo : {}) as Record<string, unknown>;
         const dati = (info.info_data && typeof info.info_data === "object" ? info.info_data : {}) as Record<string, unknown>;
         const tipo = str(info.info_kind);
+        // Le `tap` e le `veth` delle VM accese dicono `UNKNOWN`: con `LOWER_UP` fra le bandiere il collegamento c'è (sull'hub,
+        // 08/11, tutte le porte delle VM risultavano «down»).
+        const flags = Array.isArray(r.flags) ? r.flags : [];
+        const op = str(r.operstate)?.toLowerCase() ?? null;
+        const stato = op === "unknown" ? (flags.includes("LOWER_UP") ? "up" : null) : op;
         return [{
-            ifindex: num(r.ifindex), nome, mac: str(r.address), mtu: num(r.mtu), stato: str(r.operstate)?.toLowerCase() ?? null, master: str(r.master),
+            ifindex: num(r.ifindex), nome, mac: str(r.address), mtu: num(r.mtu), stato, master: str(r.master),
             tipo, vlanId: tipo === "vlan" ? num(dati.id) : null, padre: str(r.link), vlanFiltering: tipo === "bridge" && dati.vlan_filtering === 1,
         }];
     });

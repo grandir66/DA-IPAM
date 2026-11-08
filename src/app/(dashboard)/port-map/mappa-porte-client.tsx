@@ -20,7 +20,11 @@ import { MODI, TabellaPorte, Testata, TIPI_PORTA, type OrdinamentoTabella } from
 import type { SortDirection } from "@/components/shared/sortable-table-head";
 
 type Scheda = "oggetti" | "porte" | "rotte";
-interface Risposta<T> { righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[] }
+interface Risposta<T> {
+  righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[];
+  /** Filtrando per apparato: porte con più oggetti di quelli mostrati. */
+  troncate?: Array<{ porta: string; mostrati: number; totale: number }>;
+}
 
 const CONFIDENZE: Record<Confidenza, { segno: string; testo: string; classi: string; spiega: string }> = {
   certa: { segno: "●", testo: "Certa", classi: STILE_STATO.ok.classi, spiega: "Lo dice il controller, oppure è l'unico MAC sulla porta" },
@@ -285,6 +289,11 @@ export function MappaPorteClient() {
           : dati.righe.length === 0 ? <Vuoto titolo="Nessuna riga" testo="Nessun risultato con questi filtri. Dopo un'installazione nuova serve un giro sugli switch." />
           : (
             <div className="space-y-2 p-3">
+              {scheda === "oggetti" && (oggetti?.troncate?.length ?? 0) > 0 && (
+                <p className="text-[13px] text-muted-foreground">
+                  {oggetti!.troncate!.map((t) => `Su ${t.porta} passano ${t.totale} oggetti: qui i ${t.mostrati} visti più di recente.`).join(" ")}
+                </p>
+              )}
               {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} ordine={ordine} /> : scheda === "porte" ? <TabellaPorte righe={porte?.righe ?? []} ordine={ordine} /> : <TabellaRotte righe={rotte?.righe ?? []} ordine={ordine} />}
               <Paginazione pagina={pagina} totale={dati.totale} dimensione={dati.dimensionePagina} onPagina={setPagina} />
             </div>
@@ -315,9 +324,13 @@ function TabellaOggetti({ righe, onScegli, ordine }: { righe: OggettoMappa[]; on
             <TableCell className="font-mono text-[13px]">{o.mac ?? "—"}{o.macs.length > 1 ? ` +${o.macs.length - 1}` : ""}</TableCell>
             <TableCell className="font-mono text-[13px]">{o.ip ?? "—"}{o.nIp > 1 ? ` +${o.nIp - 1}` : ""}</TableCell>
             <TableCell className="max-w-64 truncate font-mono text-[13px]" title={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo ?? undefined}>
-              {o.apparato ? `${o.apparato} · ${o.porta}` : <span className="text-muted-foreground">{o.ramo}</span>}
-              {o.dedotta && o.apparato ? " ≈" : ""}
-              {o.conflitto ? " ▲" : ""}
+              {o.qui && <span className="block font-sans">Qui su {o.qui.porta} · {TIPI_PORTA[o.qui.tipoPorta].toLowerCase()}</span>}
+              <span className={o.qui ? "block text-muted-foreground" : undefined}>
+                {o.qui ? "sta su " : ""}
+                {o.apparato ? `${o.apparato} · ${o.porta}` : <span className="text-muted-foreground">{o.ramo}</span>}
+                {o.dedotta && o.apparato ? " ≈" : ""}
+                {o.conflitto ? " ▲" : ""}
+              </span>
             </TableCell>
             <TableCell className="font-mono text-[13px]">{o.vlan ?? "—"}</TableCell>
             <TableCell><SegnoConfidenza c={o.confidenza} /></TableCell>

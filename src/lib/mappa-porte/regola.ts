@@ -17,7 +17,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { completaOggetti } from "@/lib/mappa-porte/completa";
 import { creaIndicePorte } from "@/lib/mappa-porte/nomi-porta";
-import type {
+import type { Avvistamento,
   Confidenza, ConteggiMappa, DatoVlan, IngressoMappaPorte, ModoPorta, MotivoPassaggio, OggettoGrezzo, OggettoMappa, PortaMappa, Prova,
   RigaHost, RigaMacPorta, RigaPorta, RisultatoMappa, Spostamento, TipoPorta,
 } from "@/lib/mappa-porte/tipi";
@@ -236,6 +236,8 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     };
   };
 
+  // Dove ogni oggetto è visto, anche di passaggio (08/11): la chiave è il MAC, tradotta dopo nell'oggetto che lo raggruppa.
+  const grezzi: Avvistamento[] = [];
   const perMac = new Map<string, RigaPos[]>();
   for (const r of righe) perMac.set(r.mac, [...(perMac.get(r.mac) ?? []), r]);
   const oggetti: OggettoGrezzo[] = [];
@@ -257,6 +259,10 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
       const p: Prova = { apparato: nomeApparato(r.device_id), porta: nomePorta(s), tipo: tipi.get(c) ?? "vuota", nMac: s.macs.size, fonte: f, visto: r.timestamp };
       visti.set(c, p);
       prove.push(p);
+    }
+    for (const r of recenti) {
+      const s = stati.get(chiaveP(r.device_id, r.chiave))!;
+      grezzi.push({ chiave: mac, deviceId: r.device_id, portaChiave: r.chiave, porta: nomePorta(s), tipoPorta: tipi.get(chiaveP(r.device_id, r.chiave)) ?? "vuota", visto: r.timestamp });
     }
     const id = identita(mac);
     const base = {
@@ -367,6 +373,10 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     const dove = (versoApparato.get(a.id) ?? []).sort((x, y) => x.device - y.device);
     const v = dove[0];
     const s = v ? stati.get(chiaveP(v.device, v.chiave)) : undefined;
+    for (const d of dove) {
+      const st = stati.get(chiaveP(d.device, d.chiave));
+      if (st) grezzi.push({ chiave: `dev:${a.id}`, deviceId: d.device, portaChiave: d.chiave, porta: nomePorta(st), tipoPorta: tipi.get(chiaveP(d.device, d.chiave)) ?? "passaggio", visto: null });
+    }
     const prove: Prova[] = dove.flatMap((d) => {
       const st = stati.get(chiaveP(d.device, d.chiave));
       return st ? [{ apparato: nomeApparato(d.device), porta: nomePorta(st), tipo: "passaggio" as const, nMac: st.macs.size, fonte: d.fonte === "unifi" ? "LLDP · Controller" : "LLDP", visto: "" }] : [];
@@ -389,7 +399,25 @@ export function calcolaMappa(ing: IngressoMappaPorte): RisultatoMappa {
     certe: quanti("certa"), spiegate: quanti("spiegata"), daCapire: quanti("da_capire"), nonSo: quanti("non_so"),
     senzaHost: vivi.filter((o) => o.senzaHost).length, apparatiConTabella: conTabella.size, apparatiSoloController: soloController.size,
   };
-  return { oggetti: tutti, porte, conteggi };
+  return { oggetti: tutti, porte, conteggi, avvistamenti: traduciAvvistamenti(grezzi, tutti) };
+}
+
+/** Da MAC a oggetto (che può raggruppare più MAC): una riga per oggetto e porta, la più recente. */
+function traduciAvvistamenti(grezzi: readonly Avvistamento[], oggetti: readonly OggettoMappa[]): Avvistamento[] {
+  const perMac = new Map<string, string>();
+  for (const o of oggetti) {
+    perMac.set(o.chiave, o.chiave);
+    for (const m of o.macs) { const n = norm(m); if (n && !perMac.has(n)) perMac.set(n, o.chiave); }
+  }
+  const out = new Map<string, Avvistamento>();
+  for (const g of grezzi) {
+    const chiave = perMac.get(g.chiave) ?? perMac.get(norm(g.chiave) ?? "") ?? null;
+    if (!chiave) continue;
+    const k = `${chiave}|${g.deviceId}|${g.portaChiave}`;
+    const prima = out.get(k);
+    if (!prima || (g.visto ?? "") > (prima.visto ?? "")) out.set(k, { ...g, chiave });
+  }
+  return [...out.values()];
 }
 
 const AGGREGATA = /^link aggregate \d+/i;

@@ -97,6 +97,8 @@ export interface OggettoMappa {
   vecchio: boolean;
   senzaHost: boolean;
   visto: string | null;
+  /** Solo filtrando per un apparato (08/11): la porta di quell'apparato su cui l'oggetto passa, se la sua posizione è altrove. */
+  qui?: { porta: string; tipoPorta: TipoPorta } | null;
 }
 
 /** Un oggetto prima di `completaOggetti`: un MAC, una riga. */
@@ -129,6 +131,9 @@ export interface ConteggiMappa {
   apparatiConTabella: number; apparatiSoloController: number;
 }
 
-export interface RisultatoMappa { oggetti: OggettoMappa[]; porte: PortaMappa[]; conteggi: ConteggiMappa }
+/** Una porta su cui un oggetto è visto, anche di passaggio (08/11): per «oggetti visti su questo apparato». */
+export interface Avvistamento { chiave: string; deviceId: number; portaChiave: string; porta: string; tipoPorta: TipoPorta; visto: string | null }
+
+export interface RisultatoMappa { oggetti: OggettoMappa[]; porte: PortaMappa[]; conteggi: ConteggiMappa; avvistamenti: Avvistamento[] }
 
 export interface Spostamento { chiave: string; mac: string | null; nome: string | null; daApparato: string; daPorta: string; aApparato: string; aPorta: string }

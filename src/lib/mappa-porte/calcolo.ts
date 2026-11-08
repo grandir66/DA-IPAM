@@ -172,6 +172,8 @@ export function ricalcolaMappaPorte(nowMs: number = Date.now()): EsitoCalcolo {
     tipo_porta, vlan, ramo, perche, fonti, prove, conflitto, dedotta, vecchio, senza_host, visto, macs, ips) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insP = d.prepare(`INSERT INTO mappa_porte_porte (device_id, chiave, apparato, ordine, nome, membri, stato, velocita, modo, pvid, vlan_tagged, dato_vlan, poe_stato, poe_mw, stp, tipo,
     vicino, n_mac, motivi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const conAvvistamenti = esiste(d, "mappa_porte_avvistamenti");
+  const insA = conAvvistamenti ? d.prepare("INSERT OR REPLACE INTO mappa_porte_avvistamenti (chiave, device_id, porta_chiave, porta, tipo_porta, visto) VALUES (?, ?, ?, ?, ?, ?)") : null;
   const insS = d.prepare("INSERT INTO mappa_porte_spostamenti (chiave, mac, nome, da_apparato, da_porta, a_apparato, a_porta, il) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   d.transaction(() => {
     d.prepare("DELETE FROM mappa_porte_oggetti").run();
@@ -183,6 +185,10 @@ export function ricalcolaMappaPorte(nowMs: number = Date.now()): EsitoCalcolo {
     for (const p of r.porte) {
       insP.run(p.deviceId, p.chiave, p.apparato, p.ordine, p.nome, JSON.stringify(p.membri), p.stato, p.velocita, p.modo, p.pvid, JSON.stringify(p.vlanTagged), p.datoVlan, p.poeStato, p.poeMw, p.stp, p.tipo,
         p.vicino, p.nMac, JSON.stringify(p.motivi));
+    }
+    if (insA) {
+      d.prepare("DELETE FROM mappa_porte_avvistamenti").run();
+      for (const a of r.avvistamenti) insA.run(a.chiave, a.deviceId, a.portaChiave, a.porta, a.tipoPorta, a.visto);
     }
     for (const s of spostati) insS.run(s.chiave, s.mac, s.nome, s.daApparato, s.daPorta, s.aApparato, s.aPorta, il);
     d.prepare("DELETE FROM mappa_porte_spostamenti WHERE il < datetime(?, ?)").run(il, `-${GIORNI_SPOSTAMENTI} days`);
@@ -251,7 +257,10 @@ export interface FiltriOggetti {
 }
 const simile = (s: string) => `%${s.replace(/[\\%_]/g, "\\$&")}%`;
 
-export function cercaOggetti(f: FiltriOggetti): { righe: OggettoMappa[]; totale: number } {
+/** Oggetti per porta mostrati filtrando per un apparato (Riccardo, 08/11: «se gli oggetti sono troppi mostra solo i primi»). */
+export const OGGETTI_PER_PORTA = 20;
+
+export function cercaOggetti(f: FiltriOggetti): { righe: OggettoMappa[]; totale: number; troncate: Array<{ porta: string; mostrati: number; totale: number }> } {
   const d = dbTenant();
   const dove: string[] = [];
   const val: Array<string | number> = [];
@@ -260,17 +269,34 @@ export function cercaOggetti(f: FiltriOggetti): { righe: OggettoMappa[]; totale:
     dove.push("(o.nome LIKE ? ESCAPE '\\' OR o.macs LIKE ? ESCAPE '\\' OR o.ips LIKE ? ESCAPE '\\' OR o.apparato LIKE ? ESCAPE '\\' OR o.porta LIKE ? ESCAPE '\\' OR o.ramo LIKE ? ESCAPE '\\')");
     val.push(...Array<string>(6).fill(simile(f.q)));
   }
-  if (f.deviceId != null) { dove.push("o.device_id = ?"); val.push(f.deviceId); }
+  // Filtrando per un apparato (Riccardo, 08/11, «B, oggetti visti»): gli oggetti posizionati lì e quelli che passano sulle sue porte,
+  // anche trunk, al massimo OGGETTI_PER_PORTA per porta (i più recenti); la porta locale arriva in `qui`.
+  const conAvv = f.deviceId != null && esiste(d, "mappa_porte_avvistamenti");
+  const cte = conAvv ? `WITH av AS (
+      SELECT a.chiave, a.porta, a.tipo_porta, a.porta_chiave,
+        ROW_NUMBER() OVER (PARTITION BY a.porta_chiave ORDER BY a.visto DESC, a.chiave) AS n, COUNT(*) OVER (PARTITION BY a.porta_chiave) AS su_porta
+      FROM mappa_porte_avvistamenti a JOIN mappa_porte_oggetti x ON x.chiave = a.chiave
+      WHERE a.device_id = ? AND COALESCE(x.device_id, -1) <> ?),
+    qui AS (SELECT chiave, MIN(porta) AS porta, MIN(tipo_porta) AS tipo_porta FROM av WHERE n <= ${OGGETTI_PER_PORTA} GROUP BY chiave) ` : "";
+  const valCte: Array<string | number> = conAvv ? [f.deviceId as number, f.deviceId as number] : [];
+  const join = conAvv ? "LEFT JOIN qui ON qui.chiave = o.chiave" : "";
+  if (f.deviceId != null) { dove.push(conAvv ? "(o.device_id = ? OR qui.chiave IS NOT NULL)" : "o.device_id = ?"); val.push(f.deviceId); }
   if (f.vlan != null) { dove.push("o.vlan = ?"); val.push(f.vlan); }
   if (f.confidenza) { dove.push("o.confidenza = ?"); val.push(f.confidenza); }
   if (f.tipoPorta) { dove.push("o.tipo_porta = ?"); val.push(f.tipoPorta); }
   if (f.senzaHost) dove.push("o.senza_host = 1");
   if (f.spostati) dove.push("EXISTS (SELECT 1 FROM mappa_porte_spostamenti s WHERE s.chiave = o.chiave AND s.il >= datetime('now', '-7 days'))");
   const w = dove.length > 0 ? `WHERE ${dove.join(" AND ")}` : "";
-  const totale = (d.prepare(`SELECT COUNT(*) AS n FROM mappa_porte_oggetti o ${w}`).get(...val) as { n: number }).n;
-  const righe = d.prepare(`SELECT o.* FROM mappa_porte_oggetti o ${w} ORDER BY ${ordinePer(ORDINE_OGGETTI, f.ordine, ["COALESCE(o.nome, '~') COLLATE NOCASE"], ["o.chiave"])} LIMIT ? OFFSET ?`)
-    .all(...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as RigaOggetto[];
-  return { righe: righe.map(oggettoDa), totale };
+  const totale = (d.prepare(`${cte}SELECT COUNT(*) AS n FROM mappa_porte_oggetti o ${join} ${w}`).get(...valCte, ...val) as { n: number }).n;
+  const righe = d.prepare(`${cte}SELECT o.*${conAvv ? ", qui.porta AS qui_porta, qui.tipo_porta AS qui_tipo" : ""} FROM mappa_porte_oggetti o ${join} ${w}
+    ORDER BY ${ordinePer(ORDINE_OGGETTI, f.ordine, ["COALESCE(o.nome, '~') COLLATE NOCASE"], ["o.chiave"])} LIMIT ? OFFSET ?`)
+    .all(...valCte, ...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as Array<RigaOggetto & { qui_porta?: string | null; qui_tipo?: string | null }>;
+  const troncate = conAvv ? (d.prepare(`${cte}SELECT MIN(porta) AS porta, MAX(su_porta) AS totale FROM av GROUP BY porta_chiave HAVING MAX(su_porta) > ? ORDER BY porta`)
+    .all(...valCte, OGGETTI_PER_PORTA) as Array<{ porta: string; totale: number }>).map((x) => ({ ...x, mostrati: OGGETTI_PER_PORTA })) : [];
+  return {
+    righe: righe.map((r) => ({ ...oggettoDa(r), qui: r.qui_porta ? { porta: r.qui_porta, tipoPorta: r.qui_tipo as OggettoMappa["tipoPorta"] & string } : null })),
+    totale, troncate,
+  };
 }
 
 export interface FiltriPorte { q?: string; deviceId?: number; tipo?: string; modo?: string; libere?: boolean; pagina: number; ordine?: Ordine }

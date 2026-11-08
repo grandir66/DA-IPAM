@@ -533,15 +533,22 @@ export const DDL_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   device_id INTEGER NOT NULL, destinazione TEXT NOT NULL, gateway TEXT NOT NULL, interfaccia TEXT, protocollo TEXT NOT NULL, metrica INTEGER, distanza INTEGER,
   attiva INTEGER NOT NULL, primo TEXT NOT NULL, ultimo TEXT NOT NULL, PRIMARY KEY (device_id, destinazione, gateway, protocollo)
 )`],
+  // Dove ogni oggetto è visto, anche di passaggio (Riccardo, 08/11: filtrando per la UDM non compariva niente, eppure le sue porte
+  // trunk erano vive). Un oggetto ha una posizione sola; qui tutte le porte su cui passa, per «oggetti visti su questo apparato».
+  ["mappa_porte_avvistamenti", `CREATE TABLE mappa_porte_avvistamenti (
+  chiave TEXT NOT NULL, device_id INTEGER NOT NULL, porta_chiave TEXT NOT NULL, porta TEXT NOT NULL, tipo_porta TEXT NOT NULL, visto TEXT,
+  PRIMARY KEY (chiave, device_id, porta_chiave)
+)`],
   ["mappa_porte_calcolo", `CREATE TABLE mappa_porte_calcolo (
   id INTEGER PRIMARY KEY CHECK (id = 1), il TEXT NOT NULL, durata_ms INTEGER NOT NULL, conteggi TEXT NOT NULL
 )`],
 ];
 export const INDICI_MAPPA_PORTE: ReadonlyArray<readonly [string, string]> = [
   ["idx_mappa_porte_spostamenti_chiave", "CREATE INDEX idx_mappa_porte_spostamenti_chiave ON mappa_porte_spostamenti(chiave, il)"],
+  ["idx_mappa_porte_avvistamenti_porta", "CREATE INDEX idx_mappa_porte_avvistamenti_porta ON mappa_porte_avvistamenti(device_id, porta_chiave)"],
 ];
 export const SEGNO_MAPPA_PORTE = "mappa_porte_v21";
-export const VERSIONE_MAPPA_PORTE = 3;
+export const VERSIONE_MAPPA_PORTE = 4;
 
 /**
  * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):

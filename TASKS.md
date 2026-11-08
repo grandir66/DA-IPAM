@@ -325,6 +325,7 @@ Riccardo (06/11): prima scansione delicata, poi proposta di profilo per device e
 - [x] Passo 4 (06/11): `avviaGruppoEdge`, `lanciaGruppiConfermati`, rotta `proposte-va/lancia`. Edge in `DA-Vul-can`, stessa voce del suo `TASKS.md`
 - [x] Passo 5: scheda «Per device», resa a 1920 con dati finti, mai provata contro una sonda vera. Serve il deploy di Edge
 - [x] Passo 6 (08/11): pianificazione «Per device», decisioni di Riccardo «Sì a tutte», tavola oggetti 27-31 approvata. `lib/vuln/proposta/pianificazione*.ts`, giro ogni minuto da `server.ts`, rotta `pianificazione-device`, pannello «Quando», righe `device.<rete>` in Schedulazioni. 9 prove nuove viste fallire, cancello verde, resa a 1920 con dati finti. Scostamenti dalla tavola: salvare «Un profilo solo» spegne «Per device» e lo dice nell'esito (nessun avviso prima); in Schedulazioni il modo sta nel nome, non in una colonna. Mai provata contro una sonda vera
+- [x] Tappe 2 e 3 della logica rovesciata (08/11 sera, tavola oggetti 42-43): «Includi impianti…» sui soli impianti scelti con 4 ore / prossima finestra / definitiva; modo «A finestra» nel pannello «Quando» (gruppi alla sonda, rimandati quando cambiano). DA-IPAM 0.9.1027 su `dev` (`762e80dd`), sonda 0.8.271. Dettaglio, scostamenti e collaudo nel piano `DA-Vul-can/docs/superpowers/plans/2026-11-06-profili-per-device.md` e in `DA-Vul-can/TASKS.md`
 
 ## 2026-11-06 — URGENTE 72729: celle frigo bloccate, PLC spariti durante il giro (Riccardo)
 

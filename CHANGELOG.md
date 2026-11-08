@@ -21,6 +21,7 @@ Riccardo (08/11): l'autorizzazione degli impianti deve poter valere «per tutta 
 
 ### Cambiato
 - **Con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e nelle finestre** (prima solo «Adesso»). Senza, restano fuori e l'esito della pianificazione lo dice; la sonda lo ricontrolla comunque al lancio.
+
 ## [Non rilasciato] — 2026-11-08 · Sonda trunk sul Mac del tecnico: accesa e azzerata a ogni cliente
 
 Riccardo (08/11): la sonda trunk sul Mac del tecnico deve essere «abilitata per default» e «l'acquisizione deve essere da resettare e riabilitare ad ogni cambio cliente». Il Mac passa da un cliente all'altro, la sonda no.

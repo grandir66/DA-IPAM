@@ -35,7 +35,8 @@ export function valutaConfermate(
     else if (r.da_rivedere) togli("la conferma è da rivedere: il tipo è cambiato");
     // La famiglia salvata è quella di quando si è confermato: si ricalcola sul dato di oggi, contesi compresi.
     // Se differisce l'host resta fuori. Non si riscrive va_proposte: la rilettura la fa una persona.
-    else if (proponiProfilo(h, { conteso: contesi.has(r.host_id) }).famiglia !== r.famiglia) togli("tipo cambiato, da rivedere");
+    // Un forzato (Passo 9) si confronta con la famiglia che aveva quando è stato forzato: «da chiarire».
+    else if (proponiProfilo(h, { conteso: contesi.has(r.host_id) }).famiglia !== (r.forzata_da_famiglia ?? r.famiglia)) togli("tipo cambiato, da rivedere");
     else buone.push(r);
   }
   return { buone, tolti };

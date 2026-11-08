@@ -31,6 +31,8 @@ export interface GruppoDaLanciare {
   assessment_profile_id: string | null;
   /** Perché un assessment previsto non c'è (modulo non ammesso, profilo non nel catalogo); `null` se non c'è niente da dire. */
   avviso: string | null;
+  /** Passo 9: quanti device del gruppo una persona ha forzato da «da chiarire» (l'esito lo dice). */
+  forzati?: number;
 }
 
 type Moduli = "base" | "completi" | null;
@@ -142,6 +144,7 @@ export function gruppiDaConfermate(
       nuclei_profilo: scheda.nuclei,
       assessment_profile_id: assessment.id,
       avviso: assessment.avviso,
+      forzati: sue.filter((r) => r.forzata_da_famiglia).length,
     });
   }
   return gruppi;

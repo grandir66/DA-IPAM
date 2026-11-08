@@ -32,6 +32,11 @@ const VOCE_DI_FAMIGLIA: Record<Famiglia, IdVoce | null> = {
   da_chiarire: null,
 };
 
+/** Il profilo di una famiglia; `null` = nessuna scansione VA (impianti, da chiarire). */
+export function voceDiFamiglia(f: Famiglia): IdVoce | null {
+  return VOCE_DI_FAMIGLIA[f];
+}
+
 export interface HostPerProposta extends HostPerImpianti {
   attr_confidence_category?: number | null;
   attr_os_family?: string | null;

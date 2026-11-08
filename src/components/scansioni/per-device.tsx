@@ -131,7 +131,7 @@ function EsitoGruppi({ esito, nomeRete, nomi, occupato, onRiprova }: { esito: Es
               {righe.map(({ g, p }) => (
                 <tr key={g.famiglia} className="border-b">
                   <td className="whitespace-nowrap px-3 py-1.5 font-semibold">{nomi[g.famiglia] ?? g.famiglia}</td>
-                  <td className="px-3 py-1.5 font-mono text-[13px]">{g.ips.length}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{g.ips.length}{g.forzati ? <span className="font-sans text-muted-foreground"> · {g.forzati === 1 ? "1 forzato" : `${g.forzati} forzati`}</span> : null}</td>
                   <td className="px-3 py-1.5"><Stato tono={p.tono}>{p.parola}</Stato></td>
                   <td className="px-3 py-1.5 font-mono text-[13px]">{p.scan ?? "—"}</td>
                   <td className="px-3 py-1.5">{p.testo}</td>
@@ -176,7 +176,11 @@ function EsitoGruppi({ esito, nomeRete, nomi, occupato, onRiprova }: { esito: Es
   );
 }
 
-function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, onRiapri, onVoce }: {
+/** Le famiglie con cui si può forzare un «da chiarire» (Passo 9, tavola oggetto 34). */
+const FAMIGLIE_FORZA: Array<[Famiglia, string]> = [["linux", "Linux e server"], ["rete", "Rete"], ["windows", "Windows"], ["web", "Web e applicazioni"], ["periferiche", "Periferiche"]];
+const nomeForza = (f: Famiglia | null | undefined) => FAMIGLIE_FORZA.find(([k]) => k === f)?.[1] ?? f ?? "";
+
+function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, onRiapri, onVoce, onForza, onTogli }: {
   r: RigaProposta;
   amministratore: boolean;
   profonditaFissa: boolean;
@@ -184,11 +188,17 @@ function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, on
   onScegli: (stato: "confermato" | "escluso") => void;
   onRiapri: () => void;
   onVoce: (voce: "veloce" | "bilanciato") => void;
+  onForza: (famiglia: Famiglia, nota: string) => void;
+  onTogli: () => void;
 }) {
+  const [forza, setForza] = useState(false);
+  const [scelta, setScelta] = useState<Famiglia>("linux");
+  const [nota, setNota] = useState("");
   const s = statoDevice(r);
   const attiva = r.famiglia !== "impianti" && r.famiglia !== "da_chiarire";
   const bottone = (acceso: boolean) => cn("min-h-7 rounded border px-2.5 text-[13px] font-semibold", acceso ? "border-[#0D2537] bg-[#0D2537] text-white" : "border-muted-foreground bg-card");
   return (
+    <>
     <tr className={cn("border-b", !attiva && "bg-muted/40")}>
       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{r.ip}</td>
       <td className="whitespace-nowrap px-3 py-1.5 font-semibold">{r.nome ?? "—"}</td>
@@ -219,10 +229,43 @@ function RigaDevice({ r, amministratore, profonditaFissa, occupato, onScegli, on
               <button type="button" disabled={occupato} aria-pressed={r.stato === "escluso"} className={bottone(r.stato === "escluso")} onClick={() => onScegli("escluso")}>Escludi</button>
             </>
           ))}
+          {r.forzata_da_famiglia && (
+            <>
+              <span className="inline-flex items-center rounded border-2 border-dashed border-[#0D2537] bg-card px-2 py-0.5 text-[13px] font-semibold text-[#0D2537]" title={r.forzata_nota ?? undefined}>
+                ▲ Forzato come {nomeForza(r.famiglia)}{r.confermata_da ? ` · ${r.confermata_da}` : ""}{r.confermata_il ? `, ${dataBreve(r.confermata_il)}` : ""}
+              </span>
+              {amministratore && <button type="button" disabled={occupato} className={bottone(false)} onClick={onTogli}>Togli</button>}
+            </>
+          )}
+          {r.famiglia === "da_chiarire" && amministratore && (
+            <button type="button" disabled={occupato} aria-expanded={forza} className={bottone(forza)} onClick={() => setForza((v) => !v)}>Forza come…</button>
+          )}
           <Link href={`/hosts/${r.host_id}`} className="text-[13px] text-cian-testo hover:underline">Cambia tipo ›</Link>
         </span>
       </td>
     </tr>
+    {forza && (
+      <tr className="border-b bg-[#FFF6CC] text-[#0D2537]">
+        <td colSpan={7} className="px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span><strong className="font-mono">{r.ip}</strong> {r.nome ?? ""} · da chiarire: {r.motivo}</span>
+            <label className="flex items-center gap-2">Scansiona come
+              <select className={campo} value={scelta} onChange={(e) => setScelta(e.target.value as Famiglia)}>
+                {FAMIGLIE_FORZA.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2">Nota (facoltativa)
+              <input className={cn(campo, "w-72")} maxLength={300} value={nota} onChange={(e) => setNota(e.target.value)} />
+            </label>
+            <span className="text-muted-foreground">Riceve il profilo di quella famiglia; registrato a nome tuo, con l&apos;ora.</span>
+            <span className="flex-1" />
+            <Button size="sm" variant="outline" onClick={() => setForza(false)}>Annulla</Button>
+            <Button size="sm" disabled={occupato} onClick={() => { setForza(false); onForza(scelta, nota); }}>Forza la scansione</Button>
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
@@ -329,6 +372,25 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const nInLancio = inLancio.reduce((t, f) => t + f.confermati, 0);
   const somma = (k: "esclusi" | "inAttesa" | "daRivedere") => famiglie.reduce((t, f) => t + f[k], 0);
   const conteggio = (f: Famiglia) => famiglie.find((x) => x.famiglia === f)?.device ?? 0;
+
+  /** Passo 9: forza o toglie la forzatura di un host «da chiarire»; il quadro torna dal server. */
+  const forzatura = async (metodo: "POST" | "DELETE", corpo: Record<string, unknown>) => {
+    if (reteId === null) return;
+    const id = reteId;
+    setOccupato(true);
+    setRifiuto(null);
+    const r = await fetchJson<RispostaProposte>(`/api/networks/${id}/proposte-va/forza`, {
+      method: metodo,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+    if (reteCorrente.current === id) {
+      if (r.ok) setDati(r.data);
+      else setRifiuto(r.message);
+    }
+    await leggiConti();
+    setOccupato(false);
+  };
 
   const dopoScelta = async (corpo: Record<string, unknown>) => {
     if (reteId === null) return;
@@ -503,7 +565,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                         </td>
                         <td className="whitespace-nowrap px-3 py-1.5 font-semibold"><button type="button" className="font-semibold hover:underline" aria-pressed={vista} onClick={() => setFamiglia(f.famiglia)}>{f.nome}</button></td>
                         <td className="px-3 py-1.5 font-mono text-[13px]">{f.device}</td>
-                        <td className="px-3 py-1.5 font-mono text-[13px]">{f.fuori ? "—" : f.confermati}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{f.fuori ? "—" : f.confermati}{f.forzati ? <span className="font-sans text-muted-foreground"> · {f.forzati === 1 ? "1 forzato" : `${f.forzati} forzati`}</span> : null}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.greenbone}{f.scesa ? " ▼" : ""}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.nuclei}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">{f.moduli}</td>
@@ -580,6 +642,8 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
                     onScegli={(stato) => void dopoScelta({ host_ids: [r.host_id], stato })}
                     onRiapri={() => void dopoScelta({ host_ids: [r.host_id], stato: "riapri" })}
                     onVoce={(voce) => void dopoScelta({ host_ids: [r.host_id], stato: r.stato === "escluso" ? "escluso" : "confermato", voce })}
+                    onForza={(f, nota) => void forzatura("POST", { host_id: r.host_id, famiglia: f, nota: nota || null })}
+                    onTogli={() => void forzatura("DELETE", { host_id: r.host_id })}
                   />
                 ))}
                 {device.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">Nessun device corrisponde alla ricerca.</td></tr>}

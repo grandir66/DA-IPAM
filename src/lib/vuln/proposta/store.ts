@@ -7,7 +7,7 @@ import { getDb, getHostsByNetwork } from "@/lib/db";
 import { leggiContesiDiRete } from "@/lib/attribution/contesi";
 import type { Host } from "@/types";
 import type { IdVoce } from "@/lib/vuln/scansioni-va-regole";
-import { proponiProfilo, type Famiglia, type Proposta } from "./regole";
+import { ETICHETTE_FAMIGLIA, proponiProfilo, voceDiFamiglia, type Famiglia, type Proposta } from "./regole";
 
 export type StatoProposta = "proposto" | "confermato" | "escluso";
 
@@ -24,17 +24,26 @@ export interface RigaProposta {
   da_rivedere: number;
   confermata_da: string | null;
   confermata_il: string | null;
+  /** Passo 9: la famiglia di prima («da_chiarire») se una persona ha forzato la scansione; `null` = non forzato. */
+  forzata_da_famiglia?: Famiglia | null;
+  forzata_nota?: string | null;
 }
 
 interface Salvata {
   host_id: number;
   famiglia: Famiglia;
   stato: StatoProposta;
+  forzata_da_famiglia?: Famiglia | null;
 }
 
 /** Cosa fare di una riga già salvata davanti alla proposta nuova. Esportata per le prove. */
 export function esitoRigenerazione(salvata: Salvata | undefined, nuova: Proposta): "scrivi" | "segna" | "lascia" {
   if (!salvata || salvata.stato === "proposto") return "scrivi";
+  // Forzato (Passo 9): vale finché la proposta lo vede ancora com'era quando una persona l'ha forzato.
+  if (salvata.forzata_da_famiglia) {
+    if (nuova.famiglia === "impianti") return "scrivi";
+    return nuova.famiglia === salvata.forzata_da_famiglia ? "lascia" : "segna";
+  }
   if (nuova.famiglia === "impianti" && salvata.famiglia !== "impianti") return "scrivi";
   return salvata.famiglia === nuova.famiglia ? "lascia" : "segna";
 }
@@ -58,7 +67,7 @@ export function rigeneraProposte(
   const contesi = contesiDiRete(networkId, adesso);
   const salvate = new Map(
     (db.prepare(
-      `SELECT p.host_id, p.famiglia, p.stato FROM va_proposte p JOIN hosts h ON h.id = p.host_id WHERE h.network_id = ?`,
+      `SELECT p.host_id, p.famiglia, p.stato, p.forzata_da_famiglia FROM va_proposte p JOIN hosts h ON h.id = p.host_id WHERE h.network_id = ?`,
     ).all(networkId) as Salvata[]).map((s) => [s.host_id, s]),
   );
   const scrivi = db.prepare(
@@ -66,7 +75,7 @@ export function rigeneraProposte(
      VALUES (@id, @famiglia, @voce, @conWeb, @confidenza, @motivo, 'proposto', 0, datetime('now'))
      ON CONFLICT(host_id) DO UPDATE SET famiglia=excluded.famiglia, voce=excluded.voce, con_web=excluded.con_web,
        confidenza=excluded.confidenza, motivo=excluded.motivo, stato='proposto', da_rivedere=0,
-       confermata_da=NULL, confermata_il=NULL, aggiornata_il=datetime('now')`,
+       confermata_da=NULL, confermata_il=NULL, forzata_da_famiglia=NULL, forzata_nota=NULL, aggiornata_il=datetime('now')`,
   );
   const segna = db.prepare(
     `UPDATE va_proposte SET da_rivedere=1, motivo=?, aggiornata_il=datetime('now') WHERE host_id=?`,
@@ -93,7 +102,8 @@ export function rigeneraProposte(
 export function leggiProposte(networkId: number): RigaProposta[] {
   return getDb().prepare(
     `SELECT p.host_id, h.ip, COALESCE(NULLIF(h.custom_name,''), h.hostname) AS nome, p.famiglia, p.voce, p.con_web,
-            p.confidenza, p.motivo, p.stato, p.da_rivedere, p.confermata_da, p.confermata_il
+            p.confidenza, p.motivo, p.stato, p.da_rivedere, p.confermata_da, p.confermata_il,
+            p.forzata_da_famiglia, p.forzata_nota
      FROM va_proposte p JOIN hosts h ON h.id = p.host_id
      WHERE h.network_id = ? ORDER BY p.famiglia, h.ip`,
   ).all(networkId) as RigaProposta[];
@@ -191,6 +201,45 @@ export function segnaGruppiChiusi(networkId: number, chiusi: ReadonlyArray<{ sca
   db.transaction(() => {
     for (const c of chiusi) scrivi.run(c.chiuso, c.messaggio, networkId, c.scan_id);
   })();
+}
+
+export type EsitoForzatura = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * Passo 9 (Riccardo, 08/11/2026): una persona forza la scansione di un host «da chiarire» scegliendo la famiglia
+ * con cui scansionarlo. Entra in quel gruppo confermato e segnato come forzato, con chi, quando e la nota. Un
+ * impianto non si forza da qui (passa dal consenso), né un host offline o con una famiglia diversa da «da chiarire».
+ */
+export function forzaProposta(
+  networkId: number,
+  f: { hostId: number; famiglia: Famiglia; chi: string; nota?: string | null },
+  eImpiantoOggi: (hostId: number) => boolean,
+): EsitoForzatura {
+  const voce = voceDiFamiglia(f.famiglia);
+  if (!voce) return { ok: false, motivo: `«${ETICHETTE_FAMIGLIA[f.famiglia]}» non è una famiglia che si scansiona` };
+  const r = leggiProposte(networkId).find((x) => x.host_id === f.hostId);
+  if (!r) return { ok: false, motivo: "host senza proposta in questa rete" };
+  const di = r.forzata_da_famiglia ?? r.famiglia;
+  if (di !== "da_chiarire") return { ok: false, motivo: `si forzano solo gli host «Da chiarire», questo è «${ETICHETTE_FAMIGLIA[r.famiglia]}»` };
+  if (eImpiantoOggi(f.hostId)) return { ok: false, motivo: "è un impianto: si autorizza col consenso, non si forza" };
+  const nota = f.nota?.trim().slice(0, 300) || null;
+  getDb().prepare(
+    `UPDATE va_proposte SET famiglia=?, voce=?, stato='confermato', da_rivedere=0, forzata_da_famiglia='da_chiarire',
+       forzata_nota=?, confermata_da=?, confermata_il=datetime('now'), aggiornata_il=datetime('now') WHERE host_id=?`,
+  ).run(f.famiglia, voce, nota, f.chi, f.hostId);
+  return { ok: true };
+}
+
+/** Toglie la forzatura: l'host torna «da chiarire», proposto, e la rigenerazione lo rilegge da capo. */
+export function togliForzatura(networkId: number, hostId: number): EsitoForzatura {
+  const r = leggiProposte(networkId).find((x) => x.host_id === hostId);
+  if (!r?.forzata_da_famiglia) return { ok: false, motivo: "questo host non è forzato" };
+  getDb().prepare(
+    `UPDATE va_proposte SET famiglia='da_chiarire', voce=NULL, stato='proposto', da_rivedere=0, forzata_da_famiglia=NULL,
+       forzata_nota=NULL, confermata_da=NULL, confermata_il=NULL, aggiornata_il=datetime('now') WHERE host_id=?`,
+  ).run(hostId);
+  rigeneraProposte(networkId, undefined, new Set([hostId]));
+  return { ok: true };
 }
 
 export interface Conferma {

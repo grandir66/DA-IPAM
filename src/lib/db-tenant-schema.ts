@@ -175,6 +175,22 @@ export const COLONNE_DA_RIVEDERE: ReadonlyArray<readonly [tabella: string, ddl: 
   ["network_devices", "ALTER TABLE network_devices ADD COLUMN campi_da_rivedere TEXT"],
 ];
 
+/**
+ * Scansione forzata degli oggetti «da chiarire» (Passo 9, 08/11/2026): la famiglia che il device aveva quando una
+ * persona l'ha forzato, e la sua nota. Additiva e ripetibile; tabella assente = la crea lo schema all'apertura.
+ */
+export function assicuraColonneForzate(db: Database.Database): string[] {
+  const colonne = new Set((db.prepare(`PRAGMA table_info(va_proposte)`).all() as Array<{ name: string }>).map((c) => c.name));
+  if (colonne.size === 0) return [];
+  const aggiunte: string[] = [];
+  for (const nome of ["forzata_da_famiglia", "forzata_nota"]) {
+    if (colonne.has(nome)) continue;
+    db.exec(`ALTER TABLE va_proposte ADD COLUMN ${nome} TEXT`);
+    aggiunte.push(`va_proposte.${nome}`);
+  }
+  return aggiunte;
+}
+
 /** Aggiunge le due colonne `campi_da_rivedere` dove mancano. Additiva e ripetibile. */
 export function assicuraColonneDaRivedere(db: Database.Database): string[] {
   const aggiunte: string[] = [];
@@ -206,6 +222,12 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     if (aggiunte.length > 0) console.info(`${chi}: ${aggiunte.join(", ")} aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione campi_da_rivedere fallita:`, e);
+  }
+  try {
+    const forzate = assicuraColonneForzate(db);
+    if (forzate.length > 0) console.info(`${chi}: ${forzate.join(", ")} aggiunto`);
+  } catch (e) {
+    console.error(`${chi}: migrazione va_proposte forzate fallita:`, e);
   }
   try {
     // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.
@@ -2331,6 +2353,8 @@ CREATE TABLE IF NOT EXISTS va_proposte (
   da_rivedere INTEGER NOT NULL DEFAULT 0,
   confermata_da TEXT,
   confermata_il TEXT,
+  forzata_da_famiglia TEXT,
+  forzata_nota TEXT,
   aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

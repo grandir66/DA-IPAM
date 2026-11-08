@@ -11,6 +11,8 @@ export interface RigaFamiglia {
   famiglia: Famiglia;
   nome: string;
   device: number;
+  /** Passo 9: device forzati da «da chiarire» in questa famiglia. */
+  forzati?: number;
   confermati: number;
   daRivedere: number;
   esclusi: number;
@@ -34,7 +36,7 @@ export function quadroFamiglie(righe: readonly RigaProposta[]): RigaFamiglia[] {
     const sue = righe.filter((r) => r.famiglia === famiglia);
     if (sue.length === 0) return [];
     const scheda = schedaDiFamiglia(famiglia);
-    const comuni = { famiglia, nome: ETICHETTE_FAMIGLIA[famiglia], device: sue.length };
+    const comuni = { famiglia, nome: ETICHETTE_FAMIGLIA[famiglia], device: sue.length, forzati: sue.filter((r) => r.forzata_da_famiglia).length };
     if (!scheda) {
       const parola = famiglia === "impianti" ? "mai" : "no";
       return [{

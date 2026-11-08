@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Scansione forzata dei device «Da chiarire»
+
+Riccardo, sulla LAN Base dell'hub: «con l'autorizzazione di un operatore devono essere scansionabili». Piano profili per device, Passo 9, prima parte (tavola oggetti 32-34 e 37 approvata).
+
+### Aggiunto
+- **«Forza come…»** sulle righe «Da chiarire» della scheda «Per device»: una persona sceglie la famiglia e il device entra in quel gruppo, confermato e segnato come forzato (chi, quando, nota). Resta valido finché la proposta lo vede ancora «da chiarire»; se il tipo cambia esce dal lancio e torna da rivedere. «Togli» lo rimette com'era. Un impianto non si forza da qui.
+- Conteggio dei forzati nella tabella delle famiglie e nell'esito del lancio. Rotta `proposte-va/forza` (solo amministratore, non lancia niente); due colonne additive in `va_proposte`.
+
 ## [Non rilasciato] — 2026-11-08 · Menu: voci grigie senza i loro moduli · Sicurezza del dominio e Health AD in una voce
 
 Sulla ridotta `79993-ipam-7` (niente Edge, Greenbone, Wazuh nell'appliance) Riccardo ha visto voci attive che portano a pagine vuote.

@@ -1,7 +1,7 @@
 # Collector modulari e recupero da DADude3 / DA-MKNET — piano
 
 **Versione 2, 21/10 sera** (la v1 del mattino è in git, `bcce0b69` + `65568a82`).
-**Stato:** approvato il 21/10 sera (decisioni in §7); si esegue nel cloud sul ramo `collector-modulari`.
+**Stato:** approvato il 21/10 sera (decisioni in §7). **Dall'08/11: S e C0-C3 fatti in `dev`, C4-C6 da avviare; il giro 7 è fuori da `dev`** (§8). Il ramo `collector-modulari` è stato unito in `dev` il 22/10 (`83c9d4dd`, via `integra-20261022`) e non esiste più.
 **Checklist:** `TASKS.md`, sezione «2026-10-21 — recupero da DADude3 e DA-MKNET». Bacheca:
 `lavori recupero-dadude3-mknet`.
 
@@ -383,3 +383,60 @@ Collaudi indicati da Riccardo: QNAP `192.168.40.26` e `.24`, Synology `192.168.4
 
 **Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
 `aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.
+
+## 8. Stato verificato l'08/11/2026 sul codice di `dev`
+
+Verifica su `origin/dev` = 0.9.1001 (`95f0e4a9`), leggendo i file, non i resoconti. Segni: `[x]` fatto ·
+`[~]` in parte · `[ ]` da fare · `[-]` superato da una decisione.
+
+**Il ramo.** `83c9d4dd` (22/10) unisce `collector-modulari` **fino a `943c3dd8`** (giro 6). I 5 commit del
+**giro 7** (`94428d7f`..`cf94c5ab`, 22/10 sera) non sono mai entrati in `dev`: li conserva solo il tag
+`archivio/collector-modulari-20261103` (anche su origin), creato dal riordino dei rami del 03/11. Contengono
+la riga «Acquisizione con i collector» in Opzioni (con rimando da Impostazioni → Sistema) e il collector
+Proxmox agganciato al pulsante (DMI del nodo, VM senza agent senza avvisi): 12 file di codice, +200/−76. Da
+allora `dev` ha cambiato Opzioni e il riquadro, quindi riportarlo è un lavoro, non un cherry-pick a occhi chiusi.
+
+**S — fatto.**
+- [x] S1 export MikroTik solo admin (`mikrotik-guardia.ts` nella rotta). Manca la prova in locale viewer 403 / admin 200.
+- [x] S2 firmware QNAP storico (`devices/nas/qnap-versione.ts`). Manca la lettura su un QTS vero.
+- [x] S3 MAC virtuali in un elenco solo (`devices/mac-virtuali.ts`, usato da `identity.ts` e `physical-device-db.ts`), v0.9.876.
+
+**C0 — fatto.**
+- [x] 1-2 catalogo unico con versione per collector (`acquisition/catalogo.ts`).
+- [x] 3 sezioni opzionali (`acquisition/sistema-schema.ts`).
+- [x] 4 SNMPv3 e WinRM come adattatori. SNMPv3 authPriv vero non registrato; WinRM collaudato col collector `windows`.
+- [x] 5 prova di contratto (`__tests__/contratto.test.ts`, `contratto-fixture.ts`).
+- [x] 6 guida «Aggiungere una famiglia» (`docs/modules/acquisition.md` §552).
+- [~] 7 censimento di `devices/acquisition/registry.ts` scritto (`docs/proposte/2026-10-22-censimento-registry-acquisizione.md`); la cartella c'è ancora: **decide Riccardo**.
+
+**C1 — fatto.**
+- [x] 1-2 fonte e richiesta dal backend (`acquisizione-modulare/fonte.ts`, `richiesta.ts`, `esegui.ts`).
+- [x] 3 archivio: `acquisition_snapshots`, `acquisition_source_choices`, `acquisition_changes` nello schema del tenant (`archivio.ts`).
+- [x] 4 rotte `devices/[id]/acquisizione` e `settings/acquisizione-modulare`.
+- [x] 5 riquadro in Gestione e interruttore (ancora con «(anteprima)»).
+- [x] 7 collaudi HP: 5 Comware su 70151 (22/10), ProCurve JL357A e 5406R, AOS-CX JL675A (catalogo).
+
+**C2 — fatto, con due voci aperte.**
+- [x] 1-3 proiezioni (`acquisition/proiezioni/`), porte per campo, fonte `collector` (`applica.ts`).
+- [-] 4-5 anteprima e «Applica»: superate dalla decisione del 22/10 (tavola C1): l'acquisizione scrive direttamente, con traccia in `acquisition_changes`.
+- [ ] 6 M5 «vicini da completare»: nessun file (`discovery/vicini-da-completare.ts` non esiste).
+- [ ] 7 misura su copia del DB dell'hub, ogni riga di `acquisition_changes` spiegata: mai registrata.
+
+**C3 — fatto oltre il previsto.** Nel catalogo 15 collector, tutti «collaudato»: `hp-procurve`, `hp-comware`,
+`aruba-cx`, `qnap-switch`, `qnap-nas`, `mikrotik-routeros`, `windows`, `linux`, `synology-dsm`,
+`ubiquiti-device`, `unifi-controller`, `proxmox-ve`, `vmware-esxi`, `netapp-ontap`, `infoblox-nios`.
+- [x] 1-6 dell'ordine previsto (aruba-cx, qnap-nas, mikrotik-routeros, windows, linux, synology).
+- [ ] 7 `vmware-vcenter`: non esiste; `riconosci.ts` lascia il vCenter all'acquisizione di sempre.
+- [~] Collaudi parziali dichiarati nel catalogo: share e pacchetti dei NAS, PoE/FDB/STP MikroTik, `guests` Hyper-V, lotto SSH Linux, SNMPv3.
+- In uso dal pulsante e dal giro (`acquisition/riconosci.ts`): HP (tre), QNAP (due), MikroTik, Windows, Linux non hypervisor, Synology, Ubiquiti, ESXi, ONTAP. **Non agganciati**: `proxmox-ve` (aggancio nel giro 7, fuori da `dev`), `unifi-controller` (decisione del 22/10: migliora la sincronizzazione UniFi, non va sul pulsante; nessun codice), `infoblox-nios` (solo CLI).
+
+**C4 — da fare.** Nessuna traccia di entità, alias o relazioni con prova nel codice.
+
+**C5 — in parte.**
+- [x] Decisione (a) del 22/10: con l'interruttore acceso il giro SNMP non riscrive i campi del collector (`acquisizione-modulare/giri.ts`).
+- [x] Dal 07/11 il giro dei parser della Mappa porte (`mappa-porte/giro-parser.ts`, ogni 6 ore, levetta `mappa_dati`, accesa sull'hub e su 70151) esegue e applica i collector senza guardare l'interruttore.
+- [ ] Buco: `campiDelCollectorApparato` guarda solo l'interruttore, non `mappa_dati`. Con l'interruttore spento i due giri si riscrivono velocità, duplex, VLAN e STP. Da misurare prima di toccare.
+- [ ] Il vero C5: per famiglia, il giro storico smette di leggere ciò che il collector legge, dopo la misura di parità.
+
+**C6 — da fare.** Nessuna tabella né profilo `*-config` nel codice.
+

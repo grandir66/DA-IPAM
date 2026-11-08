@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Scansioni «Per device» pianificate
+
+Piano profili per device, Passo 6. Riccardo (08/11, «Sì a tutte»): all'ora fissata è DA-IPAM a lanciare i gruppi confermati in quel momento, una pianificazione per rete con le famiglie spuntate, una sola pianificazione per rete. Copiare gli elenchi di IP sulla sonda li avrebbe fatti invecchiare a ogni tipo cambiato.
+
+### Aggiunto
+- **Pannello «Quando»** nella scheda «Per device» (Adesso o Pianificata) e riga della pianificazione salvata con prossimo e ultimo giro. Il giro gira ogni minuto da `server.ts` e usa lo stesso lancio del pulsante: rilegge conferme e host e toglie gli impianti. DA-IPAM spento all'ora fissata: entro 2 ore parte, oltre salta e lo scrive.
+- **Una sola pianificazione per rete**: salvare «Per device» su una rete con «Un profilo solo» chiede di spegnere quella; salvare «Un profilo solo» spegne «Per device» e lo dice nell'esito.
+- Le pianificazioni compaiono in Schedulazioni. Non viaggiano con l'esportazione: su un'altra installazione partirebbero da sole.
+
 ## [Non rilasciato] — 2026-11-08 · CVE potenziali dalle versioni dei servizi (spente di serie)
 
 Piano `daipam-cve-locali`, deciso da Riccardo il 07/09. Molti clienti non hanno Greenbone, ma nmap legge già quale software gira sulle porte: le CVE note si deducono in casa, senza mandare l'inventario software dei clienti a terzi (ADR 0036).

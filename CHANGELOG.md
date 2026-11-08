@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · CVE potenziali dalle versioni dei servizi (spente di serie)
+
+Piano `daipam-cve-locali`, deciso da Riccardo il 07/09. Molti clienti non hanno Greenbone, ma nmap legge già quale software gira sulle porte: le CVE note si deducono in casa, senza mandare l'inventario software dei clienti a terzi (ADR 0036).
+
+### Aggiunto
+- **Archivio NVD sull'appliance** (`data/cve-intel.db`, fuori da `hub.db`): file annuali di fkie-cad letti in flusso con `xz -dc`, giro completo una volta a settimana, ogni mattina alle 06:30 solo le CVE cambiate. Misurato: 401.807 CVE, 2,5 milioni di regole, 350 MB.
+- **Matcher CPE→CVE** con intervalli di versione e confronto numerico (`8.10` > `8.9`); senza versione non si deduce niente. Alias per i nomi che nmap scrive diversi dall'NVD (`igor_sysoev:nginx` → `f5:nginx`).
+- **Pannello «CVE potenziali»** sotto l'elenco della pagina Vulnerabilità, separato dai rilievi Greenbone/Wazuh, con KEV ed EPSS dall'archivio exploit. Tabella del cliente `cve_inferred`, ricalcolata ogni ora.
+- Levetta `automatismo.cve_potenziali` in Opzioni, **spenta di serie**, e riga nelle schedulazioni.
+
+### Corretto
+- **I CPE arrivano davvero in `hosts.open_ports`.** Il fix del parser del 07/09 li leggeva, ma i cinque giri di discovery ricopiavano le porte con soli porta/protocollo/servizio/versione: sulla VM 533 nessun host aveva un CPE. Ora passano da `portaDaSalvare` (anche prodotto e versione separati).
 ## [Non rilasciato] — 2026-11-08 · Collector: giro 7 recuperato, i giri non si riscrivono più le porte
 
 Il giro 7 dei collector (22/10) non era mai entrato in `dev`: l'unione di `collector-modulari` si era fermata al giro 6 e il 03/11 il ramo è finito solo nel tag `archivio/collector-modulari-20261103`. Riportato con il sì di Riccardo dell'08/11. Nello stesso giro, misurato su 70151, il buco di C5 del piano `recupero-dadude3-mknet`.

@@ -177,6 +177,16 @@ app.prepare().then(() => {
       console.error("WARNING: scaricamento dei dati sugli exploit non avviato:", error);
     });
 
+    // CVE potenziali dalle versioni (08/11/2026, piano daipam-cve-locali): archivio NVD alle
+    // 06:30, ricalcolo dei tenant ogni ora. Spento di serie, levetta in Opzioni
+    // (automatismo.cve_potenziali): finché è spento i timer girano a vuoto.
+    import("./src/lib/vuln/cve-locali/job").then(({ avviaCveLocali }) => {
+      avviaCveLocali();
+      console.log("> CVE potenziali: archivio NVD alle 06:30 (se acceso in Opzioni)");
+    }).catch((error) => {
+      console.error("WARNING: CVE potenziali non avviate:", error);
+    });
+
     // Chi si collega ai PC (23/10/2026, piano assegnatari da AD): Wazuh e WinRM ogni ora al
     // minuto 17. Spento di serie, si accende per cliente in Opzioni (automatismo.accessi_pc).
     import("./src/lib/assegnatari/job").then(({ avviaGiroAccessi }) => {

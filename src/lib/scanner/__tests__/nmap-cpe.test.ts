@@ -16,7 +16,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseNmapXml } from "../nmap";
+import { parseNmapXml, portaDaSalvare } from "../nmap";
 import { getNmapVersionIntensity, buildTcpScanArgs } from "../ports";
 
 /** Risposta nmap realistica: due CPE su una porta, uno sull'altra, nessuno sulla terza. */
@@ -115,5 +115,27 @@ describe("intensita' -sV — la manopola esiste ma nasce ferma", () => {
       assert.equal(getNmapVersionIntensity(), atteso, `input ${JSON.stringify(dato)}`);
     }
     delete process.env.DA_INVENT_NMAP_VERSION_INTENSITY;
+  });
+});
+
+/**
+ * Secondo tratto della stessa perdita (08/11/2026): il parser teneva i CPE, ma i cinque giri
+ * di `discovery.ts` ricopiavano le porte con soli porta/protocollo/servizio/versione prima di
+ * salvarle. Sulla VM 533, due mesi dopo il fix del parser: 210 host con porte, zero CPE.
+ */
+describe("portaDaSalvare — i CPE arrivano fino a hosts.open_ports", () => {
+  const [host] = parseNmapXml(XML_DUE_CPE);
+  const salvate = JSON.parse(JSON.stringify(host.ports.map(portaDaSalvare))) as Array<Record<string, unknown>>;
+  const porta = (n: number) => salvate.find((p) => p.port === n)!;
+
+  it("CPE, prodotto e versione separata restano nel JSON salvato", () => {
+    assert.deepEqual(porta(22).cpes, ["cpe:/a:openbsd:openssh:9.6p1", "cpe:/o:linux:linux_kernel"]);
+    assert.equal(porta(22).product, "OpenSSH");
+    assert.equal(porta(22).product_version, "9.6p1 Ubuntu 3ubuntu13.15");
+    assert.equal(porta(22).version, "OpenSSH 9.6p1 Ubuntu 3ubuntu13.15");
+  });
+
+  it("una porta senza CPE non porta la chiave vuota", () => {
+    assert.equal("cpes" in porta(8291), false);
   });
 });

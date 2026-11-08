@@ -8,7 +8,7 @@ import {
 import { CHIAVE_SOGLIA_ALLARME, prendiRete, sogliaAllarmeDa } from "./network-scan-lock";
 import { passaggioOfflineConSoglia } from "./offline-guard";
 import { pingSweep as _localPingSweep } from "./ping";
-import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
+import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable, portaDaSalvare, type PortaScansione } from "./nmap";
 import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
 import type { Executor } from "@/lib/executor";
 import { esecutorePerGiro, getScanIoOverride } from "@/lib/executor";
@@ -794,7 +794,7 @@ export async function discoverNetwork(
 }
 
 type HostScanData = {
-  ports: { port: number; protocol: string; service: string | null; version: string | null }[];
+  ports: PortaScansione[];
   os: string | null;
   mac: string | null;
   snmpHostname?: string | null;
@@ -1250,12 +1250,7 @@ async function runDiscovery(
             const result = batchResults[j];
             if (result) {
               nmapResults.set(ip, {
-                ports: result.ports.map((p) => ({
-                  port: p.port,
-                  protocol: p.protocol,
-                  service: p.service,
-                  version: p.version,
-                })),
+                ports: result.ports.map(portaDaSalvare),
                 os: result.os,
                 mac: result.mac || null,
               });
@@ -1404,12 +1399,7 @@ async function runDiscovery(
           const result = batchResults[j];
           if (result) {
             nmapResults.set(ip, {
-              ports: result.ports.map((p) => ({
-                port: p.port,
-                protocol: p.protocol,
-                service: p.service,
-                version: p.version,
-              })),
+              ports: result.ports.map(portaDaSalvare),
               os: result.os,
               mac: result.mac || null,
             });
@@ -1754,12 +1744,7 @@ async function runDiscovery(
           const result = batchResults[j];
           if (result) {
             nmapResults.set(ip, {
-              ports: result.ports.map((p) => ({
-                port: p.port,
-                protocol: p.protocol,
-                service: p.service,
-                version: p.version,
-              })),
+              ports: result.ports.map(portaDaSalvare),
               os: result.os,
               mac: result.mac || null,
             });
@@ -2212,12 +2197,7 @@ async function runDiscovery(
           const result = batchResults[j];
           if (result) {
             nmapResults.set(ip, {
-              ports: result.ports.map((p) => ({
-                port: p.port,
-                protocol: p.protocol,
-                service: p.service,
-                version: p.version,
-              })),
+              ports: result.ports.map(portaDaSalvare),
               os: result.os,
               mac: result.mac || null,
             });
@@ -2703,12 +2683,7 @@ async function runDiscovery(
           if (result) {
             const existing = nmapResults.get(ip);
             nmapResults.set(ip, {
-              ports: result.ports.map((p) => ({
-                port: p.port,
-                protocol: p.protocol,
-                service: p.service,
-                version: p.version,
-              })),
+              ports: result.ports.map(portaDaSalvare),
               os: result.os,
               mac: result.mac || existing?.mac || null,
               snmpHostname: null,

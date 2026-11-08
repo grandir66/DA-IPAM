@@ -37,6 +37,7 @@ import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from 
 import { SEVERITY_STYLE, SEVERITIES, type Severity } from "@/lib/severity-style";
 import { fetchJson } from "@/lib/fetch-json";
 import { useEAdmin } from "@/hooks/use-e-admin";
+import { CvePotenziali } from "./cve-potenziali";
 
 interface VulnHostRef {
   host_id: number | null;
@@ -564,6 +565,9 @@ export function VulnerabilitiesListClient() {
           </CardContent>
         </Card>
       )}
+
+      {/* CVE dedotte dalle versioni: pannello a parte, mai mescolate ai rilievi (piano daipam-cve-locali). */}
+      <CvePotenziali />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">

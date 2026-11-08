@@ -408,3 +408,27 @@ export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): 
 
   return results;
 }
+
+/**
+ * La porta come si salva in `hosts.open_ports`. Fino all'08/11/2026 i cinque giri di discovery
+ * ricopiavano solo porta, protocollo, servizio e versione: prodotto, versione separata e CPE
+ * (letti dal parser dal 07/09) si perdevano qui, e sulla VM 533 nessun host aveva un CPE.
+ * I campi nuovi si scrivono solo se ci sono, per non gonfiare il JSON delle porte senza dati.
+ */
+export function portaDaSalvare(p: NmapPort): PortaScansione {
+  const out: PortaScansione = { port: p.port, protocol: p.protocol, service: p.service, version: p.version };
+  if (p.product) out.product = p.product;
+  if (p.product_version) out.product_version = p.product_version;
+  if (p.cpes && p.cpes.length > 0) out.cpes = p.cpes;
+  return out;
+}
+
+export type PortaScansione = {
+  port: number;
+  protocol: string;
+  service: string | null;
+  version: string | null;
+  product?: string;
+  product_version?: string;
+  cpes?: string[];
+};

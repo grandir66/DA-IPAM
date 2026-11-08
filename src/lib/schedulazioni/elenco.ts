@@ -296,6 +296,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/health/scheduler-health-notify": "timer.job_fermi",
   "./src/lib/patch/choco-automatico": "timer.choco",
   "./src/lib/vuln/exploit-feed/job": "timer.feed_exploit",
+  "./src/lib/vuln/cve-locali/job": "timer.cve_potenziali",
   "./src/lib/dalink/segnale-job": "timer.dalink",
   "./src/lib/assegnatari/job": "timer.accessi_pc",
   "./src/lib/trunk/job": "timer.sensore_trunk",
@@ -409,6 +410,26 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       esito: s.esito,
       dove: { href: `/settings/opzioni#${accessi.id}`, etichetta: "Opzioni ›" },
       cambio: { tipo: "opzione", id: accessi.id },
+    });
+  }
+
+  // CVE potenziali (08/11, piano daipam-cve-locali): archivio NVD alle 06:30, levetta in Opzioni.
+  const cvePot = catalogo().find((o) => o.id === "automatismo.cve_potenziali");
+  if (cvePot) {
+    const s = await leggiStato(cvePot);
+    const acceso = s.acceso === true;
+    righe.push({
+      ...base,
+      id: "timer.cve_potenziali",
+      nome: cvePot.nome,
+      su: "archivio NVD e versioni dei servizi",
+      quando: "ogni giorno, 06:30 (ricalcolo ogni ora al minuto 41)",
+      prossimo: acceso ? dataSqlite(prossimaEsecuzione({ tipo: "giorno", ora: "06:30" }, adesso)) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${cvePot.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: cvePot.id },
     });
   }
 

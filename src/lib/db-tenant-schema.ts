@@ -2550,6 +2550,23 @@ ${DDL_ZABBIX_LETTURA.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Acquisizione modulare (collector JSON 1.0): vedi DDL_ACQUISIZIONE_MODULARE.
 ${DDL_ACQUISIZIONE_MODULARE.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- CVE potenziali (piano daipam-cve-locali, 08/11/2026): dedotte dai CPE che nmap legge sulle
+-- porte, confrontati con l'archivio NVD locale (cve-intel.db). Non verificate: tabella a parte,
+-- mai mescolate ai rilievi Greenbone/Wazuh. Si riscrive per intero a ogni ricalcolo.
+CREATE TABLE IF NOT EXISTS cve_inferred (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  porta INTEGER NOT NULL,
+  protocollo TEXT NOT NULL DEFAULT 'tcp',
+  cpe TEXT NOT NULL,
+  cve_id TEXT NOT NULL,
+  cvss REAL,
+  severita TEXT,
+  matched_at TEXT NOT NULL DEFAULT (datetime('now')),
+  feed_versione TEXT,
+  UNIQUE(host_id, porta, protocollo, cve_id)
+);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -2791,6 +2808,10 @@ CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(ho
 -- Profili di scansione
 CREATE INDEX IF NOT EXISTS idx_profilo_rilievi_host ON host_profilo_rilievi(host_id, profilo);
 CREATE INDEX IF NOT EXISTS idx_profilo_rilievi_script ON host_profilo_rilievi(script);
+
+-- CVE potenziali (piano daipam-cve-locali): tabella in TENANT_SCHEMA_SQL.
+CREATE INDEX IF NOT EXISTS idx_cve_inferred_cve ON cve_inferred(cve_id);
+CREATE INDEX IF NOT EXISTS idx_cve_inferred_host ON cve_inferred(host_id);
 
 -- Attribution v2 (spec §4.2)
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);

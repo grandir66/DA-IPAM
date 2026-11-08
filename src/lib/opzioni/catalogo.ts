@@ -36,6 +36,8 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 import { chocoAutomaticoAccesoDb, impostaChocoAutomaticoDb } from "@/lib/patch/choco-automatico";
 import { CHIAVE_FEED_EXPLOIT, feedExploitAcceso } from "@/lib/vuln/exploit-feed/job";
 import { archivioExploit, statoFeed } from "@/lib/vuln/exploit-feed/archivio";
+import { CHIAVE_CVE_LOCALI, cveLocaliAccese } from "@/lib/vuln/cve-locali/job";
+import { archivioCve, conteggiArchivio, statoSync } from "@/lib/vuln/cve-locali/archivio";
 import { CHIAVE_MODO, impostazioniDa } from "@/lib/scanner/offline-guard";
 import { CHIAVE_SENZA_AGENTE, statoSenzaAgente } from "@/lib/integrations/meshcentral/senza-agente";
 import { getNotificationConfig, setNotificationConfig } from "@/lib/notifications/config";
@@ -738,6 +740,33 @@ function opzioniAutomatismi(): Opzione[] {
       },
       cambia(r) {
         setSetting(CHIAVE_FEED_EXPLOIT, soloAcceso(r) ? "1" : "0");
+      },
+    },
+    {
+      id: "automatismo.cve_potenziali",
+      gruppo: "automatismi",
+      nome: "CVE potenziali dalle versioni",
+      cosa: "scarica l'archivio NVD alle 06:30 e deduce le CVE dalle versioni dei servizi, per la pagina Vulnerabilità",
+      valePer: "hub",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: {
+        siFerma: "lo scaricamento dell'archivio NVD e il ricalcolo orario: il pannello «CVE potenziali» sparisce dalla pagina Vulnerabilità.",
+        resta: "l'archivio già scaricato (cve-intel.db), che si riusa alla riaccensione.",
+      },
+      accendendo: "Entro due minuti si scarica l'archivio NVD intero (circa 230 MB da GitHub, 350 MB su disco in cve-intel.db), poi ogni mattina solo le CVE cambiate. Ogni ora le versioni dei servizi letti da nmap si confrontano con l'archivio: le CVE trovate compaiono come «potenziali» nella pagina Vulnerabilità, separate dai rilievi di Greenbone e Wazuh. Nessun dato dei clienti esce dall'appliance.",
+      leggi() {
+        if (!cveLocaliAccese()) return diSerieStato(false, esito("neutro", "spento"));
+        const arch = archivioCve();
+        const stati = statoSync(arch);
+        const guasto = stati.find((s) => s.errore);
+        if (guasto) return diSerieStato(true, esito("attenzione", guasto.errore ?? "errore"));
+        if (conteggiArchivio(arch).cve === 0) return diSerieStato(true, esito("neutro", "archivio NVD non ancora scaricato"));
+        const ultimo = stati.find((s) => s.fonte === "modified")?.scaricato_at;
+        return diSerieStato(true, esito("ok", ultimo ? `archivio aggiornato ${oraItaliana(ultimo)}` : "attivo"));
+      },
+      cambia(r) {
+        setSetting(CHIAVE_CVE_LOCALI, soloAcceso(r) ? "1" : "0");
       },
     },
     {

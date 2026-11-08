@@ -17,4 +17,6 @@ Trappola corrente: le righe MAC dei router vengono solo dalla bridge host (non d
 
 Mappa porte (`/port-map`): cosa c'è in rete e su quale porta, con confidenza e fonti; aggregati e VLAN per porta. Fra porte di passaggio non sceglie: dice «non so».
 
+CVE potenziali (`/vulnerabilities`, spente di serie): dedotte dalle versioni che nmap legge, confrontate con un archivio NVD tenuto sull'appliance; nessun dato dei clienti esce (ADR 0036).
+
 Acquisizione modulare: collector dedicato Aruba AOS-CX, collaudato su 6100; limiti espliciti e sezioni parziali nel manuale di acquisizione.

@@ -452,4 +452,8 @@ allora `dev` ha cambiato Opzioni e il riquadro, quindi riportarlo è un lavoro, 
   collector); solo dopo il giro SNMP sugli HP può smettere di leggere.
 - [ ] Da guardare con Riccardo: su MK-CORE (apparato 4 di 70151) il vicino di ether1 e sfp28-2 è «MK-CORE-2-ARM-D»
   per SNMP e «GAMOfas8080a-01» (NetApp, e0k) per il collector; ora vince il collector.
+- [x] **FDB del collector, misura (08/11)**: su 70151 la FDB del collector vede gli stessi MAC del giro (ProCurve e
+  MikroTik). Il difetto vero erano i Comware senza MAC per porta per i nomi lunghi/corti: corretto con la chiave dei nomi
+  (v0.9.1007), Topologia invariata sulla copia del DB. **Proiezione FDB rinviata** (Riccardo: «solo la chiave»): serve
+  solo se si vuole spegnere il giro storico sugli HP.
 

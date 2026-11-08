@@ -32,6 +32,14 @@ Riccardo: «trova un sistema per ottenere tutti i dati», router e firewall come
   - [ ] `mikrotik-routeros` su MK-RTR-CORE: `vlans`, `network`, `identity`, `inventory` parziali.
   - [ ] Dati sbagliati: 8 PC Windows registrati come `switch`; SW-UFLEX-RG-10GB con 54 porte vecchie che nessuno legge; da-invent con SSH fallito.
   - [ ] Da fare lo stesso censimento su 70151 (parser HP: 39 ok, 6 parziali, 2 errori; hypervisor probabilmente esclusi allo stesso modo).
+  - **Piano approvato l'08/11** (Riccardo: «Sì, procedi», livello leggero). Misura che lo guida, sola lettura sul DB dell'hub: i Proxmox sono `hypervisor`/`proxmox`; il collector `proxmox-ve` (agganciato dal giro 7) non legge né FDB né ARP; UDM e apparati del controller nascono `enabled=0` per scelta del sync (`unifi-sync.ts`), si lasciano così e i loro dati vengono dal controller; MK-RTR-CORE: dei 4 «parziali» l'unico vero è `network` (ARP via SNMP in timeout), gli altri sono avvisi voluti.
+  - Riccardo, durante il lavoro (08/11): «verifica anche come ottenere dati dagli switch, ad esempio di 192.168.99.2 [79993-ipam-2], che non rispondono a ssh ed snmp ma sono dentro al controller ubiquiti che ha le informazioni». Misura su 79993-ipam-2 (DB `DEFAULT.db`, ramo `dev`): apparati ogni 2 ore, client ogni ora (53 letti, 53 salvati); dal controller non si usano ancora le VLAN tagged per porta (`tagged_vlan_mgmt`, `excluded_networkconf_ids`) né `downlink_table`. Due apparati con lo stesso nome «USW Flex 2.5G 8 PoE» (43 senza dati, 53 con): da segnalare, non toccato.
+  - Riccardo, durante il lavoro (08/11): «gli hypervisor devono essere trattati come switch per le porte e i firewall come tutti; gli stormshield devono essere rilevati come tali e acquisiti con porte, tabella arp, tabelle di routing, vlan».
+  - [ ] Hypervisor come switch: FDB (`bridge -j fdb show`), VLAN del bridge e ARP (`ip -j neigh show`) nel collector `proxmox-ve`; il giro dei parser prende gli hypervisor; porte e VLAN nella scheda come per gli switch. Niente in `switch_ports` (Topologia).
+  - [ ] Stormshield: riconosciuto come firewall; collector SSH con porte, ARP, rotte e VLAN; il giro lo prende qualunque sia il tipo registrato.
+  - [ ] Controller UniFi: VLAN tagged per porta e apparati a valle dal `port_table`/`downlink_table`; VLAN del gateway dalle reti; client del controller come ARP visto dal gateway. Nessun login in più alla console.
+  - [ ] MK-RTR-CORE: ARP via SSH quando la credenziale è valida.
+  - [ ] Attenzione col giro 7 (riga sopra «Prossimo: proiezione della tabella FDB del collector»): una proiezione di `forwarding` in `mac_port_entries` per tutti i collector porterebbe le FDB dei Proxmox in Topologia. Va limitata alle famiglie con porte da switch.
 - [ ] 72729: dopo, quando lo dirà Riccardo («solo dopo testeremo 72729»).
 - [ ] 79993-ipam-2: RB5009 via SSH e UCG, dopo `main`.
 - [ ] Seguire i vicini per i 5.271 «non so» di 70151.

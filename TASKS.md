@@ -1,6 +1,15 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — FDB del collector: misura su 70151 e proposta (Riccardo: «FDB del collector»)
+
+Misura in sola lettura su 70151 (DB `DEFAULT`, via `qm guest exec 104` da PX01), ultimo snapshot non in errore contro `mac_port_entries` (fonte `device`, 24 ore):
+
+- [x] **ProCurve (49) e MikroTik**: la FDB del collector vede gli stessi MAC del giro (MAC solo del collector: 0-2 per apparato; quelli solo del giro sono MAC invecchiati accumulati in 24 ore). Una proiezione FDB **non porta dati nuovi**: servirebbe solo a spegnere letture del giro storico.
+- [x] **Comware (11-15): 0 porte con MAC in `switch_ports`**, mentre la tabella MAC ne ha 800-1.100 per apparato su 9-62 porte. Causa: nomi delle porte in due forme, lunga in `switch_ports` («GigabitEthernet1/0/8», «Bridge-Aggregation109») e corta da `display mac-address` («GE1/0/8», «BAGG109»); `normalizePortNameForMatch` (`utils.ts`) toglie solo spazi e maiuscole. In `mac_port_entries` lo stesso MAC sta sotto tutte e due le forme. Anche la FDB del collector ha i nomi corti e non trova l'`if_index` (`hp-comware.ts:77`, confronto per uguaglianza).
+- [x] MikroTik CORE1-A/B e CORE2-A (16-18): snapshot con FDB in errore (già noto dal 07/11).
+- [ ] **Proposta, aspetta Riccardo**: (1) una chiave di confronto dei nomi porta che conosca le forme Comware (`GigabitEthernet`↔`GE`, `Ten-GigabitEthernet`↔`XGE`, `FortyGigE`↔`FGE`, `HundredGigE`↔`HGE`, `Twenty-FiveGigE`↔`WGE`, `Bridge-Aggregation`↔`BAGG`, `Route-Aggregation`↔`RAGG`), usata da `normalizePortNameForMatch` e da `nomePorta` dei collector; prova con i nomi veri; misura `misura-cavi` prima/dopo perché la Topologia usa la stessa chiave. (2) La proiezione FDB vera e propria, solo se si vuole spegnere il giro storico sugli HP.
+
 ## 2026-11-08 — recupero-dadude3-mknet: giro 7 su dev e C5 ridotto (leggero)
 
 Riccardo (08/11): «Sì, in quest'ordine». Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` §8. Worktree `.worktrees/giro7`, ramo `claude/giro7-su-dev`.

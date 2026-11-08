@@ -326,7 +326,7 @@ function TabellaOggetti({ righe, onScegli, ordine }: { righe: OggettoMappa[]; on
             <TableCell className="max-w-64 truncate font-mono text-[13px]" title={o.apparato ? `${o.apparato} · ${o.porta}` : o.ramo ?? undefined}>
               {o.qui && <span className="block font-sans">Qui su {o.qui.porta} · {TIPI_PORTA[o.qui.tipoPorta].toLowerCase()}</span>}
               <span className={o.qui ? "block text-muted-foreground" : undefined}>
-                {o.qui ? "sta su " : ""}
+                {o.qui && o.apparato ? "sta su " : ""}
                 {o.apparato ? `${o.apparato} · ${o.porta}` : <span className="text-muted-foreground">{o.ramo}</span>}
                 {o.dedotta && o.apparato ? " ≈" : ""}
                 {o.conflitto ? " ▲" : ""}

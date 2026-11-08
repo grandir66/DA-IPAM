@@ -33,6 +33,9 @@ interface UpdateInfo {
   changelog?: string[];
   error?: string;
   updateSupported?: boolean;
+  /** false sul Mac del tecnico (lib/aggiornamento-modo.ts): niente «Installa», c'è l'istruzione. */
+  applicabile?: boolean;
+  istruzione?: string | null;
   deployMode?: "container" | "systemd";
   configuredBranch?: string;
   gitBranch?: string | null;
@@ -270,7 +273,10 @@ export function UpdatesTab() {
           {info?.error && (
             <p className="text-sm text-destructive mt-3">{info.error}</p>
           )}
-          {info?.updateAvailable && !driftDetected && info.updateSupported !== false && (
+          {info?.updateAvailable && info.applicabile === false && info.istruzione && (
+            <div className="rounded-lg border border-primary/25 bg-primary/10 p-3 text-[13px]">{info.istruzione}</div>
+          )}
+          {info?.updateAvailable && !driftDetected && info.updateSupported !== false && info.applicabile !== false && (
             <div className="mt-4 flex items-center gap-3 pt-3 border-t">
               <Badge className="bg-orange-500 text-white">
                 <ArrowUpCircle className="h-3 w-3 mr-1" />

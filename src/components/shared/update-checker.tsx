@@ -31,6 +31,9 @@ interface UpdateInfo {
   lastCheck: string;
   changelog?: string[];
   error?: string;
+  /** false sul Mac del tecnico (lib/aggiornamento-modo.ts): niente «Installa», c'è l'istruzione. */
+  applicabile?: boolean;
+  istruzione?: string | null;
 }
 
 type UpdateStatus = "idle" | "checking" | "downloading" | "installing" | "completed" | "error";
@@ -296,7 +299,15 @@ export function UpdateChecker() {
               </div>
             )}
 
-            <ManualUpdateInstructions variant="compact" />
+            {updateInfo?.applicabile === false ? (
+              updateInfo.istruzione && (
+                <div className="p-3 rounded-lg border border-primary/25 bg-primary/10 text-[13px]">
+                  {updateInfo.istruzione}
+                </div>
+              )
+            ) : (
+              <ManualUpdateInstructions variant="compact" />
+            )}
 
             {updateStatus !== "idle" && updateStatus !== "checking" && (
               <div className={`p-3 rounded-lg flex items-start gap-2 ${
@@ -326,7 +337,7 @@ export function UpdateChecker() {
                 Controlla
               </Button>
 
-              {updateInfo?.updateAvailable && updateStatus === "idle" && (
+              {updateInfo?.updateAvailable && updateStatus === "idle" && updateInfo.applicabile !== false && (
                 <Button
                   onClick={handleApplyUpdate}
                   className="flex-1"

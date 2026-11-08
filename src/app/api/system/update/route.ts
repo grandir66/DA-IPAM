@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { modoAggiornamento } from "@/lib/aggiornamento-modo";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { execSync, spawn } from "child_process";
 import path from "path";
@@ -55,6 +56,9 @@ interface UpdateInfo {
   deployMode?: "container" | "systemd";
   configuredBranch?: string;
   gitBranch?: string | null;
+  /** false sul Mac del tecnico: niente «Installa» dall'interfaccia, c'è `istruzione` (09/11). */
+  applicabile?: boolean;
+  istruzione?: string | null;
 }
 
 function getProjectRoot(): string {
@@ -379,6 +383,7 @@ export async function GET(request: NextRequest) {
     }
 
     const updateAvailable = compareVersions(remote.version, currentVersion) > 0;
+    const modo = modoAggiornamento();
 
     return NextResponse.json({
       currentVersion,
@@ -390,6 +395,8 @@ export async function GET(request: NextRequest) {
       deployMode,
       configuredBranch,
       gitBranch: getGitBranch(root),
+      applicabile: modo.applicabile,
+      istruzione: modo.istruzione,
       ...(deployMode === "container" &&
         !gitSupported &&
         updateAvailable && {
@@ -446,6 +453,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "apply") {
+    // Mac del tecnico: niente servizio d'aggiornamento di systemd, si aggiorna dal Terminale (09/11).
+    const modo = modoAggiornamento();
+    if (!modo.applicabile) {
+      return NextResponse.json({ error: modo.istruzione, status: "error" as const }, { status: 400 });
+    }
     const root = getProjectRoot();
     if (!isGitUpdateSupported(root)) {
       return NextResponse.json({

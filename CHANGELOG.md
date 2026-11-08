@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Avviso d'aggiornamento sul Mac del tecnico
+
+### Corretto
+- **Sul Mac del tecnico «Installa aggiornamento» non c'è più**: rispondeva con un errore che parlava di server, systemd e `scripts/update.sh`. L'avviso resta (c'è una versione nuova), con l'istruzione giusta: `sudo da-ipam-tecnico --aggiorna` (`lib/aggiornamento-modo.ts`; il comando lo installa `installa-tecnico-mac.sh`). Anche `POST ?action=apply` lo dice. Su Linux tutto come prima (prova).
+
 ## [Non rilasciato] — 2026-11-08 · Sonda trunk: IP ufficiali e gli altri, con il perché
 
 Riccardo (08/11): «troppi IP fuori da quelli ufficiali… un'indicazione per gli IP ufficiali della VLAN e una per tutto il resto con i tag». Misura in sola lettura: su un'appliance solo 73 IP su 1.002 cadevano nella rete dichiarata della loro VLAN. La causa principale: i pacchetti senza tag arrivano come VID 0, la stessa rete in DA-IPAM è la VLAN 1.

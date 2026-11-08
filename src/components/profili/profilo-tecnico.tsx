@@ -223,7 +223,8 @@ export function SelettoreProfilo({ compresso = false, onNavigate }: { compresso?
 }
 
 /**
- * Fascia in cima a ogni pagina: su quale cliente si sta scrivendo. Navy col profilo scelto;
+ * Fascia in cima a ogni pagina: su quale cliente si sta scrivendo. Navy col profilo scelto
+ * (chiara col testo navy in tema scuro, dove il navy sparirebbe nel fondo);
  * gialla piena col segno ▲ per la vista di tutti i profili o se manca la scelta (si distingue
  * per luminanza e segno, non solo per tinta: Riccardo è daltonico).
  */
@@ -231,7 +232,7 @@ export function FasciaProfilo() {
   const { corrente, attuale } = useProfili();
   if (corrente && corrente !== VISTA_TUTTE && attuale) {
     return (
-      <div className="sticky top-0 z-30 flex h-8 shrink-0 items-center gap-2 bg-[#0D2537] pl-14 pr-4 text-[13px] text-white md:px-4">
+      <div className="sticky top-0 z-30 flex h-8 shrink-0 items-center gap-2 bg-[#0D2537] pl-14 pr-4 text-[13px] text-white md:px-4 dark:border-b dark:border-[#9AA8B2] dark:bg-[#E6EEF4] dark:text-[#0D2537]">
         <Building2 className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">
           Profilo: <strong>{attuale.name}</strong> · <span className="font-mono">{attuale.code}</span>

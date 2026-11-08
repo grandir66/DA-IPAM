@@ -22,11 +22,11 @@
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 |---|---|---|---|---|---|---|
 | S1 | [x] | Interruttore `DA_PROFILO` | in linea | — | senza variabile nulla cambia; valore sconosciuto blocca l'avvio | prova `profilo.test.ts` vista fallire + cancello |
-| S2 | [~] | Freno della cifratura | in linea | S1 | `tecnico` non parte su disco in chiaro | prova con comandi finti + misura su una VM Debian con LUKS |
+| S2 | [x] | Freno della cifratura | in linea | S1 | `tecnico` non parte su disco in chiaro | prova con comandi finti + misura su una VM Debian con LUKS |
 | S3 | [x] | Profilo nuovo pronto senza riavvio | in linea | S1 | in `tecnico` un profilo creato ha i job di serie e lo scheduler li carica subito | prova vista fallire |
 | S4 | [x] | Ingresso del tecnico senza `DEFAULT` | in linea, reviewer | S1 | in `tecnico` nessuna sessione ricade su `DEFAULT`; ingresso sull'ultimo profilo | prove viste fallire + revisione |
 | S5 | [x] | Selettore e pagina dei profili | in linea | S3, S4, proposta approvata | interfaccia approvata oggetto per oggetto, resa a 1280 | Playwright con dati finti |
-| S6 | [ ] | Deploy-Appliance: profilo e volume cifrato | sessione di Deploy-Appliance | S1, S2 | `config.yaml` `profilo: tecnico` scrive la variabile e prepara il contenitore LUKS | installazione su VM Debian di prova |
+| S6 | [x] | Deploy-Appliance: profilo e volume cifrato | sessione di Deploy-Appliance | S1, S2 | `config.yaml` `profilo: tecnico` scrive la variabile e prepara il contenitore LUKS | installazione su VM Debian di prova |
 | S7 | [!] | Invio di ogni profilo al suo centrale | — | tappe 2-3 piano 07/11 | ogni profilo va al centrale del suo `codcli` | da scrivere con le tappe 2-3 |
 
 ## Casi da non dimenticare
@@ -59,7 +59,7 @@
 
 Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` vista rossa prima di `profilo.ts` (esito 1), verde dopo; `DA_PROFILO=pippo npx tsx server.ts` → esito 1, nessun file creato; cancello `lint=0 tsc=0 test=0 build=0` (7636 prove, 0 fallite), 08/11.
 
-### [~] Task 2 — Freno della cifratura (codice e prove fatti; manca la misura su una Debian con LUKS)
+### [x] Task 2 — Freno della cifratura
 
 - **File:** crea `src/lib/profilo-cifratura.ts`, `src/lib/__tests__/profilo-cifratura.test.ts`; modifica `server.ts`.
 - **Interfacce:**
@@ -71,7 +71,7 @@ Verifica: `node --import tsx --test src/lib/__tests__/profilo.test.ts` vista ros
 - **Prova vista fallire:** uscite finte con la forma vera di `findmnt`/`lsblk` (partizione LUKS, contenitore a file `loop` sotto `crypt`, disco in chiaro, comando che fallisce), `fdesetup` acceso e spento.
 - **Misura:** su una VM Debian 13 di prova con contenitore LUKS a file montato sulla cartella dati: parte; smontato: non parte e non crea `hub.db`.
 
-Verifica: prova verde, misura scritta in «Misure». — 08/11: `profilo-cifratura.test.ts` 12 verdi (3 casi aggiunti dopo la revisione visti rossi: più dischi, collegamento spezzato, macOS fuori dal volume di sistema); avvio `tecnico` su questo Mac con FileVault: parte. **Manca** la misura su Debian 13 con contenitore LUKS (aperto parte, chiuso non parte e non crea `hub.db`): da fare con l'installer Debian (Task 6).
+Verifica: prova verde, misura scritta in «Misure». — 08/11: `profilo-cifratura.test.ts` 12 verdi (3 casi aggiunti dopo la revisione visti rossi: più dischi, collegamento spezzato, macOS fuori dal volume di sistema); avvio `tecnico` su questo Mac con FileVault: parte. Misura sul vero, 08/11, PX-NAS VM 110 (Debian 13 con la ridotta), col contenitore del Task 6: `cifraturaCartella` (copiata dal ramo dev) dà «cifrato» sul volume aperto (`/dev/mapper/da-ipam-tecnico (crypt → loop)`, forma vera di `lsblk -s`), «in chiaro» su `/opt/da-ipam/data` e sulla cartella col volume chiuso (`/dev/sda1 (part → disk)`). L'avvio di `server.ts` con `tecnico` su quella VM non è provato: lì gira la 0.9.1011 di `main`.
 
 ### [x] Task 3 — Profilo nuovo pronto senza riavvio
 
@@ -107,12 +107,12 @@ Verifica: Playwright con dati finti a 1280 px, in `tecnico` e senza variabile. �
 5. **Nuovo profilo**: finestra con due campi soli, `codcli` (solo cifre, 3-8, controllato mentre si scrive con la frase «Il codice cliente del gestionale») e ragione sociale. Alla conferma il profilo è pronto (job di serie, Task 3) e si apre.
 6. **Cancellare un profilo**: non in questa tappa. Cancella un DB intero di un cliente sul PC del tecnico: si decide dopo, con l'invio al centrale.
 
-### [ ] Task 6 — Deploy-Appliance: profilo e volume cifrato
+### [x] Task 6 — Deploy-Appliance: profilo e volume cifrato
 
 - **Dove:** repo Deploy-Appliance, coordinato con la sessione dell'installer Debian (nota nella cartella condivisa).
 - **Cosa fare:** `config.yaml` con `profilo: tecnico` → `DA_PROFILO=tecnico` nell'ambiente dell'unità systemd; se la Debian non ha la radice cifrata, crea il contenitore LUKS a file (dimensione da `config.yaml`), lo monta sulla cartella dati, e l'unità dipende dal montaggio (`RequiresMountsFor=`). La passphrase la sceglie il tecnico, non si salva sul disco.
 
-Verifica: installazione su una VM Debian 13 di prova; riavvio senza aprire il volume → DA-IPAM non parte.
+Verifica: installazione su una VM Debian 13 di prova; riavvio senza aprire il volume → DA-IPAM non parte. — 08/11: `primo-avvio/tecnico.sh` (`da-appliance tecnico attiva|apri|chiudi|stato`), [Deploy-Appliance#80](https://github.com/grandir66/Deploy-Appliance/pull/80). Scelte: contenitore LUKS2 a file sempre (anche con radice cifrata: un solo percorso), montato su `/var/lib/da-ipam-tecnico`, drop-in `40-tecnico.conf` con `ConditionPathIsMountPoint` al posto di `RequiresMountsFor` (senza voce in fstab non darebbe dipendenza), apertura esplicita dopo il riavvio invece di `crypttab` (una VM senza console non resta ferma all'avvio). Misura sulla VM 110: chiuso → systemd salta DA-IPAM, nessun file nella cartella; aperto → health 200. Aperti: `azzera` col contenitore, scelta «tecnico» in DA-Link.
 
 ### [!] Task 7 — Invio di ogni profilo al suo centrale
 
@@ -124,6 +124,7 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 - 2026-11-08 Piano approvato da Riccardo («Sì, D1 com'è oggi»)
 - 2026-11-08 Task 1 → [x] (verifica: profilo.test.ts rossa poi verde; cancello verde)
 - 2026-11-08 Task 5: proposta d'interfaccia approvata da Riccardo («Sì, tutta»)
+- 2026-11-08 Task 2 → [x] e Task 6 → [x] (misura sulla VM 110 del PX-NAS, Deploy-Appliance#80); tema scuro guardato, fascia corretta
 - 2026-11-08 Task 2 → [~], Task 3 → [x], Task 4 → [x] (revisione fatta, difetti corretti), Task 5 → [x] (resa a 1280)
 
 ## Misure
@@ -138,13 +139,13 @@ Bloccato dalle tappe 2-3 del piano `2026-11-07-installazione-snella-e-collegamen
 
 ## Consuntivo
 ### Fatto
-Task 1, 3, 4, 5; Task 2 nel codice.
+Task 1-6.
 ### Mancante
-Misura del Task 2 su Debian con LUKS; Task 6 (Deploy-Appliance, nota lasciata alla sessione dell'installer); Task 7 bloccato dalle tappe 2-3 del 07/11.
+Task 7 bloccato dalle tappe 2-3 del 07/11. Prova completa (DA-IPAM `dev` con `tecnico` su Debian con contenitore): quando il profilo arriva su `main` o con un DA-IPAM di `dev` sulla VM di prova. In Deploy-Appliance: `azzera` col contenitore e scelta «tecnico» in DA-Link.
 ### Scostamenti dal piano
 - Task 4 tocca anche `getTenantMode` e `getServerTenantCode` (revisione): in `tecnico` senza profilo le liste mostrano l'aggregato e le pagine di un profilo rimandano a «Profili».
 - Il selettore, all'apertura, fa ricaricare all'hub l'elenco dei profili: un profilo creato altrove non compariva fino al cambio.
 - Ogni profilo nuovo passa dalla configurazione guidata (`onboarding_completed:<codice>`, comportamento già esistente per tenant).
 ### Consigli di sviluppo
 - `/api/setup` in modalità `multi` crea il superadmin senza profili: va bene per `tecnico`; la modalità `single` accetta qualsiasi codice, da limitare a `CODCLI` quando l'installer Debian userà `tecnico`.
-- Guardare la fascia e il selettore anche in tema scuro.
+- Tema scuro guardato l'08/11: la fascia navy spariva nel fondo, ora è chiara col testo navy.

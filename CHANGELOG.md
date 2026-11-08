@@ -28,6 +28,9 @@ Piano `2026-11-08-installazione-tecnico.md`, Task 2-5. Tutto vale solo con `DA_P
 - **Profilo pronto subito**: in `POST /api/tenants` il codice deve essere un `codcli` del gestionale, e i job di serie partono senza riavvio. Prima un tenant nuovo restava senza job fino al riavvio (misura dell'08/11: 0 job).
 - **Selettore del profilo** in cima alla barra, **fascia** del profilo in cima a ogni pagina (navy; gialla con ▲ per «Tutti i profili» o senza scelta), **pagina «Profili»** al posto di «Istanze», col nuovo profilo in due campi. Proposta approvata da Riccardo l'08/11.
 
+### Corretto
+- Fascia del profilo in tema scuro: navy sul fondo scuro non si distingueva; ora è chiara col testo navy (luminanza invertita, Riccardo è daltonico).
+
 ### Cambiato
 - In `tecnico` il superadmin entra sul primo profilo invece che sulla vista «tutte» (dove ogni pagina rispondeva 409), e senza profilo scelto nessuna rotta o pagina ricade su `DEFAULT`: le rotte rispondono 409 «Scegli un profilo», le liste mostrano l'aggregato e le pagine rimandano a «Profili».
 

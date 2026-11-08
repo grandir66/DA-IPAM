@@ -27,9 +27,10 @@ Riccardo, 08/11: «proviamo a sviluppare l'installer pulito su debian e la possi
   - [x] Proposta d'interfaccia (selettore e pagina dei profili) scritta nel piano, Task 5
   - [x] Riccardo approva la proposta d'interfaccia (08/11: «Sì, tutta»)
   - [x] Task 3-5 (profilo pronto senza riavvio, ingresso senza `DEFAULT`, selettore e pagina «Profili»), revisione fatta e difetti corretti, resa a 1280 vista (08/11)
-  - [~] Task 2 freno della cifratura: codice e prove sì; **manca la misura su Debian 13 con contenitore LUKS** (con l'installer)
-  - [ ] Task 6 in Deploy-Appliance (`profilo: tecnico` → `DA_PROFILO`, contenitore LUKS): nota nella cartella condivisa per la sessione dell'installer Debian
-  - [ ] Tema scuro di fascia e selettore da guardare
+  - [x] Task 2 freno della cifratura: misurato sulla VM 110 del PX-NAS (08/11), «cifrato» sul volume LUKS, «in chiaro» sul disco
+  - [x] Task 6 in Deploy-Appliance: `da-appliance tecnico attiva|apri|chiudi|stato`, [Deploy-Appliance#80](https://github.com/grandir66/Deploy-Appliance/pull/80), misurato sulla VM 110 e poi VM riportata allo snapshot. Aperti lì: `azzera` col contenitore, scelta «tecnico» in DA-Link
+  - [x] Tema scuro guardato: fascia navy invisibile sul fondo scuro, corretta (chiara col testo navy)
+  - [ ] Prova completa: DA-IPAM col profilo `tecnico` su Debian col contenitore (serve il profilo su `main`, o DA-IPAM di `dev` sulla VM di prova)
 - [x] **A — installer Debian** (Riccardo: «Sì, due sessioni»), 08/11: Deploy-Appliance PR #78 (`host/installa-debian.sh`: componenti firmati + preparazione della VM modello sulla Debian, IP in ifupdown, primo avvio di sempre) e DA-Link PR #87 («Dove si installa: Debian già installata», solo la ridotta). Cancelli verdi. Prova vera sul PX-NAS, VM 110 Debian 13 netinst: file d'avvio vero di DA-Link (bozza 34 `79993-ipam-6`), `da-appliance verifica` verde anche dopo un riavvio. Trovato e corretto: umask 077 fermava la sonda trunk
 - [x] A, rilascio (Riccardo: «Sì, procedi», 08/11): #78 e #87 unite, `debian/installa-debian.sh` nella 2026.11.92 firmata, DA-Link in produzione al `f0d721e`. Prova dal comando per Debian di DA-Link: bozza 35 `79993-ipam-7` sulla VM 110 del PX-NAS, `da-appliance verifica` verde. Aperti: Riconfigura/Aggiorna per Debian; registrazione di prova `79993-ipam-6` tolta da DA-Link (08/11), ma il suo proxy `proxy-riccardo-grandi-6` resta in DA-Zabbix (1 host)
 

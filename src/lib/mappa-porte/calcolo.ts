@@ -206,9 +206,48 @@ export function statoCalcolo(): StatoCalcolo | null {
 
 export const DIMENSIONE_PAGINA = 100;
 
+/**
+ * Ordinamento delle tabelle della Mappa porte (Riccardo, 08/11: «le colonne sono fisse e non è possibile ordinarle come in tutti
+ * gli altri moduli»). Dal server, perché le tabelle sono paginate: ordinare solo la pagina visibile darebbe un ordine falso.
+ * Ogni colonna è una lista chiusa di espressioni SQL (mai testo dalla richiesta); una colonna sconosciuta vale l'ordine di sempre.
+ */
+export type Verso = "asc" | "desc";
+export interface Ordine { colonna?: string; verso?: Verso }
+
+/** IPv4 in testo → numero, per ordinare 10.0.0.9 prima di 10.0.0.10. Un valore che non è un IPv4 dà un numero senza senso, ma resta in fondo coi NULL. */
+export function ipSql(col: string): string {
+  const r1 = `substr(${col}, instr(${col}, '.') + 1)`;
+  const r2 = `substr(${r1}, instr(${r1}, '.') + 1)`;
+  const r3 = `substr(${r2}, instr(${r2}, '.') + 1)`;
+  const pezzo = (s: string) => `CAST(substr(${s}, 1, instr(${s}, '.') - 1) AS INTEGER)`;
+  return `(CASE WHEN ${col} GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*' THEN ${pezzo(col)} * 16777216 + ${pezzo(r1)} * 65536 + ${pezzo(r2)} * 256 + CAST(${r3} AS INTEGER) END)`;
+}
+
+/** ORDER BY dalla lista chiusa: ogni pezzo col verso scelto e i NULL in fondo, poi le chiavi che rendono l'ordine stabile. */
+export function ordinePer(colonne: Readonly<Record<string, readonly string[]>>, o: Ordine | undefined, base: readonly string[], spareggio: readonly string[]): string {
+  const scelta = o?.colonna ? colonne[o.colonna] : undefined;
+  const verso = o?.verso === "desc" ? "DESC" : "ASC";
+  const pezzi = scelta ? scelta.map((e) => `${e} ${verso} NULLS LAST`) : [...base];
+  return [...pezzi, ...spareggio].join(", ");
+}
+
+const ORDINE_OGGETTI: Record<string, readonly string[]> = {
+  nome: ["o.nome COLLATE NOCASE"], mac: ["o.mac"], ip: [ipSql("o.ip")], dove: ["o.apparato COLLATE NOCASE", "o.porta COLLATE NOCASE"], vlan: ["o.vlan"],
+  confidenza: ["CASE o.confidenza WHEN 'certa' THEN 0 WHEN 'spiegata' THEN 1 WHEN 'da_capire' THEN 2 ELSE 3 END"], visto: ["o.visto"],
+};
+const ORDINE_PORTE: Record<string, readonly string[]> = {
+  apparato: ["apparato COLLATE NOCASE", "ordine"], porta: ["ordine", "nome COLLATE NOCASE"], stato: ["stato"], tipo: ["tipo"], modo: ["modo"], pvid: ["pvid"],
+  velocita: ["CAST(velocita AS INTEGER)"], poe: ["poe_mw"], vicino: ["vicino COLLATE NOCASE"], mac: ["n_mac"],
+};
+const ORDINE_ROTTE: Record<string, readonly string[]> = {
+  apparato: ["nd.name COLLATE NOCASE"], destinazione: [ipSql("substr(r.destinazione, 1, instr(r.destinazione || '/', '/') - 1)"), "r.destinazione"],
+  gateway: [ipSql("NULLIF(r.gateway, '')")], interfaccia: ["r.interfaccia COLLATE NOCASE"], protocollo: ["NULLIF(r.protocollo, '')"], metrica: ["r.metrica"],
+  stato: ["r.attiva"],
+};
+
 
 export interface FiltriOggetti {
-  q?: string; deviceId?: number; vlan?: number; confidenza?: string; tipoPorta?: string; senzaHost?: boolean; spostati?: boolean; recenti?: boolean; pagina: number;
+  q?: string; deviceId?: number; vlan?: number; confidenza?: string; tipoPorta?: string; senzaHost?: boolean; spostati?: boolean; recenti?: boolean; pagina: number; ordine?: Ordine;
 }
 const simile = (s: string) => `%${s.replace(/[\\%_]/g, "\\$&")}%`;
 
@@ -229,12 +268,12 @@ export function cercaOggetti(f: FiltriOggetti): { righe: OggettoMappa[]; totale:
   if (f.spostati) dove.push("EXISTS (SELECT 1 FROM mappa_porte_spostamenti s WHERE s.chiave = o.chiave AND s.il >= datetime('now', '-7 days'))");
   const w = dove.length > 0 ? `WHERE ${dove.join(" AND ")}` : "";
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM mappa_porte_oggetti o ${w}`).get(...val) as { n: number }).n;
-  const righe = d.prepare(`SELECT o.* FROM mappa_porte_oggetti o ${w} ORDER BY COALESCE(o.nome, '~') COLLATE NOCASE, o.chiave LIMIT ? OFFSET ?`)
+  const righe = d.prepare(`SELECT o.* FROM mappa_porte_oggetti o ${w} ORDER BY ${ordinePer(ORDINE_OGGETTI, f.ordine, ["COALESCE(o.nome, '~') COLLATE NOCASE"], ["o.chiave"])} LIMIT ? OFFSET ?`)
     .all(...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as RigaOggetto[];
   return { righe: righe.map(oggettoDa), totale };
 }
 
-export interface FiltriPorte { q?: string; deviceId?: number; tipo?: string; modo?: string; libere?: boolean; pagina: number }
+export interface FiltriPorte { q?: string; deviceId?: number; tipo?: string; modo?: string; libere?: boolean; pagina: number; ordine?: Ordine }
 
 export function cercaPorte(f: FiltriPorte): { righe: PortaMappa[]; totale: number } {
   const d = dbTenant();
@@ -250,7 +289,7 @@ export function cercaPorte(f: FiltriPorte): { righe: PortaMappa[]; totale: numbe
   if (f.libere) dove.push("n_mac = 0 AND COALESCE(stato, '') <> 'up'");
   const w = dove.length > 0 ? `WHERE ${dove.join(" AND ")}` : "";
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM mappa_porte_porte ${w}`).get(...val) as { n: number }).n;
-  const righe = d.prepare(`SELECT * FROM mappa_porte_porte ${w} ORDER BY apparato COLLATE NOCASE, ordine, chiave LIMIT ? OFFSET ?`)
+  const righe = d.prepare(`SELECT * FROM mappa_porte_porte ${w} ORDER BY ${ordinePer(ORDINE_PORTE, f.ordine, ["apparato COLLATE NOCASE", "ordine"], ["device_id", "chiave"])} LIMIT ? OFFSET ?`)
     .all(...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as RigaPortaDb[];
   return { righe: righe.map(portaDa), totale };
 }
@@ -269,7 +308,7 @@ export interface VoceRotta {
 }
 
 /** Le rotte di tutti i router, comprese quelle che non si vedono più: `presente` dice se sono nell'ultimo giro dell'apparato. */
-export function cercaRotte(f: { q?: string; deviceId?: number; pagina: number }): { righe: VoceRotta[]; totale: number } {
+export function cercaRotte(f: { q?: string; deviceId?: number; pagina: number; ordine?: Ordine }): { righe: VoceRotta[]; totale: number } {
   const d = dbTenant();
   if (!esiste(d, "mappa_porte_rotte")) return { righe: [], totale: 0 };
   const dove: string[] = [];
@@ -280,7 +319,7 @@ export function cercaRotte(f: { q?: string; deviceId?: number; pagina: number })
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM mappa_porte_rotte r ${w}`).get(...val) as { n: number }).n;
   const righe = d.prepare(`SELECT r.device_id AS deviceId, nd.name AS apparato, r.destinazione, r.gateway, r.interfaccia, r.protocollo, r.metrica, r.distanza, r.attiva, r.ultimo,
       r.ultimo = (SELECT MAX(x.ultimo) FROM mappa_porte_rotte x WHERE x.device_id = r.device_id) AS presente
-    FROM mappa_porte_rotte r JOIN network_devices nd ON nd.id = r.device_id ${w} ORDER BY nd.name COLLATE NOCASE, r.destinazione LIMIT ? OFFSET ?`)
+    FROM mappa_porte_rotte r JOIN network_devices nd ON nd.id = r.device_id ${w} ORDER BY ${ordinePer(ORDINE_ROTTE, f.ordine, ["nd.name COLLATE NOCASE", "r.destinazione"], ["r.device_id", "r.destinazione", "r.gateway", "r.protocollo"])} LIMIT ? OFFSET ?`)
     .all(...val, DIMENSIONE_PAGINA, f.pagina * DIMENSIONE_PAGINA) as Array<Omit<VoceRotta, "attiva" | "presente"> & { attiva: number; presente: number }>;
   return { righe: righe.map((r) => ({ ...r, attiva: r.attiva === 1, presente: r.presente === 1 })), totale };
 }

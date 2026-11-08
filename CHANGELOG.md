@@ -40,6 +40,7 @@ Riccardo ha chiesto se la mappa prendesse tutti i dati che gli accessi già conf
 ### Cambiato
 - **Ogni Stormshield è un firewall.** Conversione una tantum (`device_type_stormshield`, elenco per nome nel log prima di scrivere) e `firewall` alla creazione col profilo Stormshield. Il giro dei parser prende uno Stormshield qualunque tipo abbia.
 - **MikroTik: ARP via SSH quando quello via SNMP è a metà** (MK-RTR-CORE sull'hub andava in `SNMP_TIMEOUT` a ogni giro).
+- **Mappa porte: colonne ordinabili** (Riccardo, 08/11: «le colonne sono fisse e non è possibile ordinarle come in tutti gli altri moduli»). Oggetti, Porte, Rotte e la tab «Porte» dell'hypervisor: intestazione cliccabile come negli altri moduli, ordine dal server perché le tabelle sono paginate; IP come numeri, vuoti in fondo.
 - **MikroTik e Proxmox: 15 s per comando invece di 4.** Su 70151 la tabella MAC del collector andava in `SSH_EXEC_TIMEOUT` su 3 MikroTik di core su 7; un nodo Proxmox con molte VM fa un secondo giro per ognuna.
 
 ## [Non rilasciato] — 2026-11-08 · CVE potenziali dalle versioni dei servizi (spente di serie)

@@ -16,7 +16,8 @@ import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import type { StatoCalcolo, VoceRotta, VoceSpostamento } from "@/lib/mappa-porte/calcolo";
 import type { Confidenza, OggettoMappa, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
-import { MODI, TabellaPorte, TIPI_PORTA } from "@/components/mappa-porte/tabella-porte";
+import { MODI, TabellaPorte, Testata, TIPI_PORTA, type OrdinamentoTabella } from "@/components/mappa-porte/tabella-porte";
+import type { SortDirection } from "@/components/shared/sortable-table-head";
 
 type Scheda = "oggetti" | "porte" | "rotte";
 interface Risposta<T> { righe: T[]; totale: number; dimensionePagina: number; calcolo: StatoCalcolo | null; apparati: Array<{ id: number; nome: string }>; vlan: number[] }
@@ -169,6 +170,9 @@ export function MappaPorteClient() {
   const [recenti, setRecenti] = useState(false);
   const [libere, setLibere] = useState(false);
   const [pagina, setPagina] = useState(0);
+  // Ordinamento dal server, per scheda (Riccardo, 08/11): nessuna colonna = l'ordine di sempre.
+  const [ordinaPer, setOrdinaPer] = useState<string | null>(null);
+  const [verso, setVerso] = useState<SortDirection>("asc");
   const [oggetti, setOggetti] = useState<Risposta<OggettoMappa> | null>(null);
   const [porte, setPorte] = useState<Risposta<PortaMappa> | null>(null);
   const [rotte, setRotte] = useState<Risposta<VoceRotta> | null>(null);
@@ -190,6 +194,7 @@ export function MappaPorteClient() {
     const u = new URLSearchParams({ vista: scheda, pagina: String(pagina) });
     const metti = (k: string, v: string | boolean) => { if (v === true) u.set(k, "1"); else if (v) u.set(k, v); };
     metti("q", q); metti("apparato", apparato); metti("tipoPorta", tipoPorta);
+    if (ordinaPer) { u.set("sortBy", ordinaPer); u.set("sortDir", verso); }
     if (scheda === "oggetti") { metti("vlan", vlan); metti("confidenza", confidenza); metti("senzaHost", senzaHost); metti("spostati", spostati); metti("recenti", recenti); }
     else if (scheda === "porte") { metti("modo", modo); metti("libere", libere); }
     try {
@@ -203,15 +208,21 @@ export function MappaPorteClient() {
     } catch {
       /* richiesta superata */
     }
-  }, [nextSignal, scheda, pagina, q, apparato, tipoPorta, vlan, confidenza, senzaHost, spostati, recenti, modo, libere]);
+  }, [nextSignal, scheda, pagina, q, apparato, tipoPorta, vlan, confidenza, senzaHost, spostati, recenti, modo, libere, ordinaPer, verso]);
   useEffect(() => {
     void carica();
   }, [carica]);
 
   const conFiltro = <T,>(f: (v: T) => void) => (v: T) => { f(v); setPagina(0); };
+  const ordine: OrdinamentoTabella = {
+    colonna: ordinaPer, verso,
+    onOrdina: (c) => { if (c === ordinaPer) setVerso((v) => (v === "asc" ? "desc" : "asc")); else { setOrdinaPer(c); setVerso("asc"); } setPagina(0); },
+  };
   const cambiaScheda = (s: Scheda) => {
     setScheda(s);
     setPagina(0);
+    setOrdinaPer(null);
+    setVerso("asc");
     setTipoPorta("");
     window.history.replaceState(null, "", `#${s}`);
   };
@@ -274,7 +285,7 @@ export function MappaPorteClient() {
           : dati.righe.length === 0 ? <Vuoto titolo="Nessuna riga" testo="Nessun risultato con questi filtri. Dopo un'installazione nuova serve un giro sugli switch." />
           : (
             <div className="space-y-2 p-3">
-              {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} /> : scheda === "porte" ? <TabellaPorte righe={porte?.righe ?? []} /> : <TabellaRotte righe={rotte?.righe ?? []} />}
+              {scheda === "oggetti" ? <TabellaOggetti righe={oggetti?.righe ?? []} onScegli={setScelto} ordine={ordine} /> : scheda === "porte" ? <TabellaPorte righe={porte?.righe ?? []} ordine={ordine} /> : <TabellaRotte righe={rotte?.righe ?? []} ordine={ordine} />}
               <Paginazione pagina={pagina} totale={dati.totale} dimensione={dati.dimensionePagina} onPagina={setPagina} />
             </div>
           )}
@@ -284,11 +295,15 @@ export function MappaPorteClient() {
   );
 }
 
-function TabellaOggetti({ righe, onScegli }: { righe: OggettoMappa[]; onScegli: (k: string) => void }) {
+function TabellaOggetti({ righe, onScegli, ordine }: { righe: OggettoMappa[]; onScegli: (k: string) => void; ordine: OrdinamentoTabella }) {
   return (
     <Table fissa riserva={70}>
       <TableHeader>
-        <TableRow><TableHead>Oggetto</TableHead><TableHead>MAC</TableHead><TableHead>IP</TableHead><TableHead>Dove</TableHead><TableHead>VLAN</TableHead><TableHead>Confidenza</TableHead><TableHead className="hidden min-[1500px]:table-cell">Visto</TableHead></TableRow>
+        <TableRow>
+          <Testata id="nome" ordine={ordine}>Oggetto</Testata><Testata id="mac" ordine={ordine}>MAC</Testata><Testata id="ip" ordine={ordine}>IP</Testata>
+          <Testata id="dove" ordine={ordine}>Dove</Testata><Testata id="vlan" ordine={ordine}>VLAN</Testata><Testata id="confidenza" ordine={ordine}>Confidenza</Testata>
+          <Testata id="visto" ordine={ordine} className="hidden min-[1500px]:table-cell">Visto</Testata>
+        </TableRow>
       </TableHeader>
       <TableBody>
         {righe.map((o) => (
@@ -314,11 +329,15 @@ function TabellaOggetti({ righe, onScegli }: { righe: OggettoMappa[]; onScegli: 
   );
 }
 
-function TabellaRotte({ righe }: { righe: VoceRotta[] }) {
+function TabellaRotte({ righe, ordine }: { righe: VoceRotta[]; ordine: OrdinamentoTabella }) {
   return (
     <Table fissa riserva={70}>
       <TableHeader>
-        <TableRow><TableHead>Apparato</TableHead><TableHead>Destinazione</TableHead><TableHead>Gateway</TableHead><TableHead>Interfaccia</TableHead><TableHead>Protocollo</TableHead><TableHead className="text-right">Metrica</TableHead><TableHead>Stato</TableHead></TableRow>
+        <TableRow>
+          <Testata id="apparato" ordine={ordine}>Apparato</Testata><Testata id="destinazione" ordine={ordine}>Destinazione</Testata><Testata id="gateway" ordine={ordine}>Gateway</Testata>
+          <Testata id="interfaccia" ordine={ordine}>Interfaccia</Testata><Testata id="protocollo" ordine={ordine}>Protocollo</Testata>
+          <Testata id="metrica" ordine={ordine} className="text-right">Metrica</Testata><Testata id="stato" ordine={ordine}>Stato</Testata>
+        </TableRow>
       </TableHeader>
       <TableBody>
         {righe.map((r) => (

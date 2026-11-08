@@ -22,6 +22,9 @@ const Parametri = z.object({
   libere: z.literal("1").optional(),
   pagina: z.coerce.number().int().min(0).default(0),
   dettaglio: z.string().max(40).optional(),
+  // Colonna d'ordinamento: la lista chiusa sta in `calcolo.ts`, una colonna sconosciuta vale l'ordine di sempre.
+  sortBy: z.string().regex(/^[a-z]{1,20}$/).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 export async function GET(request: Request) {
@@ -38,11 +41,12 @@ export async function GET(request: Request) {
     }
     // Primo accesso dopo l'aggiornamento: non si aspetta il giro.
     if (statoCalcolo() == null) ricalcolaMappaPorte();
+    const ordine = { colonna: f.sortBy, verso: f.sortDir };
     const elenco = f.vista === "rotte"
-      ? cercaRotte({ q: f.q, deviceId: f.apparato, pagina: f.pagina })
+      ? cercaRotte({ q: f.q, deviceId: f.apparato, pagina: f.pagina, ordine })
       : f.vista === "porte"
-      ? cercaPorte({ q: f.q, deviceId: f.apparato, tipo: f.tipoPorta, modo: f.modo, libere: f.libere === "1", pagina: f.pagina })
-      : cercaOggetti({ q: f.q, deviceId: f.apparato, vlan: f.vlan, confidenza: f.confidenza, tipoPorta: f.tipoPorta, senzaHost: f.senzaHost === "1", spostati: f.spostati === "1", recenti: f.recenti === "1", pagina: f.pagina });
+      ? cercaPorte({ q: f.q, deviceId: f.apparato, tipo: f.tipoPorta, modo: f.modo, libere: f.libere === "1", pagina: f.pagina, ordine })
+      : cercaOggetti({ q: f.q, deviceId: f.apparato, vlan: f.vlan, confidenza: f.confidenza, tipoPorta: f.tipoPorta, senzaHost: f.senzaHost === "1", spostati: f.spostati === "1", recenti: f.recenti === "1", pagina: f.pagina, ordine });
     return NextResponse.json({ ...elenco, dimensionePagina: DIMENSIONE_PAGINA, calcolo: statoCalcolo(), apparati: apparatiDellaMappa(), vlan: vlanDellaMappa() });
   });
 }

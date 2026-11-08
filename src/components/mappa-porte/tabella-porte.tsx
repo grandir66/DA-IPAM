@@ -5,7 +5,9 @@
  * le porte»). Senza la colonna «Apparato» quando è la scheda di un apparato solo.
  */
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Etichetta } from "@/components/shared/console";
+import { SortableTableHead, type SortDirection } from "@/components/shared/sortable-table-head";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { DatoVlan, ModoPorta, PortaMappa, TipoPorta } from "@/lib/mappa-porte/tipi";
@@ -16,11 +18,26 @@ export const TIPI_PORTA: Record<TipoPorta, string> = {
 export const MODI: Record<ModoPorta, string> = { accesso: "Accesso", trunk: "Trunk", non_letto: "Non letto" };
 export const conDedotto = (testo: string, dato: DatoVlan) => (dato === "dedotto" ? `${testo} ≈` : testo);
 
-export function TabellaPorte({ righe, conApparato = true }: { righe: PortaMappa[]; conApparato?: boolean }) {
+/** Ordinamento dal server (le tabelle sono paginate): colonna, verso e chi lo cambia. Senza, le intestazioni non si cliccano. */
+export interface OrdinamentoTabella { colonna: string | null; verso: SortDirection; onOrdina: (colonna: string) => void }
+
+/** Intestazione ordinabile se c'è un ordinamento e la colonna ha un id; altrimenti un'intestazione normale. */
+export function Testata({ id, ordine, className, children }: { id?: string; ordine?: OrdinamentoTabella; className?: string; children: ReactNode }) {
+  if (!ordine || !id) return <TableHead className={className}>{children}</TableHead>;
+  return <SortableTableHead columnId={id} sortColumn={ordine.colonna} sortDirection={ordine.verso} onSort={ordine.onOrdina} className={className}>{children}</SortableTableHead>;
+}
+
+export function TabellaPorte({ righe, conApparato = true, ordine }: { righe: PortaMappa[]; conApparato?: boolean; ordine?: OrdinamentoTabella }) {
   return (
     <Table fissa riserva={70}>
       <TableHeader>
-        <TableRow>{conApparato && <TableHead>Apparato</TableHead>}<TableHead>Porta</TableHead><TableHead>Stato</TableHead><TableHead>Tipo</TableHead><TableHead>Modo</TableHead><TableHead>PVID</TableHead><TableHead>Tagged</TableHead><TableHead>Velocità</TableHead><TableHead>PoE</TableHead><TableHead>Vicino</TableHead><TableHead className="text-right">MAC</TableHead></TableRow>
+        <TableRow>
+          {conApparato && <Testata id="apparato" ordine={ordine}>Apparato</Testata>}
+          <Testata id="porta" ordine={ordine}>Porta</Testata><Testata id="stato" ordine={ordine}>Stato</Testata><Testata id="tipo" ordine={ordine}>Tipo</Testata>
+          <Testata id="modo" ordine={ordine}>Modo</Testata><Testata id="pvid" ordine={ordine}>PVID</Testata><Testata>Tagged</Testata>
+          <Testata id="velocita" ordine={ordine}>Velocità</Testata><Testata id="poe" ordine={ordine}>PoE</Testata><Testata id="vicino" ordine={ordine}>Vicino</Testata>
+          <Testata id="mac" ordine={ordine} className="text-right">MAC</Testata>
+        </TableRow>
       </TableHeader>
       <TableBody>
         {righe.map((p) => (

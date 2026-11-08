@@ -12,7 +12,8 @@ Riccardo (08/11): «Sì, in quest'ordine». Piano: `docs/superpowers/plans/2026-
 - [x] C5: `campiDelCollectorApparato` protegge anche con `mappa_dati` accesa. Prova vista rossa (1 fail su 15), poi verde 15/15.
 - [x] C5 punto 3, confronto delle colonne: il collector scrive 9 campi per porta (`CAMPI_PORTA`), non i MAC per porta (`mac_count`, `single_mac*`, host), che vengono solo dal giro SNMP. Il giro storico sugli HP **non si può spegnere** finché la tabella FDB del collector (`forwarding`) non ha una proiezione. Nessun interruttore nuovo.
 - [ ] Da sapere, visto nella misura: su MK-CORE (apparato 4, porte ether1 e sfp28-2) SNMP dice vicino «MK-CORE-2-ARM-D», il collector «GAMOfas8080a-01» porta `e0k` (NetApp). Ora vince il collector (decisione a). Quale sia giusto si vede sul cablaggio: **da guardare con Riccardo**.
-- [ ] Rilascio su `dev`, poi sull'hub: riga in Opzioni accesa (l'hub l'aveva accesa il 22/10), «Aggiorna» su un nodo Proxmox con credenziale SSH.
+- [x] Rilascio: v0.9.1002 su `dev` (`ef8c760c`), sull'hub con la 0.9.1004 di altre sessioni (08/11, 13:37 italiane): `/api/health` ok, db ok, codice presente (`giri.ts`, riga in `opzioni/catalogo.ts`), `acquisizione_modulare.attiva=1`, `mappa_dati` accesa.
+- [ ] **Da guardare da Riccardo sull'hub** (io non entro nelle pagine dell'hub con una password): Opzioni → riga «Acquisizione con i collector» accesa; Impostazioni → Sistema mostra il rimando; «Aggiorna» su DA-PX-03/04/05 con una credenziale SSH → modello e seriale del nodo.
 - [ ] Su 70151 dopo il rilascio (arriva con `main`, non con `dev`): i cambi di duplex e PoE in `acquisition_changes` devono scendere a quasi zero.
 - [ ] Prossimo: proiezione della tabella FDB del collector (MAC per porta), poi C5 vero per gli HP; oppure C6.
 

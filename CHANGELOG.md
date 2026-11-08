@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Sonda trunk sul Mac del tecnico: accesa e azzerata a ogni cliente
+
+Riccardo (08/11): la sonda trunk sul Mac del tecnico deve essere «abilitata per default» e «l'acquisizione deve essere da resettare e riabilitare ad ogni cambio cliente». Il Mac passa da un cliente all'altro, la sonda no.
+
+### Aggiunto
+- **`trunk/tecnico.ts`** (solo con `DA_PROFILO=tecnico`): all'accesso e al cambio di profilo si segna il profilo della sonda e «azzerare» (`tecnico-profilo.ts`, solo hub: lo importa `auth.config`, ADR 0002). Il giro di lettura ogni 2 minuti prima chiama `POST /azzera` della sonda, poi accende la lettura del solo profilo scelto col cursore da capo e la spegne negli altri. Se l'azzeramento fallisce non legge niente e riprova: meglio un dato in ritardo che nel cliente sbagliato. Rientrare sullo stesso cliente non azzera.
+
 ## [Non rilasciato] — 2026-11-08 · Pagina della subnet: tasto destro e categoria a più host
 
 Riccardo (08/11): assegnare la categoria a più oggetti insieme dalla pagina della subnet, senza farlo uno alla volta, e il tasto destro «come in altre schermate per abilitare i filtri ed avere le funzioni subito pronte».

@@ -12,7 +12,9 @@
 import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
-import { accendiLetturaSeSondaLocale, sincronizzaTrunk, trunkLetturaAttiva } from "./sensore-trunk";
+import { accendiLetturaSeSondaLocale, scriviSulSocket, sincronizzaTrunk, trunkLetturaAttiva } from "./sensore-trunk";
+import { isTecnico } from "@/lib/profilo";
+import { preparaTrunkTecnico } from "./tecnico";
 
 export const CRON_TRUNK = "*/2 * * * *";
 
@@ -28,6 +30,15 @@ export async function letturaTrunkTutti(): Promise<void> {
   if (s.inCorso) return;
   s.inCorso = true;
   try {
+    // Mac del tecnico (ADR 0037): prima si azzera la sonda se il cliente è cambiato, poi si legge
+    // solo nel profilo scelto. Azzeramento fallito = niente letto in questo giro.
+    if (isTecnico()) {
+      const pronto = await preparaTrunkTecnico(() => scriviSulSocket("/azzera", {}));
+      if (!pronto.leggi) {
+        if (pronto.motivo !== "nessun profilo scelto") console.warn(`[trunk] tecnico: ${pronto.motivo}`);
+        return;
+      }
+    }
     const clienti = getActiveTenants();
     for (const t of clienti) {
       try {

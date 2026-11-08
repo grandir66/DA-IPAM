@@ -7,6 +7,18 @@ import Credentials from "next-auth/providers/credentials";
  * The actual authorize() logic with db/bcrypt runs in Node.js runtime
  * via the full auth.ts module.
  */
+/** Mac del tecnico (ADR 0037): profilo della sonda trunk all'accesso e al cambio. Altrove niente. */
+async function segnaProfiloTrunkSeTecnico(codice: string): Promise<void> {
+  try {
+    const { isTecnico } = await import("./profilo");
+    if (!isTecnico()) return;
+    const { segnaCambioProfiloTrunk } = await import("./trunk/tecnico-profilo");
+    segnaCambioProfiloTrunk(codice);
+  } catch (e) {
+    console.warn(`[Auth] profilo della sonda trunk non segnato: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export const authConfig: NextAuthConfig = {
   providers: [
     // Segnaposto per l'Edge runtime, come quello sotto: la `authorize` vera
@@ -60,6 +72,7 @@ export const authConfig: NextAuthConfig = {
         if (rawId) token.userId = rawId;
         // Ora dell'accesso: non cambia ai rinnovi, a differenza di `iat` (lib/accesso/sessione.ts).
         token.accessoAt = Date.now();
+        if (typeof token.tenantCode === "string") await segnaProfiloTrunkSeTecnico(token.tenantCode);
       } else if (token.userId && token.userId !== "0") {
         // Dopo «Esci» un token di un accesso precedente non vale più, anche se una richiesta
         // partita prima dell'uscita lo rinnova: null fa cancellare il cookie ad Auth.js.
@@ -94,6 +107,8 @@ export const authConfig: NextAuthConfig = {
         }
         token.tenantCode = richiesta;
         if (userId) segnaUltimaIstanza(userId, richiesta);
+        // Mac del tecnico: la sonda trunk si azzera e riparte sul cliente nuovo (Riccardo, 08/11).
+        await segnaProfiloTrunkSeTecnico(richiesta);
         // Ricarica lista tenant per superadmin (potrebbe aver creato nuovi clienti)
         if (token.role === "superadmin") {
           try {

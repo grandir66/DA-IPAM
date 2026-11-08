@@ -1,6 +1,20 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Pagina della subnet: tasto destro e categoria a più host (Riccardo, leggero)
+
+Riccardo (08/11): «assegnare le categorie agli oggetti in modo multiplo» dalla pagina della subnet, e il tasto destro «come in altre schermate». Proposta a schermo approvata («Sì, costruisci»).
+- [x] Finestrella `components/networks/categoria-blocco-dialog.tsx` (riusa `PATCH /api/hosts/bulk-update`, scelta a mano; casella per lasciare stare chi è già a mano)
+- [x] Tasto destro sulla lista: filtri sul valore della cella + azioni, `lib/networks/celle-subnet.ts` con 5 prove
+- [ ] Guardata resa sull'hub coi dati veri
+- Trappola: la colonna premuta si riconosce dalla posizione (`COLONNE_SUBNET`): chi aggiunge o sposta una colonna nella tabella cambia anche quell'elenco.
+
+## 2026-11-08 — DTS (71734): scansioni spente e DC che non si risolvono (Riccardo)
+
+- [ ] **Tre `fast_scan` spente** su 172.16.0.0/17, 172.17.0.0/22, 172.17.4.0/22: le ha spente la migrazione d'avvio (`applyTenantSchedulerDefaults`: rete ≥ /22 e intervallo < 720 min), che non le riaccende mai. La /17 è già a 720 ma resta spenta. Proposto: le due /22 a 720 e riaccendere tutte e tre. Aspetta il sì di Riccardo (sistema del cliente). Le `known_host_check` girano tutte, ogni 15 minuti.
+- [ ] Mostrare a schermo perché un job è spento («spento dalla regola reti grandi»): oggi non si distingue da uno spento a mano.
+- [ ] **AD: «0/2 DC letti», `SRV-DC01/02.dts.local` non si risolvono.** Su DTS `eth0` usa come DNS 1.1.1.1 e 8.8.8.8 (netplan `50-cloud-init.yaml`), che non conoscono `dts.local`. Correzione proposta: DNS di `eth0` sui DC, con ricerca `dts.local`. Nel DB SRV-DC01 compare con due IP (172.16.1.1 e 172.16.1.11), SRV-DC02 con 172.16.1.12: quale IP sia il DC vero è da confermare con Riccardo. Aspetta il suo sì.
+
 ## 2026-11-08 — Menu: voci grigie senza i loro moduli, Sicurezza del dominio unita (Riccardo)
 
 Viste sulla ridotta `79993-ipam-7`. Riccardo, 08/11: Vulnerabilità, Scansioni VA, Inventario e Applicativi grigie senza Edge e senza NIS2; Alert sicurezza grigia senza Wazuh; «Sicurezza del Dominio» e «Health Active Directory» unite su tutte le installazioni, senza perdere informazioni. Livello leggero.

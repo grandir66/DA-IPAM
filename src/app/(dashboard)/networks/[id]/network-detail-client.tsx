@@ -41,6 +41,17 @@ import { useGiri } from "@/components/shared/giri-context";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
+import { CategoriaBloccoDialog } from "@/components/networks/categoria-blocco-dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { aggiungiFiltroValore, passaFiltriValore, togliFiltroValore, valoreLeggibile, type FiltroValore } from "@/lib/discovery/filtri-valore";
+import { colonnaDaIndice, etichettaColonnaSubnet, hostDelMenu, nomeHost, testoCellaSubnet } from "@/lib/networks/celle-subnet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,7 +60,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown, Microscope } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -214,6 +225,12 @@ export function NetworkDetailClient({
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
+  // Tasto destro sulla lista (Riccardo, 08/11): filtri sul valore della cella e azioni pronte,
+  // come in Discovery. La riga premuta fissa il bersaglio prima che il menu chieda di aprirsi.
+  const [filtriValore, setFiltriValore] = useState<FiltroValore[]>([]);
+  const bersaglioRef = useRef<{ host: HostWithDevice; colonna: string | null } | null>(null);
+  const [menuRiga, setMenuRiga] = useState<{ host: HostWithDevice; colonna: string | null } | null>(null);
+  const [categoriaOpen, setCategoriaOpen] = useState(false);
   // Lista unica delle credenziali della rete. Le quattro catene vecchie non si
   // leggono né si rimandano più (tappa 2 credenziali, T12): restano nel DB,
   // congelate, fino alla 2d.
@@ -430,6 +447,7 @@ export function NetworkDetailClient({
       }
     }
     if (filterKnownOnly && !h.known_host) return false;
+    if (filtriValore.length > 0 && !passaFiltriValore(filtriValore, (c) => testoCellaSubnet(h, c))) return false;
     return true;
   });
 
@@ -490,9 +508,9 @@ export function NetworkDetailClient({
     setBulkAddOpen(true);
   }
 
-  async function handleBulkKnown(known: 0 | 1) {
-    if (selectedHostIds.size === 0) return;
-    const n = selectedHostIds.size;
+  async function handleBulkKnown(known: 0 | 1, ids: number[] = Array.from(selectedHostIds)) {
+    if (ids.length === 0) return;
+    const n = ids.length;
     const msg =
       known === 1
         ? `Segnare ${n} host come conosciuti (monitoraggio continuo)?`
@@ -505,7 +523,7 @@ export function NetworkDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           network_id: network.id,
-          host_ids: Array.from(selectedHostIds),
+          host_ids: ids,
           known_host: known,
         }),
       });
@@ -525,9 +543,9 @@ export function NetworkDetailClient({
     }
   }
 
-  async function handleBulkDeleteHosts() {
-    if (selectedHostIds.size === 0) return;
-    const n = selectedHostIds.size;
+  async function handleBulkDeleteHosts(ids: number[] = Array.from(selectedHostIds)) {
+    if (ids.length === 0) return;
+    const n = ids.length;
     if (!confirm(`Eliminare definitivamente ${n} host dall'inventario IP? Azione irreversibile.`)) return;
     setBulkHostBusy(true);
     try {
@@ -536,7 +554,7 @@ export function NetworkDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           network_id: network.id,
-          host_ids: Array.from(selectedHostIds),
+          host_ids: ids,
         }),
       });
       const data = (await res.json()) as { error?: string; deleted?: number };
@@ -553,6 +571,88 @@ export function NetworkDetailClient({
     } finally {
       setBulkHostBusy(false);
     }
+  }
+
+  /** Tasto destro su una riga: la cella premuta dà la colonna; nelle caselle di testo resta il menu del browser. */
+  function puntaMenu(e: React.MouseEvent<HTMLTableRowElement>, host: HostWithDevice) {
+    const t = e.target;
+    if (t instanceof Element && t.closest("input, textarea, select, [contenteditable=true]")) {
+      e.stopPropagation();
+      bersaglioRef.current = null;
+      return;
+    }
+    const cella = t instanceof Element ? t.closest("td") : null;
+    bersaglioRef.current = { host, colonna: cella ? colonnaDaIndice((cella as HTMLTableCellElement).cellIndex) : null };
+  }
+
+  /** Le azioni del menu valgono sulla selezione se la riga ne fa parte, altrimenti sulla riga sola. */
+  function selezionaPerMenu(host: HostWithDevice): number[] {
+    const ids = hostDelMenu(selectedHostIds, host.id);
+    if (!selectedHostIds.has(host.id)) setSelectedHostIds(new Set(ids));
+    return ids;
+  }
+
+  function menuTastoDestro({ host, colonna }: { host: HostWithDevice; colonna: string | null }) {
+    const n = hostDelMenu(selectedHostIds, host.id).length;
+    const valore = colonna ? testoCellaSubnet(host, colonna) : "";
+    const nome = nomeHost(host);
+    return (
+      <>
+        <ContextMenuLabel className="max-w-72 truncate">
+          {n > 1 ? `${n} host selezionati` : nome ? `${nome} · ${host.ip}` : host.ip}
+        </ContextMenuLabel>
+        <ContextMenuSeparator />
+        {colonna && (
+          <>
+            <ContextMenuLabel className="max-w-72 truncate" title={valore}>
+              {etichettaColonnaSubnet(colonna)}: <span className="font-mono text-foreground">{valoreLeggibile(valore)}</span>
+            </ContextMenuLabel>
+            <ContextMenuItem onClick={() => setFiltriValore((f) => aggiungiFiltroValore(f, { colonna, valore, escludi: false }))}>
+              <Filter className="h-3.5 w-3.5" />
+              Mostra solo questo valore
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => setFiltriValore((f) => aggiungiFiltroValore(f, { colonna, valore, escludi: true }))}>
+              <EyeOff className="h-3.5 w-3.5" />
+              Nascondi questo valore
+            </ContextMenuItem>
+            {valore.trim() !== "" && (
+              <ContextMenuItem
+                onClick={() => {
+                  void navigator.clipboard?.writeText(valore)
+                    .then(() => toast.success("Copiato"))
+                    .catch(() => toast.error("Il browser non permette di copiare"));
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copia il valore
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+          </>
+        )}
+        <ContextMenuItem onClick={() => { selezionaPerMenu(host); setCategoriaOpen(true); }}>
+          <Tag className="h-3.5 w-3.5" />
+          {n > 1 ? `Categoria ai ${n} selezionati…` : "Categoria…"}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => { selezionaPerMenu(host); apriAggiungiDispositivi(); }}>
+          <Plus className="h-3.5 w-3.5" />
+          Rendi apparato
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => void handleBulkKnown(1, selezionaPerMenu(host))}>
+          <UserCheck className="h-3.5 w-3.5" />
+          Conosciuti
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => void handleBulkKnown(0, selezionaPerMenu(host))}>
+          <UserX className="h-3.5 w-3.5" />
+          Rimuovi noti
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={() => void handleBulkDeleteHosts(selezionaPerMenu(host))}>
+          <Trash2 className="h-3.5 w-3.5" />
+          {n > 1 ? `Elimina ${n}…` : "Elimina…"}
+        </ContextMenuItem>
+      </>
+    );
   }
 
   /**
@@ -1398,6 +1498,16 @@ export function NetworkDetailClient({
                     <Button
                       variant="secondary"
                       size="sm"
+                      onClick={() => setCategoriaOpen(true)}
+                      disabled={selectedHostIds.size === 0 || bulkHostBusy}
+                      title="Assegna la stessa categoria a tutti gli host selezionati (anche dal tasto destro)"
+                    >
+                      <Tag className="h-3.5 w-3.5 mr-1" />
+                      Categoria…
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => void handleBulkKnown(1)}
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
                     >
@@ -1496,6 +1606,40 @@ export function NetworkDetailClient({
         />
       )}
 
+      {categoriaOpen && selectedHostIds.size > 0 && (
+        <CategoriaBloccoDialog
+          hosts={hosts.filter((h) => selectedHostIds.has(h.id))}
+          open={categoriaOpen}
+          onOpenChange={setCategoriaOpen}
+          onSalvato={() => { clearHostSelection(); void refreshHosts(); router.refresh(); }}
+        />
+      )}
+
+      {view === "list" && filtriValore.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-muted-foreground">Filtri dal tasto destro:</span>
+          {filtriValore.map((f, i) => (
+            <Button
+              key={`${f.colonna}:${f.valore}:${f.escludi}`}
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-[13px]"
+              title="Togli questo filtro"
+              onClick={() => setFiltriValore((prec) => togliFiltroValore(prec, i))}
+            >
+              {f.escludi ? <EyeOff className="h-3.5 w-3.5" /> : <Filter className="h-3.5 w-3.5" />}
+              {etichettaColonnaSubnet(f.colonna)} {f.escludi ? "≠" : "="} <span className="font-mono">{valoreLeggibile(f.valore)}</span>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          ))}
+          {filtriValore.length > 1 && (
+            <Button variant="ghost" size="sm" className="h-7 text-[13px] text-muted-foreground" onClick={() => setFiltriValore([])}>
+              Togli tutti
+            </Button>
+          )}
+        </div>
+      )}
+
       {view === "list" && (
         <Card className="overflow-hidden py-0 gap-0">
           <Table fissa>
@@ -1543,7 +1687,11 @@ export function NetworkDetailClient({
                 <TableHead title="Wazuh SIEM/HIDS agent" className="w-12 text-center">Wazuh</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <ContextMenu open={menuRiga !== null} onOpenChange={(o) => {
+              setMenuRiga(o ? bersaglioRef.current : null);
+              if (!o) bersaglioRef.current = null;
+            }}>
+            <ContextMenuTrigger render={<TableBody />}>
               {displayHosts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
@@ -1554,7 +1702,7 @@ export function NetworkDetailClient({
                 </TableRow>
               ) : (
                 displayHosts.map((host) => (
-                  <TableRow key={host.id}>
+                  <TableRow key={host.id} onContextMenu={(e) => puntaMenu(e, host)}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedHostIds.has(host.id)}
@@ -1864,7 +2012,9 @@ export function NetworkDetailClient({
                   </TableRow>
                 ))
               )}
-            </TableBody>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-64">{menuRiga && menuTastoDestro(menuRiga)}</ContextMenuContent>
+            </ContextMenu>
           </Table>
         </Card>
       )}

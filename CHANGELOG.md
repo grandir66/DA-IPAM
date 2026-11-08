@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Pagina della subnet: tasto destro e categoria a più host
+
+Riccardo (08/11): assegnare la categoria a più oggetti insieme dalla pagina della subnet, senza farlo uno alla volta, e il tasto destro «come in altre schermate per abilitare i filtri ed avere le funzioni subito pronte».
+
+### Aggiunto
+- **Tasto destro sulla lista host** della subnet, come in Discovery: «Mostra solo / Nascondi questo valore» e «Copia il valore» sulla cella premuta (IP, stato, conosciuto, DHCP, AD, nome, classificazione, vendor, note), poi le azioni: categoria, rendi apparato, conosciuti, rimuovi noti, elimina. Valgono sulla selezione se la riga premuta ne fa parte, altrimenti sulla riga sola. I filtri attivi stanno in pastiglie sopra la lista. Regola dei filtri riusata da `lib/discovery/filtri-valore.ts`; testo delle celle in `lib/networks/celle-subnet.ts` (prove).
+- **«Categoria…»** nella barra della selezione e nel menu: una finestrella sceglie la categoria, dice quante ne hanno oggi gli host scelti e permette di lasciare stare quelli già messi a mano. Salva con `PATCH /api/hosts/bulk-update` come la «Modifica in blocco» della Discovery: diventa una scelta a mano.
 ## [Non rilasciato] — 2026-11-08 · Tutti inclusi, a rischio da escludere, scelta firmata
 
 Riccardo (08/11): «teoricamente vale il contrario: mostrare i device a rischio con un'opzione per escluderli o inserirli, e la scelta verrà memorizzata con la firma di autorizzazione; i device IoT partono disabilitati», e un sistema «easy da gestire». Tavola oggetti 40-44 approvata; prima tappa.

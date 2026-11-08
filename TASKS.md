@@ -7,9 +7,9 @@ Viste sulla ridotta `79993-ipam-7`. Riccardo, 08/11: Vulnerabilità, Scansioni V
 - [x] Resa proposta oggetto per oggetto (testo spento + lucchetto + motivo); Riccardo: NIS2 «si spegne da Opzioni» (resta acceso di serie)
 - [x] Prove viste fallire: `src/lib/modules/__tests__/voci-condizionate.test.ts`, `src/lib/menu/__tests__/sicurezza-dominio-unita.test.ts`
 - [x] Menu (`shared/sidebar.tsx`), pagina unita a due schede, rimando da `/active-directory?tab=health`
-- [ ] Sulla `79993-ipam-7`: spegnere NIS2 da Opzioni e guardare il menu grigio (dopo il rilascio su `main`, che decide Riccardo)
-- [ ] Riccardo (08/11), da decidere: NIS2 spento di serie sulla ridotta (oggi acceso di serie, si spegne a mano); serve che DA-IPAM sappia di essere una ridotta o che l'installatore lo spenga (Deploy-Appliance)
-- [ ] Da decidere: chiudere anche le pagine (oggi grigie solo nel menu, raggiungibili dall'indirizzo)
+- [ ] Riccardo (08/11): «SI» a portare su `main` e guardare il menu sulla `79993-ipam-7`
+- [x] Riccardo (08/11): «SI» a NIS2 spento di serie sulla ridotta (`src/lib/modules/nis2.ts`, prova `nis2-di-serie.test.ts` vista fallire). Segnale già presente: `/etc/da-appliance/versione.json` con `"variante": "snella"` (lo scrive Deploy-Appliance e lo rinnova a ogni aggiornamento), quindi Deploy-Appliance non cambia; una scelta in Opzioni vince sempre
+- [-] Chiudere anche le pagine: no. Riccardo (08/11): «BASTA GRIGIO» — solo il menu
 
 ## 2026-11-08 — Discovery con i numeri veri e credenziali agganciate da sole alle reti (Riccardo)
 

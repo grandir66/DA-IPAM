@@ -6,6 +6,7 @@
  * `leggi` e `cambia` chiamano le funzioni che esistono già (letture, job, moduli, notifiche, DA-Link…): qui non si
  * riscrive la logica, la si indicizza. Si chiama nel contesto del tenant (rotte: `withTenantFromSession`).
  */
+import { CHIAVE_NIS2, leggiNis2, nis2DiSerie, varianteImmagine } from "@/lib/modules/nis2";
 import {
   acquisizioneModulareAccesa, getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
   getVulnScannerStato, impostaAcquisizioneModulare, listControllerClientScheduleJobs, listControllerScheduleJobs, listNetworksLite, schemaAssegnatariAdPresente, schemaCaviPresente,
@@ -520,15 +521,14 @@ function opzioniModuli(): Opzione[] {
       cosa: "la pagina Servizi",
       valePer: "cliente",
       forma: "levetta",
-      diSerie: "acceso",
+      diSerie: nis2DiSerie(varianteImmagine()) ? "acceso" : "spento",
       spegnendo: { siFerma: "la voce Servizi del menu.", resta: "i dati dell'inventario, che ricompaiono se lo riaccendi." },
       leggi() {
-        const raw = getTenantSetting("nis2_inventory_enabled");
-        const acceso = raw === null ? true : raw === "1" || raw === "true";
+        const acceso = leggiNis2();
         return diSerieStato(acceso, acceso ? esito("ok", "attivo") : esito("neutro", "spento"));
       },
       cambia(r) {
-        setTenantSetting("nis2_inventory_enabled", soloAcceso(r) ? "1" : "0");
+        setTenantSetting(CHIAVE_NIS2, soloAcceso(r) ? "1" : "0");
       },
     },
     {

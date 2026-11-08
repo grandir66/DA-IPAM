@@ -1,20 +1,14 @@
 /**
  * Toggle del modulo nativo "Inventario NIS2" (voce /services).
- *   GET  → { enabled }   (default true se mai impostato)   requireAuth
+ *   GET  → { enabled }   (mai impostato: spento sulla ridotta, acceso altrove — lib/modules/nis2.ts)   requireAuth
  *   POST → { enabled }   imposta tenant_settings            requireAdmin
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
-
-const KEY = "nis2_inventory_enabled";
-
-function readEnabled(): boolean {
-  const raw = getTenantSetting(KEY);
-  return raw === null ? true : raw === "1" || raw === "true";
-}
+import { setTenantSetting } from "@/lib/db-tenant";
+import { CHIAVE_NIS2 as KEY, leggiNis2 as readEnabled } from "@/lib/modules/nis2";
 
 export async function GET() {
   return withTenantFromSession(async () => {

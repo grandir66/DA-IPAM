@@ -18,6 +18,7 @@
  * DA-Vul-can). Dentro DA-IPAM la gestione è nativa (/vulnerabilities); la
  * connessione all'appliance è solo configurazione (tenant `vuln_scanners`).
  */
+import { leggiNis2 } from "./nis2";
 import { listCredentials } from "@/lib/credentials-vault";
 import {
   resolveEdgeBrowserUrl,
@@ -32,7 +33,7 @@ import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
-import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
+import { getTenantDb } from "@/lib/db-tenant";
 import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import { OFFERTA_MODULO, type Offerta } from "./offerta";
 
@@ -443,9 +444,8 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
 
   // ── nis2_inventory (toggle nativo via tenant_settings) — nativo /services ──
   {
-    // Default ON: preserva la visibilità storica di /services; disattivabile.
-    const raw = getTenantSetting("nis2_inventory_enabled");
-    const enabled = raw === null ? true : raw === "1" || raw === "true";
+    // Mai toccato: acceso, salvo sulla ridotta (08/11/2026). Regola in nis2.ts.
+    const enabled = leggiNis2();
     out.push({
       ...desc("nis2_inventory"),
       installed: true,

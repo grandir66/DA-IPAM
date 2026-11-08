@@ -5,8 +5,8 @@
  *
  * - Vulnerabilità, Scansioni VA, Inventario, Applicativi: grigie se mancano Scanner-Edge **e** NIS2.
  *   Edge c'è se è registrato (`installed`: una riga in `vuln_scanners`, anche spenta per un
- *   momento); NIS2 c'è se è acceso (Opzioni → Modulo NIS2, acceso di serie: sulla ridotta si
- *   spegne da lì, decisione di Riccardo dell'08/11).
+ *   momento); NIS2 c'è se è acceso (Opzioni → Modulo NIS2; di serie spento sulla ridotta e
+ *   acceso altrove, regola in `nis2.ts`).
  * - Alert sicurezza: grigia se Wazuh non è configurato (nell'appliance, in una VM sua o del
  *   cliente: conta la configurazione dell'integrazione, non dove gira).
  *

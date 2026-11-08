@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-08 · Script che prepara il dominio: account, gruppi e WinRM
+
+Riccardo (08/11): allo script dell'audit va aggiunta «la parte per abilitare WinRM e creare un utente con i diritti corretti». Scelte approvate: script separato, OU obbligatorie, WinRM e WMI solo dall'IP di DA-IPAM.
+
+### Aggiunto
+- **`scripts/Configura-Dominio-DA-IPAM.ps1`**, da scaricare dalla pagina «Cosa serve» (`/api/ad-setup/script-dominio`). Crea o riusa `svc-ipam` e il gruppo «DA-IPAM Scansioni», e `svc-ipam-dc` coi suoi gruppi di sola lettura. Poi crea la GPO «DA-IPAM - WinRM» sulle OU indicate: servizio WinRM, listener 5985, firewall WinRM e WMI e Administrators locale al gruppo. Rifiuta la radice del dominio, l'OU dei DC e ogni OU che contiene un DC; non tocca account già esistenti; le password si digitano al momento. `-Prova` non cambia niente. La prova `scripts/prova-configura-dominio.ps1` gira con pwsh e finti comandi di AD.
+- **«Non è firmato digitalmente»**: accanto ai due script la pagina dà il comando `Unblock-File`. Windows blocca gli script scaricati da internet e non firmati (Riccardo l'ha incontrato con `Configura-Audit-DC.ps1`).
 ## [Non rilasciato] — 2026-11-08 · Consenso agli impianti scelti, finestra «Per device»
 
 Riccardo (08/11): l'autorizzazione degli impianti deve poter valere «per tutta la finestra successiva» o essere definitiva dopo un giro senza danni, e «la pianificazione per device non ha la finestra». Tavola oggetti 42-43 approvata; tappe 2 e 3. Vuole la sonda 0.8.271 o seguente.

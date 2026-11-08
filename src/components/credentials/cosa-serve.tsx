@@ -7,7 +7,7 @@
  */
 
 import Link from "next/link";
-import { ArrowLeft, ClipboardCopy } from "lucide-react";
+import { ArrowLeft, ClipboardCopy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Etichetta, IntestazionePagina, Pannello } from "@/components/shared/console";
 import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
@@ -16,9 +16,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   COMANDO_LEGGI_FALLIMENTI,
   COMANDO_VERIFICA_AUDIT,
+  comandoSblocca,
   dirittiDi,
   FAMIGLIE_DIRITTI,
   REGOLE_DIRITTI,
+  SCRIPT_DOMINIO,
   type FamigliaDiritti,
 } from "@/lib/credentials/diritti";
 import { copiaTesto } from "./diritti-account";
@@ -91,6 +93,31 @@ export function CosaServe() {
           {REGOLE_DIRITTI.map((r) => <li key={r}>{r}</li>)}
           <li>Per l&apos;inventario basta una strada fra WMI e WinRM: DA-IPAM le prova da sola, host per host.</li>
         </ul>
+      </Pannello>
+
+      <Pannello
+        titolo="Preparare il dominio in un colpo solo"
+        sottotitolo="Account, gruppi e WinRM sui PC e server, con una GPO. In alternativa ai comandi uno per uno qui sotto."
+        corpoClassName="p-4"
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-3">
+            <a
+              href={SCRIPT_DOMINIO.href}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-[13px] font-medium hover:bg-muted"
+            >
+              <Download className="h-4 w-4" />
+              {SCRIPT_DOMINIO.file}
+            </a>
+            <ul className="list-disc space-y-1.5 pl-5 text-sm">
+              {SCRIPT_DOMINIO.cosaFa.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          </div>
+          <div className="space-y-3">
+            <Comando testo={SCRIPT_DOMINIO.comando} />
+            <Comando testo={comandoSblocca(SCRIPT_DOMINIO.file)} />
+          </div>
+        </div>
       </Pannello>
 
       <PannelloFamiglia famiglia="utente_scansioni" />

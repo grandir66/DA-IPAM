@@ -11,7 +11,7 @@
 
 import { Download } from "lucide-react";
 import { Etichetta } from "@/components/shared/console";
-import { dirittoPerId } from "@/lib/credentials/diritti";
+import { comandoSblocca, dirittoPerId } from "@/lib/credentials/diritti";
 
 const EVENTI = dirittoPerId("eventi_dc");
 
@@ -82,6 +82,7 @@ export function GuidaAuditDc() {
             tocca), aggiunge il controllo per DCSync e mette l&apos;account nei gruppi. Con <code className="font-mono">-Prova</code>{" "}
             dice cosa farebbe senza cambiare niente.
           </p>
+          <pre className="mt-2 overflow-x-auto rounded-md border bg-background p-2 font-mono text-[13px] leading-snug whitespace-pre-wrap">{comandoSblocca("Configura-Audit-DC.ps1")}</pre>
         </div>
         <a
           href="/api/ad-setup/script-audit"

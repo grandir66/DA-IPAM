@@ -69,6 +69,7 @@ export const REGOLE_DIRITTI: readonly string[] = [
 ];
 
 const CREA_ACCOUNT = `# Su un DC o da una macchina con gli strumenti di Active Directory.
+# (Configura-Dominio-DA-IPAM.ps1 crea i due account e dà i gruppi in un colpo solo)
 # La password si digita al momento: non sta scritta in nessun comando.
 Import-Module ActiveDirectory
 $password = Read-Host "Password di svc-ipam-dc" -AsSecureString
@@ -82,6 +83,7 @@ New-ADUser \`
   -Description "Account di DA-IPAM"`;
 
 const ABILITA_WINRM_E_ADMIN = `# Sul PC o server, PowerShell come amministratore
+# (per tutti i computer di un'OU in un colpo: Configura-Dominio-DA-IPAM.ps1, qui sopra)
 Enable-PSRemoting -Force
 Add-LocalGroupMember -Group "${GRUPPI.amministratoriLocali}" -Member "DOMINIO\\svc-ipam"`;
 
@@ -162,6 +164,35 @@ Add-ADGroupMember -Identity "${GRUPPI.dhcpAdmin}" -Members "svc-ipam-dc"
 Add-ADGroupMember -Identity "${GRUPPI.gestioneRemota}" -Members "svc-ipam-dc"`,
   },
 ];
+
+/**
+ * Windows rifiuta uno script scaricato e non firmato («non è firmato digitalmente», Riccardo 08/11 su
+ * Configura-Audit-DC.ps1): il file porta il segno «scaricato da internet». Si toglie il segno, una volta.
+ */
+export function comandoSblocca(file: string): string {
+  return `# Se PowerShell risponde «non è firmato digitalmente»: il file viene da internet, si sblocca così
+Unblock-File .\\${file}`;
+}
+
+/**
+ * Lo script che prepara il dominio in un colpo solo (Riccardo, 08/11: «abilitare WinRM e creare un utente
+ * con i diritti corretti»): i due account, i gruppi della sicurezza del dominio, e una GPO che su PC e
+ * server delle OU indicate accende WinRM, apre il firewall e dà ${GRUPPI.amministratoriLocali} locale al
+ * gruppo «DA-IPAM Scansioni». Mai sulla radice del dominio né sui DC. Testo della pagina «Cosa serve».
+ */
+export const SCRIPT_DOMINIO = {
+  file: "Configura-Dominio-DA-IPAM.ps1",
+  href: "/api/ad-setup/script-dominio",
+  cosaFa: [
+    `crea (o riusa) svc-ipam e il gruppo «DA-IPAM Scansioni», che diventa ${GRUPPI.amministratoriLocali} locale solo sui computer delle OU indicate`,
+    `crea (o riusa) svc-ipam-dc e lo mette in ${GRUPPI.lettoriRegistri} e ${GRUPPI.gestioneRemota} (e ${GRUPPI.dhcpAdmin} se c'è il DHCP)`,
+    "crea la GPO «DA-IPAM - WinRM» sulle OU indicate: servizio WinRM automatico, listener 5985, firewall WinRM e WMI solo dall'IP di DA-IPAM",
+    `rifiuta la radice del dominio, l'OU Domain Controllers e ogni OU con dentro un DC; non aggiunge mai nessuno a ${GRUPPI.domainAdmins}`,
+  ],
+  comando: `# Su un DC, PowerShell come amministratore del dominio. Le password si digitano al momento.
+.\\Configura-Dominio-DA-IPAM.ps1 -OU "OU=Server,DC=cliente,DC=local" -IpDaIpam 192.168.1.10 -Prova   # dice cosa farebbe
+.\\Configura-Dominio-DA-IPAM.ps1 -OU "OU=Server,DC=cliente,DC=local" -IpDaIpam 192.168.1.10          # applica`,
+} as const;
 
 /** Sola lettura, sul DC, per l'IT del cliente: gli accessi falliti delle ultime 24 ore. Gli stessi eventi di «Sicurezza del dominio». */
 export const COMANDO_LEGGI_FALLIMENTI = `# Sul DC, PowerShell come amministratore. Sola lettura: non cambia niente.

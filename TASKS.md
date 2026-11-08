@@ -1,6 +1,14 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Script che prepara il dominio: account, gruppi, WinRM (Riccardo, completo)
+
+Riccardo (08/11): «aggiungere la parte per abilitare WinRM e creare un utente con i diritti corretti». Approvato «Sì, come consigli»: script separato, OU obbligatorie, IP di DA-IPAM, livello completo.
+- [x] `scripts/Configura-Dominio-DA-IPAM.ps1`: due account, gruppi, GPO «DA-IPAM - WinRM» (registro + firewall + Gruppi con restrizioni in `GptTmpl.inf`). Verifica: `pwsh` parse ok; `scripts/prova-configura-dominio.ps1` 8 casi verdi (radice, OU dei DC anche scritta con gli spazi, DC, RODC, OU illeggibile = rifiuto, OU inesistente), rosso visto con la radice accettata per mutazione. Revisione indipendente: corretti controllo DC che falliva aperto e senza RODC, RA4 ripetuto per più IP, gruppo DHCP in italiano, scritture tutte sul PDC, collegamento solo a GPO completa e mai riacceso se disattivato, messaggio «Start-Service WinRM». Non verificabile senza dominio: `Set-GPRegistryValue` coi due IP, formato RA4 multiplo
+- [x] Scarico `/api/ad-setup/script-dominio`, testi in `diritti.ts` (`SCRIPT_DOMINIO`, `comandoSblocca`), pannello nella pagina «Cosa serve»; riga `Unblock-File` anche nella guida dell'audit
+- [ ] **Mai provato su un dominio vero**: la parte che scrive (New-ADUser, GPO, `GptTmpl.inf`, estensione Security) l'ha vista girare solo con comandi finti. Prossimo passo, da Riccardo su un DC: `-Prova` (non cambia niente), poi l'applicazione vera su un'OU di prova col suo sì; controllo su un PC dell'OU con `gpupdate /force`, `winrm enumerate winrm/config/listener`, `net localgroup Administrators`
+- [ ] Guardare a schermo il pannello nuovo della pagina «Cosa serve»
+
 ## 2026-11-08 — Pagina della subnet: tasto destro e categoria a più host (Riccardo, leggero)
 
 Riccardo (08/11): «assegnare le categorie agli oggetti in modo multiplo» dalla pagina della subnet, e il tasto destro «come in altre schermate». Proposta a schermo approvata («Sì, costruisci»).

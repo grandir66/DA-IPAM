@@ -9,7 +9,7 @@ Riccardo (08/11): «troppi IP fuori da quelli ufficiali», sull'hub e su DTS. Ap
 - [x] Pagina: domanda sulla VLAN nativa, «ufficiali · altri» per VLAN, colonna e filtri; `/api/trunk/vlan-nativa`
 - [x] Regola sui dati veri esportati: nativa dedotta VLAN 1 su tutti e due; DTS 672 ufficiali, 98 altra VLAN, 80 VLAN non in DA-IPAM, 74 169.254, 49 fuori rete, 20 instradati, 9 pubblici; hub 293/488
 - [ ] Guardata a schermo
-- [ ] DTS: 172.17.16.0/20 è dichiarata VLAN 16, il trunk la vede sulla VLAN 10 (da confermare con Riccardo; poi correggere la rete in DA-IPAM o lo switch)
+- [x] DTS: 172.17.16.0/20 «LAN PRODUZIONE» è la VLAN 10 (Riccardo, 09/11: «È la 10»): `networks.vlan_id` 16 → 10 sul DB di DTS, riga di prima in `/root/rete-172.17.16.0-20-prima-20261109.sql`. Ricalcolo sui dati veri: ufficiali 672 → 724, altra VLAN 98 → 31; la VLAN 16 (192.168.16.x) ora risulta «non in DA-IPAM».
 
 ## 2026-11-08 — Script che prepara il dominio: account, gruppi, WinRM (Riccardo, completo)
 

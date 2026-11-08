@@ -13,7 +13,7 @@ import type { AcquisitionTransports } from "../schema";
 export const LINK = JSON.stringify([
     { ifindex: 1, ifname: "lo", mtu: 65536, operstate: "UNKNOWN", address: "00:00:00:00:00:00", linkinfo: undefined },
     { ifindex: 2, ifname: "eno1", mtu: 1500, operstate: "UP", master: "bond0", address: "02:00:00:00:91:01", linkinfo: { info_slave_kind: "bond" } },
-    { ifindex: 3, ifname: "eno2", mtu: 1500, operstate: "UP", master: "bond0", address: "02:00:00:00:91:01", linkinfo: { info_slave_kind: "bond" } },
+    { ifindex: 3, ifname: "eno2", mtu: 1500, operstate: "UP", master: "vmbr0", address: "02:00:00:00:91:01", linkinfo: {} },
     { ifindex: 4, ifname: "bond0", mtu: 1500, operstate: "UP", master: "vmbr0", address: "02:00:00:00:91:01", linkinfo: { info_kind: "bond", info_data: { mode: "802.3ad" } } },
     { ifindex: 5, ifname: "vmbr0", mtu: 1500, operstate: "UP", address: "02:00:00:00:91:01", linkinfo: { info_kind: "bridge", info_data: { vlan_filtering: 1 } } },
     { ifindex: 6, ifname: "tap100i0", mtu: 1500, operstate: "UNKNOWN", master: "vmbr0", address: "02:00:00:00:91:10", linkinfo: { info_kind: "tun" } },
@@ -40,6 +40,8 @@ export const VLAN = JSON.stringify([
     { ifname: "tap100i0", vlans: [{ vlan: 20, flags: ["PVID", "Egress Untagged"] }] },
     { ifname: "fwpr101p0", vlans: [{ vlan: 20, flags: ["PVID", "Egress Untagged"] }] },
     { ifname: "veth200i0", vlans: [{ vlan: 30, flags: ["PVID", "Egress Untagged"] }] },
+    // Senza `-c`: una voce per VLAN (forma vista sull'hub, 4.094 per porta), anche questa vale solo per le VLAN usate.
+    { ifname: "eno2", vlans: [{ vlan: 1, flags: ["PVID", "Egress Untagged"] }, ...Array.from({ length: 199 }, (_, i) => ({ vlan: i + 2 }))] },
 ]);
 export const NEIGH = JSON.stringify([
     { dst: "192.0.2.1", dev: "vmbr0", lladdr: "02:00:00:00:a0:01", state: ["REACHABLE"] },
@@ -52,7 +54,7 @@ test("proxmox-rete: porte senza l'interno del firewall, la VM si vede dalla port
     const nomi = interfacceProxmox(link).map((i) => [i.name, i.kind]);
     assert.deepEqual(nomi, [["eno1", "physical"], ["eno2", "physical"], ["bond0", "aggregate"], ["vmbr0", "other"], ["tap100i0", "other"], ["fwpr101p0", "other"], ["veth200i0", "other"]]);
     assert.equal(interfacceProxmox(link).find((i) => i.name === "fwpr101p0")?.description, "VM 101 scheda net0");
-    assert.deepEqual(aggregatiProxmox(link), [{ name: "bond0", protocol: null, admin_status: null, oper_status: "up", members: ["eno1", "eno2"] }]);
+    assert.deepEqual(aggregatiProxmox(link), [{ name: "bond0", protocol: null, admin_status: null, oper_status: "up", members: ["eno1"] }]);
 });
 
 test("proxmox-rete: tabella MAC solo con le voci imparate su una porta di bridge", () => {
@@ -69,10 +71,10 @@ test("proxmox-rete: VLAN dal bridge filtrante, intervallo largo solo dove serve,
     const link = parseLinkProxmox(LINK)!;
     const v = vlanProxmox(link, VLAN, undefined);
     assert.deepEqual(v.map((x) => [x.id, x.tagged_ports, x.untagged_ports]), [
-        [1, [], ["bond0"]],
-        [20, ["bond0"], ["fwpr101p0", "tap100i0"]],
-        [30, ["bond0"], ["veth200i0"]],
-    ], "2-4094 sull'uplink non diventa 4.093 VLAN: vale solo per le VLAN usate");
+        [1, [], ["bond0", "eno2"]],
+        [20, ["bond0", "eno2"], ["fwpr101p0", "tap100i0"]],
+        [30, ["bond0", "eno2"], ["veth200i0"]],
+    ], "2-4094 sull'uplink non diventa 4.093 VLAN, né con gli intervalli né una per una: vale solo per le VLAN usate");
     // Bridge non filtrante: `bridge vlan show` dice «VLAN 1» ovunque e non conta; il tag della VM sì.
     const senza = parseLinkProxmox(LINK.replace('"vlan_filtering":1', '"vlan_filtering":0'))!;
     const guests = { status: "ok" as const, collected_at: "", sources: [], warnings: [], data: [{ vmid: 100, networks: [{ id: "net0", model: "virtio", mac: "bc:24:11:00:01:00", bridge: "vmbr0", vlan: "40", ip: null }] }] };
@@ -95,7 +97,7 @@ test("proxmox-rete: ARP solo IPv4 con un MAC", () => {
 });
 
 test("proxmox-ve: il collector riempie porte, FDB, VLAN e ARP; una lettura mancata resta dichiarata", async () => {
-    const uscite: Record<string, string> = { ...PROXMOX_USCITE, "ip -d -j link show": LINK, "bridge -j fdb show": FDB, "bridge -j vlan show": VLAN, "ip -j neigh show": NEIGH };
+    const uscite: Record<string, string> = { ...PROXMOX_USCITE, "ip -d -j link show": LINK, "bridge -j fdb show dynamic": FDB, "bridge -j -c vlan show": VLAN, "ip -j neigh show": NEIGH };
     const t = (rotti: string[]): AcquisitionTransports => ({
         get: async () => { throw Error("x"); }, walk: async () => { throw Error("x"); },
         shell: async (c) => Object.fromEntries(c.map((x) => [x, rotti.includes(x)
@@ -108,7 +110,7 @@ test("proxmox-ve: il collector riempie porte, FDB, VLAN e ARP; una lettura manca
     assert.deepEqual(s.vlans.data.map((v) => v.id), [1, 20, 30]);
     assert.equal(s.network.data.arp.length, 1);
     assert.ok(s.interfaces.data.some((i) => i.name === "fwpr101p0") && !s.interfaces.data.some((i) => i.name === "fwln101i0"));
-    const rotto = await collectDevice(FIXTURE["proxmox-ve"].richiesta, t(["bridge -j fdb show", "ip -j neigh show"]));
+    const rotto = await collectDevice(FIXTURE["proxmox-ve"].richiesta, t(["bridge -j fdb show dynamic", "ip -j neigh show"]));
     assert.equal(rotto.forwarding.status, "error");
     assert.ok(rotto.network.warnings.includes("ARP_NOT_READ"));
 });

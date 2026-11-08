@@ -1,8 +1,9 @@
 /**
  * Proxmox come uno switch (Riccardo, 08/11: «gli hypervisor devono essere trattati come switch per le porte»): le porte dei
  * bridge, la tabella MAC (FDB), le VLAN e l'ARP del nodo. Prima il collector leggeva interfacce e VM ma non dove sta ogni MAC:
- * le VM restavano «sul nodo», senza porta. Logica pura sui testi JSON di `ip -d -j link show`, `bridge -j fdb show`,
- * `bridge -j vlan show` e `ip -j neigh show` (tutti in sola lettura).
+ * le VM restavano «sul nodo», senza porta. Logica pura sui testi JSON di `ip -d -j link show`, `bridge -j fdb show dynamic`,
+ * `bridge -j -c vlan show` e `ip -j neigh show` (tutti in sola lettura). Sull'hub (08/11) la tabella intera con le voci
+ * permanenti di ogni VLAN superava 1 MB (936 KB su DA-PX-04, oltre il limite su DA-PX-03 e -05): `dynamic` la porta a 39 KB.
  *
  * Porte che non si mostrano: `lo` e l'interno del firewall di Proxmox (`fwbrNNNiM`, `fwlnNNNiM` e il `tapNNNiM` che sta dentro
  * un `fwbr`). Con il firewall acceso la VM arriva sul bridge vero dalla porta `fwprNNNpM`, che resta ed è la porta della VM;
@@ -128,14 +129,20 @@ export function vlanProxmox(link: readonly LinkProxmox[], testoVlan: string, gue
         const porta = str(r.ifname);
         const l = porta ? perNome.get(porta) : undefined;
         if (!porta || !l || filtranti.has(porta) || !l.master || !filtranti.has(l.master)) continue;
+        // Con o senza `-c` (intervalli o una voce per VLAN: sull'hub `bridge -j vlan show` ne elencava 4.094 per porta).
+        const voci: Array<{ primo: number; ultimo: number; untagged: boolean }> = [];
         for (const v of Array.isArray(r.vlans) ? r.vlans : []) {
             if (!v || typeof v !== "object") continue;
             const x = v as Record<string, unknown>;
             const flags = Array.isArray(x.flags) ? x.flags : [];
             const primo = num(x.vlan), ultimo = num(x.vlanEnd) ?? primo;
             if (primo == null || ultimo == null || ultimo < primo) continue;
-            if (ultimo - primo >= 64) { larghi.push({ porta, primo, ultimo }); continue; }
-            for (let id = primo; id <= ultimo; id++) metti(id, porta, flags.includes("Egress Untagged"));
+            voci.push({ primo, ultimo, untagged: flags.includes("Egress Untagged") });
+        }
+        const quante = voci.reduce((t, v) => t + v.ultimo - v.primo + 1, 0);
+        for (const v of voci) {
+            if (quante > 64 && !v.untagged) { larghi.push({ porta, primo: v.primo, ultimo: v.ultimo }); continue; }
+            for (let id = v.primo; id <= v.ultimo; id++) metti(id, porta, v.untagged);
         }
     }
     for (const l of link) {

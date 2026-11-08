@@ -51,7 +51,7 @@ test("client: IP, nome e gateway; senza sw_mac vale l'ultimo apparato a monte; i
   const devices = [{ id: 7, controller_mac: "02:00:00:00:5A:01" }, { id: 9, controller_mac: "02:00:00:00:9A:01" }];
   const r = mapClientsToPorts(c, devices, new Map([["7|5", "Port 5"]]));
   assert.deepEqual(r.byDevice.get(7), [{ mac: "02:00:00:00:C0:01", port_name: "Port 5" }, { mac: "02:00:00:00:C0:02", port_name: "Port 7" }]);
-  assert.deepEqual(r.motivi, { "cablato senza apparato UniFi a monte": 1, "apparato UniFi non in inventario": 1 });
+  assert.deepEqual(r.motivi, { "cablato senza apparato UniFi a monte": 1, "apparato UniFi non in inventario (02:00:00:00:5A:99)": 1 });
   assert.deepEqual(vistiDalGateway(c, devices), [
     { device_id: 9, mac: "02:00:00:00:C0:01", ip: "192.0.2.10", interfaccia: "Default" },
     { device_id: 9, mac: "02:00:00:00:C0:02", ip: "192.0.2.11", interfaccia: "VLAN 40" },

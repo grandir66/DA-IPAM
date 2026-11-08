@@ -113,7 +113,8 @@ export function mapClientsToPorts(
     else if (c.isWired && c.swMac === null) manca("cablato senza apparato UniFi a monte");
     else if (c.isWired && c.swPort === null) manca("cablato senza porta");
     else if (!c.isWired && c.apMac === null) manca("wifi senza access point");
-    else manca("apparato UniFi non in inventario");
+    // Il MAC dell'apparato che manca, così il resoconto dice chi è (sull'hub 29 client su 193 l'08/11).
+    else manca(`apparato UniFi non in inventario (${c.isWired ? c.swMac : c.apMac})`);
   }
   return { byDevice, unmatched, motivi };
 }

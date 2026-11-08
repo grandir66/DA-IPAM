@@ -259,7 +259,7 @@ export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Let
     }
 }
 
-const CMD_LINK = "ip -d -j link show", CMD_FDB = "bridge -j fdb show", CMD_VLAN = "bridge -j vlan show", CMD_NEIGH = "ip -j neigh show";
+const CMD_LINK = "ip -d -j link show", CMD_FDB = "bridge -j fdb show dynamic", CMD_VLAN = "bridge -j -c vlan show", CMD_NEIGH = "ip -j neigh show";
 /**
  * Proxmox come uno switch (Riccardo, 08/11): porte dei bridge senza l'interno del firewall, aggregati, tabella MAC, VLAN e
  * ARP del nodo (`proxmox-rete.ts`). Va chiamata dopo `estendiProxmox`: il `tag=` delle VM sta nei guest. Una lettura mancata

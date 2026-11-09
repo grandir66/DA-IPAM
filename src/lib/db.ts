@@ -7492,4 +7492,12 @@ export {
   registraPorteAperteServizi,
   getHostSenzaPorteServizi,
   segnaHostProvatoServizi,
+  raccogliIdentita,
+  getProposteIdentita,
+  getConteggiIdentita,
+  decidiPropostaIdentita,
+  getCelleMatrice,
+  getProveCellaMatrice,
+  getVistaServizioMatrice,
+  getConteggiSegmentazione,
 } from "./db-tenant";

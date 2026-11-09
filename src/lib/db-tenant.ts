@@ -15,6 +15,8 @@ import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import * as servizi from "./servizi-rete/db";
+import * as identita from "./servizi-rete/identita";
+import * as segmentazione from "./segmentazione/db";
 import type { EsitoSonda } from "./servizi-rete/sonde";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
@@ -12922,4 +12924,32 @@ export function getHostSenzaPorteServizi(): servizi.HostDaProvare[] {
 }
 export function segnaHostProvatoServizi(hostId: number, provate: number, aperte: number): void {
   servizi.segnaHostProvato(db(), hostId, provate, aperte);
+}
+export function raccogliIdentita(): { prove: number; proposte: number } {
+  return identita.raccogliECalcola(db());
+}
+export function getProposteIdentita(stato?: "proposto" | "confermato" | "rifiutato"): identita.PropostaIdentita[] {
+  return identita.proposteIdentita(db(), stato);
+}
+export function getConteggiIdentita(): identita.ConteggiIdentita {
+  return identita.conteggiIdentita(db());
+}
+export function decidiPropostaIdentita(
+  id: number,
+  esito: "confermato" | "rifiutato",
+  utente: string,
+): identita.PropostaIdentita | null {
+  return identita.decidiProposta(db(), id, esito, utente);
+}
+export function getCelleMatrice(): segmentazione.CellaMatrice[] {
+  return segmentazione.celleMatrice(db());
+}
+export function getProveCellaMatrice(reteSorgente: number, reteBersaglio: number): segmentazione.ProvaSegmentazione[] {
+  return segmentazione.proveDellaCella(db(), reteSorgente, reteBersaglio);
+}
+export function getVistaServizioMatrice(): segmentazione.VistaServizio[] {
+  return segmentazione.vistaServizio(db());
+}
+export function getConteggiSegmentazione(): segmentazione.ConteggiSegmentazione {
+  return segmentazione.conteggiSegmentazione(db());
 }

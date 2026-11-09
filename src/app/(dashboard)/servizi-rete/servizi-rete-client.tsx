@@ -150,6 +150,7 @@ function DettaglioServizio({ r }: { r: ServizioRete }) {
       {ssh && (
         <Blocco titolo="SSH">
           <DatoDettaglio nome="Si presenta come" valore={ssh.ident} mono />
+          {ssh.fingerprint && <DatoDettaglio nome="Impronta host key SHA-256" valore={ssh.fingerprint} mono />}
           <DatoDettaglio nome="Scambio chiavi" valore={<Elenco voci={ssh.kex} />} />
           <DatoDettaglio nome="Chiavi dell'host" valore={<Elenco voci={ssh.hostkey} />} />
           <DatoDettaglio nome="Cifrari" valore={<Elenco voci={ssh.cifrari} />} />

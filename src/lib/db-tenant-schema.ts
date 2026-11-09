@@ -294,6 +294,62 @@ CREATE TABLE IF NOT EXISTS servizi_rete_prove (
   porte_aperte INTEGER NOT NULL DEFAULT 0
 );`;
 
+/**
+ * Prove di identità senza credenziali (09/11/2026): impronte che dicono che due IP
+ * sono lo stesso apparato. Le proposte si confermano o si rifiutano; niente fusioni
+ * automatiche. `host_a < host_b` evita i doppioni. Date nel formato di `datetime('now')`.
+ */
+export const DDL_IDENTITA = `CREATE TABLE IF NOT EXISTS identita_prove (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL,
+  valore TEXT NOT NULL,
+  fonte TEXT NOT NULL,
+  porta INTEGER,
+  visto TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(host_id, tipo, valore)
+);
+CREATE INDEX IF NOT EXISTS idx_identita_prove_tipo ON identita_prove(tipo, valore);
+CREATE TABLE IF NOT EXISTS identita_proposte (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_a INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  host_b INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL,
+  valore TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'proposto' CHECK (stato IN ('proposto','confermato','rifiutato')),
+  deciso_da TEXT,
+  deciso_il TEXT,
+  UNIQUE(host_a, host_b, tipo, valore),
+  CHECK(host_a < host_b)
+);
+CREATE INDEX IF NOT EXISTS idx_identita_proposte_stato ON identita_proposte(stato);`;
+
+/**
+ * Prove di raggiungibilità rete × rete (matrice di segmentazione, 09/11/2026).
+ * Una riga per giro+sorgente+bersaglio; il riepilogo della pagina si calcola da qui.
+ */
+export const DDL_SEGMENTAZIONE = `CREATE TABLE IF NOT EXISTS segmentazione_giri (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  iniziato TEXT NOT NULL DEFAULT (datetime('now')),
+  finito TEXT,
+  esito TEXT NOT NULL DEFAULT 'in corso',
+  errore TEXT
+);
+CREATE TABLE IF NOT EXISTS segmentazione_prove (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  giro_id INTEGER NOT NULL REFERENCES segmentazione_giri(id) ON DELETE CASCADE,
+  vlan_sorgente INTEGER NOT NULL,
+  rete_sorgente INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+  rete_bersaglio INTEGER REFERENCES networks(id) ON DELETE SET NULL,
+  host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+  ip TEXT NOT NULL,
+  porta INTEGER NOT NULL,
+  esito TEXT NOT NULL,
+  visto TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_segmentazione_prove_giro ON segmentazione_prove(giro_id);
+CREATE INDEX IF NOT EXISTS idx_segmentazione_prove_celle ON segmentazione_prove(rete_sorgente, rete_bersaglio);`;
+
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL,
@@ -480,6 +536,8 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     db.exec(DDL_ACCESSO_WINDOWS_ESITI);
     db.exec(DDL_SCELTE_GRUPPO);
     db.exec(DDL_SERVIZI_RETE);
+    db.exec(DDL_IDENTITA);
+    db.exec(DDL_SEGMENTAZIONE);
   } catch (e) {
     console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
@@ -1658,6 +1716,10 @@ CREATE TABLE IF NOT EXISTS host_credentials (
 ${DDL_ACCESSO_WINDOWS_ESITI}
 
 ${DDL_SERVIZI_RETE}
+
+${DDL_IDENTITA}
+
+${DDL_SEGMENTAZIONE}
 
 -- Dispositivi multi-homed
 -- is_primary: per ogni group_id esattamente UN record ha is_primary=1; sugli altri

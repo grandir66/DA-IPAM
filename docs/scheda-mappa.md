@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: Mappa porte su `main` dopo la verifica delle 03:00, poi i vicini per i «non so» di 70151
+prossimo: Collaudo matrice su VM 963 (trunk 102/103), interruttore in Opzioni, NTLM opzionale
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

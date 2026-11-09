@@ -8,7 +8,7 @@
  * Opzioni hanno una riga loro (job di serie, pulizia, controller, Chocolatey, dati sugli exploit) dalla stessa opzione,
  * così la lapide e il «spento da … il …» restano gli stessi; gli altri job dal loro interruttore, come la pagina dei job.
  */
-import { getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, listNetworksLite } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting, listNetworksLite } from "@/lib/db-tenant";
 import { parseDbDate } from "@/lib/db-date";
 import { ETICHETTE_JOB, scheduledJobLabel, unifiJobKind } from "@/lib/scheduled-job-types";
 import type { ScheduledJob } from "@/types";
@@ -328,6 +328,8 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/mappa-porte/job": "timer.mappa_porte",
   "./src/lib/scanner/profili/sconosciuti-job": "timer.riconoscimento",
   "./src/lib/security/eventi-dc/job": "timer.eventi_dc",
+  "./src/lib/servizi-rete/job": "timer.servizi_rete",
+  "./src/lib/segmentazione/job": "timer.segmentazione",
   "./src/lib/vuln/proposta/pianificazione-job": "fuori: è il giro delle pianificazioni «Per device», le sue righe sono le pianificazioni (device.<rete>)",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
@@ -479,6 +481,34 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
     esito: calcoloMappa ? esito("ok", `ultimo calcolo ${calcoloMappa.il}`) : esito("neutro", "non ancora calcolata"),
     dove: { href: "/port-map", etichetta: "Mappa porte ›" },
     perche: "Gira sempre: non interroga gli apparati e tocca solo le sue tabelle. I parser sugli apparati, ogni 6 ore, stanno dietro «Tutti i dati per la Mappa porte»",
+  });
+
+  const serviziAcceso = (getTenantSetting("servizi_rete.automatico") ?? "1").trim() !== "0";
+  righe.push({
+    ...base,
+    id: "timer.servizi_rete",
+    nome: "Sonde dei servizi di rete",
+    su: "le porte già note e gli host senza porte",
+    quando: "3 minuti dopo l'avvio, poi ogni 6 ore",
+    prossimo: null,
+    stato: serviziAcceso ? "acceso" : "spento",
+    esito: esito("neutro", serviziAcceso ? "acceso di serie" : "spento per questo cliente"),
+    dove: { href: "/servizi-rete", etichetta: "Servizi di rete ›" },
+    perche: "Si spegne per un cliente con servizi_rete.automatico = 0. L'interruttore in Opzioni arriva dopo.",
+  });
+
+  const matriceAccesa = (getTenantSetting("segmentazione.automatico") ?? "1").trim() !== "0";
+  righe.push({
+    ...base,
+    id: "timer.segmentazione",
+    nome: "Matrice di segmentazione",
+    su: "i servizi già noti, da ogni VLAN del trunk",
+    quando: "ogni lunedì alle 03:23",
+    prossimo: null,
+    stato: matriceAccesa ? "acceso" : "spento",
+    esito: esito("neutro", matriceAccesa ? "acceso di serie" : "spento per questo cliente"),
+    dove: { href: "/segmentazione", etichetta: "Matrice di segmentazione ›" },
+    perche: "Si spegne per un cliente con segmentazione.automatico = 0. L'interruttore in Opzioni arriva dopo.",
   });
 
   // Sensore trunk (25/10): levetta per cliente in Opzioni, lettura ogni 2 minuti.

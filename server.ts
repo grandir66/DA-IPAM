@@ -243,6 +243,14 @@ app.prepare().then(() => {
       console.error("WARNING: giro automatico dei servizi di rete non avviato:", error);
     });
 
+    // Matrice di segmentazione (09/11/2026, Riccardo: settimanale accesa di serie).
+    import("./src/lib/segmentazione/job").then(({ avviaGiroSegmentazioneAutomatico }) => {
+      avviaGiroSegmentazioneAutomatico();
+      console.log("> Matrice di segmentazione: giro settimanale (lunedì 03:23)");
+    }).catch((error) => {
+      console.error("WARNING: giro della matrice di segmentazione non avviato:", error);
+    });
+
     // Pianificazioni «Per device» (08/11/2026, piano profili per device, Passo 6): ogni minuto si lanciano i gruppi
     // confermati delle reti arrivate all'ora fissata. Nessuna pianificazione nasce da sola: la salva un amministratore.
     import("./src/lib/vuln/proposta/pianificazione-job").then(({ avviaPianificazioniDevice }) => {

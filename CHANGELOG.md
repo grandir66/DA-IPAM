@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Identità senza credenziali e matrice di segmentazione
+
+Riccardo (09/11): due IP con la stessa impronta SSH o TLS sono lo stesso apparato, da confermare; la matrice misura quali reti raggiungono quali, da dentro ogni VLAN.
+
+### Aggiunto
+- **Scheda «Stesso apparato»** in Servizi di rete: le sonde leggono l'impronta SHA-256 della host key SSH (stretta di mano fino a KEX_ECDH_REPLY) e quella del certificato TLS; due IP con la stessa impronta forte (SSH, TLS, SNMP engineID) diventano una proposta. Conferma li collega allo stesso apparato fisico; rifiuto no. Niente fusioni automatiche. Un tenant non vede l'altro.
+- **Pagina «Matrice di segmentazione»** (Sicurezza): da ogni VLAN con tag e gateway la sonda prova i servizi già noti delle altre reti (max 40 per cella, prima i servizi di gestione). Tessere, matrice rete × rete «raggiunti / totale · chiusi · filtrati», clic sulla cella → elenco, vista servizio × rete sorgente. Giro settimanale acceso di serie (lunedì 03:23), spegnibile con `segmentazione.automatico = 0`.
+- La sonda trunk (DA-Vul-can) ha `/raggiungibilita`: stesso schema del ping per VLAN (sotto-interfaccia col tag, IP libero verificato via ARP, rotta verso il gateway, poi tutto tolto), un lavoro alla volta.
+
 ## [Non rilasciato] — 2026-11-09 · Gravità a tacche nella lista Vulnerabilità (dall'idea di Nety)
 
 Riccardo (09/11): «lavoriamo sulla rappresentazione dei dati», riprendendo l'interfaccia di Nety (idee, non codice: Nety è GPL-3.0).

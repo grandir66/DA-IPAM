@@ -20,7 +20,7 @@ Riccardo (09/11): «puoi verificare come riutilizzare parti della UI di NETY in 
 | Confronto fra due giri (aggiunti, tolti, cambiati, spostati per host, servizi, rilievi) | «Cosa è cambiato» nella subnet (già proposto sopra) | `scan_history` | medio |
 | Lanciatore dei giri: tipo a schede, profilo a schede (Rapido, Standard, Completo, Lento, Su misura), parametri derivati | pagina Scansioni / profili | `VoceSelezionabile` | medio |
 | Risultati dal vivo via WebSocket | oggi lettura ogni 3 s (`servizi-rete`) | — | alto, bassa priorità |
-| Matrice di segmentazione | ferma (vedi `docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`) | — | — |
+| Matrice di segmentazione | `/segmentazione` | `TesseraNumero`, tabella, `BadgeEsito` | fatto il codice; collaudo trunk 102/103 sulla 963 aperto |
 
 - [ ] Riccardo da scegliere da dove partire. Ordine consigliato: piccoli mattoni → triage → rilievi a riga espandibile con gravità a tacche → panoramica per rete → «Cosa è cambiato» → lanciatore
 
@@ -36,23 +36,24 @@ Riccardo (09/11): «capire come implementare l'ottimo motore di rilevazione e al
 - [x] Riccardo (09/11): «il massimo automatismo» → giro automatico all'avvio (+3 min) e ogni 6 ore per cliente; spegnibile con `servizi_rete.automatico = 0`. Le reti restano proposte da confermare (decisione dello stesso giorno)
 - [x] Riccardo (09/11): porte «molto più ampie dello standard» → top 1000 di nmap-services + porte di gestione (`porte.test.ts`; dal vivo stesse porte di Nety su 99.1 e 99.2 in < 0,5 s per host)
 - [ ] Da valutare: tutte le 65.535 porte sulle reti confermate (sulla LAN ~20 s per host; i filtrati costano fino a 3 minuti)
-- [ ] Riccardo (09/11): «Nety ha anche una visualizzazione a matrice molto efficace» → matrice di segmentazione rete sorgente × rete bersaglio, servizi raggiunti sul totale, chiusi e filtrati. Va misurata DA DENTRO ogni VLAN: dalla sonda trunk col tag della VLAN (come l'arp-scan di «Porta in DA-IPAM»), provando i servizi già noti delle altre reti
+- [x] Riccardo (09/11): «Nety ha anche una visualizzazione a matrice molto efficace» → pagina `/segmentazione` (Sicurezza): tessere, matrice rete × rete, clic sulla cella, vista servizio × rete sorgente. Misura da dentro ogni VLAN (sonda trunk). **Non guardata a schermo**
 - [ ] Riccardo (09/11): «anche il sistema di scansione è multiplo e porta informazioni molto utili a livello di networking» (Nety su 192.168.15.178, `missions/1/scans/new` e `matrix`). Visto:
   - **quattro tipi di giro**: Discovery (host, porte, servizi, identità, controlli leggeri) · Segmentazione (dalla rete in cui si è collegati, riprova i servizi trovati nelle ALTRE reti e riempie la matrice) · Sonda L2 (ascolto CDP/LLDP/DTP/STP e tag 802.1Q, passiva) · Solo controlli (rifà riconoscimento e controlli su quanto già inventariato, senza scansione);
   - **«dove sei collegato»**: si sceglie la rete sorgente = un'interfaccia per VLAN (eth0 VLAN 1, eth1 VLAN 5, eth2 VLAN 4, eth4 VLAN 40). La matrice si misura mandando da ognuna;
   - **profili**: Rapido (top 100 TCP) · Standard (top 1000 TCP + top 20 UDP, riconoscimento, identità, controlli) · Completo (65.535 TCP + top 100 UDP, si mette in pausa e riprende) · Lento (connect a 300 pps per reti fragili o IPS) · Su misura; fasi accendibili una per una; credenziali di fabbrica solo a richiesta («intrusive»);
   - **matrice all'ufficio**: 1751 prove, 1632 raggiungibili attraverso un confine (93,2%), LAN Storage VLAN 16 mai provata come sorgente; celle «raggiunti / totale · chiusi · filtrati», seconda vista «servizio × rete sorgente».
   Per DA-IPAM: l'appliance ha già la porta trunk; servono sotto-interfacce per VLAN (o il tag nella sonda trunk) per mandare da ogni rete. Da proporre come tappa dopo identità
-- [ ] Riccardo (09/11): «Matrice di segmentazione» scelta come prossima tappa. Piano proposto, in attesa del sì:
-  - **Sonda trunk (DA-Vul-can, `scanner_edge/sensore/`)**: nuovo `/raggiungibilita` sul socket. Riusa lo schema di `giro._ping` (sotto-interfaccia col tag nello spazio `trunk`, IP libero verificato via ARP, poi tolta), aggiunge la rotta verso il gateway della VLAN e prova in TCP i bersagli dati: aperto / chiuso / filtrato / senza rotta. Un giro alla volta, ritmo basso
-  - **DA-IPAM**: tabella delle prove per giro; giro che, per ogni VLAN sorgente vista dal trunk, sceglie i servizi già noti in `servizi_rete` delle altre reti (tetto per cella) e chiama la sonda; pagina «Matrice di segmentazione» (Sicurezza): tessere, matrice rete × rete «raggiunti / totale · chiusi · filtrati», clic sulla cella → elenco, seconda vista servizio × rete sorgente
-  - Sonda 963: la porta trunk vede solo la VLAN nativa (VID 0) → per il collaudo serve un trunk vero
-  - Riccardo (09/11): «Sì, come consigli» (IP libero verificato, gateway della VLAN, servizi noti max 40 per cella, settimanale accesa, trunk 102/103 sulla 963, livello completo sulla sonda). **Fermo**: la parte della sonda che prova la raggiungibilità da dentro le VLAN è rimasta fuori dalla sessione del 09/11, nessun codice scritto. Da decidere con Riccardo come farla
+- [x] Riccardo (09/11): «Matrice di segmentazione» — codice scritto (sessione del 09/11 sera, handoff). Decisioni tenute: IP libero via ARP, uscita dal gateway della VLAN, max 40 per cella (prima i servizi di gestione), settimanale accesa (`23 3 * * 1`), livello completo sulla sonda.
+  - [x] Sonda (DA-Vul-can): `POST /raggiungibilita` sul socket e `/api/v1/trunk/raggiungibilita` sull'edge; stesso lock del giro; esiti raggiunto / chiuso / filtrato / senza rotta. Prove `test_sensore_raggiungibilita.py` 4/4
+  - [x] DA-IPAM: tabelle `segmentazione_*`, giro, pagina `/segmentazione`. Prove `bersagli.test.ts` verdi (tetto 40, gestione prima, giro finto)
+  - [ ] Collaudo: trunk VLAN 102 e 103 sulla scheda della VM 963 (PX-NAS), snapshot prima (c'è già `pre-servizi-rete-20261109`). Oggi la 963 vede solo la VLAN nativa
+- [ ] Interruttore `segmentazione.automatico` in Opzioni (oggi solo nelle impostazioni del tenant; in Schedulazioni c'è la riga)
 
 - [ ] Interruttore `servizi_rete.automatico` in Opzioni (oggi solo nelle impostazioni del tenant)
 - [x] Installata da sola (timer `dev`) sull'hub 192.168.4.8 e sulla sonda 963 «79993-ipam-2» (192.168.99.2), v0.9.1043; snapshot `pre-servizi-rete-20261109` su VM 533 (DA-PX-03) e VM 963 (PX-NAS), dischi controllati «thawed». Giro all'avvio partito da solo: hub 70791 1034 servizi / 949 sondati / 263 HTTP / 143 TLS / 97 SSH (giro della 1042); sonda 963 228 servizi / 196 sondati / 71 HTTP / 28 TLS / 24 SSH, 21 host senza porte provati e 11 con porte (1043)
 - [ ] Guardare a schermo Servizi di rete e il riquadro in Subnet: la pagina dell'hub chiede l'accesso, da fare con Riccardo
-- [ ] Tappa identità senza credenziali: NetBIOS, mDNS, SNMP `public`/engineID, impronte di chiavi SSH e certificati (già lette dalle sonde) come prove che due IP sono lo stesso apparato (proposte, mai fusioni automatiche). La parte sulla sfida NTLM (SMB/RDP/HTTP) è rimasta fuori dalla sessione del 09/11: da decidere a parte
+- [x] Tappa identità senza credenziali: tabella `identita_prove` / `identita_proposte`, scheda «Stesso apparato» in Servizi di rete. Due IP con la stessa chiave SSH compaiono come proposta; conferma collega, rifiuto no; il ricalcolo non resuscita il rifiuto; un tenant non vede l'altro. Prove `identita.test.ts` verdi. **Non guardata a schermo**
+- [ ] NTLM (pezzo opzionale dell'identità): un server SMB/RDP/HTTP-negotiate riporta nome, dominio e versione nella risposta di negoziazione, prima dell'autenticazione. Da fare dopo il collaudo della matrice
 - [ ] Tappa ascolto all'avvio: CDP/LLDP/DTP/STP, VLAN etichettate, lease DHCP → reti proposte da sole; partire dalla sonda del trunk che c'è già
 - [ ] Tappa motore: confronto a parità dalla 79993 con Nety (VM 192.168.99.83, da cancellare dopo), poi ARP per primo, naabu, `-sV` solo sulle porte aperte
 

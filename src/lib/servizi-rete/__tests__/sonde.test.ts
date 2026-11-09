@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leggiKexinit, leggiRispostaHttp, prodottoDaServer, prodottoDaSsh, testoStampabile } from "../sonde";
+import { createHash } from "node:crypto";
+import {
+  hostkeyDaKexEcdhReply,
+  improntaHostkey,
+  kexCurve25519,
+  leggiKexinit,
+  leggiRispostaHttp,
+  pacchettoSsh,
+  prodottoDaServer,
+  prodottoDaSsh,
+  testoStampabile,
+} from "../sonde";
 
 test("risposta HTTP: stato, titolo, server, cookie tenuti solo per nome", () => {
   const grezzo = Buffer.from(
@@ -54,4 +65,24 @@ test("KEXINIT: le liste di algoritmi lette dal pacchetto", () => {
 
 test("banner con byte di controllo resta leggibile", () => {
   assert.equal(testoStampabile(Buffer.from([0x41, 0x0d, 0x0a, 0x00])), "A\\r\\n\\x00");
+});
+
+test("KEX_ECDH_REPLY: host key e impronta SHA-256", () => {
+  const blob = Buffer.from("ssh-ed25519\0chiave-di-prova");
+  const firma = Buffer.from("firma");
+  const q = Buffer.alloc(32, 7);
+  const payload = Buffer.concat([
+    Buffer.from([31]),
+    (() => { const n = Buffer.alloc(4); n.writeUInt32BE(blob.length); return Buffer.concat([n, blob]); })(),
+    (() => { const n = Buffer.alloc(4); n.writeUInt32BE(q.length); return Buffer.concat([n, q]); })(),
+    (() => { const n = Buffer.alloc(4); n.writeUInt32BE(firma.length); return Buffer.concat([n, firma]); })(),
+  ]);
+  const pkt = pacchettoSsh(payload);
+  const letto = hostkeyDaKexEcdhReply(pkt);
+  assert.ok(letto);
+  assert.equal(letto.equals(blob), true);
+  assert.equal(improntaHostkey(blob), createHash("sha256").update(blob).digest("hex"));
+  assert.equal(hostkeyDaKexEcdhReply(pkt.subarray(0, 8)), null);
+  assert.equal(kexCurve25519(["diffie-hellman-group14-sha256"]), null);
+  assert.equal(kexCurve25519(["curve25519-sha256", "diffie-hellman-group14-sha256"]), "curve25519-sha256");
 });

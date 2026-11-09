@@ -30,4 +30,7 @@ export const FUORI_CATALOGO: readonly FuoriCatalogo[] = [
   })),
   { chiave: "MDM_SYNC_INTERVALLO_MINUTI", motivo: "è il ritmo del job mdm_sync creato all'accensione: si vede in Schedulazioni" },
   { chiave: "GIORNI_REGISTRO_PULIZIA", motivo: "conservazione tecnica del registro delle pulizie, non regola cosa si archivia" },
+  // 09/11: accesi di serie, spegnibili per cliente; l'interruttore in Opzioni lo fa Riccardo dopo aver visto le pagine.
+  { chiave: "servizi_rete.automatico", motivo: "si spegne per cliente nelle impostazioni del tenant; l'interruttore in Opzioni è in coda" },
+  { chiave: "segmentazione.automatico", motivo: "si spegne per cliente nelle impostazioni del tenant; l'interruttore in Opzioni è in coda" },
 ];

@@ -11,7 +11,7 @@
  */
 import net from "node:net";
 import tls from "node:tls";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 
 export interface InfoTls {
   version: string | null;
@@ -48,6 +48,8 @@ export interface InfoSsh {
   hostkey: string[];
   cifrari: string[];
   mac: string[];
+  /** SHA-256 dell'host key (blob SSH), esadecimale minuscolo. Null se la stretta di mano si ferma agli algoritmi. */
+  fingerprint: string | null;
 }
 
 /** Come è stato riconosciuto ciò che risponde: la prova, non la tabella delle porte. */
@@ -261,7 +263,111 @@ export function leggiKexinit(buf: Buffer): Omit<InfoSsh, "ident"> | null {
     liste.push(buf.subarray(p, p + n).toString("latin1").split(",").filter(Boolean));
     p += n;
   }
-  return { kex: liste[0], hostkey: liste[1], cifrari: liste[2], mac: liste[4] };
+  return { kex: liste[0], hostkey: liste[1], cifrari: liste[2], mac: liste[4], fingerprint: null };
+}
+
+const KEX_CURVE = ["curve25519-sha256", "curve25519-sha256@libssh.org"] as const;
+
+function paddingSsh(lunghezzaPayload: number): number {
+  let p = (3 - (lunghezzaPayload % 8) + 8) % 8;
+  if (p < 4) p += 8;
+  return p;
+}
+
+/** Pacchetto SSH in chiaro (prima di NEWKEYS): length, padding_length, payload, padding. */
+export function pacchettoSsh(payload: Buffer): Buffer {
+  const pad = paddingSsh(payload.length);
+  const packetLength = 1 + payload.length + pad;
+  const out = Buffer.alloc(4 + packetLength);
+  out.writeUInt32BE(packetLength, 0);
+  out[4] = pad;
+  payload.copy(out, 5);
+  randomBytes(pad).copy(out, 5 + payload.length);
+  return out;
+}
+
+function stringaSsh(s: string | Buffer): Buffer {
+  const b = typeof s === "string" ? Buffer.from(s, "latin1") : s;
+  const n = Buffer.alloc(4);
+  n.writeUInt32BE(b.length);
+  return Buffer.concat([n, b]);
+}
+
+function leggiStringaSsh(buf: Buffer, o: number): { v: Buffer; o: number } | null {
+  if (o + 4 > buf.length) return null;
+  const n = buf.readUInt32BE(o);
+  if (n < 0 || o + 4 + n > buf.length) return null;
+  return { v: buf.subarray(o + 4, o + 4 + n), o: o + 4 + n };
+}
+
+/** KEXINIT del cliente: chiediamo solo curve25519, così la risposta porta l'host key. */
+export function kexinitCliente(): Buffer {
+  const cookie = randomBytes(16);
+  const liste = [
+    KEX_CURVE.join(","),
+    "ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256",
+    "aes128-ctr",
+    "aes128-ctr",
+    "hmac-sha2-256",
+    "hmac-sha2-256",
+    "none",
+    "none",
+    "",
+    "",
+  ];
+  const parti: Buffer[] = [Buffer.from([20]), cookie];
+  for (const l of liste) parti.push(stringaSsh(l));
+  parti.push(Buffer.from([0]), Buffer.alloc(4));
+  return pacchettoSsh(Buffer.concat(parti));
+}
+
+/** SHA-256 del blob della host key (stesso dato che `ssh-keyscan` firma). */
+export function improntaHostkey(blob: Buffer): string {
+  return createHash("sha256").update(blob).digest("hex");
+}
+
+/**
+ * Host key dal pacchetto SSH_MSG_KEX_ECDH_REPLY (RFC 5656 §4). `null` se il
+ * pacchetto non è completo o non è il tipo 31.
+ */
+export function hostkeyDaKexEcdhReply(buf: Buffer): Buffer | null {
+  if (buf.length < 6) return null;
+  const lungh = buf.readUInt32BE(0);
+  if (lungh < 2 || buf.length < 4 + lungh) return null;
+  const pad = buf[4];
+  if (pad < 4 || 1 + pad >= lungh) return null;
+  const payload = buf.subarray(5, 4 + lungh - pad);
+  if (payload.length < 1 || payload[0] !== 31) return null;
+  const s = leggiStringaSsh(payload, 1);
+  return s && s.v.length > 0 ? s.v : null;
+}
+
+export function kexCurve25519(liste: string[]): string | null {
+  for (const nome of KEX_CURVE) {
+    if (liste.includes(nome)) return nome;
+  }
+  return null;
+}
+
+function chiaveX25519(): Buffer | null {
+  try {
+    const { publicKey } = generateKeyPairSync("x25519");
+    const der = publicKey.export({ type: "spki", format: "der" });
+    return der.subarray(-32);
+  } catch {
+    return null;
+  }
+}
+
+/** Dopo il KEXINIT del server: mandiamo il nostro e l'ECDH INIT, leggiamo l'host key. */
+async function improntaSshDaSocket(sock: net.Socket, kex: string[], ms: number): Promise<string | null> {
+  if (!kexCurve25519(kex)) return null;
+  const pub = chiaveX25519();
+  if (!pub) return null;
+  sock.write(Buffer.concat([kexinitCliente(), pacchettoSsh(Buffer.concat([Buffer.from([30]), stringaSsh(pub)]))]));
+  const grezzo = await leggi(sock, ms, (b) => b.length >= 6 && b.length >= 4 + b.readUInt32BE(0));
+  const hostkey = hostkeyDaKexEcdhReply(grezzo);
+  return hostkey ? improntaHostkey(hostkey) : null;
 }
 
 const RICHIESTA_HTTP = (ip: string) =>
@@ -309,7 +415,15 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
         const kex = leggiKexinit(kexBuf);
         esito.metodo = "ssh";
         esito.banner = ident;
-        esito.ssh = { ident, kex: kex?.kex ?? [], hostkey: kex?.hostkey ?? [], cifrari: kex?.cifrari ?? [], mac: kex?.mac ?? [] };
+        const fingerprint = kex ? await improntaSshDaSocket(s1, kex.kex, ms) : null;
+        esito.ssh = {
+          ident,
+          kex: kex?.kex ?? [],
+          hostkey: kex?.hostkey ?? [],
+          cifrari: kex?.cifrari ?? [],
+          mac: kex?.mac ?? [],
+          fingerprint,
+        };
         Object.assign(esito, prodottoDaSsh(ident));
         return esito;
       }

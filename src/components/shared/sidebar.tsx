@@ -124,6 +124,7 @@ const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
   { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
   { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
+  { href: "/segmentazione", label: "Matrice di segmentazione", icon: LayoutGrid },
 ];
 
 const networkServicesSubItems: readonly SubItem[] = [
@@ -445,7 +446,7 @@ export function Sidebar() {
     !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk"].some((h) => pathname.startsWith(h))
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione"].some((h) => pathname.startsWith(h))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))

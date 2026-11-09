@@ -19,7 +19,7 @@ after(() => {
   closeHubDb();
 });
 
-const esito: EsitoSonda = { metodo: "ssh", banner: "SSH-2.0-OpenSSH_9.6", tls: null, http: null, ssh: { ident: "SSH-2.0-OpenSSH_9.6", kex: ["curve25519-sha256"], hostkey: [], cifrari: [], mac: [] }, prodotto: "OpenSSH", versione: "9.6" };
+const esito: EsitoSonda = { metodo: "ssh", banner: "SSH-2.0-OpenSSH_9.6", tls: null, http: null, ssh: { ident: "SSH-2.0-OpenSSH_9.6", kex: ["curve25519-sha256"], hostkey: [], cifrari: [], mac: [], fingerprint: "aa".repeat(32) }, prodotto: "OpenSSH", versione: "9.6" };
 
 async function attendi(): Promise<void> {
   for (let i = 0; i < 200 && statoGiro(T).inCorso; i++) await new Promise((r) => setTimeout(r, 10));

@@ -45,6 +45,8 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "acquisition_source_choices", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
+  // Stesso apparato da confermare (09/11): scelta di una persona, dopo gli host per le FK.
+  { table: "identita_proposte", scope: "tenant", tier: "config" },
   // Archivio della pulizia degli host (piano 2026-10-20): istantanee degli host tolti, viaggiano con gli host.
   { table: "hosts_archivio", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
@@ -69,6 +71,9 @@ export const TENANT_TABLES: TableSpec[] = [
   // Rilievi dei profili di scansione (04/11/2026): l'output grezzo degli script NSE,
   // stesso livello delle evidenze — si rifà con una scansione, non serve trasferirlo.
   { table: "host_profilo_rilievi", scope: "tenant", tier: "history" },
+  // Sonde senza credenziali (09/11): si rifanno col giro; le prove di identità si ricalcolano da qui.
+  { table: "servizi_rete", scope: "tenant", tier: "history" },
+  { table: "identita_prove", scope: "tenant", tier: "history" },
   { table: "arp_entries", scope: "tenant", tier: "history" },
   // Indice unico (device_id, mac, port_name) dalla fase 2 della topologia: una sorgente più vecchia ha i doppi.
   { table: "mac_port_entries", scope: "tenant", tier: "history", dedupe: { key: ["device_id", "mac", "port_name"], latest: "timestamp" } },
@@ -189,6 +194,11 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   "trunk_osservazioni",
   "trunk_vlan",
   "trunk_vicini",
+  // Prove di raggiungibilità misurate da questa sonda trunk (09/11): copiate altrove descriverebbero un'altra rete.
+  "segmentazione_giri",
+  "segmentazione_prove",
+  // Quali host il giro ha già provato su questa istanza (09/11): altrove si riparte.
+  "servizi_rete_prove",
   // Tentativi del giro sugli `unknown` (2026-11-06): valgono per la rete da cui ha provato questa istanza.
   "riconoscimento_tentativi",
   // Rilievi di sicurezza della rete osservata (2026-10-25): giudizi su quanto vede il sensore di questa istanza,

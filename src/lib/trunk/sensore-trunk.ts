@@ -188,6 +188,57 @@ export async function chiediGiroArp(vid: number, cidr: string): Promise<{ id: nu
   }
 }
 
+export interface EsitoRaggiungibilita {
+  ip: string;
+  porta: number;
+  esito: string;
+}
+
+export interface GiroRaggiungibilita {
+  id: number;
+  esito: string;
+  errore: string | null;
+  fine: string | null;
+  esiti: EsitoRaggiungibilita[];
+}
+
+/**
+ * Chiede al sensore di misurare la raggiungibilità da una VLAN. Socket locale
+ * prima, poi l'edge. POST ritorna l'id; GET legge gli esiti quando `fine` è piena.
+ */
+export async function chiediRaggiungibilita(
+  vid: number,
+  cidr: string,
+  gateway: string,
+  bersagli: Array<{ ip: string; porta: number }>,
+): Promise<{ id: number; fonte: "socket" | "edge" }> {
+  const corpo = { vid, cidr, gateway, bersagli };
+  try {
+    const r = await scriviSulSocket<{ id: number }>("/raggiungibilita", corpo);
+    return { id: r.id, fonte: "socket" };
+  } catch (e) {
+    if (!(e instanceof SensoreTrunkAssente)) throw e;
+  }
+  const scanner = getActiveEdgeScanner();
+  if (!scanner) throw new SensoreTrunkAssente("né socket locale né Scanner-Edge configurato");
+  try {
+    const r = await edgeApiPost<{ id: number }>(scanner, "/api/v1/trunk/raggiungibilita", corpo, { timeoutMs: 15_000 });
+    return { id: r.id, fonte: "edge" };
+  } catch (err) {
+    if (err instanceof EdgeClientError && (err.status === 404 || err.status === 405)) {
+      throw new SensoreTrunkAssente("lo Scanner-Edge non ha il sensore di raggiungibilità o va aggiornato");
+    }
+    throw err;
+  }
+}
+
+export async function leggiRaggiungibilita(id: number, fonte: "socket" | "edge"): Promise<GiroRaggiungibilita> {
+  if (fonte === "socket") return leggiDalSocket<GiroRaggiungibilita>(`/raggiungibilita/${id}`);
+  const scanner = getActiveEdgeScanner();
+  if (!scanner) throw new SensoreTrunkAssente("Scanner-Edge non configurato");
+  return edgeApiGet<GiroRaggiungibilita>(scanner, `/api/v1/trunk/raggiungibilita/${id}`, { timeoutMs: 15_000 });
+}
+
 /** GET sul socket Unix del sensore. Socket assente o rifiutato → SensoreTrunkAssente. */
 export function leggiDalSocket<T>(percorso: string, params?: Record<string, string | number>, socket = socketPath()): Promise<T> {
   return new Promise((resolve, reject) => {

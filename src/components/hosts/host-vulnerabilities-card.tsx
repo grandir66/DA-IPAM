@@ -4,10 +4,9 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, ChevronRight, ChevronDown } from "lucide-react";
-import { SEVERITY_STYLE } from "@/lib/severity-style";
+import { BadgeGravita } from "@/components/shared/console";
 import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
 
 interface Finding {
@@ -62,11 +61,7 @@ function BreakdownBadges({ b }: { b: FindingGroup["breakdown"] }) {
       {(["Critical", "High", "Medium", "Low"] as const).map((sev) => {
         const n = b[sev];
         if (n === 0) return null;
-        return (
-          <Badge key={sev} className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[sev]}`}>
-            {sev[0]}:{n}
-          </Badge>
-        );
+        return <BadgeGravita key={sev} gravita={sev} conteggio={n} />;
       })}
     </div>
   );
@@ -166,9 +161,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex flex-wrap gap-2 text-xs">
                 {(["Critical", "High", "Medium", "Low"] as const).map((sev) => (
-                  <Badge key={sev} className={SEVERITY_STYLE[sev]}>
-                    {sev}: {data.severity_rollup[sev]}
-                  </Badge>
+                  <BadgeGravita key={sev} gravita={sev} conteggio={data.severity_rollup[sev]} />
                 ))}
               </div>
               <div className="flex gap-1">
@@ -224,10 +217,10 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                               <span className="ml-2 text-xs text-muted-foreground">({total} CVE)</span>
                             </td>
                             <td className="py-1 pr-2">
-                              <Badge className={SEVERITY_STYLE[g.top_severity] ?? ""}>
-                                {g.top_severity}
-                                {g.top_cvss != null && ` · ${g.top_cvss.toFixed(1)}`}
-                              </Badge>
+                              <span className="inline-flex items-center gap-1.5">
+                                <BadgeGravita gravita={g.top_severity} />
+                                {g.top_cvss != null && <span className="font-mono text-[13px] text-muted-foreground">{g.top_cvss.toFixed(1)}</span>}
+                              </span>
                             </td>
                             <td className="py-1 pr-2"><BreakdownBadges b={g.breakdown} /></td>
                             <td className="py-1 pr-2"><ExploitBadges exploit={exploitDelGruppo(g)} compatto /></td>
@@ -253,7 +246,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                                       <tr key={`${g.key}-cve-${i}`}>
                                         <td className="py-0.5 pr-2"><CveLink cve={c.cve_id} /></td>
                                         <td className="py-0.5 pr-2">
-                                          <Badge className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[c.severity] ?? ""}`}>{c.severity}</Badge>
+                                          <BadgeGravita gravita={c.severity} />
                                         </td>
                                         <td className="py-0.5 pr-2 font-mono">{c.cvss_score?.toFixed(1) ?? "—"}</td>
                                         <td className="py-0.5 pr-2"><ExploitBadges exploit={c.exploit} compatto /></td>
@@ -292,7 +285,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                     {flatPaged.map((f) => (
                       <tr key={String(f.id)} className="border-b last:border-b-0">
                         <td className="py-1 pr-2"><CveLink cve={f.cve_id} /></td>
-                        <td className="py-1 pr-2"><Badge className={SEVERITY_STYLE[f.severity] ?? ""}>{f.severity}</Badge></td>
+                        <td className="py-1 pr-2"><BadgeGravita gravita={f.severity} /></td>
                         <td className="py-1 pr-2 font-mono">{f.cvss_score?.toFixed(1) ?? "—"}</td>
                         <td className="py-1 pr-2 font-mono text-xs">{f.port ?? "—"}</td>
                         <td className="py-1 pr-2 truncate max-w-[28rem]" title={f.nvt_name ?? ""}>{f.nvt_name ?? "—"}</td>

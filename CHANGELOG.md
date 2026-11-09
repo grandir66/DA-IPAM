@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Gravità a tacche anche nella scheda host
+
+Riccardo (09/11), rappresentazione: la gravità a tacche uguale in tutta l'app.
+
+### Cambiato
+- **Scheda host, card Vulnerabilità**: i badge gravità (rollup, gruppo per prodotto, CVE, finding) ora usano `BadgeGravita` (tacche + colore + parola), al posto dei badge Tailwind. Analytics (anomalie) e Salute AD restano con la loro scala.
+
 ## [Non rilasciato] — 2026-11-09 · Riepilogo triage e rilievi per rete in dashboard
 
 Riccardo (09/11): «i rilievi per rete stanno bene anche nella dashboard».

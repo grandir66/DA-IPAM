@@ -34,8 +34,8 @@ import { Pagination } from "@/components/shared/pagination";
 import { LoadError } from "@/components/shared/load-error";
 import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
-import { BadgeGravita, BarraGravita, LegendaGravita, Pannello } from "@/components/shared/console";
-import { BadgeTriage, EditorTriage } from "@/components/shared/triage-riga";
+import { BadgeGravita, BarraDivisa, BarraGravita, LegendaGravita, Pannello } from "@/components/shared/console";
+import { BadgeTriage, EditorTriage, TRIAGE_UI } from "@/components/shared/triage-riga";
 import type { RigaTriage, StatoTriage } from "@/lib/triage/db";
 import { fetchJson } from "@/lib/fetch-json";
 import { useEAdmin } from "@/hooks/use-e-admin";
@@ -197,6 +197,7 @@ export function VulnerabilitiesListClient() {
   const admin = useEAdmin();
   const [triage, setTriage] = useState<Record<string, RigaTriage>>({});
   const [perRete, setPerRete] = useState<RilievoRete[]>([]);
+  const [conteggiTriage, setConteggiTriage] = useState<Record<StatoTriage, number>>({ da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState<string | null>(null);
@@ -276,8 +277,11 @@ export function VulnerabilitiesListClient() {
     let cancelled = false;
     const chiavi = dataCve.map((r) => r.key).join(",");
     void (async () => {
-      const r = await fetchJson<{ triage: Record<string, RigaTriage> }>(`/api/triage?chiavi=${encodeURIComponent(chiavi)}`);
-      if (!cancelled && r.ok) setTriage(r.data.triage);
+      const r = await fetchJson<{ triage: Record<string, RigaTriage>; conteggi: Record<StatoTriage, number> }>(`/api/triage?chiavi=${encodeURIComponent(chiavi)}`);
+      if (!cancelled && r.ok) {
+        setTriage(r.data.triage);
+        setConteggiTriage(r.data.conteggi);
+      }
     })();
     return () => {
       cancelled = true;
@@ -422,6 +426,24 @@ export function VulnerabilitiesListClient() {
                 <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
               </div>
             ))}
+          </div>
+        </Pannello>
+      )}
+
+      {(conteggiTriage.da_fare + conteggiTriage.in_corso + conteggiTriage.fatto + conteggiTriage.ignorato) > 0 && (
+        <Pannello
+          titolo="Triage"
+          sottotitolo={`${conteggiTriage.fatto + conteggiTriage.ignorato} di ${conteggiTriage.da_fare + conteggiTriage.in_corso + conteggiTriage.fatto + conteggiTriage.ignorato} rilievi chiusi`}
+        >
+          <div className="p-3">
+            <BarraDivisa
+              parti={[
+                { nome: TRIAGE_UI.da_fare.parola, valore: conteggiTriage.da_fare, classe: "bg-[#C5CED4]" },
+                { nome: TRIAGE_UI.in_corso.parola, valore: conteggiTriage.in_corso, classe: "bg-[#FFD400]" },
+                { nome: TRIAGE_UI.fatto.parola, valore: conteggiTriage.fatto, classe: "bg-[#1F7A4D]" },
+                { nome: TRIAGE_UI.ignorato.parola, valore: conteggiTriage.ignorato, classe: "bg-muted-foreground/50" },
+              ]}
+            />
           </div>
         </Pannello>
       )}

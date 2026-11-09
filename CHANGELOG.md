@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Riepilogo triage e rilievi per rete in dashboard
+
+Riccardo (09/11): «i rilievi per rete stanno bene anche nella dashboard».
+
+### Aggiunto
+- **Riepilogo triage** in testata di Vulnerabilità: «N di M rilievi chiusi» con una barra divisa per stato (Da rivedere · In corso · Rivisto · Ignorato), dai conteggi di `/api/triage`.
+- **Card «Rilievi per rete» nella dashboard**: le stesse barre impilate della pagina Vulnerabilità (prime 6 reti), ognuna apre la pagina Vulnerabilità. Usa `getRilieviPerRete` e il mattone `BarraGravita`.
+
 ## [Non rilasciato] — 2026-11-09 · Copia-valore e tempo relativo (piccoli mattoni da Nety)
 
 Riccardo (09/11), rappresentazione dei dati: i tocchi d'uso quotidiano di uno strumento di rete.

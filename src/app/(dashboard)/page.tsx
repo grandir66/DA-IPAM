@@ -9,11 +9,12 @@ import { Network, Shield, Activity, PlugZap } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { getTenantDb, withTenant } from "@/lib/db-tenant";
+import { getTenantDb, withTenant, getRilieviPerRete, type RilieviPerRete } from "@/lib/db-tenant";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { IstogrammaAccessi } from "@/components/dashboard/istogramma-accessi";
 import { CardSicurezza } from "@/components/dashboard/card-sicurezza";
 import { BarreSubnet, LegendaSubnet } from "@/components/dashboard/barre-subnet";
+import { BarraGravita, LegendaGravita } from "@/components/shared/console";
 import { ModuliCompatti } from "@/components/dashboard/moduli-compatti";
 import { leggiAccessiIndexer, type SerieAccessi } from "@/lib/security/accessi-indexer";
 import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
@@ -156,6 +157,12 @@ export default async function DashboardPage() {
   );
   // «—» se l'archivio non si legge: l'indicatore non fa cadere la dashboard (m11, revisione finale).
   const archiviati = withTenant(tenantCode, () => contaArchiviatiOTrattino());
+  let rilieviRete: RilieviPerRete[] = [];
+  try {
+    rilieviRete = withTenant(tenantCode, () => getRilieviPerRete()).slice(0, 6);
+  } catch {
+    rilieviRete = [];
+  }
   const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =
@@ -183,6 +190,9 @@ export default async function DashboardPage() {
 
       {/* ── Riga 2: sicurezza, card bianche con striscia (Riccardo, 20/10) ── */}
       <RigaSicurezza k={sicurezza} accessi={accessi} />
+
+      {/* Rilievi per rete (Riccardo, 09/11): le barre della pagina Vulnerabilità, anche qui. */}
+      {rilieviRete.length > 0 && <RigaRilieviPerRete reti={rilieviRete} />}
 
       {/* ── Riga 3: tre colonne che riempiono l'altezza che resta ─────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 lg:flex-1 lg:min-h-0">
@@ -329,6 +339,26 @@ const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
  * bloccati da Wazuh, alert da gestire, Health di Active Directory. Una fonte non
  * configurata è grigia, non «zero». Card bianche con la striscia del token e il simbolo.
  */
+function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
+  return (
+    <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-base">Rilievi per rete</CardTitle>
+        <LegendaGravita />
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {reti.map((r) => (
+          <div key={r.network_id} className="flex items-center gap-3">
+            <Link href="/vulnerabilities" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
+            <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
+            <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi | null }) {
   const a = k.accessi;
   const falliti = accessi?.totale24h ?? 0;

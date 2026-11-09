@@ -37,6 +37,14 @@ Riccardo (09/11): stampanti e UPS finivano fra gli switch e il giro ne leggeva p
 ### Cambiato
 - **La tabella `network_devices` si ricostruisce una volta** su ogni tenant perché il CHECK accetti i valori nuovi (SQLite non altera un CHECK). Parte dalla definizione attuale, così ogni colonna resta; porte, MAC e binding tengono i loro apparati; se qualcosa non torna la tabella resta com'era e si riprova al prossimo avvio.
 
+## [Non rilasciato] — 2026-11-09 · Pulsante «Importa estrazione» nella scheda
+
+Riccardo (09/11): «Sì, scrivila» (oggetti 1-5 della proposta).
+
+### Aggiunto
+- **«Importa estrazione»** nell'intestazione del riquadro Acquisizione della scheda (tab Gestione), solo per gli admin. Si sceglie il `.json` del tecnico e viene caricato subito. Se riesce, il riquadro si ricarica con il nuovo snapshot e compare un avviso con modifiche e rotte. Un apparato diverso (409, «▲ Apparato diverso») o un file non conforme (422, «✕ Estrazione non valida», con i primi errori) restano scritti nel riquadro, senza un pulsante per forzare l'import.
+- Accanto allo snapshot di un collector che il prodotto non ha ancora c'è l'etichetta «collector del tecnico, non ancora nel prodotto». Il nome del collector compare solo se è diverso da quello della fonte.
+
 ## [Non rilasciato] — 2026-11-09 · Import dell'estrazione del tecnico (parte A, senza pulsante)
 
 Riccardo (09/11): «Sì, lanciala qui» (parte A del prompt di sviluppo: inghiottire il JSON del tecnico).

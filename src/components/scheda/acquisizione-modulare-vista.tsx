@@ -10,6 +10,7 @@
 import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
+import { Etichetta } from "@/components/shared/console";
 import { parseDbDate } from "@/lib/db-date";
 
 export interface SezioneVista {
@@ -32,7 +33,7 @@ export interface StatoAcquisizione {
   descrittore: { id: string; versione: string; prodotti: readonly string[]; collaudo: string; collaudati: ReadonlyArray<{ modello: string; firmware: string }> } | null;
   disponibili: string[];
   snapshot: {
-    id: number; collector: string; collector_version: string; status: string; finished_at: string; duration_ms: number;
+    id: number; collector: string; collector_version: string; nel_catalogo?: boolean; status: string; finished_at: string; duration_ms: number;
     requested_by_name: string | null; credenziali: Record<string, string>; sezioni: SezioneVista[]; modifiche: { righe: ModificaVista[]; totale: number };
   } | null;
   storico: { righe: Array<{ id: number; status: string; finished_at: string; duration_ms: number; payload_bytes: number; sha256: string; collector: string }>; totale: number; pagina: number; per_pagina: number };
@@ -222,6 +223,9 @@ export function VistaAcquisizioneModulare({ stato, isAdmin, onVedi, onScegliFont
         <>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <ChipStato stato={s.status} />
+            {/* Il nome si ripete solo se diverso dalla fonte qui sopra (es. snapshot importato dal tecnico). */}
+            {s.collector !== fonte.collector && <span className="font-mono text-[13px]">{s.collector} {s.collector_version}</span>}
+            {s.nel_catalogo === false && <Etichetta tono="marca" mono={false}>collector del tecnico, non ancora nel prodotto</Etichetta>}
             <span className="tabular-nums">{quando(s.finished_at)} · {secondi(s.duration_ms)}</span>
             {s.requested_by_name && <span className="text-muted-foreground">richiesta da {s.requested_by_name}</span>}
             {stato.in_corso && <span className="font-semibold">● acquisizione in corso…</span>}

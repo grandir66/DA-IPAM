@@ -22,6 +22,7 @@ import { valutaConfermate, type TolloDalLancio } from "./ammessi";
 import { gruppiDaConfermate, type GruppoDaLanciare } from "./gruppi";
 import { ETICHETTE_FAMIGLIA, type Famiglia, type HostPerProposta } from "./regole";
 import { contesiDiRete, leggiProposte, registraGruppiLanciati, type GruppoLanciato, type RigaProposta } from "./store";
+import { leggiScelte, type SceltaGruppo } from "./scelte-gruppo";
 
 export interface DipendenzeLancio {
   proposte: (networkId: number) => RigaProposta[];
@@ -35,6 +36,8 @@ export interface DipendenzeLancio {
   registra: (networkId: number, gruppi: Array<Pick<GruppoLanciato, "scan_id" | "famiglia" | "device">>, il: string) => void;
   /** Passo 9: gli impianti della rete; la sonda tiene solo quelli del consenso valido. */
   impianti: (networkId: number) => string[];
+  /** 09/11/2026: la scelta per gruppo della rete (tavola 45-48). */
+  scelte: (networkId: number) => SceltaGruppo[];
 }
 
 export type EsitoGruppoLancio = EsitoGruppoEdge | { stato: "non_tentato"; messaggio: string };
@@ -69,6 +72,7 @@ const REALI: DipendenzeLancio = {
   avvia: avviaGruppoEdge,
   registra: registraGruppiLanciati,
   impianti: ipImpiantiDellaRete,
+  scelte: leggiScelte,
 };
 
 /** Dopo questi esiti si va avanti col gruppo dopo: è andato, o Edge ha rifiutato proprio quel gruppo. */
@@ -95,7 +99,7 @@ export async function lanciaGruppiConfermati(
     if (cat.avviso) avvisi.push(cat.avviso);
     if (profili.length === 0) avvisi.push("Il catalogo dei profili assessment della sonda è vuoto: i gruppi partono senza assessment.");
   }
-  const gruppi: Array<GruppoDaLanciare & { anche_impianti?: boolean }> = gruppiDaConfermate(buone, profili);
+  const gruppi: Array<GruppoDaLanciare & { anche_impianti?: boolean }> = gruppiDaConfermate(buone, profili, d.scelte(networkId));
   for (const g of gruppi) if (g.avviso) avvisi.push(`${ETICHETTE_FAMIGLIA[g.famiglia]}: ${g.avviso}`);
   // Passo 9 (Riccardo, 08/11/2026): gli impianti partono solo se chiesti, col consenso valido della rete, e solo con
   // Greenbone Veloce. Il consenso lo controlla la sonda (`consensi.richiesto`): senza, risponde 409 e il gruppo non parte.

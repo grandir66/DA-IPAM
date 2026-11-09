@@ -15,6 +15,7 @@ import { valutaConfermate } from "./ammessi";
 import { gruppiDaConfermate } from "./gruppi";
 import type { Famiglia, HostPerProposta } from "./regole";
 import { contesiDiRete, leggiProposte, type RigaProposta } from "./store";
+import { leggiScelte, type SceltaGruppo } from "./scelte-gruppo";
 
 export interface GruppoFinestra {
   nome: Famiglia;
@@ -28,6 +29,7 @@ export interface DipendenzeGruppi {
   host: (networkId: number) => Array<HostPerProposta & { id: number }>;
   contesi: (networkId: number) => Set<number>;
   impianti: (networkId: number) => string[];
+  scelte: (networkId: number) => SceltaGruppo[];
 }
 
 const REALI: DipendenzeGruppi = {
@@ -35,6 +37,7 @@ const REALI: DipendenzeGruppi = {
   host: (n) => getHostsByNetwork(n) as ReturnType<DipendenzeGruppi["host"]>,
   contesi: (n) => contesiDiRete(n),
   impianti: ipImpiantiDellaRete,
+  scelte: leggiScelte,
 };
 
 /** I gruppi da mandare alla sonda: gli stessi del lancio (stesse conferme, stesse barriere), più gli impianti. */
@@ -43,7 +46,7 @@ export function gruppiFinestra(networkId: number, famiglie: readonly Famiglia[],
   const confermate = d.proposte(networkId).filter((r) => r.stato !== "escluso");
   const host = new Map(d.host(networkId).map((h) => [h.id, h]));
   const { buone } = valutaConfermate(confermate, host, d.contesi(networkId), famiglie);
-  const gruppi: GruppoFinestra[] = gruppiDaConfermate(buone).map((g) => ({ nome: g.famiglia, profile: g.profile, ips: g.ips, impianti: false }));
+  const gruppi: GruppoFinestra[] = gruppiDaConfermate(buone, [], d.scelte(networkId)).map((g) => ({ nome: g.famiglia, profile: g.profile, ips: g.ips, impianti: false }));
   if (famiglie.includes("impianti")) {
     const ips = d.impianti(networkId);
     if (ips.length > 0) gruppi.push({ nome: "impianti", profile: "fast", ips, impianti: true });

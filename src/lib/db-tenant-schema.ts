@@ -77,6 +77,22 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
  * `migraCredenzialiTipi`, che ricostruisce la tabella e rifiuta se ne trova una in meno, e un esito rifatto dalla prossima
  * scansione non è una riga da difendere lì. Il trigger la ricostruzione lo ricrea (passo 5).
  */
+/**
+ * Scelta per gruppo (09/11/2026, tavola 45-48): Greenbone, nuclei e moduli di una famiglia sulla rete, al posto della
+ * tabella. Un campo NULL = vale la tabella. Firmata con chi, quando e nota. Anche nel path legacy di `getDb`.
+ */
+export const DDL_SCELTE_GRUPPO = `CREATE TABLE IF NOT EXISTS va_scelte_gruppo (
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  famiglia TEXT NOT NULL,
+  profile TEXT CHECK (profile IN ('fast','balanced','deep')),
+  nuclei TEXT CHECK (nuclei IN ('nessuno','gestione','quick','standard')),
+  moduli TEXT CHECK (moduli IN ('nessuno','base','completi')),
+  chi TEXT NOT NULL,
+  nota TEXT,
+  il TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (network_id, famiglia)
+);`;
+
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL,
@@ -261,6 +277,7 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
   try {
     // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.
     db.exec(DDL_ACCESSO_WINDOWS_ESITI);
+    db.exec(DDL_SCELTE_GRUPPO);
   } catch (e) {
     console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
@@ -2386,6 +2403,8 @@ CREATE TABLE IF NOT EXISTS va_proposte (
   forzata_nota TEXT,
   aggiornata_il TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+${DDL_SCELTE_GRUPPO}
 
 -- Quale scansione di Edge è quale gruppo (Passo 5, 06/11/2026): la sonda sa solo gli IP, la famiglia la sa IPAM.
 CREATE TABLE IF NOT EXISTS va_gruppi_lanciati (

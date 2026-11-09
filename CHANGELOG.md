@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Scelta per gruppo in «Per device»
+
+Riccardo (09/11): «perché Windows giro minimo e non c'è un'opzione per cambiare per il gruppo la modalità di scansione». Tavola oggetti 45-48 approvata («Sì, scrivila»).
+
+### Aggiunto
+- **Greenbone, nuclei e moduli si scelgono per gruppo** nel pannello «2. Famiglie», per la rete. Di serie resta la tabella; un valore scelto ha il bordo tratteggiato e sotto chi, quando e la nota; «↺ Torna alla tabella» lo toglie. Vale per Adesso, A orario e A finestra (nella finestra conta il Greenbone). Una profondità più bassa scelta su un device abbassa ancora il gruppo.
+- **Le scelte che alzano il rischio si confermano con una nota**: giro completo su Windows (enum4linux-ng e LDAP sul dominio) o Rete, Greenbone Profondo, nuclei Standard su Rete o Periferiche. La rotta rifiuta la scelta senza nota.
+- Gli impianti non si cambiano da qui; «da chiarire» sale al massimo a Bilanciato, senza nuclei né moduli. La regola vale anche al lancio: una scelta non ammessa finita nel database non passa.
+
 ## [Non rilasciato] — 2026-11-09 · Avviso d'aggiornamento sul Mac del tecnico
 
 ### Corretto

@@ -11,6 +11,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getHostsByNetwork, getNetworkById } from "@/lib/db";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import { quadroFamiglie } from "@/lib/vuln/proposta/quadro";
+import { leggiScelte } from "@/lib/vuln/proposta/scelte-gruppo";
 import type { HostPerProposta } from "@/lib/vuln/proposta/regole";
 import { forzaProposta, leggiProposte, togliForzatura, ultimaProposta } from "@/lib/vuln/proposta/store";
 
@@ -31,7 +32,7 @@ async function rete(params: Ctx["params"]): Promise<number | null> {
 
 function risposta(id: number) {
   const proposte = leggiProposte(id);
-  return { proposte, famiglie: quadroFamiglie(proposte), aggiornata_il: ultimaProposta(id) };
+  return { proposte, famiglie: quadroFamiglie(proposte, leggiScelte(id)), aggiornata_il: ultimaProposta(id) };
 }
 
 export async function POST(req: Request, { params }: Ctx) {

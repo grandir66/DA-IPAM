@@ -19,6 +19,7 @@ import { vocePaginaDelProfilo } from "@/lib/vuln/profili-assessment-testi";
 import { VOCI_BASE } from "@/lib/vuln/scansioni-va-regole";
 import type { Famiglia } from "./regole";
 import type { RigaProposta } from "./store";
+import { controllaScelta, type SceltaGruppo } from "./scelte-gruppo-regole";
 
 /** Profilo nuclei di un gruppo: `gestione` = solo web di gestione (Edge ≥ Passo 4), il resto è il suo. */
 export type NucleiGruppo = "gestione" | "quick" | "standard";
@@ -63,6 +64,33 @@ const SCHEDE: Partial<Record<Famiglia, Scheda>> = {
 /** La riga della tabella per una famiglia; `null` per gli impianti, che partono solo col consenso. */
 export function schedaDiFamiglia(f: Famiglia): { profile: EdgeScanProfile; nuclei: NucleiGruppo | null; moduli: "base" | "completi" | null } | null {
   const s = SCHEDE[f];
+  return s ? { profile: s.profile, nuclei: s.nuclei, moduli: s.moduli } : null;
+}
+
+/**
+ * La riga della tabella con sopra la scelta di una persona (09/11/2026, tavola 45-48). Una scelta che le regole non
+ * ammettono (controllaScelta) non vale, anche se è nel database: si torna alla tabella per quel campo.
+ */
+function schedaEffettiva(f: Famiglia, scelte: readonly SceltaGruppo[]): Scheda | null {
+  const base = SCHEDE[f];
+  if (!base) return null;
+  const trovata = scelte.find((x) => x.famiglia === f);
+  if (!trovata) return base;
+  // Campo per campo: di una scelta che le regole non ammettono resta solo la parte ammessa («da chiarire» Bilanciato sì,
+  // nuclei no).
+  const s = { ...trovata };
+  if (controllaScelta(f, { ...s, nuclei: null, moduli: null }) !== null) s.profile = null;
+  if (controllaScelta(f, { ...s, profile: null, moduli: null }) !== null) s.nuclei = null;
+  if (controllaScelta(f, { ...s, profile: null, nuclei: null }) !== null) s.moduli = null;
+  const nuclei = s.nuclei === null ? base.nuclei : s.nuclei === "nessuno" ? null : s.nuclei;
+  const moduli: Moduli = s.moduli === null ? base.moduli : s.moduli === "nessuno" ? null : s.moduli;
+  // Il giro minimo resta chiuso sui moduli giudicati; il completo l'ha chiesto una persona, con la firma.
+  return { profile: s.profile ?? base.profile, nuclei, moduli, soloModuliAmmessi: base.soloModuliAmmessi && moduli !== "completi" };
+}
+
+/** Per la pagina: la riga effettiva (tabella + scelta), senza l'abbassamento dei device. */
+export function valoriDiFamiglia(f: Famiglia, scelte: readonly SceltaGruppo[]): { profile: EdgeScanProfile; nuclei: NucleiGruppo | null; moduli: "base" | "completi" | null } | null {
+  const s = schedaEffettiva(f, scelte);
   return s ? { profile: s.profile, nuclei: s.nuclei, moduli: s.moduli } : null;
 }
 
@@ -124,10 +152,11 @@ function idAssessment(
 export function gruppiDaConfermate(
   righe: readonly RigaProposta[],
   catalogo: readonly EdgeAssessmentProfile[] = [],
+  scelte: readonly SceltaGruppo[] = [],
 ): GruppoDaLanciare[] {
   const gruppi: GruppoDaLanciare[] = [];
   for (const famiglia of ORDINE) {
-    const scheda = SCHEDE[famiglia];
+    const scheda = schedaEffettiva(famiglia, scelte);
     if (!scheda) continue;
     // Inclusione di serie (08/11/2026): parte ogni riga che una persona non ha escluso; un tipo cambiato è solo un avviso.
     const sue = righe.filter((r) => r.famiglia === famiglia && r.stato !== "escluso" && r.ip.trim() !== "");

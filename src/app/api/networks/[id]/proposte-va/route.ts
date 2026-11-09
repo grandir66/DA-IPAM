@@ -8,6 +8,7 @@ import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getNetworkById } from "@/lib/db";
 import { quadroFamiglie } from "@/lib/vuln/proposta/quadro";
+import { leggiScelte } from "@/lib/vuln/proposta/scelte-gruppo";
 import { confermaProposte, leggiProposte, riapriProposte, rigeneraProposte, ultimaProposta } from "@/lib/vuln/proposta/store";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -23,7 +24,7 @@ const NON_TROVATA = { error: "Rete non trovata" };
 /** Tutto quello che serve alla pagina: la rilettura dopo ogni scelta dà sempre lo stesso quadro. */
 function risposta(id: number) {
   const proposte = leggiProposte(id);
-  return { proposte, famiglie: quadroFamiglie(proposte), aggiornata_il: ultimaProposta(id) };
+  return { proposte, famiglie: quadroFamiglie(proposte, leggiScelte(id)), aggiornata_il: ultimaProposta(id) };
 }
 
 export async function GET(_req: Request, { params }: Ctx) {

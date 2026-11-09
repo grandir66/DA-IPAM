@@ -27,6 +27,8 @@ import { scadenzaConsenso, type ConsensoRete, type QuadroScansioni, type ReteSca
 import { Stato } from "./stato-va";
 import { QuandoDevice } from "./quando-device";
 import { RiquadroConsenso } from "./impianti-consenso";
+import { CelleSceltaGruppo, RiquadroRischio, rischioDi, valoriDopo, type CampoScelta } from "./scelta-gruppo";
+import type { ValoriScelta } from "@/lib/vuln/proposta/scelte-gruppo-regole";
 
 interface RispostaProposte {
   proposte: RigaProposta[];
@@ -384,6 +386,47 @@ export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
     setSpente(new Set(tutte.split(",").filter((f): f is Famiglia => f !== "" && !salvate.includes(f as Famiglia)) as Famiglia[]));
   }, [tutte]);
 
+  // Scelta per gruppo (09/11/2026, tavola 45-46): si salva subito; se alza il rischio, prima il riquadro con la nota.
+  const [perRischio, setPerRischio] = useState<{ f: RigaFamiglia; valori: ValoriScelta; rischio: string } | null>(null);
+  const salvaSceltaGruppo = async (f: RigaFamiglia, valori: ValoriScelta, nota: string | null) => {
+    if (reteId === null) return;
+    const id = reteId;
+    setOccupato(true);
+    setRifiuto(null);
+    const r = await fetchJson<RispostaProposte>(`/api/networks/${id}/proposte-va/scelte-gruppo`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ famiglia: f.famiglia, ...valori, nota }),
+    });
+    if (reteCorrente.current === id) {
+      if (r.ok) setDati(r.data);
+      else setRifiuto(r.message);
+    }
+    setOccupato(false);
+    setPerRischio(null);
+  };
+  const cambiaScelta = (f: RigaFamiglia, c: CampoScelta, v: string) => {
+    const valori = valoriDopo(f, c, v);
+    const rischio = rischioDi(f, valori);
+    if (rischio) setPerRischio({ f, valori, rischio });
+    else void salvaSceltaGruppo(f, valori, f.scelta?.nota ?? null);
+  };
+  const tornaAllaTabella = async (f: RigaFamiglia) => {
+    if (reteId === null) return;
+    const id = reteId;
+    setOccupato(true);
+    const r = await fetchJson<RispostaProposte>(`/api/networks/${id}/proposte-va/scelte-gruppo`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ famiglia: f.famiglia }),
+    });
+    if (reteCorrente.current === id) {
+      if (r.ok) setDati(r.data);
+      else setRifiuto(r.message);
+    }
+    setOccupato(false);
+  };
+
   /** Passo 9: revoca il consenso degli impianti della rete (stessa rotta della scheda «Un profilo solo»). */
   const revocaConsenso = async () => {
     if (!rete) return;
@@ -580,7 +623,7 @@ export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead className="bg-muted text-left text-[13px]">
-                  <tr>{["Lancia", "Famiglia", "Device", "Inclusi", "Greenbone", "Nuclei", "Moduli", "Stato"].map((t) => <th key={t} className="whitespace-nowrap px-3 py-2 font-semibold">{t}</th>)}</tr>
+                  <tr>{["Lancia", "Famiglia", "Device", "Inclusi", "Greenbone", "Nuclei", "Moduli", "Stato", ""].map((t, i) => <th key={i} className="whitespace-nowrap px-3 py-2 font-semibold">{t}</th>)}</tr>
                 </thead>
                 <tbody>
                   {famiglie.map((f) => {
@@ -604,9 +647,15 @@ export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
                         <td className="whitespace-nowrap px-3 py-1.5 font-semibold"><button type="button" className="font-semibold hover:underline" aria-pressed={vista} onClick={() => setFamiglia(f.famiglia)}>{f.nome}</button></td>
                         <td className="px-3 py-1.5 font-mono text-[13px]">{f.device}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px]">{f.fuori ? "—" : f.confermati}{f.forzati ? <span className="font-sans text-muted-foreground"> · {f.forzati === 1 ? "1 forzato" : `${f.forzati} forzati`}</span> : null}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5">{f.famiglia === "impianti" && consenso ? "Veloce, solo col consenso" : f.greenbone}{f.scesa ? " ▼" : ""}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5">{f.nuclei}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5">{f.moduli}</td>
+                        {f.famiglia === "impianti" ? (
+                          <>
+                            <td className="whitespace-nowrap px-3 py-1.5">{consenso ? "Veloce, solo col consenso" : f.greenbone}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5">{f.nuclei}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5">{f.moduli}</td>
+                          </>
+                        ) : (
+                          <CelleSceltaGruppo f={f} amministratore={amministratore} occupato={occupato} onCambia={(c, v) => cambiaScelta(f, c, v)} />
+                        )}
                         <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
                           {f.famiglia === "impianti" && (consenso || rete?.consensoFuturo) ? (
                             <span className="flex items-center gap-2">
@@ -620,6 +669,11 @@ export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
                                 <Button size="sm" variant="outline" disabled={occupato} onClick={() => setPerConsenso(null)}>Autorizza gli impianti</Button>
                               )}
                             </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                          {f.scelta && amministratore && (
+                            <button type="button" disabled={occupato} className="text-[13px] font-semibold text-cian-testo underline" onClick={() => void tornaAllaTabella(f)}>↺ Torna alla tabella</button>
                           )}
                         </td>
                       </tr>
@@ -739,6 +793,17 @@ export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
               {somma("esclusi") > 0 && <Stato tono="spento">● {somma("esclusi")} esclusi</Stato>}
             </span>
           }
+        />
+      )}
+
+      {perRischio && (
+        <RiquadroRischio
+          nome={perRischio.f.nome}
+          rischio={perRischio.rischio}
+          notaIniziale={perRischio.f.scelta?.nota ?? ""}
+          occupato={occupato}
+          onConferma={(nota) => void salvaSceltaGruppo(perRischio.f, perRischio.valori, nota)}
+          onChiudi={() => setPerRischio(null)}
         />
       )}
 

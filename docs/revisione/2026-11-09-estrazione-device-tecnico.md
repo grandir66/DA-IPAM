@@ -1,5 +1,10 @@
 # Estrazione di apparati dal PC del tecnico — analisi (09/11/2026)
 
+> **Solo riferimento, non blocca niente.** Decisione di Riccardo (09/11/2026): «mi basta un prompt da dare al claude code con le
+> modalità con cui scrivere i json, poi verrà inserito nel pacchetto completo di da-ipam». Il prompt autosufficiente è in
+> [`2026-11-09-prompt-tecnico-estrazione.md`](2026-11-09-prompt-tecnico-estrazione.md); le domande D1-D11 restano qui come
+> appunti per quando il prompt entrerà nel pacchetto.
+
 > **Richiesta di Riccardo (09/11/2026):** «vorrei che venisse preparato un prompt da dare a Claude Code nei PC dei tecnici per
 > acquisire un formato di json in grado di essere digerito da DA-IPAM, per consentire di estendere la copertura delle tipologie
 > di prodotti con ulteriori analisi. Il sistema dovrebbe prevedere un motore di collegamento ssh, snmp o web/api a device per

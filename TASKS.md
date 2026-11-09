@@ -3,8 +3,10 @@
 
 ## 2026-11-09 — Estrazione device dal PC del tecnico (analisi)
 
-- [x] Riccardo (09/11): prompt per il Claude Code dei tecnici che produce un JSON digeribile da DA-IPAM, con un motore SSH/SNMP/API per switch e router. Analisi in `docs/revisione/2026-11-09-estrazione-device-tecnico.md`, bozza del prompt in `docs/revisione/2026-11-09-prompt-tecnico-estrazione.md`. In breve: il formato è lo snapshot 1.0 che c'è già, più una busta e le sezioni `routes` e `config`.
-- [ ] Riccardo decide il vincolo dei dati verso il modello esterno (§6, alternative A-E) e le domande D2-D11 (§7). Prima di questo, niente codice.
+- [x] Riccardo (09/11): prompt per il Claude Code dei tecnici che produce un JSON digeribile da DA-IPAM, collegandosi a switch e router via SSH, SNMP o API. Analisi di riferimento in `docs/revisione/2026-11-09-estrazione-device-tecnico.md`.
+- [x] Riccardo (09/11): «mi basta un prompt da dare al claude code con le modalità con cui scrivere i json, poi verrà inserito nel pacchetto completo di da-ipam». Il prompt autosufficiente è in `docs/revisione/2026-11-09-prompt-tecnico-estrazione.md`: busta + snapshot 1.0, comandi vietati, credenziali solo da variabili d'ambiente, controllo in Python. Le domande D1-D11 dell'analisi non bloccano più.
+- [ ] Più avanti: il prompt entra nel pacchetto come `docs/tecnico/prompt-estrazione.md`, copiato dall'installer «tecnico». Resta da fare anche l'import del JSON in DA-IPAM (analisi §4).
+- [ ] Da sapere: con il prompt da solo, l'output dei comandi (IP, MAC, nomi del cliente) passa da Claude Code, che è un modello esterno. È in contrasto con la regola «dati di clienti solo su modelli interni» (analisi §6): Riccardo l'ha visto?
 
 ## 2026-11-08 — Sonda trunk: IP ufficiali e altri, VLAN nativa (Riccardo, leggero)
 

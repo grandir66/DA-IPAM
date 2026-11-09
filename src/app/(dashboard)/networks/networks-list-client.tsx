@@ -801,8 +801,6 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
         </Dialog>
       </div>
 
-      {sottoIntestazione}
-
       {networks.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -895,6 +893,8 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
           </Table>
         </Card>
       )}
+
+      {sottoIntestazione}
 
     </div>
   );

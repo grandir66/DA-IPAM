@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · «Reti da confermare» sotto le subnet definite
+
+Riccardo (10/11): l'elenco delle reti viste da confermare va sotto le subnet già definite, non sopra.
+
+### Cambiato
+- **Subnet**: il pannello «Reti viste, da confermare» (viste dal trunk) è spostato in fondo alla pagina, dopo l'elenco delle subnet definite.
+
 ## [Non rilasciato] — 2026-11-10 · NTLM su RDP e Negotiate, levette in Opzioni
 
 Riccardo (10/11): «fai le altre attività» — RDP, HTTP che offre solo Negotiate, interruttori in Opzioni.

@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Pagina «Estrazione apparati» sul PC del tecnico
+
+Riccardo (09/11): «il prompt dovrebbe essere visibile nella UI dell'installazione del tecnico».
+
+### Aggiunto
+- **Pagina «Estrazione apparati»** (`/estrazione-apparati`), con la voce di menu accanto a «Profili»: mostra il prompt da incollare nel Claude Code del PC, col pulsante «Copia». Il prompt fa leggere a Claude uno switch o un router in sola lettura e gli fa scrivere il JSON che DA-IPAM importa. Esiste solo con `DA_PROFILO=tecnico`; altrove la voce non c'è e la rotta dà 404. Il testo sta in un file solo, `src/lib/estrazione/prompt-tecnico.md`, così pagina e documentazione non divergono.
+
 ## [Non rilasciato] — 2026-11-09 · Scelta per gruppo in «Per device»
 
 Riccardo (09/11): «perché Windows giro minimo e non c'è un'opzione per cambiare per il gruppo la modalità di scansione». Tavola oggetti 45-48 approvata («Sì, scrivila»).

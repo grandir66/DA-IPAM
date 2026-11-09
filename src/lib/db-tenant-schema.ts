@@ -264,7 +264,8 @@ export const DDL_SCELTE_GRUPPO = `CREATE TABLE IF NOT EXISTS va_scelte_gruppo (
 /**
  * Servizi di rete (09/11/2026, sul modello di Nety): cosa risponde su ogni porta aperta e
  * come lo si è saputo. Una riga per host+porta+protocollo; le sonde la aggiornano man mano,
- * così un giro interrotto lascia leggibile quanto ha visto. Date nel formato di
+ * così un giro interrotto lascia leggibile quanto ha visto. `servizi_rete_prove` segna quando il giro
+ * leggero ha provato un host, per non riprovarlo a ogni passata. Date nel formato di
  * `datetime('now')` (spazio, non `T`), confrontabili in SQL.
  */
 export const DDL_SERVIZI_RETE = `CREATE TABLE IF NOT EXISTS servizi_rete (
@@ -285,7 +286,13 @@ export const DDL_SERVIZI_RETE = `CREATE TABLE IF NOT EXISTS servizi_rete (
   ultima_sonda TEXT,
   UNIQUE(host_id, porta, protocollo)
 );
-CREATE INDEX IF NOT EXISTS idx_servizi_rete_porta ON servizi_rete(porta, protocollo);`;
+CREATE INDEX IF NOT EXISTS idx_servizi_rete_porta ON servizi_rete(porta, protocollo);
+CREATE TABLE IF NOT EXISTS servizi_rete_prove (
+  host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+  provato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  porte_provate INTEGER NOT NULL DEFAULT 0,
+  porte_aperte INTEGER NOT NULL DEFAULT 0
+);`;
 
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,

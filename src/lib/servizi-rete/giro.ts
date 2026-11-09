@@ -18,8 +18,10 @@ import {
   getHostServiziDellaRete,
   registraPorteAperteServizi,
   getHostSenzaPorteServizi,
+  segnaHostProvatoServizi,
 } from "@/lib/db-tenant";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
+import { portePerGiro } from "./porte";
 import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
 
 /**
@@ -29,13 +31,6 @@ import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili
 export function daSaltare(porta: number, vendor: string | null): boolean {
   return PORTE_DA_NON_TOCCARE.has(porta) || (vendor !== null && PRODUTTORE_DI_CAMPO.test(vendor));
 }
-
-/** Le porte del giro leggero: accesso remoto, web e pannelli, posta, file, database, directory. */
-export const PORTE_COMUNI: readonly number[] = [
-  21, 22, 23, 25, 53, 80, 81, 88, 110, 111, 135, 139, 143, 389, 443, 445, 465, 587, 636, 993, 995,
-  1433, 1723, 2049, 3000, 3128, 3306, 3389, 4443, 5000, 5001, 5432, 5900, 5985, 6443, 7443, 8000,
-  8006, 8080, 8081, 8443, 8888, 9000, 9090, 9443, 10000, 10443,
-].filter((p) => !PORTE_DA_NON_TOCCARE.has(p));
 
 export interface StatoGiro {
   inCorso: boolean;
@@ -50,7 +45,7 @@ export interface StatoGiro {
 }
 
 const PARALLELE = 32;
-const PARALLELE_PORTE = 128;
+const PARALLELE_PORTE = 256;
 // Su globalThis: rotte, discovery e `server.ts` possono avere istanze diverse del modulo, e la
 // pagina deve vedere anche un giro partito dal programmatore (come `trunk/job.ts`).
 const g = globalThis as typeof globalThis & { __giriServiziRete?: Map<string, StatoGiro> };
@@ -85,7 +80,7 @@ export function avviaGiro(
   networkId: number | null,
   /** `porteComuni`: «rete» = gli host della rete (conferma dal trunk); «senza-porte» = gli host
    *  del tenant che non hanno porte note (giro automatico). */
-  opzioni: { porteComuni?: "rete" | "senza-porte"; strumenti?: Strumenti } = {},
+  opzioni: { porteComuni?: "rete" | "senza-porte"; strumenti?: Strumenti; porte?: number[] } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
   const { sonda, aperta } = opzioni.strumenti ?? STRUMENTI;
@@ -97,7 +92,8 @@ export function avviaGiro(
         const candidati =
           opzioni.porteComuni === "rete" ? (networkId ? getHostServiziDellaRete(networkId) : []) : getHostSenzaPorteServizi();
         const host = candidati.filter((h) => !(h.vendor && PRODUTTORE_DI_CAMPO.test(h.vendor)));
-        const prove = host.flatMap((h) => PORTE_COMUNI.map((porta) => ({ h, porta })));
+        const elenco = opzioni.porte ?? portePerGiro();
+        const prove = host.flatMap((h) => elenco.map((porta) => ({ h, porta })));
         stato.fase = "porte";
         stato.totale = prove.length;
         stato.fatte = 0;
@@ -112,7 +108,11 @@ export function avviaGiro(
           if (si) trovate.set(h.host_id, [...(trovate.get(h.host_id) ?? []), porta]);
           stato.fatte += 1;
         });
-        for (const [hostId, porte] of trovate) registraPorteAperteServizi(hostId, porte.sort((a, b) => a - b));
+        for (const h of host) {
+          const porte = (trovate.get(h.host_id) ?? []).sort((a, b) => a - b);
+          registraPorteAperteServizi(h.host_id, porte);
+          segnaHostProvatoServizi(h.host_id, elenco.length, porte.length);
+        }
       }
       allineaServiziRete(networkId ?? undefined);
       const coda = getPorteServiziDaSondare(networkId ?? undefined).filter((p) => !daSaltare(p.porta, p.vendor));

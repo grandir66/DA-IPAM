@@ -7491,4 +7491,5 @@ export {
   getHostServiziDellaRete,
   registraPorteAperteServizi,
   getHostSenzaPorteServizi,
+  segnaHostProvatoServizi,
 } from "./db-tenant";

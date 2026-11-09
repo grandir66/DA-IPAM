@@ -354,7 +354,7 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
 }
 
 /** La porta TCP accetta la connessione? Si chiude subito, senza scrivere niente. */
-export async function portaAperta(ip: string, porta: number, ms = 800): Promise<boolean> {
+export async function portaAperta(ip: string, porta: number, ms = 700): Promise<boolean> {
   const s = await connetti(ip, porta, ms);
   if (!s) return false;
   s.destroy();

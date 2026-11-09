@@ -259,7 +259,7 @@ export function registraPorteAperte(
  * Host visti di recente che non hanno nessuna porta nota: arrivano da ARP, DHCP o trunk.
  * Il giro automatico prova su di loro le porte comuni.
  */
-export function hostSenzaPorte(db: Database.Database, giorni = 7, limite = 2000): HostDaProvare[] {
+export function hostSenzaPorte(db: Database.Database, giorni = 7, limite = 300): HostDaProvare[] {
   return db
     .prepare(
       `SELECT h.id AS host_id, h.ip, COALESCE(h.vendor, h.device_manufacturer) AS vendor FROM hosts h
@@ -267,7 +267,16 @@ export function hostSenzaPorte(db: Database.Database, giorni = 7, limite = 2000)
          AND h.status <> 'offline'
          AND COALESCE(h.last_seen, h.updated_at) >= datetime('now', ?)
          AND NOT EXISTS (SELECT 1 FROM servizi_rete s WHERE s.host_id = h.id)
+         AND NOT EXISTS (SELECT 1 FROM servizi_rete_prove p WHERE p.host_id = h.id AND p.provato_il >= datetime('now', ?))
        ORDER BY h.ip LIMIT ?`,
     )
-    .all(`-${giorni} days`, limite) as HostDaProvare[];
+    .all(`-${giorni} days`, `-${giorni} days`, limite) as HostDaProvare[];
+}
+
+/** Segna che il giro leggero ha provato l'host (anche senza trovare niente). */
+export function segnaHostProvato(db: Database.Database, hostId: number, provate: number, aperte: number): void {
+  db.prepare(
+    `INSERT INTO servizi_rete_prove (host_id, provato_il, porte_provate, porte_aperte) VALUES (?, datetime('now'), ?, ?)
+     ON CONFLICT(host_id) DO UPDATE SET provato_il = excluded.provato_il, porte_provate = excluded.porte_provate, porte_aperte = excluded.porte_aperte`,
+  ).run(hostId, provate, aperte);
 }

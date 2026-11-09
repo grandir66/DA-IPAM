@@ -11,6 +11,9 @@ Riccardo (09/11): «capire come implementare l'ottimo motore di rilevazione e al
 - [x] Sonde dei servizi avviate da sole a fine discovery riuscita, con freno su porte di campo/stampa e produttori di campo (`freno.test.ts`)
 - [x] Host confermati dal trunk senza porte → giro leggero di 47 porte comuni senza nmap (Riccardo: «Sì, alla conferma»). Prova `giro.test.ts` su tenant isolato verde
 - [x] Riccardo (09/11): «il massimo automatismo» → giro automatico all'avvio (+3 min) e ogni 6 ore per cliente; spegnibile con `servizi_rete.automatico = 0`. Le reti restano proposte da confermare (decisione dello stesso giorno)
+- [x] Riccardo (09/11): porte «molto più ampie dello standard» → top 1000 di nmap-services + porte di gestione (`porte.test.ts`; dal vivo stesse porte di Nety su 99.1 e 99.2 in < 0,5 s per host)
+- [ ] Da valutare: tutte le 65.535 porte sulle reti confermate (sulla LAN ~20 s per host; i filtrati costano fino a 3 minuti)
+- [ ] Riccardo (09/11): «Nety ha anche una visualizzazione a matrice molto efficace» → matrice di segmentazione rete sorgente × rete bersaglio, servizi raggiunti sul totale, chiusi e filtrati. Va misurata DA DENTRO ogni VLAN: dalla sonda trunk col tag della VLAN (come l'arp-scan di «Porta in DA-IPAM»), provando i servizi già noti delle altre reti
 - [ ] Interruttore `servizi_rete.automatico` in Opzioni (oggi solo nelle impostazioni del tenant)
 - [ ] Guardare a schermo Servizi di rete e il riquadro in Subnet su un'appliance con dati (72729 o PX-NAS)
 - [ ] Tappa identità senza credenziali: sfida NTLM su SMB/RDP/HTTP (nome, dominio, versione Windows), NetBIOS, SNMP `public`/engineID, chiave SSH e GUID SMB come prove che due IP sono lo stesso apparato (proposte, mai fusioni automatiche)

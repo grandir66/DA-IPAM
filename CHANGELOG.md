@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Giro leggero sulle 1000 porte più usate, anche fuori standard
+
+Riccardo (09/11): «le porte da verificare possono essere molto più ampie dello standard per rilevare anche apparati che lavorano su porte fuori standard». Nety di serie prova le 1000 TCP più frequenti.
+
+### Cambiato
+- Il giro leggero prova le **1000 porte TCP più frequenti** della classifica di nmap (`nmap-services`, già sull'appliance) più 26 porte di gestione fuori classifica (x443, MikroTik 8291/8728/8729, SSH su 2222, BMC 16992/17988…); senza il file ripiega sulle 47 comuni. Misura dal Mac: 1015 porte in 0,2–0,5 s per host, stesse porte che trova Nety su 192.168.99.1 e .2 (anche 3001, 4443, 8008).
+- **Host già provati** segnati in `servizi_rete_prove`: il giro automatico non li riprova per 7 giorni, e prende al massimo 300 host per passata.
+
 ## [Non rilasciato] — 2026-11-09 · Servizi di rete in automatico: porte comuni e sonde senza pulsanti
 
 Riccardo (09/11): host confermati dal trunk senza porte, «Sì, alla conferma»; poi «vorrei se possibile però il massimo automatismo».

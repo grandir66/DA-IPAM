@@ -12920,3 +12920,6 @@ export function registraPorteAperteServizi(hostId: number, porte: number[]): voi
 export function getHostSenzaPorteServizi(): servizi.HostDaProvare[] {
   return servizi.hostSenzaPorte(db());
 }
+export function segnaHostProvatoServizi(hostId: number, provate: number, aperte: number): void {
+  servizi.segnaHostProvato(db(), hostId, provate, aperte);
+}

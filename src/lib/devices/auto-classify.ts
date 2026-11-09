@@ -112,6 +112,9 @@ const VENDOR_RULES: VendorRule[] = [
   { vendor: "fortinet", os: "network-os", matches: ({ ouiVendor }) => /fortinet/.test(ouiVendor) },
   { vendor: "stormshield", os: "network-os", matches: ({ ouiVendor }) => /stormshield|netasq/.test(ouiVendor) },
   { vendor: "sonicwall", os: "network-os", matches: ({ ouiVendor }) => /sonicwall/.test(ouiVendor) },
+  { vendor: "paloalto", os: "network-os", matches: ({ ouiVendor }) => /palo alto/.test(ouiVendor) },
+  { vendor: "checkpoint", os: "network-os", matches: ({ ouiVendor }) => /check point|checkpoint/.test(ouiVendor) },
+  { vendor: "watchguard", os: "network-os", matches: ({ ouiVendor }) => /watchguard/.test(ouiVendor) },
   { vendor: "draytek", os: "network-os", matches: ({ ouiVendor }) => /draytek/.test(ouiVendor) },
   // Printer vendors
   { vendor: "hp-printer", os: null, matches: ({ ouiVendor }) => /^hp/.test(ouiVendor) && /print/.test(ouiVendor) },
@@ -212,6 +215,8 @@ function inferOsFromPorts(ports: number[]): { os: InferredOsFamily | null; confi
 }
 
 // ─── Device type from ports / vendor ────────────────────────────────────────
+/** Marche di firewall: con un SO di rete sono sempre `firewall` (le ultime tre dal 09/11/2026). */
+const MARCHE_FIREWALL = new Set(["fortinet", "stormshield", "sonicwall", "paloalto", "checkpoint", "watchguard"]);
 
 function inferDeviceType(
   ports: number[],
@@ -231,7 +236,7 @@ function inferDeviceType(
   if (vendor === "synology" || vendor === "qnap") return { device_type: "nas", reason: "vendor NAS" };
   // Network OS
   if (osFamily === "network-os") {
-    if (vendor === "fortinet" || vendor === "stormshield" || vendor === "sonicwall") return { device_type: "firewall", reason: `vendor ${vendor}` };
+    if (vendor && MARCHE_FIREWALL.has(vendor)) return { device_type: "firewall", reason: `vendor ${vendor}` };
     // Generic: SNMP indicates router/switch; without further data, default switch
     return { device_type: set.has(80) || set.has(443) ? "router" : "switch", reason: "vendor network-os" };
   }

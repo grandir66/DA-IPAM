@@ -124,7 +124,8 @@ describe("proponiApparato — piattaforma, protocollo, porta", () => {
   });
 
   it("marche fuori elenco senza famiglia SO → other", () => {
-    for (const marca of ["dell", "lenovo", "juniper", "fortinet", "sonicwall", "draytek"]) {
+    // fortinet e sonicwall erano qui fino al 09/11/2026: da allora sono marche ammesse (tipi-periferiche-firewall.test.ts).
+    for (const marca of ["dell", "lenovo", "juniper", "draytek"]) {
       assert.equal(piattaformaDaHost(host({ inferred_vendor: marca })), "other", marca);
     }
   });

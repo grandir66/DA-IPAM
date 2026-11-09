@@ -109,6 +109,8 @@ export interface DeviceInfo {
   nas_inventory?: NasInventorySnapshot;
   /** Inventario stampante (Printer-MIB SNMP): toner/materiali, contatori, vassoi, stato */
   printer_inventory?: PrinterInventorySnapshot;
+  /** Inventario UPS (UPS-MIB RFC 1628 + APC PowerNet): batteria, autonomia, carico, rete elettrica, ultimo test */
+  ups_inventory?: UpsInventorySnapshot;
   /** Linux: porte TCP/UDP in ascolto (da ss -tlnp / ss -ulnp) */
   listening_ports?: Array<{
     port: number;
@@ -164,6 +166,47 @@ export interface PrinterInventorySnapshot {
       max_raw?: number | null;
     }>;
   };
+}
+
+/**
+ * Snapshot strutturato per gli UPS (serializzato in last_device_info_json), scritto da `ups-acquisition.ts` (09/11/2026).
+ * Ogni campo null = non letto. Valori già in unità leggibili (%, minuti, V, Hz, W, °C) e stati in italiano.
+ */
+export interface UpsInventorySnapshot {
+  /** MIB che hanno risposto: `ups_mib` = RFC 1628 (standard), `apc` = PowerNet. */
+  sources: ("ups_mib" | "apc")[];
+  manufacturer?: string | null;
+  model?: string | null;
+  serial?: string | null;
+  firmware?: string | null;
+  /** Da dove esce la corrente: `rete` normale, `batteria` (rete assente), `bypass`, `spento`, altro testo se raro. */
+  output_source?: string | null;
+  /** Rete elettrica in ingresso: true presente, false assente (UPS su batteria), null non letto. */
+  rete_presente?: boolean | null;
+  battery?: {
+    /** normale | bassa | esaurita | guasta */
+    status?: string | null;
+    charge_pct?: number | null;
+    runtime_min?: number | null;
+    temperature_c?: number | null;
+    voltage_v?: number | null;
+    /** true = l'UPS chiede di sostituire la batteria */
+    replace_needed?: boolean | null;
+    /** Data dell'ultima sostituzione come la dà l'UPS (APC: mm/gg/aa) */
+    last_replaced?: string | null;
+    seconds_on_battery?: number | null;
+  };
+  input?: { voltage_v?: number | null; frequency_hz?: number | null; fail_cause?: string | null };
+  output?: { voltage_v?: number | null; frequency_hz?: number | null; load_pct?: number | null; power_w?: number | null };
+  last_test?: {
+    /** superato | avviso | errore | interrotto | in corso | mai eseguito */
+    result?: string | null;
+    detail?: string | null;
+    /** Data come la dà l'UPS (APC: mm/gg/aa); la RFC 1628 la dà solo relativa all'avvio dell'agente */
+    date?: string | null;
+  };
+  /** upsAlarmsPresent (RFC 1628) */
+  alarms?: number | null;
 }
 
 /** Snapshot strutturato per Synology / QNAP (serializzato in last_device_info_json) */
@@ -248,6 +291,13 @@ export function resolveNasKind(device: NetworkDevice): "synology" | "qnap" | nul
 export function resolvePrinterKind(device: NetworkDevice): "printer" | null {
   const c = (device.classification ?? "").toLowerCase();
   if (/stampante|printer|multifunzione|fotocopiatrice/.test(c)) return "printer";
+  return null;
+}
+
+/** UPS: classificazione, tipo o profilo (09/11/2026). Decide il walk UPS-MIB/PowerNet nella lettura SNMP. */
+export function resolveUpsKind(device: NetworkDevice): "ups" | null {
+  const c = (device.classification ?? "").toLowerCase();
+  if (c === "ups" || device.device_type === "ups" || device.product_profile === "generic_ups") return "ups";
   return null;
 }
 
@@ -1532,6 +1582,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   let winrmFailure: Error | null = null;
   const nasKind = resolveNasKind(device);
   const printerKind = resolvePrinterKind(device);
+  const upsKind = resolveUpsKind(device);
 
   // «Ha SNMP?»: protocollo SNMP o una fonte SNMP dell'apparato (binding non falliti, colonne, community_string),
   // dal motore unico (tappa 2 credenziali, T8). Mai la catena della rete.
@@ -1613,7 +1664,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH (tranne NAS: serve SSH per volumi/utenti/rete)
       const snmpComplete = result.model && result.firmware && result.serial_number;
       // MikroTik: le risorse si leggono solo in SSH. Stampante: serve il walk Printer-MIB qui sotto.
-      if (snmpComplete && hasSsh && !nasKind && !printerKind && device.vendor !== "mikrotik") {
+      if (snmpComplete && hasSsh && !nasKind && !printerKind && !upsKind && device.vendor !== "mikrotik") {
         return result;
       }
     } else {
@@ -1636,6 +1687,16 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       result = { ...result, ...printerSnmp };
       if (result.printer_inventory?.snmp?.model && !result.model) result.model = result.printer_inventory.snmp.model;
       if (result.printer_inventory?.snmp?.serial && !result.serial_number) result.serial_number = result.printer_inventory.snmp.serial;
+    }
+
+    // UPS: walk UPS-MIB (RFC 1628) + APC PowerNet — batteria, autonomia, carico, rete elettrica, ultimo test.
+    if (upsKind) {
+      const { getUpsSnmpInventory } = await import("./ups-acquisition");
+      const ups = await getUpsSnmpInventory(device);
+      result = { ...result, ...ups };
+      if (result.ups_inventory?.model && !result.model) result.model = result.ups_inventory.model;
+      if (result.ups_inventory?.serial && !result.serial_number) result.serial_number = result.ups_inventory.serial;
+      if (result.ups_inventory?.firmware && !result.firmware) result.firmware = result.ups_inventory.firmware;
     }
 
     // Ultimo tentativo SNMP v2c: walk ENTITY-MIB seriali (molti switch/router espongono il seriale solo su indici >2)

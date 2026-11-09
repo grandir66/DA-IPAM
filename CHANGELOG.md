@@ -4,6 +4,22 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Periferiche col loro tipo, marche dei firewall, stato degli UPS
+
+Riccardo (09/11): stampanti e UPS finivano fra gli switch e il giro ne leggeva porte e MAC; un FortiGate o un Palo Alto diventava «other»; DA-IPAM riconosceva un UPS ma non ne leggeva lo stato.
+
+### Aggiunto
+- **Tipi d'apparato `stampante`, `ups`, `voip`, `telecamera`, `iot`** (scelta di Riccardo: un tipo per ciascuno). Prima ripiegavano su `switch`. Le righe già create si correggono da sole all'apertura del tenant (segno `device_type_v22`, elenco per nome nel log prima di scrivere); uno switch vero senza profilo non si muove.
+- **Marche di firewall Fortinet, Palo Alto, Check Point, WatchGuard, SonicWall**, con il loro profilo prodotto (`fortinet_firewall`, …): l'apparato è sempre `firewall` con la sua marca, come Stormshield. Si riconoscono da OUI, produttore SNMP e stringhe dell'host; la lettura ARP usa SNMP come per Stormshield. Lettura SNMP dedicata di modello e seriale: più avanti.
+- **Vista «UPS» nella scheda dell'apparato**: rete elettrica, batteria, autonomia stimata, carico, ultimo test e allarmi, letti via SNMP dalla UPS-MIB (RFC 1628) e dalla PowerNet di APC (dove rispondono tutte e due vince APC). Soglie d'attenzione: batteria ≤ 30%, autonomia < 10 minuti, carico ≥ 80%.
+- **L'apparato nasce dalla classificazione**: classificando a mano un oggetto che non è ancora apparato come switch, router, firewall, access point, stampante o UPS, DA-IPAM crea da solo il lato tecnico, se sull'host c'è già una credenziale SNMP provata con successo. Le scelte sono quelle di «Rendi apparato»; senza credenziale provata non succede niente e l'oggetto resta da rendere apparato a mano. Nella modifica in blocco il messaggio dice quanti apparati sono nati.
+
+### Corretto
+- **OID UPS sbagliati** nel profilo SNMP: l'autonomia RFC 1628 si leggeva dalla tensione della batteria (`.2.5`) e la carica dalla corrente (`.2.6`); quella APC dall'indicatore di sostituzione. Ora `.2.3`, `.2.4` e `upsAdvBatteryRunTimeRemaining`.
+
+### Cambiato
+- **La tabella `network_devices` si ricostruisce una volta** su ogni tenant perché il CHECK accetti i valori nuovi (SQLite non altera un CHECK). Parte dalla definizione attuale, così ogni colonna resta; porte, MAC e binding tengono i loro apparati; se qualcosa non torna la tabella resta com'era e si riprova al prossimo avvio.
+
 ## [Non rilasciato] — 2026-11-09 · Pagina «Estrazione apparati» sul PC del tecnico
 
 Riccardo (09/11): «il prompt dovrebbe essere visibile nella UI dell'installazione del tecnico».

@@ -98,8 +98,10 @@ export const UPS_MIB_OIDS = {
   upsIdentModel: "1.3.6.1.2.1.33.1.1.2.0",
   upsIdentUPSSoftwareVersion: "1.3.6.1.2.1.33.1.1.3.0",
   upsBatteryStatus: "1.3.6.1.2.1.33.1.2.1.0",
-  upsEstimatedMinutesRemaining: "1.3.6.1.2.1.33.1.2.5.0",
-  upsEstimatedChargeRemaining: "1.3.6.1.2.1.33.1.2.6.0",
+  // RFC 1628, gruppo upsBattery: .3 minuti residui, .4 carica %. Fino al 09/11/2026 qui c'erano .5 e .6 (tensione e
+  // corrente della batteria): il profilo leggeva l'autonomia dal posto sbagliato.
+  upsEstimatedMinutesRemaining: "1.3.6.1.2.1.33.1.2.3.0",
+  upsEstimatedChargeRemaining: "1.3.6.1.2.1.33.1.2.4.0",
 } as const;
 
 /**
@@ -706,7 +708,8 @@ export const SNMP_VENDOR_PROFILES: SnmpVendorProfile[] = [
       batteryStatus: "1.3.6.1.4.1.318.1.1.1.2.1.1.0",
       batteryCapacity: "1.3.6.1.4.1.318.1.1.1.2.2.1.0",
       batteryTemperature: "1.3.6.1.4.1.318.1.1.1.2.2.2.0",
-      batteryRuntime: "1.3.6.1.4.1.318.1.1.1.2.2.4.0",
+      // upsAdvBatteryRunTimeRemaining (TimeTicks). Il .2.2.4 è upsAdvBatteryReplaceIndicator (corretto il 09/11/2026).
+      batteryRuntime: "1.3.6.1.4.1.318.1.1.1.2.2.3.0",
       outputLoad: "1.3.6.1.4.1.318.1.1.1.4.2.3.0",
     },
   },

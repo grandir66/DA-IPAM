@@ -19,6 +19,11 @@ export const MARCHE_ROUTER = [
   { value: "ubiquiti", label: "Ubiquiti" },
   { value: "cisco", label: "Cisco" },
   { value: "stormshield", label: "Stormshield" },
+  { value: "fortinet", label: "Fortinet" },
+  { value: "paloalto", label: "Palo Alto Networks" },
+  { value: "checkpoint", label: "Check Point" },
+  { value: "watchguard", label: "WatchGuard" },
+  { value: "sonicwall", label: "SonicWall" },
   { value: "other", label: "Altro" },
 ] as const;
 

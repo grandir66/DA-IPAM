@@ -45,6 +45,7 @@ import { canonicalizza, type Canonica } from "./classification/canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
 import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
+import { convertiDeviceTypeV22, SEGNO_DEVICE_TYPE_V22 } from "./devices/migra-device-type-v22";
 import { convertiStormshieldFirewall, SEGNO_STORMSHIELD_FIREWALL } from "./devices/migra-stormshield-firewall";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -2814,6 +2815,14 @@ export function getTenantDb(tenantCode: string): Database.Database {
     if (esito.eseguita && esito.convertiti > 0) console.info(`[db-tenant] ${tenantCode}: ${SEGNO_STORMSHIELD_FIREWALL}, corretti ${esito.convertiti} apparati`);
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_STORMSHIELD_FIREWALL} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // Periferiche con un tipo proprio (09/11/2026): stampanti, UPS, VoIP, telecamere e IoT non sono più `switch`. Dopo la
+  // ricostruzione del CHECK (`migraCredenzialiWmi`); elenco per nome nel log prima di scrivere.
+  try {
+    const esito = convertiDeviceTypeV22(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (esito.eseguita) console.info(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22}, corretti ${esito.convertiti} apparati`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
   }
 
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
@@ -8192,12 +8201,13 @@ function mapClassificationToInventoryCategoria(classification: string | null, de
   if (dt === "router") return "Router";
   if (dt === "firewall") return "Firewall";
   if (dt === "hypervisor") return "Server";
+  if (dt === "stampante") return "Stampante";
   if (dt === "switch") {
     // device_type=switch può nascondere un server/NAS: usa vendor come hint
     if (["linux", "windows"].includes(v)) return "Server";
     if (["proxmox", "vmware"].includes(v)) return "Server";
     if (["synology", "qnap"].includes(v)) return "NAS";
-    if (v === "stormshield") return "Firewall";
+    if (["stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall"].includes(v)) return "Firewall";
     // Solo qui è un vero switch (vendor di rete: cisco, hp, ubiquiti, ecc.)
     return "Switch";
   }

@@ -68,6 +68,174 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
 };
 
 /**
+ * Tipi e marche ammessi da `network_devices` (09/11/2026, Riccardo): stampante, UPS, VoIP, telecamera e IoT ripiegavano su
+ * `switch` e il giro ne leggeva porte e MAC; FortiGate, Palo Alto & c. finivano `other`. Un CHECK di SQLite non si altera:
+ * `migraCheckNetworkDevices` ricostruisce la tabella quando la CREATE salvata non ha ancora questi valori.
+ */
+export const DEVICE_TYPES_AMMESSI: readonly string[] = [
+  "router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot",
+];
+export const VENDOR_AMMESSI: readonly string[] = [
+  "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall",
+  "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other", "apple",
+];
+const elencoSql = (valori: readonly string[]): string => valori.map((v) => `'${v}'`).join(", ");
+export const DEVICE_TYPE_CHECK_SQL = `device_type IN (${elencoSql(DEVICE_TYPES_AMMESSI)})`;
+export const VENDOR_CHECK_SQL = `vendor IN (${elencoSql(VENDOR_AMMESSI)})`;
+
+/** DDL di `network_devices` nello schema dei tenant. Le colonne aggiunte poi per ALTER (`host_id`, `campi_da_rivedere`) no. */
+export function ddlNetworkDevices(nome: string, seNonEsiste = false): string {
+  return `CREATE TABLE ${seNonEsiste ? "IF NOT EXISTS " : ""}${nome} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  device_type TEXT NOT NULL CHECK(${DEVICE_TYPE_CHECK_SQL}),
+  vendor TEXT NOT NULL CHECK(${VENDOR_CHECK_SQL}),
+  vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
+  protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+  username TEXT,
+  encrypted_password TEXT,
+  community_string TEXT,
+  api_token TEXT,
+  api_url TEXT,
+  port INTEGER DEFAULT 22,
+  enabled INTEGER DEFAULT 1,
+  classification TEXT,
+  server_roles TEXT,
+  -- 1 = classificazione scelta a mano: scansioni e attribuzione non la toccano (tappa 5, 21/10).
+  classification_manual INTEGER NOT NULL DEFAULT 0,
+  sysname TEXT,
+  sysdescr TEXT,
+  model TEXT,
+  firmware TEXT,
+  serial_number TEXT,
+  part_number TEXT,
+  last_info_update TEXT,
+  last_device_info_json TEXT,
+  stp_info TEXT,
+  last_proxmox_scan_at TEXT,
+  last_proxmox_scan_result TEXT,
+  scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux', 'macos')),
+  product_profile TEXT,
+  use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
+  physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  location_set_by TEXT,
+  location_set_at TEXT,
+  topology_role TEXT,
+  topology_hidden INTEGER NOT NULL DEFAULT 0,
+  controller_mac TEXT,
+  uplink_mac TEXT,
+  uplink_remote_port INTEGER,
+  uplink_seen_at TEXT,
+  -- Versione SNMP a community ('1' | '2c'). NULL = non rilevata: ogni punto parla come prima
+  -- (src/lib/protocols/snmp-sessione.ts). snmp_version_fissata = 1: scelta a mano, la discovery non la tocca.
+  snmp_version TEXT CHECK(snmp_version IN ('1', '2c')),
+  snmp_version_fissata INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`;
+}
+
+const RE_TABELLA_ND = /^CREATE TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?)network_devices\1\s*\(/i;
+const RE_CHECK_DEVICE_TYPE = /(device_type\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*device_type\s+IN\s*\()([^)]*)(\))/i;
+const RE_CHECK_VENDOR = /(vendor\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*vendor\s+IN\s*\()([^)]*)(\))/i;
+
+/** Valori dell'elenco di un CHECK `x IN ('a', 'b')`; null se l'elenco non si riconosce. */
+function valoriDelCheck(sql: string, re: RegExp): string[] | null {
+  const m = sql.match(re);
+  return m ? [...m[2].matchAll(/'([^']*)'/g)].map((v) => v[1]) : null;
+}
+
+/**
+ * La definizione nuova di `network_devices` dalla attuale: gli elenchi di `device_type` e `vendor` estesi (mai ridotti:
+ * un valore che c'è resta) e il nome della tabella d'appoggio. Errore se definizione o CHECK non si riconoscono.
+ * Esportata per le prove.
+ */
+export function definizioneNetworkDevicesTipiNuovi(sqlAttuale: string, nomeNuovo: string): string {
+  if (!RE_TABELLA_ND.test(sqlAttuale)) throw new Error("network_devices: definizione non riconosciuta, ricostruzione non eseguita");
+  let sql = sqlAttuale;
+  for (const [re, ammessi, cosa] of [[RE_CHECK_DEVICE_TYPE, DEVICE_TYPES_AMMESSI, "device_type"], [RE_CHECK_VENDOR, VENDOR_AMMESSI, "vendor"]] as const) {
+    const attuali = valoriDelCheck(sql, re);
+    if (!attuali) throw new Error(`network_devices: CHECK di ${cosa} non riconosciuto, ricostruzione non eseguita`);
+    const tutti = [...attuali, ...ammessi.filter((v) => !attuali.includes(v))];
+    sql = sql.replace(re, `$1${elencoSql(tutti)}$3`);
+  }
+  return sql.replace(RE_TABELLA_ND, `CREATE TABLE ${nomeNuovo} (`);
+}
+
+/**
+ * Ricostruisce `network_devices` perché i CHECK di `device_type` e `vendor` accettino i valori nuovi (09/11/2026). Stessa
+ * forma di `migraAppleMacos`: si parte dalla definizione **attuale** in sqlite_master e si cambiano solo i due elenchi,
+ * così ogni colonna resta (anche quelle venute per ALTER: `host_id`, `campi_da_rivedere`, quelle del path legacy).
+ * foreign_keys spento prima della transazione (le figlie — porte, MAC, binding, … — tengono i loro `device_id`: gli id si
+ * copiano); nella transazione tabella nuova, copia, DROP, RENAME, indici/trigger/viste ricreati, contatore AUTOINCREMENT
+ * conservato, conteggio e foreign_key_check (se non tornano, ROLLBACK). Se qualcosa non riesce la tabella resta com'era e
+ * l'errore sale al chiamante. true = ricostruita, false = niente da fare.
+ */
+export function migraCheckNetworkDevices(db: Database.Database): boolean {
+  const leggi = (): string | null =>
+    (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'network_devices'").get() as { sql?: string } | undefined)?.sql ?? null;
+  const daFare = (sql: string | null): boolean => {
+    if (!sql) return false;
+    const tipi = valoriDelCheck(sql, RE_CHECK_DEVICE_TYPE);
+    const marche = valoriDelCheck(sql, RE_CHECK_VENDOR);
+    return !tipi || !marche || DEVICE_TYPES_AMMESSI.some((v) => !tipi.includes(v)) || VENDOR_AMMESSI.some((v) => !marche.includes(v));
+  };
+  if (!daFare(leggi())) return false;
+
+  const NUOVA = "network_devices__tipi_new";
+  const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  const violazioni = (): number => (db.prepare("PRAGMA foreign_key_check").all() as unknown[]).length;
+  let fatta = false;
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      // Si riguarda dentro la transazione: un'altra connessione può aver già ricostruito.
+      const sql = leggi();
+      if (!daFare(sql)) return;
+      const sqlNuova = definizioneNetworkDevicesTipiNuovi(sql!, NUOVA);
+      const collegati = db
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = 'network_devices' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name")
+        .all() as Array<{ sql: string }>;
+      const viste = db
+        .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'view' AND sql LIKE '%network_devices%'")
+        .all() as Array<{ name: string; sql: string }>;
+      const colonne = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).map((c) => `"${c.name}"`).join(", ");
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'network_devices'").get() as { seq: number } | undefined;
+      const violazioniPrima = violazioni();
+      const prima = conta("network_devices");
+      for (const v of viste) db.exec(`DROP VIEW "${v.name}"`);
+      db.exec(`DROP TABLE IF EXISTS ${NUOVA}`);
+      db.exec(sqlNuova);
+      db.exec(`INSERT INTO ${NUOVA} (${colonne}) SELECT ${colonne} FROM network_devices`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?").run(seq.seq, NUOVA);
+        if (upd.changes === 0) db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(NUOVA, seq.seq);
+      }
+      db.exec("DROP TABLE network_devices");
+      db.exec(`ALTER TABLE ${NUOVA} RENAME TO network_devices`);
+      for (const c of collegati) db.exec(c.sql);
+      for (const v of viste) db.exec(v.sql);
+      const dopo = conta("network_devices");
+      if (dopo !== prima) throw new Error(`network_devices: ${prima} righe prima, ${dopo} dopo: ricostruzione annullata`);
+      const violazioniDopo = violazioni();
+      if (violazioniDopo > violazioniPrima) {
+        throw new Error(`network_devices: foreign_key_check da ${violazioniPrima} a ${violazioniDopo} violazioni: ricostruzione annullata`);
+      }
+      fatta = true;
+    }).immediate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return fatta;
+}
+
+/**
  * L'esito dell'ultimo tentativo di accesso Windows per host, voce e strada (revisione finale del piano 2026-11-04).
  * Una riga in `host_credentials` mette la voce fra i candidati dell'host, e il motore non la crea per un esito che non è un
  * fallimento: un host con le porte chiuse restava invisibile (`.207` del 72729, «Nessun host provato» dopo una scansione).
@@ -287,6 +455,13 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     } catch (e) {
       console.error(`${chi}: migrazione ${tabella} protocollo wmi fallita:`, e);
     }
+  }
+  // Dopo `campi_da_rivedere` (sopra): la ricostruzione la porta con sé. Un guasto lascia la tabella com'era e chi scrive
+  // un tipo nuovo riceve l'errore del CHECK; al prossimo avvio si riprova.
+  try {
+    if (migraCheckNetworkDevices(db)) console.info(`${chi}: network_devices CHECK aggiornato (tipi e marche nuovi)`);
+  } catch (e) {
+    console.error(`${chi}: migrazione network_devices tipi/marche fallita:`, e);
   }
 }
 
@@ -1175,58 +1350,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS network_devices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  host TEXT NOT NULL,
-  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor', 'access_point', 'nas', 'server')),
-  vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other', 'apple')),
-  vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
-  protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
-  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
-  snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
-  username TEXT,
-  encrypted_password TEXT,
-  community_string TEXT,
-  api_token TEXT,
-  api_url TEXT,
-  port INTEGER DEFAULT 22,
-  enabled INTEGER DEFAULT 1,
-  classification TEXT,
-  server_roles TEXT,
-  -- 1 = classificazione scelta a mano: scansioni e attribuzione non la toccano (tappa 5, 21/10).
-  classification_manual INTEGER NOT NULL DEFAULT 0,
-  sysname TEXT,
-  sysdescr TEXT,
-  model TEXT,
-  firmware TEXT,
-  serial_number TEXT,
-  part_number TEXT,
-  last_info_update TEXT,
-  last_device_info_json TEXT,
-  stp_info TEXT,
-  last_proxmox_scan_at TEXT,
-  last_proxmox_scan_result TEXT,
-  scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux', 'macos')),
-  product_profile TEXT,
-  use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
-  physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
-  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
-  location_set_by TEXT,
-  location_set_at TEXT,
-  topology_role TEXT,
-  topology_hidden INTEGER NOT NULL DEFAULT 0,
-  controller_mac TEXT,
-  uplink_mac TEXT,
-  uplink_remote_port INTEGER,
-  uplink_seen_at TEXT,
-  -- Versione SNMP a community ('1' | '2c'). NULL = non rilevata: ogni punto parla come prima
-  -- (src/lib/protocols/snmp-sessione.ts). snmp_version_fissata = 1: scelta a mano, la discovery non la tocca.
-  snmp_version TEXT CHECK(snmp_version IN ('1', '2c')),
-  snmp_version_fissata INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
+${ddlNetworkDevices("network_devices", true)};
 
 -- Identità fisica di un device. Aggrega N network_devices/hosts visibili in subnet diverse
 -- ma che rappresentano lo stesso chassis. Anchor: serial_number > primary_mac > sys_object_id+sysname > sysname.

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getHostById, updateHost, deleteHost, getDb } from "@/lib/db";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { creaApparatoDaClassificazione } from "@/lib/devices/apparato-da-classificazione";
 import { HostUpdateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -40,11 +41,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!host) {
       return NextResponse.json({ error: "Host non trovato" }, { status: 404 });
     }
+    // Classificato con un tipo che si legge in SNMP e con una credenziale SNMP validata: nasce anche l'apparato (09/11/2026).
+    let apparato: ReturnType<typeof creaApparatoDaClassificazione> | null = null;
     if (classification !== undefined && classification !== "") {
       scriviClassificazione(getDb(), { hostId }, classification, { manuale: true });
+      apparato = creaApparatoDaClassificazione(hostId);
     }
     const full = getHostById(hostId);
-    return NextResponse.json(full ?? host);
+    return NextResponse.json({
+      ...(full ?? host),
+      ...(apparato?.creato ? { apparato_creato: { id: apparato.deviceId, nome: apparato.nome } } : {}),
+    });
     } catch (error) {
       console.error("Error updating host:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento dell'host" }, { status: 500 });

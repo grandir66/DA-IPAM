@@ -224,6 +224,12 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
       return createHpClient(device, creds);
     case "omada":
       return createOmadaClient(device);
+    // Firewall delle altre marche (09/11/2026): CLI proprietarie come Stormshield, stessa strategia (SNMP se c'è).
+    case "fortinet":
+    case "paloalto":
+    case "checkpoint":
+    case "watchguard":
+    case "sonicwall":
     case "stormshield": {
       // Stormshield SNS ha CLI custom (NS-BSD) e accetta solo `keyboard-interactive`.
       // Strategia: se c'è community/credenziale SNMP (binding v2 incluso), prendi SNMP

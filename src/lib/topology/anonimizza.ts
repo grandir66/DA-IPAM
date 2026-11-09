@@ -21,6 +21,7 @@ const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
 const MAC_ANY = /^([0-9a-f]{2}([:-])[0-9a-f]{2}(\2[0-9a-f]{2}){4}|[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}|[0-9a-f]{12})$/i;
 const SIGLA: Record<string, string> = {
   router: "RTR", switch: "SW", access_point: "AP", firewall: "FW", hypervisor: "HV", nas: "NAS", server: "SRV",
+  stampante: "PRN", ups: "UPS", voip: "VOIP", telecamera: "CAM", iot: "IOT",
 };
 
 /**
@@ -120,8 +121,8 @@ const contains = (o: Cidr, ip: number): boolean => ip >= o.base && ip < o.base +
  * di `server_windows`, ancora presente nei dati.
  */
 export const VOCABOLARIO = {
-  vendor: ["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"],
-  device_type: ["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"],
+  vendor: ["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"],
+  device_type: ["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot"],
   classification: [...DEVICE_CLASSIFICATIONS, ...SLUG_VECCHI, "windows"] as string[],
   status: ["online", "offline", "unknown"],
   protocol: ["lldp", "cdp", "mndp", "unknown"],

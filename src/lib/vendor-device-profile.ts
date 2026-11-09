@@ -74,6 +74,48 @@ const PROFILES: Record<NetworkDevice["vendor"], VendorDeviceProfile> = {
     credentialSshFilter: "ssh_api",
     shortHint: "SSH e SNMP (firewall Stormshield).",
   },
+  // Firewall delle altre marche (09/11/2026): nessun collector dedicato ancora, la lettura che c'è è SNMP (interfacce,
+  // ARP, tabelle standard). SSH resta ammesso per quando arriverà il collector.
+  fortinet: {
+    allowedProtocols: SSH_SNMP,
+    defaultProtocol: "snmp_v2",
+    allowedScanTargets: ["none"],
+    defaultScanTarget: "none",
+    credentialSshFilter: "ssh_api",
+    shortHint: "SNMP e SSH (firewall FortiGate).",
+  },
+  paloalto: {
+    allowedProtocols: SSH_SNMP,
+    defaultProtocol: "snmp_v2",
+    allowedScanTargets: ["none"],
+    defaultScanTarget: "none",
+    credentialSshFilter: "ssh_api",
+    shortHint: "SNMP e SSH (firewall Palo Alto PAN-OS).",
+  },
+  checkpoint: {
+    allowedProtocols: SSH_SNMP,
+    defaultProtocol: "snmp_v2",
+    allowedScanTargets: ["none"],
+    defaultScanTarget: "none",
+    credentialSshFilter: "ssh_api",
+    shortHint: "SNMP e SSH (gateway Check Point Gaia).",
+  },
+  watchguard: {
+    allowedProtocols: SSH_SNMP,
+    defaultProtocol: "snmp_v2",
+    allowedScanTargets: ["none"],
+    defaultScanTarget: "none",
+    credentialSshFilter: "ssh_api",
+    shortHint: "SNMP e SSH sulla porta 4118 (Firebox WatchGuard).",
+  },
+  sonicwall: {
+    allowedProtocols: SSH_SNMP,
+    defaultProtocol: "snmp_v2",
+    allowedScanTargets: ["none"],
+    defaultScanTarget: "none",
+    credentialSshFilter: "ssh_api",
+    shortHint: "SNMP e SSH (firewall SonicWall).",
+  },
   /** PROXMOX: SSH, API */
   proxmox: {
     allowedProtocols: ["ssh", "api"],

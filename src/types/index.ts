@@ -255,9 +255,9 @@ export interface NetworkDevice {
   id: number;
   name: string;
   host: string;
-  device_type: "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server";
+  device_type: "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server" | "stampante" | "ups" | "voip" | "telecamera" | "iot";
   classification: string | null;
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "fortinet" | "paloalto" | "checkpoint" | "watchguard" | "sonicwall" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   /** Versione SNMP a community: NULL = non rilevata, ogni punto parla come prima (snmp-sessione.ts). */
@@ -881,8 +881,8 @@ export interface HostUpdate {
 export interface NetworkDeviceInput {
   name: string;
   host: string;
-  device_type: "router" | "switch" | "firewall";
-  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
+  device_type: "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server" | "stampante" | "ups" | "voip" | "telecamera" | "iot";
+  vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "fortinet" | "paloalto" | "checkpoint" | "watchguard" | "sonicwall" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype?: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   credential_id?: number | null;

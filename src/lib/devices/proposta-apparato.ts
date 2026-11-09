@@ -75,15 +75,17 @@ export interface PropostaApparato {
 
 /** Valori ammessi da `network_devices.vendor` (più `apple`, che la tappa 1b aggiunge alla tabella). */
 const PIATTAFORME = new Set([
-  "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware",
-  "linux", "windows", "synology", "qnap", "apple", "other",
+  "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard",
+  "sonicwall", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other",
 ]);
 
 /** Piattaforme software che girano su Linux: vincono sulla famiglia «linux». */
 const PIATTAFORME_SU_LINUX = new Set(["proxmox", "vmware", "synology", "qnap"]);
 
 /** Marche di rete: vincono sulla famiglia «linux» solo se l'host è un apparato di rete. */
-const MARCHE_DI_RETE = new Set(["mikrotik", "ubiquiti", "cisco", "hp", "stormshield", "omada"]);
+const MARCHE_DI_RETE = new Set([
+  "mikrotik", "ubiquiti", "cisco", "hp", "stormshield", "omada", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall",
+]);
 const CLASSI_DI_RETE = new Set(["switch", "router", "firewall", "access_point"]);
 
 /** Marche di hardware che dicono la piattaforma (senza famiglia SO dedotta). */

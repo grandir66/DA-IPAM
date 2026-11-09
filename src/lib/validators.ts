@@ -121,14 +121,15 @@ const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
-  device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"]),
+  // Stesso elenco del CHECK di network_devices (DEVICE_TYPES_AMMESSI, db-tenant-schema.ts): periferiche dal 09/11/2026.
+  device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot"]),
   // Solo valori dell'elenco (tappa 1, 15/10): «printer» del classificatore passava
   // e l'apparato spariva dalle liste per classificazione.
   classification: z.preprocess(
     emptyToUndefined,
     classificazioneCanonicaEnum("Classificazione non valida: scegline una dall'elenco").optional().nullable()
   ),
-  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
+  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
   /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */
   product_profile: z.preprocess(emptyToUndefined, productProfileEnum.optional().nullable()),

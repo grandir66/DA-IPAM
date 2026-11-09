@@ -34,6 +34,11 @@ export const PRODUCT_PROFILE_IDS = [
   "omada_access_point",
   "omada_other",
   "stormshield_firewall",
+  "fortinet_firewall",
+  "paloalto_firewall",
+  "checkpoint_firewall",
+  "watchguard_firewall",
+  "sonicwall_firewall",
   "cisco_switch",
   "cisco_router",
   "cisco_telefono",
@@ -79,6 +84,11 @@ export const PRODUCT_PROFILE_LABELS: Record<ProductProfileId, string> = {
   omada_access_point: "Access Point",
   omada_other: "Altro",
   stormshield_firewall: "Firewall",
+  fortinet_firewall: "FortiGate",
+  paloalto_firewall: "Firewall PAN-OS",
+  checkpoint_firewall: "Firewall Gaia",
+  watchguard_firewall: "Firebox",
+  sonicwall_firewall: "Firewall SonicOS",
   cisco_switch: "Switch",
   cisco_router: "Router",
   cisco_telefono: "Telefono",
@@ -106,6 +116,11 @@ export const PRODUCT_PROFILES_BY_VENDOR: Record<NetworkDevice["vendor"], readonl
   hp: ["hp_switch_procurve", "hp_switch_comware", "hp_switch_arubaos", "hp_server_ilo", "hp_stampante"],
   omada: ["omada_switch", "omada_access_point", "omada_other"],
   stormshield: ["stormshield_firewall"],
+  fortinet: ["fortinet_firewall"],
+  paloalto: ["paloalto_firewall"],
+  checkpoint: ["checkpoint_firewall"],
+  watchguard: ["watchguard_firewall"],
+  sonicwall: ["sonicwall_firewall"],
   cisco: ["cisco_switch", "cisco_router", "cisco_telefono"],
   vmware: ["vmware_vsphere"],
   apple: ["macos_notebook", "macos_desktop", "macos_server"],
@@ -188,10 +203,59 @@ export function isValidProductProfileForVendor(
   return allowed.has(profile as ProductProfileId);
 }
 
+/** Profili dei firewall: ognuno è un apparato `firewall`, qualunque classificazione abbia (Stormshield 08/11, le altre marche 09/11). */
+export const PROFILI_FIREWALL: ReadonlySet<ProductProfileId> = new Set<ProductProfileId>([
+  "stormshield_firewall",
+  "fortinet_firewall",
+  "paloalto_firewall",
+  "checkpoint_firewall",
+  "watchguard_firewall",
+  "sonicwall_firewall",
+]);
+
+/** Marche dei firewall → il loro profilo (la classificazione «firewall» su queste piattaforme). */
+const FIREWALL_DELLA_MARCA: Partial<Record<NetworkDevice["vendor"], ProductProfileId>> = {
+  stormshield: "stormshield_firewall",
+  fortinet: "fortinet_firewall",
+  paloalto: "paloalto_firewall",
+  checkpoint: "checkpoint_firewall",
+  watchguard: "watchguard_firewall",
+  sonicwall: "sonicwall_firewall",
+};
+
 /**
- * Suggerisce device_type in base al profilo (router/switch/hypervisor).
+ * Periferiche con un tipo proprio (Riccardo, 09/11/2026): prima ripiegavano su `switch` e il giro ne leggeva porte e MAC.
+ */
+const TIPO_DEL_PROFILO_PERIFERICA: Partial<Record<ProductProfileId, NetworkDevice["device_type"]>> = {
+  hp_stampante: "stampante",
+  generic_stampante: "stampante",
+  generic_ups: "ups",
+  generic_voip: "voip",
+  cisco_telefono: "voip",
+  generic_cam: "telecamera",
+  generic_iot: "iot",
+};
+
+/** Classificazioni delle periferiche → device_type. */
+export const TIPO_DELLA_CLASSIFICAZIONE_PERIFERICA: Readonly<Record<string, NetworkDevice["device_type"]>> = {
+  stampante: "stampante",
+  multifunzione: "stampante",
+  scanner: "stampante",
+  ups: "ups",
+  voip: "voip",
+  telecamera: "telecamera",
+  iot: "iot",
+  sensore: "iot",
+  domotica: "iot",
+};
+
+/**
+ * Suggerisce device_type in base al profilo (router/hypervisor/access point/firewall/periferiche; il resto `switch`).
  */
 export function suggestDeviceTypeFromProductProfile(profile: ProductProfileId): NetworkDevice["device_type"] {
+  if (PROFILI_FIREWALL.has(profile)) return "firewall";
+  const periferica = TIPO_DEL_PROFILO_PERIFERICA[profile];
+  if (periferica) return periferica;
   if (
     profile === "mikrotik_router" ||
     profile === "qnap_router" ||
@@ -232,8 +296,8 @@ export function suggestProductProfileForClassification(
     const mapped = byVendor[vendor];
     if (mapped) return mapped;
   }
-  if (classification === "firewall" && vendor === "stormshield") {
-    return "stormshield_firewall";
+  if (classification === "firewall" && FIREWALL_DELLA_MARCA[vendor]) {
+    return FIREWALL_DELLA_MARCA[vendor]!;
   }
   if (vendor === "apple") {
     return getDefaultProductProfileForVendor("apple", classification);
@@ -248,13 +312,17 @@ export function resolveDeviceTypeForCreate(input: {
   classification?: string | null;
 }): NetworkDevice["device_type"] {
   // Ogni Stormshield è un firewall (Riccardo, 08/11): sull'hub SNS EVA2 era «server» e restava fuori da scheda e giro.
-  if (input.product_profile === "stormshield_firewall") return "firewall";
+  // Dal 09/11 vale per ogni marca di firewall (FortiGate, Palo Alto, Check Point, WatchGuard, SonicWall).
+  if (PROFILI_FIREWALL.has(input.product_profile)) return "firewall";
   if (input.classification === "router") return "router";
   if (input.classification === "firewall") return "firewall";
   if (input.classification === "hypervisor") return "hypervisor";
   if (input.classification === "switch") return "switch";
   if (input.classification === "access_point") return "access_point";
   if (input.classification === "nas" || input.classification === "storage") return "nas";
+  // Periferiche: un tipo proprio, mai più `switch` (09/11/2026).
+  const periferica = input.classification ? TIPO_DELLA_CLASSIFICAZIONE_PERIFERICA[input.classification] : undefined;
+  if (periferica) return periferica;
   if (
     input.classification === "server" ||
     input.classification === "server_linux" ||
@@ -555,6 +623,36 @@ export const PRODUCT_PROFILE_KNOWLEDGE: Record<ProductProfileId, ProductProfileM
     credentialHint: "Admin Stormshield o API; SNMP limitato a metriche.",
     notes: "CLI proprietaria; per export coerenti usare strumenti ufficiali o API documentata.",
   },
+  fortinet_firewall: {
+    intent: "Firewall Fortinet FortiGate (FortiOS): policy, VPN IPsec/SSL, SD-WAN, HA, interfacce.",
+    acquisitionPriority: ["ssh", "snmp", "https"],
+    credentialHint: "Utente admin in sola lettura (profilo read-only) per SSH; SNMP v2c/v3; token REST API su HTTPS.",
+    notes: "FortiOS espone CLI coerente e REST API documentata; VDOM: verificare in quale contesto si legge.",
+  },
+  paloalto_firewall: {
+    intent: "Firewall Palo Alto Networks (PAN-OS): policy, zone, VPN, HA, interfacce.",
+    acquisitionPriority: ["https", "ssh", "snmp"],
+    credentialHint: "Chiave API (XML/REST) di un amministratore in sola lettura; SSH CLI; SNMP v2c/v3.",
+    notes: "Con Panorama la configurazione vera sta lì: il singolo firewall può avere solo parte delle policy.",
+  },
+  checkpoint_firewall: {
+    intent: "Firewall Check Point (Gaia): gateway di sicurezza, cluster, interfacce, VPN.",
+    acquisitionPriority: ["ssh", "snmp", "https"],
+    credentialHint: "Utente Gaia (clish) in sola lettura per SSH; SNMP v2c/v3; Management API sul server di gestione.",
+    notes: "Le policy stanno nel server di gestione (SmartConsole), non sul gateway: sul gateway restano sistema e interfacce.",
+  },
+  watchguard_firewall: {
+    intent: "Firewall WatchGuard Firebox (Fireware): policy, VPN, interfacce, HA.",
+    acquisitionPriority: ["snmp", "ssh", "https"],
+    credentialHint: "SNMP v2c/v3; utente status (sola lettura) per CLI SSH sulla porta 4118.",
+    notes: "La CLI SSH ascolta sulla 4118, non sulla 22; la Web UI sulla 8080.",
+  },
+  sonicwall_firewall: {
+    intent: "Firewall SonicWall (SonicOS): policy, VPN, zone, interfacce, HA.",
+    acquisitionPriority: ["ssh", "snmp", "https"],
+    credentialHint: "Utente amministratore in sola lettura per SSH; SNMP v2c/v3; SonicOS API su HTTPS se abilitata.",
+    notes: "SonicOS 7 ha API REST; le versioni 6.x solo CLI e SNMP.",
+  },
   cisco_switch: {
     intent: "Switch Cisco IOS/IOS‑XE/NX‑OS (layer access/distribution): VLAN, trunk, STP, port‑channel.",
     acquisitionPriority: ["ssh", "snmp"],
@@ -709,6 +807,11 @@ export const PRODUCT_PROFILE_INVENTORY_HINTS: Record<
     summary: "Policy, oggetti, VPN, HA, log filtrati",
     specificFields: ["rules", "objects", "vpn", "ha", "logs"],
   },
+  fortinet_firewall: { summary: "Policy, VPN, SD-WAN, HA, interfacce", specificFields: ["rules", "vpn", "sdwan", "ha", "interfaces"] },
+  paloalto_firewall: { summary: "Policy, zone, VPN, HA, interfacce", specificFields: ["rules", "zones", "vpn", "ha", "interfaces"] },
+  checkpoint_firewall: { summary: "Sistema, cluster, interfacce, VPN", specificFields: ["system", "cluster", "interfaces", "vpn"] },
+  watchguard_firewall: { summary: "Policy, VPN, interfacce, HA", specificFields: ["rules", "vpn", "interfaces", "ha"] },
+  sonicwall_firewall: { summary: "Policy, VPN, zone, interfacce, HA", specificFields: ["rules", "vpn", "zones", "interfaces", "ha"] },
   cisco_switch: {
     summary: "Porte, VLAN, STP, EtherChannel, MAC, PoE",
     specificFields: ["ports", "vlan", "stp", "port_channel", "mac", "poe"],
@@ -810,6 +913,11 @@ const CLASSIFICAZIONI_DEL_PROFILO: Partial<Record<ProductProfileId, readonly str
   omada_switch: ["switch"],
   omada_access_point: ["access_point"],
   stormshield_firewall: ["firewall"],
+  fortinet_firewall: ["firewall"],
+  paloalto_firewall: ["firewall"],
+  checkpoint_firewall: ["firewall"],
+  watchguard_firewall: ["firewall"],
+  sonicwall_firewall: ["firewall"],
   cisco_switch: ["switch"],
   cisco_router: ["router"],
   cisco_telefono: ["voip"],

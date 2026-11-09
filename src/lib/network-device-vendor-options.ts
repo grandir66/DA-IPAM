@@ -13,6 +13,11 @@ export const NETWORK_DEVICE_VENDOR_BASE_LABELS: Record<NetworkDevice["vendor"], 
   hp: "HPE",
   omada: "TP-Link Omada",
   stormshield: "Stormshield",
+  fortinet: "Fortinet",
+  paloalto: "Palo Alto Networks",
+  checkpoint: "Check Point",
+  watchguard: "WatchGuard",
+  sonicwall: "SonicWall",
   proxmox: "Proxmox",
   vmware: "VMware",
   linux: "Linux",
@@ -36,6 +41,11 @@ export const NETWORK_DEVICE_VENDOR_ORDER: readonly NetworkDevice["vendor"][] = [
   "hp",
   "omada",
   "stormshield",
+  "fortinet",
+  "paloalto",
+  "checkpoint",
+  "watchguard",
+  "sonicwall",
   "cisco",
   "vmware",
   "other",
@@ -69,6 +79,11 @@ export function mapSnmpProfileIdToNetworkDeviceVendor(profileId: string): Networ
   if (id.startsWith("hp_") || id.startsWith("hpe_") || id.startsWith("aruba")) return "hp";
   if (id.startsWith("tplink_omada") || id === "omada") return "omada";
   if (id.startsWith("stormshield")) return "stormshield";
+  if (id.startsWith("fortinet") || id.startsWith("fortigate")) return "fortinet";
+  if (id.startsWith("paloalto")) return "paloalto";
+  if (id.startsWith("checkpoint")) return "checkpoint";
+  if (id.startsWith("watchguard")) return "watchguard";
+  if (id.startsWith("sonicwall")) return "sonicwall";
   if (id === "synology") return "synology";
   if (id === "qnap" || id.startsWith("qnap_")) return "qnap";
   if (id.startsWith("proxmox")) return "proxmox";

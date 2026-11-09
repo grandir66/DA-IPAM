@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateHost, getDb } from "@/lib/db";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { creaApparatoDaClassificazione } from "@/lib/devices/apparato-da-classificazione";
 import { assegnaCredenzialeAgliHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import {
   bulkUpdateNetworkDeviceByHostId,
@@ -114,6 +115,7 @@ export async function PATCH(request: Request) {
       let updated = 0;
       let devicesUpdated = 0;
       let assetsUpdated = 0;
+      let apparatiCreati = 0;
 
       // Build update SQL fragments per tabella secondaria
       const ndUpdate: Record<string, unknown> = {};
@@ -141,6 +143,8 @@ export async function PATCH(request: Request) {
         if (classification !== undefined) {
           const r = scriviClassificazione(getDb(), { hostId: id }, classification, { manuale: true });
           if (r.hostId != null && Object.keys(update).length === 0) updated++;
+          // Tipo leggibile in SNMP + credenziale SNMP validata: nasce anche l'apparato (09/11/2026).
+          if (r.hostId != null && r.deviceId == null && creaApparatoDaClassificazione(id).creato) apparatiCreati++;
         }
 
         // Aggiorna network_devices linkati via IP (se ci sono campi device da aggiornare)
@@ -168,6 +172,7 @@ export async function PATCH(request: Request) {
       if (credentialsFailed > 0) parts.push(`credenziale non assegnata a ${credentialsFailed} host per un errore`);
       if (devicesUpdated > 0) parts.push(`${devicesUpdated} device aggiornat${devicesUpdated !== 1 ? "i" : "o"}`);
       if (assetsUpdated > 0) parts.push(`${assetsUpdated} asset aggiornat${assetsUpdated !== 1 ? "i" : "o"}`);
+      if (apparatiCreati > 0) parts.push(`${apparatiCreati} apparat${apparatiCreati !== 1 ? "i" : "o"} creat${apparatiCreati !== 1 ? "i" : "o"} (credenziale SNMP già provata)`);
       const message = parts.join(", ") || "Nessuna modifica";
 
       return NextResponse.json({
@@ -177,6 +182,7 @@ export async function PATCH(request: Request) {
         credentials_failed: credentialsFailed,
         devices_updated: devicesUpdated,
         assets_updated: assetsUpdated,
+        apparati_creati: apparatiCreati,
         message,
       });
     } catch (error) {

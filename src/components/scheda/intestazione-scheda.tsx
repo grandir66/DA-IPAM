@@ -30,6 +30,7 @@ export const ETICHETTA_TIPO: Record<TipoScheda, string> = {
   server_windows: "Server Windows",
   server_linux: "Server Linux",
   stampante: "Stampante",
+  ups: "UPS",
   generico: "Apparato",
   host: "Host",
 };

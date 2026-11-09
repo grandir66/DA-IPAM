@@ -4708,12 +4708,13 @@ function mapClassificationToInventoryCategoria(classification: string | null, de
   if (dt === "router") return "Router";
   if (dt === "firewall") return "Firewall";
   if (dt === "hypervisor") return "Server";
+  if (dt === "stampante") return "Stampante";
   if (dt === "switch") {
     // device_type=switch può nascondere un server/NAS: usa vendor come hint
     if (["linux", "windows"].includes(v)) return "Server";
     if (["proxmox", "vmware"].includes(v)) return "Server";
     if (["synology", "qnap"].includes(v)) return "NAS";
-    if (v === "stormshield") return "Firewall";
+    if (["stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall"].includes(v)) return "Firewall";
     // Solo qui è un vero switch (vendor di rete: cisco, hp, ubiquiti, ecc.)
     return "Switch";
   }

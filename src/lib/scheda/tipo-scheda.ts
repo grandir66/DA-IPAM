@@ -7,14 +7,14 @@ import { canonicalizza } from "@/lib/classification/canonico";
 
 export type TipoScheda =
   | "switch" | "router" | "firewall" | "storage" | "hypervisor"
-  | "server_windows" | "server_linux" | "stampante" | "generico" | "host";
+  | "server_windows" | "server_linux" | "stampante" | "ups" | "generico" | "host";
 
 export type TabId =
   | "panoramica" | "porte" | "vlan" | "vicini" | "interfacce" | "routing" | "dhcp"
   | "configurazione" | "dischi" | "volumi" | "servizi_nas" | "vm" | "nodi" | "storage_px"
   | "rete_px" | "sistema" | "servizi" | "aggiornamenti" | "software" | "utenti" | "ad"
   | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori" | "materiali"
-  | "rilievi";
+  | "rilievi" | "ups";
 
 export interface InputTipoScheda {
   gestito: boolean;
@@ -26,9 +26,12 @@ export interface InputTipoScheda {
 
 const min = (s: string | null): string => (s ?? "").trim().toLowerCase();
 
+/** Marche di firewall: la scheda è sempre quella del firewall (Stormshield 08/11, le altre dal 09/11/2026). */
+const MARCHE_FIREWALL = new Set(["stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall"]);
+
 /** Server o VM: la piattaforma decide la scheda (hypervisor, Windows, Linux), altrimenti generico. */
 function daServer(vendor: string, scanTarget: string): TipoScheda {
-  if (vendor === "stormshield") return "firewall";
+  if (MARCHE_FIREWALL.has(vendor)) return "firewall";
   if (scanTarget === "proxmox" || scanTarget === "vmware" || vendor === "proxmox" || vendor === "vmware") return "hypervisor";
   if (vendor === "windows" || scanTarget === "windows") return "server_windows";
   if (vendor === "linux" || scanTarget === "linux") return "server_linux";
@@ -51,6 +54,7 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
       case "nas": return "storage";
       case "hypervisor": return "hypervisor";
       case "stampante": case "multifunzione": return "stampante";
+      case "ups": return "ups";
       case "server": case "vm": return daServer(vendor, scanTarget);
       // Slug «di sistema» non canonici (DA-VEEAM: classificazione `windows`): è un server, non una stampante.
       // Una postazione (`workstation`) col vendor windows resta generico: non passa di qui.
@@ -70,12 +74,15 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
     case "hypervisor": return "hypervisor";
     case "nas": return "storage";
     case "server": return daServer(vendor, scanTarget);
+    // Periferiche col loro tipo (09/11/2026); VoIP, telecamere e IoT restano generiche.
+    case "stampante": return "stampante";
+    case "ups": return "ups";
     case "switch":
       if (vendor === "windows") return "server_windows";
       if (vendor === "linux") return "server_linux";
       if (vendor === "proxmox" || vendor === "vmware") return "hypervisor";
       if (vendor === "synology" || vendor === "qnap") return "storage";
-      if (vendor === "stormshield") return "firewall";
+      if (MARCHE_FIREWALL.has(vendor)) return "firewall";
       return "switch";
     default: return "generico";
   }
@@ -137,6 +144,7 @@ function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
   // Router e firewall hanno porte e VLAN come gli switch (Riccardo, 07/11): stesse tab, stessi componenti.
   if (t === "router" || t === "firewall") return ["panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "stampante") return ["panoramica", "materiali", ...TAB_COMUNI];
+  if (t === "ups") return ["panoramica", "ups", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
   // Porte come uno switch (Riccardo, 08/11): dalla Mappa porte, dopo la Rete del nodo.
   if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", "porte", ...TAB_COMUNI];
@@ -168,7 +176,7 @@ export function bloccoReteGestione(t: TipoScheda): { snmp: boolean; ipMappa: boo
     case "switch": return { snmp: true, ipMappa: false };
     case "router": case "firewall": case "generico": return { snmp: false, ipMappa: false };
     case "hypervisor": return { snmp: true, ipMappa: false };
-    case "stampante": return { snmp: true, ipMappa: true };
+    case "stampante": case "ups": return { snmp: true, ipMappa: true };
     case "server_windows": case "server_linux": return { snmp: false, ipMappa: true };
     default: return { snmp: true, ipMappa: true }; // storage, host
   }

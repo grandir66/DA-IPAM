@@ -29,6 +29,7 @@ import {
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { apparatoGiaPresente, messaggioIpDiApparato } from "@/lib/devices/apparato-del-cluster";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { creaApparatoDaClassificazione } from "@/lib/devices/apparato-da-classificazione";
 import { ruoliDalCorpo } from "@/lib/devices/crea-apparato";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
@@ -312,8 +313,15 @@ export async function PATCH(request: Request) {
       return { devicesUpdated: aggiornati, hostsUpdated: host, credenziali: esito };
     })();
 
+    // Host classificati con un tipo leggibile in SNMP e una credenziale SNMP validata: nasce anche l'apparato (09/11/2026).
+    // Dopo la transazione: `creaApparato` apre la sua.
+    let apparatiCreati = 0;
+    if (classification !== undefined) {
+      for (const id of host_ids) if (creaApparatoDaClassificazione(id).creato) apparatiCreati++;
+    }
     const total = devicesUpdated + hostsUpdated;
     const parti = [total === 1 ? "1 elemento aggiornato" : `${total} elementi aggiornati`];
+    if (apparatiCreati > 0) parti.push(`${apparatiCreati} apparat${apparatiCreati !== 1 ? "i" : "o"} creat${apparatiCreati !== 1 ? "i" : "o"} (credenziale SNMP già provata)`);
     if (credenziali) {
       const inTesta = credenziali.aggiunti + credenziali.spostati;
       if (inTesta > 0) parti.push(`credenziale in testa su ${inTesta} binding`);
@@ -330,6 +338,7 @@ export async function PATCH(request: Request) {
       success: true,
       devices_updated: devicesUpdated,
       hosts_updated: hostsUpdated,
+      apparati_creati: apparatiCreati,
       credenziali,
       message: parti.join("; "),
     });

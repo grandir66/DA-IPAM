@@ -1,6 +1,21 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-09 — Tipi stampante/UPS/VoIP/telecamera/IoT, marche firewall, vista UPS (Riccardo, completo)
+
+Riccardo (09/11): tre richieste, zona gialla (ricostruzione di `network_devices`). Scelte: «Un tipo per ciascuno» per VoIP/telecamere/IoT; firewall «Marca + profilo prodotto»; tavola UPS «puoi approvarla, procedi senza mostrarla».
+- [x] Tipi `stampante`, `ups`, `voip`, `telecamera`, `iot`: CHECK, unioni TS, validatore Zod, `suggestDeviceTypeFromProductProfile` e `resolveDeviceTypeForCreate`, conversione delle righe vecchie (`migra-device-type-v22.ts`, segno `device_type_v22`)
+- [x] Ricostruzione di `network_devices` (`migraCheckNetworkDevices` in `migraCredenzialiWmi`, quindi anche il path legacy di `getDb`), sul modello di `migra-apple-macos.ts`: parte dalla definizione attuale (tiene `host_id`, `campi_da_rivedere`), indici/trigger/viste ricreati, conteggio e foreign_key_check; CREATE dello schema da `ddlNetworkDevices`, CREATE legacy di `db-schema.ts` allineata
+- [x] Marche firewall: vendor, profili `*_firewall`, `PIATTAFORME`/`MARCHE_DI_RETE`, auto-classify (+ Palo Alto, Check Point, WatchGuard), inferenza da produttore e da stringa host, client ARP come Stormshield, scheda firewall, tendina e procedura guidata del gateway
+- [x] Vista UPS: `ups-acquisition.ts` (UPS-MIB + APC PowerNet), `ups_inventory`, `scheda/ups.ts`, tipo scheda `ups` con tab «UPS»; corretti gli OID UPS sbagliati del profilo SNMP
+- [x] Prove nuove viste fallire sul codice di prima (worktree di `origin/dev`): migrazione 5/5 rosse, v22 modulo assente, tipi/firewall 7 rosse, UPS modulo assente; sul codice nuovo 24 verdi
+- [x] Quarta richiesta (Riccardo via sessione «VA per device», 09/11): lato tecnico creato alla classificazione. Forma scelta, senza interfaccia nuova: solo classi leggibili in SNMP (switch, router, firewall, access point, stampante/multifunzione/scanner, UPS) e solo con una credenziale SNMP già validata sull'host; passa da `creaApparato` come «Rendi apparato». `src/lib/devices/apparato-da-classificazione.ts`, chiamato da `PUT /api/hosts/[id]`, `hosts/bulk-update`, `devices/bulk` (host). Prova vista rossa sul codice di prima (modulo assente), 6 verdi
+- [ ] Da decidere con Riccardo: senza credenziale SNMP validata si potrebbe proporre l'apparato con evidenza (es. un avviso nella scheda dell'host): tocca l'interfaccia, serve la tavola
+- [x] Cancello intero (09/11): lint e tsc verdi, `npm test` 7.765 passate 0 fallite, build verde. Aggiornata una prova storica (`proposta-apparato.test.ts`, «marche fuori elenco»): fortinet e sonicwall ora sono marche ammesse
+- [ ] Collaudo dal vero su 79993-ipam-2: apertura del tenant (log `network_devices CHECK aggiornato`, `device_type_v22`), un UPS letto in SNMP e la sua scheda
+- [ ] Non verificato: vista UPS guardata a schermo (layout nuovo, una schermata a 1920 dopo il collaudo)
+- [ ] Più avanti: lettura SNMP dedicata (modello/seriale/versione) dei firewall nuovi; UPS Eaton con la sua MIB (oggi solo se espone la RFC 1628)
+
 ## 2026-11-09 — Estrazione device dal PC del tecnico (analisi)
 
 - [x] Riccardo (09/11): prompt per il Claude Code dei tecnici che produce un JSON digeribile da DA-IPAM, collegandosi a switch e router via SSH, SNMP o API. Analisi di riferimento in `docs/revisione/2026-11-09-estrazione-device-tecnico.md`.

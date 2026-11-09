@@ -173,6 +173,12 @@ export function ricevePorteDaSwitch(id: string): boolean {
     return !!d && FAMIGLIE_CON_PORTE.has(d.famiglia);
 }
 
+/** Come `ricevePorteDaSwitch`, ma per uno snapshot: un collector del tecnico non ancora in catalogo usa la sua `origine.famiglia`. */
+export function ricevePorteDaSnapshot(s: { collector: string; origine?: { tipo: "tecnico"; famiglia: string | null } }): boolean {
+    if (CATALOGO.some(c => c.id === s.collector)) return ricevePorteDaSwitch(s.collector);
+    return s.origine?.tipo === "tecnico" && !!s.origine.famiglia && FAMIGLIE_CON_PORTE.has(s.origine.famiglia);
+}
+
 export type CollectorId = (typeof CATALOGO)[number]["id"];
 
 /** Tupla non vuota per `z.enum`. */

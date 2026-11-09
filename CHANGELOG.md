@@ -28,6 +28,15 @@ Riccardo (09/11): stampanti e UPS finivano fra gli switch e il giro ne leggeva p
 ### Cambiato
 - **La tabella `network_devices` si ricostruisce una volta** su ogni tenant perché il CHECK accetti i valori nuovi (SQLite non altera un CHECK). Parte dalla definizione attuale, così ogni colonna resta; porte, MAC e binding tengono i loro apparati; se qualcosa non torna la tabella resta com'era e si riprova al prossimo avvio.
 
+## [Non rilasciato] — 2026-11-09 · Import dell'estrazione del tecnico (parte A, senza pulsante)
+
+Riccardo (09/11): «Sì, lanciala qui» (parte A del prompt di sviluppo: inghiottire il JSON del tecnico).
+
+### Aggiunto
+- **`POST /api/devices/[id]/acquisizione/importa`**: importa la busta `da-ipam-estrazione` 1.0 nell'apparato, con `requireAdmin` e il profilo attivo. Segue lo stesso percorso dell'acquisizione modulare: archivio con `trigger = import_tecnico`, proiezioni sull'apparato, Mappa porte dall'ultimo snapshot. In più scrive le rotte in `routing_table`. Rifiuta un'estrazione di un altro apparato (seriale, o indirizzo se manca il seriale) e una che contiene una credenziale dell'apparato.
+- **Sezioni `routes` e `origine` nello snapshot**, opzionali (lo schema resta 1.0). Uno snapshot con `origine.tipo = tecnico` può avere un collector che il catalogo non ha ancora: lo accettano archivio e Mappa porte, e riceve le porte solo se la famiglia è switch o router.
+- Il pulsante «Importa estrazione» nella scheda non c'è ancora: l'interfaccia si propone prima di scriverla.
+
 ## [Non rilasciato] — 2026-11-09 · Pacchetto di consegna del tecnico e prompt per lo sviluppo
 
 Riccardo (09/11): «servirebbe un prompt per inghiottire sia il json che inserire il collector centralizzato delle installazioni dei tecnici».

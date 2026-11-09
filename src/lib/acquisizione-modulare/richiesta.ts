@@ -30,7 +30,7 @@ export function lettoreDb(dbh: Database.Database): LettoreSegreto {
   };
 }
 
-function segretiDi(s: Segreto): string[] {
+export function segretiDi(s: Segreto): string[] {
   switch (s.forma) {
     case "utente": return [s.password];
     case "chiave_ssh": return [s.privateKey, s.passphrase ?? ""];

@@ -5,7 +5,8 @@
  */
 import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { snapshotSchema, type AcquisitionSnapshot } from "@/lib/acquisition";
+import { type AcquisitionSnapshot } from "@/lib/acquisition";
+import { validaSnapshotSalvato } from "@/lib/acquisition/schema";
 import { inserisciSnapshotAcquisizione, leggiSnapshotAcquisizione, type SnapshotAcquisizioneRiga } from "@/lib/db-tenant";
 
 /** Le voci d'archivio usate, per protocollo: solo id e nome, mai segreti. */
@@ -39,7 +40,9 @@ export function contieneSegreto(valore: unknown, segreti: readonly string[], chi
 }
 
 export function salvaSnapshot(deviceId: number, snapshot: AcquisitionSnapshot, o: OpzioniSalvataggio): number {
-  const valido = snapshotSchema.parse(snapshot);
+  const v = validaSnapshotSalvato(snapshot);
+  if (!v.success) throw v.error;
+  const valido = v.data;
   if (contieneSegreto(valido, o.segreti ?? [])) throw new Error("SNAPSHOT_CON_SEGRETO");
   const json = JSON.stringify(valido);
   const payload = gzipSync(Buffer.from(json, "utf8"));
@@ -83,7 +86,7 @@ export function leggiPayload(deviceId: number, snapshotId: number): LetturaSnaps
   } catch {
     return { ok: false, motivo: "Snapshot illeggibile (payload guasto)", status: 500 };
   }
-  const v = snapshotSchema.safeParse(grezzo);
+  const v = validaSnapshotSalvato(grezzo);
   if (!v.success) return { ok: false, motivo: "Snapshot non conforme allo schema 1.0", status: 500 };
   return { ok: true, riga, snapshot: v.data };
 }

@@ -40,12 +40,21 @@ export const stpSchema = z.object({ port: z.string(), instance: nullableString, 
 export const lagSchema = z.object({ name: z.string(), protocol: nullableString, admin_status: nullableString, oper_status: nullableString, members: z.array(z.string()), member_states: z.array(z.object({ port: z.string(), selection: z.string(), flags: z.array(z.string()) })).optional() });
 export const sensorSchema = z.object({ name: z.string(), kind: z.enum(["temperature", "fan", "optical_rx", "optical_tx", "voltage", "current"]), value: z.number().finite(), unit: z.enum(["celsius", "rpm", "dBm", "milliwatt", "volt", "ampere"]), note: nullableString, thresholds: z.object({ lower: nullableNumber, warning: nullableNumber, alarm: nullableNumber, shutdown: nullableNumber }).optional() });
 export const poeSchema = z.object({ port: z.string(), enabled: z.boolean().nullable(), status: nullableString, power_watts: nullableNumber, module_observed: z.boolean().nullable().optional() });
+/** Rotte (09/11/2026, estrazione del tecnico): la tabella di routing che lo snapshot non aveva; opzionale, schema resta 1.0. */
+export const routeSchema = z.object({ destination: z.string().min(1).max(64), prefix_len: z.number().int().min(0).max(128), gateway: nullableString, interface: nullableString, protocol: nullableString, metric: nullableNumber, distance: nullableNumber, active: z.boolean().nullable(), vrf: nullableString });
+/**
+ * Snapshot nato dall'estrazione di un tecnico (busta `da-ipam-estrazione`): il suo `collector` può non essere ancora nel
+ * catalogo, e `famiglia` dice se riceve le porte come uno switch. Assente per gli snapshot dei collector del prodotto.
+ */
+export const origineSnapshotSchema = z.object({ tipo: z.literal("tecnico"), famiglia: z.enum(["switch", "router", "firewall"]).nullable() }).strict();
 export const sectionStatus = z.enum(["ok", "partial", "unsupported", "error", "skipped"]);
 function section<T extends z.ZodType>(data: T) { return z.object({ status: sectionStatus, collected_at: z.string().datetime(), sources: z.array(z.string()), warnings: z.array(z.string()), data: data }); }
 export const snapshotSchema = z.object({
     schema_version: z.literal("1.0"), collector: z.enum(COLLECTOR_IDS), collector_version: z.string().regex(/^\d+\.\d+\.\d+$/), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
     inventory: section(z.object({ scope: z.enum(['device','proxmox-cluster-visible']), tables: z.array(z.object({ name: z.string(), status: sectionStatus, sources: z.array(z.string()), warnings: z.array(z.string()), records: z.array(z.record(z.string(), z.union([z.string(),z.number(),z.boolean(),z.null()]))) })) })).optional(),
     controller_inventory: section(z.object({ site: z.string(), tls_pin: nullableString, devices: z.array(z.object({ mac: nullableString, name: nullableString, model: nullableString, type: nullableString, ip: nullableString, state: nullableNumber, version: nullableString, serial: nullableString, adopted: z.boolean().nullable(), port_table: z.array(z.object({ port_idx: z.number(), name: nullableString, up: z.boolean().nullable(), enable: z.boolean().nullable(), speed: nullableNumber, full_duplex: z.boolean().nullable(), poe_power: nullableNumber, stp_state: nullableString, aggregated_by: nullableNumber })), lldp_table: z.array(z.object({ chassis_id: nullableString, port_id: nullableString, local_port_idx: nullableNumber, local_port_name: nullableString, mgmt_ips: z.array(z.string()) })), uplink: z.object({ port_idx: nullableNumber, uplink_mac: nullableString, uplink_remote_port: nullableNumber, uplink_device_name: nullableString, uplink_source: nullableString, type: z.enum(["wire", "wireless"]).nullable() }).nullable() })) })).optional(),
+    origine: origineSnapshotSchema.optional(),
+    routes: section(z.array(routeSchema)).optional(),
     ddi: section(infobloxDdiSchema).optional(),
     storage: section(ontapStorageSchema).optional(),
     virtualization: section(virtualizationSchema).optional(),
@@ -66,6 +75,21 @@ export const snapshotSchema = z.object({
     identity: section(identitySchema.nullable()), interfaces: section(z.array(interfaceSchema)), vlans: section(z.array(vlanSchema)), forwarding: section(z.array(fdbSchema)), neighbors: section(z.array(neighborSchema)), spanning_tree: section(z.object({ enabled: z.boolean().nullable(), protocol: nullableString, ports: z.array(stpSchema) })), aggregation: section(z.array(lagSchema)), poe: section(z.array(poeSchema)).extend({ enabled: z.boolean().nullable().optional() }), sensors: section(z.array(sensorSchema)),
 });
 export type AcquisitionSnapshot = z.infer<typeof snapshotSchema>;
+/** Collector del tecnico non ancora nel catalogo: stesso snapshot, `collector` libero, `origine` obbligatoria. */
+export const ID_COLLECTOR_TECNICO = /^[a-z0-9-]{3,40}$/;
+export const snapshotTecnicoSchema = snapshotSchema.extend({ collector: z.string().regex(ID_COLLECTOR_TECNICO), origine: origineSnapshotSchema });
+/**
+ * Valida uno snapshot da salvare o riletto dall'archivio: prima lo schema dei collector, poi (solo se `origine.tipo` è
+ * `tecnico`) quello col collector libero. Il tipo resta `AcquisitionSnapshot`: chi riceve lo snapshot di un collector fuori
+ * catalogo non deve chiamare `descrittore(snapshot.collector)`; le proiezioni usano `ricevePorteDaSnapshot`.
+ */
+export function validaSnapshotSalvato(dato: unknown): { success: true; data: AcquisitionSnapshot } | { success: false; error: z.ZodError } {
+    const stretto = snapshotSchema.safeParse(dato);
+    if (stretto.success) return stretto;
+    const tecnico = snapshotTecnicoSchema.safeParse(dato);
+    return tecnico.success ? { success: true, data: tecnico.data as unknown as AcquisitionSnapshot } : stretto;
+}
+export type Route = z.infer<typeof routeSchema>;
 export type Identity = z.infer<typeof identitySchema>;
 export type DeviceInterface = z.infer<typeof interfaceSchema>;
 export type Vlan = z.infer<typeof vlanSchema>;

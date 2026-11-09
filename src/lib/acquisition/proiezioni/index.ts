@@ -20,7 +20,7 @@
  * restano nello snapshot e non diventano porte di uno switch.
  */
 import { normalizePortNameForMatch } from "@/lib/utils";
-import { ricevePorteDaSwitch } from "../catalogo";
+import { ricevePorteDaSnapshot } from "../catalogo";
 import type { LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 import type { AcquisitionSnapshot, DeviceInterface } from "../schema";
 
@@ -147,7 +147,7 @@ function valoriPerPorta(snapshot: AcquisitionSnapshot, i: DeviceInterface): Valo
 
 export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly PortaAttuale[]): ModifichePorte {
   const out: ModifichePorte = { aggiorna: [], aggiungi: [], togli: [] };
-  if (!ricevePorteDaSwitch(snapshot.collector) || !usabile(snapshot.interfaces)) return out;
+  if (!ricevePorteDaSnapshot(snapshot) || !usabile(snapshot.interfaces)) return out;
   const tutte = snapshot.interfaces.data;
   // Abbinamento in due passate. Prima il nome: il percorso SSH di sempre numera le porte per posizione nell'uscita, mentre
   // il collector porta l'ifIndex SNMP, quindi lo stesso numero può essere un'altra porta. Poi l'indice, solo fra righe e
@@ -204,7 +204,7 @@ export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly P
  */
 export function campiDelCollectorPerPorta(snapshot: AcquisitionSnapshot): Map<string, CampoPorta[]> {
   const out = new Map<string, CampoPorta[]>();
-  if (!ricevePorteDaSwitch(snapshot.collector) || !usabile(snapshot.interfaces)) return out;
+  if (!ricevePorteDaSnapshot(snapshot) || !usabile(snapshot.interfaces)) return out;
   for (const i of snapshot.interfaces.data) {
     if (i.kind === "other") continue;
     const v = valoriPerPorta(snapshot, i);
@@ -265,7 +265,7 @@ const STATI: Record<string, string> = { forwarding: "forwarding", discarding: "d
 /** null = né spanning tree né aggregazioni usabili. Ogni riga porta tutte le colonne (null dove non si sa), come vuole il contratto dei lettori. */
 export function proiettaFatti(snapshot: AcquisitionSnapshot): FattoPortaProiettato[] | null {
   const stp = usabile(snapshot.spanning_tree), lag = usabile(snapshot.aggregation);
-  if (!ricevePorteDaSwitch(snapshot.collector) || !stp && !lag || !usabile(snapshot.interfaces)) return null;
+  if (!ricevePorteDaSnapshot(snapshot) || !stp && !lag || !usabile(snapshot.interfaces)) return null;
   const gruppo = new Map<string, string>();
   if (lag) for (const a of snapshot.aggregation.data) for (const m of a.members) gruppo.set(nomePorta(m), a.name);
   return snapshot.interfaces.data.filter((i) => i.kind !== "other").map((i) => {
@@ -294,7 +294,7 @@ export function proiettaFatti(snapshot: AcquisitionSnapshot): FattoPortaProietta
  * `display vlan all` le dà tutte (29 VLAN, ~2800 porte taggate).
  */
 export function proiettaVlan(snapshot: AcquisitionSnapshot): LetturaVlanSwitch | null {
-  if (!ricevePorteDaSwitch(snapshot.collector) || snapshot.vlans.status !== "ok" || snapshot.vlans.data.length === 0) return null;
+  if (!ricevePorteDaSnapshot(snapshot) || snapshot.vlans.status !== "ok" || snapshot.vlans.data.length === 0) return null;
   const indice = new Map<string, number>();
   for (const i of snapshot.interfaces.data) if (i.if_index !== null) indice.set(nomePorta(i.name), i.if_index);
   const porte = new Map<string, LetturaVlanSwitch["porte"][number]>();

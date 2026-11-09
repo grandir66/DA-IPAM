@@ -481,6 +481,17 @@ un secondo era irraggiungibile). Dal giro 3, **non ancora provato su un apparato
 `-enum ALL`: quale vale è da verificare), **software** da tutti gli `INFO` di `/var/packages` senza limiti, modello e
 seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 
+## Import dell'estrazione del tecnico (09/11/2026)
+
+`POST /api/devices/[id]/acquisizione/importa` (solo admin) riceve la busta `da-ipam-estrazione` 1.0 prodotta dal Claude Code
+del PC del tecnico. Il formato è nel prompt `src/lib/estrazione/prompt-tecnico.md`; lo schema in `src/lib/estrazione/busta.ts`.
+
+- Lo snapshot riceve `origine: { tipo: "tecnico", famiglia }`. La famiglia viene dalla busta o dal tipo dell'apparato.
+- Il collector può non essere ancora nel catalogo: lo valida `validaSnapshotSalvato` in `schema.ts`, e le proiezioni usano `ricevePorteDaSnapshot`.
+- Quando il collector entra nel prodotto (parte B di `src/lib/estrazione/prompt-sviluppo.md`), con lo stesso id, gli snapshot già importati passano lo schema stretto.
+- Dopo la validazione: controllo dell'identità, rifiuto se c'è un segreto dell'apparato, poi `salvaSnapshot` con `trigger = import_tecnico` e `applicaSnapshot`.
+- Le rotte (`routes`) vanno in `routing_table`, che il giro SNMP del router riscrive: vale l'ultima lettura.
+
 ## Switch senza collector: Zyxel GS1900 (04/11/2026)
 
 Nessun collector: il GS1900 parla le MIB standard, quindi lo legge l'acquisizione SNMP di sempre. Piattaforma «Altro», profilo

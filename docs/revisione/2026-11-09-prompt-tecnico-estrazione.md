@@ -17,23 +17,58 @@ Ti colleghi a **uno switch o un router** e produci **un file JSON** con tutto ci
 Il file verrà importato in DA-IPAM, l'inventario di rete di Domarc. I protocolli sono tre: SSH (CLI), SNMP (v2c o v3) e
 web/API (HTTPS).
 
-Ti dirò io:
-- l'indirizzo dell'apparato, il vendor e il modello se li so;
-- quale protocollo usare;
-- come trovi le credenziali, nelle regole del punto 2.
+Ti dirò l'indirizzo dell'apparato, e il vendor e il modello se li so. Il resto lo scopri tu, in cinque fasi, nell'ordine.
+Ti fermi solo dove la fase lo dice.
 
-Procedi così:
+**Fase 1 — Riconoscere l'apparato e capire come si accede (internet).**
+- Se non so il vendor o il modello, ricavali prima senza credenziali:
+  - quali porte rispondono fra 22, 23, 80, 443, 161/udp e 8443, con `nc -z` o `nmap -sT -p` su quel solo indirizzo, mai su
+    una rete intera;
+  - il banner SSH;
+  - il titolo della pagina web.
+- Cerca su internet la documentazione **ufficiale** del vendor per quel modello e firmware, e le pagine pubbliche affidabili
+  (manuali, riferimenti della CLI, MIB, riferimenti delle API). Ti servono quattro cose:
+  - quali protocolli di gestione ha;
+  - quale profilo o utente in sola lettura esiste;
+  - con quali comandi, OID o endpoint si legge ciascuna sezione del §3;
+  - come si toglie la paginazione nella sola sessione.
+- **Nelle ricerche metti solo vendor, modello, firmware e nomi di comandi.** Mai l'IP, l'hostname, il seriale, il nome del
+  cliente o pezzi di output dell'apparato.
+- Dimmi in breve cosa hai trovato: il protocollo che consigli, il tipo di utente da usare e i link principali.
 
-1. Scrivi uno script (Python 3 o Bash, solo librerie standard più `paramiko`/`pysnmp`/`requests` se sono già installate) che:
-   - legge le credenziali dalle variabili d'ambiente;
-   - lancia **solo comandi di lettura**;
-   - salva gli output grezzi in una cartella di lavoro;
-   - costruisce il JSON.
-2. Fai girare lo script e controlla il JSON con il punto «Controllo prima di consegnare».
-3. Consegna il file col nome giusto, nella cartella giusta. Dimmi:
-   - le sezioni lette;
-   - quelle non lette, e perché;
-   - i comandi lanciati.
+**Fase 2 — Chiedere le credenziali (senza che passino da te).**
+- Scrivi lo script `imposta_credenziali.py` (§2). Poi chiedimi di lanciarlo **nel mio terminale**, non nel tuo, indicandomi
+  il comando esatto. Mi chiede le credenziali a input nascosto e le salva in un file che tu non leggi.
+- Chiedi credenziali **di sola lettura**, se l'apparato le prevede. Dimmi quale profilo creare sull'apparato, se non c'è,
+  per esempio `network-operator`, `read-only` o SNMPv3 senza vista di scrittura.
+- Aspetti che ti dica «fatto».
+
+**Fase 3 — Provare l'accesso.**
+- **Un login solo**, con un solo comando innocuo:
+  - SSH: `show version`, o l'equivalente trovato nella fase 1;
+  - SNMP: GET di `sysDescr.0` e `sysObjectID.0`;
+  - API: il `GET` della versione o dello stato.
+- Se riesce, mi dici vendor, modello e firmware letti. Se non tornano con la fase 1, ricontrolli la documentazione per quella
+  versione.
+- Se fallisce, **ti fermi**: niente secondo tentativo, niente varianti di utente, porta o protocollo. Molti apparati bloccano
+  l'utente dopo pochi errori. Mi dici l'errore esatto (rifiutato, timeout, chiave host, cifrario) e cosa propone la
+  documentazione.
+
+**Fase 4 — Piano di lettura, poi lettura.**
+- Fai una tabella: per ogni sezione del §3, il comando, l'OID o l'endpoint che la legge, preso dalla documentazione, e il link.
+  Le sezioni senza un modo di leggerle restano `unsupported` o `skipped`.
+- Ogni voce deve stare fra quelli ammessi del §1. Una voce che non ci sta **non si lancia**: me la segnali e prosegui con le
+  altre.
+- Scrivi lo script `<collector>.py` (Python 3, libreria standard più `paramiko`, `pysnmp` o `requests` se sono già installati).
+  Lo script:
+  - carica le credenziali dal file della fase 2;
+  - lancia i comandi del piano uno alla volta;
+  - salva gli output grezzi;
+  - costruisce il JSON.
+- Se un comando ha un formato diverso da quello della documentazione, guarda l'output grezzo salvato e adatta il parser.
+  Non rilanciare comandi a caso.
+
+**Fase 5 — Controllo e consegna.** Controllo del §5, nome e cartella del §4, resoconto del §6.
 
 Se un dato si legge solo con un comando che non è fra quelli ammessi, **non lanciarlo**: scrivimelo.
 
@@ -64,18 +99,25 @@ Se due comandi di fila falliscono e la causa non è chiara, fermati e chiedimi.
 
 # 2. Credenziali: mai nel file, mai a schermo
 
-- Le credenziali le metto io nelle variabili d'ambiente, prima di lanciarti o in un file `.env` fuori da ogni repository, con
-  permessi `600`:
+- Le credenziali si chiedono con lo script `imposta_credenziali.py`, che scrivi tu e lancio io nel **mio** terminale (non
+  nel tuo, non col prefisso `!` di Claude Code: finirebbero nella conversazione). Lo script:
+  - chiede ogni valore con `getpass`, a input nascosto;
+  - scrive `~/DA-IPAM-estrazioni/.credenziali/<host>.env` nella forma `CHIAVE=valore`, con la cartella a `700` e il file a
+    `600`;
+  - stampa solo «salvato: <percorso>».
+- **Tu quel file non lo leggi mai**: niente `cat`, `grep`, `head` o lettura con lo strumento dei file. Lo carica solo lo
+  script di lettura. Le chiavi sono queste:
   - `DEV_HOST`, `DEV_PROTO` (`ssh`, `snmp` o `api`);
   - per SSH: `SSH_USER`, `SSH_PASSWORD` o `SSH_KEY_FILE`;
   - per SNMP v2c: `SNMP_COMMUNITY`;
   - per SNMP v3: `SNMP_V3_USER`, `SNMP_V3_AUTH_PROTO`, `SNMP_V3_AUTH_KEY`, `SNMP_V3_PRIV_PROTO`, `SNMP_V3_PRIV_KEY`;
   - per l'API: `API_USER` e `API_PASSWORD`, oppure `API_TOKEN`.
-- Lo script le legge solo da lì. **Non stamparle mai, non scriverle nei log, nel JSON o nei nomi dei file**, e non passarle
-  come argomento sulla riga di comando: si vedrebbero in `ps`.
-- Non chiedermele in chat. Non cercarle in altri file, portachiavi o database.
-- Prima di consegnare, il controllo del punto 5 cerca nel JSON ogni credenziale presa dalle variabili d'ambiente: se ne
-  trova una, il file non si consegna.
+- Lo script di lettura le legge solo da lì. **Non stamparle mai, non scriverle nei log, nel JSON o nei nomi dei file**, e
+  non passarle come argomento sulla riga di comando: si vedrebbero in `ps`.
+- Non chiedermele in chat. Se te le scrivo lo stesso, non ripeterle e non usarle: dimmi di cambiarle, perché ormai sono nella
+  conversazione, e di rifare la fase 2. Non cercarle in altri file, portachiavi o database.
+- Prima di consegnare, il controllo del punto 5 cerca nel JSON ogni credenziale del file: se ne trova una, il file non si
+  consegna.
 - **Non salvare mai la configurazione dell'apparato**: contiene password, hash, community e chiavi.
 
 # 3. Il formato JSON
@@ -241,12 +283,12 @@ In questo esempio `aggregation` è `ok` con `[]`: il comando ha risposto e non c
 
 # 5. Controllo prima di consegnare
 
-Lancia questo controllo, che usa solo la libreria standard di Python. Deve finire con `OK` ed esito 0, altrimenti correggi e
+Lancia questo controllo, che usa solo la libreria standard di Python e riceve il file delle credenziali della fase 2. Deve finire con `OK` ed esito 0, altrimenti correggi e
 rilancia:
 
 ```python
 #!/usr/bin/env python3
-"""Uso: python3 controlla_estrazione.py <file.json>  (legge le credenziali dalle stesse variabili d'ambiente dello script)"""
+"""Uso: python3 controlla_estrazione.py <file.json> ~/DA-IPAM-estrazioni/.credenziali/<host>.env  (il file credenziali non si stampa mai)"""
 import json, os, re, sys
 ISO = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$")
 STATI = {"ok", "partial", "unsupported", "error", "skipped"}
@@ -287,7 +329,12 @@ for i in (s.get("interfaces") or {}).get("data") or []:
     if any(not re.match(r"^\d+$", str(v)) for v in (i.get("counters") or {}).values()): e(f"interfaccia {i.get('name')}: contatori non stringhe di cifre")
 for v in (s.get("vlans") or {}).get("data") or []:
     if not (isinstance(v.get("id"), int) and 1 <= v["id"] <= 4094): e(f"vlan {v.get('id')}: id fuori 1-4094")
-segreti = [os.environ[k] for k in os.environ if re.match(r"^(SSH_PASSWORD|SNMP_COMMUNITY|SNMP_V3_\w*KEY|API_PASSWORD|API_TOKEN)$", k) and len(os.environ[k]) >= 3]
+cred = {}
+if len(sys.argv) > 2:
+    for r in open(os.path.expanduser(sys.argv[2]), encoding="utf-8"):
+        if "=" in r: k, v = r.rstrip("\n").split("=", 1); cred[k.strip()] = v.strip().strip('"').strip("'")
+else: e("manca il file credenziali: senza, il controllo dei segreti non si fa")
+segreti = [v for k, v in cred.items() if re.match(r"^(SSH_PASSWORD|SNMP_COMMUNITY|SNMP_V3_\w*KEY|API_PASSWORD|API_TOKEN)$", k) and len(v) >= 3]
 if any(x in testo for x in segreti): e("NEL FILE C'E' UNA CREDENZIALE: non consegnare")
 if re.search(r"(password|secret|community|psk|private.key)\s*[:=]", testo, re.I): e("possibile segreto nel testo (password/secret/community/psk)")
 print("\n".join(err) if err else "OK"); sys.exit(1 if err else 0)

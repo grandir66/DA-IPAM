@@ -1,6 +1,29 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-09 — Riusare l'interfaccia di Nety in DA-IPAM: cosa si può e come (Riccardo, analisi)
+
+Riccardo (09/11): «puoi verificare come riutilizzare parti della UI di NETY in da-ipam». Letto `web/` di Nety (`77ef0dd`, ~17.000 righe TSX).
+
+**Il codice non si copia.** Nety è GPL-3.0 (anche `web/`, nessuna licenza a parte). DA-IPAM va sulle appliance dei clienti: un componente copiato renderebbe DA-IPAM opera derivata, da distribuire col sorgente sotto GPL. Si riprendono idee, disposizione e flussi (non coperti dal diritto d'autore), riscritti coi mattoni di `console.tsx`, come per «Servizi di rete».
+
+**Non c'è neanche una libreria da prendere in prestito.** Nety usa solo React 18, react-router, react-query, clsx, Tailwind 3; tabelle, grafici, triage e finestre sono scritti a mano. DA-IPAM è Next.js 16 / React 19 / Tailwind 4 / base-ui con componenti server: un componente di Nety andrebbe comunque rifatto (rotte, dati, tema scuro non Domarc).
+
+| Vista di Nety | Dove in DA-IPAM | Mattoni che ci sono già | Lavoro |
+|---|---|---|---|
+| Services con riga espandibile | `/servizi-rete` | — | fatto |
+| Piccoli mattoni: tempo relativo («1 ora fa»), copia accanto a IP e impronte, filtro «IP o CIDR», ricerca con «/» | `console.tsx`, poi Servizi di rete e Discovery | `IntestazionePagina`, `Pannello` | basso |
+| **Triage** per riga (da fare · in corso · fatto · saltato) con nota «cosa hai provato, cosa hai trovato», selezione multipla, barra «N di M rivisti» | Servizi di rete e Vulnerabilità | `BarraDivisa`, `Etichetta` | medio (tabella stato+nota per tenant) |
+| Findings: riga espandibile con prova, rimedio, stato; filtro per gravità a pulsanti con conteggio; «Espandi tutto» | `/vulnerabilities` (Per vulnerabilità) | `Pannello`, `Legenda` | medio |
+| Gravità col segno a tacche (1–4 barre) oltre al colore | badge di gravità di tutto DA-IPAM | `STILE_STATO` | basso, utile per daltonici |
+| Overview: «rilievi per rete» a barre impilate, «rilievi più gravi», giri recenti con avanzamento | testata di Vulnerabilità o cruscotto | `TesseraNumero`, `BarraDivisa`, `InCorso` | basso-medio |
+| Confronto fra due giri (aggiunti, tolti, cambiati, spostati per host, servizi, rilievi) | «Cosa è cambiato» nella subnet (già proposto sopra) | `scan_history` | medio |
+| Lanciatore dei giri: tipo a schede, profilo a schede (Rapido, Standard, Completo, Lento, Su misura), parametri derivati | pagina Scansioni / profili | `VoceSelezionabile` | medio |
+| Risultati dal vivo via WebSocket | oggi lettura ogni 3 s (`servizi-rete`) | — | alto, bassa priorità |
+| Matrice di segmentazione | ferma (vedi `docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`) | — | — |
+
+- [ ] Riccardo da scegliere da dove partire. Ordine consigliato: piccoli mattoni → triage → rilievi a riga espandibile con gravità a tacche → panoramica per rete → «Cosa è cambiato» → lanciatore
+
 ## 2026-11-09 — Servizi di rete e identità senza credenziali, sul modello di Nety (Riccardo, leggero)
 
 Riccardo (09/11): «capire come implementare l'ottimo motore di rilevazione e alcune visualizzazioni»; «i dati acquisiti in questa pagina sono eccellenti» (Nety, Services); «imparare molto da come ottenere dati passivi senza credenziali all'avvio»; «la costruzione automatica delle network viste, con i dati specifici, gli host ben determinati senza fare scansioni esplicite». Approvato «Sì, procedi». Codice scritto da zero: Nety è GPL-3.0, se ne riprendono le idee.

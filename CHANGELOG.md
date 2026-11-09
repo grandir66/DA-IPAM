@@ -28,6 +28,14 @@ Riccardo (09/11): stampanti e UPS finivano fra gli switch e il giro ne leggeva p
 ### Cambiato
 - **La tabella `network_devices` si ricostruisce una volta** su ogni tenant perché il CHECK accetti i valori nuovi (SQLite non altera un CHECK). Parte dalla definizione attuale, così ogni colonna resta; porte, MAC e binding tengono i loro apparati; se qualcosa non torna la tabella resta com'era e si riprova al prossimo avvio.
 
+## [Non rilasciato] — 2026-11-09 · Pacchetto di consegna del tecnico e prompt per lo sviluppo
+
+Riccardo (09/11): «servirebbe un prompt per inghiottire sia il json che inserire il collector centralizzato delle installazioni dei tecnici».
+
+### Aggiunto
+- **Pacchetto di consegna** nel prompt del tecnico (§4.1), mostrato nella pagina «Estrazione apparati»: script, output grezzi anonimizzati, `atteso.json` e `LEGGIMI.md`, più `controlla_campione.py`, che ferma IP, MAC e nomi veri. Senza un campione non si possono scrivere le prove del collector, e il repo è pubblico.
+- **Prompt per lo sviluppo** (`src/lib/estrazione/prompt-sviluppo.md`): fa scrivere una volta sola l'import del JSON d'estrazione e, a ogni consegna, trasforma lo script del tecnico in un collector del catalogo, con una prova d'oro su `atteso.json` e una PR verso `dev`.
+
 ## [Non rilasciato] — 2026-11-09 · Pagina «Estrazione apparati» sul PC del tecnico
 
 Riccardo (09/11): «il prompt dovrebbe essere visibile nella UI dell'installazione del tecnico».

@@ -4,6 +4,8 @@ import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
+import { TempoRelativo } from "@/components/shared/console";
+import { BottoneCopia } from "@/components/shared/copia";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,14 +141,6 @@ export default function ArpTablePage() {
     return () => clearTimeout(t);
   }, [fetchData, q]);
 
-  const formatDate = (dateStr: string) =>
-    parseDbDate(dateStr).toLocaleString("it-IT", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
 
   const sortAccessors = useMemo(
     () => ({
@@ -291,16 +285,16 @@ export default function ArpTablePage() {
                   {sortedMappings.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-mono text-sm">{m.mac_display}</TableCell>
-                      <TableCell className="font-mono text-sm">{m.ip}</TableCell>
+                      <TableCell className="text-sm"><BottoneCopia valore={m.ip}><span className="font-mono">{m.ip}</span></BottoneCopia></TableCell>
                       <TableCell>
                         <Badge variant="outline">{SOURCE_LABELS[m.source] ?? m.source}</Badge>
                       </TableCell>
                       <TableCell className="text-sm">{m.network_name ?? "—"}</TableCell>
                       <TableCell className="font-medium">{m.hostname ?? "—"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{m.vendor ?? "—"}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(m.last_seen)}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {m.previous_ip ?? "—"}
+                      <TableCell className="text-sm text-muted-foreground"><TempoRelativo data={m.last_seen} /></TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {m.previous_ip ? <BottoneCopia valore={m.previous_ip}><span className="font-mono">{m.previous_ip}</span></BottoneCopia> : "—"}
                       </TableCell>
                     </TableRow>
                   ))}

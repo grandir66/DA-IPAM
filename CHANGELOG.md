@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Copia IP e tempo relativo nella tabella ARP
+
+### Cambiato
+- **Tabella ARP**: gli IP (attuale e precedente) hanno il bottone copia; «ultima vista» mostra il tempo relativo con la data esatta nel suggerimento. Stessi mattoni di Servizi di rete.
+
 ## [Non rilasciato] — 2026-11-09 · Gravità a tacche anche nella scheda host
 
 Riccardo (09/11), rappresentazione: la gravità a tacche uguale in tutta l'app.

@@ -34,6 +34,11 @@ Riccardo (08/11): l'autorizzazione degli impianti deve poter valere «per tutta 
 - **«Includi impianti…» autorizza solo gli impianti selezionati**, con tre durate: 4 ore, la prossima finestra della rete (la fascia la dice la sonda), definitiva (si sceglie solo per impianti già scansionati senza danni con un consenso; la sentinella la revoca se interviene). Il server confronta gli IP scelti con l'inventario di oggi. La riga di ogni impianto dice fino a quando è incluso e chi l'ha autorizzato.
 - **«A finestra» nel pannello «Quando»**, accanto ad «Adesso» e «A orario»: dalle, alle, giorni. DA-IPAM manda alla sonda i gruppi dei device inclusi, ognuno col suo profilo, e li rimanda quando cambiano (giro di ogni minuto, una sonda che non risponde si riprova dopo 10 minuti); a fine fascia la sonda si ferma e alla fascia dopo riprende. Una sola pianificazione per rete resta la regola: passare da finestra a orario, o spegnere, toglie la finestra dalla sonda. Solo Greenbone: nuclei e moduli nella finestra non partono.
 
+### Corretto (collaudo del 09/11 su 79993-ipam-2)
+- Cambiando fra «A orario» e «A finestra» l'esito del modo di prima non resta più in vista, e tornando indietro si ritrovano orario e fascia salvati (prima ripartivano da settimanale 02:00).
+- Le spunte «Lancia» si riaprono con le famiglie della pianificazione accesa, invece di tornare tutte accese a ogni ricarica.
+- Il riquadro del consenso scrive il nome di chi è entrato, non «te».
+
 ### Cambiato
 - **Con un consenso che copre l'ora gli impianti entrano anche nelle pianificazioni e nelle finestre** (prima solo «Adesso»), in «Per device» e anche in «Un profilo solo» (Riccardo: «Sì, estendilo»; lo decide la sonda al giro, la colonna «Cosa cambia» lo dice). Senza, restano fuori e l'esito della pianificazione lo dice; la sonda lo ricontrolla comunque al lancio.
 

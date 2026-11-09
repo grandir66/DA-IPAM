@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import {
-  decisione, finestreDevice, istanteRoma, leggiPianificazione, prossimaEsecuzione, riassuntoEsito, salvaFinestraDevice, salvaPianificazione, scadute, spegniPianificazione,
+  decisione, finestreDevice, istanteRoma, leggiPianificazione, prossimaEsecuzione, registraEsito, riassuntoEsito, salvaFinestraDevice, salvaPianificazione, scadute, spegniPianificazione,
 } from "@/lib/vuln/proposta/pianificazione";
 import { allineaFinestre, eseguiScadute } from "@/lib/vuln/proposta/pianificazione-job";
 import { quandoInParole } from "@/lib/vuln/proposta/pianificazione-parole";
@@ -191,7 +191,22 @@ test("finestra per device: salvata non si lancia all'ora, si descrive con la fas
     assert.equal(finestreDevice().some((x) => x.network_id === 21), true);
     const orario = salvaPianificazione({ network_id: 21, famiglie: ["rete"], frequenza: "giornaliera", giorno: null, ora: "02:00", chi: "r" });
     assert.equal(orario.modo, "orario", "una sola pianificazione per rete: l'orario prende il posto della finestra");
-    assert.equal(orario.fascia, null);
+    assert.equal(quandoInParole(orario), "ogni giorno alle 02:00");
+    assert.deepEqual(orario.fascia, { giorni: [0, 6], dalle: "22:00", alle: "06:00" }, "la fascia resta per riproporla");
+  });
+});
+
+// Collaudo del 09/11: cambiando modo l'esito del modo di prima restava in vista, e tornando a «A orario» frequenza e ora
+// ripartivano da settimanale 02:00.
+test("cambiando modo: l'esito di prima sparisce, l'orario di prima resta", () => {
+  withTenant(T, () => {
+    rete(24);
+    salvaPianificazione({ network_id: 24, famiglie: ["rete"], frequenza: "giornaliera", giorno: null, ora: "14:30", chi: "r" });
+    registraEsito(24, new Date("2026-11-08T13:30:00Z"), "3 gruppi su 3 partiti", "ok");
+    const f = salvaFinestraDevice({ network_id: 24, famiglie: ["rete"], chi: "r", fascia: { giorni: [0], dalle: "22:00", alle: "06:00" }, firma: "x" });
+    assert.equal(f.ultimo_esito, null);
+    assert.equal(f.ultima_il, null);
+    assert.deepEqual([f.frequenza, f.ora], ["giornaliera", "14:30"]);
   });
 });
 

@@ -249,7 +249,13 @@ function RigaDevice({ r, consenso, amministratore, profonditaFissa, occupato, sc
   );
 }
 
-export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: QuadroScansioni; amministratore: boolean; onRileggi: () => Promise<void> }) {
+export function PerDevice({ quadro, amministratore, onRileggi, nomeUtente }: {
+  quadro: QuadroScansioni;
+  amministratore: boolean;
+  onRileggi: () => Promise<void>;
+  /** Chi è entrato: il riquadro del consenso lo scrive («Registrato a nome di …»). */
+  nomeUtente: string;
+}) {
   const [conti, setConti] = useState<Record<number, ContoProposte>>({});
   const [reteId, setReteId] = useState<number | null>(null);
   const [dati, setDati] = useState<RispostaProposte | null>(null);
@@ -370,6 +376,13 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
   const nInLancio = inLancio.reduce((t, f) => t + (f.famiglia === "impianti" ? f.device : f.confermati), 0);
   const somma = (k: "esclusi" | "inAttesa" | "daRivedere") => famiglie.reduce((t, f) => t + f[k], 0);
   const conteggio = (f: Famiglia) => famiglie.find((x) => x.famiglia === f)?.device ?? 0;
+
+  // Collaudo del 09/11: a ogni ricarica le spunte «Lancia» tornavano tutte accese; con una pianificazione accesa si
+  // riaprono con le sue famiglie. Stabile (useCallback) perché il pannello «Quando» la usa nella sua lettura.
+  const tutte = famiglie.map((f) => f.famiglia).join(",");
+  const riprendiSpunte = useCallback((salvate: readonly Famiglia[]) => {
+    setSpente(new Set(tutte.split(",").filter((f): f is Famiglia => f !== "" && !salvate.includes(f as Famiglia)) as Famiglia[]));
+  }, [tutte]);
 
   /** Passo 9: revoca il consenso degli impianti della rete (stessa rotta della scheda «Un profilo solo»). */
   const revocaConsenso = async () => {
@@ -718,6 +731,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
           manca={manca}
           occupato={occupato}
           onAdesso={() => void lancia(inLancio.map((f) => f.famiglia))}
+          onSalvata={riprendiSpunte}
           fuori={
             <span className="flex flex-wrap items-center gap-2 text-sm">
               Restano fuori:
@@ -732,7 +746,7 @@ export function PerDevice({ quadro, amministratore, onRileggi }: { quadro: Quadr
         <RiquadroConsenso
           rete={rete}
           scelti={perConsenso ?? undefined}
-          nome="te"
+          nome={nomeUtente}
           onChiudi={() => setPerConsenso(false)}
           onFatto={() => {
             setPerConsenso(false);

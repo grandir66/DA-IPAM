@@ -131,7 +131,8 @@ function daRiga(r: Riga): Pianificazione {
   const famiglie = r.famiglie.split(",").filter((f): f is FamigliaPianificabile => (FAMIGLIE_PIANIFICABILI as readonly string[]).includes(f));
   const tono = (["ok", "avviso", "errore", "spento"] as const).find((x) => x === r.ultimo_tono) ?? null;
   const modo: ModoPianificazione = r.modo === "finestra" ? "finestra" : "orario";
-  const fascia = modo === "finestra" && r.fascia_dalle && r.fascia_alle
+  // La fascia resta anche tornando a «A orario» (e l'orario resta con la finestra): il pannello ripropone l'ultima scelta.
+  const fascia = r.fascia_dalle && r.fascia_alle
     ? { giorni: (r.fascia_giorni ?? "").split(",").filter((g) => g !== "").map(Number), dalle: r.fascia_dalle, alle: r.fascia_alle }
     : null;
   return {
@@ -158,6 +159,9 @@ export function salvaPianificazione(
      VALUES (?, ?, ?, ?, ?, 1, ?, ?, datetime('now'), 'orario')
      ON CONFLICT(network_id) DO UPDATE SET famiglie = excluded.famiglie, frequenza = excluded.frequenza, giorno = excluded.giorno,
        ora = excluded.ora, attiva = 1, prossima_il = excluded.prossima_il, chi = excluded.chi, aggiornata_il = datetime('now'),
+       ultima_il = CASE WHEN modo = 'finestra' THEN NULL ELSE ultima_il END,
+       ultimo_esito = CASE WHEN modo = 'finestra' THEN NULL ELSE ultimo_esito END,
+       ultimo_tono = CASE WHEN modo = 'finestra' THEN NULL ELSE ultimo_tono END,
        modo = 'orario', firma_gruppi = NULL`,
   ).run(p.network_id, p.famiglie.join(","), p.frequenza, p.giorno, p.ora, prossima, p.chi);
   return leggiPianificazione(p.network_id)!;
@@ -175,8 +179,12 @@ export function salvaFinestraDevice(
     `INSERT INTO va_pianificazioni_device (network_id, famiglie, frequenza, giorno, ora, attiva, prossima_il, chi, aggiornata_il,
        modo, fascia_giorni, fascia_dalle, fascia_alle, firma_gruppi)
      VALUES (?, ?, 'giornaliera', NULL, ?, 1, NULL, ?, datetime('now'), 'finestra', ?, ?, ?, ?)
-     ON CONFLICT(network_id) DO UPDATE SET famiglie = excluded.famiglie, frequenza = 'giornaliera', giorno = NULL, ora = excluded.ora,
-       attiva = 1, prossima_il = NULL, chi = excluded.chi, aggiornata_il = datetime('now'), modo = 'finestra',
+     ON CONFLICT(network_id) DO UPDATE SET famiglie = excluded.famiglie,
+       attiva = 1, prossima_il = NULL, chi = excluded.chi, aggiornata_il = datetime('now'),
+       ultima_il = CASE WHEN modo = 'orario' THEN NULL ELSE ultima_il END,
+       ultimo_esito = CASE WHEN modo = 'orario' THEN NULL ELSE ultimo_esito END,
+       ultimo_tono = CASE WHEN modo = 'orario' THEN NULL ELSE ultimo_tono END,
+       modo = 'finestra',
        fascia_giorni = excluded.fascia_giorni, fascia_dalle = excluded.fascia_dalle, fascia_alle = excluded.fascia_alle,
        firma_gruppi = excluded.firma_gruppi`,
   ).run(p.network_id, p.famiglie.join(","), p.fascia.dalle, p.chi, giorni, p.fascia.dalle, p.fascia.alle, p.firma);

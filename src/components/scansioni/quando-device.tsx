@@ -36,7 +36,7 @@ function istante(iso: string): string {
   return new Date(iso).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-export function QuandoDevice({ reteId, nomeRete, scelte, sceltePiano, nomiFamiglie, nDevice, amministratore, manca, occupato, onAdesso, fuori }: {
+export function QuandoDevice({ reteId, nomeRete, scelte, sceltePiano, nomiFamiglie, nDevice, amministratore, manca, occupato, onAdesso, fuori, onSalvata }: {
   reteId: number;
   nomeRete: string;
   /** I gruppi spuntati nella colonna «Lancia» che partono adesso (gli impianti solo col consenso che vale ora). */
@@ -52,6 +52,8 @@ export function QuandoDevice({ reteId, nomeRete, scelte, sceltePiano, nomiFamigl
   occupato: boolean;
   onAdesso: () => void;
   fuori: React.ReactNode;
+  /** Le famiglie della pianificazione accesa: la colonna «Lancia» si riapre con quelle (collaudo del 09/11). */
+  onSalvata?: (famiglie: readonly Famiglia[]) => void;
 }) {
   const [modo, setModo] = useState<Modo>("adesso");
   const [giorni, setGiorni] = useState<number[]>([6, 0]);
@@ -76,18 +78,21 @@ export function QuandoDevice({ reteId, nomeRete, scelte, sceltePiano, nomiFamigl
     setDati(r.data);
     const p = r.data.pianificazione;
     if (p) {
-      if (p.modo === "finestra" && p.fascia) {
+      // Orario e fascia restano salvati tutti e due: cambiando modo si ritrova l'ultima scelta (collaudo del 09/11).
+      if (p.fascia) {
         setGiorni(p.fascia.giorni);
         setDalle(p.fascia.dalle);
         setAlle(p.fascia.alle);
-      } else {
-        setFrequenza(p.frequenza);
-        setGiorno(p.giorno ?? (p.frequenza === "mensile" ? 1 : 0));
-        setOra(p.ora);
       }
-      if (p.attiva) setModo(p.modo === "finestra" ? "finestra" : "orario");
+      setFrequenza(p.frequenza);
+      setGiorno(p.giorno ?? (p.frequenza === "mensile" ? 1 : 0));
+      setOra(p.ora);
+      if (p.attiva) {
+        setModo(p.modo === "finestra" ? "finestra" : "orario");
+        onSalvata?.(p.famiglie);
+      }
     }
-  }, [reteId]);
+  }, [reteId, onSalvata]);
 
   useEffect(() => {
     setDati(null);

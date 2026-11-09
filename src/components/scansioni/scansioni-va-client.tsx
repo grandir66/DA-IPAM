@@ -393,7 +393,7 @@ export function ScansioniVaClient() {
         />
       )}
 
-      {scheda === "registro" ? <RegistroImpianti /> : scheda === "device" ? <PerDevice quadro={quadro} amministratore={amministratore} onRileggi={leggi} /> : (<>
+      {scheda === "registro" ? <RegistroImpianti /> : scheda === "device" ? <PerDevice quadro={quadro} amministratore={amministratore} onRileggi={leggi} nomeUtente={session?.user?.name ?? session?.user?.email ?? "chi è entrato"} /> : (<>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Reti scelte" valore={scelteValide.length} qualifica={`su ${quadro.reti.length}`} />
         <TesseraNumero

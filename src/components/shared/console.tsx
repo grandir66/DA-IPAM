@@ -480,3 +480,38 @@ export function BarraGravita({ conteggi, className }: { conteggi: Partial<Record
     </div>
   );
 }
+
+// ─── Tempo relativo (09/11/2026, dall'idea di Nety) ────────────────────────────
+// «1 ora fa», «3 giorni fa»: funzione pura (niente hook), usabile lato server e client.
+// La data assoluta resta nel `title`. Accetta la stringa del DB (UTC senza fuso) o un ISO.
+function dataDa(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) ? `${s.replace(" ", "T")}Z` : s;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Scrive quanto tempo fa, con la data e l'ora esatte nel `title`. `adesso` è per le prove. */
+export function TempoRelativo({ data, adesso, className }: { data: string | null | undefined; adesso?: Date; className?: string }) {
+  const d = dataDa(data);
+  if (!d) return <span className={cn("text-muted-foreground", className)}>—</span>;
+  return (
+    <span className={className} title={d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}>
+      {testoRelativo(d, adesso ?? new Date())}
+    </span>
+  );
+}
+
+/** «adesso», «5 min fa», «3 ore fa», «2 giorni fa», poi la data. Esportata per le prove. */
+export function testoRelativo(d: Date, adesso: Date): string {
+  const sec = Math.round((adesso.getTime() - d.getTime()) / 1000);
+  if (sec < 0) return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
+  if (sec < 45) return "adesso";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min fa`;
+  const ore = Math.round(min / 60);
+  if (ore < 24) return `${ore} ${ore === 1 ? "ora" : "ore"} fa`;
+  const giorni = Math.round(ore / 24);
+  if (giorni <= 7) return `${giorni} ${giorni === 1 ? "giorno" : "giorni"} fa`;
+  return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+}

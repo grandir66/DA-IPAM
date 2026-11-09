@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Copia-valore e tempo relativo (piccoli mattoni da Nety)
+
+Riccardo (09/11), rappresentazione dei dati: i tocchi d'uso quotidiano di uno strumento di rete.
+
+### Aggiunto
+- **`TempoRelativo`** (`console.tsx`, funzione pura): «1 ora fa», «3 giorni fa», con data e ora esatte nel `title`; oltre una settimana mostra la data. Usato per «ultima vista» in Servizi di rete.
+- **`BottoneCopia`** (`components/shared/copia.tsx`): icona che copia un IP/MAC/impronta negli appunti con la spunta di conferma. Accanto agli IP in Servizi di rete (riga e dettaglio): un IP si incolla al volo in un terminale.
+
 ## [Non rilasciato] — 2026-11-09 · Rilievi per rete in testata di Vulnerabilità (dall'Overview di Nety)
 
 Riccardo (09/11), rappresentazione dei dati: a colpo d'occhio, dove si concentrano i rilievi.

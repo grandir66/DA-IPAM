@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
-import { DatoDettaglio, Etichetta, InCorso, Legenda, Pannello, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { DatoDettaglio, Etichetta, InCorso, Legenda, Pannello, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { BottoneCopia } from "@/components/shared/copia";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
@@ -113,7 +114,7 @@ function DettaglioServizio({ r }: { r: ServizioRete }) {
   return (
     <div className="grid gap-3 bg-muted/40 p-3 md:grid-cols-2 xl:grid-cols-3">
       <Blocco titolo="Servizio">
-        <DatoDettaglio nome="Indirizzo" valore={`${r.ip}:${r.porta}/${r.protocollo}`} mono />
+        <DatoDettaglio nome="Indirizzo" valore={<BottoneCopia valore={r.ip}><span className="font-mono">{`${r.ip}:${r.porta}/${r.protocollo}`}</span></BottoneCopia>} />
         <DatoDettaglio nome="Come lo sappiamo" valore={<Metodo metodo={r.metodo} />} />
         <DatoDettaglio nome="Prima vista · ultima vista" valore={`${quando(r.primo_visto)} · ${quando(r.ultimo_visto)}`} mono />
         <DatoDettaglio nome="Ultima sonda" valore={quando(r.ultima_sonda)} mono />
@@ -362,7 +363,7 @@ export function ServiziReteClient({ iniziale, admin }: { iniziale: Dati & { reti
                       <TableRow className="cursor-pointer" onClick={() => apriChiudi(r.id)} aria-expanded={aperta}>
                         <TableCell>{aperta ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</TableCell>
                         <TableCell>
-                          <div className="font-mono font-semibold">{r.ip}</div>
+                          <BottoneCopia valore={r.ip}><span className="font-mono font-semibold">{r.ip}</span></BottoneCopia>
                           {r.hostname && <div className="text-[13px] text-muted-foreground">{r.hostname}</div>}
                         </TableCell>
                         <TableCell className="font-mono">{r.porta}/{r.protocollo}</TableCell>
@@ -376,7 +377,7 @@ export function ServiziReteClient({ iniziale, admin }: { iniziale: Dati & { reti
                         <TableCell className="max-w-[28rem] truncate" title={riassunto(r)}>{riassunto(r)}</TableCell>
                         <TableCell><Metodo metodo={r.metodo} /></TableCell>
                         <TableCell className="text-[13px]">{r.rete ?? "—"}</TableCell>
-                        <TableCell className="font-mono text-[13px]">{quando(r.ultimo_visto)}</TableCell>
+                        <TableCell className="text-[13px]"><TempoRelativo data={r.ultimo_visto} /></TableCell>
                       </TableRow>
                       {aperta && (
                         <TableRow>

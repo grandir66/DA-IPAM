@@ -15,6 +15,7 @@ import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import * as servizi from "./servizi-rete/db";
+import * as triage from "./triage/db";
 import * as identita from "./servizi-rete/identita";
 import * as segmentazione from "./segmentazione/db";
 import type { EsitoSonda } from "./servizi-rete/sonde";
@@ -12952,4 +12953,15 @@ export function getVistaServizioMatrice(): segmentazione.VistaServizio[] {
 }
 export function getConteggiSegmentazione(): segmentazione.ConteggiSegmentazione {
   return segmentazione.conteggiSegmentazione(db());
+}
+
+// ── Triage dei rilievi (09/11/2026, dall'engagement di Nety) ─────────────────
+export function getTriageRilievi(chiavi: string[]): Record<string, triage.RigaTriage> {
+  return triage.getTriage(db(), chiavi);
+}
+export function getConteggiTriage(): Record<triage.StatoTriage, number> {
+  return triage.conteggiTriage(db());
+}
+export function setTriageRilievo(chiave: string, stato: triage.StatoTriage, nota: string, utente: string | null): void {
+  triage.setTriage(db(), chiave, stato, nota, utente);
 }

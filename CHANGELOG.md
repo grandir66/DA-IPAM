@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Triage dei rilievi per riga (dall'engagement di Nety)
+
+Riccardo (09/11), rappresentazione dei dati: durante la revisione ogni rilievo ha uno stato deciso a mano e una nota.
+
+### Aggiunto
+- **Triage nella lista Vulnerabilità** (vista Per vulnerabilità): colonna «Stato» con badge (Da rivedere · In corso · Rivisto · Ignorato, segno + colore di `STILE_STATO`, leggibile per un daltonico) e, aprendo la riga, i quattro stati da scegliere e una nota «cosa ho provato, cosa ho trovato». Stato e nota per chiave di rilievo (`CVE-…` o `nvt:…`), stabili fra una scansione e l'altra.
+- **Mattoni `BadgeTriage` e `EditorTriage`** (`components/shared/triage-riga.tsx`), tabella `triage_rilievi` per tenant (`DDL_TRIAGE_RILIEVI`), logica in `lib/triage/db.ts`, rotta `/api/triage` (lettura con `requireAuth`, scrittura con `requireAdmin`). `da_fare` con nota vuota cancella la riga, così i conteggi restano veri.
+
 ## [Non rilasciato] — 2026-11-09 · Identità senza credenziali e matrice di segmentazione
 
 Riccardo (09/11): due IP con la stessa impronta SSH o TLS sono lo stesso apparato, da confermare; la matrice misura quali reti raggiungono quali, da dentro ogni VLAN.

@@ -350,6 +350,20 @@ CREATE TABLE IF NOT EXISTS segmentazione_prove (
 CREATE INDEX IF NOT EXISTS idx_segmentazione_prove_giro ON segmentazione_prove(giro_id);
 CREATE INDEX IF NOT EXISTS idx_segmentazione_prove_celle ON segmentazione_prove(rete_sorgente, rete_bersaglio);`;
 
+/**
+ * Triage dei rilievi (09/11/2026, dall'engagement di Nety): mentre si rivede un report, ogni
+ * rilievo ha uno stato deciso a mano e una nota «cosa ho provato, cosa ho trovato». Gli stati
+ * sono pochi di proposito. La chiave è quella del rilievo aggregato (`CVE-…` o `nvt:…`), stabile
+ * fra una scansione e l'altra. Per tenant.
+ */
+export const DDL_TRIAGE_RILIEVI = `CREATE TABLE IF NOT EXISTS triage_rilievi (
+  chiave TEXT PRIMARY KEY,
+  stato TEXT NOT NULL DEFAULT 'da_fare' CHECK(stato IN ('da_fare','in_corso','fatto','ignorato')),
+  nota TEXT NOT NULL DEFAULT '',
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  aggiornato_da TEXT
+);`;
+
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL,
@@ -536,6 +550,7 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     db.exec(DDL_ACCESSO_WINDOWS_ESITI);
     db.exec(DDL_SCELTE_GRUPPO);
     db.exec(DDL_SERVIZI_RETE);
+    db.exec(DDL_TRIAGE_RILIEVI);
     db.exec(DDL_IDENTITA);
     db.exec(DDL_SEGMENTAZIONE);
   } catch (e) {
@@ -1716,6 +1731,8 @@ CREATE TABLE IF NOT EXISTS host_credentials (
 ${DDL_ACCESSO_WINDOWS_ESITI}
 
 ${DDL_SERVIZI_RETE}
+
+${DDL_TRIAGE_RILIEVI}
 
 ${DDL_IDENTITA}
 

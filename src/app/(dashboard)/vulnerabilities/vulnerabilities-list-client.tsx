@@ -35,6 +35,8 @@ import { LoadError } from "@/components/shared/load-error";
 import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { BadgeGravita, LegendaGravita } from "@/components/shared/console";
+import { BadgeTriage, EditorTriage } from "@/components/shared/triage-riga";
+import type { RigaTriage, StatoTriage } from "@/lib/triage/db";
 import { fetchJson } from "@/lib/fetch-json";
 import { useEAdmin } from "@/hooks/use-e-admin";
 import { CvePotenziali } from "./cve-potenziali";
@@ -182,6 +184,8 @@ export function VulnerabilitiesListClient() {
   const [sortBy, setSortBy] = useState("severity");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const admin = useEAdmin();
+  const [triage, setTriage] = useState<Record<string, RigaTriage>>({});
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState<string | null>(null);
@@ -242,6 +246,20 @@ export function VulnerabilitiesListClient() {
       cancelled = true;
     };
   }, [params, vista, ricarica]);
+
+  // Triage delle CVE mostrate: una chiamata dopo che la lista è arrivata (solo vista CVE).
+  useEffect(() => {
+    if (vista !== "cve" || dataCve.length === 0) return;
+    let cancelled = false;
+    const chiavi = dataCve.map((r) => r.key).join(",");
+    void (async () => {
+      const r = await fetchJson<{ triage: Record<string, RigaTriage> }>(`/api/triage?chiavi=${encodeURIComponent(chiavi)}`);
+      if (!cancelled && r.ok) setTriage(r.data.triage);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dataCve, vista]);
 
   // URL preset (es. ?search=Firefox, ?vista=host) — letto solo al primo mount
   useEffect(() => {
@@ -328,7 +346,7 @@ export function VulnerabilitiesListClient() {
   const hasFilters =
     search || severityFilter.size > 0 || sourceFilter.size > 0 || osFilter.size > 0 || exploitFilter.size > 0 || onlyWithCve;
   const righe = vista === "host" ? dataHost.length : dataCve.length;
-  const colonne = vista === "host" ? 13 : 10;
+  const colonne = vista === "host" ? 13 : 11;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -506,6 +524,7 @@ export function VulnerabilitiesListClient() {
                       <SortableTableHead columnId="cve_id" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort}>CVE</SortableTableHead>
                       <SortableTableHead columnId="severity" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort}>Severità</SortableTableHead>
                       <SortableTableHead columnId="cvss" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort}>CVSS</SortableTableHead>
+                      <SortableTableHead columnId="" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>Stato</SortableTableHead>
                       <SortableTableHead columnId="package" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>Pacchetto / NVT</SortableTableHead>
                       <SortableTableHead columnId="exploit" sortColumn={sortBy} sortDirection={sortDir} onSort={onSort}>Exploit</SortableTableHead>
                       <SortableTableHead columnId="epss" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}}>EPSS</SortableTableHead>
@@ -547,6 +566,9 @@ export function VulnerabilitiesListClient() {
                       isOpen={expanded.has(row.key)}
                       onToggle={() => toggleExpand(row.key)}
                       onOpenDrillDown={openDrillDown}
+                      triage={triage[row.key]}
+                      admin={admin}
+                      onTriage={(t) => setTriage((m) => ({ ...m, [row.key]: { chiave: row.key, nota: t.nota, stato: t.stato, aggiornato_il: new Date().toISOString(), aggiornato_da: null } }))}
                     />
                   ))}
                   {!loading && vista === "host" && dataHost.map((row) => (
@@ -654,11 +676,17 @@ function RowGroup({
   isOpen,
   onToggle,
   onOpenDrillDown,
+  triage,
+  admin,
+  onTriage,
 }: {
   row: AggregatedVulnUi;
   isOpen: boolean;
   onToggle: () => void;
   onOpenDrillDown: (key: string) => void;
+  triage?: RigaTriage;
+  admin: boolean;
+  onTriage: (t: { stato: StatoTriage; nota: string }) => void;
 }) {
   return (
     <>
@@ -669,6 +697,7 @@ function RowGroup({
         <TableCell><CveLink cve={row.cve_id} /></TableCell>
         <TableCell><BadgeGravita gravita={row.severity} /></TableCell>
         <TableCell className="font-mono text-xs">{row.cvss_score?.toFixed(1) ?? "—"}</TableCell>
+        <TableCell>{triage ? <BadgeTriage stato={triage.stato} /> : <span className="text-[13px] text-muted-foreground">—</span>}</TableCell>
         <TableCell className="max-w-[16rem] 2xl:max-w-[28rem] truncate" title={row.package_label ?? ""}>
           {row.package_label ?? <span className="text-muted-foreground">—</span>}
         </TableCell>
@@ -687,8 +716,17 @@ function RowGroup({
       </TableRow>
       {isOpen && (
         <TableRow>
-          <TableCell colSpan={10} className="bg-muted/20 p-0">
-            <div className="p-3">
+          <TableCell colSpan={11} className="bg-muted/20 p-0">
+            <div className="space-y-3 p-3" onClick={(e) => e.stopPropagation()}>
+              <div className="rounded-lg border bg-card p-3">
+                <p className="mb-2 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Triage</p>
+                <EditorTriage
+                  chiave={row.key}
+                  admin={admin}
+                  iniziale={triage ? { stato: triage.stato, nota: triage.nota, aggiornato_il: triage.aggiornato_il, aggiornato_da: triage.aggiornato_da } : undefined}
+                  onCambio={onTriage}
+                />
+              </div>
               <HostsTable hosts={row.hosts_preview} compact />
               {row.host_count > row.hosts_preview.length && (
                 <div className="mt-2 text-right">

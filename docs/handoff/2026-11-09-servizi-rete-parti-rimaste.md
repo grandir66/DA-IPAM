@@ -36,6 +36,18 @@ segmentazione» (menu Sicurezza): tessere coi numeri, matrice rete×rete «raggi
 Collaudo: rendere trunk la scheda della VM 963 sul Proxmox di casa con le VLAN 102 e 103, snapshot
 prima. Oggi la 963 vede solo la VLAN nativa.
 
+**Richiede una riconfig del deploy (Riccardo, 10/11/2026).** La matrice non gira sulla scheda
+condivisa: il sensore in modo «condivisa» (NIC dell'IP ufficiale) la rifiuta con 400 «usa la NIC
+trunk dedicata» — provato sulla sonda 963, `modo: condivisa` su eth0. Perché funzioni dai clienti
+serve che ogni appliance nasca con una **porta trunk dedicata**, non su richiesta:
+- **Deploy-Appliance**: seconda scheda in trunk di serie (`config.yaml`, installer con `--trunk-nic`
+  dedicata / su Proxmox `--trunk-bridge` + `--trunk-vlans`); oggi `trunk_sensore` è opzionale.
+- **Immagini / provisioning (DA-Link)**: la VM va creata con quella seconda scheda su un bridge
+  VLAN-aware in trunk.
+- **Conseguenza nota**: con il sensore su NIC dedicata le sorgenti ARP `vlan-subif` su quella
+  scheda non valgono più (doc del sensore trunk) — decidere come conviverci.
+Finché il deploy non cambia, la matrice si prova solo dove c'è già un trunk dedicato.
+
 ## 3. NTLM (pezzo opzionale dell'identità)
 Un server SMB/RDP/HTTP-negotiate riporta nome, dominio e versione del sistema nella risposta di
 negoziazione, prima dell'autenticazione. È una prova in più per l'identità del punto 1. Da

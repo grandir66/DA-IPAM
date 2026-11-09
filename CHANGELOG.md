@@ -12,6 +12,11 @@ Riccardo (10/11): «si andiamo con ntlm» — prova in più per lo stesso appara
 - **Sonda NTLM** sulla 445 (SMB2 NEGOTIATE anonimo) e su HTTP con `WWW-Authenticate: NTLM`: si legge nome computer, dominio e versione OS dalla CHALLENGE. Nessun Type 3, nessuna password. RDP resta fuori (stretta di mano pesante).
 - Due IP con lo stesso nome Windows (`ntlm_computer`) diventano una proposta «stesso apparato», come SSH e TLS. WORKGROUP e localhost non contano. Niente fusioni automatiche.
 
+## [Non rilasciato] — 2026-11-09 · Copia IP nell'intestazione della scheda asset
+
+### Cambiato
+- **Scheda asset (`/objects/[id]`)**: l'IP nell'intestazione ha il bottone copia — il posto più aperto per prendere al volo l'indirizzo di un apparato.
+
 ## [Non rilasciato] — 2026-11-09 · Copia IP e tempo relativo nella tabella ARP
 
 ### Cambiato

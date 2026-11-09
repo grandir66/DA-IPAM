@@ -18,6 +18,7 @@ import { marcaRilevata } from "@/lib/devices/marca-rilevata";
 import type { TipoScheda } from "@/lib/scheda/tipo-scheda";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
+import { BottoneCopia } from "@/components/shared/copia";
 import type { HostDetail } from "@/types";
 import type { DeviceFull } from "./dati";
 
@@ -108,7 +109,7 @@ export function IntestazioneScheda({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="min-w-0 shrink truncate text-xl font-bold tracking-tight" title={nome}>{nome}</h1>
-        <span className="shrink-0 font-mono text-sm text-muted-foreground">{host.ip}</span>
+        <BottoneCopia valore={host.ip} className="shrink-0"><span className="font-mono text-sm text-muted-foreground">{host.ip}</span></BottoneCopia>
         <span className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-[#0D2537] text-white dark:border-[#E6EEF4] dark:bg-[#E6EEF4] dark:text-[#0D2537]")}>{ETICHETTA_TIPO[tipo]}</span>
         {ruoliNoti.map((r) => (
           <span key={r} title={ETICHETTE_RUOLI[r]} className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-white text-[#0D2537] dark:border-[#E6EEF4] dark:bg-transparent dark:text-[#E6EEF4]")}>{RUOLO_BREVE[r] ?? ETICHETTE_RUOLI[r]}</span>

@@ -4,6 +4,7 @@
  * Va chiamato dentro il contesto del tenant. Nessun segreto: credenziali per nome, snapshot già ripuliti.
  */
 import { descrittore } from "@/lib/acquisition";
+import { COLLECTOR_IDS } from "@/lib/acquisition/catalogo";
 import { acquisizioneModulareAccesa, elencoSnapshotAcquisizione, getNetworkDeviceById, modificheSnapshotAcquisizione } from "@/lib/db-tenant";
 import { leggiPayload } from "./archivio";
 import { acquisizioneInCorso } from "./esegui";
@@ -38,6 +39,8 @@ export function statoRiquadro(deviceId: number, chiesto: number | null, pagina: 
     }
     inVista = {
       id: l.riga.id, collector: l.riga.collector, collector_version: l.riga.collector_version, status: l.riga.status,
+      // Estrazione del tecnico con un collector che il prodotto non ha ancora (09/11): la scheda lo dice accanto al nome.
+      nel_catalogo: (COLLECTOR_IDS as readonly string[]).includes(l.riga.collector),
       finished_at: l.riga.finished_at, duration_ms: l.riga.duration_ms, requested_by_name: l.riga.requested_by_name,
       credenziali: Object.fromEntries(Object.entries(credenziali).map(([p, c]) => [p, c.nome])),
       sezioni: sezioniPerScheda(l.snapshot),

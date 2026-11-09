@@ -13,6 +13,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { Riquadro } from "./riquadro";
 import { VistaAcquisizioneModulare, type StatoAcquisizione } from "./acquisizione-modulare-vista";
+import { EsitoImportEstrazione, PulsanteImportaEstrazione, type EsitoImportVisto } from "./importa-estrazione";
 
 export function FinestraFonte({ aperta, onChiudi, possibili, attuale, nomeApparato, onSalva }: {
   aperta: boolean;
@@ -61,6 +62,7 @@ export function RiquadroAcquisizioneModulare({ deviceId, nomeApparato, isAdmin }
   const [errore, setErrore] = useState<string | null>(null);
   const [vista, setVista] = useState<{ snapshot: number | null; pagina: number }>({ snapshot: null, pagina: 1 });
   const [finestra, setFinestra] = useState(false);
+  const [esitoImport, setEsitoImport] = useState<EsitoImportVisto>(null);
 
   const carica = useCallback(async () => {
     const q = new URLSearchParams({ pagina: String(vista.pagina) });
@@ -85,7 +87,10 @@ export function RiquadroAcquisizioneModulare({ deviceId, nomeApparato, isAdmin }
 
   return (
     <div className="rounded-xl ring-2 ring-[#00A7E7]/70">
-      <Riquadro titolo="Acquisizione modulare (anteprima)">
+      <Riquadro titolo="Acquisizione modulare (anteprima)"
+        azione={isAdmin ? <PulsanteImportaEstrazione deviceId={deviceId} onEsito={setEsitoImport}
+          onFatto={async () => { setVista({ snapshot: null, pagina: 1 }); await carica(); }} /> : undefined}>
+        {esitoImport && <EsitoImportEstrazione esito={esitoImport} onChiudi={() => setEsitoImport(null)} />}
         {errore ? (
           <LoadError what="l'acquisizione modulare" message={errore} onRetry={() => void carica()} />
         ) : !stato ? (

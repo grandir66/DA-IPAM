@@ -60,3 +60,17 @@ export function nvdCveUrl(cve: string): string {
 export function fonteEdgeSql(alias: string): string {
   return `CASE WHEN ${alias}.nvt_oid LIKE 'nuclei:%' THEN 'Edge-N' WHEN ${alias}.nvt_oid LIKE 'controllo:%' THEN 'Edge-C' ELSE 'Edge-G' END`;
 }
+
+/**
+ * Scala della gravità per la rappresentazione (Riccardo, 09/11/2026, dall'idea di Nety):
+ * ogni livello ha un numero di tacche (1–4) OLTRE al colore, così si legge per forma e per
+ * luminanza, non per tinta — Riccardo è daltonico. I colori sono dati, non Tailwind «di
+ * significato»: hex espliciti a luminanza crescente dal Critical (scuro) al Low (chiaro),
+ * con la loro legenda accanto (come `STILE_STATO`). Vale per i quattro livelli di DA-IPAM.
+ */
+export const GRAVITA_SCALA: Record<Severity, { barre: number; fondo: string; testo: string; bordo: string; etichetta: string }> = {
+  Critical: { barre: 4, fondo: "#8E1B20", testo: "#FFFFFF", bordo: "#6E1419", etichetta: "Critica" },
+  High: { barre: 3, fondo: "#C65A1E", testo: "#FFFFFF", bordo: "#9C4517", etichetta: "Alta" },
+  Medium: { barre: 2, fondo: "#FFD400", testo: "#0D2537", bordo: "#C9A800", etichetta: "Media" },
+  Low: { barre: 1, fondo: "#BFE3F4", testo: "#0D2537", bordo: "#7FB9D9", etichetta: "Bassa" },
+};

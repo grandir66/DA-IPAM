@@ -12,7 +12,6 @@ import {
   RotateCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -34,7 +33,8 @@ import { SortableTableHead, type SortDirection } from "@/components/shared/sorta
 import { Pagination } from "@/components/shared/pagination";
 import { LoadError } from "@/components/shared/load-error";
 import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
-import { SEVERITY_STYLE, SEVERITIES, type Severity } from "@/lib/severity-style";
+import { SEVERITIES, type Severity } from "@/lib/severity-style";
+import { BadgeGravita, LegendaGravita } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { useEAdmin } from "@/hooks/use-e-admin";
 import { CvePotenziali } from "./cve-potenziali";
@@ -365,10 +365,9 @@ export function VulnerabilitiesListClient() {
         </div>
         <div className="flex items-center gap-2">
           {(["Critical", "High", "Medium", "Low"] as Severity[]).map((sev) => (
-            <Badge key={sev} className={SEVERITY_STYLE[sev]}>
-              {sev}: {rollup[sev]}
-            </Badge>
+            <BadgeGravita key={sev} gravita={sev} conteggio={rollup[sev]} />
           ))}
+          <LegendaGravita className="w-full justify-end" />
         </div>
       </div>
 
@@ -398,7 +397,6 @@ export function VulnerabilitiesListClient() {
                     type="button"
                     size="sm"
                     variant={active ? "default" : "outline"}
-                    className={active ? SEVERITY_STYLE[sev] : ""}
                     onClick={() => alterna(setSeverityFilter, sev)}
                   >
                     {sev}
@@ -669,7 +667,7 @@ function RowGroup({
           {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </TableCell>
         <TableCell><CveLink cve={row.cve_id} /></TableCell>
-        <TableCell><Badge className={SEVERITY_STYLE[row.severity]}>{row.severity}</Badge></TableCell>
+        <TableCell><BadgeGravita gravita={row.severity} /></TableCell>
         <TableCell className="font-mono text-xs">{row.cvss_score?.toFixed(1) ?? "—"}</TableCell>
         <TableCell className="max-w-[16rem] 2xl:max-w-[28rem] truncate" title={row.package_label ?? ""}>
           {row.package_label ?? <span className="text-muted-foreground">—</span>}
@@ -716,7 +714,7 @@ function RowGroup({
 
 function ConteggioSeverita({ sev, n }: { sev: Severity; n: number }) {
   if (n === 0) return <span className="text-muted-foreground">–</span>;
-  return <Badge className={`min-w-[1.75rem] justify-center tabular-nums ${SEVERITY_STYLE[sev]}`}>{n}</Badge>;
+  return <BadgeGravita gravita={sev} conteggio={n} />;
 }
 
 function HostRow({ row, isOpen, onToggle }: { row: VulnHostRowUi; isOpen: boolean; onToggle: () => void }) {
@@ -832,7 +830,7 @@ function DettaglioHost({ row }: { row: VulnHostRowUi }) {
                 {(tutte ? vulns : vulns.slice(0, DETTAGLIO_PRIMI)).map((v) => (
                   <tr key={v.key} className="border-t border-border/40">
                     <td className="py-1 px-2"><CveLink cve={v.cve_id} /></td>
-                    <td className="py-1 px-2"><Badge className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[v.severity]}`}>{v.severity}</Badge></td>
+                    <td className="py-1 px-2"><BadgeGravita gravita={v.severity} /></td>
                     <td className="py-1 px-2 font-mono">{v.cvss_score?.toFixed(1) ?? "—"}</td>
                     <td className="py-1 px-2 max-w-[26rem] truncate" title={v.package_label ?? ""}>{v.package_label ?? "—"}</td>
                     <td className="py-1 px-2 font-mono whitespace-nowrap" title={v.ports.join(", ")}>
@@ -899,7 +897,7 @@ function HostsTable({ hosts, compact = false }: { hosts: VulnHostRef[]; compact?
               </td>
               <td className="py-1 pr-3 font-mono">{h.ip || "—"}</td>
               <td className="py-1 pr-3 text-muted-foreground">{h.network_name ?? "—"}</td>
-              <td className="py-1 pr-3"><Badge className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[h.severity] ?? ""}`}>{h.severity}</Badge></td>
+              <td className="py-1 pr-3"><BadgeGravita gravita={h.severity} /></td>
               <td className="py-1 pr-3 font-mono">{h.cvss_score?.toFixed(1) ?? "—"}</td>
               <td className="py-1 pr-3"><SourcesBadges sources={[h.source]} /></td>
               <td className="py-1 pr-3 text-muted-foreground whitespace-nowrap">{formatDate(h.scanned_at)}</td>

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { GRAVITA_SCALA, SEVERITIES, normalizeSeverity, type Severity } from "@/lib/severity-style";
 
 /**
  * Mattoni delle pagine «console» (docs/STILE-UI.md). Vengono dal modello HTML di Riccardo
@@ -393,6 +394,89 @@ export function SchedePagina<T extends string>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Gravità a tacche (09/11/2026, dall'idea di Nety) ──────────────────────────
+// Il numero di barrette dice la gravità anche senza colore: Riccardo è daltonico, la
+// legge per forma e luminanza. La scala (colori-dato + barre) sta in `severity-style.ts`.
+
+/** Meter a 4 tacche, riempite fino alla gravità. `colore` = colore delle tacche piene. */
+function Tacche({ barre, colore, spente = "currentColor" }: { barre: number; colore: string; spente?: string }) {
+  const alt = [6, 9, 12, 15];
+  return (
+    <span aria-hidden className="inline-flex items-end gap-[2px]" style={{ height: 15 }}>
+      {alt.map((h, i) => (
+        <span
+          key={i}
+          className="w-[3px] rounded-[1px]"
+          style={{ height: h, backgroundColor: i < barre ? colore : spente, opacity: i < barre ? 1 : 0.25 }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Badge di gravità: tacche + parola, fondo pieno della scala. Sostituisce i badge
+ * rosso/arancio/giallo/blu di Tailwind (stessa luminanza per un daltonico). `conteggio`
+ * mette un numero al posto della parola (per le colonne «quante Critical» ecc.).
+ */
+export function BadgeGravita({ gravita, conteggio, className }: { gravita: Severity | string; conteggio?: number; className?: string }) {
+  const g = GRAVITA_SCALA[normalizeSeverity(gravita)];
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold leading-none whitespace-nowrap", className)}
+      style={{ backgroundColor: g.fondo, color: g.testo, borderColor: g.bordo }}
+      title={`Gravità ${g.etichetta.toLowerCase()}`}
+    >
+      <Tacche barre={g.barre} colore={g.testo} />
+      {conteggio != null ? <span className="tabular-nums">{conteggio}</span> : g.etichetta}
+    </span>
+  );
+}
+
+/** Legenda della gravità: le quattro tacche con la parola, per accompagnare le tabelle. */
+export function LegendaGravita({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-muted-foreground", className)}>
+      {SEVERITIES.map((s) => (
+        <span key={s} className="flex items-center gap-1.5">
+          <Tacche barre={GRAVITA_SCALA[s].barre} colore={GRAVITA_SCALA[s].fondo} />
+          {GRAVITA_SCALA[s].etichetta}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Barra impilata della gravità (dall'«rilievi per rete» di Nety): un segmento per livello,
+ * largo quanto il conteggio, col numero dentro se ci sta. I colori sono quelli della scala,
+ * quindi leggibili con la `LegendaGravita` accanto.
+ */
+export function BarraGravita({ conteggi, className }: { conteggi: Partial<Record<Severity, number>>; className?: string }) {
+  const totale = SEVERITIES.reduce((a, s) => a + (conteggi[s] ?? 0), 0);
+  return (
+    <div className={cn("flex h-5 w-full overflow-hidden rounded-md border bg-muted", className)} title={`${totale} rilievi`}>
+      {totale > 0 &&
+        SEVERITIES.map((s) => {
+          const n = conteggi[s] ?? 0;
+          if (n === 0) return null;
+          const g = GRAVITA_SCALA[s];
+          const perc = (n / totale) * 100;
+          return (
+            <div
+              key={s}
+              className="flex items-center justify-center text-[13px] font-semibold tabular-nums"
+              style={{ width: `${perc}%`, backgroundColor: g.fondo, color: g.testo }}
+              title={`${g.etichetta}: ${n}`}
+            >
+              {perc >= 8 ? n : ""}
+            </div>
+          );
+        })}
     </div>
   );
 }

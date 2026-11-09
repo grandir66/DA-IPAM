@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Gravità a tacche nella lista Vulnerabilità (dall'idea di Nety)
+
+Riccardo (09/11): «lavoriamo sulla rappresentazione dei dati», riprendendo l'interfaccia di Nety (idee, non codice: Nety è GPL-3.0).
+
+### Cambiato
+- **Badge di gravità `BadgeGravita`** (`console.tsx`): tacche 1–4 + colore a luminanza crescente + parola («Critica… Bassa»), al posto dei badge rosso/arancio/giallo/blu di Tailwind. La gravità si legge per forma e luminanza, non per tinta (Riccardo è daltonico). Usato nella lista Vulnerabilità (testata, colonna, conteggi, dettaglio host) e in CVE potenziali.
+- **`LegendaGravita` e `BarraGravita`** (barra impilata «rilievi per rete», dall'Overview di Nety): mattoni pronti in `console.tsx`. La scala (tacche + colori-dato) sta in `severity-style.ts` (`GRAVITA_SCALA`).
+- Tolti i colori Tailwind «di significato» (`bg-red-600`…) dalla lista Vulnerabilità e da CVE potenziali: ora solo colori-dato con legenda, come chiede STILE-UI.
+
 ## [Non rilasciato] — 2026-11-09 · Giro leggero sulle 1000 porte più usate, anche fuori standard
 
 Riccardo (09/11): «le porte da verificare possono essere molto più ampie dello standard per rilevare anche apparati che lavorano su porte fuori standard». Nety di serie prova le 1000 TCP più frequenti.

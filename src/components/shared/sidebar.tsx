@@ -55,7 +55,7 @@ import {
   PanelLeftOpen,
   Lock,
   type LucideIcon,
-  SlidersHorizontal, CalendarClock,
+  SlidersHorizontal, CalendarClock, FileCode2,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
@@ -582,6 +582,10 @@ export function Sidebar() {
         {/* «URL dell'hub» è in Impostazioni → Sistema dal 23/10 (Riccardo: quasi inutile qui). */}
         {isSuperadmin && (
           <NavItem href="/tenants" icon={Building2} label={tecnico ? "Profili" : "Istanze"} active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
+        )}
+        {/* Installazione «tecnico»: il prompt per il Claude Code del PC (Riccardo, 09/11). Altrove la rotta dà 404. */}
+        {tecnico && (
+          <NavItem href="/estrazione-apparati" icon={FileCode2} label="Estrazione apparati" active={isActive("/estrazione-apparati")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* ═══ SEPARATORE DATI ISTANZA (nascosto se collassato); la scelta è in Impostazioni ═══ */}

@@ -9,10 +9,11 @@ import { Etichetta, Legenda, Pannello, TesseraNumero, Vuoto } from "@/components
 import { fetchJson } from "@/lib/fetch-json";
 import type { ConteggiIdentita, PropostaIdentita } from "@/lib/servizi-rete/identita";
 
-const TIPO: Record<string, { segno: string; testo: string; classe: string }> = {
+const TIPO: Record<string, { segno: "■" | "◆" | "●" | "◇"; testo: string; classe: string }> = {
   ssh_hostkey: { segno: "■", testo: "chiave SSH", classe: "border-primary/40 bg-primary/10 text-cian-testo" },
   tls_cert: { segno: "◆", testo: "certificato TLS", classe: "border-primary/40 bg-primary/10 text-cian-testo" },
   snmp_engine_id: { segno: "●", testo: "engineID SNMP", classe: "border-primary/40 bg-primary/10 text-cian-testo" },
+  ntlm_computer: { segno: "◇", testo: "nome Windows", classe: "border-primary/40 bg-primary/10 text-cian-testo" },
 };
 
 interface Dati {
@@ -21,9 +22,10 @@ interface Dati {
 }
 
 function Impronta({ valore }: { valore: string }) {
+  const corto = /^[0-9a-f]{16,}$/i.test(valore) ? `${valore.slice(0, 16)}…` : valore;
   return (
     <span className="font-mono text-[13px]" title={valore}>
-      {valore.slice(0, 16)}…
+      {corto}
     </span>
   );
 }
@@ -80,13 +82,13 @@ export function IdentitaClient({ iniziale, admin }: { iniziale: Dati; admin: boo
         <TesseraNumero titolo="Da confermare" valore={c.proposte} nota="stessa impronta forte su due IP" />
         <TesseraNumero titolo="Collegati" valore={c.confermati} nota="confermati da una persona" />
         <TesseraNumero titolo="Rifiutati" valore={c.rifiutati} nota="non si ripropongono da soli" />
-        <TesseraNumero titolo="Prove" valore={c.prove} nota="impronte SSH, TLS, SNMP, nomi del trunk" />
+        <TesseraNumero titolo="Prove" valore={c.prove} nota="impronte SSH, TLS, SNMP, nome Windows, nomi del trunk" />
       </div>
 
       <Pannello
         titolo="Stesso apparato, da confermare"
         conteggio={dati.righe.length}
-        sottotitolo="Due IP con la stessa chiave SSH, lo stesso certificato o lo stesso engineID SNMP. Conferma li collega; rifiuto no. Nessuna fusione da sola."
+        sottotitolo="Due IP con la stessa chiave SSH, lo stesso certificato, lo stesso engineID SNMP o lo stesso nome Windows (NTLM). Conferma li collega; rifiuto no. Nessuna fusione da sola."
         azioni={
           admin ? (
             <Button size="sm" variant="outline" onClick={() => void raccogli()}>

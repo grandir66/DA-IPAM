@@ -8,15 +8,17 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
-import { normalizzaImpronta, raccogliECalcola, proposteIdentita, decidiProposta, conteggiIdentita } from "../identita";
+import { chiaveIdentitaNtlm, normalizzaImpronta, raccogliECalcola, proposteIdentita, decidiProposta, conteggiIdentita } from "../identita";
 
 const A = "PROVAIDENTA";
 const B = "PROVAIDENTB";
 const C = "PROVAIDENTC";
 const D = "PROVAIDENTD";
+const E = "PROVAIDENTE";
+const F = "PROVAIDENTF";
 
 after(() => {
-  for (const t of [A, B, C, D]) {
+  for (const t of [A, B, C, D, E, F]) {
     closeTenantDb(t);
     deleteTenantDatabase(t);
   }
@@ -99,6 +101,64 @@ test("conferma collega, rifiuto no; il ricalcolo non resuscita il rifiuto", () =
     const c = conteggiIdentita(d);
     assert.equal(c.rifiutati, 1);
     assert.equal(c.proposte, 0);
+  });
+});
+
+test("chiave NTLM: FQDN, altrimenti dominio\\pc; WORKGROUP non conta", () => {
+  assert.equal(chiaveIdentitaNtlm({ dns_computer: "DC01.contoso.local", netbios: "DC01", dominio_netbios: "CONTOSO", dominio_dns: "contoso.local" }), "dc01.contoso.local");
+  assert.equal(chiaveIdentitaNtlm({ dns_computer: null, netbios: "PC01", dominio_netbios: "CONTOSO", dominio_dns: null }), "contoso\\pc01");
+  assert.equal(chiaveIdentitaNtlm({ dns_computer: null, netbios: "PC01", dominio_netbios: "WORKGROUP", dominio_dns: null }), "pc01");
+  assert.equal(chiaveIdentitaNtlm({ dns_computer: null, netbios: "WORKGROUP", dominio_netbios: "WORKGROUP", dominio_dns: null }), null);
+  assert.equal(chiaveIdentitaNtlm({ dns_computer: "", netbios: null, dominio_netbios: null, dominio_dns: null }), null);
+});
+
+test("due IP con lo stesso nome Windows NTLM compaiono come proposta", () => {
+  withTenant(E, () => {
+    const d = getTenantDb(E);
+    const n = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.4.0.0/24', 'lan')").run().lastInsertRowid);
+    const ins = d.prepare("INSERT INTO hosts (network_id, ip, status) VALUES (?, ?, 'online')");
+    const a = Number(ins.run(n, "10.4.0.10").lastInsertRowid);
+    const b = Number(ins.run(n, "10.4.0.20").lastInsertRowid);
+    const json = JSON.stringify({
+      netbios: "DC01",
+      dominio_netbios: "CONTOSO",
+      dns_computer: "dc01.contoso.local",
+      dominio_dns: "contoso.local",
+      versione_os: "10.0.20348",
+      fonte: "smb",
+    });
+    d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)").run(a, json);
+    d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)").run(b, json);
+    const r = raccogliECalcola(d);
+    assert.equal(r.prove, 2);
+    assert.equal(r.proposte, 1);
+    const p = proposteIdentita(d);
+    assert.equal(p.length, 1);
+    assert.equal(p[0]!.tipo, "ntlm_computer");
+    assert.equal(p[0]!.valore, "dc01.contoso.local");
+  });
+});
+
+test("NTLM solo WORKGROUP non diventa proposta", () => {
+  withTenant(F, () => {
+    const d = getTenantDb(F);
+    const n = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.5.0.0/24', 'lan')").run().lastInsertRowid);
+    const ins = d.prepare("INSERT INTO hosts (network_id, ip, status) VALUES (?, ?, 'online')");
+    const a = Number(ins.run(n, "10.5.0.10").lastInsertRowid);
+    const b = Number(ins.run(n, "10.5.0.20").lastInsertRowid);
+    const json = JSON.stringify({
+      netbios: "WORKGROUP",
+      dominio_netbios: "WORKGROUP",
+      dns_computer: null,
+      dominio_dns: null,
+      versione_os: "6.1.0",
+      fonte: "smb",
+    });
+    d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)").run(a, json);
+    d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)").run(b, json);
+    const r = raccogliECalcola(d);
+    assert.equal(r.prove, 0);
+    assert.equal(r.proposte, 0);
   });
 });
 

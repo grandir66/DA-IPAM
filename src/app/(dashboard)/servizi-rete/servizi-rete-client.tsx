@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
 import type { ConteggiServiziRete, ServizioRete } from "@/lib/servizi-rete/db";
 import type { StatoGiro } from "@/lib/servizi-rete/giro";
-import type { InfoHttp, InfoSsh, InfoTls } from "@/lib/servizi-rete/sonde";
+import type { InfoHttp, InfoNtlm, InfoSsh, InfoTls } from "@/lib/servizi-rete/sonde";
 
 interface Dati {
   righe: ServizioRete[];
@@ -39,6 +39,7 @@ const METODI: Record<string, { segno: string; testo: string; classe: string; spi
   tls: { segno: "◆", testo: "TLS", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "stretta di mano TLS letta" },
   http: { segno: "●", testo: "HTTP", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "risposta HTTP letta" },
   ssh: { segno: "■", testo: "SSH", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "versione e algoritmi SSH letti" },
+  ntlm: { segno: "◇", testo: "NTLM", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "nome e dominio dalla CHALLENGE NTLM, senza autenticarsi" },
   banner: { segno: "▲", testo: "banner", classe: "border-[#C9A800] bg-[#FFD400] text-[#0D2537]", spiega: "il servizio si presenta da solo" },
   silenzio: { segno: "○", testo: "tace", classe: "border-border bg-muted text-muted-foreground", spiega: "aperta, ma non risponde alle sonde" },
   aperta: { segno: "–", testo: "aperta", classe: "border-dashed border-border bg-transparent text-muted-foreground", spiega: "trovata aperta dal giro leggero, non ancora sondata" },
@@ -50,6 +51,7 @@ const TIPI: Array<{ valore: string; testo: string }> = [
   { valore: "http", testo: "Con risposta HTTP" },
   { valore: "tls", testo: "Con certificato TLS" },
   { valore: "ssh", testo: "SSH" },
+  { valore: "ntlm", testo: "Con nome Windows" },
   { valore: "banner", testo: "Con banner" },
   { valore: "silenzio", testo: "Aperte ma mute" },
   { valore: "da-sondare", testo: "Non ancora sondate" },
@@ -76,10 +78,15 @@ function quando(s: string | null): string {
 function riassunto(r: ServizioRete): string {
   const http = leggiJson<InfoHttp>(r.http_json);
   const tls = leggiJson<InfoTls>(r.tls_json);
+  const ntlm = leggiJson<InfoNtlm>(r.ntlm_json);
   const parti: string[] = [];
   if (http) parti.push(`${http.status_code}${http.title ? ` · ${http.title}` : http.location ? ` → ${http.location}` : ""}`);
   if (tls?.subject_cn) parti.push(`CN=${tls.subject_cn}${tls.self_signed ? " (autofirmato)" : ""}`);
-  if (!http && !tls && r.banner) parti.push(r.banner.split("\\r\\n")[0].split("\\n")[0]);
+  if (ntlm) {
+    const nome = ntlm.dns_computer ?? (ntlm.dominio_netbios && ntlm.netbios ? `${ntlm.dominio_netbios}\\${ntlm.netbios}` : ntlm.netbios);
+    if (nome) parti.push(nome);
+  }
+  if (!http && !tls && !ntlm && r.banner) parti.push(r.banner.split("\\r\\n")[0].split("\\n")[0]);
   return parti.join(" · ") || "—";
 }
 
@@ -111,6 +118,7 @@ function DettaglioServizio({ r }: { r: ServizioRete }) {
   const tls = leggiJson<InfoTls>(r.tls_json);
   const http = leggiJson<InfoHttp>(r.http_json);
   const ssh = leggiJson<InfoSsh>(r.ssh_json);
+  const ntlm = leggiJson<InfoNtlm>(r.ntlm_json);
   return (
     <div className="grid gap-3 bg-muted/40 p-3 md:grid-cols-2 xl:grid-cols-3">
       <Blocco titolo="Servizio">
@@ -146,6 +154,15 @@ function DettaglioServizio({ r }: { r: ServizioRete }) {
               </div>
             ))}
           </div>
+        </Blocco>
+      )}
+      {ntlm && (
+        <Blocco titolo="Nome Windows (NTLM)">
+          <DatoDettaglio nome="Computer DNS" valore={ntlm.dns_computer ?? "—"} mono />
+          <DatoDettaglio nome="NetBIOS" valore={ntlm.netbios ?? "—"} mono />
+          <DatoDettaglio nome="Dominio" valore={ntlm.dominio_dns ?? ntlm.dominio_netbios ?? "—"} mono />
+          <DatoDettaglio nome="Versione OS" valore={ntlm.versione_os ?? "—"} mono />
+          <DatoDettaglio nome="Letto da" valore={ntlm.fonte === "http" ? "HTTP" : "SMB"} />
         </Blocco>
       )}
       {ssh && (

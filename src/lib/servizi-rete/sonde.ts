@@ -12,6 +12,13 @@
 import net from "node:net";
 import tls from "node:tls";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+import {
+  buildNtlmNegotiateMessage,
+  parseNtlmChallenge,
+  probeSmb2,
+  type NtlmChallengeInfo,
+  type Smb2Finding,
+} from "@/lib/scanner/probes/smb2";
 
 export interface InfoTls {
   version: string | null;
@@ -52,8 +59,18 @@ export interface InfoSsh {
   fingerprint: string | null;
 }
 
+/** Nome, dominio e versione OS dalla CHALLENGE NTLM: il server li manda prima di qualsiasi login. */
+export interface InfoNtlm {
+  netbios: string | null;
+  dominio_netbios: string | null;
+  dns_computer: string | null;
+  dominio_dns: string | null;
+  versione_os: string | null;
+  fonte: "smb" | "http";
+}
+
 /** Come è stato riconosciuto ciò che risponde: la prova, non la tabella delle porte. */
-export type MetodoSonda = "ssh" | "http" | "tls-http" | "tls" | "banner" | "silenzio";
+export type MetodoSonda = "ssh" | "http" | "tls-http" | "tls" | "banner" | "silenzio" | "ntlm";
 
 export interface EsitoSonda {
   metodo: MetodoSonda;
@@ -61,6 +78,7 @@ export interface EsitoSonda {
   tls: InfoTls | null;
   http: InfoHttp | null;
   ssh: InfoSsh | null;
+  ntlm?: InfoNtlm | null;
   /** Prodotto/versione letti dalla risposta (header Server, identità SSH), se ci sono. */
   prodotto: string | null;
   versione: string | null;
@@ -386,6 +404,102 @@ export function vuoleTls(http: InfoHttp): boolean {
   return http.status_code === 400 || (http.location ?? "").toLowerCase().startsWith("https://");
 }
 
+function headerDi(headers: Record<string, string>, nome: string): string | null {
+  const k = Object.keys(headers).find((x) => x.toLowerCase() === nome);
+  return k ? headers[k] : null;
+}
+
+function testoNtlm(s: string | null | undefined): string | null {
+  const t = typeof s === "string" ? s.trim() : "";
+  return t ? t : null;
+}
+
+export function infoNtlmDaChallenge(
+  c: Pick<NtlmChallengeInfo, "version" | "nbComputerName" | "nbDomainName" | "dnsComputerName" | "dnsDomainName">,
+  fonte: InfoNtlm["fonte"],
+): InfoNtlm {
+  return {
+    netbios: testoNtlm(c.nbComputerName),
+    dominio_netbios: testoNtlm(c.nbDomainName),
+    dns_computer: testoNtlm(c.dnsComputerName),
+    dominio_dns: testoNtlm(c.dnsDomainName),
+    versione_os: testoNtlm(c.version),
+    fonte,
+  };
+}
+
+export function infoNtlmDaSmb2(f: Smb2Finding): InfoNtlm {
+  return {
+    netbios: testoNtlm(f.netbiosName),
+    dominio_netbios: testoNtlm(f.nbDomainName),
+    dns_computer: testoNtlm(f.dnsComputerName),
+    dominio_dns: testoNtlm(f.dnsDomain),
+    versione_os: testoNtlm(f.osVersion),
+    fonte: "smb",
+  };
+}
+
+/** L'intestazione WWW-Authenticate invita a NTLM (non solo Negotiate/Kerberos). */
+export function ntlmOfferto(headers: Record<string, string>): boolean {
+  const v = headerDi(headers, "www-authenticate") ?? "";
+  return /(^|[\s,])ntlm(\s|$|,)/i.test(v);
+}
+
+/** Estrae il blob Type 2 da `WWW-Authenticate: NTLM <base64>`. */
+export function ntlmChallengeDaWwwAuthenticate(headers: Record<string, string>): Buffer | null {
+  const v = headerDi(headers, "www-authenticate") ?? "";
+  const m = /\bNTLM\s+([A-Za-z0-9+/=]+)/i.exec(v);
+  if (!m) return null;
+  try {
+    const buf = Buffer.from(m[1], "base64");
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
+const RICHIESTA_HTTP_NTLM = (ip: string, token: string) =>
+  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: DA-IPAM\r\nAccept: */*\r\nAuthorization: NTLM ${token}\r\nConnection: close\r\n\r\n`;
+
+/** Seconda richiesta HTTP: Type 1 NTLM, si legge la CHALLENGE. Nessun Type 3, nessuna password. */
+export async function ntlmDaHttp(
+  ip: string,
+  porta: number,
+  scheme: "http" | "https",
+  ms: number,
+): Promise<InfoNtlm | null> {
+  const token = buildNtlmNegotiateMessage().toString("base64");
+  const sock = scheme === "https" ? await connettiTls(ip, porta, ms) : await connetti(ip, porta, ms);
+  if (!sock) return null;
+  try {
+    sock.write(RICHIESTA_HTTP_NTLM(ip, token));
+    const grezzo = await leggi(sock, ms, (b) => b.includes("\r\n\r\n"));
+    const http = leggiRispostaHttp(grezzo, scheme);
+    if (!http) return null;
+    const buf = ntlmChallengeDaWwwAuthenticate(http.headers);
+    if (!buf) return null;
+    const c = parseNtlmChallenge(buf);
+    return c ? infoNtlmDaChallenge(c, "http") : null;
+  } finally {
+    sock.destroy();
+  }
+}
+
+async function magariNtlmHttp(
+  esito: EsitoSonda,
+  ip: string,
+  porta: number,
+  scheme: "http" | "https",
+  ms: number,
+): Promise<void> {
+  if (esito.ntlm || !esito.http || !ntlmOfferto(esito.http.headers)) return;
+  try {
+    esito.ntlm = await ntlmDaHttp(ip, porta, scheme, ms);
+  } catch {
+    // una 401 NTLM che non risponde al Type 1 non ferma la sonda
+  }
+}
+
 function testaDi(grezzo: Buffer): string {
   const i = grezzo.indexOf("\r\n\r\n");
   return testoStampabile(i >= 0 ? grezzo.subarray(0, i + 2) : grezzo);
@@ -398,7 +512,22 @@ function testaDi(grezzo: Buffer): string {
 export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = {}): Promise<EsitoSonda | null> {
   const ms = opz.timeoutMs ?? 4000;
   const attesa = opz.attesaBannerMs ?? 1500;
-  const esito: EsitoSonda = { metodo: "silenzio", banner: null, tls: null, http: null, ssh: null, prodotto: null, versione: null };
+  const esito: EsitoSonda = { metodo: "silenzio", banner: null, tls: null, http: null, ssh: null, ntlm: null, prodotto: null, versione: null };
+
+  // 445: NTLMSSP NEGOTIATE anonimo, si legge la CHALLENGE. Nessun AUTHENTICATE.
+  if (porta === 445) {
+    try {
+      const smb = await probeSmb2(ip, { timeoutMs: ms });
+      if (smb) {
+        esito.metodo = "ntlm";
+        esito.ntlm = infoNtlmDaSmb2(smb);
+        esito.versione = esito.ntlm.versione_os;
+        return esito;
+      }
+    } catch {
+      // SMB muto: si prova comunque banner/HTTP come sulle altre porte
+    }
+  }
 
   // 1. Connessione in chiaro: c'è un banner spontaneo?
   const s1 = await connetti(ip, porta, ms);
@@ -440,7 +569,10 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
       Object.assign(esito, prodottoDaServer(http.server));
       // nginx su una porta TLS risponde 400 «plain HTTP request was sent to HTTPS port»;
       // Proxmox rimanda a https://. In questi due casi il servizio vero è dentro TLS.
-      if (!vuoleTls(http)) return esito;
+      if (!vuoleTls(http)) {
+        await magariNtlmHttp(esito, ip, porta, "http", ms);
+        return esito;
+      }
     }
   } finally {
     s1.destroy();
@@ -460,6 +592,7 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
       esito.http = http;
       esito.banner = testaDi(grezzo);
       Object.assign(esito, prodottoDaServer(http.server));
+      await magariNtlmHttp(esito, ip, porta, "https", ms);
     }
     return esito;
   } finally {

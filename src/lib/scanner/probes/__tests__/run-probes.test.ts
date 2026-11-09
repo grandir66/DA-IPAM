@@ -152,7 +152,7 @@ describe("runAttributionProbes — scrittura evidenze", () => {
     const recordCallsByHost: Record<number, number> = {};
     const deps = baseDeps({
       // build=0 → non plausibile come Windows (vedi isPlausibleWindowsVersion): solo category=compute (1 evidenza).
-      smb2: async () => ({ osVersion: "6.1.0", netbiosName: null, dnsDomain: null, signingRequired: true }),
+      smb2: async () => ({ osVersion: "6.1.0", netbiosName: null, dnsDomain: null, dnsComputerName: null, nbDomainName: null, signingRequired: true }),
       // MikroTik → vendor=mikrotik + category=network.router (2 evidenze). Totale per host: 3.
       httpTls: async () => [
         {
@@ -176,7 +176,7 @@ describe("runAttributionProbes — scrittura evidenze", () => {
     const recordCalls: EvidenceInput[][] = [];
     const deps = baseDeps({
       httpTls: async () => { throw new Error("connessione rifiutata"); },
-      smb2: async () => ({ osVersion: "10.0.19041", netbiosName: null, dnsDomain: null, signingRequired: true }),
+      smb2: async () => ({ osVersion: "10.0.19041", netbiosName: null, dnsDomain: null, dnsComputerName: null, nbDomainName: null, signingRequired: true }),
       recordEvidence: (_hostId, inputs) => { recordCalls.push(inputs); return inputs.length; },
     });
     const r = await runAttributionProbes(1, [host(1, [443, 445])], { deps });

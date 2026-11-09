@@ -266,6 +266,8 @@ function smb2Finding(partial: Partial<Smb2Finding>): Smb2Finding {
     osVersion: "10.0.20348",
     netbiosName: "WIN-SRV01",
     dnsDomain: "corp.local",
+    dnsComputerName: "win-srv01.corp.local",
+    nbDomainName: "CORP",
     signingRequired: false,
     ...partial,
   };
@@ -561,13 +563,16 @@ function buildNtlmChallengeBuffer(opts: {
   minor?: number;
   build?: number;
   nbComputerName?: string | null;
+  nbDomainName?: string | null;
+  dnsComputerName?: string | null;
   dnsDomainName?: string | null;
   noTargetInfo?: boolean;
   prefixJunk?: Buffer;
 }): Buffer {
   const {
     includeVersion = true, major = 10, minor = 0, build = 20348,
-    nbComputerName = "WIN-SRV01", dnsDomainName = "corp.local",
+    nbComputerName = "WIN-SRV01", nbDomainName = "CORP",
+    dnsComputerName = "win-srv01.corp.local", dnsDomainName = "corp.local",
     noTargetInfo = false, prefixJunk,
   } = opts;
 
@@ -582,6 +587,8 @@ function buildNtlmChallengeBuffer(opts: {
   };
   if (!noTargetInfo) {
     if (nbComputerName) pushAv(0x0001, nbComputerName);
+    if (nbDomainName) pushAv(0x0002, nbDomainName);
+    if (dnsComputerName) pushAv(0x0003, dnsComputerName);
     if (dnsDomainName) pushAv(0x0004, dnsDomainName);
     avPairs.push(Buffer.from([0, 0, 0, 0])); // MsvAvEOL
   }
@@ -615,6 +622,8 @@ describe("parseNtlmChallenge", () => {
     assert.ok(r);
     assert.equal(r?.version, "10.0.20348");
     assert.equal(r?.nbComputerName, "WIN-SRV01");
+    assert.equal(r?.nbDomainName, "CORP");
+    assert.equal(r?.dnsComputerName, "win-srv01.corp.local");
     assert.equal(r?.dnsDomainName, "corp.local");
   });
 
@@ -683,6 +692,8 @@ describe("parseNtlmChallenge", () => {
     assert.ok(r);
     assert.equal(r?.version, "6.1.0");
     assert.equal(r?.nbComputerName, "DA-765");
+    assert.equal(r?.nbDomainName, "DA-765");
+    assert.equal(r?.dnsComputerName, "da-765");
     assert.equal(r?.dnsDomainName, ""); // AV_PAIR MsvAvDnsDomainName presente ma vuoto (len=0)
   });
 });

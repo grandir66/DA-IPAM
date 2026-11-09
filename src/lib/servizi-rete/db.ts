@@ -4,6 +4,7 @@
  * della logica, così le due strade non divergono (regola 12 di CLAUDE.md).
  */
 import type Database from "better-sqlite3";
+import { assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
 import type { EsitoSonda } from "./sonde";
 
 export interface PortaDaSondare {
@@ -31,6 +32,7 @@ export interface ServizioRete {
   tls_json: string | null;
   http_json: string | null;
   ssh_json: string | null;
+  ntlm_json: string | null;
   primo_visto: string;
   ultimo_visto: string;
   ultima_sonda: string | null;
@@ -41,7 +43,7 @@ export interface FiltriServiziRete {
   networkId?: number;
   hostId?: number;
   porta?: number;
-  /** `tls`, `http`, `ssh`, `banner`, `da-sondare` (mai sondato), `silenzio`. */
+  /** `tls`, `http`, `ssh`, `banner`, `ntlm`, `da-sondare` (mai sondato), `silenzio`. */
   tipo?: string;
   limit: number;
   offset: number;
@@ -128,16 +130,17 @@ export function porteDaSondare(db: Database.Database, networkId?: number, limite
 
 /** Scrive l'esito di una sonda. `null` = la porta non risponde più: si segna solo la prova. */
 export function salvaEsitoSonda(db: Database.Database, hostId: number, porta: number, esito: EsitoSonda | null): void {
+  assicuraColonnaNtlmServizi(db);
   if (!esito) {
     db.prepare(
       "UPDATE servizi_rete SET ultima_sonda = datetime('now') WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'",
     ).run(hostId, porta);
     return;
   }
-  const nomeDaMetodo = esito.metodo === "ssh" ? "ssh" : esito.metodo === "http" ? "http" : esito.metodo.startsWith("tls") ? (esito.http || esito.metodo === "tls-http" ? "https" : "ssl") : null;
+  const nomeDaMetodo = esito.metodo === "ssh" ? "ssh" : esito.metodo === "http" ? "http" : esito.metodo === "ntlm" ? "microsoft-ds" : esito.metodo.startsWith("tls") ? (esito.http || esito.metodo === "tls-http" ? "https" : "ssl") : null;
   db.prepare(
     `UPDATE servizi_rete SET
-       metodo = ?, banner = ?, tls_json = ?, http_json = ?, ssh_json = ?,
+       metodo = ?, banner = ?, tls_json = ?, http_json = ?, ssh_json = ?, ntlm_json = ?,
        nome = COALESCE(nome, ?),
        prodotto = COALESCE(prodotto, ?), versione = COALESCE(versione, ?),
        ultimo_visto = datetime('now'), ultima_sonda = datetime('now')
@@ -148,6 +151,7 @@ export function salvaEsitoSonda(db: Database.Database, hostId: number, porta: nu
     esito.tls ? JSON.stringify(esito.tls) : null,
     esito.http ? JSON.stringify(esito.http) : null,
     esito.ssh ? JSON.stringify(esito.ssh) : null,
+    esito.ntlm ? JSON.stringify(esito.ntlm) : null,
     nomeDaMetodo,
     esito.prodotto,
     esito.versione,
@@ -166,6 +170,7 @@ function condizioni(f: FiltriServiziRete): { where: string; args: unknown[] } {
     case "tls": w.push("s.tls_json IS NOT NULL"); break;
     case "http": w.push("s.http_json IS NOT NULL"); break;
     case "ssh": w.push("s.ssh_json IS NOT NULL"); break;
+    case "ntlm": w.push("s.ntlm_json IS NOT NULL"); break;
     case "banner": w.push("s.metodo = 'banner'"); break;
     case "silenzio": w.push("s.metodo = 'silenzio'"); break;
     case "da-sondare": w.push("s.ultima_sonda IS NULL"); break;
@@ -176,14 +181,15 @@ function condizioni(f: FiltriServiziRete): { where: string; args: unknown[] } {
     const like = `%${q.replace(/[%_]/g, (c) => `\\${c}`)}%`;
     w.push(
       `(h.ip LIKE ? ESCAPE '\\' OR h.hostname LIKE ? ESCAPE '\\' OR s.nome LIKE ? ESCAPE '\\' OR s.prodotto LIKE ? ESCAPE '\\'
-        OR s.banner LIKE ? ESCAPE '\\' OR s.http_json LIKE ? ESCAPE '\\' OR s.tls_json LIKE ? ESCAPE '\\')`,
+        OR s.banner LIKE ? ESCAPE '\\' OR s.http_json LIKE ? ESCAPE '\\' OR s.tls_json LIKE ? ESCAPE '\\' OR s.ntlm_json LIKE ? ESCAPE '\\')`,
     );
-    a.push(like, like, like, like, like, like, like);
+    a.push(like, like, like, like, like, like, like, like);
   }
   return { where: w.length ? `WHERE ${w.join(" AND ")}` : "", args: a };
 }
 
 export function serviziRetePaginati(db: Database.Database, f: FiltriServiziRete): { righe: ServizioRete[]; totale: number } {
+  assicuraColonnaNtlmServizi(db);
   const { where, args } = condizioni(f);
   const da = `FROM servizi_rete s JOIN hosts h ON h.id = s.host_id LEFT JOIN networks n ON n.id = h.network_id ${where}`;
   const totale = (db.prepare(`SELECT COUNT(*) AS c ${da}`).get(...args) as { c: number }).c;
@@ -191,7 +197,7 @@ export function serviziRetePaginati(db: Database.Database, f: FiltriServiziRete)
     .prepare(
       `SELECT s.id, s.host_id, h.ip, COALESCE(h.custom_name, h.hostname) AS hostname, h.network_id,
               n.name AS rete, n.cidr AS cidr, s.porta, s.protocollo, s.nome, s.prodotto, s.versione, s.metodo,
-              s.banner, s.tls_json, s.http_json, s.ssh_json, s.primo_visto, s.ultimo_visto, s.ultima_sonda
+              s.banner, s.tls_json, s.http_json, s.ssh_json, s.ntlm_json, s.primo_visto, s.ultimo_visto, s.ultima_sonda
        ${da} ORDER BY h.network_id, h.ip, s.protocollo, s.porta LIMIT ? OFFSET ?`,
     )
     .all(...args, f.limit, f.offset) as ServizioRete[];

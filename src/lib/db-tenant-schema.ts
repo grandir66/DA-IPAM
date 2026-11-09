@@ -281,6 +281,7 @@ export const DDL_SERVIZI_RETE = `CREATE TABLE IF NOT EXISTS servizi_rete (
   tls_json TEXT,
   http_json TEXT,
   ssh_json TEXT,
+  ntlm_json TEXT,
   primo_visto TEXT NOT NULL DEFAULT (datetime('now')),
   ultimo_visto TEXT NOT NULL DEFAULT (datetime('now')),
   ultima_sonda TEXT,
@@ -553,6 +554,7 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     db.exec(DDL_TRIAGE_RILIEVI);
     db.exec(DDL_IDENTITA);
     db.exec(DDL_SEGMENTAZIONE);
+    if (assicuraColonnaNtlmServizi(db)) console.info(`${chi}: servizi_rete.ntlm_json aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
@@ -602,6 +604,16 @@ export function assicuraColonneMdmConfig(db: Database.Database): string[] {
     aggiunte.push(nome);
   }
   return aggiunte;
+}
+
+/** NTLM letto dalla CHALLENGE (SMB/HTTP, senza autenticarsi). Additiva e ripetibile. */
+export function assicuraColonnaNtlmServizi(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(servizi_rete)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("ntlm_json")) return false;
+  db.exec("ALTER TABLE servizi_rete ADD COLUMN ntlm_json TEXT");
+  return true;
 }
 
 /**

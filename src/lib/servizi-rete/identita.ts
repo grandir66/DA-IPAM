@@ -4,13 +4,15 @@
  * l'impronta della host key SSH; il trunk ha i nomi NetBIOS/mDNS; i profili
  * nmap hanno ssh-hostkey e SNMP engineID.
  *
- * Le impronte forti (SSH, TLS, engineID) diventano proposte «stesso apparato».
+ * Le impronte forti (SSH, TLS, engineID, nome Windows NTLM) diventano proposte «stesso apparato».
  * Conferma collega i due host allo stesso apparato fisico; rifiuto no.
  * Niente fusioni automatiche (Riccardo, 09/11/2026).
  */
 import type Database from "better-sqlite3";
+import { assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
+import type { InfoNtlm } from "./sonde";
 
-export const TIPI_FORTI = ["ssh_hostkey", "tls_cert", "snmp_engine_id"] as const;
+export const TIPI_FORTI = ["ssh_hostkey", "tls_cert", "snmp_engine_id", "ntlm_computer"] as const;
 export type TipoForte = (typeof TIPI_FORTI)[number];
 
 /** Un certificato condiviso da troppi IP è un reverse proxy, non un apparato. */
@@ -18,7 +20,10 @@ const TETTO_HOST_PER_IMPRONTA: Record<TipoForte, number> = {
   ssh_hostkey: 12,
   tls_cert: 8,
   snmp_engine_id: 12,
+  ntlm_computer: 12,
 };
+
+const NTLM_GENERICO = new Set(["workgroup", "localhost", "none", "local", "*", "."]);
 
 export interface PropostaIdentita {
   id: number;
@@ -101,24 +106,54 @@ function sshFp(json: string | null): string | null {
   }
 }
 
+function nomeNtlm(v: unknown): string | null {
+  return typeof v === "string" && v.trim() && !NTLM_GENERICO.has(v.trim().toLowerCase()) ? v.trim() : null;
+}
+
+/**
+ * Chiave di identità dalla CHALLENGE: FQDN del computer, altrimenti DOMINIO\PC.
+ * WORKGROUP, localhost e nomi vuoti non contano: troppi host li condividono.
+ */
+export function chiaveIdentitaNtlm(n: Pick<InfoNtlm, "netbios" | "dominio_netbios" | "dns_computer" | "dominio_dns">): string | null {
+  const dns = nomeNtlm(n.dns_computer);
+  if (dns) return dns.toLowerCase();
+  const pc = nomeNtlm(n.netbios);
+  if (!pc) return null;
+  const dom = nomeNtlm(n.dominio_dns) ?? nomeNtlm(n.dominio_netbios);
+  return (dom ? `${dom}\\${pc}` : pc).toLowerCase();
+}
+
+function ntlmChiave(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as InfoNtlm;
+    return chiaveIdentitaNtlm(v);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Raccoglie le prove dagli archivi già scritti (sonde, profili, trunk) e calcola
  * le proposte nuove. Non tocca confermate o rifiutate. Ritorna quante prove e
  * quante proposte nuove.
  */
 export function raccogliECalcola(db: Database.Database): { prove: number; proposte: number } {
+  assicuraColonnaNtlmServizi(db);
   const provePrima = (db.prepare("SELECT COUNT(*) AS c FROM identita_prove").get() as { c: number }).c;
   const propostePrima = (db.prepare("SELECT COUNT(*) AS c FROM identita_proposte").get() as { c: number }).c;
 
   const servizi = db
-    .prepare("SELECT host_id, porta, tls_json, ssh_json FROM servizi_rete")
-    .all() as Array<{ host_id: number; porta: number; tls_json: string | null; ssh_json: string | null }>;
+    .prepare("SELECT host_id, porta, tls_json, ssh_json, ntlm_json FROM servizi_rete")
+    .all() as Array<{ host_id: number; porta: number; tls_json: string | null; ssh_json: string | null; ntlm_json: string | null }>;
   db.transaction(() => {
     for (const s of servizi) {
       const tls = tlsSha(s.tls_json);
       if (tls) upsertProva(db, s.host_id, "tls_cert", tls, "sonda", s.porta);
       const ssh = sshFp(s.ssh_json);
       if (ssh) upsertProva(db, s.host_id, "ssh_hostkey", ssh, "sonda", s.porta);
+      const ntlm = ntlmChiave(s.ntlm_json);
+      if (ntlm) upsertProva(db, s.host_id, "ntlm_computer", ntlm, "sonda", s.porta);
     }
   })();
 
@@ -169,7 +204,7 @@ export function raccogliECalcola(db: Database.Database): { prove: number; propos
   const forti = db
     .prepare(
       `SELECT tipo, valore, host_id FROM identita_prove
-       WHERE tipo IN ('ssh_hostkey', 'tls_cert', 'snmp_engine_id')
+       WHERE tipo IN ('ssh_hostkey', 'tls_cert', 'snmp_engine_id', 'ntlm_computer')
        ORDER BY tipo, valore, host_id`,
     )
     .all() as Array<{ tipo: TipoForte; valore: string; host_id: number }>;

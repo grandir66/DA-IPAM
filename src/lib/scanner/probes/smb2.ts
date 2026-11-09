@@ -16,6 +16,8 @@ export interface Smb2Finding {
   osVersion: string | null; // "major.minor.build" da NTLMSSP Version
   netbiosName: string | null; // AV_PAIR MsvAvNbComputerName
   dnsDomain: string | null; // AV_PAIR MsvAvDnsDomainName
+  dnsComputerName: string | null; // AV_PAIR MsvAvDnsComputerName
+  nbDomainName: string | null; // AV_PAIR MsvAvNbDomainName
   signingRequired: boolean; // SecurityMode del NEGOTIATE response
 }
 
@@ -97,7 +99,7 @@ function buildNegotiateRequest(): Buffer {
 }
 
 /** NTLMSSP NEGOTIATE_MESSAGE anonimo: 32 byte, nessun dominio/workstation, nessuna Version. */
-function buildNtlmNegotiateMessage(): Buffer {
+export function buildNtlmNegotiateMessage(): Buffer {
   const msg = Buffer.alloc(32);
   NTLMSSP_SIGNATURE.copy(msg, 0);
   msg.writeUInt32LE(1, 8); // MessageType = NEGOTIATE
@@ -217,9 +219,11 @@ export function extractSessionSetupSecurityBuffer(msg: Buffer): Buffer | null {
   return msg.subarray(secBufOffset, end);
 }
 
-interface NtlmChallengeInfo {
+export interface NtlmChallengeInfo {
   version: string | null;
   nbComputerName: string | null;
+  nbDomainName: string | null;
+  dnsComputerName: string | null;
   dnsDomainName: string | null;
 }
 
@@ -234,7 +238,7 @@ function parseAvPairs(buf: Buffer): Map<number, string> {
     const valueEnd = valueStart + avLen;
     if (avId === 0x0000) break; // MsvAvEOL
     if (valueEnd > buf.length) break; // AV_PAIR troncata: fermarsi, non leggere oltre
-    if (avId === 0x0001 || avId === 0x0004) {
+    if (avId === 0x0001 || avId === 0x0002 || avId === 0x0003 || avId === 0x0004) {
       try {
         result.set(avId, buf.subarray(valueStart, valueEnd).toString("utf16le"));
       } catch {
@@ -276,6 +280,8 @@ export function parseNtlmChallenge(buf: Buffer): NtlmChallengeInfo | null {
   }
 
   let nbComputerName: string | null = null;
+  let nbDomainName: string | null = null;
+  let dnsComputerName: string | null = null;
   let dnsDomainName: string | null = null;
   if (targetInfoLen > 0) {
     const start = base + targetInfoOffset;
@@ -283,11 +289,13 @@ export function parseNtlmChallenge(buf: Buffer): NtlmChallengeInfo | null {
     if (start >= 0 && start < end && end <= buf.length) {
       const avPairs = parseAvPairs(buf.subarray(start, end));
       nbComputerName = avPairs.get(0x0001) ?? null;
+      nbDomainName = avPairs.get(0x0002) ?? null;
+      dnsComputerName = avPairs.get(0x0003) ?? null;
       dnsDomainName = avPairs.get(0x0004) ?? null;
     }
   }
 
-  return { version, nbComputerName, dnsDomainName };
+  return { version, nbComputerName, nbDomainName, dnsComputerName, dnsDomainName };
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +407,8 @@ export async function probeSmb2(ip: string, opts?: { timeoutMs?: number }): Prom
       osVersion: challenge.version,
       netbiosName: challenge.nbComputerName,
       dnsDomain: challenge.dnsDomainName,
+      dnsComputerName: challenge.dnsComputerName,
+      nbDomainName: challenge.nbDomainName,
       signingRequired,
     };
   } catch {

@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Nome Windows dalla CHALLENGE NTLM (senza password)
+
+Riccardo (10/11): «si andiamo con ntlm» — prova in più per lo stesso apparato, prima di qualsiasi autenticazione.
+
+### Aggiunto
+- **Sonda NTLM** sulla 445 (SMB2 NEGOTIATE anonimo) e su HTTP con `WWW-Authenticate: NTLM`: si legge nome computer, dominio e versione OS dalla CHALLENGE. Nessun Type 3, nessuna password. RDP resta fuori (stretta di mano pesante).
+- Due IP con lo stesso nome Windows (`ntlm_computer`) diventano una proposta «stesso apparato», come SSH e TLS. WORKGROUP e localhost non contano. Niente fusioni automatiche.
+
 ## [Non rilasciato] — 2026-11-09 · Copia IP e tempo relativo nella tabella ARP
 
 ### Cambiato

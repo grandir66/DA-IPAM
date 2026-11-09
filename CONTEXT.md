@@ -50,7 +50,7 @@ ADR 0037, piano `plans/2026-11-08-installazione-tecnico.md` (approvato, D1 «com
 
 ## Servizi di rete, identità, matrice — 09/11/2026
 
-Pagina `/servizi-rete` (sonde senza credenziali, v0.9.1043). **Identità**: due IP con la stessa impronta SSH/TLS/engineID diventano una proposta «stesso apparato»; conferma collega `physical_device_id`, rifiuto no; niente fusioni automatiche. **Matrice** `/segmentazione`: la sonda trunk prova i servizi già noti da dentro ogni VLAN (`/raggiungibilita` in DA-Vul-can). Trappole: l'impronta SSH non c'era nelle sonde del 09/11 mattina (solo KEXINIT) — ora si legge da KEX_ECDH_REPLY; la 963 vede solo la VLAN nativa, per il collaudo serve trunk 102/103; gli interruttori in Opzioni arrivano dopo (oggi `servizi_rete.automatico` e `segmentazione.automatico` nel tenant). Handoff: `docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`.
+Pagina `/servizi-rete` (sonde senza credenziali, v0.9.1043). **Identità**: due IP con la stessa impronta SSH/TLS/engineID o lo stesso nome Windows NTLM (CHALLENGE su SMB 445 o HTTP, senza password) diventano una proposta «stesso apparato»; conferma collega `physical_device_id`, rifiuto no; niente fusioni automatiche. **Matrice** `/segmentazione`: la sonda trunk prova i servizi già noti da dentro ogni VLAN (`/raggiungibilita` in DA-Vul-can). Trappole: l'impronta SSH non c'era nelle sonde del 09/11 mattina (solo KEXINIT) — ora si legge da KEX_ECDH_REPLY; la 963 ha nic trunk dedicata (`ens19`, modo dedicata); gli interruttori in Opzioni arrivano dopo (oggi `servizi_rete.automatico` e `segmentazione.automatico` nel tenant). Handoff: `docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`.
 
 ## Sonda trunk: appartenenza degli IP — 08/11/2026
 

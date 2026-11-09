@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Reti viste da confermare, sonde dopo ogni scansione
+
+Riccardo (09/11): «appena partito mi aspetto che molte cose si popolino senza scansioni»; alla domanda se creare da sole le reti viste dal trunk: «proposte da confermare».
+
+### Aggiunto
+- **«Reti viste, da confermare»** in cima a Subnet: le reti sentite dal sensore trunk che non si sovrappongono a nessuna rete di DA-IPAM, con VLAN, gateway, indirizzi visti e ultimo giorno attivo. «Porta … in DA-IPAM» è la stessa conferma della pagina «Reti dal trunk» (rete, giro ARP sulla VLAN, host). Senza sensore letto il riquadro non c'è; un suo guasto non toglie l'elenco delle subnet.
+- **Sonde dei servizi a fine scansione**: ogni giro di discovery riuscito avvia le sonde sulle porte che ha trovato, senza pulsanti. Un giro già in corso fa saltare l'avvio; le porte restano da sondare per il prossimo.
+
+### Sicurezza
+- **Freno delle sonde**: non si toccano le porte di campo e di stampa (sulla 9100 il `GET /` verrebbe stampato) né gli host con produttore di campo; stesso elenco della ricognizione degli sconosciuti (`PORTE_DA_NON_TOCCARE`, ora esportato).
+
 ## [Non rilasciato] — 2026-11-09 · Servizi di rete: cosa risponde su ogni porta, senza credenziali
 
 Riccardo (09/11), dopo aver provato Nety: «i dati acquisiti in questa pagina sono eccellenti, nulla che noi siamo riusciti a fare». DA-IPAM salvava il nome della porta secondo nmap e quasi mai la risposta vera.

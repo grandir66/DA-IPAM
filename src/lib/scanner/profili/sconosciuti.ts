@@ -26,7 +26,7 @@ export const HOST_PER_GIRO = 10;
 export const PORTE_DI_CAMPO: readonly number[] = [102, 502, 1883, 2404, 4840, 8883, 9600, 18245, 18246, 19999, 20000, 44818];
 
 /** Porte di campo e di stampa (raw, IPP, LPD): chi le ha aperte non riceve `-O`. */
-const PORTE_DA_NON_TOCCARE = new Set([...PORTE_DI_CAMPO, 515, 631, 9100]);
+export const PORTE_DA_NON_TOCCARE: ReadonlySet<number> = new Set([...PORTE_DI_CAMPO, 515, 631, 9100]);
 
 /**
  * Produttori di apparati di campo. Microchip c'è per i moduli Ethernet dentro gli apparati (19 `unknown` al 72729):

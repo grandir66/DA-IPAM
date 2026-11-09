@@ -2,7 +2,7 @@
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,8 @@ interface Credential {
 interface NetworksListClientProps {
   initialNetworks: (NetworkWithStats & { router_id?: number | null })[];
   routers: { id: number; name: string; host: string }[];
+  /** Riquadro fra l'intestazione e l'elenco: le reti viste dal trunk da confermare (09/11). */
+  sottoIntestazione?: ReactNode;
 }
 
 const ROUTER_VENDOR_OPTIONS = [
@@ -78,7 +80,7 @@ const ROUTER_PROTOCOL_OPTIONS = [
   { value: "api", label: "API REST" },
 ] as const;
 
-export function NetworksListClient({ initialNetworks, routers: initialRouters }: NetworksListClientProps) {
+export function NetworksListClient({ initialNetworks, routers: initialRouters, sottoIntestazione }: NetworksListClientProps) {
   const router = useRouter();
   const [networks, setNetworks] = useState<NetworkWithRouter[]>((initialNetworks ?? []) as NetworkWithRouter[]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -798,6 +800,8 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
           </DialogContent>
         </Dialog>
       </div>
+
+      {sottoIntestazione}
 
       {networks.length === 0 ? (
         <Card>

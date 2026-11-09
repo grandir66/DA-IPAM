@@ -10,6 +10,7 @@ export interface PortaDaSondare {
   host_id: number;
   ip: string;
   porta: number;
+  vendor: string | null;
 }
 
 export interface ServizioRete {
@@ -117,7 +118,7 @@ export function allineaServiziDaPorte(db: Database.Database, networkId?: number)
 export function porteDaSondare(db: Database.Database, networkId?: number, limite = 5000): PortaDaSondare[] {
   return db
     .prepare(
-      `SELECT s.host_id, h.ip, s.porta FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
+      `SELECT s.host_id, h.ip, s.porta, COALESCE(h.vendor, h.device_manufacturer) AS vendor FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
        WHERE s.protocollo = 'tcp' ${networkId ? "AND h.network_id = ?" : ""}
        ORDER BY s.ultima_sonda IS NOT NULL, s.ultima_sonda, h.ip, s.porta
        LIMIT ?`,

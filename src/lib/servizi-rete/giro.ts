@@ -13,6 +13,15 @@ import {
   salvaEsitoSondaServizio,
 } from "@/lib/db-tenant";
 import { sondaPorta, type EsitoSonda } from "./sonde";
+import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
+
+/**
+ * Freno: le porte di campo e di stampa non si sondano (sulla 9100 il nostro GET verrebbe
+ * stampato), e nemmeno gli apparati di campo. Stesso elenco della ricognizione degli sconosciuti.
+ */
+export function daSaltare(porta: number, vendor: string | null): boolean {
+  return PORTE_DA_NON_TOCCARE.has(porta) || (vendor !== null && PRODUTTORE_DI_CAMPO.test(vendor));
+}
 
 export interface StatoGiro {
   inCorso: boolean;
@@ -44,7 +53,7 @@ export function avviaGiro(tenant: string, networkId: number | null, sonda: Sonda
   void withTenant(tenant, async () => {
     try {
       allineaServiziRete(networkId ?? undefined);
-      const coda = getPorteServiziDaSondare(networkId ?? undefined);
+      const coda = getPorteServiziDaSondare(networkId ?? undefined).filter((p) => !daSaltare(p.porta, p.vendor));
       stato.totale = coda.length;
       let i = 0;
       const lavoratore = async () => {

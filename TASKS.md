@@ -1,6 +1,11 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-09 — Estrazione device dal PC del tecnico (analisi)
+
+- [x] Riccardo (09/11): prompt per il Claude Code dei tecnici che produce un JSON digeribile da DA-IPAM, con un motore SSH/SNMP/API per switch e router. Analisi in `docs/revisione/2026-11-09-estrazione-device-tecnico.md`, bozza del prompt in `docs/revisione/2026-11-09-prompt-tecnico-estrazione.md`. In breve: il formato è lo snapshot 1.0 che c'è già, più una busta e le sezioni `routes` e `config`.
+- [ ] Riccardo decide il vincolo dei dati verso il modello esterno (§6, alternative A-E) e le domande D2-D11 (§7). Prima di questo, niente codice.
+
 ## 2026-11-08 — Sonda trunk: IP ufficiali e altri, VLAN nativa (Riccardo, leggero)
 
 Riccardo (08/11): «troppi IP fuori da quelli ufficiali», sull'hub e su DTS. Approvato «Sì, come consigli».

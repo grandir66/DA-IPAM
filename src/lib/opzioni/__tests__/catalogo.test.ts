@@ -63,6 +63,8 @@ const CENSIMENTO: ReadonlyArray<[chiave: string, id: string]> = [
   ["DA_VAULT_LOCALE", "file.vault_locale"],
   ["DA_VAULT_DALINK", "file.vault_dalink"],
   ...VOCI_DA_AMBIENTE.map((v): [string, string] => [v.variabile, `file.${v.variabile.toLowerCase()}`]),
+  ["servizi_rete.automatico", "automatismo.servizi_rete"],
+  ["segmentazione.automatico", "automatismo.segmentazione"],
   ["DA_INVENT_BACKUP_CRON", "sempre.backup"],
   ["allarme salute", "sempre.allarme_salute"],
   ["allarme job fermi", "sempre.allarme_job_fermi"],
@@ -195,5 +197,21 @@ test("(f) acquisizione modulare: spenta di serie, si accende e si spegne da Opzi
     assert.equal((await o.leggi()).acceso, false);
     assert.equal(acquisizioneModulareAccesa(), false);
     assert.throws(() => o.cambia?.({}, "test"), /accendere o spegnere/);
+  });
+});
+
+test("(g) sonde dei servizi e matrice: accese di serie, si spengono per cliente", async () => {
+  await withTenant(T, async () => {
+    for (const id of ["automatismo.servizi_rete", "automatismo.segmentazione"] as const) {
+      const o = catalogo().find((x) => x.id === id);
+      assert.ok(o, `${id}: riga mancante`);
+      assert.equal(o.forma, "levetta");
+      assert.equal(o.valePer, "cliente");
+      assert.equal((await o.leggi()).acceso, true);
+      o.cambia?.({ acceso: false }, "test");
+      assert.equal((await o.leggi()).acceso, false);
+      o.cambia?.({ acceso: true }, "test");
+      assert.equal((await o.leggi()).acceso, true);
+    }
   });
 });

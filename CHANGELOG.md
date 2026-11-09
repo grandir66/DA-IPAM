@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · NTLM su RDP e Negotiate, levette in Opzioni
+
+Riccardo (10/11): «fai le altre attività» — RDP, HTTP che offre solo Negotiate, interruttori in Opzioni.
+
+### Aggiunto
+- **NTLM da RDP** (3389): Connection Request X.224, TLS, CredSSP TSRequest con Type 1; si legge la CHALLENGE e si chiude. Nessun Type 3.
+- **HTTP solo Negotiate**: se `WWW-Authenticate` non dice NTLM, la sonda manda SPNEGO intorno al Type 1 e legge la CHALLENGE dal blob Negotiate.
+- **Levette in Opzioni** «Sonde dei servizi di rete» e «Matrice di segmentazione»: accese di serie, spegnibili per cliente. Da Schedulazioni si usa la stessa riga.
+
 ## [Non rilasciato] — 2026-11-09 · Copia IP anche in Software e Host monitorati
 
 ### Cambiato

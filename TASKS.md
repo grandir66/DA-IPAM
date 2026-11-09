@@ -46,14 +46,14 @@ Riccardo (09/11): «capire come implementare l'ottimo motore di rilevazione e al
 - [x] Riccardo (09/11): «Matrice di segmentazione» — codice scritto (sessione del 09/11 sera, handoff). Decisioni tenute: IP libero via ARP, uscita dal gateway della VLAN, max 40 per cella (prima i servizi di gestione), settimanale accesa (`23 3 * * 1`), livello completo sulla sonda.
   - [x] Sonda (DA-Vul-can): `POST /raggiungibilita` sul socket e `/api/v1/trunk/raggiungibilita` sull'edge; stesso lock del giro; esiti raggiunto / chiuso / filtrato / senza rotta. Prove `test_sensore_raggiungibilita.py` 4/4
   - [x] DA-IPAM: tabelle `segmentazione_*`, giro, pagina `/segmentazione`. Prove `bersagli.test.ts` verdi (tetto 40, gestione prima, giro finto)
-  - [ ] Collaudo: trunk VLAN 102 e 103 sulla scheda della VM 963 (PX-NAS), snapshot prima (c'è già `pre-servizi-rete-20261109`). Oggi la 963 vede solo la VLAN nativa
-- [ ] Interruttore `segmentazione.automatico` in Opzioni (oggi solo nelle impostazioni del tenant; in Schedulazioni c'è la riga)
+  - [x] Collaudo: nic trunk dedicata `ens19` sulla 963 (snapshot `pre-nic-trunk-20261110`); matrice con esiti da VLAN 102. Riccardo: «ok funziona»
+- [x] Interruttore `segmentazione.automatico` in Opzioni (acceso di serie, spegnibile per cliente; stessa levetta in Schedulazioni)
 
-- [ ] Interruttore `servizi_rete.automatico` in Opzioni (oggi solo nelle impostazioni del tenant)
+- [x] Interruttore `servizi_rete.automatico` in Opzioni (acceso di serie, spegnibile per cliente; stessa levetta in Schedulazioni)
 - [x] Installata da sola (timer `dev`) sull'hub 192.168.4.8 e sulla sonda 963 «79993-ipam-2» (192.168.99.2), v0.9.1043; snapshot `pre-servizi-rete-20261109` su VM 533 (DA-PX-03) e VM 963 (PX-NAS), dischi controllati «thawed». Giro all'avvio partito da solo: hub 70791 1034 servizi / 949 sondati / 263 HTTP / 143 TLS / 97 SSH (giro della 1042); sonda 963 228 servizi / 196 sondati / 71 HTTP / 28 TLS / 24 SSH, 21 host senza porte provati e 11 con porte (1043)
 - [ ] Guardare a schermo Servizi di rete e il riquadro in Subnet: la pagina dell'hub chiede l'accesso, da fare con Riccardo
 - [x] Tappa identità senza credenziali: tabella `identita_prove` / `identita_proposte`, scheda «Stesso apparato» in Servizi di rete. Due IP con la stessa chiave SSH compaiono come proposta; conferma collega, rifiuto no; il ricalcolo non resuscita il rifiuto; un tenant non vede l'altro. Prove `identita.test.ts` verdi. **Non guardata a schermo**
-- [x] NTLM (pezzo opzionale dell'identità): SMB 445 e HTTP con WWW-Authenticate NTLM riportano nome, dominio e versione OS dalla CHALLENGE, senza autenticarsi. Due IP con lo stesso nome Windows diventano una proposta. WORKGROUP saltato. RDP non in questa tappa. Prove `identita.test.ts` e parser verdi.
+- [x] NTLM (pezzo opzionale dell'identità): SMB 445, HTTP NTLM o solo Negotiate (SPNEGO), RDP 3389 (X.224+TLS+CredSSP). CHALLENGE senza autenticarsi. Due IP con lo stesso nome Windows diventano una proposta. WORKGROUP saltato. Prove `identita.test.ts`, `sonde.test.ts`, `ntlm-spnego.test.ts` verdi.
 - [ ] Tappa ascolto all'avvio: CDP/LLDP/DTP/STP, VLAN etichettate, lease DHCP → reti proposte da sole; partire dalla sonda del trunk che c'è già
 - [ ] Tappa motore: confronto a parità dalla 79993 con Nety (VM 192.168.99.83, da cancellare dopo), poi ARP per primo, naabu, `-sV` solo sulle porte aperte
 

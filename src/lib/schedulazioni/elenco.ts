@@ -8,7 +8,7 @@
  * Opzioni hanno una riga loro (job di serie, pulizia, controller, Chocolatey, dati sugli exploit) dalla stessa opzione,
  * così la lapide e il «spento da … il …» restano gli stessi; gli altri job dal loro interruttore, come la pagina dei job.
  */
-import { getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting, listNetworksLite } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, listNetworksLite } from "@/lib/db-tenant";
 import { parseDbDate } from "@/lib/db-date";
 import { ETICHETTE_JOB, scheduledJobLabel, unifiJobKind } from "@/lib/scheduled-job-types";
 import type { ScheduledJob } from "@/types";
@@ -89,6 +89,26 @@ function prossimoOgniMinuti(n: number, adesso: Date): Date {
   const d = new Date(adesso);
   d.setSeconds(0, 0);
   d.setMinutes(Math.floor(d.getMinutes() / n) * n + n);
+  return d;
+}
+
+/** Cron «minuto ogni N ore»: es. 17 ogni 6 ore. */
+function prossimaOgniOreAlMinuto(ore: number, minuto: number, adesso: Date): Date {
+  const d = new Date(adesso);
+  d.setSeconds(0, 0);
+  d.setMilliseconds(0);
+  d.setMinutes(minuto);
+  d.setHours(Math.floor(adesso.getHours() / ore) * ore);
+  if (d.getTime() <= adesso.getTime()) d.setHours(d.getHours() + ore);
+  return d;
+}
+
+/** Cron «M H * * 1»: prossimo lunedì a quell'ora del server. */
+function prossimoLunedi(h: number, m: number, adesso: Date): Date {
+  const d = new Date(adesso);
+  d.setHours(h, m, 0, 0);
+  d.setDate(d.getDate() + ((1 - d.getDay() + 7) % 7));
+  if (d.getTime() <= adesso.getTime()) d.setDate(d.getDate() + 7);
   return d;
 }
 
@@ -483,33 +503,43 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
     perche: "Gira sempre: non interroga gli apparati e tocca solo le sue tabelle. I parser sugli apparati, ogni 6 ore, stanno dietro «Tutti i dati per la Mappa porte»",
   });
 
-  const serviziAcceso = (getTenantSetting("servizi_rete.automatico") ?? "1").trim() !== "0";
-  righe.push({
-    ...base,
-    id: "timer.servizi_rete",
-    nome: "Sonde dei servizi di rete",
-    su: "le porte già note e gli host senza porte",
-    quando: "3 minuti dopo l'avvio, poi ogni 6 ore",
-    prossimo: null,
-    stato: serviziAcceso ? "acceso" : "spento",
-    esito: esito("neutro", serviziAcceso ? "acceso di serie" : "spento per questo cliente"),
-    dove: { href: "/servizi-rete", etichetta: "Servizi di rete ›" },
-    perche: "Si spegne per un cliente con servizi_rete.automatico = 0. L'interruttore in Opzioni arriva dopo.",
-  });
+  const serviziRete = catalogo().find((o) => o.id === "automatismo.servizi_rete");
+  if (serviziRete) {
+    const s = await leggiStato(serviziRete);
+    const acceso = s.acceso === true;
+    righe.push({
+      ...base,
+      id: "timer.servizi_rete",
+      nome: serviziRete.nome,
+      su: "le porte già note e gli host senza porte",
+      quando: "3 minuti dopo l'avvio, poi ogni 6 ore al minuto 17",
+      prossimo: acceso ? dataSqlite(prossimaOgniOreAlMinuto(6, 17, adesso)) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${serviziRete.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: serviziRete.id },
+    });
+  }
 
-  const matriceAccesa = (getTenantSetting("segmentazione.automatico") ?? "1").trim() !== "0";
-  righe.push({
-    ...base,
-    id: "timer.segmentazione",
-    nome: "Matrice di segmentazione",
-    su: "i servizi già noti, da ogni VLAN del trunk",
-    quando: "ogni lunedì alle 03:23",
-    prossimo: null,
-    stato: matriceAccesa ? "acceso" : "spento",
-    esito: esito("neutro", matriceAccesa ? "acceso di serie" : "spento per questo cliente"),
-    dove: { href: "/segmentazione", etichetta: "Matrice di segmentazione ›" },
-    perche: "Si spegne per un cliente con segmentazione.automatico = 0. L'interruttore in Opzioni arriva dopo.",
-  });
+  const matrice = catalogo().find((o) => o.id === "automatismo.segmentazione");
+  if (matrice) {
+    const s = await leggiStato(matrice);
+    const acceso = s.acceso === true;
+    righe.push({
+      ...base,
+      id: "timer.segmentazione",
+      nome: matrice.nome,
+      su: "i servizi già noti, da ogni VLAN del trunk",
+      quando: "ogni lunedì alle 03:23 (ora del server)",
+      prossimo: acceso ? dataSqlite(prossimoLunedi(3, 23, adesso)) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${matrice.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: matrice.id },
+    });
+  }
 
   // Sensore trunk (25/10): levetta per cliente in Opzioni, lettura ogni 2 minuti.
   const trunk = catalogo().find((o) => o.id === "modulo.sensore_trunk");

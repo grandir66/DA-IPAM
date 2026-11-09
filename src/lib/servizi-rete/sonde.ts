@@ -19,6 +19,8 @@ import {
   type NtlmChallengeInfo,
   type Smb2Finding,
 } from "@/lib/scanner/probes/smb2";
+import { probeRdpNtlm } from "@/lib/scanner/probes/rdp-ntlm";
+import { ntlmDaGssORaw, wrapNtlmInSpnego } from "./ntlm-spnego";
 
 export interface InfoTls {
   version: string | null;
@@ -66,7 +68,7 @@ export interface InfoNtlm {
   dns_computer: string | null;
   dominio_dns: string | null;
   versione_os: string | null;
-  fonte: "smb" | "http";
+  fonte: "smb" | "http" | "rdp";
 }
 
 /** Come è stato riconosciuto ciò che risponde: la prova, non la tabella delle porte. */
@@ -439,40 +441,59 @@ export function infoNtlmDaSmb2(f: Smb2Finding): InfoNtlm {
   };
 }
 
-/** L'intestazione WWW-Authenticate invita a NTLM (non solo Negotiate/Kerberos). */
+/** L'intestazione WWW-Authenticate invita a NTLM o a Negotiate (IIS spesso offre solo Negotiate). */
 export function ntlmOfferto(headers: Record<string, string>): boolean {
+  const v = headerDi(headers, "www-authenticate") ?? "";
+  return /(^|[\s,])(ntlm|negotiate)(\s|$|,)/i.test(v);
+}
+
+function ntlmEspicito(headers: Record<string, string>): boolean {
   const v = headerDi(headers, "www-authenticate") ?? "";
   return /(^|[\s,])ntlm(\s|$|,)/i.test(v);
 }
 
-/** Estrae il blob Type 2 da `WWW-Authenticate: NTLM <base64>`. */
-export function ntlmChallengeDaWwwAuthenticate(headers: Record<string, string>): Buffer | null {
-  const v = headerDi(headers, "www-authenticate") ?? "";
-  const m = /\bNTLM\s+([A-Za-z0-9+/=]+)/i.exec(v);
-  if (!m) return null;
+function blobDaBase64(s: string): Buffer | null {
   try {
-    const buf = Buffer.from(m[1], "base64");
+    const buf = Buffer.from(s, "base64");
     return buf.length > 0 ? buf : null;
   } catch {
     return null;
   }
 }
 
-const RICHIESTA_HTTP_NTLM = (ip: string, token: string) =>
-  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: DA-IPAM\r\nAccept: */*\r\nAuthorization: NTLM ${token}\r\nConnection: close\r\n\r\n`;
+/** Estrae il blob Type 2 da `WWW-Authenticate: NTLM <base64>` o `Negotiate <base64 SPNEGO>`. */
+export function ntlmChallengeDaWwwAuthenticate(headers: Record<string, string>): Buffer | null {
+  const v = headerDi(headers, "www-authenticate") ?? "";
+  const ntlm = /\bNTLM\s+([A-Za-z0-9+/=]+)/i.exec(v);
+  if (ntlm) {
+    const raw = blobDaBase64(ntlm[1]);
+    return raw ? ntlmDaGssORaw(raw) ?? raw : null;
+  }
+  const neg = /\bNegotiate\s+([A-Za-z0-9+/=]+)/i.exec(v);
+  if (!neg) return null;
+  const raw = blobDaBase64(neg[1]);
+  return raw ? ntlmDaGssORaw(raw) : null;
+}
 
-/** Seconda richiesta HTTP: Type 1 NTLM, si legge la CHALLENGE. Nessun Type 3, nessuna password. */
+const RICHIESTA_HTTP_AUTH = (ip: string, schema: string, token: string) =>
+  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: DA-IPAM\r\nAccept: */*\r\nAuthorization: ${schema} ${token}\r\nConnection: close\r\n\r\n`;
+
+/** Seconda richiesta HTTP: Type 1 NTLM (o SPNEGO se c'è solo Negotiate). Nessun Type 3, nessuna password. */
 export async function ntlmDaHttp(
   ip: string,
   porta: number,
   scheme: "http" | "https",
   ms: number,
+  headersPrima?: Record<string, string>,
 ): Promise<InfoNtlm | null> {
-  const token = buildNtlmNegotiateMessage().toString("base64");
+  const type1 = buildNtlmNegotiateMessage();
+  const usaNegotiate = headersPrima ? !ntlmEspicito(headersPrima) : false;
+  const token = (usaNegotiate ? wrapNtlmInSpnego(type1) : type1).toString("base64");
+  const schema = usaNegotiate ? "Negotiate" : "NTLM";
   const sock = scheme === "https" ? await connettiTls(ip, porta, ms) : await connetti(ip, porta, ms);
   if (!sock) return null;
   try {
-    sock.write(RICHIESTA_HTTP_NTLM(ip, token));
+    sock.write(RICHIESTA_HTTP_AUTH(ip, schema, token));
     const grezzo = await leggi(sock, ms, (b) => b.includes("\r\n\r\n"));
     const http = leggiRispostaHttp(grezzo, scheme);
     if (!http) return null;
@@ -494,7 +515,7 @@ async function magariNtlmHttp(
 ): Promise<void> {
   if (esito.ntlm || !esito.http || !ntlmOfferto(esito.http.headers)) return;
   try {
-    esito.ntlm = await ntlmDaHttp(ip, porta, scheme, ms);
+    esito.ntlm = await ntlmDaHttp(ip, porta, scheme, ms, esito.http.headers);
   } catch {
     // una 401 NTLM che non risponde al Type 1 non ferma la sonda
   }
@@ -526,6 +547,21 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
       }
     } catch {
       // SMB muto: si prova comunque banner/HTTP come sulle altre porte
+    }
+  }
+
+  // 3389: X.224 + TLS + CredSSP, stessa CHALLENGE, sempre senza password.
+  if (porta === 3389) {
+    try {
+      const rdp = await probeRdpNtlm(ip, { timeoutMs: ms });
+      if (rdp) {
+        esito.metodo = "ntlm";
+        esito.ntlm = infoNtlmDaChallenge(rdp, "rdp");
+        esito.versione = esito.ntlm.versione_os;
+        return esito;
+      }
+    } catch {
+      // RDP muto o senza CredSSP: si prova TLS come sulle altre porte
     }
   }
 

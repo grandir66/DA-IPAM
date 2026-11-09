@@ -1,6 +1,6 @@
 /**
  * Giro settimanale della matrice di segmentazione (Riccardo, 09/11/2026: acceso
- * di serie, spegnibile per cliente con `segmentazione.automatico = 0`).
+ * di serie, spegnibile per cliente dalla levetta in Opzioni (`segmentazione.automatico = 0`).
  */
 import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";

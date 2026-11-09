@@ -14,6 +14,7 @@ import {
   prodottoDaSsh,
   testoStampabile,
 } from "../sonde";
+import { wrapNtlmInSpnego } from "../ntlm-spnego";
 
 test("risposta HTTP: stato, titolo, server, cookie tenuti solo per nome", () => {
   const grezzo = Buffer.from(
@@ -37,6 +38,7 @@ test("non HTTP: nessuna risposta inventata", () => {
 test("WWW-Authenticate: NTLM riconosciuto, blob Type 2 estratto, Basic ignorato", () => {
   assert.equal(ntlmOfferto({ "WWW-Authenticate": "Negotiate, NTLM" }), true);
   assert.equal(ntlmOfferto({ "www-authenticate": "NTLM" }), true);
+  assert.equal(ntlmOfferto({ "WWW-Authenticate": "Negotiate" }), true);
   assert.equal(ntlmOfferto({ "WWW-Authenticate": "Basic realm=\"x\"" }), false);
   assert.equal(ntlmOfferto({ Server: "IIS" }), false);
   const token = Buffer.from("NTLMSSP\0xxxx").toString("base64");
@@ -44,6 +46,10 @@ test("WWW-Authenticate: NTLM riconosciuto, blob Type 2 estratto, Basic ignorato"
   assert.ok(buf);
   assert.equal(buf.subarray(0, 7).toString("latin1"), "NTLMSSP");
   assert.equal(ntlmChallengeDaWwwAuthenticate({ "WWW-Authenticate": "NTLM" }), null);
+  const gss = wrapNtlmInSpnego(Buffer.from("NTLMSSP\0yyyy"));
+  const daNeg = ntlmChallengeDaWwwAuthenticate({ "WWW-Authenticate": `Negotiate ${gss.toString("base64")}` });
+  assert.ok(daNeg);
+  assert.equal(daNeg.subarray(0, 7).toString("latin1"), "NTLMSSP");
 });
 
 test("prodotto e versione da Server e da SSH", () => {

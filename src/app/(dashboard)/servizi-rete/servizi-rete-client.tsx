@@ -162,7 +162,7 @@ function DettaglioServizio({ r }: { r: ServizioRete }) {
           <DatoDettaglio nome="NetBIOS" valore={ntlm.netbios ?? "—"} mono />
           <DatoDettaglio nome="Dominio" valore={ntlm.dominio_dns ?? ntlm.dominio_netbios ?? "—"} mono />
           <DatoDettaglio nome="Versione OS" valore={ntlm.versione_os ?? "—"} mono />
-          <DatoDettaglio nome="Letto da" valore={ntlm.fonte === "http" ? "HTTP" : "SMB"} />
+          <DatoDettaglio nome="Letto da" valore={ntlm.fonte === "http" ? "HTTP" : ntlm.fonte === "rdp" ? "RDP" : "SMB"} />
         </Blocco>
       )}
       {ssh && (

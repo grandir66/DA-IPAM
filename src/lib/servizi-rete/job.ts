@@ -3,8 +3,8 @@
  *
  * Avviato da `server.ts`: tre minuti dopo l'avvio e poi ogni 6 ore, per ogni cliente attivo,
  * prova le porte comuni sugli host senza porte note e rilegge con le sonde tutte le porte,
- * le più vecchie per prime. Si spegne per un cliente con `servizi_rete.automatico = 0`
- * nelle impostazioni del tenant. Il freno su campo e stampa vale sempre (`daSaltare`).
+ * le più vecchie per prime. Si spegne per un cliente dalla levetta in Opzioni
+ * (`servizi_rete.automatico = 0`). Il freno su campo e stampa vale sempre (`daSaltare`).
  */
 import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";

@@ -53,6 +53,8 @@ import { giroEventiDcAdesso, ultimoGiroDc } from "@/lib/security/eventi-dc/job";
 import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { CHIAVE_VICINI_SNMP } from "@/lib/attribution/annunci";
 import { CHIAVE_RICONOSCIMENTO } from "@/lib/scanner/profili/sconosciuti";
+import { CHIAVE_AUTOMATICO as CHIAVE_SERVIZI_RETE } from "@/lib/servizi-rete/job";
+import { CHIAVE_AUTOMATICO as CHIAVE_SEGMENTAZIONE } from "@/lib/segmentazione/job";
 import { statoVault } from "@/lib/vault/appliance";
 import { MOTIVO_OPENBAO_TOLTO, openBaoRimastoNelFile, vaultDalinkAcceso, vaultLocaleAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
@@ -992,6 +994,48 @@ function opzioniAutomatismi(): Opzione[] {
         const acceso = soloAcceso(r);
         if (acceso && !schemaCaviPresente()) throw new ErroreOpzione("Mappa nuova non disponibile: lo schema di questo cliente non è aggiornato");
         scriviMappaCavi(acceso, chi);
+      },
+    },
+    {
+      id: "automatismo.servizi_rete",
+      gruppo: "automatismi",
+      nome: "Sonde dei servizi di rete",
+      cosa: "ogni 6 ore legge banner, HTTP, TLS, SSH e NTLM sulle porte già note, e prova le porte comuni sugli host senza porte",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "acceso",
+      configura: { href: "/servizi-rete", etichetta: "Servizi di rete ›" },
+      spegnendo: {
+        siFerma: "il giro automatico delle sonde (all'avvio e ogni 6 ore). Il pulsante nella pagina resta.",
+        resta: "i servizi già letti e le proposte di identità.",
+      },
+      leggi() {
+        const acceso = (getTenantSetting(CHIAVE_SERVIZI_RETE) ?? "1").trim() !== "0";
+        return diSerieStato(acceso, esito("neutro", acceso ? "acceso di serie" : "spento"));
+      },
+      cambia(r) {
+        setTenantSetting(CHIAVE_SERVIZI_RETE, soloAcceso(r) ? "1" : "0");
+      },
+    },
+    {
+      id: "automatismo.segmentazione",
+      gruppo: "automatismi",
+      nome: "Matrice di segmentazione",
+      cosa: "ogni lunedì alle 03:23 prova i servizi già noti da dentro ogni VLAN del trunk",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "acceso",
+      configura: { href: "/segmentazione", etichetta: "Matrice di segmentazione ›" },
+      spegnendo: {
+        siFerma: "il giro settimanale della matrice. Il pulsante nella pagina resta.",
+        resta: "le prove già fatte.",
+      },
+      leggi() {
+        const acceso = (getTenantSetting(CHIAVE_SEGMENTAZIONE) ?? "1").trim() !== "0";
+        return diSerieStato(acceso, esito("neutro", acceso ? "acceso di serie" : "spento"));
+      },
+      cambia(r) {
+        setTenantSetting(CHIAVE_SEGMENTAZIONE, soloAcceso(r) ? "1" : "0");
       },
     },
   ];

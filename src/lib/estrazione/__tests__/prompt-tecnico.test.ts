@@ -19,6 +19,6 @@ test("la voce di menu è dentro il ramo «tecnico»", () => {
 test("il prompt si legge dal file unico e ha le parti obbligatorie", () => {
   const p = leggiPromptTecnico();
   assert.ok(p, "manca src/lib/estrazione/prompt-tecnico.md");
-  for (const parte of ["da-ipam-estrazione", "Vietati sempre", "imposta_credenziali.py", "controlla_estrazione.py"]) assert.ok(p.includes(parte), parte);
+  for (const parte of ["da-ipam-estrazione", "Vietati sempre", "imposta_credenziali.py", "controlla_estrazione.py", "Pacchetto di consegna", "controlla_campione.py"]) assert.ok(p.includes(parte), parte);
   assert.equal(leggiPromptTecnico("/percorso/che/non/esiste"), null);
 });

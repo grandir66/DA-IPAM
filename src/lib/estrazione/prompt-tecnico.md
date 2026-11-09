@@ -55,7 +55,10 @@ Ti fermi solo dove la fase lo dice.
 - Se un comando ha un formato diverso da quello della documentazione, guarda l'output grezzo salvato e adatta il parser.
   Non rilanciare comandi a caso.
 
-**Fase 5 — Controllo e consegna.** Controllo del §5, nome e cartella del §4, resoconto del §6.
+- Lo script funziona anche **senza collegarsi**: `python3 <collector>.py --da-grezzo <cartella>` ricostruisce il JSON dagli
+  output grezzi salvati. Serve a rifare il parser e a preparare il pacchetto di consegna del §4.1.
+
+**Fase 5 — Controllo e consegna.** Controllo del §5, nome e cartella del §4, pacchetto di consegna del §4.1, resoconto del §6.
 
 Se un dato si legge solo con un comando che non è fra quelli ammessi, **non lanciarlo**: scrivimelo.
 
@@ -268,6 +271,63 @@ In questo esempio `aggregation` è `ok` con `[]`: il comando ha risposto e non c
 - **Lo script** lo salvi accanto, come `<collector>.py`: la prossima volta su un apparato della stessa famiglia si riusa.
 - File e cartelle con permessi `600` e `700`.
 
+## 4.1 Pacchetto di consegna (per far entrare il collector in DA-IPAM)
+
+Lo sviluppo di DA-IPAM trasforma il tuo script in un collector del prodotto, così da lì in poi tutte le installazioni leggono
+quel tipo di apparato da sole. Per farlo gli serve un pacchetto **senza dati veri del cliente**. Il repository di DA-IPAM è
+pubblico, e i dati dei clienti non vanno a modelli esterni.
+
+Cartella `~/DA-IPAM-estrazioni/consegna/<collector>-<AAAAMMGG>/`, con dentro:
+
+| File | Cosa |
+| --- | --- |
+| `<collector>.py` | lo script, senza credenziali né indirizzi scritti dentro |
+| `campione/c1.txt`, `c2.txt`, … | gli output grezzi **anonimizzati**, uno per comando, con gli stessi id di `comandi[]` |
+| `atteso.json` | il JSON prodotto da `python3 <collector>.py --da-grezzo campione/`, cioè dal campione e non dall'apparato |
+| `LEGGIMI.md` | vendor, modello, firmware, protocollo, i link della documentazione usata, il piano di lettura della fase 4, cosa non si legge e perché |
+
+L'anonimizzazione la fa uno script `anonimizza.py`, che scrivi tu. Gira sulla cartella `grezzo/` e scrive `campione/`:
+- **IP** → indirizzi di documentazione, sempre lo stesso finto per lo stesso vero: `192.0.2.x`, poi `198.51.100.x`, poi
+  `203.0.113.x`. Le maschere, `0.0.0.0` e `127.0.0.1` restano;
+- **MAC** → `02:00:00:xx:xx:xx`, sempre lo stesso per lo stesso vero; `ff:ff:ff:ff:ff:ff` resta;
+- **hostname, nomi di sistema dei vicini, descrizioni di porta, nomi di VLAN, location, contact, nomi utente** →
+  segnaposto come `SW-01`, `CORE-01`, `PORTA-12`, `VLAN-10`;
+- **seriali** → `S000000000001` e seguenti;
+- **domini ed email** → `example.com`.
+
+Va mantenuta la **forma**: colonne, spazi, maiuscole e lunghezze vicine al vero. Il parser deve leggere il campione come
+l'output vero.
+
+La tabella `vero → finto` la salva in `~/DA-IPAM-estrazioni/consegna/<…>.corrispondenze.json`, **fuori** dalla cartella di
+consegna, a `600`. Non si consegna mai.
+
+Prima di consegnare, controlla il campione con questo script:
+
+```python
+#!/usr/bin/env python3
+"""Uso: python3 controlla_campione.py <cartella consegna> <file corrispondenze.json>"""
+import ipaddress, json, pathlib, re, sys
+cons, corr = pathlib.Path(sys.argv[1]), json.load(open(sys.argv[2], encoding="utf-8"))
+DOC = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "0.0.0.0/32", "127.0.0.0/8", "255.0.0.0/8", "224.0.0.0/4")]
+err = []
+for f in sorted(p for p in cons.rglob("*") if p.is_file()):
+    t = f.read_text(encoding="utf-8", errors="replace")
+    for vero in corr:
+        if len(vero) >= 4 and vero in t: err.append(f"{f.name}: contiene un valore vero ({len(vero)} caratteri)")
+    for ip in set(re.findall(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])", t)):
+        try:
+            if not any(ipaddress.ip_address(ip) in n for n in DOC): err.append(f"{f.name}: IP non di documentazione {ip}")
+        except ValueError: pass
+    for mac in set(m.lower() for m in re.findall(r"\b[0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5}\b", t)):
+        if not mac.replace("-", ":").startswith(("02:00:00", "ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00")): err.append(f"{f.name}: MAC non anonimo {mac}")
+    if re.search(r"(password|secret|community|psk|private.key)\s*[:=]", t, re.I): err.append(f"{f.name}: possibile segreto")
+print("\n".join(err) if err else "OK"); sys.exit(1 if err else 0)
+```
+
+Deve dire `OK`. Poi chiedimi di **guardare il campione a occhio** prima di consegnarlo: l'anonimizzatore può non riconoscere
+un nome di cliente scritto in una descrizione. Il pacchetto lo mando io allo sviluppo, non tu. Il JSON vero resta sul PC e
+lo importo io in DA-IPAM.
+
 # 5. Controllo prima di consegnare
 
 Lancia questo controllo, che usa solo la libreria standard di Python e riceve il file delle credenziali della fase 2. Deve finire con `OK` ed esito 0, altrimenti correggi e
@@ -339,7 +399,7 @@ Se c'è un clone di DA-IPAM sul PC, lo schema ufficiale dello snapshot si genera
 
 # 6. Cosa mi dici alla fine
 
-- Il percorso del file JSON.
+- Il percorso del file JSON e della cartella di consegna, con l'esito di `controlla_campione.py`.
 - Le sezioni lette, con il numero di righe, e quelle non lette, con il motivo.
 - I comandi lanciati: l'elenco di `comandi[]`.
 - Cosa non hai potuto provare.

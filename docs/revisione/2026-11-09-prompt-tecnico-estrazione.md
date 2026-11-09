@@ -11,4 +11,9 @@
 Sull'installazione «tecnico» lo mostra la pagina «Estrazione apparati» (`/estrazione-apparati`), col pulsante «Copia». Si
 modifica solo quel file: questa pagina non ne tiene una copia.
 
+**Prompt per lo sviluppo** (Riccardo, 09/11: «servirebbe un prompt per inghiottire sia il json che inserire il collector
+centralizzato delle installazioni dei tecnici»): [`src/lib/estrazione/prompt-sviluppo.md`](../../src/lib/estrazione/prompt-sviluppo.md).
+Si usa nel repo DA-IPAM a ogni pacchetto di consegna di un tecnico. La parte A, da fare una volta sola, scrive l'import del
+JSON; la parte B trasforma lo script del tecnico in un collector del catalogo.
+
 L'analisi completa resta come riferimento in [`2026-11-09-estrazione-device-tecnico.md`](2026-11-09-estrazione-device-tecnico.md).

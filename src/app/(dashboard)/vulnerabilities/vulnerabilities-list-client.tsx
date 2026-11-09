@@ -34,7 +34,7 @@ import { Pagination } from "@/components/shared/pagination";
 import { LoadError } from "@/components/shared/load-error";
 import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
-import { BadgeGravita, LegendaGravita } from "@/components/shared/console";
+import { BadgeGravita, BarraGravita, LegendaGravita, Pannello } from "@/components/shared/console";
 import { BadgeTriage, EditorTriage } from "@/components/shared/triage-riga";
 import type { RigaTriage, StatoTriage } from "@/lib/triage/db";
 import { fetchJson } from "@/lib/fetch-json";
@@ -52,6 +52,16 @@ interface VulnHostRef {
   source: string;
   package_label: string | null;
   scanned_at: string;
+}
+
+interface RilievoRete {
+  network_id: number;
+  network_name: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
 }
 
 interface AggregatedVulnUi {
@@ -186,6 +196,7 @@ export function VulnerabilitiesListClient() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const admin = useEAdmin();
   const [triage, setTriage] = useState<Record<string, RigaTriage>>({});
+  const [perRete, setPerRete] = useState<RilievoRete[]>([]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState<string | null>(null);
@@ -246,6 +257,18 @@ export function VulnerabilitiesListClient() {
       cancelled = true;
     };
   }, [params, vista, ricarica]);
+
+  // Rilievi per rete: una chiamata, per le barre in testata. Rilegge quando si aggiornano i feed.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const r = await fetchJson<{ reti: RilievoRete[] }>("/api/vulnerabilities/per-rete");
+      if (!cancelled && r.ok) setPerRete(r.data.reti);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ricarica]);
 
   // Triage delle CVE mostrate: una chiamata dopo che la lista è arrivata (solo vista CVE).
   useEffect(() => {
@@ -388,6 +411,20 @@ export function VulnerabilitiesListClient() {
           <LegendaGravita className="w-full justify-end" />
         </div>
       </div>
+
+      {perRete.length > 0 && (
+        <Pannello titolo="Rilievi per rete" conteggio={perRete.length} sottotitolo="Dove si concentrano, per gravità" piede={<LegendaGravita />}>
+          <div className="space-y-2 p-3">
+            {perRete.map((r) => (
+              <div key={r.network_id} className="flex items-center gap-3">
+                <span className="w-44 shrink-0 truncate text-[13px] font-medium" title={r.network_name}>{r.network_name}</span>
+                <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
+                <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
+              </div>
+            ))}
+          </div>
+        </Pannello>
+      )}
 
       <Card>
         <CardHeader>

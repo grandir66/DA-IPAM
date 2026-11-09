@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Rilievi per rete in testata di Vulnerabilità (dall'Overview di Nety)
+
+Riccardo (09/11), rappresentazione dei dati: a colpo d'occhio, dove si concentrano i rilievi.
+
+### Aggiunto
+- **Pannello «Rilievi per rete»** in cima alla pagina Vulnerabilità: una barra impilata per rete (Critica/Alta/Media/Bassa, coi numeri), col totale e la legenda. Usa il mattone `BarraGravita`. Stessa deduplica della vista per host (una CVE/NVT per host, Edge + Wazuh).
+- **`getRilieviPerRete`** (`db-tenant.ts`) e rotta `/api/vulnerabilities/per-rete` (`requireAuth`).
+
 ## [Non rilasciato] — 2026-11-09 · Triage dei rilievi per riga (dall'engagement di Nety)
 
 Riccardo (09/11), rappresentazione dei dati: durante la revisione ogni rilievo ha uno stato deciso a mano e una nota.

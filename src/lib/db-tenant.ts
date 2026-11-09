@@ -9593,6 +9593,65 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
   return map;
 }
 
+export interface RilieviPerRete {
+  network_id: number;
+  network_name: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+/**
+ * Rilievi per rete e gravità (09/11/2026, dall'Overview di Nety): la barra «rilievi per rete»
+ * in testata di Vulnerabilità. Stessa deduplica di `getVulnSummary` (una CVE/NVT conta una volta
+ * per host, con la gravità più alta, Edge + Wazuh), poi i conteggi raggruppati per rete dell'host.
+ */
+export function getRilieviPerRete(): RilieviPerRete[] {
+  const superati = [...kernelSuperati(
+    db().prepare(
+      `SELECT DISTINCT agent_id, package_name, package_version FROM wazuh_vuln
+        WHERE status = 'VALID' AND package_name LIKE 'linux-image-%'`
+    ).all() as PacchettoKernel[]
+  )];
+  const rows = db()
+    .prepare(
+      `SELECT n.id AS network_id, n.name AS network_name,
+              SUM(CASE WHEN rango = 0 THEN 1 ELSE 0 END) AS critical,
+              SUM(CASE WHEN rango = 1 THEN 1 ELSE 0 END) AS high,
+              SUM(CASE WHEN rango = 2 THEN 1 ELSE 0 END) AS medium,
+              SUM(CASE WHEN rango = 3 THEN 1 ELSE 0 END) AS low
+         FROM (
+           SELECT host_id, chiave, MIN(rango) AS rango FROM (
+             SELECT host_id, COALESCE(NULLIF(cve_id, ''), 'nvt:' || nvt_oid) AS chiave,
+                    CASE severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END AS rango
+               FROM vuln_findings_attuali
+              WHERE host_id IS NOT NULL
+                AND severity IN ('Critical','High','Medium','Low')
+             UNION ALL
+             SELECT wa.host_id, wv.cve,
+                    CASE wv.severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END
+               FROM wazuh_vuln wv
+               JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
+              WHERE wa.host_id IS NOT NULL
+                AND wv.status = 'VALID'
+                AND wv.severity IN ('Critical','High','Medium','Low')
+                AND ${wazuhAgenteVivo("wa")}
+                AND (wv.agent_id || '|' || COALESCE(wv.package_name, '')) NOT IN (SELECT value FROM json_each(?))
+           )
+           WHERE chiave IS NOT NULL
+           GROUP BY host_id, chiave
+         ) d
+         JOIN hosts h ON h.id = d.host_id
+         JOIN networks n ON n.id = h.network_id
+        GROUP BY n.id, n.name
+        ORDER BY critical DESC, high DESC, medium DESC, low DESC`
+    )
+    .all(JSON.stringify(superati)) as Array<Omit<RilieviPerRete, "total">>;
+  return rows.map((r) => ({ ...r, total: r.critical + r.high + r.medium + r.low })).filter((r) => r.total > 0);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT SETTINGS (key/value)
 // ═══════════════════════════════════════════════════════════════════════════

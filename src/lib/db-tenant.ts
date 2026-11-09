@@ -14,6 +14,8 @@ import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
+import * as servizi from "./servizi-rete/db";
+import type { EsitoSonda } from "./servizi-rete/sonde";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
 import { registraCambioIp } from "./mac-ip-storico";
@@ -12890,4 +12892,22 @@ export function esitiApparatoNeiJob(deviceId: number): Map<number, { stato: Stat
     "SELECT job_id, stato, giro_il FROM job_apparati_esiti WHERE device_id = ?",
   ).all(deviceId) as Array<{ job_id: number; stato: StatoEsito; giro_il: string }>;
   return new Map(righe.map((r) => [r.job_id, { stato: r.stato, giro_il: r.giro_il }]));
+}
+
+// ── Servizi di rete (09/11/2026, sul modello di Nety) ─────────────────────────
+// La logica sta in `servizi-rete/db.ts`; qui solo il DB del tenant corrente. `db.ts` le riesporta.
+export function allineaServiziRete(networkId?: number): number {
+  return servizi.allineaServiziDaPorte(db(), networkId);
+}
+export function getPorteServiziDaSondare(networkId?: number, limite?: number): servizi.PortaDaSondare[] {
+  return servizi.porteDaSondare(db(), networkId, limite);
+}
+export function salvaEsitoSondaServizio(hostId: number, porta: number, esito: EsitoSonda | null): void {
+  servizi.salvaEsitoSonda(db(), hostId, porta, esito);
+}
+export function getServiziRetePaginati(f: servizi.FiltriServiziRete): { righe: servizi.ServizioRete[]; totale: number } {
+  return servizi.serviziRetePaginati(db(), f);
+}
+export function getConteggiServiziRete(networkId?: number): servizi.ConteggiServiziRete {
+  return servizi.conteggiServiziRete(db(), networkId);
 }

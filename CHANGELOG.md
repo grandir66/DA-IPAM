@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Servizi di rete: cosa risponde su ogni porta, senza credenziali
+
+Riccardo (09/11), dopo aver provato Nety: «i dati acquisiti in questa pagina sono eccellenti, nulla che noi siamo riusciti a fare». DA-IPAM salvava il nome della porta secondo nmap e quasi mai la risposta vera.
+
+### Aggiunto
+- **Pagina «Servizi di rete»** (Network → Servizi di rete): una riga per porta aperta, filtri per rete, porta, tipo e testo; la riga si apre su banner, risposta HTTP (stato, titolo, server, intestazioni), certificato TLS (intestatario, emittente, nomi, scadenza, autofirmato) e algoritmi SSH. Accanto, *come* lo si sa (TLS + HTTP, HTTP, SSH, banner, tace, solo nmap) con segno e legenda.
+- **Sonde senza credenziali** in Node (`lib/servizi-rete/sonde.ts`, scritte da zero: Nety è GPL-3.0): banner spontaneo, GET `/` in chiaro, stretta di mano TLS col GET dentro, scambio SSH fino agli algoritmi. Su 7 porte della LAN di casa: 1,6 s, stessi dati di Nety. Un 400 in chiaro o un rimando a `https://` fanno provare anche TLS (nginx e Proxmox sulle porte TLS).
+- **Tabella `servizi_rete`** (tenant, aggiunta pura): si riempie dalle porte già in `hosts.open_ports` e le sonde la aggiornano porta per porta, così un giro interrotto lascia quanto ha visto. Il giro parte dal pulsante della pagina (admin), 32 porte in parallelo, uno per tenant alla volta.
+
 ## [Non rilasciato] — 2026-11-09 · Porte xN443 dei pannelli di gestione nella ricognizione
 
 Riccardo (09/11, dati del 72729): un Fortinet risponde sulla 4443, da validare a fondo; «le porte x443 dovremmo aggiungerle per vedere se rispondono». Il giro approfondito aveva 443/8443/9443/10443 ma non la 4443.

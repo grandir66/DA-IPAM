@@ -261,6 +261,32 @@ export const DDL_SCELTE_GRUPPO = `CREATE TABLE IF NOT EXISTS va_scelte_gruppo (
   PRIMARY KEY (network_id, famiglia)
 );`;
 
+/**
+ * Servizi di rete (09/11/2026, sul modello di Nety): cosa risponde su ogni porta aperta e
+ * come lo si è saputo. Una riga per host+porta+protocollo; le sonde la aggiornano man mano,
+ * così un giro interrotto lascia leggibile quanto ha visto. Date nel formato di
+ * `datetime('now')` (spazio, non `T`), confrontabili in SQL.
+ */
+export const DDL_SERVIZI_RETE = `CREATE TABLE IF NOT EXISTS servizi_rete (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  porta INTEGER NOT NULL,
+  protocollo TEXT NOT NULL DEFAULT 'tcp',
+  nome TEXT,
+  prodotto TEXT,
+  versione TEXT,
+  metodo TEXT,
+  banner TEXT,
+  tls_json TEXT,
+  http_json TEXT,
+  ssh_json TEXT,
+  primo_visto TEXT NOT NULL DEFAULT (datetime('now')),
+  ultimo_visto TEXT NOT NULL DEFAULT (datetime('now')),
+  ultima_sonda TEXT,
+  UNIQUE(host_id, porta, protocollo)
+);
+CREATE INDEX IF NOT EXISTS idx_servizi_rete_porta ON servizi_rete(porta, protocollo);`;
+
 export const DDL_ACCESSO_WINDOWS_ESITI = `CREATE TABLE IF NOT EXISTS accesso_windows_esiti (
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL,
@@ -446,6 +472,7 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     // Nello schema dei tenant c'è già; serve al path legacy di `getDb`, che ha il suo schema.
     db.exec(DDL_ACCESSO_WINDOWS_ESITI);
     db.exec(DDL_SCELTE_GRUPPO);
+    db.exec(DDL_SERVIZI_RETE);
   } catch (e) {
     console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
@@ -1622,6 +1649,8 @@ CREATE TABLE IF NOT EXISTS host_credentials (
 );
 
 ${DDL_ACCESSO_WINDOWS_ESITI}
+
+${DDL_SERVIZI_RETE}
 
 -- Dispositivi multi-homed
 -- is_primary: per ogni group_id esattamente UN record ha is_primary=1; sugli altri

@@ -7482,4 +7482,10 @@ export {
   getHostNotoPerIp,
   getHostNotoPerNomeNodo,
   getScansioniProxmoxSalvate,
+  // Servizi di rete (09/11/2026): una sola copia
+  allineaServiziRete,
+  getPorteServiziDaSondare,
+  salvaEsitoSondaServizio,
+  getServiziRetePaginati,
+  getConteggiServiziRete,
 } from "./db-tenant";

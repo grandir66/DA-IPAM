@@ -56,6 +56,7 @@ import {
   Lock,
   type LucideIcon,
   SlidersHorizontal, CalendarClock, FileCode2,
+  Plug,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
@@ -99,6 +100,7 @@ const inventorySubItems: readonly SubItem[] = [
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
+  { href: "/servizi-rete", label: "Servizi di rete", icon: Plug },
   { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/port-map", label: "Mappa porte", icon: EthernetPort },
   { href: "/software", label: "Software", icon: Package },

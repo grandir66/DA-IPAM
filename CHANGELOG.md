@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Copia IP anche in Software e Host monitorati
+
+### Cambiato
+- **Software** e **Host monitorati**: l'IP dell'host ha il bottone copia, come in Servizi di rete, ARP e scheda asset.
+
 ## [Non rilasciato] — 2026-11-10 · Nome Windows dalla CHALLENGE NTLM (senza password)
 
 Riccardo (10/11): «si andiamo con ntlm» — prova in più per lo stesso apparato, prima di qualsiasi autenticazione.

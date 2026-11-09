@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { BottoneCopia } from "@/components/shared/copia";
 import {
   Table,
   TableBody,
@@ -91,7 +92,7 @@ export function KnownHostsClient({ initialRows }: { initialRows: Row[] }) {
                       <span className="font-medium">{h.network_name}</span>
                       <span className="text-muted-foreground font-mono text-xs ml-1">{h.network_cidr}</span>
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{h.ip}</TableCell>
+                    <TableCell className="text-sm"><BottoneCopia valore={h.ip}><span className="font-mono">{h.ip}</span></BottoneCopia></TableCell>
                     <TableCell className="text-sm max-w-[200px] truncate" title={displayName}>
                       {displayName}
                     </TableCell>

@@ -31,6 +31,7 @@ import {
 import { SortableTableHead, type SortDirection } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
 import { SourcesBadges } from "@/components/shared/vuln-badges";
+import { BottoneCopia } from "@/components/shared/copia";
 
 type SoftwareSource = "Wazuh" | "Probe" | "Agent";
 
@@ -560,7 +561,7 @@ function HostsTable({ hosts, compact = false }: { hosts: SoftwareHostRef[]; comp
                   {h.hostname ?? `host #${h.host_id}`}
                 </Link>
               </td>
-              <td className="py-1 pr-3 font-mono">{h.ip || "—"}</td>
+              <td className="py-1 pr-3">{h.ip ? <BottoneCopia valore={h.ip}><span className="font-mono">{h.ip}</span></BottoneCopia> : "—"}</td>
               <td className="py-1 pr-3 font-mono text-muted-foreground">{h.version ?? "—"}</td>
               <td className="py-1 pr-3 text-muted-foreground">{h.network_name ?? "—"}</td>
               <td className="py-1 pr-3 text-muted-foreground max-w-[12rem] truncate" title={h.publisher ?? ""}>{h.publisher ?? "—"}</td>

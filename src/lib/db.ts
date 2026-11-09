@@ -7488,4 +7488,7 @@ export {
   salvaEsitoSondaServizio,
   getServiziRetePaginati,
   getConteggiServiziRete,
+  getHostServiziDellaRete,
+  registraPorteAperteServizi,
+  getHostSenzaPorteServizi,
 } from "./db-tenant";

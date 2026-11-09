@@ -9,7 +9,10 @@ Riccardo (09/11): «capire come implementare l'ottimo motore di rilevazione e al
 - [ ] Riccardo (09/11): «appena partito mi aspetto che molte cose si popolino senza scansioni» → è la tappa ascolto all'avvio, sotto
 - [x] Riccardo (09/11): reti viste dal trunk «proposte da confermare», non create da sole → riquadro in Subnet con «Porta … in DA-IPAM». Prove `reti-proposte.test.ts` verdi; **non guardato a schermo**
 - [x] Sonde dei servizi avviate da sole a fine discovery riuscita, con freno su porte di campo/stampa e produttori di campo (`freno.test.ts`)
-- [ ] Prossimo: host confermati dal trunk senza porte → un giro leggero di porte comuni senza nmap, così anche loro hanno servizi (da decidere: quali porte, e se parte da solo alla conferma)
+- [x] Host confermati dal trunk senza porte → giro leggero di 47 porte comuni senza nmap (Riccardo: «Sì, alla conferma»). Prova `giro.test.ts` su tenant isolato verde
+- [x] Riccardo (09/11): «il massimo automatismo» → giro automatico all'avvio (+3 min) e ogni 6 ore per cliente; spegnibile con `servizi_rete.automatico = 0`. Le reti restano proposte da confermare (decisione dello stesso giorno)
+- [ ] Interruttore `servizi_rete.automatico` in Opzioni (oggi solo nelle impostazioni del tenant)
+- [ ] Guardare a schermo Servizi di rete e il riquadro in Subnet su un'appliance con dati (72729 o PX-NAS)
 - [ ] Tappa identità senza credenziali: sfida NTLM su SMB/RDP/HTTP (nome, dominio, versione Windows), NetBIOS, SNMP `public`/engineID, chiave SSH e GUID SMB come prove che due IP sono lo stesso apparato (proposte, mai fusioni automatiche)
 - [ ] Tappa ascolto all'avvio: CDP/LLDP/DTP/STP, VLAN etichettate, lease DHCP → reti proposte da sole; partire dalla sonda del trunk che c'è già
 - [ ] Tappa motore: confronto a parità dalla 79993 con Nety (VM 192.168.99.83, da cancellare dopo), poi ARP per primo, naabu, `-sV` solo sulle porte aperte

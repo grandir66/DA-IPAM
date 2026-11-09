@@ -9,6 +9,8 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { aggiungiReteDalTrunk } from "@/lib/trunk/aggiungi-rete";
+import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { avviaGiro } from "@/lib/servizi-rete/giro";
 
 const Corpo = z.object({
   vid: z.number().int().min(0).max(4094),
@@ -34,7 +36,11 @@ export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     try {
       const e = await aggiungiReteDalTrunk({ vid, cidr, gateway: gateway ?? null, nome });
-      return NextResponse.json({ id: e.rete.id, cidr: e.rete.cidr, host: e.host, giro: e.giro });
+      // Rete confermata (Riccardo, 09/11: «Sì, alla conferma»): giro leggero di porte comuni sui
+      // suoi host, poi le sonde dei servizi. In sottofondo: la risposta non lo aspetta.
+      const tenant = getCurrentTenantCode();
+      const servizi = tenant ? avviaGiro(tenant, e.rete.id, { porteComuni: "rete" }) : false;
+      return NextResponse.json({ id: e.rete.id, cidr: e.rete.cidr, host: e.host, giro: e.giro, servizi });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
     }

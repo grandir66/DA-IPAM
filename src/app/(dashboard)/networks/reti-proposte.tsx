@@ -31,7 +31,7 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
     setInCorso(p.cidr);
     const attesa = toast.loading(`Rete ${p.cidr}: giro ARP sulla VLAN e host trovati (fino a un minuto e mezzo)…`);
     try {
-      const res = await fetchJson<{ id: number; host: { creati: number }; giro: string }>("/api/trunk/rete", {
+      const res = await fetchJson<{ id: number; host: { creati: number }; giro: string; servizi: boolean }>("/api/trunk/rete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vid: p.vid, cidr: p.cidr, gateway: p.fonte === "dhcp" ? p.gateway_ip : null }),
@@ -41,7 +41,11 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
         return;
       }
       setFatte((s) => new Set(s).add(p.cidr));
-      toast.success(`Rete ${p.cidr} creata con ${res.data.host.creati} host · ${res.data.giro}`, { id: attesa });
+      toast.success(
+        `Rete ${p.cidr} creata con ${res.data.host.creati} host · ${res.data.giro}` +
+          (res.data.servizi ? " · porte comuni e servizi in lettura (Servizi di rete)" : ""),
+        { id: attesa },
+      );
       router.refresh();
     } finally {
       setInCorso(null);

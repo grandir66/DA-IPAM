@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Servizi di rete in automatico: porte comuni e sonde senza pulsanti
+
+Riccardo (09/11): host confermati dal trunk senza porte, «Sì, alla conferma»; poi «vorrei se possibile però il massimo automatismo».
+
+### Aggiunto
+- **Giro leggero di porte comuni** (47 porte TCP: accesso remoto, web e pannelli, posta, file, database, directory), solo connessione e chiusura, senza nmap; le porte trovate entrano in `servizi_rete` (metodo «aperta») e in `hosts.open_ports`, poi le sonde le leggono.
+- **Alla conferma di una rete dal trunk** il giro parte da solo sugli host della rete.
+- **Giro automatico per ogni cliente** (`servizi-rete/job.ts`, da `server.ts`): 3 minuti dopo l'avvio e ogni 6 ore, porte comuni sugli host visti negli ultimi 7 giorni senza porte note, poi sonde su tutte le porte, le più vecchie per prime. Si spegne per un cliente con `servizi_rete.automatico = 0` nelle impostazioni del tenant. Il freno su campo e stampa vale sempre.
+
+### Corretto
+- Lo stato del giro sta su `globalThis`: la pagina vede anche un giro partito dal programmatore o da una scansione (istanze diverse del modulo).
+
 ## [Non rilasciato] — 2026-11-09 · Reti viste da confermare, sonde dopo ogni scansione
 
 Riccardo (09/11): «appena partito mi aspetto che molte cose si popolino senza scansioni»; alla domanda se creare da sole le reti viste dal trunk: «proposte da confermare».

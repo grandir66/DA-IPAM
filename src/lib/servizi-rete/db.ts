@@ -216,3 +216,58 @@ export function conteggiServiziRete(db: Database.Database, networkId?: number): 
     sondati: r.sondati ?? 0,
   };
 }
+
+export interface HostDaProvare {
+  host_id: number;
+  ip: string;
+  vendor: string | null;
+}
+
+/** Gli host di una rete, per il giro leggero delle porte comuni. */
+export function hostDellaRete(db: Database.Database, networkId: number): HostDaProvare[] {
+  return db
+    .prepare("SELECT id AS host_id, ip, COALESCE(vendor, device_manufacturer) AS vendor FROM hosts WHERE network_id = ? ORDER BY ip")
+    .all(networkId) as HostDaProvare[];
+}
+
+/**
+ * Registra le porte TCP trovate aperte dal giro leggero: una riga in `servizi_rete` (metodo
+ * `aperta`, finché la sonda non la legge) e l'unione con `hosts.open_ports`, dove le leggono
+ * classificazione e scheda dell'host. `unisci` è `mergeOpenPortsJson` del chiamante: niente
+ * copie della regola d'unione.
+ */
+export function registraPorteAperte(
+  db: Database.Database,
+  hostId: number,
+  porte: number[],
+  unisci: (esistente: string | null, nuove: string) => string,
+): void {
+  if (porte.length === 0) return;
+  const ins = db.prepare(
+    `INSERT INTO servizi_rete (host_id, porta, protocollo, metodo) VALUES (?, ?, 'tcp', 'aperta')
+     ON CONFLICT(host_id, porta, protocollo) DO UPDATE SET ultimo_visto = datetime('now')`,
+  );
+  db.transaction(() => {
+    for (const p of porte) ins.run(hostId, p);
+    const r = db.prepare("SELECT open_ports FROM hosts WHERE id = ?").get(hostId) as { open_ports: string | null } | undefined;
+    const nuove = JSON.stringify(porte.map((port) => ({ port, protocol: "tcp", service: null, version: null })));
+    db.prepare("UPDATE hosts SET open_ports = ?, updated_at = datetime('now') WHERE id = ?").run(unisci(r?.open_ports ?? null, nuove), hostId);
+  })();
+}
+
+/**
+ * Host visti di recente che non hanno nessuna porta nota: arrivano da ARP, DHCP o trunk.
+ * Il giro automatico prova su di loro le porte comuni.
+ */
+export function hostSenzaPorte(db: Database.Database, giorni = 7, limite = 2000): HostDaProvare[] {
+  return db
+    .prepare(
+      `SELECT h.id AS host_id, h.ip, COALESCE(h.vendor, h.device_manufacturer) AS vendor FROM hosts h
+       WHERE (h.open_ports IS NULL OR h.open_ports IN ('', '[]'))
+         AND h.status <> 'offline'
+         AND COALESCE(h.last_seen, h.updated_at) >= datetime('now', ?)
+         AND NOT EXISTS (SELECT 1 FROM servizi_rete s WHERE s.host_id = h.id)
+       ORDER BY h.ip LIMIT ?`,
+    )
+    .all(`-${giorni} days`, limite) as HostDaProvare[];
+}

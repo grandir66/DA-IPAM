@@ -234,6 +234,15 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Servizi di rete (09/11/2026, Riccardo: «il massimo automatismo»): 3 minuti dopo l'avvio e
+    // poi ogni 6 ore, porte comuni sugli host senza porte e sonde senza credenziali su tutte.
+    import("./src/lib/servizi-rete/job").then(({ avviaGiroServiziAutomatico }) => {
+      avviaGiroServiziAutomatico();
+      console.log("> Servizi di rete: giro automatico all'avvio e ogni 6 ore");
+    }).catch((error) => {
+      console.error("WARNING: giro automatico dei servizi di rete non avviato:", error);
+    });
+
     // Pianificazioni «Per device» (08/11/2026, piano profili per device, Passo 6): ogni minuto si lanciano i gruppi
     // confermati delle reti arrivate all'ora fissata. Nessuna pianificazione nasce da sola: la salva un amministratore.
     import("./src/lib/vuln/proposta/pianificazione-job").then(({ avviaPianificazioniDevice }) => {

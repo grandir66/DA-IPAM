@@ -12911,3 +12911,12 @@ export function getServiziRetePaginati(f: servizi.FiltriServiziRete): { righe: s
 export function getConteggiServiziRete(networkId?: number): servizi.ConteggiServiziRete {
   return servizi.conteggiServiziRete(db(), networkId);
 }
+export function getHostServiziDellaRete(networkId: number): servizi.HostDaProvare[] {
+  return servizi.hostDellaRete(db(), networkId);
+}
+export function registraPorteAperteServizi(hostId: number, porte: number[]): void {
+  servizi.registraPorteAperte(db(), hostId, porte, mergeOpenPortsJson);
+}
+export function getHostSenzaPorteServizi(): servizi.HostDaProvare[] {
+  return servizi.hostSenzaPorte(db());
+}

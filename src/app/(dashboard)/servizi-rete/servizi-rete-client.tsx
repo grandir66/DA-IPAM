@@ -40,6 +40,7 @@ const METODI: Record<string, { segno: string; testo: string; classe: string; spi
   ssh: { segno: "■", testo: "SSH", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "versione e algoritmi SSH letti" },
   banner: { segno: "▲", testo: "banner", classe: "border-[#C9A800] bg-[#FFD400] text-[#0D2537]", spiega: "il servizio si presenta da solo" },
   silenzio: { segno: "○", testo: "tace", classe: "border-border bg-muted text-muted-foreground", spiega: "aperta, ma non risponde alle sonde" },
+  aperta: { segno: "–", testo: "aperta", classe: "border-dashed border-border bg-transparent text-muted-foreground", spiega: "trovata aperta dal giro leggero, non ancora sondata" },
   nmap: { segno: "–", testo: "solo nmap", classe: "border-dashed border-border bg-transparent text-muted-foreground", spiega: "nome dalla scansione, non ancora sondata" },
 };
 
@@ -250,9 +251,9 @@ export function ServiziReteClient({ iniziale, admin }: { iniziale: Dati & { reti
 
       {giro?.inCorso && (
         <InCorso
-          titolo={`Sonde in corso${reteScelta ? ` su ${reteScelta.cidr}` : ""}`}
+          titolo={`${giro.fase === "porte" ? "Porte comuni in prova" : "Sonde in corso"}${reteScelta ? ` su ${reteScelta.cidr}` : ""}`}
           percentuale={giro.totale ? (giro.fatte / giro.totale) * 100 : 0}
-          dettaglio={`${giro.fatte} di ${giro.totale} porte`}
+          dettaglio={`${giro.fatte} di ${giro.totale} ${giro.fase === "porte" ? "prove" : "porte"}`}
         />
       )}
       {giro && !giro.inCorso && giro.errore && <LoadError what="il giro delle sonde" message={giro.errore} />}

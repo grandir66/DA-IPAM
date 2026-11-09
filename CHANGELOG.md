@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-09 · Porte xN443 dei pannelli di gestione nella ricognizione
+
+Riccardo (09/11, dati del 72729): un Fortinet risponde sulla 4443, da validare a fondo; «le porte x443 dovremmo aggiungerle per vedere se rispondono». Il giro approfondito aveva 443/8443/9443/10443 ma non la 4443.
+
+### Aggiunto
+- **4443 (Fortinet), 6443 e 7443** nel profilo approfondito e in `PORTE_TLS` (`scanner/profili/profili.ts`): la ricognizione delicata le prova, `ssl-cert` ne legge il certificato, e un device che risponde lì finisce «da chiarire». Non sono fra le porte «da non toccare», quindi arrivano anche alla ricognizione degli unknown.
+- Di conseguenza il `default-login` dell'Edge (che gira su ogni profilo con la coppia nota del prodotto) raggiunge i pannelli Fortinet, Zyxel e HP su quelle porte, senza alcuna credenziale scritta nel repo.
+
 ## [Non rilasciato] — 2026-11-09 · Periferiche col loro tipo, marche dei firewall, stato degli UPS
 
 Riccardo (09/11): stampanti e UPS finivano fra gli switch e il giro ne leggeva porte e MAC; un FortiGate o un Palo Alto diventava «other»; DA-IPAM riconosceva un UPS ma non ne leggeva lo stato.

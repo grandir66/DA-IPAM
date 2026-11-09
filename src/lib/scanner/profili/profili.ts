@@ -37,8 +37,9 @@ export const SCRIPT_VIETATI: readonly string[] = [
 
 /** Porte web su cui vale la pena chiedere titolo, intestazioni, favicon e generator. */
 const PORTE_WEB = [80, 81, 280, 591, 3000, 5000, 5001, 7304, 8000, 8001, 8008, 8080, 8081, 8880, 8888, 9000, 10000];
-/** Porte TLS su cui `ssl-cert` dice CN, organizzazione e seriale del certificato. */
-const PORTE_TLS = [443, 465, 636, 993, 995, 1300, 3389, 5986, 5989, 8006, 8007, 8443, 8883, 9443, 10443];
+/** Porte TLS su cui `ssl-cert` dice CN, organizzazione e seriale del certificato. Le xN443 (4443 Fortinet,
+ * 6443, 7443) sono pannelli di gestione web: così la ricognizione le vede e il default-login dell'Edge le prova (09/11/2026). */
+const PORTE_TLS = [443, 465, 636, 993, 995, 1300, 3389, 4443, 5986, 5989, 6443, 7443, 8006, 8007, 8443, 8883, 9443, 10443];
 
 export const PROFILO_APPROFONDITO: ProfiloScansione = {
   id: "approfondito",
@@ -48,8 +49,8 @@ export const PROFILO_APPROFONDITO: ProfiloScansione = {
   tcp: [
     21, 22, 23, 25, 53, 80, 81, 88, 110, 111, 135, 139, 143, 161, 179, 199, 280, 389, 443, 445, 465, 541, 542, 548,
     554, 587, 591, 623, 631, 636, 873, 902, 990, 993, 995, 1300, 1433, 1514, 1515, 1720, 1723, 2049, 2121, 3000,
-    3128, 3306, 3389, 4786, 4899, 5000, 5001, 5060, 5061, 5100, 5432, 5631, 5666, 5800, 5900, 5985, 5986, 5988,
-    5989, 6000, 6690, 6789, 7304, 8000, 8001, 8006, 8007, 8009, 8080, 8081, 8200, 8291, 8443, 8554, 8728, 8729,
+    3128, 3306, 3389, 4443, 4786, 4899, 5000, 5001, 5060, 5061, 5100, 5432, 5631, 5666, 5800, 5900, 5985, 5986, 5988,
+    5989, 6000, 6443, 6690, 6789, 7304, 7443, 8000, 8001, 8006, 8007, 8009, 8080, 8081, 8200, 8291, 8443, 8554, 8728, 8729,
     8880, 8888, 9000, 9100, 9443, 9999, 10000, 10050, 10051, 10443, 17988, 17990, 34567, 37777, 49152, 49153,
     49154, 49155, 49156, 49157, 55000,
   ],

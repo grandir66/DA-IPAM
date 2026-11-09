@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { parseNmapXml } from "../../nmap";
 import { PROFILI, PROFILO_APPROFONDITO, PROFILO_IOT_OT, SCRIPT_VIETATI, profiloPerId, scriptDelProfilo } from "../profili";
 import { argomentiTcp, argomentiUdp, scriptPerProtocollo, scriptMancanti, ScriptVietatoError } from "../comando";
+import { PROFILO_RICONOSCIMENTO } from "../sconosciuti";
 import { tuttiGliScriptCandidati } from "../motore";
 import { fattiDaRisultato, fattiDaScript, rilieviDaRisultato } from "../lettura";
 import { evidenzeDaScript, evidenzaDaPortaOt, fogliaDaTipoCip, produttoreNoto } from "@/lib/attribution/profilo-evidence";
@@ -348,5 +349,18 @@ describe("evidenze per l'attribuzione", () => {
     assert.equal(produttoreNoto("Let's Encrypt"), null);
     assert.equal(produttoreNoto("Synology Inc."), "Synology");
     assert.equal(produttoreNoto(undefined), null);
+  });
+});
+
+// Porte xN443 dei pannelli di gestione web (Riccardo, 09/11/2026: «le porte x443 dovremmo aggiungerle per vedere se
+// rispondono»). 4443 è il Fortinet del 72729; 6443 e 7443 sono altri pannelli. Devono stare nel giro approfondito,
+// avere ssl-cert (PORTE_TLS), e arrivare alla ricognizione delicata (non fra le porte «da non toccare»).
+describe("porte xN443 di gestione", () => {
+  it("ci sono nel giro approfondito, in ssl-cert e nella ricognizione delicata", () => {
+    const xN443 = [4443, 6443, 7443];
+    for (const p of xN443) assert.ok(PROFILO_APPROFONDITO.tcp.includes(p), `approfondito manca la ${p}`);
+    const sslCert = PROFILO_APPROFONDITO.regole.find((r) => r.script.includes("ssl-cert"))!;
+    for (const p of xN443) assert.ok(sslCert.porte.includes(p), `ssl-cert manca la ${p}`);
+    for (const p of xN443) assert.ok(PROFILO_RICONOSCIMENTO.tcp.includes(p), `la ricognizione delicata non prova la ${p}`);
   });
 });

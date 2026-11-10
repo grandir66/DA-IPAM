@@ -298,6 +298,37 @@ export interface PortaDaControllare extends PortaDaSondare {
   tls: number;
 }
 
+export interface CredenzialeValidata extends IndiziImpianto {
+  host_id: number;
+  ip: string;
+  credential_id: number;
+  protocol_type: "ssh" | "snmp";
+  port: number;
+  /** Valorizzato solo per SNMPv3. */
+  auth_protocol: string | null;
+  banner: string | null;
+}
+
+/**
+ * Le credenziali SSH e SNMP già validate PER L'HOST (`validated = 1`) e fuori fermo. È l'unica
+ * porta d'ingresso dei controlli autenticati: una voce del registro non validata su quell'host
+ * qui non compare, quindi il giro non la può provare (Riccardo, 10/11/2026).
+ */
+export function credenzialiValidate(db: Database.Database, networkId: number | undefined, oraIso: string): CredenzialeValidata[] {
+  return db
+    .prepare(
+      `SELECT hc.host_id, h.ip, hc.credential_id, hc.protocol_type, hc.port, c.auth_protocol, s.banner, ${INDIZI_IMPIANTO}
+       FROM host_credentials hc
+       JOIN hosts h ON h.id = hc.host_id
+       JOIN credentials c ON c.id = hc.credential_id
+       LEFT JOIN servizi_rete s ON s.host_id = hc.host_id AND s.porta = hc.port AND s.protocollo = 'tcp'
+       WHERE hc.validated = 1 AND hc.protocol_type IN ('ssh', 'snmp') AND h.ip IS NOT NULL
+         AND (hc.backoff_until IS NULL OR hc.backoff_until < ?) ${networkId ? "AND h.network_id = ?" : ""}
+       ORDER BY hc.host_id, hc.sort_order, hc.id`,
+    )
+    .all(...(networkId ? [oraIso, networkId] : [oraIso])) as CredenzialeValidata[];
+}
+
 /**
  * Porte su cui ha senso un controllo (LDAP, Redis, Mongo, NFS, SNMP, VNC, FTP, SMB, API).
  * Se `ancheHttp401`, anche i servizi che hanno già un `http_json` (percorsi .git/.env/actuator e, con levetta, login di fabbrica).

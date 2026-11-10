@@ -23,7 +23,11 @@ import {
   riempiOsVuotiServizi,
   getPorteServiziDaControllare,
   salvaControlloServizioRete,
+  getCredenzialiValidateServizi,
+  accessoSshCredenziale,
 } from "@/lib/db-tenant";
+import { runSshCommand } from "@/lib/devices/ssh-run";
+import { COMANDO_SSH, eRifiutoSsh, eShellPosix, leggiUscitaSsh } from "@/lib/rilievi/autenticati";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
 import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
@@ -43,7 +47,7 @@ export interface StatoGiro {
   inCorso: boolean;
   networkId: number | null;
   /** «porte» mentre prova le porte comuni, «sonde» mentre legge le risposte. */
-  fase: "porte" | "sonde" | null;
+  fase: "porte" | "sonde" | "credenziali" | null;
   totale: number;
   fatte: number;
   iniziato: string | null;
@@ -57,6 +61,9 @@ export interface RiepilogoGiro {
   sondati: number;
   risposte: number;
   controlli: number;
+  /** Host letti con la credenziale già validata, e credenziali validate che l'host ha rifiutato. */
+  conCredenziali: number;
+  credRifiutate: number;
   durataMs: number;
   errore: string | null;
 }
@@ -79,6 +86,8 @@ export function statoGiro(tenant: string): StatoGiro {
 export interface Strumenti {
   sonda: (ip: string, porta: number) => Promise<EsitoSonda | null>;
   aperta: (ip: string, porta: number) => Promise<boolean>;
+  /** Esegue `COMANDO_SSH` e torna lo stdout. Sostituibile nelle prove. */
+  ssh?: (o: { host: string; port: number; username: string; password: string }) => Promise<string>;
   /** Assente nelle prove iniettate: i controlli veri non partono. */
   controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean; tls?: boolean }) => Promise<EsitoSondaControllo>;
 }
@@ -111,6 +120,7 @@ export function avviaSondeDopoDiscovery(
   networkId: number,
   opzioni: {
     proveFabbrica?: boolean;
+    conCredenziali?: boolean;
     strumenti?: Strumenti;
     timeoutMs?: number;
     concorrenza?: number;
@@ -118,7 +128,7 @@ export function avviaSondeDopoDiscovery(
 ): void {
   if (avviaGiro(tenant, networkId, opzioni)) return;
   const coda = codeDiscovery.get(tenant) ?? new Map<string, () => void>();
-  const chiave = `${networkId}:${opzioni.proveFabbrica === true}:${opzioni.timeoutMs ?? ""}:${opzioni.concorrenza ?? ""}`;
+  const chiave = `${networkId}:${opzioni.proveFabbrica === true}:${opzioni.conCredenziali === true}:${opzioni.timeoutMs ?? ""}:${opzioni.concorrenza ?? ""}`;
   coda.set(chiave, () => { avviaGiro(tenant, networkId, opzioni); });
   codeDiscovery.set(tenant, coda);
 }
@@ -142,12 +152,14 @@ export function avviaGiro(
     timeoutMs?: number;
     /** Worker in parallelo di questo giro. Assente = 32 sonde / 256 prove porte. */
     concorrenza?: number;
+    /** Usa le credenziali SSH/SNMP già validate per l'host. Solo da `/scans`, mai dai giri automatici. */
+    conCredenziali?: boolean;
     /** Chiamata a giro finito, dentro il contesto del tenant. */
     alTermine?: (riepilogo: RiepilogoGiro) => void;
   } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
-  const riepilogo: RiepilogoGiro = { host: 0, sondati: 0, risposte: 0, controlli: 0, durataMs: 0, errore: null };
+  const riepilogo: RiepilogoGiro = { host: 0, sondati: 0, risposte: 0, controlli: 0, conCredenziali: 0, credRifiutate: 0, durataMs: 0, errore: null };
   const partenza = Date.now();
   const reti = typeof ambito === "number" ? [ambito] : ambito ?? [undefined];
   const networkId = reti.length === 1 ? reti[0] ?? null : null;
@@ -234,6 +246,39 @@ export function avviaGiro(
             esito = { info: null, tentativiUsati: 0 };
           }
           if (esito.info) salvaControlloServizioRete(p.host_id, p.porta, p.protocollo, esito.info);
+          stato.fatte += 1;
+        });
+      }
+      if (opzioni.conCredenziali) {
+        const voci = reti.flatMap((rete) => getCredenzialiValidateServizi(rete)).filter((v) => !eImpianto(v));
+        // SNMP: nessun traffico, il rilievo viene dal registro (community validata = gestione in chiaro).
+        for (const v of voci) {
+          if (v.protocol_type === "snmp" && !v.auth_protocol) salvaControlloServizioRete(v.host_id, v.port, "udp", { snmp_community_gestione: true });
+        }
+        // SSH: una credenziale per host (la prima validata), una sessione, un comando di sola lettura.
+        const visti = new Set<number>();
+        const ssh = voci.filter((v) => v.protocol_type === "ssh" && eShellPosix(v.banner) && !visti.has(v.host_id) && visti.add(v.host_id));
+        const esegui = opzioni.strumenti?.ssh ?? (async (o) => (await runSshCommand({ ...o, command: COMANDO_SSH, timeoutSec: 20 })).stdout);
+        stato.fase = "credenziali";
+        stato.totale += ssh.length;
+        await inParallelo(ssh, 4, async (v) => {
+          try {
+            const a = accessoSshCredenziale(v.credential_id);
+            // Il ponte SSH prende utente e password: le voci a chiave qui non si usano.
+            if (a.ok && a.accesso.password) {
+              const info = leggiUscitaSsh(await esegui({ host: v.ip, port: v.port, username: a.accesso.username, password: a.accesso.password }));
+              if (info) {
+                salvaControlloServizioRete(v.host_id, v.port, "tcp", { auth_ssh: info });
+                riepilogo.conCredenziali += 1;
+              }
+            }
+          } catch (e) {
+            // Nessun secondo tentativo: un rifiuto si conta e si dice, niente IP né segreti nel log.
+            if (eRifiutoSsh(e instanceof Error ? e.message : "")) {
+              riepilogo.credRifiutate += 1;
+              console.warn(`[servizi-rete] host #${v.host_id}: la credenziale SSH validata è stata rifiutata, non riprovo`);
+            }
+          }
           stato.fatte += 1;
         });
       }

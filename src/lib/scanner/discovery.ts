@@ -195,6 +195,8 @@ export type DiscoverNetworkOptions = {
   sequenzaId?: string;
   /** Login di fabbrica dopo nmap: solo dal lanciatore `/scans`, mai dai giri automatici. */
   proveFabbrica?: boolean;
+  /** Controlli con le credenziali già validate per l'host: solo dal lanciatore `/scans`. */
+  conCredenziali?: boolean;
   /** Timeout per bersaglio di questo giro (ms). Assente = default nmap/Opzioni. */
   timeoutMs?: number;
   /** Worker in parallelo di questo giro (ping e batch nmap). Assente = default. */
@@ -803,6 +805,7 @@ export async function discoverNetwork(
       try {
         avviaSondeDopoDiscovery(tenantCode, networkId, {
           proveFabbrica: options?.proveFabbrica === true,
+          conCredenziali: options?.conCredenziali === true,
           timeoutMs: options?.timeoutMs,
           concorrenza: options?.concorrenza,
         });

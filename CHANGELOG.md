@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
 ### Aggiunto
+- **Controlli con credenziali già validate** (Riccardo, 10/11: «solo se validate, per evitare brute force su apparati diversi»): da `/scans`, con la casella «Usa le credenziali già validate», il giro usa la credenziale SSH solo sugli host dove la Discovery l'ha già verificata (`host_credentials.validated = 1`, fuori fermo) e solo su OpenSSH: una sessione, un comando di sola lettura (root con password, password vuote, altri UID 0, aggiornamenti di sicurezza, riavvio richiesto). Per SNMP nessun traffico: un apparato gestito con community v1/v2c validata diventa un rilievo. Nessuna credenziale viene provata su un host nuovo; un rifiuto si conta in cronologia e non si riprova. Mai nei giri automatici.
+
+### Aggiunto
 - **Controlli TLS attivi**: il giro prova se un servizio accetta TLS 1.0/1.1 e cifrari deboli (RC4, 3DES, DES, NULL), offrendoglieli. Prima si guardava solo la versione negoziata con un client moderno, e un server che accettava anche il vecchio passava pulito: nel confronto con Nety sulla rete 192.168.99 (10/11) loro avevano 14 rilievi TLS, noi 0. Nessun handshake viene completato.
 - **SSH**: i MAC `umac-64` contano fra gli algoritmi deboli (11 host in più nello stesso confronto).
 

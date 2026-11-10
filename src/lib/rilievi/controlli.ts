@@ -7,6 +7,8 @@ import type { InfoHttp, InfoNtlm, InfoSsh } from "@/lib/servizi-rete/sonde";
 import type { RilievoUnito } from "./tipi";
 import type { ContestoServizio } from "./da-servizi";
 
+import type { InfoAuthSsh } from "./autenticati";
+
 export interface InfoControllo {
   ldap_anonimo?: boolean;
   redis_aperto?: boolean;
@@ -44,10 +46,27 @@ export interface InfoControllo {
   vnc_auth_debole?: boolean;
   ipmi_rakp?: boolean;
   ssh_password?: boolean;
+  /** Letto con la credenziale SSH già validata per l'host. */
+  auth_ssh?: InfoAuthSsh;
+  /** L'apparato è gestito con una community SNMP v1/v2c validata (viaggia in chiaro). Dal registro, senza traffico. */
+  snmp_community_gestione?: boolean;
   /** Versioni TLS vecchie che il server accetta se gliele si chiede (prova attiva). */
   tls_vecchi?: string[];
   /** Cifrari deboli scelti dal server quando gli si offrono solo quelli. */
   tls_cifrari_deboli?: string[];
+}
+
+function authSshDaJson(v: unknown): InfoAuthSsh | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const agg = typeof o.agg_sicurezza === "number" && Number.isInteger(o.agg_sicurezza) ? o.agg_sicurezza : undefined;
+  return {
+    root_password: o.root_password === true,
+    password_vuote: o.password_vuote === true,
+    uid0: elencoTesti(o.uid0),
+    riavvio: o.riavvio === true,
+    agg_sicurezza: agg,
+  };
 }
 
 function elencoTesti(v: unknown): string[] | undefined {
@@ -561,6 +580,26 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   if (c.vnc_auth_debole && !c.vnc_senza_auth) {
     out.push(riga(ctx, "vnc-debole", "Medium", `VNC con autenticazione debole su ${dove}`, "Il server offre il tipo 2 (password DES a 8 caratteri).", "Usa un tunnel SSH o un VNC con TLS; password lunghe non bastano sul tipo 2."));
   }
+  const a = c.auth_ssh;
+  const conCred = "Letto con la credenziale SSH già validata per questo host.";
+  if (a?.password_vuote) {
+    out.push(riga(ctx, "auth-ssh-password-vuote", "High", `SSH accetta password vuote su ${dove}`, `PermitEmptyPasswords yes. ${conCred}`, "In sshd_config: PermitEmptyPasswords no."));
+  }
+  if (a?.uid0?.length) {
+    out.push(riga(ctx, "auth-uid0", "High", `Altri utenti con UID 0 su ${ctx.ip}`, `Oltre a root: ${a.uid0.join(", ")}. ${conCred}`, "Verifica chi li ha creati: un secondo UID 0 è un root nascosto. Toglili o dagli un UID normale."));
+  }
+  if (a?.root_password) {
+    out.push(riga(ctx, "auth-ssh-root", "Medium", `Root entra via SSH con la password su ${dove}`, `PermitRootLogin yes. ${conCred}`, "In sshd_config: PermitRootLogin prohibit-password (solo chiavi) o no."));
+  }
+  if (a?.agg_sicurezza) {
+    out.push(riga(ctx, "auth-agg-sicurezza", "Medium", `${a.agg_sicurezza} aggiornamenti di sicurezza in attesa su ${ctx.ip}`, `apt li elenca dal canale «security». ${conCred}`, "Installa gli aggiornamenti di sicurezza (apt upgrade) e pianifica il riavvio se serve."));
+  }
+  if (a?.riavvio) {
+    out.push(riga(ctx, "auth-riavvio", "Low", `Riavvio richiesto su ${ctx.ip}`, `/var/run/reboot-required c'è: un aggiornamento già installato non è ancora in uso. ${conCred}`, "Riavvia la macchina in una finestra concordata."));
+  }
+  if (c.snmp_community_gestione) {
+    out.push(riga(ctx, "snmp-community-gestione", "Low", `Gestito con SNMP v1/v2c su ${dove}`, "La credenziale SNMP validata per questo apparato è una community: viaggia in chiaro e chi ascolta la rete la legge.", "Passa a SNMPv3 con autenticazione e cifratura, e limita le sorgenti ammesse."));
+  }
   if (c.tls_vecchi?.length) {
     out.push(
       riga(
@@ -720,6 +759,8 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
       vnc_auth_debole: o.vnc_auth_debole === true,
       ipmi_rakp: o.ipmi_rakp === true,
       ssh_password: o.ssh_password === true,
+      auth_ssh: authSshDaJson(o.auth_ssh),
+      snmp_community_gestione: o.snmp_community_gestione === true,
       tls_vecchi: elencoTesti(o.tls_vecchi),
       tls_cifrari_deboli: elencoTesti(o.tls_cifrari_deboli),
     };

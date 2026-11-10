@@ -99,6 +99,8 @@ export function ScansClient() {
   const [fasi, setFasi] = useState<FaseGiro[]>([...FASI_GIRO]);
   const [confermaCompleto, setConfermaCompleto] = useState(false);
   const [proveFabbrica, setProveFabbrica] = useState(false);
+  // Accesa di serie: usa solo credenziali già validate per l'host, non ne prova di nuove.
+  const [conCredenziali, setConCredenziali] = useState(true);
   const [reti, setReti] = useState<Rete[]>([]);
   const [scelte, setScelte] = useState<Set<number>>(new Set());
   const [history, setHistory] = useState<ScanHistory[]>([]);
@@ -197,6 +199,7 @@ export function ScansClient() {
     }
     if (vuoleTutteLePorte) b.conferma_completo = true;
     if (serveRete && proveFabbrica && controlliAccesi) b.prove_fabbrica = true;
+    if (serveRete && conCredenziali && controlliAccesi) b.con_credenziali = true;
 
     if (haProfilo) {
       if (targets.trim()) b.targets = targets.trim();
@@ -462,6 +465,21 @@ export function ScansClient() {
             </div>
           </fieldset>
           <div className="mt-2 p-1">
+            <label className={`mb-2 flex items-start gap-2 rounded-xl border p-3 text-[13px] ${controlliAccesi ? "" : "opacity-70"}`}>
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={conCredenziali && controlliAccesi}
+                disabled={!controlliAccesi}
+                onChange={(e) => setConCredenziali(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Usa le credenziali già validate</span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  Solo SSH e SNMP, e solo sugli host dove la Discovery le ha già verificate: nessuna credenziale viene provata su un apparato nuovo. Via SSH legge in sola lettura (root con password, UID 0, aggiornamenti di sicurezza, riavvio richiesto). Mai nei giri automatici.
+                </span>
+              </span>
+            </label>
             <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
           <input
             type="checkbox"
@@ -506,6 +524,21 @@ export function ScansClient() {
                 <Input value={concorrenza} onChange={(e) => setConcorrenza(e.target.value)} inputMode="numeric" placeholder="1–256" className="font-mono" />
               </label>
             </div>
+            <label className={`mb-2 flex items-start gap-2 rounded-xl border p-3 text-[13px] ${controlliAccesi ? "" : "opacity-70"}`}>
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={conCredenziali && controlliAccesi}
+                disabled={!controlliAccesi}
+                onChange={(e) => setConCredenziali(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Usa le credenziali già validate</span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  Solo SSH e SNMP, e solo sugli host dove la Discovery le ha già verificate: nessuna credenziale viene provata su un apparato nuovo. Via SSH legge in sola lettura (root con password, UID 0, aggiornamenti di sicurezza, riavvio richiesto). Mai nei giri automatici.
+                </span>
+              </span>
+            </label>
             <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
           <input
             type="checkbox"

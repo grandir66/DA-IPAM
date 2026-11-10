@@ -12999,6 +12999,9 @@ export function allineaServiziRete(networkId?: number): number {
 export function getPorteServiziDaSondare(networkId?: number, limite?: number): servizi.PortaDaSondare[] {
   return servizi.porteDaSondare(db(), networkId, limite);
 }
+export function getCredenzialiValidateServizi(networkId?: number): servizi.CredenzialeValidata[] {
+  return servizi.credenzialiValidate(db(), networkId, new Date().toISOString());
+}
 export function salvaEsitoSondaServizio(hostId: number, porta: number, esito: EsitoSonda | null): void {
   servizi.salvaEsitoSonda(db(), hostId, porta, esito);
 }

@@ -52,6 +52,8 @@ export interface LancioGiro {
   conferma_completo?: boolean;
   /** Login di fabbrica: solo se true, e solo da questo lanciatore. */
   prove_fabbrica?: boolean;
+  /** Controlli con le credenziali SSH/SNMP già validate per l'host. Solo da questo lanciatore. */
+  con_credenziali?: boolean;
   timeout_ms?: number;
   concorrenza?: number;
   targets?: string;
@@ -222,7 +224,8 @@ export function leggiLancio(corpo: LancioGiro): LancioLetto {
 export function testoRiepilogo(r: RiepilogoGiro): string {
   if (r.errore) return `fallito: ${r.errore}`;
   if (r.sondati === 0) return "nessun servizio noto su questa rete: serve prima una Discovery";
-  return `${r.sondati} servizi già noti risondati su ${r.host} host, ${r.risposte} rispondono · ${r.controlli} controlli`;
+  const cred = r.conCredenziali || r.credRifiutate ? ` · ${r.conCredenziali} host letti con credenziali${r.credRifiutate ? `, ${r.credRifiutate} credenziali rifiutate` : ""}` : "";
+  return `${r.sondati} servizi già noti risondati su ${r.host} host, ${r.risposte} rispondono · ${r.controlli} controlli${cred}`;
 }
 
 function porteDaPreset(preset: string | undefined, udp: boolean): string | null | undefined {
@@ -315,7 +318,8 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
   }
 
   const proveFabbrica = corpo.prove_fabbrica === true;
-  const opzioniSonde = { proveFabbrica, timeoutMs, concorrenza };
+  const conCredenziali = corpo.con_credenziali === true;
+  const opzioniSonde = { proveFabbrica, conCredenziali, timeoutMs, concorrenza };
 
   const vuoleSonde = fasi.includes("sonde");
   const soloSonde = profilo === "su_misura" && !fasi.includes("porte") && vuoleSonde;
@@ -352,7 +356,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
       networkId,
       etichetta: networkId != null ? d.rete(networkId)?.name ?? undefined : `${scope.length} reti`,
       faseDefault,
-      fase: (s) => (s.fase === "porte" ? "Prova porte comuni" : s.fase === "sonde" ? "Sonde e identità" : faseDefault),
+      fase: (s) => (s.fase === "porte" ? "Prova porte comuni" : s.fase === "sonde" ? "Sonde e identità" : s.fase === "credenziali" ? "Controlli con credenziali validate" : faseDefault),
       leggiStato: () => {
         const s = statoGiro(tenant);
         return { inCorso: s.inCorso, totale: s.totale, fatte: s.fatte, iniziato: s.iniziato, finito: s.finito, errore: s.errore, fase: s.fase };
@@ -414,6 +418,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
         tcpPorts: params.tcpPorts,
         udpPorts: params.udpPorts,
         proveFabbrica,
+        conCredenziali,
         timeoutMs,
         concorrenza,
         targetIps,

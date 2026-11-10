@@ -349,7 +349,7 @@ function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
       <CardContent className="space-y-2">
         {reti.map((r) => (
           <div key={r.network_id} className="flex items-center gap-3">
-            <Link href="/vulnerabilities" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
+            <Link href="/vulnerabilities#vulnerabilita" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
             <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
             <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
           </div>
@@ -368,9 +368,9 @@ function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi 
     <div className="grid gap-2 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shrink-0">
       {k.cve ? (
         <>
-          <CardSicurezza tono={k.cve.critiche.cve > 0 ? "guasto" : "ok"} titolo="Vulnerabilità critiche" valore={numero(k.cve.critiche.cve)} nota={`su ${k.cve.critiche.host} host`} href="/vulnerabilities"
+          <CardSicurezza tono={k.cve.critiche.cve > 0 ? "guasto" : "ok"} titolo="Vulnerabilità critiche" valore={numero(k.cve.critiche.cve)} nota={`su ${k.cve.critiche.host} host`} href="/vulnerabilities#vulnerabilita"
             title={`Scanner-Edge: vulnerabilità distinte di gravità Critical (CVE, o NVT quando manca la CVE) e host colpiti${k.cve.ultimaScansione ? ` · ultima scansione ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
-          <CardSicurezza tono={k.cve.alte.cve > 0 ? "attenzione" : "ok"} titolo="Vulnerabilità alte" valore={numero(k.cve.alte.cve)} nota={`su ${k.cve.alte.host} host`} href="/vulnerabilities" title="Scanner-Edge: vulnerabilità distinte di gravità High e host colpiti" />
+          <CardSicurezza tono={k.cve.alte.cve > 0 ? "attenzione" : "ok"} titolo="Vulnerabilità alte" valore={numero(k.cve.alte.cve)} nota={`su ${k.cve.alte.host} host`} href="/vulnerabilities#vulnerabilita" title="Scanner-Edge: vulnerabilità distinte di gravità High e host colpiti" />
         </>
       ) : (
         <CardSicurezza tono="grigio" titolo="Vulnerabilità" valore="Scanner-Edge non configurato" href="/settings/moduli/edge" />

@@ -23,6 +23,7 @@ Riccardo (09/11): «puoi verificare come riutilizzare parti della UI di NETY in 
 | Matrice di segmentazione | `/segmentazione` | `TesseraNumero`, tabella, `BadgeEsito` | fatto il codice; collaudo trunk 102/103 sulla 963 aperto |
 
 - [x] Findings + lanciatore (10/11, livello leggero): elenco unico su `/vulnerabilities` (titolo Findings, visibile anche senza Edge) da CVE + trunk + TLS delle sonde; `/scans` lancia i 4 tipi e i 5 profili sui motori già fatti. Completo chiede conferma e non è nei giri automatici. Scansioni VA restano al loro posto.
+- [x] La vista precedente (per CVE / per host, exploit, triage) è di nuovo in pagina, scheda «Vulnerabilità» (`#vulnerabilita`; `?vista=host` apre quella)
 - [ ] Riccardo da scegliere da dove partire. Ordine consigliato: piccoli mattoni → triage → rilievi a riga espandibile con gravità a tacche → panoramica per rete → «Cosa è cambiato» → lanciatore
 
 ## 2026-11-09 — Servizi di rete e identità senza credenziali, sul modello di Nety (Riccardo, leggero)

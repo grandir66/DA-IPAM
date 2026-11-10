@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Vista Vulnerabilità di nuovo in pagina
+
+Riccardo (10/11): la vista per CVE e per host deve restare, con exploit e filtri.
+
+### Cambiato
+- **Findings**: due schede. «Elenco» è l'unione (CVE, trunk, giri). «Vulnerabilità» è la pagina di prima, per CVE o per host.
+
 ## [Non rilasciato] — 2026-11-10 · Findings e lanciatore dei giri
 
 Riccardo (10/11): in Nety Findings è collegato alle scansioni con tipi e profili.

@@ -168,7 +168,7 @@ function leggiVistaDaUrl(): Vista {
   return new URLSearchParams(window.location.search).get("vista") === "host" ? "host" : "cve";
 }
 
-export function VulnerabilitiesListClient() {
+export function VulnerabilitiesListClient({ embedded = false }: { embedded?: boolean }) {
   const [vista, setVista] = useState<Vista>("cve");
   const [dataCve, setDataCve] = useState<AggregatedVulnUi[]>([]);
   const [dataHost, setDataHost] = useState<VulnHostRowUi[]>([]);
@@ -376,14 +376,16 @@ export function VulnerabilitiesListClient() {
   const colonne = vista === "host" ? 13 : 11;
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className={embedded ? "space-y-4" : "space-y-4 p-4 sm:p-6"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="text-2xl font-semibold flex items-center gap-2">
-              <ShieldAlert className="h-6 w-6 text-orange-500" />
-              Vulnerabilità
-            </h1>
+            {!embedded && (
+              <h1 className="text-2xl font-semibold flex items-center gap-2">
+                <ShieldAlert className="h-6 w-6 text-orange-500" />
+                Vulnerabilità
+              </h1>
+            )}
             <div role="group" aria-label="Raggruppa le vulnerabilità" className="inline-flex rounded-lg border border-foreground/70 overflow-hidden">
               {(["cve", "host"] as const).map((v) => (
                 <button

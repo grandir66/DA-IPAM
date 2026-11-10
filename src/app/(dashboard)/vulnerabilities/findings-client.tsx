@@ -14,6 +14,7 @@ import {
   IntestazionePagina,
   LegendaGravita,
   Pannello,
+  SchedePagina,
   TesseraNumero,
   TempoRelativo,
   Vuoto,
@@ -21,11 +22,65 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import { FONTI_RILIEVO, FONTI_RILIEVO_UI, type ElencoRilievi, type FonteRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
-import { CvePotenziali } from "./cve-potenziali";
+import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
+
+type Scheda = "findings" | "vulnerabilita";
+
+function schedaDaIndirizzo(): Scheda {
+  if (typeof window === "undefined") return "findings";
+  const hash = window.location.hash.replace(/^#/, "");
+  if (hash === "vulnerabilita") return "vulnerabilita";
+  if (hash === "findings") return "findings";
+  const vista = new URLSearchParams(window.location.search).get("vista");
+  if (vista === "host" || vista === "cve") return "vulnerabilita";
+  return "findings";
+}
 
 const PER_PAGINA = 50;
 
 export function FindingsClient() {
+  const [scheda, setScheda] = useState<Scheda>("findings");
+  const [pronta, setPronta] = useState(false);
+  useEffect(() => {
+    setScheda(schedaDaIndirizzo());
+    setPronta(true);
+    const onHash = () => setScheda(schedaDaIndirizzo());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  function scegli(v: Scheda) {
+    setScheda(v);
+    const url = `${window.location.pathname}${window.location.search}#${v}`;
+    window.history.replaceState(null, "", url);
+  }
+
+  return (
+    <div className="space-y-4 p-4 sm:p-6">
+      <IntestazionePagina
+        titolo="Findings"
+        sottotitolo="Rilievi di rete e vulnerabilità. La vista per CVE e per host è la scheda Vulnerabilità."
+        azioni={
+          <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
+            Lancia un giro
+          </Button>
+        }
+      />
+      <SchedePagina<Scheda>
+        etichetta="Findings"
+        scelta={scheda}
+        onScegli={scegli}
+        voci={[
+          { valore: "findings", titolo: "Elenco", descrizione: "CVE, trunk e giri in un elenco solo" },
+          { valore: "vulnerabilita", titolo: "Vulnerabilità", descrizione: "Per CVE o per host, con exploit, triage e filtri" },
+        ]}
+      />
+      {!pronta ? null : scheda === "vulnerabilita" ? <VulnerabilitiesListClient embedded /> : <ElencoFindings />}
+    </div>
+  );
+}
+
+function ElencoFindings() {
   const [fonte, setFonte] = useState<FonteRilievo | "tutti">("tutti");
   const [gravita, setGravita] = useState<Set<Severity>>(new Set());
   const [q, setQ] = useState("");
@@ -77,17 +132,7 @@ export function FindingsClient() {
   const totale = dati?.total ?? 0;
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <IntestazionePagina
-        titolo="Findings"
-        sottotitolo="CVE, allarmi del trunk e rilievi dei giri di rete, in un elenco solo."
-        azioni={
-          <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
-            Lancia un giro
-          </Button>
-        }
-      />
-
+    <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Critici" valore={dati ? rollup.Critical : null} nota="CVE Critical" />
         <TesseraNumero titolo="Alti" valore={dati ? rollup.High : null} nota="CVE High, trunk gravi, TLS scaduto" />
@@ -200,8 +245,6 @@ export function FindingsClient() {
           )}
         </div>
       </Pannello>
-
-      <CvePotenziali />
     </div>
   );
 }

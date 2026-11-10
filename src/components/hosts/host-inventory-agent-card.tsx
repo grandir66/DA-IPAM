@@ -333,7 +333,7 @@ export function HostInventoryAgentCard({ hostId }: { hostId: number }) {
           <Badge variant="secondary">{total} software</Badge>
           {licenses.length > 0 && <Badge variant="secondary">{licenses.length} licenze</Badge>}
           {data.vuln_summary && data.vuln_summary.total > 0 && (
-            <Link href="/vulnerabilities" className="inline-flex">
+            <Link href="/vulnerabilities#vulnerabilita" className="inline-flex">
               <Badge variant="destructive" className="gap-1">
                 {data.vuln_summary.critical + data.vuln_summary.high} CVE Critical/High
               </Badge>
@@ -526,7 +526,7 @@ export function HostInventoryAgentCard({ hostId }: { hostId: number }) {
       <p className="text-[10px] text-muted-foreground">
         device_id <code>{ep.device_id}</code>
         {data.vuln_summary && data.vuln_summary.total > 0 && (
-          <> · incrocia software installati con CVE in <Link href="/vulnerabilities" className="text-primary hover:underline">Vulnerabilità</Link></>
+          <> · incrocia software installati con CVE in <Link href="/vulnerabilities#vulnerabilita" className="text-primary hover:underline">Vulnerabilità</Link></>
         )}
       </p>
     </div>

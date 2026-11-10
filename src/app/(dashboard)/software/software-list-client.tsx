@@ -421,7 +421,7 @@ function RowGroup({
   onToggle: () => void;
   onOpenDrillDown: (key: string) => void;
 }) {
-  const vulnLink = `/vulnerabilities?search=${encodeURIComponent(row.name)}`;
+  const vulnLink = `/vulnerabilities?search=${encodeURIComponent(row.name)}#vulnerabilita`;
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-muted/40" onClick={onToggle}>

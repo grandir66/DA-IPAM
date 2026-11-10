@@ -325,7 +325,7 @@ export function ScansioniVaClient() {
     <IntestazionePagina
       titolo="Scansioni VA"
       sottotitolo="Un gruppo per tipo di device, o un profilo solo su più reti."
-      azioni={<Link href="/vulnerabilities" className="text-sm text-cian-testo hover:underline">Rapporti in Vulnerabilità ›</Link>}
+      azioni={<Link href="/vulnerabilities#vulnerabilita" className="text-sm text-cian-testo hover:underline">Rapporti in Vulnerabilità ›</Link>}
     />
   );
 

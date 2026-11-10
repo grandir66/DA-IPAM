@@ -88,8 +88,24 @@
   a 0,95; il generico «apparato di rete» resta a 0,85. Verifica sull'hub (0.9.1121): dei 15 host che si
   annunciano, 6 sono `network.switch` (`CRS304-4XG`, `CRS504-4XQ`, `CRS309-1G-8S+`) e 9 `network.router`
   (`CCR2004…`, `RB5009UPr+S+`, `CHR`). Prima erano tutti router.
-- [ ] **2.5 Dove si vede** (tavola mostrata a Riccardo il 10/11, in attesa del sì): una riga per apparato, non per annuncio; filtri per protocollo e per «non in DA-IPAM» / «non registrato come apparato»; aperta, le interfacce con VLAN e indirizzo. Testo di prima: In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
-  indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
+- [x] **2.5 Elenco «Annunci»** (Riccardo, 10/11: «la tavola è perfetta»). Terza scheda di «Reti dal
+  trunk»: `src/lib/trunk/annunci.ts`, `GET /api/trunk/annunci`, `annunci-pannello.tsx`. Una riga per
+  apparato, filtri per protocollo e per stato in DA-IPAM, aperta le interfacce. Sola lettura, nessun
+  pulsante che scrive. *Vista a 1920 sull'hub (0.9.1129):* 20 apparati, MNDP 9, Ubiquiti 2, CDP 18,
+  LLDP 0; 3 non in DA-IPAM, 14 non registrati come apparato; compaiono anche i telefoni Yealink che
+  si annunciano in CDP.
+- [x] **3.5 Le dichiarazioni in DA-IPAM e nella pagina del trunk** (Riccardo, 10/11: «sono tutti dati
+  che devono finire anche nella pagina del trunk dove riconosciamo a layer 2 gli oggetti in modo
+  passivo»). `src/lib/trunk/dichiarazioni.ts`, tabella `trunk_dichiarazioni`: lette a ogni giro,
+  agganciate per MAC, prove con le regole delle sonde attive, modello e nome riempiti dove mancano;
+  nella scheda «VLAN e reti» ogni oggetto mostra ciò che dice di sé.
+- [x] **Errore trovato sui dati veri e corretto (sonda 0.8.293, DA-IPAM 0.9.1129):** il gateway UniFi
+  ripete fra le VLAN gli annunci mDNS degli altri col proprio MAC; con la 0.8.292 risultava offrire
+  AirPlay e SSH di un Mac ed era sceso da `network.controller` a `network`. Ora una dichiarazione
+  mDNS vale solo se chi parla dice anche il proprio indirizzo nello stesso pacchetto, e un SSDP con
+  in LOCATION l'indirizzo di un altro si scarta. Pulizia una volta sola nel sensore e in DA-IPAM
+  (24 host ricalcolati sull'hub; il controller è tornato `network.controller`). Un computer con
+  AirPlay non è più uno schermo.
 
 ## Tappa 3 — cos'altro dice il trunk (Riccardo, 10/11: «arrivano tante informazioni passive per tanti protocolli… non so cosa si può estrarre in più»)
 

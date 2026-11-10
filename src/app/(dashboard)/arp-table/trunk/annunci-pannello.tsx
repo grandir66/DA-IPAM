@@ -20,6 +20,8 @@ type Stato = "tutti" | "non_in_ipam" | "non_apparato";
 const NOME_PROTOCOLLO: Record<string, string> = { MNDP: "MNDP", UBNT: "Ubiquiti", CDP: "CDP", LLDP: "LLDP" };
 const NOME_CATEGORIA: Record<string, string> = {
   "network.router": "router", "network.switch": "switch", "network.access_point": "access point", network: "apparato di rete",
+  "network.controller": "controller", "network.firewall": "firewall", "voip.phone": "telefono", "av.camera": "telecamera",
+  "peripheral.printer": "stampante", "compute.server": "server",
 };
 const nomeVlan = (vid: number) => (vid === 0 ? "senza tag" : `VLAN ${vid}`);
 const INTERFACCE_MOSTRATE = 12;

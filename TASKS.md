@@ -2263,3 +2263,12 @@ Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con 
 - [x] **Fatto** (04/11, Riccardo «Sì, stampanti leggero», livello leggero): collector `printer-acquisition.ts` (Printer-MIB RFC 3805 + Host Resources), `printer_inventory` in `DeviceInfo`/`DeviceInfoJson`, `resolvePrinterKind`, aggancio in `getDeviceInfo`. Tipo scheda `stampante` (`tipo-scheda.ts`) + tab Materiali/Contatori (`components/scheda/tipi/stampante/`), helper `lib/scheda/stampante.ts`, registro in `tab-scheda.tsx`. 9 prove (parsing con walk sintetici), lint 0/tsc verdi.
 - [ ] **Verifica resa non fatta**: niente stampante nel DB locale per renderla; la scheda si vede sulla 72729 dopo deploy su main + scansione SNMP di una stampante (Riccardo ci sta lavorando). JSX comunque type-checked.
 - [ ] HP sul solo vendor NON attiva il collector (ambiguo coi PC): una stampante HP si legge quando è classificata `stampante` (OID/porte lo fanno). Gli OID Printer-MIB sono standard; il seriale usa `43.5.1.1.17.1` (corretto vs il `.16.1` del segnalato seed SNMP, che è il nome).
+
+## 2026-11-10 — Promozione su main ferma: cancello rosso
+
+- [ ] Riccardo (10/11 sera): «promuovi in main». Cancello su `origin/dev` `a249ce99`: lint e tipi verdi, **8 prove rosse su 8013**, promozione NON fatta.
+  - 5 rosse dalla release 0.9.1113 (`12a517d4`, «Classi vecchie svuotate», altra sessione): `classification/__tests__/scrittura-canonica.test.ts` (upsertHost con `dns_server` dà classe `null` invece di `server`) e 4 di `__tests__/topologia-t2-freno.test.ts` (10 apparati con `classification: null` invece di server/switch/router/nas). Da decidere: prove vecchie da aggiornare, o la svuotatura cancella anche classi appena scritte.
+  - 1 rossa da `01898a25` (altra sessione): `schedulazioni/__tests__/elenco.test.ts`, `scanner/rilancia-giri` avviato da `server.ts` senza riga in Schedulazioni.
+  - 2 rosse da prima di oggi: `transfer/__tests__/registry.test.ts` (`triage_rilievi` non classificata) e `scanner/profili/__tests__/sconosciuti.test.ts` (porta 9100/UDP).
+  - La build nel worktree fallisce per `node_modules` (artefatto locale): l'hub costruisce lo stesso codice senza errori.
+- [ ] Sonda 79993-ipam-9 (bridge 44): versione voluta 0.8.294 scritta alle 23:16, dopo 25+ minuti ancora 0.8.263. Stessa versione di partenza della 70151 bloccata. 71343 non toccata.

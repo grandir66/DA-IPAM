@@ -98,29 +98,36 @@ export interface RigaAutomatica {
 export function creaApparatiAutomatici(opz: { applica: boolean }): RigaAutomatica[] {
   const db = getDb();
   const archivio = db.prepare("SELECT id, name, credential_type, port FROM credentials").all() as CredenzialeArchivio[];
+  /* Un apparato con più IP è UN apparato (Riccardo, 10/11: «il motore per collassare gli IP multipli c'è già»). Il
+   * motore è `multihomed_links`: stesso `group_id` = stesso apparecchio (seriale, sysName…), `is_primary` = l'IP che
+   * riceve le scansioni. Per gruppo nasce un apparato solo, dall'IP primario se è fra i candidati; gli altri si saltano
+   * col motivo. Prova a vuoto sull'hub 533: «DA-RT-CORE» su quattro reti, due nodi Proxmox senza nome su due. */
   const host = db.prepare(
-    `SELECT h.* FROM hosts h
+    `SELECT h.*, ml.group_id AS gruppo,
+            EXISTS (SELECT 1 FROM multihomed_links m2 JOIN hosts h2 ON h2.id = m2.host_id
+                    JOIN network_devices d2 ON d2.host_id = h2.id OR d2.host = h2.ip
+                    WHERE m2.group_id = ml.group_id) AS gruppo_con_apparato
+     FROM hosts h LEFT JOIN multihomed_links ml ON ml.host_id = h.id
      WHERE EXISTS (SELECT 1 FROM host_credentials hc WHERE hc.host_id = h.id AND hc.validated = 1)
        AND NOT EXISTS (SELECT 1 FROM network_devices d WHERE d.host_id = h.id OR d.host = h.ip)
-     ORDER BY h.id`,
-  ).all() as HostAutomatico[];
+     GROUP BY h.id
+     ORDER BY COALESCE(MAX(ml.is_primary), 0) DESC, h.id`,
+  ).all() as Array<HostAutomatico & { gruppo: string | null; gruppo_con_apparato: number }>;
   const leggiLegami = db.prepare(
     "SELECT credential_id, protocol_type, port, validated, validated_at FROM host_credentials WHERE host_id = ? ORDER BY sort_order, id",
   );
-  /* Un apparato con più IP è UN apparato (prova a vuoto sull'hub 533, 10/11: «DA-RT-CORE» su quattro reti, «DA-FILES»
-   * su tre). Vale il primo IP; gli altri si saltano col motivo, e una persona li aggiunge all'apparato se servono. */
-  const nomi = new Set((db.prepare("SELECT name FROM network_devices").all() as Array<{ name: string }>).map((d) => d.name.trim().toLowerCase()));
+  const gruppiFatti = new Set<string>();
   const righe: RigaAutomatica[] = [];
   for (const h of host) {
     const base = { hostId: h.id, ip: h.ip, classe: h.classification ?? null };
     try {
+      if (h.gruppo && h.gruppo_con_apparato === 1) { righe.push({ ...base, esito: "saltato", motivo: "altro IP di un apparato che c'è già" }); continue; }
       h.host_credentials = leggiLegami.all(h.id) as HostPerProposta["host_credentials"];
       const piano = pianoApparatoAutomatico(h, archivio);
       if ("motivo" in piano) { righe.push({ ...base, esito: "saltato", motivo: piano.motivo }); continue; }
       const descr = { nome: String(piano.corpo.name), protocollo: String(piano.corpo.protocol), legami: 1 + (piano.corpo.snmp_credential_id ? 1 : 0) + piano.altri.length };
-      const chiave = descr.nome.trim().toLowerCase();
-      if (nomi.has(chiave)) { righe.push({ ...base, esito: "saltato", motivo: `stesso nome di un apparato: «${descr.nome}»` }); continue; }
-      nomi.add(chiave);
+      if (h.gruppo && gruppiFatti.has(h.gruppo)) { righe.push({ ...base, esito: "saltato", motivo: "altro IP di un apparato di questo giro" }); continue; }
+      if (h.gruppo) gruppiFatti.add(h.gruppo);
       if (!opz.applica) { righe.push({ ...base, esito: "da_creare", ...descr }); continue; }
       const esito = creaApparato(piano.corpo);
       if (!esito.ok) { righe.push({ ...base, esito: "saltato", motivo: esito.error }); continue; }

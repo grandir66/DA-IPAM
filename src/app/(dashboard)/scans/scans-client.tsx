@@ -266,15 +266,20 @@ export function ScansClient() {
       return;
     }
     const n = r.data.avvii.length;
-    toast.success(n === 1 ? r.data.avvii[0]!.messaggio : `${n} giri avviati`);
+    toast.success(n === 1 ? r.data.avvii[0]!.messaggio : `${n} giri avviati: avanzano tutti insieme, li trovi qui sotto`);
     for (const s of r.data.saltati) toast.message(s.motivo);
     // Apre il pannello di avanzamento (ScanProgress, globale) per ogni giro appena avviato.
-    for (const a of r.data.avvii) if (a.job_id) apri(a.job_id);
+    // Il pannello di avanzamento ne mostra uno solo: con più reti aprirlo faceva vedere l'ultimo giro
+    // e sembrava che gli altri non fossero partiti (Riccardo, 10/11). Con più giri resta l'elenco qui sotto.
+    const idGiri = [...new Set(r.data.avvii.map((a) => a.job_id).filter((id): id is string => !!id))];
+    if (idGiri.length === 1) apri(idGiri[0]!);
     setAvvio(null);
     void load();
   }
 
-  const giriInCorso = giri.filter((g) => g.status === "running");
+  // In corso per primi, poi quelli appena finiti (la bacheca li tiene 5 minuti): così si vede che sono partiti tutti.
+  const giriInCorso = [...giri.filter((g) => g.status === "running"), ...giri.filter((g) => g.status !== "running")];
+  const nInCorso = giri.filter((g) => g.status === "running").length;
 
   function toggleRete(id: number) {
     setScelte((prev) => {
@@ -679,15 +684,17 @@ export function ScansClient() {
         {avvio && <InCorso titolo={avvio} />}
       </div>
       {giriInCorso.length > 0 && (
-        <Pannello titolo="Giri in corso" conteggio={giriInCorso.length} sottotitolo="Avanzamento dal vivo; clic su «Apri» per il dettaglio">
+        <Pannello titolo="Giri in corso" conteggio={nInCorso} sottotitolo="Uno per rete, avanzano insieme. Restano qui 5 minuti dopo la fine; «Apri» per il dettaglio">
           <div className="space-y-2 p-1">
             {giriInCorso.map((g) => {
-              const pct = g.total > 0 ? Math.round((g.scanned / g.total) * 100) : null;
+              const inCorso = g.status === "running";
+              const pct = inCorso && g.total > 0 ? Math.round((g.scanned / g.total) * 100) : null;
+              const esito = inCorso ? g.phase : g.status === "completed" ? "Finito" : (g.error ?? "Fallito");
               return (
                 <div key={g.id} className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-2">
                   <span className="min-w-0 flex-1">
                     <span className="font-semibold">{g.etichetta ?? etichettaGiro(g.scan_type)}</span>
-                    <span className="ml-2 text-[13px] text-muted-foreground">{g.phase}</span>
+                    <span className="ml-2 text-[13px] text-muted-foreground">{esito}</span>
                   </span>
                   {pct != null && <span className="font-mono text-[13px] tabular-nums">{pct}%</span>}
                   <Button size="sm" variant="outline" onClick={() => apri(g.id)}>Apri</Button>

@@ -165,6 +165,36 @@ function ElencoFindings() {
 
   return (
     <div className="space-y-4">
+      {dati && triTot > 0 && (
+        <Pannello titolo="Revisione">
+          <div className="space-y-2 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[13px]">
+                <strong className="font-mono text-foreground">{triRivisti}</strong> di{" "}
+                <strong className="font-mono text-foreground">{triTot}</strong> rivisti{" "}
+                <span className="text-muted-foreground">({triPct}%)</span>
+              </p>
+              <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                <span className="rounded-md border px-2 py-0.5">
+                  Tutti <strong className="font-mono text-foreground">{triTot}</strong>
+                </span>
+                <span className="rounded-md border px-2 py-0.5">
+                  Da rivedere <strong className="font-mono text-foreground">{conteggiTriage.da_fare}</strong>
+                </span>
+              </div>
+            </div>
+            <BarraDivisa
+              parti={[
+                { nome: TRIAGE_UI.da_fare.parola, valore: conteggiTriage.da_fare, classe: "bg-[#C5CED4]" },
+                { nome: TRIAGE_UI.in_corso.parola, valore: conteggiTriage.in_corso, classe: "bg-[#FFD400]" },
+                { nome: TRIAGE_UI.fatto.parola, valore: conteggiTriage.fatto, classe: "bg-[#1F7A4D]" },
+                { nome: TRIAGE_UI.ignorato.parola, valore: conteggiTriage.ignorato, classe: "bg-muted-foreground/50" },
+              ]}
+            />
+          </div>
+        </Pannello>
+      )}
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Critici" valore={dati ? rollup.Critical : null} nota="CVE Critical" />
         <TesseraNumero titolo="Alti" valore={dati ? rollup.High : null} nota="CVE High, trunk gravi, TLS scaduto" />
@@ -183,20 +213,6 @@ function ElencoFindings() {
         <p role="status" className="text-sm">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
-      {dati && triTot > 0 && (
-        <Pannello titolo="Revisione" sottotitolo={`${triRivisti} di ${triTot} rivisti (${triPct}%)`}>
-          <div className="p-3">
-            <BarraDivisa
-              parti={[
-                { nome: TRIAGE_UI.da_fare.parola, valore: conteggiTriage.da_fare, classe: "bg-[#C5CED4]" },
-                { nome: TRIAGE_UI.in_corso.parola, valore: conteggiTriage.in_corso, classe: "bg-[#FFD400]" },
-                { nome: TRIAGE_UI.fatto.parola, valore: conteggiTriage.fatto, classe: "bg-[#1F7A4D]" },
-                { nome: TRIAGE_UI.ignorato.parola, valore: conteggiTriage.ignorato, classe: "bg-muted-foreground/50" },
-              ]}
-            />
-          </div>
-        </Pannello>
-      )}
       <Pannello
         titolo="Elenco"
         conteggio={totale}
@@ -287,10 +303,10 @@ function ElencoFindings() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
+                    <TableHead>Stato</TableHead>
                     <TableHead>Rilievo</TableHead>
                     <TableHead>Fonte</TableHead>
                     <TableHead>Gravità</TableHead>
-                    <TableHead>Stato</TableHead>
                     <TableHead>Dove</TableHead>
                     <TableHead>Visto</TableHead>
                   </TableRow>
@@ -342,6 +358,9 @@ function Riga({
         <TableCell className="w-8 text-muted-foreground">
           {aperto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </TableCell>
+        <TableCell>
+          {r.triage ? <BadgeTriage stato={r.triage.stato} /> : <BadgeTriage stato="da_fare" />}
+        </TableCell>
         <TableCell className="font-medium">
           <span className="inline-flex flex-wrap items-center gap-2">
             {r.titolo}
@@ -351,9 +370,6 @@ function Riga({
         <TableCell className="text-[13px]">{FONTI_RILIEVO_UI[r.fonte].nome}</TableCell>
         <TableCell>
           <BadgeGravita gravita={r.gravita} />
-        </TableCell>
-        <TableCell>
-          {r.triage ? <BadgeTriage stato={r.triage.stato} /> : <span className="text-[13px] text-muted-foreground">—</span>}
         </TableCell>
         <TableCell className="font-mono text-[13px]">
           {r.ip ?? r.network_name ?? "—"}

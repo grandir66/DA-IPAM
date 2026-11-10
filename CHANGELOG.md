@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Scansioni: UI delle opzioni per modalità
+
+Riccardo (10/11): «fai tutta la pagina». Ora `/scans` manda i knob che il motore (Cursor, v0.9.1079) accetta, con il layout preso dalle schermate di Nety.
+
+### Aggiunto
+- **Discovery «Su misura» → pannello «Targets e parametri»**: `targets`/`exclusions` (IPv4/CIDR, font mono), `auto_targets` (acceso di serie; spento vuole almeno un target), porte TCP (Top 100/1000/Tutte/su misura) e UDP, modo di scansione (auto/SYN/connect), rate, timeout, concorrenza, tentativi. I numeri partono come `number`; i campi vuoti si omettono (restano i default del profilo). «Tutte le porte» chiede conferma.
+- **Segmentazione → pannelli «Da» (rete sorgente) e «Reti da raggiungere»** (checkbox coi conteggi `servizi · host noti` da `GET /api/scans/reti-bersaglio`; vuoto = tutte le altre). Le tecniche da auditor (ICMP, IPv6, SYN frammentato, porta sorgente, gateway, L2 con avviso) sono mostrate **disabilitate** con «Non ancora disponibile sulla sonda» e non vengono inviate.
+- **Sonda L2 → campo «Durata (secondi)»** (1–600; vuoto = lettura immediata).
+
 ## [Non rilasciato] — 2026-11-10 · Scansioni: opzioni per modalità
 
 Riccardo (10/11): ogni tipo di giro ha i suoi knob; la UI li manderà quando l'API li accetta.

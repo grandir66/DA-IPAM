@@ -676,7 +676,6 @@ function FasciaIndicatori({
   onHost: (h: NonNullable<IndicatoriRilievi["hostPiuEsposto"]>) => void;
   onRete: (r: RilievoRete) => void;
 }) {
-  const massimo = Math.max(1, ...reti.map((r) => r.total));
   const casella = "rounded-lg border bg-card px-3 py-2 text-left hover:bg-muted disabled:hover:bg-card";
   return (
     <div className="rounded-xl border bg-card">
@@ -732,11 +731,8 @@ function FasciaIndicatori({
                   className={`flex w-full items-center gap-3 rounded-md px-1 text-left hover:bg-muted ${reteScelta === r.network_id ? "bg-muted ring-1 ring-foreground" : ""}`}
                 >
                   <span className="w-40 shrink-0 truncate text-[13px] font-medium" title={r.network_name}>{r.network_name}</span>
-                  <span className="flex-1">
-                    <span className="block" style={{ width: `${Math.max(4, Math.round((r.total / massimo) * 100))}%` }}>
-                      <BarraGravita conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
-                    </span>
-                  </span>
+                  {/* A tutta larghezza come in Dashboard: accorciate, i numeri dentro le barre si sovrapponevano. */}
+                  <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
                   <span className="w-14 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
                 </button>
               ))

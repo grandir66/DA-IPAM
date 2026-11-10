@@ -4,8 +4,9 @@
 
 Riccardo: iniziare lo sviluppo senza sovrapporsi agli altri lavori. Piano in DA-IPAM, commit `510eca57`.
 - [x] Comparatore IPv4 e prove locali in `src/lib/scanner/confronto-giri.ts`. Distingue cambi certi e porte appena osservate. Rifiuta giri incompleti e perimetri diversi. Nessuna modifica a Discovery, Subnet o Edge.
+- [x] Riccardo: aggiunta la voce «Network Changes» nel dettaglio subnet e la pagina dedicata, con stato di attesa esplicito.
 - [ ] Collegare le osservazioni al completamento del giro. `hosts.open_ports` unisce dati di sessione e archivio e non è la fonte del delta. Raccogliere esiti espliciti per IP e porta/protocollo.
-- [ ] Definire persistenza idempotente, retention e vista Subnet, con verifica su copia prima della migrazione.
+- [ ] Definire persistenza idempotente, retention e collegamento dei dati alla vista Subnet, con verifica su copia prima della migrazione.
 
 ## 2026-11-10 — «Solo controlli» sembrava non fare nulla (Riccardo, base)
 

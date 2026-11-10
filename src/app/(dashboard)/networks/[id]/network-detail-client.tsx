@@ -1133,6 +1133,14 @@ export function NetworkDetailClient({
             <Button
               variant="outline"
               size="sm"
+              nativeButton={false}
+              render={<Link href={`/networks/${network.id}/changes`} />}
+            >
+              Network Changes
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => { window.location.href = `/api/export?network_id=${network.id}`; }}
             >
               <Download className="h-4 w-4 mr-2" />

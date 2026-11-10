@@ -15,19 +15,7 @@ import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/l
 import { SEVERITY_RANK, type Severity } from "@/lib/severity-style";
 import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
 import type { GravitaRilievo } from "@/lib/trunk/rilievi-tipi";
-import { rilieviDaTls, tlsDaJson } from "./da-servizi";
-import {
-  controlloDaJson,
-  httpDaJson,
-  ntlmDaJson,
-  protocolloControllo,
-  rilieviDaControllo,
-  rilieviDaHttp,
-  rilieviDaNtlm,
-  rilieviDaPorta,
-  rilieviDaSsh,
-  sshDaJson,
-} from "./controlli";
+import { rilieviDelServizio } from "./del-servizio";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type OspiteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 import { agganciaTriage } from "./triage-aggancio";
 import { barrePerRete, indicatori, raggruppa, type Raggruppamento } from "./gruppi";
@@ -187,24 +175,7 @@ function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
     network_name: string | null;
   }>;
   const out: RilievoUnito[] = [];
-  for (const r of righe.slice(0, 4000)) {
-    const ctx = {
-      host_id: r.host_id,
-      ip: r.ip,
-      hostname: r.hostname,
-      network_id: r.network_id,
-      network_name: r.network_name,
-      porta: r.porta,
-      protocollo: r.protocollo,
-    };
-    const tls = tlsDaJson(r.tls_json);
-    if (tls) out.push(...rilieviDaTls(tls, ctx));
-    out.push(...rilieviDaNtlm(ntlmDaJson(r.ntlm_json), ctx));
-    out.push(...rilieviDaSsh(sshDaJson(r.ssh_json), ctx));
-    out.push(...rilieviDaHttp(httpDaJson(r.http_json), ctx));
-    if (r.protocollo === "tcp") out.push(...rilieviDaPorta(ctx, Boolean(tls)));
-    if (r.protocollo === protocolloControllo(r.porta)) out.push(...rilieviDaControllo(controlloDaJson(r.controllo_json), ctx));
-  }
+  for (const r of righe.slice(0, 4000)) out.push(...rilieviDelServizio(r));
   return { righe: out, parziale: righe.length > 4000 };
 }
 

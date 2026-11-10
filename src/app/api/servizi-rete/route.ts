@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getCurrentTenantCode, getServiziRetePaginati, getConteggiServiziRete } from "@/lib/db-tenant";
+import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { elencoServiziRete } from "@/lib/servizi-rete/elenco";
 import { statoGiro } from "@/lib/servizi-rete/giro";
 
-/** Elenco paginato dei servizi di rete del tenant, con i conteggi e lo stato del giro delle sonde. */
+/**
+ * I servizi di rete del tenant: una pagina di righe coi rilievi della porta, oppure i gruppi
+ * (`raggruppa=porta|prodotto|host|rete`), più indicatori, conteggi e stato del giro delle sonde.
+ */
 export async function GET(request: Request) {
   const sessione = await requireAuth();
   if (isAuthError(sessione)) return sessione;
@@ -14,24 +18,22 @@ export async function GET(request: Request) {
       const n = Number(sp.get(k));
       return Number.isInteger(n) && n > 0 ? n : undefined;
     };
-    const limit = Math.min(intero("limit") ?? 100, 500);
-    const pagina = intero("page") ?? 1;
-    const networkId = intero("network_id");
     try {
-      const { righe, totale } = getServiziRetePaginati({
-        q: sp.get("q") ?? undefined,
-        networkId,
-        hostId: intero("host_id"),
-        porta: intero("porta"),
-        tipo: sp.get("tipo") ?? undefined,
-        limit,
-        offset: (pagina - 1) * limit,
-      });
       const tenant = getCurrentTenantCode();
       return NextResponse.json({
-        righe,
-        totale,
-        conteggi: getConteggiServiziRete(networkId),
+        ...elencoServiziRete({
+          q: sp.get("q") ?? undefined,
+          networkId: intero("network_id"),
+          hostId: intero("host_id"),
+          porta: intero("porta"),
+          prodotto: sp.get("prodotto") ?? undefined,
+          tipo: sp.get("tipo") ?? undefined,
+          segnale: sp.get("segnale") ?? undefined,
+          raggruppa: sp.get("raggruppa") ?? undefined,
+          conRilievi: sp.get("rilievi") === "1",
+          limit: Math.min(intero("limit") ?? 100, 500),
+          pagina: intero("page") ?? 1,
+        }),
         giro: tenant ? statoGiro(tenant) : null,
       });
     } catch (e) {

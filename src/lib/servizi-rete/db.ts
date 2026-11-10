@@ -49,6 +49,8 @@ export interface FiltriServiziRete {
   porta?: number;
   /** `tls`, `http`, `ssh`, `banner`, `ntlm`, `da-sondare` (mai sondato), `silenzio`. */
   tipo?: string;
+  /** Nome del prodotto esatto; `(senza)` = righe senza prodotto. */
+  prodotto?: string;
   limit: number;
   offset: number;
 }
@@ -165,12 +167,14 @@ export function salvaEsitoSonda(db: Database.Database, hostId: number, porta: nu
   );
 }
 
-function condizioni(f: FiltriServiziRete): { where: string; args: unknown[] } {
+function condizioni(f: Omit<FiltriServiziRete, "limit" | "offset">): { where: string; args: unknown[] } {
   const w: string[] = [];
   const a: unknown[] = [];
   if (f.networkId) { w.push("h.network_id = ?"); a.push(f.networkId); }
   if (f.hostId) { w.push("s.host_id = ?"); a.push(f.hostId); }
   if (f.porta) { w.push("s.porta = ?"); a.push(f.porta); }
+  if (f.prodotto === "(senza)") w.push("s.prodotto IS NULL");
+  else if (f.prodotto) { w.push("s.prodotto = ?"); a.push(f.prodotto); }
   switch (f.tipo) {
     case "tls": w.push("s.tls_json IS NOT NULL"); break;
     case "http": w.push("s.http_json IS NOT NULL"); break;
@@ -208,6 +212,35 @@ export function serviziRetePaginati(db: Database.Database, f: FiltriServiziRete)
     )
     .all(...args, f.limit, f.offset) as ServizioRete[];
   return { righe, totale };
+}
+
+/** Una riga con anche l'esito dei controlli del giro: serve a calcolare i rilievi della porta. */
+export type ServizioReteCompleto = ServizioRete & { controllo_json: string | null };
+
+/**
+ * Tutti i servizi che passano i filtri, senza pagina: gruppi, indicatori e barre della pagina
+ * «Servizi di rete» si calcolano in memoria sugli stessi dati dell'elenco (come in Findings).
+ * Resta sul server: al browser va una pagina sola. `tetto` ferma un tenant fuori misura.
+ */
+export function serviziReteTutti(
+  db: Database.Database,
+  f: Omit<FiltriServiziRete, "limit" | "offset">,
+  tetto = 20000,
+): { righe: ServizioReteCompleto[]; parziale: boolean } {
+  assicuraColonnaNtlmServizi(db);
+  assicuraColonnaControlloServizi(db);
+  const { where, args } = condizioni(f);
+  const righe = db
+    .prepare(
+      `SELECT s.id, s.host_id, h.ip, COALESCE(h.custom_name, h.hostname) AS hostname, h.network_id,
+              n.name AS rete, n.cidr AS cidr, s.porta, s.protocollo, s.nome, s.prodotto, s.versione, s.metodo,
+              s.banner, s.tls_json, s.http_json, s.ssh_json, s.ntlm_json, s.controllo_json,
+              s.primo_visto, s.ultimo_visto, s.ultima_sonda
+       FROM servizi_rete s JOIN hosts h ON h.id = s.host_id LEFT JOIN networks n ON n.id = h.network_id ${where}
+       ORDER BY h.network_id, h.ip, s.protocollo, s.porta LIMIT ?`,
+    )
+    .all(...args, tetto + 1) as ServizioReteCompleto[];
+  return { righe: righe.slice(0, tetto), parziale: righe.length > tetto };
 }
 
 export function conteggiServiziRete(db: Database.Database, networkId?: number): ConteggiServiziRete {

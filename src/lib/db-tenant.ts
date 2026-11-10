@@ -13052,6 +13052,9 @@ export function salvaEsitoSondaServizio(hostId: number, porta: number, esito: Es
 export function getServiziRetePaginati(f: servizi.FiltriServiziRete): { righe: servizi.ServizioRete[]; totale: number } {
   return servizi.serviziRetePaginati(db(), f);
 }
+export function getServiziReteTutti(f: Omit<servizi.FiltriServiziRete, "limit" | "offset">): { righe: servizi.ServizioReteCompleto[]; parziale: boolean } {
+  return servizi.serviziReteTutti(db(), f);
+}
 export function getConteggiServiziRete(networkId?: number): servizi.ConteggiServiziRete {
   return servizi.conteggiServiziRete(db(), networkId);
 }

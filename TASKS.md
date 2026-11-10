@@ -25,7 +25,8 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
   - [x] Difetto vero trovato: l'avanzamento diceva «Nmap quick TCP» anche con le 1000 porte del profilo. Ora dice «Nmap TCP, 1.000 porte» (0.9.1100). Non guardato a schermo.
   - [ ] Resta: gli host che non rispondono (209 indirizzi su 254 nella rete 3) non ricevono nessuna prova di porta. Se Riccardo ha un host o una porta precisa che si aspettava e non c'è, partire da lì.
   - [ ] Tappa 2: Windows via WinRM (SMBv1, firma SMB, LLMNR, patch, amministratori locali), passando dalla scelta WinRM/WMI della scansione.
-- [ ] Riccardo (10/11): `/servizi-rete` «probabilmente dovremmo ridisegnarla con la logica dei findings». Da proporre oggetto per oggetto prima di scriverla.
+- [x] Riccardo (10/11): `/servizi-rete` «probabilmente dovremmo ridisegnarla con la logica dei findings». Proposta in sei oggetti su tavola, approvata («Sì, tutti e sei»), scritta: testata su una riga con «Stesso apparato» a pulsante; fascia «Dove guardare» con quattro segnali e servizi per rete; «Raggruppa per» Servizio/Porta/Prodotto/Host/Rete; filtri a pulsanti col conteggio e CIDR; tabella dei gruppi che si apre sui servizi; rilievi e triage sotto la porta. `servizi-rete/viste.ts` (puro), `elenco.ts`, `rilievi/del-servizio.ts`. Prove `viste.test.ts` + rilievi 33 verdi, `tsc`, lint.
+  - [ ] Non fatto: ordinamento per colonna nei gruppi; «Prendi in carico» sul gruppo; collegamento dalla riga alla pagina Findings; gli indirizzi `?vista=` come in Findings. Gruppi e indicatori si calcolano in memoria su tutti i servizi del tenant (tetto 20.000, sull'hub sono 1.085).
 - [ ] Da Nety, non fatto: le fasi di «Solo controlli» accendibili una per una (riconoscimento / identità / controlli). Il nostro giro le fa sempre tutte: serve un filtro nel motore.
 - [ ] Un giro in corso si perde al riavvio dell'aggiornamento automatico da `dev` (oggi tre riavvii in 40 minuti), senza riga in cronologia.
 

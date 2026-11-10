@@ -7516,6 +7516,7 @@ export {
   getPorteServiziDaSondare,
   salvaEsitoSondaServizio,
   getServiziRetePaginati,
+  getServiziReteTutti,
   getConteggiServiziRete,
   getHostServiziDellaRete,
   registraPorteAperteServizi,

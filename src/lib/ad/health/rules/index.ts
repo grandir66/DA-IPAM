@@ -3,6 +3,7 @@ import { anomalyRules } from "./anomaly";
 import { auditRules } from "./audit";
 import { collectRules } from "./collect";
 import { lacuneAbRules } from "./lacune-ab";
+import { lacuneDfgRules } from "./lacune-dfg";
 import { phase2Rules } from "./phase2";
 import { phase3Rules } from "./phase3";
 import { phase4Rules } from "./phase4";
@@ -23,6 +24,7 @@ export const ALL_RULES: RuleDef[] = [
   ...phase5Rules,
   ...phase6Rules,
   ...lacuneAbRules,
+  ...lacuneDfgRules,
   ...collectRules,
   ...auditRules,
 ];
@@ -32,6 +34,7 @@ export {
   auditRules,
   collectRules,
   lacuneAbRules,
+  lacuneDfgRules,
   phase2Rules,
   phase3Rules,
   phase4Rules,

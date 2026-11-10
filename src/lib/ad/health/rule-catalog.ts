@@ -355,6 +355,66 @@ const CATALOG: Record<string, RuleGuide> = {
     why: "La delega del gMSA lascia leggere la sua password a Everyone, Authenticated Users, Users, Domain Users o Domain Computers. Si è letta solo la delega, mai la password.",
     fix: "Restringi PrincipalsAllowedToRetrieveManagedPassword ai soli server che usano il gMSA.",
   },
+  "DA-A-DnsZoneInsecureUpdate": {
+    titleIt: "Zona DNS con aggiornamenti dinamici non sicuri",
+    why: "La zona accetta aggiornamenti dinamici anche senza autenticazione: chiunque sia in rete può creare o sovrascrivere un nome e deviare il traffico verso di sé.",
+    fix: "Imposta la zona su «Solo aggiornamenti sicuri» (proprietà della zona nel DNS Manager).",
+  },
+  "DA-A-DnsZoneBroadWrite": {
+    titleIt: "Zona DNS scrivibile da un gruppo ampio",
+    why: "La delega della zona lascia a Everyone, Authenticated Users, Users, Domain Users o Domain Computers il diritto di modificare i record, la delega o il proprietario. Creare record nuovi è il diritto di serie e non è contato.",
+    fix: "Togli dalla sicurezza della zona i diritti di scrittura e di controllo dati ai gruppi ampi.",
+  },
+  "DA-A-DnsWildcardRecord": {
+    titleIt: "Record DNS jolly (*) presente",
+    why: "Un record * risponde a ogni nome che non esiste. Può essere una difesa voluta contro chi registra nomi come wpad, oppure il segno di chi li ha già dirottati: da solo non dimostra niente.",
+    fix: "Controlla chi l'ha creato e dove punta; se non è voluto, toglilo.",
+  },
+  "DA-A-AnonymousLdapOps": {
+    titleIt: "Operazioni LDAP anonime consentite",
+    why: "Il settimo carattere di dSHeuristics vale 2: la directory risponde alle ricerche LDAP anche a chi non si è autenticato.",
+    fix: "Riporta a 0 il settimo carattere di dSHeuristics, dopo aver verificato che nessuna applicazione usi il bind anonimo.",
+  },
+  "DA-P-AdminSdExMask": {
+    titleIt: "Protezione AdminSDHolder ridotta",
+    why: "Il sedicesimo carattere di dSHeuristics esclude alcuni gruppi di operatori (Account, Server, Print, Backup Operators) dalla protezione AdminSDHolder: le loro deleghe non vengono più riportate a quelle di riferimento.",
+    fix: "Riporta a 0 il sedicesimo carattere di dSHeuristics, se l'esclusione non è una scelta documentata.",
+  },
+  "DA-A-SysvolFrs": {
+    titleIt: "SYSVOL ancora replicato con FRS",
+    why: "FRS è dismesso da Windows Server 2008 R2 e non è più supportato dai domain controller recenti: la replica di GPO e script può fermarsi senza avvisi, e non si può aggiungere un DC nuovo.",
+    fix: "Porta a termine la migrazione a DFSR con dfsrmig (stati 1, 2, 3), verificando la replica a ogni passo.",
+  },
+  "DA-A-DcOutsideDcOu": {
+    titleIt: "Domain controller fuori dalla OU Domain Controllers",
+    why: "Un DC spostato in un'altra OU non riceve la Default Domain Controllers Policy e prende le GPO pensate per server normali.",
+    fix: "Riporta l'account del DC nella OU Domain Controllers.",
+  },
+  "DA-P-RodcPasswordPolicy": {
+    titleIt: "RODC: replica delle password troppo larga",
+    why: "La politica di replica delle password del RODC consente di tenere in copia le password di account privilegiati o di gruppi ampi, oppure non ha nessun gruppo negato. Chi prende il RODC le ottiene. Si sono letti solo i gruppi della politica, mai le password.",
+    fix: "Togli privilegiati e gruppi ampi dall'elenco «Consentiti» e rimetti nei «Negati» il gruppo Denied RODC Password Replication Group.",
+  },
+  "DA-P-DmsaSupersedesPrivileged": {
+    titleIt: "dMSA che succede a un account privilegiato",
+    why: "Un account di servizio gestito delegato (Windows Server 2025) è collegato come successore di un account privilegiato e ne eredita i diritti: è la tecnica nota come BadSuccessor.",
+    fix: "Verifica che la migrazione sia voluta; se non lo è, togli il collegamento msDS-ManagedAccountPrecededByLink e controlla chi può creare dMSA nelle OU.",
+  },
+  "DA-S-AzureSsoKeyOld": {
+    titleIt: "Chiave del Seamless SSO di Entra non ruotata",
+    why: "L'account AZUREADSSOACC$ firma i ticket del Seamless SSO verso Entra ID. Microsoft chiede di ruotarne la chiave ogni 30 giorni: una chiave vecchia rubata vale finché non cambia.",
+    fix: "Ruota la chiave con Update-AzureADSSOForest dal server Entra Connect e mettila in calendario.",
+  },
+  "DA-P-EntraSyncAccountPrivileged": {
+    titleIt: "Account di sincronizzazione Entra in un gruppo privilegiato",
+    why: "L'account che Entra Connect usa per leggere il dominio (MSOL_, AAD_, Sync_) è membro di un gruppo privilegiato: chi prende il server di sincronizzazione prende il dominio.",
+    fix: "Togli l'account dai gruppi privilegiati e lasciagli solo le deleghe che chiede Entra Connect.",
+  },
+  "DA-P-PrivilegedSyncedToEntra": {
+    titleIt: "Account privilegiati sincronizzati con Entra ID",
+    why: "Gli account amministrativi del dominio portano l'ancora di Entra Connect, quindi esistono anche nel cloud: una compromissione da una parte passa dall'altra.",
+    fix: "Escludi gli account privilegiati dalla sincronizzazione e usa account solo cloud per amministrare Entra.",
+  },
   "DA-A-ShadowCredentials": {
     titleIt: "Shadow credentials presenti",
     why: "msDS-KeyCredentialLink consente login con chiave (utile a Entra ID, abusabile se scritto da attaccanti).",

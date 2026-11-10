@@ -82,6 +82,44 @@ export interface PasswordAttributeRow {
   attribute: string;
 }
 
+export interface DnsZoneRow {
+  dn: string;
+  name: string;
+  /** 0 nessuno, 1 anche non sicuri, 2 solo sicuri; null = non letto. */
+  allowUpdate: number | null;
+  /** SID ampi che possono più che creare record; null = ACL non letta. */
+  broadWriters: string[] | null;
+}
+
+export interface RodcPolicyRow {
+  dn: string;
+  /** msDS-RevealOnDemandGroup: di chi il RODC può tenere la password. */
+  revealDns: string[];
+  /** msDS-NeverRevealGroup: di chi non la tiene mai. */
+  neverRevealDns: string[];
+}
+
+export interface DmsaRow {
+  dn: string;
+  /** msDS-ManagedAccountPrecededByLink: l'account di cui il dMSA eredita i diritti. */
+  precededByDn: string | null;
+}
+
+export type SysvolReplication = "dfsr" | "migrating" | "frs";
+
+/** Blocchi D, F e G delle lacune; ogni campo a null = non letto. */
+export interface InfraExtras {
+  dnsZones: DnsZoneRow[] | null;
+  dnsWildcardDns: string[] | null;
+  /** Stringa dSHeuristics; "" = non impostata. */
+  dsHeuristics: string | null;
+  sysvolReplication: SysvolReplication | null;
+  rodcPolicies: RodcPolicyRow[] | null;
+  dmsas: DmsaRow[] | null;
+  /** Utenti con adminCount=1 e l'ancora di Entra Connect (mS-DS-ConsistencyGuid). */
+  entraSyncedPrivilegedDns: string[] | null;
+}
+
 export interface GmsaReadersRow {
   dn: string;
   /** false = msDS-GroupMSAMembership assente o non leggibile con questa utenza. */
@@ -222,6 +260,8 @@ export interface RuleContext {
   passwordAttributeRows?: PasswordAttributeRow[] | null;
   /** Delega di lettura della password dei gMSA; null = non letta. */
   gmsaReaders?: GmsaReadersRow[] | null;
+  /** DNS, infrastruttura ed Entra (blocchi D, F, G); null = non letto. */
+  infra?: InfraExtras | null;
   /**
    * Labels of LDAP collect queries that failed (e.g. "users", "groups").
    * Empty/undefined = every query succeeded. Without this, a timed-out query

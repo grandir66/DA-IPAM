@@ -301,6 +301,7 @@ export async function runAdHealthcheck(
       shadowCredentialDns: extras.shadowCredentialDns,
       passwordAttributeRows: extras.passwordAttributeRows,
       gmsaReaders: extras.gmsaReaders,
+      infra: extras.infra,
       ldapCollectErrors: extras.collectErrors,
       wazuh: wazuhSignals,
     };

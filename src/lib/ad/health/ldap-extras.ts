@@ -17,7 +17,8 @@ import { hasFlag, UAC } from "@/lib/ad/health/uac";
 import { collectAdcsExtras, type AdcsExtras } from "@/lib/ad/health/adcs";
 import { guidFromMsBytes, parseSecurityDescriptor } from "./acl/security-descriptor";
 import { appliesAllow, isBroadTrustee } from "./acl/delegation-evidence";
-import type { AdGpoRow, AdTrustRow, GmsaReadersRow, LapsComputerState, PasswordAttributeRow } from "@/lib/ad/health/types";
+import { collectInfraExtras } from "./infra-extras";
+import type { AdGpoRow, AdTrustRow, GmsaReadersRow, InfraExtras, LapsComputerState, PasswordAttributeRow } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
   userUacBySam: Map<string, number>;
@@ -58,6 +59,8 @@ export interface LdapExtras {
   passwordAttributeRows: PasswordAttributeRow[] | null;
   /** Chi può leggere la password di ogni gMSA (solo la delega); null = non letto. */
   gmsaReaders: GmsaReadersRow[] | null;
+  /** DNS, infrastruttura ed Entra (blocchi D, F, G delle lacune). */
+  infra: InfraExtras;
   adcs: AdcsExtras;
   /**
    * Labels of queries that failed. Each failure leaves the corresponding maps
@@ -561,6 +564,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     }
 
     const adcs = await collectAdcsExtras(client, configurationDn);
+    const infra = await collectInfraExtras(client, baseDn, configurationDn, collectErrors);
 
     return {
       userUacBySam,
@@ -597,6 +601,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       shadowCredentialDns: shadowCredentialDns.slice(0, 50),
       passwordAttributeRows,
       gmsaReaders,
+      infra,
       adcs,
       collectErrors,
     };

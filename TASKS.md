@@ -1,5 +1,30 @@
 # TASKS — DA-IPAM
 
+## 2026-11-10 — Riconoscimento: un motore solo, firme, apparati creati da soli (Riccardo)
+
+Riccardo, 10/11: «valutare un modo unico ed efficace per le assegnazioni; in subnet e discovery accorpare per probabilità; automatizzare assegnazione e trasformazione in device se le credenziali funzionano». Su `dev` dalla 0.9.1113 alla 0.9.1130; niente su `main`. Dettaglio per chi riapre: `CONTEXT.md`, sezioni del 10/11. Misure sull'hub 533 (tenant 70791) e sul 79993 (`192.168.99.2`, tenant `DEFAULT`).
+
+Fatto
+- [x] Valutazione: il motore unico c'è già (`lib/attribution/`); i classificatori vecchi non decidono più ma restano nel codice. Hub: con categoria da 250 su 384 a 302 su 367 (gli host sono scesi per conto loro), «unknown» da 100 a 4, 106 scelte manuali intatte.
+- [x] A. Classe vecchia non manuale senza categoria → si svuota (Riccardo: «Sì, svuotale»); `classification_manual` NULL vale 0 (101 host saltati dalla proiezione). 0.9.1113-1114. Classi di prima: `/opt/da-invent/data/backups/classi-pre-ricalcolo-20261110.csv` sull'hub.
+- [x] B. **Firme** al posto della somma degli indizi deboli (misurata: 3 host su 107): `FIRME_NOME`, `FIRME_PORTE` in `attribution/emitters.ts`; Fanvil/Yealink → voip, Meross → iot dall'OUI. 0.9.1118-1119.
+- [-] C. Categoria prevalente fra i vicini di rete: misurata, non scritta (3 host su 75 con regola stretta; con regola larga sbaglia su Ubiquiti e HP). Da rimisurare su una rete cliente prima di riaprirla.
+- [x] A2. **Gemello di MAC** (`attribution/gemelli.ts`, fonte `mac_gemello`). Decisivo da solo su 4 host. 0.9.1119.
+- [x] G. **Una VM con un ruolo prende il ruolo** (`attribution/fuse.ts`, Riccardo: «99.13 è un proxmox pbs»). 0.9.1130. Ricalcolato sul 79993 (PBS → server) e sull'hub (4 VM: 2 → hypervisor, 2 → server).
+- [x] F. **Apparati creati da soli** (`devices/apparato-automatico.ts`, Opzioni → Automatismi, spento di serie). Risposte di Riccardo: classe del motore se confidenza ≥ 80; «snmp, ssh, winrm e se l'apparato risponde a più protocolli devono essere registrati tutti»; nessuna esclusione; per tenant; `192.168.4.42` «va creata»; IP multipli col motore che c'è (`multihomed_links`). 0.9.1123-1126.
+  - Hub 533: 19 apparati creati (da 43 a 62), interruttore acceso alle 21:35 del 10/11. Copia del database prima: `/opt/da-invent/data/backups/70791-pre-apparati-automatici-20261110.db`. Sette nati col tipo sbagliato (3 VM come nodi Proxmox, 4 PC come switch): corretti nel codice (0.9.1126) e a mano sulle righe.
+  - 79993: interruttore acceso alle 21:42, 2 router creati («MK-RG-DOMOTICA» snmp; «MK-RG-CHR» ssh + snmp). Si entra dal Proxmox `192.168.99.1`, `qm guest exec 963`.
+
+Aperto
+- [ ] **Nessuna lettura provata** sui 21 apparati nuovi: sull'hub 0 su 19 hanno `last_info_update`, i legami sono tutti `untested`. Guardare dopo il primo giro.
+- [ ] Piattaforma proposta da rivedere su quattro apparati dell'hub: `DA-765` e `192.168.16.26` (NAS, «windows / windows_client» via ssh), `DA-SYN-VM` (NAS, «linux_client»), `DA-RT-VPN` (router, «linux_client»). Viene da `proponiApparato`, la stessa della finestra «Rendi apparato».
+- [ ] PBS `192.168.99.13`: classe «server» con confidenza 60, sotto la soglia di 80, quindi non diventa apparato (Riccardo, 10/11: «No, lascialo»).
+- [ ] 13 host accesi senza categoria sull'hub: tre switch Ubiquiti (`192.168.40.237/238/239`, solo ssh), APC `192.168.15.130`, QNAP `192.168.15.140`, otto senza indizi. Servono SNMP o credenziali, non regole.
+- [ ] D. Ritirare i classificatori vecchi dal codice (`device-classifier.ts`, regole di fingerprint, `auto-classify.ts`): oggi sono solo fonti di evidenze deboli; una tabella sola produttore/prodotto.
+- [ ] E. Subnet e Discovery: riepilogo per macro categoria con conteggi e «da confermare», conferma in blocco. Interfaccia: da proporre oggetto per oggetto prima di scriverla.
+- [ ] Mai visti a schermo: la voce «Apparati creati da soli» in Opzioni, le classi cambiate, gli apparati nuovi. Cancello completo mai eseguito sulle versioni del 10/11: va fatto una volta prima di `main`.
+- [ ] Trappola: dopo un push il processo vecchio resta in memoria finché l'aggiornamento non riavvia, e un suo giro di scansione ritira le evidenze che solo il codice nuovo emette. Il ricalcolo va lanciato dopo `ultimo_successo` in `data/aggiornamento.json`.
+
 ## 2026-11-10 — «Solo controlli» sembrava non fare nulla (Riccardo, base)
 
 Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha restituito in pochi secondi il controllo su 1000 porte»; poi «controlla la logica che usa Nety per riprodurla meglio anche nella UI». Misurato sull'hub: rete 4, 90 servizi noti su 37 host di 102, giro di ~25 s; il profilo era ignorato.

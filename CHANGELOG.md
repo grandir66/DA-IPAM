@@ -6,6 +6,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
+### Aggiunto
+- **Controlli TLS attivi**: il giro prova se un servizio accetta TLS 1.0/1.1 e cifrari deboli (RC4, 3DES, DES, NULL), offrendoglieli. Prima si guardava solo la versione negoziata con un client moderno, e un server che accettava anche il vecchio passava pulito: nel confronto con Nety sulla rete 192.168.99 (10/11) loro avevano 14 rilievi TLS, noi 0. Nessun handshake viene completato.
+- **SSH**: i MAC `umac-64` contano fra gli algoritmi deboli (11 host in più nello stesso confronto).
+
 - **Findings**. «Elenco» e «Vulnerabilità» erano due elenchi diversi delle stesse CVE, ognuno coi suoi filtri. Ora la pagina è una: gli stessi rilievi si leggono per rilievo, per cosa aggiornare, per host e per rete, con gli stessi filtri, e in testata una fascia richiudibile dice dove guardare (da rivedere, sfruttate attivamente, aggiornamenti che pesano, host più esposto, rilievi per rete). La tabella di prima resta dietro «Tabella completa» finché non sono portati EPSS, sistema operativo e ordinamenti.
 
 ## [Non rilasciato] — 2026-11-10 · Findings a gruppi

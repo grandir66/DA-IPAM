@@ -294,6 +294,8 @@ export function segnaHostProvato(db: Database.Database, hostId: number, provate:
 
 export interface PortaDaControllare extends PortaDaSondare {
   protocollo: string;
+  /** 1 se la sonda ha già letto un certificato: lì si prova anche il TLS vecchio. */
+  tls: number;
 }
 
 /**
@@ -317,11 +319,12 @@ export function porteDaControllare(
   }
   if (ancheHttp401) {
     or.push(`(s.http_json IS NOT NULL AND s.http_json != '')`);
+    or.push(`(s.tls_json IS NOT NULL AND s.tls_json != '')`);
   }
   if (networkId) args.push(networkId);
   return db
     .prepare(
-      `SELECT s.host_id, h.ip, s.porta, s.protocollo, ${INDIZI_IMPIANTO}
+      `SELECT s.host_id, h.ip, s.porta, s.protocollo, (s.tls_json IS NOT NULL AND s.tls_json != '') AS tls, ${INDIZI_IMPIANTO}
        FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
        WHERE (${or.join(" OR ")}) ${rete}
        ORDER BY h.ip, s.porta`,

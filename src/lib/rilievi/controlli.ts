@@ -44,6 +44,16 @@ export interface InfoControllo {
   vnc_auth_debole?: boolean;
   ipmi_rakp?: boolean;
   ssh_password?: boolean;
+  /** Versioni TLS vecchie che il server accetta se gliele si chiede (prova attiva). */
+  tls_vecchi?: string[];
+  /** Cifrari deboli scelti dal server quando gli si offrono solo quelli. */
+  tls_cifrari_deboli?: string[];
+}
+
+function elencoTesti(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const t = v.filter((x): x is string => typeof x === "string" && x.length < 40).slice(0, 12);
+  return t.length ? t : undefined;
 }
 
 export const TETTO_FABBRICA_PER_HOST = 6;
@@ -58,7 +68,8 @@ const SSH_KEX_DEBOLI = new Set([
   "diffie-hellman-group-exchange-sha1",
 ]);
 const SSH_CIFRARI_DEBOLI = new Set(["3des-cbc", "3des-ctr", "arcfour", "arcfour128", "arcfour256", "blowfish-cbc", "none"]);
-const SSH_MAC_DEBOLI = new Set(["hmac-md5", "hmac-md5-96", "hmac-sha1-96"]);
+// umac-64: etichetta a 64 bit, ancora accesa di serie su OpenSSH (Nety la segnala, noi no fino al 10/11).
+const SSH_MAC_DEBOLI = new Set(["hmac-md5", "hmac-md5-96", "hmac-sha1-96", "umac-64@openssh.com", "umac-64-etm@openssh.com"]);
 
 const CONSOLE_WEB: ReadonlyArray<{ re: RegExp; nome: string }> = [
   { re: /phpmyadmin/i, nome: "phpMyAdmin" },
@@ -550,6 +561,30 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   if (c.vnc_auth_debole && !c.vnc_senza_auth) {
     out.push(riga(ctx, "vnc-debole", "Medium", `VNC con autenticazione debole su ${dove}`, "Il server offre il tipo 2 (password DES a 8 caratteri).", "Usa un tunnel SSH o un VNC con TLS; password lunghe non bastano sul tipo 2."));
   }
+  if (c.tls_vecchi?.length) {
+    out.push(
+      riga(
+        ctx,
+        "tls-vecchio-accettato",
+        "Medium",
+        `TLS vecchio accettato (${c.tls_vecchi.join(", ")}) su ${dove}`,
+        `Il server ha risposto con un ServerHello a ${c.tls_vecchi.join(" e ")}. Un client moderno negozia di meglio, ma chi è in rete può forzare la versione vecchia.`,
+        "Lascia solo TLS 1.2 o 1.3 nella configurazione del servizio.",
+      ),
+    );
+  }
+  if (c.tls_cifrari_deboli?.length) {
+    out.push(
+      riga(
+        ctx,
+        "tls-cifrario-accettato",
+        "Medium",
+        `TLS accetta cifrari deboli su ${dove}`,
+        `Offrendo solo RC4, 3DES, DES e NULL il server ha scelto ${c.tls_cifrari_deboli.join(", ")}.`,
+        "Lascia solo AES-GCM o ChaCha20. Togli RC4, 3DES, NULL ed EXPORT.",
+      ),
+    );
+  }
   if (c.ssh_password) {
     out.push(
       riga(
@@ -685,6 +720,8 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
       vnc_auth_debole: o.vnc_auth_debole === true,
       ipmi_rakp: o.ipmi_rakp === true,
       ssh_password: o.ssh_password === true,
+      tls_vecchi: elencoTesti(o.tls_vecchi),
+      tls_cifrari_deboli: elencoTesti(o.tls_cifrari_deboli),
     };
   } catch {
     return null;

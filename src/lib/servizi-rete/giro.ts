@@ -80,7 +80,7 @@ export interface Strumenti {
   sonda: (ip: string, porta: number) => Promise<EsitoSonda | null>;
   aperta: (ip: string, porta: number) => Promise<boolean>;
   /** Assente nelle prove iniettate: i controlli veri non partono. */
-  controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean }) => Promise<EsitoSondaControllo>;
+  controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean; tls?: boolean }) => Promise<EsitoSondaControllo>;
 }
 
 const STRUMENTI: Strumenti = {
@@ -158,7 +158,7 @@ export function avviaGiro(
     ? {
         sonda: (ip: string, p: number) => sondaPorta(ip, p, { timeoutMs }),
         aperta: (ip: string, p: number) => portaAperta(ip, p, timeoutMs),
-        controllo: (ip: string, p: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean }) =>
+        controllo: (ip: string, p: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean; tls?: boolean }) =>
           sondaControllo(ip, p, { ...opz, timeoutMs }),
       }
     : STRUMENTI);
@@ -222,6 +222,7 @@ export function avviaGiro(
           try {
             esito = await controllo(p.ip, p.porta, {
               proveFabbrica,
+              tls: Boolean(p.tls),
               consumaTentativo: () => {
                 const budget = restanti.get(p.ip) ?? TETTO_FABBRICA_PER_HOST;
                 if (!proveFabbrica || budget <= 0) return false;

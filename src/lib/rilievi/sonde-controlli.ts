@@ -2,6 +2,7 @@
  * Prove senza credenziali (e login di fabbrica solo se chiesti) sulle porte
  * già aperte. Scritte da zero: Nety è GPL-3.0, se ne riprende l'idea.
  */
+import { randomBytes } from "node:crypto";
 import dgram from "node:dgram";
 import net from "node:net";
 import { request as richiestaHttp } from "node:http";
@@ -10,6 +11,7 @@ import * as snmp from "net-snmp";
 import { apriSessioneCommunity, provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
 import type { InfoControllo } from "./controlli";
 import { sondaSmb } from "./smb-controlli";
+import { provaTlsAttivo } from "./tls-attivo";
 import {
   provaDnsAxfr,
   provaIpmiRakp,
@@ -28,6 +30,8 @@ export interface OpzioniControllo {
   timeoutMs?: number;
   proveFabbrica?: boolean;
   consumaTentativo?: () => boolean;
+  /** La porta parla TLS (certificato già letto): si provano versioni vecchie e cifrari deboli. */
+  tls?: boolean;
 }
 
 export interface EsitoSondaControllo {
@@ -792,6 +796,13 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (await provaPostgresFabbrica(ip, porta, ms)) info.fabbrica = { servizio: "postgres", utente: "postgres" };
     } else if (porta === 1433 && tentaLogin()) {
       if (await provaMssqlSa(ip, porta, ms)) info.fabbrica = { servizio: "mssql", utente: "sa" };
+    }
+
+    // RDP (3389) vuole prima la trattativa X.224: lì la prova a mano non parla.
+    if (opz.tls && porta !== 3389) {
+      const t = await provaTlsAttivo(ip, porta, ms, randomBytes(32));
+      if (t.vecchi.length) info.tls_vecchi = t.vecchi;
+      if (t.deboli.length) info.tls_cifrari_deboli = t.deboli;
     }
 
     const httpish =

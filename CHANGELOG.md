@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 
+### Modificato
+- **Dashboard, barre per rete**: contavano le CVE per host, e un solo kernel o una build di Windows ne portano 2.000-3.600: LAN Server risultava a 28.760 (Riccardo, 10/11: «non ritengo possibile che la rete Domarc abbia questi numeri»). Ora contano le cose da sistemare, cioè un pacchetto o un controllo per host con la gravità più alta fra le sue CVE: LAN Server 701. Le CVE restano scritte accanto.
+
 ### Corretto
 - **L'aggiornamento automatico non riavvia più sopra una scansione**: il 10/11 quattro Discovery lanciate a mano sull'hub sono morte al riavvio di un aggiornamento, senza una riga in cronologia. Ora `auto-update.sh` chiede all'app se c'è un giro in corso (`giri_in_corso` in `/api/health`) e rimanda al tick dopo; oltre 3 ore aggiorna comunque. «Aggiorna ora» dall'interfaccia non aspetta.
 

@@ -343,7 +343,7 @@ function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
   return (
     <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Rilievi per rete</CardTitle>
+        <CardTitle className="text-base">Cose da sistemare per rete <span className="text-[13px] font-normal text-muted-foreground">· un pacchetto o un controllo per host; a destra le CVE che ci stanno dietro</span></CardTitle>
         <LegendaGravita />
       </CardHeader>
       <CardContent className="space-y-2">
@@ -352,6 +352,7 @@ function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
             <Link href="/vulnerabilities#vulnerabilita" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
             <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
             <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
+            <span className="w-24 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground" title="CVE per host dietro a queste cose da sistemare">{r.cve.toLocaleString("it-IT")} CVE</span>
           </div>
         ))}
       </CardContent>

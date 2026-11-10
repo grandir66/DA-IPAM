@@ -154,7 +154,7 @@ export function ScansClient() {
     setLoading(true);
     const [n, h] = await Promise.all([
       fetchJson<Rete[] | { data: Rete[] }>("/api/networks"),
-      fetchJson<ScanHistory[]>(`/api/scans/history?limit=${SCANS_LIMIT}`),
+      fetchJson<ScanHistory[]>(`/api/scans/history?limit=${SCANS_LIMIT}&solo_giri=1`),
     ]);
     if (n.ok) {
       const grezzo = n.data;
@@ -698,7 +698,7 @@ export function ScansClient() {
         </Pannello>
       )}
 
-      <Pannello titolo="Storico" conteggio={history.length} sottotitolo="Gli ultimi giri di questa installazione">
+      <Pannello titolo="Storico" conteggio={history.length} sottotitolo="Gli ultimi giri, una riga per rete. Il controllo automatico ogni 15 minuti non compare">
         {error ? (
           <LoadError what="lo storico" message={error} onRetry={() => void load()} />
         ) : history.length === 0 ? (

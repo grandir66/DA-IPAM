@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
 ### Corretto
+- **Scansioni, storico**: mostrava le ultime 200 righe di ogni tipo, e il controllo automatico ogni 15 minuti (una riga per host) le riempiva tutte: i giri lanciati a mano non si vedevano. Ora mostra solo i giri, una riga per rete. La rotta dello storico ora chiede l'accesso come le altre.
+
+### Corretto
 - **RDP: falso «RDP in chiaro»**. La risposta alla trattativa RDP dei Windows moderni ha i flags diversi da zero (0x1f su Server 2019) e la sonda non la riconosceva: un server con TLS e NLA risultava «Standard, in chiaro» (rilievo High) e senza certificato. Visto su 192.168.4.4 confrontando con Nety il 10/11. Ora la 3389 dà TLS, NLA e certificato.
 
 ### Aggiunto

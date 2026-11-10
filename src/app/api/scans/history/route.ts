@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getScanHistory } from "@/lib/db";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { requireAuth, isAuthError } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
+  const sessione = await requireAuth();
+  if (isAuthError(sessione)) return sessione;
   return withTenantFromSession(async () => {
     try {
       const { searchParams } = new URL(request.url);
@@ -14,6 +17,7 @@ export async function GET(request: Request) {
       host_id: hostId ? Number(hostId) : undefined,
       network_id: networkId ? Number(networkId) : undefined,
       limit: limit ? Number(limit) : 100,
+      soloGiri: searchParams.get("solo_giri") === "1",
     });
 
     return NextResponse.json(history);

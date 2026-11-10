@@ -3572,9 +3572,10 @@ export function addScanHistory(entry: Omit<ScanHistory, "id" | "timestamp">): vo
   );
 }
 
-export function getScanHistory(filters: { host_id?: number; network_id?: number; limit?: number }): ScanHistory[] {
+export function getScanHistory(filters: { host_id?: number; network_id?: number; limit?: number; soloGiri?: boolean }): ScanHistory[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
+  if (filters.soloGiri) conditions.push("host_id IS NULL AND scan_type <> 'fast'");
 
   if (filters.host_id) { conditions.push("host_id = ?"); values.push(filters.host_id); }
   if (filters.network_id) { conditions.push("network_id = ?"); values.push(filters.network_id); }

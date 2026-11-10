@@ -26,6 +26,7 @@ import {
   getNmapHostTimeoutSeconds,
   getNetworkDiscoveryQuickConcurrency,
   getNetworkDiscoveryQuickExecMs,
+  PORTE_STAMPA_RAW,
   setGetSettingFn,
 } from "./ports";
 import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
@@ -198,6 +199,11 @@ export type DiscoverNetworkOptions = {
   timeoutMs?: number;
   /** Worker in parallelo di questo giro (ping e batch nmap). Assente = default. */
   concorrenza?: number;
+  scanMode?: "auto" | "syn" | "connect";
+  ratePps?: number;
+  retries?: number;
+  /** UDP solo se il lanciatore l'ha chiesto esplicitamente (`udp_ports` nel corpo). */
+  udpDalLancio?: boolean;
 };
 
 /**
@@ -925,6 +931,31 @@ function buildSnmpContextForClassifier(d: HostScanData | undefined): string | nu
 function nmapArgsConTimeoutMs(args: string, timeoutMs: number): string {
   const flag = `--host-timeout ${timeoutMs}ms`;
   return /--host-timeout\s+\S+/.test(args) ? args.replace(/--host-timeout\s+\S+/g, flag) : `${args} ${flag}`;
+}
+
+function nmapArgsConOpzioniGiro(args: string, opts: DiscoverNetworkOptions | undefined): string {
+  if (!opts) return args;
+  let a = args;
+  if (opts.scanMode === "syn") a = a.replace(/(^|\s)-sT(\s|$)/, "$1-sS$2");
+  if (opts.retries != null) {
+    a = /--max-retries\s+\S+/.test(a)
+      ? a.replace(/--max-retries\s+\S+/g, `--max-retries ${opts.retries}`)
+      : `${a} --max-retries ${opts.retries}`;
+  }
+  if (opts.ratePps != null) {
+    a = a.replace(/--min-rate\s+\S+/g, "").replace(/--max-rate\s+\S+/g, "");
+    a = `${a.trim()} --max-rate ${opts.ratePps}`;
+  }
+  if (opts.tcpPorts === null) a = a.replace(/-p\s+\S+/g, "-p-");
+  else if (opts.tcpPorts) {
+    const noStampa = new Set<number>(PORTE_STAMPA_RAW);
+    const elenco = opts.tcpPorts.split(",").filter((p) => !noStampa.has(Number(p))).join(",");
+    a = a.replace(/-p\s+\S+/g, `-p ${elenco || "80,443"}`);
+  }
+  const escludi = `--exclude-ports ${PORTE_STAMPA_RAW.join(",")}`;
+  a = /--exclude-ports\s+\S+/.test(a) ? a.replace(/--exclude-ports\s+\S+/g, escludi) : `${a} ${escludi}`;
+  if (opts.timeoutMs != null) a = nmapArgsConTimeoutMs(a, opts.timeoutMs);
+  return a.replace(/\s+/g, " ").trim();
 }
 
 async function runDiscovery(
@@ -1700,8 +1731,9 @@ async function runDiscovery(
     // colonna "non rispondenti" e l'utente li vede sparire dalla rete.
     const onlineSet = new Set(onlineIps);
     const dbHosts = getHostsByNetwork(networkId);
+    const ammessi = new Set(ips);
     const tcpCandidates = dbHosts
-      .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+      .filter((h) => h.status === "online" && !onlineSet.has(h.ip) && ammessi.has(h.ip))
       .map((h) => h.ip);
     if (tcpCandidates.length > 0) {
       progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
@@ -1738,14 +1770,15 @@ async function runDiscovery(
     }
 
     const nmapAvailable = await isNmapAvailable();
-    const quickPortsSpecNd = getQuickScanTcpPorts();
+    const quickPortsSpecNd = discoverOpts?.tcpPorts || getQuickScanTcpPorts();
     const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecNd);
     if (naabuPrepNd.enabled) seedNaabuOpenPorts(naabuPrepNd.byIp);
 
     const quickArgsBase = buildNetworkDiscoveryQuickTcpArgs();
-    const quickArgs = timeoutMsGiro != null ? nmapArgsConTimeoutMs(quickArgsBase, timeoutMsGiro) : quickArgsBase;
+    const quickArgs = nmapArgsConOpzioniGiro(quickArgsBase, discoverOpts);
     const quickExecMs = timeoutMsGiro != null ? timeoutMsGiro + 2000 : getNetworkDiscoveryQuickExecMs();
     const quickBatch = discoverOpts?.concorrenza ?? getNetworkDiscoveryQuickConcurrency();
+    const skipUdpNd = !discoverOpts?.udpDalLancio;
 
     if (nmapAvailable && onlineIps.length > 0) {
       progress.phase = `Nmap quick TCP — 0/${onlineIps.length}`;
@@ -1765,7 +1798,7 @@ async function runDiscovery(
               ip,
               tcpArgsForHost(ip, quickArgs, naabuPrepNd.enabled, naabuPrepNd.byIp, naabuPrepNd.basePorts),
               quickExecMs,
-              { skipUdp: true }
+              { skipUdp: skipUdpNd, udpPorts: skipUdpNd ? null : discoverOpts?.udpPorts }
             )
           )
         );

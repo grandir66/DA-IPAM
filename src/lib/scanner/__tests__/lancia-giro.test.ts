@@ -177,6 +177,103 @@ test("segmentazione già in corso → 409", async () => {
   );
 });
 
+test("syn senza privilegi, all senza conferma, auditor e auto_targets vuoto sono rifiutati", () => {
+  assert.throws(
+    () => leggiLancio({ tipo: "discovery", profilo: "rapido", network_ids: [1], tcp_ports: "all" }),
+    ErroreLancio,
+  );
+  assert.throws(
+    () => leggiLancio({ tipo: "discovery", profilo: "rapido", network_ids: [1], auto_targets: false }),
+    ErroreLancio,
+  );
+  assert.throws(
+    () => leggiLancio({ tipo: "segmentazione", profilo: "standard", protocollo: "icmp_echo" }),
+    (e: unknown) => e instanceof ErroreLancio && /auditor/.test(e.message),
+  );
+});
+
+test("Discovery inoltra scan_mode, rate, retries e i bersagli; syn senza root no", async () => {
+  const visti: Array<{ args: string; opts?: { scanMode?: string; ratePps?: number; retries?: number; targetIps?: string[] } }> = [];
+  await lanciaGiro(
+    {
+      tipo: "discovery",
+      profilo: "rapido",
+      network_ids: [7],
+      scan_mode: "connect",
+      rate_pps: 100,
+      retries: 2,
+      tcp_ports: "22,80",
+      auto_targets: false,
+      targets: "10.0.0.9",
+    },
+    {
+      tenant: () => "T",
+      rete: (id) => ({ id, cidr: "10.0.0.0/24", name: "lan" }) as never,
+      discovery: async (_id, _tipo, args, _snmp, opts) => {
+        visti.push({
+          args: String(args),
+          opts: { scanMode: opts?.scanMode, ratePps: opts?.ratePps, retries: opts?.retries, targetIps: opts?.targetIps },
+        });
+        return { id: "job-k", progress: { status: "running" } } as never;
+      },
+    },
+  );
+  assert.match(visti[0]!.args, /-p 22,80/);
+  assert.match(visti[0]!.args, /--max-retries 2/);
+  assert.match(visti[0]!.args, /--max-rate 100/);
+  assert.equal(visti[0]!.opts?.scanMode, "connect");
+  assert.deepEqual(visti[0]!.opts?.targetIps, ["10.0.0.9"]);
+
+  await assert.rejects(
+    () =>
+      lanciaGiro(
+        { tipo: "discovery", profilo: "rapido", network_ids: [7], scan_mode: "syn" },
+        {
+          tenant: () => "T",
+          privilegi: () => false,
+          rete: (id) => ({ id, cidr: "10.0.0.0/24", name: "lan" }) as never,
+        },
+      ),
+    (e: unknown) => e instanceof ErroreLancio && /syn/.test(e.message),
+  );
+});
+
+test("Sonda L2 con durata_s non aspetta in linea; segmentazione inoltra la sorgente", async () => {
+  const attese: number[] = [];
+  const r = await lanciaGiro(
+    { tipo: "sonda_l2", profilo: "standard", durata_s: 30 },
+    {
+      tenant: () => "T",
+      accendiTrunk: () => undefined,
+      attendi: async (ms) => {
+        attese.push(ms);
+      },
+      inTenant: async (_t, lavoro) => {
+        await lavoro();
+      },
+      syncTrunk: async () => ({ osservazioni: 0, vlan: 0 }),
+      history: () => undefined,
+    },
+  );
+  assert.match(r.avvii[0]!.messaggio, /30 secondi/);
+  assert.deepEqual(attese, [30_000]);
+
+  let visto: { sourceNetworkId?: number; retiBersaglio?: number[] } | undefined;
+  await lanciaGiro(
+    { tipo: "segmentazione", profilo: "standard", source_network_id: 4, reti_bersaglio: [5, 6] },
+    {
+      tenant: () => "T",
+      rete: (id) => ({ id, cidr: "10.0.0.0/24", name: "lan" }) as never,
+      segmentazione: (_t, _c, o) => {
+        visto = o;
+        return true;
+      },
+      history: () => undefined,
+    },
+  );
+  assert.deepEqual(visto, { sourceNetworkId: 4, retiBersaglio: [5, 6] });
+});
+
 test("le sonde conservano le reti scelte e scartano gli ID estranei", async () => {
   for (const tipo of ["controlli", "discovery"]) {
     let ambito: unknown;

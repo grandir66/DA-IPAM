@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Scansioni: opzioni per modalità
+
+Riccardo (10/11): ogni tipo di giro ha i suoi knob; la UI li manderà quando l'API li accetta.
+
+### Aggiunto
+- **Discovery**: `targets`, `exclusions`, `auto_targets`, `tcp_ports`, `udp_ports`, `scan_mode`, `rate_pps`, `retries` (oltre a timeout/concorrenza). `syn` senza root non parte. `all` vuole conferma. Assenti = default del profilo.
+- **Segmentazione**: `source_network_id`, `reti_bersaglio`. Tecniche da auditor (ICMP, IPv6, SYN frammentato, porta sorgente, next-hop, L2) → errore chiaro finché la sonda non le sa. `GET /api/scans/reti-bersaglio` dà i conteggi servizi/host per rete.
+- **Sonda L2**: `durata_s` (1–600): ascolto in sottofondo poi sync; assente = sync immediato.
+
 ## [Non rilasciato] — 2026-11-10 · Fix: la scansione avanzata non fa più stampare le stampanti
 
 Riccardo (10/11): la scansione avanzata faceva stampare la stampante 192.168.99.84 (fogli con caratteri strani).

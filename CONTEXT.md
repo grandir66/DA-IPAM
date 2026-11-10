@@ -17,6 +17,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## AD Health — piano del 10/11/2026
+
+Piano proposto in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`. Prima consegna prevista su LAPS e valutazione dei template AD CS. Seguono ESC8, percorsi di controllo e confronto con copertura esplicita. Implementazione da avviare.
+
 ## Accesso Windows e diritti — 04/11/2026
 
 La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`), con un motivo per host. Trappole:

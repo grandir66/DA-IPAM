@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-10 — AD Health, confronto con PingCastle
+
+Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev` `0cf74c06`: 58 regole registrate. Analisi statica.
+- [x] Piano di implementazione in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`.
+- [ ] Correggere la copertura Windows LAPS usando schema e metadati di scadenza, evitando la lettura degli attributi password. Separare copertura, visibilità e diritti di lettura.
+- [ ] Distinguere template AD CS sospetti da template pubblicati e ottenibili. Poi aggiungere ESC4 e, con accesso in lettura a IIS, ESC8.
+- [ ] Valutare percorsi di controllo verso i privilegi di dominio attraverso gruppi, ACL e GPO. Mostrare la catena di evidenze e distinguere il dato non verificato.
+- [ ] Confrontare due raccolte con copertura compatibile e mostrare rilievi nuovi, risolti e non verificabili.
+
 ## 2026-11-10 — Seconda verifica Findings e giri
 
 Riccardo: approfondire la verifica e correggere i difetti confermati. Base origin/dev 0.9.1069.

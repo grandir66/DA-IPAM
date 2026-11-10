@@ -18,6 +18,8 @@ import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
 import { formatPortsDisplay } from "@/lib/utils";
 import { useEAdmin } from "@/hooks/use-e-admin";
+import { useGiri } from "@/components/shared/giri-context";
+import { etichettaGiro } from "@/lib/scanner/giri";
 import {
   FASI_GIRO,
   PROFILI_GIRO,
@@ -51,6 +53,7 @@ const FASI_UI: Record<FaseGiro, string> = {
 
 export function ScansClient() {
   const admin = useEAdmin();
+  const { giri, apri } = useGiri();
   const [tipo, setTipo] = useState<TipoGiro>("discovery");
   const [profilo, setProfilo] = useState<ProfiloGiro>("standard");
   const [fasi, setFasi] = useState<FaseGiro[]>([...FASI_GIRO]);
@@ -116,9 +119,13 @@ export function ScansClient() {
     const n = r.data.avvii.length;
     toast.success(n === 1 ? r.data.avvii[0]!.messaggio : `${n} giri avviati`);
     for (const s of r.data.saltati) toast.message(s.motivo);
+    // Apre il pannello di avanzamento (ScanProgress, globale) per ogni giro appena avviato.
+    for (const a of r.data.avvii) if (a.job_id) apri(a.job_id);
     setAvvio(null);
     void load();
   }
+
+  const giriInCorso = giri.filter((g) => g.status === "running");
 
   function toggleRete(id: number) {
     setScelte((prev) => {
@@ -224,15 +231,43 @@ export function ScansClient() {
         {avvio && <InCorso titolo={avvio} />}
       </div>
       {serveRete && (
-        <label className="flex items-start gap-2 text-[13px]">
+        <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
           <input
             type="checkbox"
             className="mt-0.5"
             checked={proveFabbrica}
             onChange={(e) => setProveFabbrica(e.target.checked)}
           />
-          <span>Prove invasive: login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host.</span>
+          <span>
+            <span className="flex items-center gap-2 font-semibold">
+              Prove invasive
+              <Etichetta tono="ruolo">▲ invasiva</Etichetta>
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host. Da concordare col cliente.
+            </span>
+          </span>
         </label>
+      )}
+
+      {giriInCorso.length > 0 && (
+        <Pannello titolo="Giri in corso" conteggio={giriInCorso.length} sottotitolo="Avanzamento dal vivo; clic su «Apri» per il dettaglio">
+          <div className="space-y-2 p-1">
+            {giriInCorso.map((g) => {
+              const pct = g.total > 0 ? Math.round((g.scanned / g.total) * 100) : null;
+              return (
+                <div key={g.id} className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-semibold">{g.etichetta ?? etichettaGiro(g.scan_type)}</span>
+                    <span className="ml-2 text-[13px] text-muted-foreground">{g.phase}</span>
+                  </span>
+                  {pct != null && <span className="font-mono text-[13px] tabular-nums">{pct}%</span>}
+                  <Button size="sm" variant="outline" onClick={() => apri(g.id)}>Apri</Button>
+                </div>
+              );
+            })}
+          </div>
+        </Pannello>
       )}
 
       <Pannello titolo="Storico" conteggio={history.length} sottotitolo="Gli ultimi giri di questa installazione">

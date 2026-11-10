@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
+
+Riccardo (10/11): «Sì, svuotale». Misura sull'hub 533: 75 host non manuali mostravano la classe scritta dal motore ritirato il 28/07, e dei 30 «voip» solo 13 erano telefoni.
+
+### Cambiato
+- **Una classe non manuale senza più categoria si svuota** al ricalcolo, invece di restare quella di luglio col motivo «Insufficient evidence». Le scelte manuali non si toccano; una categoria generica senza slug (es. `network`) non svuota.
+- **Fanvil e Yealink sono telefoni, Meross è IoT** già dal produttore del MAC: il motore nuovo aveva solo il nome host, sotto soglia.
+
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
 ### Corretto

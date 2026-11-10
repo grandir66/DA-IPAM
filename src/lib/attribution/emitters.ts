@@ -139,6 +139,12 @@ const OUI_SOLO_OT: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bkronotech\b/i, "iot"],
   [/\bcontrol techniques\b/i, "rete_ot"],
   [/\bvacon\b/i, "rete_ot"],
+  /* Non sono OT ma vale la stessa regola: fanno un solo tipo di apparato (10/11/2026,
+   * hub 533: 16 Fanvil e 8 Meross senza categoria; il motore vecchio li sapeva, il
+   * nuovo aveva solo `hostname` a 0.17). */
+  [/\bfanvil\b/i, "voip"],
+  [/\byealink\b/i, "voip"],
+  [/\bmeross\b/i, "iot"],
 ];
 
 // Lacuna 2: voci placeholder del registro IEEE (nessun produttore reale dietro il

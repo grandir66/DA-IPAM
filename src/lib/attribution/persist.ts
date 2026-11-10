@@ -120,6 +120,15 @@ export function applyAttribution(
     for (const [column, value, currentValue] of candidates) {
       if (value !== null && value !== currentValue) legacyToWrite.push([column, value]);
     }
+    /* Classe vecchia senza categoria (Riccardo, 10/11/2026): se la fusione non ha
+     * NESSUNA categoria, la classe non manuale si svuota. Prima restava quella
+     * scritta dal motore ritirato il 28/07: sull'hub 75 host mostravano una classe
+     * di luglio col motivo «Insufficient evidence», e dei 30 «voip» solo 13 erano
+     * telefoni (gli altri PC che avevano preso quell'IP). Una categoria presente
+     * ma senza slug (es. `network`) NON svuota: lì la classe vecchia è più precisa. */
+    if (result.category.claim == null && current.classification != null && current.classification !== "") {
+      legacyToWrite.push(["classification", null]);
+    }
   }
 
   if (attrUnchanged && legacyToWrite.length === 0) return false;

@@ -55,6 +55,15 @@ describe("produttori che fanno solo apparati OT", () => {
     for (const [v, attesa] of Object.entries(attese)) assert.equal(classe(segnali(v)), attesa, v);
   });
 
+  it("telefoni e prese: Fanvil e Yealink sono voip, Meross iot (hub 533, 10/11/2026)", () => {
+    const attese: Record<string, string> = {
+      "Fanvil Technology Co., Ltd.": "voip",
+      "YEALINK(XIAMEN) NETWORK TECHNOLOGY CO.,LTD.": "voip",
+      "Chengdu Meross Technology Co., Ltd.": "iot",
+    };
+    for (const [v, attesa] of Object.entries(attese)) assert.equal(classe(segnali(v)), attesa, v);
+  });
+
   it("il produttore resta emesso", () => {
     const o = emitEvidenceFromSignals(segnali("Weintek Labs. Inc."));
     assert.ok(o.some((e) => e.source === "oui" && e.dimension === "vendor" && e.claim === "weintek-labs"));

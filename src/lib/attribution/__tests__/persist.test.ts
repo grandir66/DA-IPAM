@@ -86,6 +86,21 @@ describe("applyAttribution — proiezione legacy (fase 4)", () => {
     assert.equal(hostRow(4).classification, "server");
   });
 
+  it("nessuna categoria dalla fusione → la classe vecchia non manuale si svuota (10/11/2026)", () => {
+    insertHost({ id: 31, classification: "voip" });
+    applyAttribution(db, 31, fusionResult({ category: null, os: null, vendor: "hp" }), "scan");
+    const row = db.prepare("SELECT classification FROM hosts WHERE id = 31").get() as { classification: string | null };
+    assert.equal(row.classification, null);
+    assert.equal(applyAttribution(db, 31, fusionResult({ category: null, os: null, vendor: "hp" }), "scan"), false, "secondo giro: niente da scrivere");
+  });
+
+  it("nessuna categoria ma classe manuale → resta", () => {
+    insertHost({ id: 32, classification: "voip", classificationManual: 1 });
+    applyAttribution(db, 32, fusionResult({ category: null, os: null, vendor: "hp" }), "scan");
+    const row = db.prepare("SELECT classification FROM hosts WHERE id = 32").get() as { classification: string | null };
+    assert.equal(row.classification, "voip");
+  });
+
   it("valore già allineato → non riscrive (nessun cambiamento, resta idempotente)", () => {
     insertHost({ id: 5, classificationManual: 0, classification: "router" });
     db.exec("UPDATE hosts SET inferred_device_type='router', inferred_vendor='cisco', inferred_os_family=NULL, inferred_confidence=91 WHERE id=5");

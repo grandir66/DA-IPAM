@@ -172,8 +172,11 @@ export function ScansClient() {
   }, [tipo]);
 
   const serveRete = tipo === "discovery" || tipo === "controlli";
+  // Come in Nety: il profilo (quante porte, a che ritmo) è della Discovery. Gli altri tipi lavorano
+  // su ciò che è già in inventario: mostrarlo lì faceva credere a una scansione che non parte.
+  const haProfilo = tipo === "discovery";
   const vuoleTutteLePorte =
-    profilo === "completo" || (tipo === "discovery" && profilo === "su_misura" && presetPorte === "all");
+    haProfilo && (profilo === "completo" || (profilo === "su_misura" && presetPorte === "all"));
 
   const motivoBlocco = useMemo(() => {
     if (!admin) return "Solo un amministratore può lanciare un giro";
@@ -187,9 +190,15 @@ export function ScansClient() {
   }, [admin, avvio, serveRete, scelte.size, tipo, sourceNet, profilo, autoTargets, targets, vuoleTutteLePorte, confermaCompleto]);
 
   function corpoLancio(): Record<string, unknown> {
-    const b: Record<string, unknown> = { tipo, profilo };
+    const b: Record<string, unknown> = { tipo, profilo: haProfilo ? profilo : "standard" };
     if (serveRete) b.network_ids = [...scelte];
-    if (profilo === "su_misura") b.fasi = fasi;
+    if (haProfilo && profilo === "su_misura") b.fasi = fasi;
+    if (tipo === "controlli") {
+      const tm = numeroOpzionale(timeoutMs);
+      if (tm !== undefined) b.timeout_ms = tm;
+      const co = numeroOpzionale(concorrenza);
+      if (co !== undefined) b.concorrenza = co;
+    }
     if (vuoleTutteLePorte) b.conferma_completo = true;
     if (serveRete && proveFabbrica) b.prove_fabbrica = true;
 
@@ -269,7 +278,7 @@ export function ScansClient() {
     <div className="space-y-4">
       <IntestazionePagina
         titolo="Scansioni di rete"
-        sottotitolo="Scegli il tipo e il profilo, poi la rete. I findings si vedono dopo il giro."
+        sottotitolo="Scegli il tipo, poi la rete. Solo la Discovery cerca porte nuove: gli altri tipi lavorano su ciò che è già in inventario."
         azioni={
           <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/vulnerabilities" />}>
             Vedi i findings
@@ -278,7 +287,7 @@ export function ScansClient() {
       />
 
       <div className="grid gap-4 lg:grid-cols-12">
-        <Pannello numero={1} titolo="Tipo" className="lg:col-span-6" sottotitolo="Cosa fa questo giro">
+        <Pannello numero={1} titolo="Tipo" className={haProfilo ? "lg:col-span-6" : "lg:col-span-12"} sottotitolo="Cosa fa questo giro">
           <div className="grid gap-2 sm:grid-cols-2">
             {TIPI_GIRO.map((t) => (
               <VoceSelezionabile key={t} scelta={tipo === t} onScegli={() => setTipo(t)}>
@@ -288,7 +297,7 @@ export function ScansClient() {
             ))}
           </div>
         </Pannello>
-        {tipo !== "sonda_l2" && (
+        {haProfilo && (
           <Pannello numero={2} titolo="Profilo" className="lg:col-span-6" sottotitolo="Quante porte e a che ritmo">
             <div className="grid gap-2 sm:grid-cols-2">
               {PROFILI_GIRO.map((p) => (
@@ -431,8 +440,33 @@ export function ScansClient() {
         </Pannello>
       )}
 
+      {tipo === "controlli" && (
+        <Pannello titolo="Solo controlli" sottotitolo="Lavora sugli host e sui servizi già in inventario per la rete">
+          <div className="space-y-3 p-1 text-[13px]">
+            <p>
+              Non scopre host e non cerca porte: ripassa i servizi già noti e rifà riconoscimento, identità e controlli.
+              Dura pochi secondi. Per trovare porte nuove lancia una <strong>Discovery</strong> (Standard = 1000 porte TCP),
+              che alla fine fa anche questi controlli.
+            </p>
+            <p className="text-muted-foreground">
+              Rifarlo non duplica niente: aggiorna le righe che ci sono e lascia stati e note come sono.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="font-medium">Timeout (ms)</span>
+                <Input value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} inputMode="numeric" placeholder="500–60000" className="font-mono" />
+              </label>
+              <label className="space-y-1">
+                <span className="font-medium">Concorrenza</span>
+                <Input value={concorrenza} onChange={(e) => setConcorrenza(e.target.value)} inputMode="numeric" placeholder="1–256" className="font-mono" />
+              </label>
+            </div>
+          </div>
+        </Pannello>
+      )}
+
       {serveRete && (
-        <Pannello numero={3} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
+        <Pannello numero={haProfilo ? 3 : 2} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
           {loading ? (
             <p className="p-3 text-[13px] text-muted-foreground">Caricamento…</p>
           ) : reti.length === 0 ? (
@@ -542,7 +576,7 @@ export function ScansClient() {
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" disabled={!!motivoBlocco} title={motivoBlocco ?? undefined} onClick={() => void avvia()}>
           Avvia {TIPI_GIRO_UI[tipo].nome}
-          {tipo !== "sonda_l2" ? ` · ${PROFILI_GIRO_UI[profilo].nome}` : ""}
+          {haProfilo ? ` · ${PROFILI_GIRO_UI[profilo].nome}` : ""}
         </Button>
         {avvio && <InCorso titolo={avvio} />}
       </div>

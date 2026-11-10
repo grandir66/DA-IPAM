@@ -338,3 +338,27 @@ test("Controlli e segmentazione agganciano il giro e restituiscono il job_id (pa
   assert.equal(seguiti[1]?.scanType, "segmentazione");
   assert.equal(seguiti[1]?.etichetta, "vlan40");
 });
+
+test("Solo controlli scrive la cronologia a giro finito, con cosa ha fatto", async () => {
+  const righe: Array<{ status: string; duration_ms: number | null }> = [];
+  let termine: ((r: never) => void) | undefined;
+  await lanciaGiro(
+    { tipo: "controlli", profilo: "standard", network_ids: [3] },
+    {
+      tenant: () => "T",
+      rete: (id) => ({ id }) as never,
+      servizi: (_t, _n, o) => {
+        termine = o?.alTermine as never;
+        return true;
+      },
+      segui: () => "job-test",
+      history: (r) => void righe.push({ status: r.status, duration_ms: r.duration_ms }),
+    },
+  );
+  assert.equal(righe.length, 0);
+  termine?.({ host: 37, sondati: 90, risposte: 84, controlli: 12, durataMs: 25000, errore: null } as never);
+  assert.match(righe[0]!.status, /90 servizi già noti risondati su 37 host, 84 rispondono/);
+  assert.equal(righe[0]!.duration_ms, 25000);
+  termine?.({ host: 0, sondati: 0, risposte: 0, controlli: 0, durataMs: 5, errore: null } as never);
+  assert.match(righe[1]!.status, /serve prima una Discovery/);
+});

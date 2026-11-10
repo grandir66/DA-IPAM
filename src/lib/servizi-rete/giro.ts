@@ -51,6 +51,16 @@ export interface StatoGiro {
   errore: string | null;
 }
 
+/** Cosa ha fatto un giro, per la riga in cronologia: senza, «Solo controlli» restava «avviato» per sempre. */
+export interface RiepilogoGiro {
+  host: number;
+  sondati: number;
+  risposte: number;
+  controlli: number;
+  durataMs: number;
+  errore: string | null;
+}
+
 const PARALLELE = 32;
 const PARALLELE_PORTE = 256;
 // Su globalThis: rotte, discovery e `server.ts` possono avere istanze diverse del modulo, e la
@@ -132,9 +142,13 @@ export function avviaGiro(
     timeoutMs?: number;
     /** Worker in parallelo di questo giro. Assente = 32 sonde / 256 prove porte. */
     concorrenza?: number;
+    /** Chiamata a giro finito, dentro il contesto del tenant. */
+    alTermine?: (riepilogo: RiepilogoGiro) => void;
   } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
+  const riepilogo: RiepilogoGiro = { host: 0, sondati: 0, risposte: 0, controlli: 0, durataMs: 0, errore: null };
+  const partenza = Date.now();
   const reti = typeof ambito === "number" ? [ambito] : ambito ?? [undefined];
   const networkId = reti.length === 1 ? reti[0] ?? null : null;
   const timeoutMs = opzioni.timeoutMs;
@@ -182,6 +196,8 @@ export function avviaGiro(
       for (const rete of reti) allineaServiziRete(rete);
       const coda = reti.flatMap((rete) => getPorteServiziDaSondare(rete)).filter((p) => !daSaltare(p.porta, null) && !eImpianto(p));
       stato.fase = "sonde";
+      riepilogo.host = new Set(coda.map((p) => p.host_id)).size;
+      riepilogo.sondati = coda.length;
       stato.totale = coda.length;
       stato.fatte = 0;
       await inParallelo(coda, parallele, async (p) => {
@@ -192,6 +208,7 @@ export function avviaGiro(
           esito = null; // un errore di rete è «non risponde», non ferma il giro
         }
         salvaEsitoSondaServizio(p.host_id, p.porta, esito);
+        if (esito) riepilogo.risposte += 1;
         stato.fatte += 1;
       });
       if (controllo) {
@@ -199,6 +216,7 @@ export function avviaGiro(
           .filter((p) => !daSaltare(p.porta, null) && !eImpianto(p) && p.protocollo === protocolloControllo(p.porta));
         const restanti = new Map<string, number>();
         stato.totale += extra.length;
+        riepilogo.controlli = extra.length;
         await inParallelo(extra, parallele, async (p) => {
           let esito: EsitoSondaControllo;
           try {
@@ -227,6 +245,15 @@ export function avviaGiro(
       stato.inCorso = false;
       stato.fase = null;
       stato.finito = new Date().toISOString();
+      if (opzioni.alTermine) {
+        riepilogo.durataMs = Date.now() - partenza;
+        riepilogo.errore = stato.errore;
+        try {
+          opzioni.alTermine(riepilogo);
+        } catch (e) {
+          console.error(`[servizi-rete] riepilogo non scritto per ${tenant}:`, e instanceof Error ? e.message : "errore");
+        }
+      }
       const coda = codeDiscovery.get(tenant);
       const prossima = coda?.entries().next().value;
       if (coda && prossima) {

@@ -1,5 +1,13 @@
 # TASKS — DA-IPAM
 
+## 2026-11-10 — «Solo controlli» sembrava non fare nulla (Riccardo, base)
+
+Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha restituito in pochi secondi il controllo su 1000 porte»; poi «controlla la logica che usa Nety per riprodurla meglio anche nella UI». Misurato sull'hub: rete 4, 90 servizi noti su 37 host di 102, giro di ~25 s; il profilo era ignorato.
+- [x] Come Nety (`ScanLauncherPage.tsx`): profilo solo per Discovery; riquadro «Solo controlli» (non cerca porte, timeout, concorrenza). Prove `lancia-giro.test.ts` e `giro.test.ts` verdi, tsc ed eslint puliti. **Non guardata a schermo.**
+- [x] Cronologia scritta a giro finito con l'esito (`alTermine` in `servizi-rete/giro.ts`).
+- [ ] Da Nety, non fatto: le fasi di «Solo controlli» accendibili una per una (riconoscimento / identità / controlli). Il nostro giro le fa sempre tutte: serve un filtro nel motore.
+- [ ] Un giro in corso si perde al riavvio dell'aggiornamento automatico da `dev` (oggi tre riavvii in 40 minuti), senza riga in cronologia.
+
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)
 
 Giro di 20 pagine dell'hub (0.9.1082) a 1920, in sola lettura. Fatto su `dev`, prove mirate + `tsc`; **non visto a schermo dopo la modifica**.

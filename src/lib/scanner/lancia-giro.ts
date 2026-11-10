@@ -2,7 +2,7 @@
  * Lancia un giro dal tipo + profilo. I motori restano quelli già fatti.
  */
 import { addScanHistory, getCurrentTenantCode, getNetworkById, setTenantSetting, withTenant } from "@/lib/db-tenant";
-import { avviaGiro, statoGiro } from "@/lib/servizi-rete/giro";
+import { avviaGiro, statoGiro, type RiepilogoGiro } from "@/lib/servizi-rete/giro";
 import { avviaGiroSeg, statoGiroSeg } from "@/lib/segmentazione/giro";
 import { sincronizzaTrunk } from "@/lib/trunk/sensore-trunk";
 import { discoverNetwork } from "@/lib/scanner/discovery";
@@ -218,6 +218,13 @@ export function leggiLancio(corpo: LancioGiro): LancioLetto {
   };
 }
 
+/** Esito di «Solo controlli» per la cronologia. Zero servizi noti si dice: non è un giro riuscito a vuoto. */
+export function testoRiepilogo(r: RiepilogoGiro): string {
+  if (r.errore) return `fallito: ${r.errore}`;
+  if (r.sondati === 0) return "nessun servizio noto su questa rete: serve prima una Discovery";
+  return `${r.sondati} servizi già noti risondati su ${r.host} host, ${r.risposte} rispondono · ${r.controlli} controlli`;
+}
+
 function porteDaPreset(preset: string | undefined, udp: boolean): string | null | undefined {
   if (!preset) return undefined;
   if (preset === "all") return null;
@@ -320,20 +327,24 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
     });
     if (!scope.length) throw new ErroreLancio("Nessuna rete trovata");
     const networkId = scope.length === 1 ? scope[0]! : null;
-    const avviato = d.servizi(tenant, networkId ?? scope, opzioniSonde);
+    // «Solo controlli» non cerca porte (come in Nety): rifà sonde e controlli su ciò che è già noto.
+    // La riga in cronologia si scrive a giro finito, con cosa ha fatto davvero.
+    const alTermine =
+      tipo === "controlli"
+        ? (r: RiepilogoGiro) =>
+            d.history({
+              host_id: null,
+              network_id: networkId,
+              scan_type: "controlli",
+              status: testoRiepilogo(r),
+              ports_open: null,
+              raw_output: null,
+              duration_ms: r.durataMs,
+            })
+        : undefined;
+    const avviato = d.servizi(tenant, networkId ?? scope, { ...opzioniSonde, ...(alTermine ? { alTermine } : {}) });
     if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
-    if (tipo === "controlli") {
-      d.history({
-        host_id: null,
-        network_id: networkId,
-        scan_type: "controlli",
-        status: "avviato",
-        ports_open: null,
-        raw_output: null,
-        duration_ms: null,
-      });
-    }
-    const messaggio = tipo === "controlli" ? "Sonde e identità avviate" : "Solo sonde (senza nmap)";
+    const messaggio = tipo === "controlli" ? "Sonde e controlli sui servizi già noti (nessuna porta nuova)" : "Solo sonde (senza nmap)";
     const faseDefault = tipo === "controlli" ? "Sonde e identità" : "Solo sonde";
     const jobId = d.segui({
       tenantCode: tenant,

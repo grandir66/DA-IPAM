@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings a gruppi
 
+### Corretto
+- **Scansioni, «Solo controlli»**: mostrava il profilo (1000 porte) ma lo ignorava, e in pochi secondi restituiva il controllo senza dire cosa aveva fatto (Riccardo, 10/11: «ho l'impressione che non faccia praticamente nulla»). Come in Nety, il profilo ora compare solo per la Discovery; «Solo controlli» ha un riquadro che dice che non cerca porte nuove, con timeout e concorrenza. La riga in cronologia si scrive a giro finito con servizi risondati, host, risposte e durata (prima restava «avviato» per sempre).
+
 - **Findings › Elenco, «Raggruppa per: Cosa aggiornare»**. Con 2.705 rilievi da rivedere e nessuno rivisto, una riga per CVE non si smaltiva: ora le CVE si raccolgono per software da aggiornare, con quelle sfruttate attivamente in cima, e un gruppo si prende in carico in un colpo. Lo stato resta per CVE.
 
 ## [Non rilasciato] — 2026-11-10 · Revisione d'uso dell'hub: correzioni piccole

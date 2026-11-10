@@ -25,7 +25,7 @@ export const TIPI_GIRO_UI: Record<TipoGiro, { nome: string; riga: string }> = {
   discovery: { nome: "Discovery", riga: "Host, porte, servizi, identità" },
   segmentazione: { nome: "Segmentazione", riga: "Dalla VLAN prova i servizi delle altre reti" },
   sonda_l2: { nome: "Sonda L2", riga: "Ascolto CDP, LLDP, STP e tag 802.1Q sul trunk" },
-  controlli: { nome: "Solo controlli", riga: "Rifà sonde, identità e controlli, senza nmap" },
+  controlli: { nome: "Solo controlli", riga: "Rifà sonde, identità e controlli sui servizi già noti. Non cerca porte nuove" },
 };
 
 export const PROFILI_GIRO_UI: Record<ProfiloGiro, { nome: string; riga: string }> = {

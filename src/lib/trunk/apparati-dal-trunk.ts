@@ -60,6 +60,11 @@ export function portaApparatiDalTrunk(): EsitoApparati {
 
   const esito: EsitoApparati = { hostToccati: 0, campiRiempiti: 0 };
   const visti = new Set<number>();
+  // Un host può annunciarsi con più protocolli: la riga più recente può non dire il mestiere (CDP di
+  // un MikroTik: «MikroTik») mentre un'altra sì (MNDP: «CRS504-4XQ»). Visto sull'hub il 10/11/2026:
+  // guardando solo la prima riga l'host restava `unknown` con la prova già in tabella.
+  const conCategoria = new Set<number>();
+  for (const r of righe) if (categoriaDaAnnuncio(r)) conCategoria.add(r.host_id);
   for (const r of righe) {
     if (visti.has(r.host_id)) continue;   // uno switch si annuncia su ogni porta: basta una riga
     visti.add(r.host_id);
@@ -79,7 +84,7 @@ export function portaApparatiDalTrunk(): EsitoApparati {
         console.error(`[trunk] host ${r.host_id}: segno «da rivedere» o apparato non aggiornati:`, e);
       }
     }
-    if (riempite.length > 0 || (categoriaDaAnnuncio(r) && !haEvidenzaDiAnnuncio(d, r.host_id))) {
+    if (riempite.length > 0 || (conCategoria.has(r.host_id) && !haEvidenzaDiAnnuncio(d, r.host_id))) {
       recomputeAttributionForDb(d, r.host_id, "scan");
     }
   }

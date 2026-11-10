@@ -35,6 +35,7 @@ import { getMdmConfig, saveMdmConfig } from "@/lib/integrations/mdm-config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { chocoAutomaticoAccesoDb, impostaChocoAutomaticoDb } from "@/lib/patch/choco-automatico";
+import { apparatiAutomaticiAccesi, impostaApparatiAutomatici } from "@/lib/devices/apparato-automatico";
 import { CHIAVE_FEED_EXPLOIT, feedExploitAcceso } from "@/lib/vuln/exploit-feed/job";
 import { archivioExploit, statoFeed } from "@/lib/vuln/exploit-feed/archivio";
 import { CHIAVE_CVE_LOCALI, cveLocaliAccese } from "@/lib/vuln/cve-locali/job";
@@ -717,6 +718,23 @@ function opzioniAutomatismi(): Opzione[] {
       },
       cambia(r) {
         impostaChocoAutomaticoDb(getTenantDb(tenant()), soloAcceso(r));
+      },
+    },
+    {
+      id: "automatismo.apparati_automatici",
+      gruppo: "automatismi",
+      nome: "Apparati creati da soli",
+      cosa: "a fine scansione rende apparato ogni host con una credenziale validata e una classe sicura, con tutte le sue credenziali",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: { siFerma: "la creazione automatica degli apparati a fine scansione.", resta: "gli apparati già creati, con le loro credenziali." },
+      async leggi() {
+        const acceso = apparatiAutomaticiAccesi(getTenantDb(tenant()));
+        return diSerieStato(acceso, esito(acceso ? "ok" : "neutro", acceso ? "attivo" : "spento"));
+      },
+      cambia(r) {
+        impostaApparatiAutomatici(getTenantDb(tenant()), soloAcceso(r));
       },
     },
     {

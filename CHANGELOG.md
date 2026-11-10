@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Apparati creati da soli (interruttore spento di serie)
+
+Riccardo (10/11): «automatizzare … la trasformazione in device se le credenziali funzionano»; «se l'apparato risponde a più protocolli devono essere registrati tutti».
+
+### Aggiunto
+- **Opzioni → Automatismi → «Apparati creati da soli»**, per cliente, spento di serie. Acceso, a fine scansione ogni host con una credenziale validata (SNMP, SSH o WinRM) e una classe sicura (scelta a mano, o del motore con confidenza ≥ 80) diventa apparato, con le stesse scelte della finestra «Rendi apparato» e **tutte** le credenziali validate legate. Sull'hub 533 i candidati erano 38 e con la regola del 09/11 (solo classificazione a mano, solo SNMP) nessuno lo sarebbe diventato.
+- `scripts/apparati-automatici-cli.ts <tenant> [--applica]`: la prova a vuoto, coi nomi.
+
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 
 ### Aggiunto

@@ -612,7 +612,7 @@ function GruppiSoftware({
                     <div className="font-medium">{g.nome}</div>
                     <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
                       <span>{g.rilievi} {g.rilievi === 1 ? "rilievo" : "rilievi"}</span>
-                      {g.kev > 0 && <Etichetta>▲ {g.kev} sfruttate attivamente</Etichetta>}
+                      {g.kev > 0 && <Etichetta>▲ {g.kev} {g.kev === 1 ? "sfruttata" : "sfruttate"} attivamente</Etichetta>}
                       {g.edb > 0 && <Etichetta>{g.edb} con exploit pubblico</Etichetta>}
                     </div>
                   </TableCell>

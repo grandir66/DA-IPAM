@@ -19,6 +19,9 @@ test("nomeSoftware toglie la versione in coda e solo quella", () => {
   assert.equal(nomeSoftware("openssl 3.0.2-0ubuntu1.15"), "openssl");
   assert.equal(nomeSoftware("Microsoft Edge"), "Microsoft Edge");
   assert.equal(nomeSoftware("7-Zip 23.01"), "7-Zip");
+  assert.equal(nomeSoftware("Mozilla Firefox 67.0.2 (x64 it)"), "Mozilla Firefox");
+  assert.equal(nomeSoftware("Microsoft Windows Server 2019 Standard 10.0.17763.8880 10.0.17763.8880"), "Microsoft Windows Server 2019 Standard");
+  assert.equal(nomeSoftware("Windows Server 2019"), "Windows Server 2019");
   assert.equal(nomeSoftware("  "), null);
   assert.equal(nomeSoftware(null), null);
 });

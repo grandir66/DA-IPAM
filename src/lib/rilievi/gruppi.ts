@@ -44,9 +44,18 @@ const ANTEPRIMA = 12;
 export function nomeSoftware(etichetta: string | null | undefined): string | null {
   const t = (etichetta ?? "").trim().replace(/\s+/g, " ");
   if (!t) return null;
-  const parole = t.split(" ");
-  if (parole.length > 1 && /^v?\d[\w.+~:-]*$/i.test(parole[parole.length - 1])) parole.pop();
-  return parole.join(" ");
+  // In coda possono esserci più pezzi che non sono il nome: «67.0.2 (x64 it)», o la versione
+  // scritta due volte («… Standard 10.0.17763.8880 10.0.17763.8880», visto sull'hub il 10/11).
+  // Un numero senza punti resta: «Windows Server 2019» è un nome.
+  let nome = t;
+  for (;;) {
+    const senzaParentesi = nome.replace(/\s*\([^()]*\)$/, "");
+    const senzaVersione = senzaParentesi.replace(/\s+v?\d+(?:[._-][\w+~:]+)+$/i, "");
+    const prossimo = senzaVersione.trim();
+    if (!prossimo || prossimo === nome) break;
+    nome = prossimo;
+  }
+  return nome;
 }
 
 function gruppoDi(r: RilievoUnito): { chiave: string; tipo: TipoGruppo; nome: string } {

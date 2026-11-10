@@ -2,7 +2,7 @@
 
 > Piano del 10/11/2026. Richiesta di Riccardo: «non avrebbe senso montare LLDP/CDP, i protocolli
 > che identificano gli oggetti di rete per trovare le porte e chi si presenta utilizzando queste
-> tecnologie? Quindi LLDP/CDP/MNDP e varianti». **Stato: in attesa del sì.** Livello proposto:
+> tecnologie? Quindi LLDP/CDP/MNDP e varianti». **Stato: tappa 1 in corso (sì di Riccardo il 10/11); il rilascio della sonda aspetta la sua conferma.** Livello proposto:
 > **leggero** (due tappe, due repo, nessuna zona rossa fino al rilascio della sonda ai clienti).
 
 ## Cosa c'è oggi (misurato sull'hub il 10/11)
@@ -29,22 +29,30 @@
 
 ## Tappa 1 — la sonda (DA-Vul-can)
 
-- [ ] **1.1 Misura prima di scrivere.** Dieci minuti di cattura sul sensore dell'hub (VM 533) e di una
-  sonda libera (79993), contando i telai per indirizzo di destinazione e porta UDP: MNDP 5678, Ubiquiti
-  10001, EDP (00:E0:2B:00:00:00), FDP (01:E0:52:CC:CC:CC), LLDP-MED. Si salva un telaio vero per tipo.
-  *Fatto quando:* tabella «protocollo → telai, host» nel piano; si implementano solo quelli visti.
-- [ ] **1.2 MNDP in `pacchetti.py`.** `_mndp` sui datagrammi UDP 5678: MAC (1), identità (5), versione (7),
-  piattaforma (8), scheda (12), interfaccia (16), IPv4 (17). Diventa un `Vicino(protocollo="mndp", …)`;
-  nuovo bit nella maschera dei protocolli. *Verifica:* prova in `app/tests/test_sensore_trunk.py` col
-  telaio vero della 1.1.
-- [ ] **1.3 Scoperta Ubiquiti** (UDP 10001, risposte e annunci v1/v2): MAC, IP, nome, modello, firmware
-  → `Vicino(protocollo="ubnt", …)`. Solo se la 1.1 ne trova.
-- [ ] **1.4 LLDP-MED e campi in più.** Dai TLV dell'organizzazione 00-12-BB: modello, seriale, firmware,
-  tipo di apparato (telefono, access point); da 802.1: VLAN della porta. Da CDP: VLAN voce, seriale
-  dove c'è. Colonne nuove in `vicino` con `ALTER TABLE` idempotente (già l'uso in `rubrica.py`).
-- [ ] **1.5 EDP / FDP**: solo se la 1.1 ne trova. FDP ha il formato di CDP: stesso interprete, altro
-  indirizzo.
-- [ ] **1.6 Rilascio della sonda.** Prove della sonda, `version:release`, `bash scripts/deploy.sh`
+- [x] **1.1 Misura prima di scrivere.** Fatta il 10/11 sul trunk dell'hub (VM 533, scheda `enp6s19`
+  nello spazio di rete `trunk`, `tcpdump` per 200 secondi):
+
+  | Protocollo | Telai | Apparati (MAC sorgenti) | Note |
+  | --- | --- | --- | --- |
+  | MNDP (UDP 5678) | 239 | 14 | in 10 VLAN (2, 4, 5, 6, 7, 15, 20, 40, 133, 666) e senza tag |
+  | Ubiquiti (UDP 10001) | 516 | 6 | annunci versione 2 |
+  | CDP | 3.050 | 55 | lo mandano anche i MikroTik |
+  | LLDP | 0 | 0 | atteso: non attraversa gli switch |
+  | EDP, FDP | 0 | 0 | non si implementano |
+
+  Non misurata la sonda 79993.
+- [x] **1.2 MNDP in `pacchetti.py`.** `_mndp`: nome, modello dalla scheda («MikroTik» non è un modello),
+  versione senza la data di compilazione, interfaccia che parla, IPv4, MAC; bit `mndp` nella maschera;
+  il nome finisce anche sull'osservazione dell'host. Prove sulla struttura del telaio vero (nomi e
+  indirizzi cambiati). DA-Vul-can, ramo `macbook/sensore-mndp`.
+- [x] **1.3 Scoperta Ubiquiti.** `_ubnt`, versioni 1 e 2: nome, modello, versione (campo 0x16 quando c'è,
+  altrimenti la stringa del firmware), IPv4, MAC. Prova sulla struttura del telaio vero.
+- [-] **1.4 LLDP-MED e campi in più.** Rinviato: sul trunk dell'hub non arriva LLDP, quindi non c'è un
+  telaio vero su cui provarlo. Si riprende dove il sensore è attaccato a uno switch che lo manda.
+- [-] **1.5 EDP / FDP.** Annullato: la misura non ne ha trovati.
+- [!] **1.6 Rilascio della sonda** (fermo: aspetta la conferma di Riccardo). Prima del rilascio: il ramo
+  va unito a `main`; la prova `test_il_sensore_non_ascolta_in_rete` è già rossa su `main` per
+  `sensore/raggiungibilita.py` (usa `AF_INET`), non per questo lavoro. Prove della sonda, `version:release`, `bash scripts/deploy.sh`
   (dry-run), poi `--applica`. **Qui si chiede conferma**: il pacchetto va alle sonde dei clienti.
   *Verifica:* `GET /vicini` del sensore dell'hub mostra righe `mndp`.
 

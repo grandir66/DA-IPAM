@@ -29,6 +29,13 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
   - [ ] Non fatto: ordinamento per colonna nei gruppi; «Prendi in carico» sul gruppo; collegamento dalla riga alla pagina Findings; gli indirizzi `?vista=` come in Findings. Gruppi e indicatori si calcolano in memoria su tutti i servizi del tenant (tetto 20.000, sull'hub sono 1.085).
 - [ ] Da Nety, non fatto: le fasi di «Solo controlli» accendibili una per una (riconoscimento / identità / controlli). Il nostro giro le fa sempre tutte: serve un filtro nel motore.
 - [ ] Un giro in corso si perde al riavvio dell'aggiornamento automatico da `dev` (oggi tre riavvii in 40 minuti), senza riga in cronologia.
+- [x] Riccardo (10/11): «confronta lo stesso host tra Nety e DA-IPAM … i dati sono diversi … non necessariamente una è giusta, ma i dati dovrebbero essere coerenti». Host 192.168.4.1 (DA-DC01), Nety dell'ufficio (LXC 111 su DA-PX-04, DB copiato in sola lettura) contro l'hub 70791:
+  - Nety: 4 porte TCP (53, 139, 443, 5985) senza riconoscimento («port-table») + 3 UDP con dati (53 DNS, 123 NTP, 137 NetBIOS: nome, dominio DOMARC, controller di dominio, MAC). Nessun finding.
+  - DA-IPAM: 11 porte TCP (anche 88, 135, 389, 445, 636, 3389, 10050), 443 con certificato e HTTP, versione Windows da NTLM, 4 rilievi (LDAP anonimo e senza firma, AD CS, TLS vecchio e 3DES). Nessuna delle tre UDP.
+  - **Perché diversi**: il giro di Nety su 192.168.4.0/24 era «custom» con 27 porte, `retries: 0`, 1400 ms: ha perso 135/389/445/636/3389 che pure erano nel suo elenco. Le UDP vengono da un altro suo giro (rete «LAN Base», Standard, rimasto in pausa). DA-IPAM su quella rete non ha mai fatto una Discovery dal lanciatore con l'UDP. Due fotografie con impostazioni diverse, non due motori in disaccordo.
+  - 636 «tace» è giusto: provato con openssl dall'hub, il DC chiude senza certificato.
+- [ ] Buco vero nostro emerso dal confronto: **sonde UDP di protocollo** (DNS 53, NTP 123, NetBIOS-NS 137). Nety le interroga e legge nome, dominio, ruolo DC e MAC; noi per l'UDP abbiamo solo l'esito di nmap, senza contenuto. Da fare nel giro delle sonde.
+- [ ] Confronto pulito ancora da fare: stesso profilo Standard (1000 TCP + 20 UDP) sulla stessa rete da tutti e due, poi contare.
 
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)
 

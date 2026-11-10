@@ -6,6 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Evidenze AD Health
 
+- **Deleghe AD Health**. Evidenze di Enroll e modifica dei template, candidati ESC4 e concessioni estese LAPS sui computer. Le ACE osservate restano diagnostiche finché non si può confermare l'accesso effettivo.
 - **LAPS**. La raccolta usa metadati di scadenza e tratta la mancata visibilità come esito ignoto.
 - **AD CS**. I template sono correlati alle CA della foresta. ESC1 e ESC2 senza verifica dei diritti di enrollment restano candidati diagnostici, fuori dal punteggio.
 

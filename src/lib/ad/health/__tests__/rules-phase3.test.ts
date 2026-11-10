@@ -56,10 +56,10 @@ function runRule(id: string, ctx: RuleContext) {
   return rule.run(ctx);
 }
 
-test("ALL_RULES has 58 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 58);
+test("ALL_RULES has 60 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 60);
   const ids = ALL_RULES.map((r) => r.id);
-  assert.equal(new Set(ids).size, 58);
+  assert.equal(new Set(ids).size, 60);
 });
 
 test("DA-P-NestedIntoDomainAdmins fires on nested only", () => {

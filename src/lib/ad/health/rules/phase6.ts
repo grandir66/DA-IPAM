@@ -2,6 +2,7 @@
  * Phase 6: DC hardening (WinRM registry) + ADCS ESC + PSO / shadow credentials.
  */
 
+import { isBroadTrustee } from "../acl/delegation-evidence";
 import { aggFinding } from "./helpers";
 import type { RuleContext, RuleDef } from "../types";
 
@@ -144,6 +145,7 @@ export const phase6Rules: RuleDef[] = [
       const adcs = ctx.adcs;
       if (!adcs || adcs.status !== "ok") return null;
       if (adcs.esc1Names.length === 0) return null;
+      const candidates = adcs.templates.filter((t) => t.esc1 && t.publishedBy?.length !== 0);
       return aggFinding({
         ruleId: "DA-A-AdcsEsc1",
         axis: "anomaly",
@@ -153,8 +155,14 @@ export const phase6Rules: RuleDef[] = [
         description:
           `${adcs.esc1Names.length} template(s) allow enrollee-supplied subject + auth EKU without approval: ` +
           adcs.esc1Names.slice(0, 10).join(", ") + ". Permessi Enroll da verificare.",
-        dns: adcs.templates.filter((t) => t.esc1 && t.publishedBy?.length !== 0).map((t) => t.distinguishedName),
-        raw: { esc1Names: adcs.esc1Names, enrollment: "non_verificabile", criteriaRevision: 2 },
+        dns: candidates.map((t) => t.distinguishedName),
+        raw: { esc1Names: adcs.esc1Names, enrollment: "non_verificabile", criteriaRevision: 2,
+          templates: candidates.slice(0, 50).map((t) => ({
+            name: t.name,
+            publishedBy: t.publishedBy ?? null,
+            enrollSids: t.delegation?.enrollSids ?? null,
+          })),
+        },
       });
     },
   },
@@ -168,6 +176,7 @@ export const phase6Rules: RuleDef[] = [
       const adcs = ctx.adcs;
       if (!adcs || adcs.status !== "ok") return null;
       if (adcs.esc2Names.length === 0) return null;
+      const candidates = adcs.templates.filter((t) => t.esc2 && t.publishedBy?.length !== 0);
       return aggFinding({
         ruleId: "DA-A-AdcsEsc2",
         axis: "anomaly",
@@ -177,8 +186,44 @@ export const phase6Rules: RuleDef[] = [
         description:
           `${adcs.esc2Names.length} template(s) with Any Purpose or empty EKU: ` +
           adcs.esc2Names.slice(0, 10).join(", ") + ". Permessi Enroll da verificare.",
-        dns: adcs.templates.filter((t) => t.esc2 && t.publishedBy?.length !== 0).map((t) => t.distinguishedName),
-        raw: { esc2Names: adcs.esc2Names, enrollment: "non_verificabile", criteriaRevision: 2 },
+        dns: candidates.map((t) => t.distinguishedName),
+        raw: { esc2Names: adcs.esc2Names, enrollment: "non_verificabile", criteriaRevision: 2,
+          templates: candidates.slice(0, 50).map((t) => ({
+            name: t.name,
+            publishedBy: t.publishedBy ?? null,
+            enrollSids: t.delegation?.enrollSids ?? null,
+          })),
+        },
+      });
+    },
+  },
+  {
+    id: "DA-A-AdcsEsc4",
+    axis: "anomaly",
+    points: 0,
+    title: "Template AD CS da verificare per ESC4",
+    diagnostic: true,
+    run(ctx) {
+      if (ctx.adcs?.status !== "ok") return null;
+      const domainSid = ctx.acl?.domainSid;
+      const rows = ctx.adcs.templates.flatMap((t) => {
+        const delegation = t.delegation;
+        if (!delegation) return [];
+        const ownerSid = delegation.ownerSid && isBroadTrustee(delegation.ownerSid, domainSid)
+          ? delegation.ownerSid : null;
+        const editSids = delegation.editSids.filter((sid) => isBroadTrustee(sid, domainSid));
+        return ownerSid || editSids.length ? [{ name: t.name, dn: t.distinguishedName, ownerSid, editSids }] : [];
+      });
+      if (!rows.length) return null;
+      return aggFinding({
+        ruleId: "DA-A-AdcsEsc4",
+        axis: "anomaly",
+        points: 0,
+        diagnostic: true,
+        title: "Template AD CS da verificare per ESC4",
+        description: "Proprietà o ACE di modifica osservate per gruppi ampi. Permessi effettivi da verificare.",
+        dns: rows.map((t) => t.dn),
+        raw: { templates: rows.slice(0, 50) },
       });
     },
   },

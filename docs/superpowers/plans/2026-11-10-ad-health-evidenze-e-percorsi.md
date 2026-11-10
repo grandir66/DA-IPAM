@@ -14,6 +14,7 @@
 
 - [x] Copertura LAPS da metadati, lettura dello schema e conteggi salvati. Attributi password rimossi dal collector.
 - [x] Pubblicazione dei template AD CS verificata nel contesto Configuration. I candidati ESC1/ESC2 senza verifica dei permessi restano visibili come diagnostica a zero punti.
+- [x] Motore 0.9.1. Rilevate ACE Enroll e modifica AD CS, proprietari ampi per ESC4 e concessioni estese LAPS. Esiti diagnostici con SID ed evidenza. Verifica locale con 139 test.
 - [ ] Diritti di lettura LAPS, permessi effettivi Enroll e controlli ESC4/ESC8 da completare. Collaudo su dominio di laboratorio ancora da eseguire.
 
 ## Vincoli comuni

@@ -227,7 +227,7 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.9.0";
+export const ENGINE_VERSION = "0.9.1";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

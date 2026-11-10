@@ -4,6 +4,8 @@
  */
 
 import type { Client } from "ldapts";
+import { templateDelegation, type TemplateDelegation } from "./acl/delegation-evidence";
+import { sdFlagsControl } from "./acl/sd-flags-control";
 import { ldapStr, ldapStrArray } from "@/lib/ad/ldap-utils";
 
 /** CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT */
@@ -18,6 +20,7 @@ export const EKU_ANY_PURPOSE = "2.5.29.37.0";
 export interface AdcsTemplateRow {
   name: string;
   publishedBy?: string[] | null;
+  delegation?: TemplateDelegation | null;
   distinguishedName: string;
   enrolleeSuppliesSubject: boolean;
   managerApproval: boolean;
@@ -140,6 +143,24 @@ export async function collectAdcsExtras(
       // La lettura dei template resta disponibile, la pubblicazione è ignota.
     }
 
+    const delegations = new Map<string, TemplateDelegation | null>();
+    try {
+      const { searchEntries: entries } = await client.search(templatesDn, {
+        scope: "one",
+        filter: "(objectClass=pKICertificateTemplate)",
+        attributes: ["distinguishedName", "nTSecurityDescriptor"],
+        explicitBufferAttributes: ["nTSecurityDescriptor"],
+        paged: { pageSize: 200 },
+        timeLimit: 30,
+      }, sdFlagsControl());
+      for (const entry of entries) {
+        const dn = ldapStr(entry.distinguishedName) ?? entry.dn;
+        if (dn) delegations.set(dn.toLowerCase(), templateDelegation(entry.nTSecurityDescriptor));
+      }
+    } catch {
+      // L'inventario dei template resta disponibile anche se le ACL non sono leggibili.
+    }
+
     const templates: AdcsTemplateRow[] = [];
     for (const entry of searchEntries) {
       const dn = ldapStr(entry.distinguishedName);
@@ -156,7 +177,7 @@ export async function collectAdcsExtras(
         raSignatures: parseIntAttr(entry["msPKI-RA-Signature"]),
         ekus: collectEkus(entry as Record<string, unknown>),
       });
-      templates.push({ ...template, publishedBy });
+      templates.push({ ...template, publishedBy, delegation: delegations.get(dn.toLowerCase()) ?? null });
     }
 
     return {

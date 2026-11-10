@@ -53,9 +53,9 @@ function okWinrm(hardening: NonNullable<WinrmProbeResult["hardening"]>): WinrmPr
   };
 }
 
-test("ALL_RULES has 58 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 58);
-  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 58);
+test("ALL_RULES has 60 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 60);
+  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 60);
 });
 
 test("classifyTemplate ESC1 on enrollee subject + client auth", () => {
@@ -203,4 +203,18 @@ test("AD CS usa il contesto della foresta e incrocia pubblicazione per CN", asyn
   const partial = await collectAdcsExtras(missingCa, dn);
   assert.deepEqual(partial.templates.map((t) => t.publishedBy), [null, null]);
   assert.equal(partial.esc1Names.length, 2);
+});
+
+test("ESC4 espone i gruppi ampi osservati senza alzare il punteggio", () => {
+  const adcs = {
+    status: "ok" as const, esc1Names: [], esc2Names: [],
+    templates: [{
+      ...classifyTemplate({ name: "Test", distinguishedName: "CN=Test", nameFlags: 0, enrollmentFlags: 0, raSignatures: 0, ekus: [EKU_CLIENT_AUTH] }),
+      delegation: { ownerSid: "S-1-5-18", enrollSids: [], editSids: ["S-1-5-11"], truncated: false },
+    }],
+  };
+  const f = run("DA-A-AdcsEsc4", baseCtx({ adcs }));
+  assert.equal(f?.diagnostic, true);
+  assert.equal(f?.points, 0);
+  assert.deepEqual(f?.sampleDns, ["CN=Test"]);
 });

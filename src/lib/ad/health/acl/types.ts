@@ -38,9 +38,16 @@ export interface SidPrincipal {
   kind: AclObjectKind | "other";
 }
 
+export interface LapsDelegationEvidence {
+  objectDn: string;
+  trusteeSid: string;
+  attributes: string[];
+}
+
 export interface AclExtras {
   meta: AclCollectMeta;
   interestingAces: InterestingAce[];
+  lapsDelegations?: LapsDelegationEvidence[];
   /** Domain object SID (for RID-relative expected trustees). */
   domainSid: string | null;
 }

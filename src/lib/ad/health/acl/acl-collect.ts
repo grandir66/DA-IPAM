@@ -7,6 +7,7 @@ import { getAdIntegrationById } from "@/lib/db";
 import { connectLdap } from "@/lib/ad/ad-client";
 import { ldapStr } from "@/lib/ad/ldap-utils";
 import { filterInterestingFromAces, rankInterestingAces } from "./interesting-ace";
+import { isBroadTrustee, observesControlAccess } from "./delegation-evidence";
 import { sdFlagsControl } from "./sd-flags-control";
 import { parseSecurityDescriptor } from "./security-descriptor";
 import { sidToString } from "./sid";
@@ -18,6 +19,7 @@ import {
   type AclExtras,
   type AclObjectKind,
   type InterestingAce,
+  type LapsDelegationEvidence,
   type SidPrincipal,
 } from "./types";
 
@@ -108,9 +110,10 @@ async function searchKind(
  */
 export function processAclItems(
   items: WorkItem[],
-  opts?: { domainSid?: string | null; interestingCap?: number; sdCap?: number },
+  opts?: { domainSid?: string | null; interestingCap?: number; sdCap?: number; lapsSecretGuids?: Record<string, string> },
 ): {
   interestingAces: InterestingAce[];
+  lapsDelegations: LapsDelegationEvidence[];
   domainSid: string | null;
   sdParsed: number;
   truncated: boolean;
@@ -133,6 +136,8 @@ export function processAclItems(
   }
 
   const interesting: InterestingAce[] = [];
+  const lapsDelegations: LapsDelegationEvidence[] = [];
+  const lapsAttrs = Object.entries(opts?.lapsSecretGuids ?? {});
   let sdParsed = 0;
   let truncated = items.length > sdCap;
   const slice = items.slice(0, sdCap);
@@ -142,6 +147,25 @@ export function processAclItems(
     try {
       const parsed = parseSecurityDescriptor(it.sd);
       sdParsed += 1;
+      if (it.kind === "computer" && lapsAttrs.length > 0) {
+        const bySid = new Map<string, Set<string>>();
+        for (const ace of parsed.aces) {
+          if (!isBroadTrustee(ace.sid, domainSid)) continue;
+          for (const [name, guid] of lapsAttrs) {
+            if (!observesControlAccess(ace, guid)) continue;
+            const attrs = bySid.get(ace.sid) ?? new Set<string>();
+            attrs.add(name);
+            bySid.set(ace.sid, attrs);
+          }
+        }
+        for (const [trusteeSid, attributes] of bySid) {
+          if (lapsDelegations.length >= interestingCap) {
+            truncated = true;
+            break;
+          }
+          lapsDelegations.push({ objectDn: it.dn, trusteeSid, attributes: [...attributes] });
+        }
+      }
       const kept = filterInterestingFromAces({
         aces: parsed.aces,
         objectDn: it.dn,
@@ -160,6 +184,7 @@ export function processAclItems(
   if (totalInteresting > interestingCap) truncated = true;
   return {
     interestingAces: ranked.slice(0, interestingCap),
+    lapsDelegations,
     domainSid,
     sdParsed,
     truncated,
@@ -167,7 +192,7 @@ export function processAclItems(
   };
 }
 
-export async function collectAclExtras(integrationId: number): Promise<AclExtras> {
+export async function collectAclExtras(integrationId: number, lapsSecretGuids?: Record<string, string>): Promise<AclExtras> {
   const started = Date.now();
   const integration = getAdIntegrationById(integrationId);
   if (!integration) {
@@ -323,6 +348,7 @@ export async function collectAclExtras(integrationId: number): Promise<AclExtras
     const processed = processAclItems(items, {
       interestingCap: ACL_INTERESTING_CAP,
       sdCap: ACL_SD_CAP,
+      lapsSecretGuids,
     });
 
     const truncated =
@@ -340,6 +366,7 @@ export async function collectAclExtras(integrationId: number): Promise<AclExtras
         durationMs: Date.now() - started,
       },
       interestingAces: processed.interestingAces,
+      lapsDelegations: processed.lapsDelegations,
       domainSid: processed.domainSid,
     };
   } catch (err) {

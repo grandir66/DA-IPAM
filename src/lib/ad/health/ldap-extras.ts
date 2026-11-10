@@ -15,6 +15,7 @@ import {
 } from "@/lib/ad/ldap-utils";
 import { hasFlag, UAC } from "@/lib/ad/health/uac";
 import { collectAdcsExtras, type AdcsExtras } from "@/lib/ad/health/adcs";
+import { guidFromMsBytes } from "./acl/security-descriptor";
 import type { AdGpoRow, AdTrustRow, LapsComputerState } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
@@ -42,6 +43,7 @@ export interface LdapExtras {
   machineAccountQuota: number | null;
   msDsBehaviorVersion: number | null;
   lapsSchemaPresent: boolean | null;
+  lapsSecretGuids: Record<string, string>;
   integrationUseSsl: boolean;
   gpos: AdGpoRow[];
   siteCount: number | null;
@@ -266,16 +268,25 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     const computerAllowedToActOnBehalfOfBySam = new Map<string, boolean>();
     const computerLapsStateBySam = new Map<string, LapsComputerState>();
     let lapsSchemaPresent: boolean | null = null;
+    const lapsSecretGuids: Record<string, string> = {};
     if (schemaDn) {
       try {
         const { searchEntries } = await client.search(schemaDn, {
           scope: "one",
-          filter: "(&(objectClass=attributeSchema)(|(lDAPDisplayName=msLAPS-PasswordExpirationTime)(lDAPDisplayName=ms-Mcs-AdmPwdExpirationTime)))",
-          attributes: ["lDAPDisplayName"],
+          filter: "(&(objectClass=attributeSchema)(|(lDAPDisplayName=msLAPS-PasswordExpirationTime)(lDAPDisplayName=ms-Mcs-AdmPwdExpirationTime)(lDAPDisplayName=ms-Mcs-AdmPwd)(lDAPDisplayName=msLAPS-Password)(lDAPDisplayName=msLAPS-EncryptedPassword)))",
+          attributes: ["lDAPDisplayName", "schemaIDGUID"],
+          explicitBufferAttributes: ["schemaIDGUID"],
           timeLimit: 10,
         });
         // Una ricerca vuota può dipendere dalla visibilità dello schema.
         if (searchEntries.some((entry) => ldapStr(entry.lDAPDisplayName))) lapsSchemaPresent = true;
+        for (const entry of searchEntries) {
+          const name = ldapStr(entry.lDAPDisplayName)?.toLowerCase();
+          if (name && ["ms-mcs-admpwd", "mslaps-password", "mslaps-encryptedpassword"].includes(name) &&
+            Buffer.isBuffer(entry.schemaIDGUID) && entry.schemaIDGUID.length === 16) {
+            lapsSecretGuids[name] = guidFromMsBytes(entry.schemaIDGUID);
+          }
+        }
       } catch {
         collectErrors.push("lapsSchema");
       }
@@ -523,6 +534,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       machineAccountQuota: domainPolicy.machineAccountQuota,
       msDsBehaviorVersion: domainPolicy.msDsBehaviorVersion,
       lapsSchemaPresent,
+      lapsSecretGuids,
       integrationUseSsl,
       gpos,
       siteCount,

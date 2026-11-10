@@ -13,6 +13,27 @@ function aclOf(ctx: RuleContext): AclExtras | null | undefined {
 
 export const phase4Rules: RuleDef[] = [
   {
+    id: "DA-A-LapsDelegationObserved",
+    axis: "anomaly",
+    points: 0,
+    title: "Deleghe LAPS da verificare",
+    diagnostic: true,
+    run(ctx) {
+      const entries = ctx.acl?.lapsDelegations ?? [];
+      if (!entries.length) return null;
+      return aggFinding({
+        ruleId: "DA-A-LapsDelegationObserved",
+        axis: "anomaly",
+        points: 0,
+        diagnostic: true,
+        title: "Deleghe LAPS da verificare",
+        description: "Diritti estesi osservati per gruppi ampi. Lettura effettiva e decrittazione da verificare.",
+        dns: [...new Set(entries.map((entry) => entry.objectDn))],
+        raw: { delegations: entries.slice(0, 50) },
+      });
+    },
+  },
+  {
     id: "DA-A-AclCollectPartial",
     axis: "anomaly",
     points: 0,

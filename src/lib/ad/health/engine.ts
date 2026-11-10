@@ -206,7 +206,7 @@ export async function runAdHealthcheck(
     const extras = await collectLdapExtras(integrationId);
 
     // ACL collect is best-effort (Phase 4) — never fails the whole run.
-    const acl = await collectAclExtras(integrationId);
+    const acl = await collectAclExtras(integrationId, extras.lapsSecretGuids);
     stats.acl = {
       meta: acl.meta,
       interestingAceCount: acl.meta.interestingAceCount,

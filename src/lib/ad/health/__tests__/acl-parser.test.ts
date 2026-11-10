@@ -18,6 +18,7 @@ import {
   filterInterestingFromAces,
   dcsyncPrincipals,
 } from "../acl/interesting-ace";
+import { CERTIFICATE_ENROLL, templateDelegation } from "../acl/delegation-evidence";
 import { processAclItems } from "../acl/acl-collect";
 
 test("sid round-trip Domain Admins style", () => {
@@ -127,4 +128,43 @@ test("classifyAceRights GenericAll", () => {
     inheritedObjectTypeGuid: null,
   });
   assert.deepEqual(rights, ["GenericAll"]);
+});
+
+test("AD CS distingue enroll, modifica e ACE che valgono solo per i figli", () => {
+  const broad = "S-1-5-11";
+  const group = "S-1-5-21-1-2-3-513";
+  const sd = buildSecurityDescriptor({
+    ownerSid: "S-1-5-18",
+    aces: [
+      buildAccessAllowedObjectAce({ mask: 0x100, sid: broad, objectTypeGuid: CERTIFICATE_ENROLL }),
+      buildAccessAllowedAce(0x40000, group),
+      buildAccessAllowedObjectAce({ mask: 0x100, sid: group, objectTypeGuid: CERTIFICATE_ENROLL, aceFlags: 0x08 }),
+      buildAccessAllowedObjectAce({ mask: 0x100, sid: "S-1-1-0", objectTypeGuid: GUID_DS_REPL_GET_CHANGES }),
+    ],
+  });
+  assert.deepEqual(templateDelegation(sd), {
+    ownerSid: "S-1-5-18",
+    enrollSids: [broad],
+    editSids: [group],
+    truncated: false,
+  });
+  assert.equal(templateDelegation(Buffer.alloc(4)), null);
+});
+
+test("LAPS raccoglie solo concessioni osservabili sugli attributi dello schema", () => {
+  const sid = "S-1-5-11";
+  const guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const sd = buildSecurityDescriptor({
+    ownerSid: "S-1-5-18",
+    aces: [
+      buildAccessAllowedObjectAce({ mask: 0x100, sid, objectTypeGuid: guid }),
+      buildAccessAllowedObjectAce({ mask: 0x100, sid: "S-1-1-0", objectTypeGuid: guid, aceFlags: 0x08 }),
+      buildAccessAllowedObjectAce({ mask: 0x100, sid: "S-1-1-0", objectTypeGuid: CERTIFICATE_ENROLL }),
+    ],
+  });
+  const item = { dn: "CN=pc,DC=lab", kind: "computer" as const, sam: "pc$", sid: null, sd };
+  assert.deepEqual(processAclItems([item], { lapsSecretGuids: { "mslaps-password": guid } }).lapsDelegations, [
+    { objectDn: item.dn, trusteeSid: sid, attributes: ["mslaps-password"] },
+  ]);
+  assert.deepEqual(processAclItems([{ ...item, kind: "ou" }], { lapsSecretGuids: { "mslaps-password": guid } }).lapsDelegations, []);
 });

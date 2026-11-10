@@ -285,6 +285,16 @@ const CATALOG: Record<string, RuleGuide> = {
     why: "Lo Spooler sul DC amplia la superficie (es. PrintNightmare / abusi di stampa).",
     fix: "Disabilita il servizio Spooler sui Domain Controller se non serve la stampa.",
   },
+  "DA-A-LapsDelegationObserved": {
+    titleIt: "Deleghe LAPS da verificare",
+    why: "Diritti estesi sui computer possono ampliare la visibilità degli attributi LAPS.",
+    fix: "Verifica l'accesso effettivo per gruppo e la delega di decrittazione separatamente.",
+  },
+  "DA-A-AdcsEsc4": {
+    titleIt: "Template AD CS da verificare per ESC4",
+    why: "Proprietà o scrittura concesse a gruppi ampi possono consentire modifiche al template.",
+    fix: "Verifica i permessi effettivi e limita la modifica ai gestori della PKI.",
+  },
   "DA-A-AdcsEsc1": {
     titleIt: "Template AD CS da verificare per ESC1",
     why: "Il template consente di scegliere il soggetto. Verifica chi può richiedere il certificato.",

@@ -33,18 +33,38 @@ const PERCORSI_NMAP_SERVICES = [
   "/opt/homebrew/share/nmap/nmap-services",
 ];
 
-/** Le `n` porte TCP più frequenti dal testo di `nmap-services`. */
-export function porteTcpPiuFrequenti(testo: string, n: number): number[] {
+/** Le `n` porte più frequenti dal testo di `nmap-services` per un protocollo. */
+export function portePiuFrequenti(testo: string, n: number, proto: "tcp" | "udp"): number[] {
+  const suffisso = `/${proto}`;
   const righe: Array<[number, number]> = [];
   for (const riga of testo.split("\n")) {
     if (!riga || riga.startsWith("#")) continue;
     const [, portaProto, freq] = riga.split(/\s+/);
-    if (!portaProto?.endsWith("/tcp")) continue;
-    const porta = Number(portaProto.slice(0, -4));
+    if (!portaProto?.endsWith(suffisso)) continue;
+    const porta = Number(portaProto.slice(0, -suffisso.length));
     const f = Number(freq);
     if (Number.isInteger(porta) && porta > 0 && Number.isFinite(f) && f > 0) righe.push([porta, f]);
   }
   return righe.sort((a, b) => b[1] - a[1]).slice(0, n).map(([p]) => p);
+}
+
+/** Le `n` porte TCP più frequenti dal testo di `nmap-services`. */
+export function porteTcpPiuFrequenti(testo: string, n: number): number[] {
+  return portePiuFrequenti(testo, n, "tcp");
+}
+
+/** Le `n` porte UDP più frequenti dal testo di `nmap-services`. */
+export function porteUdpPiuFrequenti(testo: string, n: number): number[] {
+  return portePiuFrequenti(testo, n, "udp");
+}
+
+/** Testo di nmap-services, o null se il file non c'è. */
+export function testoNmapServices(leggi: (p: string) => string | null = leggiFile): string | null {
+  for (const p of PERCORSI_NMAP_SERVICES) {
+    const testo = leggi(p);
+    if (testo) return testo;
+  }
+  return null;
 }
 
 let memo: { n: number; porte: number[] } | null = null;

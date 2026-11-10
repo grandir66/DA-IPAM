@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings e lanciatore dei giri
+
+Riccardo (10/11): in Nety Findings è collegato alle scansioni con tipi e profili.
+
+### Aggiunto
+- **Findings** (`/vulnerabilities`): un elenco solo di CVE, allarmi del trunk e rilievi dei giri (TLS scaduto, proto vecchio, autofirmato). Riga che si apre su prova e rimedio; filtri per fonte e gravità. Voce di menu sempre visibile, anche senza Edge.
+- **Lanciatore** (`/scans`): quattro tipi (Discovery, Segmentazione, Sonda L2, Solo controlli) e cinque profili (Rapido, Standard, Completo, Lento, Su misura). Completo chiede conferma e non parte dai giri automatici. I motori restano quelli già fatti.
+
+### Cambiato
+- Menu Sicurezza: «Vulnerabilità» diventa «Findings». Scansioni VA resta al suo posto.
+
 ## [Non rilasciato] — 2026-11-10 · «Reti da confermare» sotto le subnet definite
 
 Riccardo (10/11): l'elenco delle reti viste da confermare va sotto le subnet già definite, non sopra.

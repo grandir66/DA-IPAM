@@ -127,6 +127,8 @@ const CONTRACT: Contract[] = [
   { route: "devices/[id]/scansione-automatica", method: "GET", guard: "requireAuth" },
   // «Invia ora» verso DA-Vul-can (A-IPAM, 22/10): fa uscire dati del cliente, solo admin
   { route: "dalink/vulcan/invia", method: "POST", guard: "requireAdmin" },
+  { route: "scans/lancia", method: "POST", guard: "requireAdmin" },
+  { route: "rilievi", method: "GET", guard: "requireAuth" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

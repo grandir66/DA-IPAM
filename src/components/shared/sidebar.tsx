@@ -119,7 +119,7 @@ const networkSubItems: readonly SubItem[] = [
 // una voce sola, su tutte le installazioni. Vulnerabilità, Scansioni VA e Alert sicurezza
 // diventano grigie senza il modulo che le alimenta (`condizione`).
 const sicurezzaSubItems: readonly SubItem[] = [
-  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert, condizione: "vulnerabilita" },
+  { href: "/vulnerabilities", label: "Findings", icon: ShieldAlert },
   { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch, condizione: "scansioni_va" },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
   { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },

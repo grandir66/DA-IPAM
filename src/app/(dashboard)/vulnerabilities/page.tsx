@@ -1,9 +1,9 @@
-import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
+import { FindingsClient } from "./findings-client";
 
 export const metadata = {
-  title: "Vulnerabilità — DA-IPAM",
+  title: "Findings — DA-IPAM",
 };
 
 export default function VulnerabilitiesPage() {
-  return <VulnerabilitiesListClient />;
+  return <FindingsClient />;
 }

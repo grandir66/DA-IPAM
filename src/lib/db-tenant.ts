@@ -10185,6 +10185,10 @@ export interface AggregatedVulnOpts {
    * scritta 9,1 da Greenbone, 6,3 per l'NVD).
    */
   cvssDi?: (cves: string[]) => Map<string, { cvss: number | null }>;
+  /** Solo i rilievi di scansioni (Edge) o di agenti in contatto (Wazuh) negli ultimi N giorni. */
+  soloRecentiGiorni?: number;
+  /** Lascia fuori i rilievi di gravità bassa (dopo l'eventuale correzione del punteggio). */
+  senzaBassi?: boolean;
 }
 
 /** Gli avvisi di pacchetto di Greenbone (Local Security Checks): un test per avviso, non per CVE. */
@@ -10326,7 +10330,10 @@ function wazuhAgenteVivo(a: string): string {
  * Le righe grezze di tutte le vulnerabilità del tenant (Edge + Wazuh), una per rilevamento:
  * la fonte comune della vista per CVE e di quella per host (22/10).
  */
-function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow[] {
+function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false, soloRecentiGiorni?: number): RawVulnRow[] {
+  // «Non scansionato di recente» (Riccardo, 10/11/2026): per Edge conta la data della scansione che
+  // ha trovato il rilievo, per Wazuh l'ultimo contatto dell'agente. Senza soglia non si filtra.
+  const g = soloRecentiGiorni ?? null;
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
   // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
   const osActive = !!(osFamilies && osFamilies.length > 0 && osFamilies.length < OS_FAMILIES.length);
@@ -10355,6 +10362,7 @@ function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow
       -- Di base i rilievi attuali per host (vista vuln_findings_attuali: l'ultima scansione buona in cui
       -- l'IP compare; Riccardo, 27/10/2026). Le precedenti col pulsante.
       AND (? = 1 OR f.id IN (SELECT id FROM vuln_findings_attuali))
+      AND (? IS NULL OR julianday(f.scanned_at) >= julianday('now') - ?)
     UNION ALL
     SELECT
       v.cve AS key,
@@ -10375,9 +10383,10 @@ function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow
     WHERE v.status = 'VALID'
       AND v.severity IN ('Critical','High','Medium','Low')
       AND (? = 1 OR ${wazuhAgenteVivo("a")})
+      AND (? IS NULL OR a.last_keep_alive IS NULL OR julianday(a.last_keep_alive) >= julianday('now') - ?)
   `;
 
-  const params = [...osList, precedenti ? 1 : 0, ...osList, precedenti ? 1 : 0];
+  const params = [...osList, precedenti ? 1 : 0, g, g, ...osList, precedenti ? 1 : 0, g, g];
   return db().prepare(baseSql).all(...params) as RawVulnRow[];
 }
 
@@ -10407,8 +10416,8 @@ function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
 }
 
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
-  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti);
-  const rows = opts.soloMotore ? lette.filter((r) => (r.source === "Wazuh") === (opts.soloMotore === "wazuh")) : lette;
+  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti, opts.soloRecentiGiorni);
+  let rows = opts.soloMotore ? lette.filter((r) => (r.source === "Wazuh") === (opts.soloMotore === "wazuh")) : lette;
   if (opts.cvssDi) {
     const daAvviso = rows.filter((r) => r.source === "Edge-G" && !!r.cve_id && !!r.nvt_oid?.startsWith(OID_AVVISO_PACCHETTO));
     if (daAvviso.length > 0) {
@@ -10423,6 +10432,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       }
     }
   }
+  if (opts.senzaBassi) rows = rows.filter((r) => normalizeSeverity(r.severity) !== "Low");
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;

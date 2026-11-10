@@ -103,7 +103,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const [rete, setRete] = useState<{ id: number; nome: string } | null>(null);
   const [ospite, setOspite] = useState<{ id: number; nome: string } | null>(null);
   const [os, setOs] = useState<Set<OsFamiglia>>(new Set());
-  const [precedenti, setPrecedenti] = useState(false);
   const [ordina, setOrdina] = useState<OrdineElenco>("gravita");
   const [verso, setVerso] = useState<SortDirection>("desc");
   const [fasciaChiusa, setFasciaChiusa] = useState(false);
@@ -145,7 +144,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
     if (rete) sp.set("rete", String(rete.id));
     if (ospite) sp.set("ospite", String(ospite.id));
     if (os.size) sp.set("os", [...os].join(","));
-    if (precedenti) sp.set("precedenti", "1");
     if (ordina !== "gravita" || verso !== "desc") {
       sp.set("ordina", ordina);
       sp.set("verso", verso);
@@ -157,7 +155,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, precedenti, ordina, verso]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, ordina, verso]);
 
   useEffect(() => {
     void load();
@@ -167,7 +165,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   // La selezione vale per la vista corrente: cambiando tab, filtri, ricerca o pagina si azzera.
   useEffect(() => {
     setSelezione(new Set());
-  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, precedenti, ordina, verso]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, ordina, verso]);
 
   function alterna<T>(set: (f: (prev: Set<T>) => Set<T>) => void, v: T) {
     set((prev) => {
@@ -322,6 +320,9 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
+      <p className="text-[13px] text-muted-foreground">
+        Solo rilievi critici, alti e medi di scansioni degli ultimi 30 giorni: i bassi, gli informativi e gli host non scansionati di recente non compaiono.
+      </p>
       <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
 
       <FasciaIndicatori
@@ -410,7 +411,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
             })}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {SEVERITIES.map((s) => (
+            {SEVERITIES.filter((s) => s !== "Low").map((s) => (
               <button
                 key={`f-${s}`}
                 type="button"
@@ -441,11 +442,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
                 {NOME_OS[v]}
               </button>
             ))}
-            <button type="button" aria-pressed={precedenti} onClick={() => { setPrecedenti((v) => !v); setPage(1); }}
-              title="Di base solo l'ultima scansione di ogni rete"
-              className={`h-7 rounded-md border px-2 text-[13px] ${precedenti ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
-              Anche le scansioni precedenti
-            </button>
             {rete && (
               <button type="button" onClick={() => { setRete(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per rete">
                 Rete {rete.nome} ✕
@@ -840,7 +836,7 @@ function GruppiRilievi({
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {SEVERITIES.filter((s) => (g.gravita[s as keyof typeof g.gravita] ?? 0) > 0).map((s) => (
+                      {SEVERITIES.filter((s) => s !== "Low" && (g.gravita[s as keyof typeof g.gravita] ?? 0) > 0).map((s) => (
                         <BadgeGravita key={s} gravita={s} conteggio={g.gravita[s as keyof typeof g.gravita]} />
                       ))}
                     </div>

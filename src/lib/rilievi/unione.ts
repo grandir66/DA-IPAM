@@ -30,6 +30,19 @@ function gravitaDaTrunk(g: GravitaRilievo): Severity {
 
 type RilievoConFonti = RilievoUnito & { fonti?: FonteRilievo[] };
 
+/**
+ * Cosa non entra MAI nei Findings (Riccardo, 10/11/2026: «i rilievi low, info e vecchi non
+ * consideriamoli mai», «esiste un oggetto, ma non è stato scansionato recentemente: anche se ha dei
+ * rilievi deve essere escluso»): la gravità bassa e gli informativi, e tutto ciò che non viene da
+ * una scansione (o da un contatto dell'agente, o da un giro) degli ultimi giorni qui sotto.
+ */
+export const RILIEVO_RECENTE_GIORNI = 30;
+const eRecente = (data: string | null | undefined): boolean => {
+  if (!data) return false;
+  const t = Date.parse(data.includes("T") ? data : `${data.replace(" ", "T")}Z`);
+  return !Number.isNaN(t) && Date.now() - t <= RILIEVO_RECENTE_GIORNI * 86_400_000;
+};
+
 /** Tetto di sicurezza alle CVE lette: oltre, l'elenco si dichiara parziale. */
 const TETTO_CVE = 100_000;
 
@@ -67,7 +80,8 @@ function daCve(
     ...(opzioni.cvssDi ? { cvssDi: opzioni.cvssDi } : {}),
     ...(opzioni.exploitDi ? { exploitDi: opzioni.exploitDi } : {}),
     ...(opzioni.os?.length ? { osFamilies: opzioni.os } : {}),
-    ...(opzioni.precedenti ? { precedenti: true } : {}),
+    soloRecentiGiorni: RILIEVO_RECENTE_GIORNI,
+    senzaBassi: true,
   });
   const righe = data.map((v): RilievoConFonti => {
     const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
@@ -158,6 +172,8 @@ function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
         OR (s.http_json IS NOT NULL AND s.http_json != '')
         OR (s.controllo_json IS NOT NULL AND s.controllo_json != '')
         OR (s.protocollo = 'tcp' AND s.porta IN (23, 135, 512, 513, 514, 5985, 5986, 631, 8530)))
+       -- Solo i servizi visti da un giro recente (Riccardo, 10/11/2026); senza data non si nasconde.
+       AND (s.ultimo_visto IS NULL OR julianday(s.ultimo_visto) >= julianday('now') - ${RILIEVO_RECENTE_GIORNI})
      ORDER BY s.ultimo_visto DESC, s.host_id, s.porta, s.protocollo
      LIMIT 4001`,
   ).all(...(hostId ? [hostId] : [])) as Array<{
@@ -269,7 +285,11 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   // Gli stessi filtri valgono per la lettura unita e per quella di un motore solo.
   const filtra = (ingresso: RilievoConFonti[]): RilievoConFonti[] => {
     let righe = ingresso;
-    // Sistema operativo: le CVE le filtra già la lettura; trunk e giri si filtrano per l'host che toccano
+    // Bassi e vecchi fuori, per le fonti che non passano dalla lettura delle CVE (trunk e giri):
+  // le CVE li hanno già tolti alla fonte, host per host.
+  righe = righe.filter((x) => !!x.cve_key || (x.gravita !== "Low" && (x.fonte !== "trunk" || eRecente(x.visto))));
+
+  // Sistema operativo: le CVE le filtra già la lettura; trunk e giri si filtrano per l'host che toccano
     // (senza un host censito il sistema è «Unknown»).
     if (osScelti) {
       const vuole = new Set<OsFamily>(osScelti);

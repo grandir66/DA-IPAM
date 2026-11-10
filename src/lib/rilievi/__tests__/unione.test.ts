@@ -88,14 +88,14 @@ test("Telnet in inventario compare come giro Medium", () => {
   });
 });
 
-test("filtro gravità: Low non entra se si chiede High", () => {
+test("filtro gravità: Low non entra se si chiede High, e non entra mai", () => {
   reteConTls(A, "10.9.0.10", { self_signed: true, expired: false, version: "TLSv1.3", subject_cn: "x" });
   withTenant(A, () => {
     const high = elencoRilievi({ fonti: ["giro"], gravita: ["High"] });
     assert.ok(high.data.every((r) => r.gravita === "High"));
-    const low = elencoRilievi({ fonti: ["giro"], gravita: ["Low"] });
-    assert.ok(low.total >= 1);
-    assert.ok(low.data.every((r) => r.gravita === "Low"));
+    // Dal 10/11/2026 (Riccardo: «i rilievi low, info e vecchi non consideriamoli mai») i bassi
+    // non compaiono nemmeno chiedendoli: prima questa prova si aspettava di trovarne almeno uno.
+    assert.equal(elencoRilievi({ fonti: ["giro"], gravita: ["Low"] }).total, 0);
   });
 });
 

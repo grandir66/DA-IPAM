@@ -337,6 +337,8 @@ export function rilieviDaHttp(h: InfoHttp | null, ctx: ContestoServizio): Riliev
   ];
 }
 
+// Riccardo, 10/11/2026: «se manca la password il rilievo è critico, non solo high; anche se funziona
+// una password easy o di default». Vale per ogni accesso riuscito senza password o con quella di fabbrica.
 export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizio): RilievoUnito[] {
   if (!c) return [];
   const dove = `${ctx.ip}:${ctx.porta}`;
@@ -358,7 +360,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "redis-aperto",
-        "Medium",
+        "Critical",
         `Redis risponde a PING senza autenticazione su ${dove}`,
         "PING ha risposto PONG senza AUTH.",
         "Imposta requirepass (o ACL) e non esporre Redis sulla LAN utente.",
@@ -370,7 +372,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "mongo-aperto",
-        "High",
+        "Critical",
         `MongoDB senza autenticazione su ${dove}`,
         "listDatabases è andato a buon fine senza credenziali.",
         "Abilita authorization e un utente. Non lasciare 27017 raggiungibile da tutta la LAN.",
@@ -394,7 +396,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "snmp-public",
-        "Medium",
+        "Critical",
         `SNMP risponde alla community public su ${dove}`,
         `sysDescr: ${c.snmp_public.slice(0, 180)}`,
         "Togli la community public, usa una stringa lunga o passa a SNMPv3.",
@@ -406,7 +408,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "vnc-aperto",
-        "High",
+        "Critical",
         `VNC senza autenticazione su ${dove}`,
         "Il server offre il tipo di sicurezza None: lo schermo è visibile a chi si collega.",
         "Imposta una password VNC (meglio: tunnel SSH o spegni VNC se non serve).",
@@ -418,7 +420,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "login-fabbrica",
-        "High",
+        "Critical",
         `Login di fabbrica su ${dove} (${c.fabbrica.servizio})`,
         `Accettato l'utente «${c.fabbrica.utente}».`,
         "Cambia la password di fabbrica e spegni l'accesso se il servizio non serve in LAN.",
@@ -466,7 +468,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "smb-share",
-        "High",
+        "Critical",
         `Condivisione SMB senza credenziali su ${dove}`,
         `Aperte: ${c.smb_share_anon.slice(0, 8).join(", ")}`,
         "Togli Everyone/Guest dalle share e dagli ACL NTFS.",
@@ -474,13 +476,13 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     );
   }
   if (c.memcached) {
-    out.push(riga(ctx, "memcached", "Medium", `Memcached aperto su ${dove}`, "Il comando stats ha risposto senza autenticazione.", "Metti Memcached in localhost o con SASL, e non esporlo in LAN."));
+    out.push(riga(ctx, "memcached", "Critical", `Memcached aperto su ${dove}`, "Il comando stats ha risposto senza autenticazione.", "Metti Memcached in localhost o con SASL, e non esporlo in LAN."));
   }
   if (c.zookeeper) {
     out.push(riga(ctx, "zookeeper", "Medium", `ZooKeeper risponde su ${dove}`, "Il comando ruok ha risposto imok.", "Chiudi i four-letter-word o metti ACL; non esporre 2181."));
   }
   if (c.elasticsearch) {
-    out.push(riga(ctx, "elasticsearch", "High", `Elasticsearch senza autenticazione su ${dove}`, "GET / ha restituito il cluster senza login.", "Abilita xpack.security e non esporre 9200 sulla LAN utente."));
+    out.push(riga(ctx, "elasticsearch", "Critical", `Elasticsearch senza autenticazione su ${dove}`, "GET / ha restituito il cluster senza login.", "Abilita xpack.security e non esporre 9200 sulla LAN utente."));
   }
   if (c.docker) {
     out.push(riga(ctx, "docker", "Medium", `Versione Docker accessibile su ${dove}`, "GET /version ha restituito ApiVersion senza credenziali.", "Non esporre il socket Docker in TCP. Usa TLS e autorizzazione, o solo lo unix socket."));
@@ -492,7 +494,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     out.push(riga(ctx, "couchdb", "Low", `Pagina iniziale CouchDB accessibile su ${dove}`, "GET / ha restituito una risposta CouchDB senza credenziali.", "Verifica che database e funzioni amministrative richiedano autenticazione."));
   }
   if (c.kubelet) {
-    out.push(riga(ctx, "kubelet", "High", `Kubelet senza autenticazione su ${dove}`, "GET /runningpods ha risposto.", "Chiudi l'API read-only del kubelet (--read-only-port=0) e autentica la 10250."));
+    out.push(riga(ctx, "kubelet", "Critical", `Kubelet senza autenticazione su ${dove}`, "GET /runningpods ha risposto.", "Chiudi l'API read-only del kubelet (--read-only-port=0) e autentica la 10250."));
   }
   if (c.actuator_health) {
     out.push(riga(ctx, "actuator", "Low", `Spring Actuator health accessibile su ${dove}`, "GET /actuator/health restituisce lo stato senza login.", "Verifica che health esponga solo lo stato previsto e proteggi gli endpoint amministrativi."));
@@ -510,7 +512,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     );
   }
   if (c.x11) {
-    out.push(riga(ctx, "x11", "High", `X11 senza autenticazione su ${dove}`, "Il server X ha accettato la connessione.", "Spegni X11 in rete o usa SSH -X; xhost -"));
+    out.push(riga(ctx, "x11", "Critical", `X11 senza autenticazione su ${dove}`, "Il server X ha accettato la connessione.", "Spegni X11 in rete o usa SSH -X; xhost -"));
   }
   if (c.ms17_010) {
     out.push(
@@ -549,7 +551,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "snmp-write",
-        "High",
+        "Critical",
         `SNMP accetta la community private in scrittura su ${dove}`,
         "SET di sysName con community private riuscito (stesso valore letto prima).",
         "Togli le community di scrittura, usa SNMPv3 con authPriv.",
@@ -575,7 +577,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     out.push(riga(ctx, "adcs", "Low", `AD CS enrollment web su ${dove}`, "GET /certsrv/ mostra una pagina di iscrizione certificati AD CS.", "Tieni certsrv sulla rete di gestione, con HTTPS e autenticazione forte."));
   }
   if (c.jenkins_script_console) {
-    out.push(riga(ctx, "jenkins-script", "High", `Jenkins Script Console su ${dove}`, "GET /script ha aperto la console Groovy.", "Togli Script Console agli anonimi; autentica Jenkins; non esporlo in LAN."));
+    out.push(riga(ctx, "jenkins-script", "Critical", `Jenkins Script Console su ${dove}`, "GET /script ha aperto la console Groovy.", "Togli Script Console agli anonimi; autentica Jenkins; non esporlo in LAN."));
   }
   if (c.vnc_auth_debole && !c.vnc_senza_auth) {
     out.push(riga(ctx, "vnc-debole", "Medium", `VNC con autenticazione debole su ${dove}`, "Il server offre il tipo 2 (password DES a 8 caratteri).", "Usa un tunnel SSH o un VNC con TLS; password lunghe non bastano sul tipo 2."));
@@ -583,7 +585,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   const a = c.auth_ssh;
   const conCred = "Letto con la credenziale SSH già validata per questo host.";
   if (a?.password_vuote) {
-    out.push(riga(ctx, "auth-ssh-password-vuote", "High", `SSH accetta password vuote su ${dove}`, `PermitEmptyPasswords yes. ${conCred}`, "In sshd_config: PermitEmptyPasswords no."));
+    out.push(riga(ctx, "auth-ssh-password-vuote", "Critical", `SSH accetta password vuote su ${dove}`, `PermitEmptyPasswords yes. ${conCred}`, "In sshd_config: PermitEmptyPasswords no."));
   }
   if (a?.uid0?.length) {
     out.push(riga(ctx, "auth-uid0", "High", `Altri utenti con UID 0 su ${ctx.ip}`, `Oltre a root: ${a.uid0.join(", ")}. ${conCred}`, "Verifica chi li ha creati: un secondo UID 0 è un root nascosto. Toglili o dagli un UID normale."));

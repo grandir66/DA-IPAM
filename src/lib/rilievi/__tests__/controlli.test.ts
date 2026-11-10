@@ -103,9 +103,9 @@ test("consola web da titolo Jenkins; nginx no", () => {
   assert.equal(r[0]!.gravita, "Low");
 });
 
-test("Redis PING senza autenticazione: Medium; JSON rotto: null", () => {
+test("Redis PING senza autenticazione: Critical (Riccardo 10/11: senza password = critico); JSON rotto: null", () => {
   const r = rilieviDaControllo({ redis_aperto: true }, { ...CTX, porta: 6379 });
-  assert.equal(r[0]!.gravita, "Medium");
+  assert.equal(r[0]!.gravita, "Critical");
   assert.equal(controlloDaJson("nope"), null);
   assert.equal(controlloDaJson(JSON.stringify({ redis_aperto: true }))?.redis_aperto, true);
 });
@@ -165,7 +165,7 @@ test("SMBv1, sessione anonima e EternalBlue dal JSON", () => {
 
 test("Memcached e IPMI esposto; cipher0 vince su ping", () => {
   const m = rilieviDaControllo({ memcached: true }, { ...CTX, porta: 11211 });
-  assert.equal(m[0]!.gravita, "Medium");
+  assert.equal(m[0]!.gravita, "Critical");
   const ipmi = rilieviDaControllo({ ipmi_esposto: true }, { ...CTX, porta: 623 });
   assert.equal(ipmi.length, 1);
   assert.match(ipmi[0]!.titolo, /IPMI/);

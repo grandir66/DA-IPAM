@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
+### Modificato
+- **Gravità dei rilievi** (Riccardo, 10/11: «se manca la password il rilievo è critico, non solo high; anche se funziona una password easy o di default»): diventano Critical l'accesso senza password (Redis, MongoDB, Memcached, Elasticsearch, Kubelet, X11, VNC, Jenkins Script Console, share SMB anonima, SSH con password vuote) e quello con credenziali di fabbrica (login di fabbrica, community SNMP `public` e `private` in scrittura).
+
 ### Aggiunto
 - **Controlli con credenziali già validate** (Riccardo, 10/11: «solo se validate, per evitare brute force su apparati diversi»): da `/scans`, con la casella «Usa le credenziali già validate», il giro usa la credenziale SSH solo sugli host dove la Discovery l'ha già verificata (`host_credentials.validated = 1`, fuori fermo) e solo su OpenSSH: una sessione, un comando di sola lettura (root con password, password vuote, altri UID 0, aggiornamenti di sicurezza, riavvio richiesto). Per SNMP nessun traffico: un apparato gestito con community v1/v2c validata diventa un rilievo. Nessuna credenziale viene provata su un host nuovo; un rifiuto si conta in cronologia e non si riprova. Mai nei giri automatici.
 

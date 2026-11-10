@@ -115,8 +115,10 @@ il broadcast e multicast (9.968 telai):
 Non visti sull'hub ma probabili dai clienti con impianti (72729): Profinet DCP, EtherNet/IP, BACnet,
 che dicono nome, modello e produttore di PLC e pannelli senza interrogarli. Serve una cattura là.
 
-- [~] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60 e 81). **Scritto nel sensore**, non
-  rilasciato: DA-Vul-can, ramo `macbook/sensore-passivo`. Tabella nuova `dichiarazione` (mac, chiave,
+- [x] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60 e 81). **Rilasciato** con DA-Vul-can
+  0.8.292 (sì di Riccardo, 10/11) e attivo sulla sonda dell'hub: dopo due minuti e mezzo `GET /dichiarazioni`
+  dava 20 dichiarazioni da 11 apparati (due HP iLO, stampante 3D, Chromecast Ultra, client `ARM__boot` e
+  `udhcp`). Le sonde dei clienti restano alla loro versione (comandate da DA-Link). Ramo `macbook/sensore-passivo`. Tabella nuova `dichiarazione` (mac, chiave,
   valore, VLAN, prima e ultima vista; al più 16 valori per apparato e chiave), `GET /dichiarazioni`.
   Chiavi: `ssdp_server`, `ssdp_tipo`, `ssdp_agente`, `mdns_servizio`, `mdns_modello`, `dhcp_classe`,
   `dhcp_fqdn`. *Verifica (10/11):* la cattura vera del trunk dell'hub (9.923 telai, 185 secondi)

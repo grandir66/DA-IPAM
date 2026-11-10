@@ -9,6 +9,7 @@ Riccardo: approfondire la verifica e correggere i difetti confermati. Base origi
 - [x] Verifica mirata su SQLite isolato, parser e server locali finti. Nessuna prova su apparati o browser.
 - [x] Accodate le sonde di Discovery quando un giro è già in corso, con rete e levetta originali. Coda in memoria e una sola esecuzione per richiesta equivalente in attesa.
 - [x] VNC e NFS aggiornano il rilievo precedente solo con una risposta completa e interpretabile. Prove mirate su coda e sonde, 35 passate.
+- [x] Riccardo (10/11): «vai in dev». Build di produzione verde. Snapshot `pre-findings-dev-20261110` sulla VM 533 di DA-PX-03 prima della pubblicazione.
 - [ ] Collaudare in laboratorio su apparati reali. DNS prova la sola zona inversa /24 e UDP dipende dalle porte note. Per le sonde ancora binarie restano da distinguere esito negativo, timeout e controllo saltato. Le soglie delle fonti restano e sono segnalate in Findings.
 
 

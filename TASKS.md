@@ -57,6 +57,7 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
 - [ ] **Ipotesi, non accertata**: una protezione sui DC (risposta attiva di Wazuh, regola del firewall di Windows, EDR) ha bloccato l'indirizzo dell'hub dopo troppi accessi falliti. Dall'hub non si può verificare: va guardato sui DC o in Wazuh. Non è stato tentato nessun rimedio.
 - [x] Il giro «Servizi di rete» non riparte più a ogni riavvio: all'avvio parte solo se l'ultimo giro (segno `servizi_rete.ultimo_giro_automatico`, o l'ultima sonda vista) ha più di 6 ore; il giro ogni 6 ore resta. `src/lib/servizi-rete/job.ts`, prova `giro-all-avvio.test.ts`.
 - [x] 20:30 circa: `192.168.4.2` è tornato a rispondere all'hub (Riccardo ha scritto «192.168.4.2»), i nomi si risolvono di nuovo. Nessun DNS di riserva aggiunto. `192.168.4.1` in quel momento non rispondeva ancora.
+- [ ] Riccardo, 10/11: «forse XDR installato» sui DC. Se è l'XDR, le prove senza credenziali di DA-IPAM e della sonda verso i DC vanno o tolte o fatte autorizzare (indirizzo dell'hub fra le eccezioni dell'XDR): da decidere.
 - [ ] Resta: capire sui DC cosa ha bloccato l'hub; valutare se la prova SMB anonima va esclusa sui DC; l'hub dipende dai soli DC per i nomi (il gateway `192.168.4.254` risponde e conosce anche i nomi interni).
 
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)

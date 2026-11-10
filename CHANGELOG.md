@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Controlli: cipher-zero, LOGIN7, MS17, HTTP extra
+
+Riccardo (10/11): i quattro ritocchi lasciati dopo l'ondata 2.
+
+### Cambiato
+- **IPMI**: dopo il ping RMCP, Open Session con cipher suite 0; se lo status è 0 compare il rilievo High.
+- **MSSQL**: LOGIN7 `sa` con offset TDS corretti; LOGINACK nel flusso token, non un byte a caso.
+- **MS17-010**: PeekNamedPipe come TRANSACTION 0x25 su `\\PIPE\\` FID 0 (il check pubblico).
+- **`.git`/`.env`/actuator**: anche sulle porte già viste come HTTP fuori da 80/443/8080.
+
 ## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 2)
 
 Riccardo (10/11): seconda ondata in Findings; SMB anonimo sempre come Redis; EternalBlue, IPMI e login DB solo con la levetta già presente su `/scans`.

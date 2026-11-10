@@ -279,28 +279,29 @@ export async function provaSmbSessioni(
 }
 
 /**
- * MS17-010: NEGOTIATE SMB1 + session setup anonimo + tree IPC$ + PeekNamedPipe FID 0.
- * STATUS_INSUFF_SERVER_RESOURCES = non patchato.
+ * MS17-010: TRANSACTION PeekNamedPipe su FID 0 (check pubblico).
+ * STATUS_INSUFF_SERVER_RESOURCES = non patchato; ACCESS_DENIED = patchato.
  */
 export function peekNamedPipeSmb1(tid: number, uid: number, mid: number): Buffer {
   const h = Buffer.alloc(32);
   h[0] = 0xff;
   h.write("SMB", 1);
-  h[4] = 0xa0; // NT_TRANSACT
+  h[4] = 0x25; // TRANSACTION
   h[13] = 0x18;
   h.writeUInt16LE(0x4801, 14);
   h.writeUInt16LE(tid, 24);
   h.writeUInt16LE(uid, 28);
   h.writeUInt16LE(mid, 30);
-  // setup PeekNamedPipe (0x23) su FID 0 — layout NT Trans minimale
-  const words = Buffer.alloc(1 + 2 * 19);
-  words[0] = 19;
-  words.writeUInt16LE(0, 1); // max setup
-  words.writeUInt16LE(0, 15); // flags
-  words.writeUInt16LE(1, 25); // setup count
-  words.writeUInt16LE(0x0023, 27); // PeekNamedPipe
-  words.writeUInt16LE(0, 29); // FID 0
-  const bcc = Buffer.from([0x00, 0x00]);
+  const words = Buffer.alloc(33);
+  words[0] = 16;
+  words.writeUInt16LE(0x400, 7);
+  words[27] = 2;
+  words.writeUInt16LE(0x0023, 29);
+  words.writeUInt16LE(0, 31);
+  const nome = Buffer.from("\\PIPE\\\0", "binary");
+  const bcc = Buffer.alloc(2 + nome.length);
+  bcc.writeUInt16LE(nome.length, 0);
+  nome.copy(bcc, 2);
   return nbss(Buffer.concat([h, words, bcc]));
 }
 

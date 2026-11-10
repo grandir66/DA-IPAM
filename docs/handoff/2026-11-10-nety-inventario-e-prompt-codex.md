@@ -56,10 +56,10 @@ SNMP community `public`, VNC senza auth, pannelli web esposti; con la levetta: F
 **Seconda ondata GIÀ FATTA (10/11 — non rifare):** SMBv1, sessione SMB anonima/Guest/share (sempre,
 probe in `smb-controlli.ts`; `probes/smb2.ts` resta solo CHALLENGE); SSH KEX/cifrari/MAC deboli;
 Telnet 23, WinRM 5985/5986, WSUS HTTP 8530; Memcached, ZooKeeper, Elasticsearch, Docker API, etcd,
-CouchDB, Kubelet, X11, `.git`/`.env`/Spring Actuator; con la stessa levetta: EternalBlue
-(MS17-010), IPMI RMCP ping, MySQL/MSSQL/Postgres di fabbrica (tetto 6). IPMI cipher-zero è
-dichiarato ma non ancora provato (resta `false`). Verifica dal vivo: giro **«Solo controlli»**
-sull'hub, con e senza levetta.
+CouchDB, Kubelet, X11, `.git`/`.env`/Spring Actuator anche su porte HTTP non standard; con la
+stessa levetta: EternalBlue (MS17-010, TRANSACTION PeekNamedPipe), IPMI RMCP ping **e cipher-zero**,
+MySQL/MSSQL (LOGIN7 `sa`) / Postgres di fabbrica (tetto 6). Prove su server finti verdi; collaudo
+dal vivo su SQL Server / Windows 7 non patchato ancora da fare sull'hub.
 
 **Resto del catalogo DA FARE (solo nomi, stessa impostazione):**
 - RDP: sicurezza Standard (senza TLS). SSH: login con password offerto. LDAP: signing non obbligatorio.
@@ -67,7 +67,7 @@ sull'hub, con e senza levetta.
 - TLS: cifrari deboli, chiave debole.
 - Web: Jenkins script console, pannello stampante, AD CS enrollment.
 - Altri: spooler RPC, Cisco Smart Install, trasferimento zona DNS, TFTP, NTP monlist, rsync,
-  r-services, IPMI cipher zero / RAKP, SMTP relay e VRFY, VNC con auth debole.
+  r-services, IPMI RAKP, SMTP relay e VRFY, VNC con auth debole.
 
 **Vincolo tassativo sugli autenticati/intrusivi** (default di fabbrica DB, `admin`/`admin`, SNMP
 write): spenti di serie, si accendono solo con la levetta «prove intrusive» del lanciatore, si

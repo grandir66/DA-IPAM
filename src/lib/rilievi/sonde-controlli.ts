@@ -328,8 +328,18 @@ async function httpJsonSenzaAuth(ip: string, porta: number, https: boolean, perc
   return r != null && r.code >= 200 && r.code < 400 && indizio.test(r.corpo);
 }
 
-export async function provaPercorsiHttp(ip: string, porta: number, ms: number): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
-  const https = porta === 443 || porta === 8443;
+function schemiHttp(porta: number): boolean[] {
+  if (porta === 80 || porta === 8080 || porta === 8000 || porta === 8888) return [false];
+  if (porta === 443 || porta === 8443 || porta === 9443) return [true, false];
+  return [false, true];
+}
+
+async function percorsiSuSchema(
+  ip: string,
+  porta: number,
+  https: boolean,
+  ms: number,
+): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
   const out: Pick<InfoControllo, "actuator" | "git_env"> = {};
   const git = await httpGet(ip, porta, https, ms, undefined, "/.git/HEAD");
   if (git && git.code === 200 && /ref: /.test(git.corpo)) out.git_env = ".git/HEAD";
@@ -340,6 +350,15 @@ export async function provaPercorsiHttp(ip: string, porta: number, ms: number): 
   const act = await httpGet(ip, porta, https, ms, undefined, "/actuator/health");
   if (act && act.code === 200 && /status|UP/i.test(act.corpo)) out.actuator = true;
   return out;
+}
+
+/** `.git` / `.env` / actuator: su 80/443 e anche sulle altre porte già viste come HTTP. */
+export async function provaPercorsiHttp(ip: string, porta: number, ms: number): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
+  for (const https of schemiHttp(porta)) {
+    const out = await percorsiSuSchema(ip, porta, https, ms);
+    if (out.git_env || out.actuator) return out;
+  }
+  return {};
 }
 
 export function x11Accettato(buf: Buffer): boolean {
@@ -355,12 +374,42 @@ export async function provaX11(ip: string, porta: number, ms: number): Promise<b
 
 export const RMCP_PING = Buffer.from([0x06, 0x00, 0xff, 0x06, 0x00, 0x00, 0x11, 0xbe, 0x80, 0x00, 0x00, 0x00]);
 
+/** RMCP+ Open Session con cipher suite 0 (auth/integrity/conf = none). */
+export function pacchettoIpmiOpenSessionCipher0(): Buffer {
+  const payload = Buffer.alloc(32);
+  payload[2] = 0x04;
+  payload.writeUInt32LE(0xa0a1a2a3, 4);
+  payload[8] = 0x00;
+  payload[11] = 0x08;
+  payload[16] = 0x01;
+  payload[19] = 0x08;
+  payload[24] = 0x02;
+  payload[27] = 0x08;
+  const pkt = Buffer.alloc(48);
+  pkt[0] = 0x06;
+  pkt[2] = 0xff;
+  pkt[3] = 0x07;
+  pkt[4] = 0x06;
+  pkt[5] = 0x10;
+  pkt.writeUInt16LE(32, 14);
+  payload.copy(pkt, 16);
+  return pkt;
+}
+
 export function ipmiPong(buf: Buffer): boolean {
   return buf.length >= 12 && buf[0] === 0x06 && buf[3] === 0x06 && buf[8] === 0x40;
 }
 
-export async function provaIpmi(ip: string, ms: number): Promise<{ esposto: boolean; cipher0: boolean }> {
-  const esposto = await new Promise<boolean>((resolve) => {
+/** Open Session Response: payload type 0x11, status 0x00 = cipher 0 accettato. */
+export function ipmiCipher0Accettato(buf: Buffer): boolean {
+  if (buf.length < 18) return false;
+  if (buf[0] !== 0x06 || buf[4] !== 0x06) return false;
+  if ((buf[5]! & 0x3f) !== 0x11) return false;
+  return buf[17] === 0x00;
+}
+
+function udpScambio(ip: string, porta: number, req: Buffer, ms: number, accetta: (b: Buffer) => boolean): Promise<boolean> {
+  return new Promise((resolve) => {
     const s = dgram.createSocket("udp4");
     const t = setTimeout(() => {
       s.close();
@@ -369,14 +418,14 @@ export async function provaIpmi(ip: string, ms: number): Promise<{ esposto: bool
     s.once("message", (m) => {
       clearTimeout(t);
       s.close();
-      resolve(ipmiPong(m));
+      resolve(accetta(m));
     });
     s.once("error", () => {
       clearTimeout(t);
       s.close();
       resolve(false);
     });
-    s.send(RMCP_PING, 623, ip, (e) => {
+    s.send(req, porta, ip, (e) => {
       if (e) {
         clearTimeout(t);
         s.close();
@@ -384,7 +433,13 @@ export async function provaIpmi(ip: string, ms: number): Promise<{ esposto: bool
       }
     });
   });
-  return { esposto, cipher0: false };
+}
+
+export async function provaIpmi(ip: string, ms: number, porta = 623): Promise<{ esposto: boolean; cipher0: boolean }> {
+  const esposto = await udpScambio(ip, porta, RMCP_PING, ms, ipmiPong);
+  if (!esposto) return { esposto: false, cipher0: false };
+  const cipher0 = await udpScambio(ip, porta, pacchettoIpmiOpenSessionCipher0(), ms, ipmiCipher0Accettato);
+  return { esposto, cipher0 };
 }
 
 function mysqlLenenc(buf: Buffer): { n: number; o: number } | null {
@@ -457,7 +512,55 @@ function tdsPassword(s: string): Buffer {
   return b;
 }
 
-/** LOGIN7 sa con password vuota; LOGINACK (0xAD) = successo. */
+/** LOGIN7 sa / password vuota (TDS 7.1). */
+export function pacchettoLogin7Sa(): Buffer {
+  const host = Buffer.from("DA-IPAM", "utf16le");
+  const user = Buffer.from("sa", "utf16le");
+  const pass = tdsPassword("");
+  const app = Buffer.from("DA-IPAM", "utf16le");
+  const fisso = 94;
+  const dati = Buffer.concat([host, user, pass, app]);
+  const payload = Buffer.alloc(fisso + dati.length);
+  payload.writeUInt32LE(payload.length, 0);
+  payload.writeUInt32LE(0x71000001, 4);
+  payload.writeUInt32LE(4096, 8);
+  payload[24] = 0xe0;
+  payload[25] = 0x03;
+  const campo = (o: number, ib: number, cch: number) => {
+    payload.writeUInt16LE(ib, o);
+    payload.writeUInt16LE(cch, o + 2);
+  };
+  let ib = fisso;
+  campo(36, ib, host.length / 2);
+  ib += host.length;
+  campo(40, ib, user.length / 2);
+  ib += user.length;
+  campo(44, ib, pass.length / 2);
+  ib += pass.length;
+  campo(48, ib, app.length / 2);
+  dati.copy(payload, fisso);
+  const pkt = Buffer.alloc(8 + payload.length);
+  pkt[0] = 0x10;
+  pkt[1] = 0x01;
+  pkt.writeUInt16BE(pkt.length, 2);
+  payload.copy(pkt, 8);
+  return pkt;
+}
+
+/** Token LOGINACK (0xAD) nel flusso TDS; ERROR (0xAA) = rifiuto. */
+export function tdsLoginRiuscito(buf: Buffer): boolean {
+  if (buf.length < 9) return false;
+  let i = 8;
+  while (i < buf.length) {
+    const tok = buf[i];
+    if (tok === 0xad) return true;
+    if (tok === 0xaa || tok === 0xfd || tok === 0xff) return false;
+    if (i + 3 > buf.length) return false;
+    i += 3 + buf.readUInt16LE(i + 1);
+  }
+  return false;
+}
+
 export async function provaMssqlSa(ip: string, porta: number, ms: number): Promise<boolean> {
   const s = await connetti(ip, porta, ms);
   if (!s) return false;
@@ -468,31 +571,9 @@ export async function provaMssqlSa(ip: string, porta: number, ms: number): Promi
     pre.writeUInt16BE(8, 2);
     s.write(pre);
     await leggi(s, ms, (b) => b.length >= 8);
-    const user = Buffer.from("sa", "utf16le");
-    const pass = tdsPassword("");
-    const app = Buffer.from("DA-IPAM", "utf16le");
-    const fisso = 94;
-    const payload = Buffer.alloc(fisso + user.length + pass.length + app.length);
-    payload.writeUInt32LE(payload.length, 0);
-    payload.writeUInt32LE(0x71000001, 4);
-    payload.writeUInt32LE(4096, 8);
-    payload.writeUInt32LE(fisso, 36);
-    payload.writeUInt16LE(user.length / 2, 38);
-    payload.writeUInt32LE(fisso + user.length, 40);
-    payload.writeUInt16LE(pass.length / 2, 42);
-    payload.writeUInt32LE(fisso + user.length + pass.length, 44);
-    payload.writeUInt16LE(app.length / 2, 46);
-    user.copy(payload, fisso);
-    pass.copy(payload, fisso + user.length);
-    app.copy(payload, fisso + user.length + pass.length);
-    const pkt = Buffer.alloc(8 + payload.length);
-    pkt[0] = 0x10;
-    pkt[1] = 0x01;
-    pkt.writeUInt16BE(pkt.length, 2);
-    payload.copy(pkt, 8);
-    s.write(pkt);
+    s.write(pacchettoLogin7Sa());
     const r2 = await leggi(s, ms, (b) => b.length >= 9);
-    return r2.length >= 9 && r2[8] === 0xad;
+    return tdsLoginRiuscito(r2);
   } finally {
     s.destroy();
   }
@@ -593,7 +674,7 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
     }
 
     const httpish = porta === 80 || porta === 443 || porta === 8080 || porta === 8443 || porta === 8000 || porta === 8888;
-    if (httpish) {
+    if (httpish || !PORTE_CONTROLLO.has(porta)) {
       Object.assign(info, await provaPercorsiHttp(ip, porta, ms));
     }
     if (opz.proveFabbrica && restanti > 0 && httpish) {

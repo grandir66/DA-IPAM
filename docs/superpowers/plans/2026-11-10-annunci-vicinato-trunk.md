@@ -79,11 +79,15 @@
 - [x] **Verifica sull'hub (10/11, 0.9.1112):** prove `mndp` attive nel riconoscimento: produttore
   `mikrotik` su 14 host, categoria `network.router` su 8 e `network.switch` su 6. Il modello annunciato
   vale prima della capacità generica del CDP (un CRS in CDP si dichiara router).
-- [ ] **Aperto:** su tre host (`192.168.15.145`, `.155`, `.156`, tutti `CRS504-4XQ`) il campo
-  `hosts.classification` non è cambiato (uno `unknown`, due `router`) pur avendo la prova `mndp`
-  «switch»: capire quale strada scrive quel campo. E il modello resta «MikroTik» / «RouterOS (…)»
-  perché un modello già scritto non si sovrascrive: proposto a Riccardo di far vincere il modello
-  annunciato su quelli che sono solo il nome del produttore.
+- [x] **Modello annunciato al posto di quello generico** (Riccardo, 10/11: «Sì, fallo»). Verifica
+  sull'hub (0.9.1117): «13 campi riempiti su 21 host»; 15 host hanno ora il modello vero
+  (`CRS504-4XQ`, `CRS304-4XG`, `CRS309-1G-8S+`, `CCR2004-1G-12S+2XS`, `CCR2004-16G-2S+`, `RB5009UPr+S+`,
+  `CHR`) al posto di «MikroTik» / «RouterOS (…)». Un modello vero già scritto non si tocca.
+- [ ] **Aperto, da decidere:** i CRS (switch) restano `network.router` in `hosts.attr_category`. La
+  prova `mndp` «switch» c'è (0,85 × peso 0,9), ma le altre fonti votano router (porte di RouterOS,
+  banner HTTP, vicini) e insieme vincono. Un CRS con RouterOS può fare tutti e due i mestieri: se il
+  modello deve decidere, `mndp` va reso autoritativo sulla categoria. (Il 10/11 avevo guardato
+  `hosts.classification`, che è un altro campo.)
 - [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 

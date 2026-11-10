@@ -8,6 +8,7 @@
  */
 import type { ProfiloScansione } from "./tipi";
 import { SCRIPT_VIETATI } from "./profili";
+import { PORTE_STAMPA_RAW } from "@/lib/scanner/ports";
 
 /** Tetto al singolo script: `mqtt-subscribe` resta in ascolto, `ssl-cert` su una porta muta aspetta. */
 const SCRIPT_TIMEOUT_S = 20;
@@ -87,6 +88,10 @@ export function argomentiTcp(profilo: ProfiloScansione, opts: OpzioniComando): s
     "-sT",
     "-p",
     elencoPorte(profilo.tcp),
+    // Porte di stampa raw (9100/9101/9102/515) mai sondate: -sV vi manderebbe probe e la
+    // stampante stamperebbe (incidente 10/11, 192.168.99.84).
+    "--exclude-ports",
+    PORTE_STAMPA_RAW.join(","),
     "-sV",
     "--version-intensity",
     String(profilo.versionIntensity),

@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Fix: la scansione avanzata non fa più stampare le stampanti
+
+Riccardo (10/11): la scansione avanzata faceva stampare la stampante 192.168.99.84 (fogli con caratteri strani).
+
+### Corretto
+- **Nmap `-sV` non sonda più le porte di stampa raw** (9100/9101/9102 jetdirect, 515 LPD): i probe di versione su jetdirect venivano stampati. La 9100 è tolta da `ALWAYS_USEFUL_TCP_PORTS`, le porte di stampa (`PORTE_STAMPA_RAW`) sono filtrate dal `-p` e aggiunte a `--exclude-ports` in tutti i comandi nmap (scan mirato post-naabu e scan completo) e nel profilo. Le sonde già le saltavano; il buco era in nmap. Prova di regressione in `scanner/__tests__/porte-stampa-no-sv.test.ts`.
+
 ## [Non rilasciato] — 2026-11-10 · Scansioni: timeout e concorrenza per-giro
 
 Riccardo (10/11): il profilo «Su misura» deve poter scegliere timeout e worker; oggi restano i default del motore.

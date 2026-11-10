@@ -17,6 +17,7 @@ Riccardo (10/11): «Sì, svuotale». Misura sull'hub 533: 75 host non manuali mo
 ### Cambiato
 - **Una classe non manuale senza più categoria si svuota** al ricalcolo, invece di restare quella di luglio col motivo «Insufficient evidence». Le scelte manuali non si toccano; una categoria generica senza slug (es. `network`) non svuota.
 - **La classe si aggiorna anche sugli host col lucchetto mai impostato** (`classification_manual` NULL, 101 su 384 sull'hub): prima la proiezione li saltava e 57 VM riconosciute restavano «unknown».
+- **Firme di nome e di porte**: un indizio certo vale da solo (Winbox + API = router, 8006 + ssh = hypervisor, 17988 = server, `DESKTOP-XXXXXXX` = postazione, iPhone/Pixel/iPad = smartphone o tablet). Prima pesavano tutti 0.15-0.17 e «iPhone» diventava un telefono VoIP. Sommare gli indizi deboli non serviva: sull'hub solo 3 host su 107 ne avevano due concordi.
 - **Fanvil e Yealink sono telefoni, Meross è IoT** già dal produttore del MAC: il motore nuovo aveva solo il nome host, sotto soglia.
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola

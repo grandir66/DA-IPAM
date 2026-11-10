@@ -220,6 +220,27 @@ export function prodottoDaVersione(versione: string | null | undefined) {
   return PRODOTTI_DA_VERSIONE.find((p) => p.re.test(versione)) ?? null;
 }
 
+/**
+ * Firme (10/11/2026, misura sull'hub 533): nomi e porte che da soli dicono il tipo.
+ * Sommare gli indizi deboli non serviva — su 107 host senza categoria solo 3 ne
+ * avevano due concordi; gli altri avevano UN indizio, spesso certo (Winbox + API =
+ * RouterOS) ma emesso a 0.15-0.17 come qualunque altro. Qui il peso è quello di
+ * `nmap_service`: 0.85 x 0.7 = 0.595, sopra soglia e sotto chi parla con l'apparato.
+ * Il nome «iPhone» finiva su `voip.phone` (la regola vecchia cerca «phone»): da lì
+ * venivano i falsi «voip» sulla rete dei client.
+ */
+const PESO_FIRMA = 0.85;
+const FIRME_NOME: ReadonlyArray<readonly [RegExp, CategorySlug]> = [
+  [/^desktop-[a-z0-9]{7}$/i, "compute.workstation"], // nome di serie di Windows 10/11
+  [/^ipad\b/i, "mobile.tablet"],
+  [/^iphone\b|^pixel[-\s]?\d|^galaxy[-\s]|fairphone|nothing[-\s]phone|^redmi|^oneplus/i, "mobile.phone"],
+];
+const FIRME_PORTE: ReadonlyArray<readonly [(aperte: ReadonlySet<number>) => boolean, CategorySlug]> = [
+  [(a) => a.has(8291) && (a.has(8728) || a.has(8729)), "network.router"], // Winbox + API RouterOS
+  [(a) => a.has(8006) && a.has(22), "compute.hypervisor"], // interfaccia di Proxmox VE
+  [(a) => a.has(17988), "compute.server"], // virtual media di HPE iLO
+];
+
 function safeJson<T>(raw: string | null): T | null {
   if (!raw) return null;
   try { return JSON.parse(raw) as T; } catch { return null; }
@@ -394,17 +415,29 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     if (mestiere) out.push({ source: "nmap_os", phase: "scan_nmap_base", dimension: "category", claim: mestiere, confidence: 0.7, raw_value: host.os_info.slice(0, 200) });
   }
 
-  // 4. hostname (debole)
+  // 4. hostname: prima le firme (nomi che dicono il tipo), poi la regola debole
   if (host.hostname) {
-    const cat = categoryFromLegacyText({ hostname: host.hostname });
-    if (cat) out.push({ source: "hostname", phase: "scan_icmp", dimension: "category", claim: cat, confidence: 0.5, raw_value: host.hostname });
+    const firma = FIRME_NOME.find(([re]) => re.test(host.hostname ?? ""));
+    if (firma) {
+      out.push({ source: "hostname", phase: "scan_icmp", dimension: "category", claim: firma[1], confidence: 0.7, weight: PESO_FIRMA, raw_value: host.hostname });
+    } else {
+      const cat = categoryFromLegacyText({ hostname: host.hostname });
+      if (cat) out.push({ source: "hostname", phase: "scan_icmp", dimension: "category", claim: cat, confidence: 0.5, raw_value: host.hostname });
+    }
   }
 
-  // 5. porte aperte (debole)
+  // 5. porte aperte: prima le firme (porte di un solo prodotto), poi la regola debole
   const ports = safeJson<Array<{ port: number; version?: string | null }>>(host.open_ports);
   if (ports && ports.length > 0) {
-    const cat = categoryFromLegacyText({ openPorts: ports });
-    if (cat) out.push({ source: "ports", phase: "scan_naabu", dimension: "category", claim: cat, confidence: 0.5, raw_value: ports.map((p) => p.port).join(",") });
+    const aperte = new Set(ports.map((p) => p.port));
+    const firma = FIRME_PORTE.find(([vale]) => vale(aperte));
+    const elenco = ports.map((p) => p.port).join(",");
+    if (firma) {
+      out.push({ source: "ports", phase: "scan_naabu", dimension: "category", claim: firma[1], confidence: 0.7, weight: PESO_FIRMA, raw_value: elenco });
+    } else {
+      const cat = categoryFromLegacyText({ openPorts: ports });
+      if (cat) out.push({ source: "ports", phase: "scan_naabu", dimension: "category", claim: cat, confidence: 0.5, raw_value: elenco });
+    }
 
     /* 5b. La VERSIONE dei servizi (`-sV`): è il posto dove un prodotto dice il proprio
      * nome, e fino al 05/11/2026 non la leggeva nessuno — né per l'OS né per la

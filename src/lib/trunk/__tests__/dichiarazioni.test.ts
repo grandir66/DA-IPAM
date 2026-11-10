@@ -110,11 +110,34 @@ test("annunci di Windows, WS-Discovery e iLO: valori veri dell'hub", () => {
     ["netbios:category=compute.server", "netbios:os=windows"]);
   assert.deepEqual(di([{ chiave: "nbt_os", valore: "10.0" }, { chiave: "nbt_ruolo", valore: "workstation" }]),
     ["netbios:category=compute.workstation", "netbios:os=windows"]);
+  // Samba su un NAS manda lo stesso annuncio con «6.1»: non è Windows e non è un «server» (hub, 10/11)
+  assert.deepEqual(di([{ chiave: "nbt_os", valore: "6.1" }, { chiave: "nbt_ruolo", valore: "stampa,server" }, { chiave: "nbt_commento", valore: "NAS Server" }]), []);
   assert.deepEqual(di([{ chiave: "wsd_tipo", valore: "Device" }, { chiave: "wsd_tipo", valore: "PrintDeviceType" }]), ["wsd:category=peripheral.printer"]);
   assert.deepEqual(di([{ chiave: "wsd_tipo", valore: "Device" }, { chiave: "wsd_tipo", valore: "Computer" }]), [], "«Device Computer» non dice il mestiere");
   assert.deepEqual(di([{ chiave: "dhcp6_classe", valore: "CPQRIB3" }]), ["dhcp:vendor=hpe"]);
   // lo spanning tree e i prefissi IPv6 si mostrano, non sono prove di cosa è l'apparato
   assert.deepEqual(di([{ chiave: "stp_radice", valore: "0/08:55:31:00:00:01" }, { chiave: "ra_prefisso", valore: "2001:db8::/64" }]), []);
+});
+
+test("una prova NetBIOS scritta da qui e non più valida si toglie e l'host si ricalcola", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const net = Number((d.prepare("SELECT id FROM networks LIMIT 1").get() as { id: number }).id);
+    const nas = Number(d.prepare("INSERT INTO hosts (network_id, ip, mac) VALUES (?, '10.66.0.40', 'AA:BB:CC:00:00:40')").run(net).lastInsertRowid);
+    const prova = d.prepare(
+      "INSERT INTO attribution_evidence (host_id, source, phase, dimension, claim, confidence, raw_value) VALUES (?, 'netbios', 'scan_naabu', ?, ?, 0.7, ?)",
+    );
+    prova.run(nas, "category", "compute.server", "ruolo stampa,server");
+    prova.run(nas, "os", "windows", "annuncio NetBIOS, versione 6.1");
+    prova.run(nas, "os", "linux", "nbstat: Samba");
+    salvaDichiarazioni([
+      { mac: "aa:bb:cc:00:00:40", chiave: "nbt_os", valore: "6.1", vid: 40, ultima_vista: ORA },
+      { mac: "aa:bb:cc:00:00:40", chiave: "nbt_ruolo", valore: "stampa,server", vid: 40, ultima_vista: ORA },
+    ]);
+    portaDichiarazioniSugliHost([nas]);
+    const rimaste = d.prepare("SELECT raw_value FROM attribution_evidence WHERE host_id = ? AND source = 'netbios'").all(nas) as Array<{ raw_value: string }>;
+    assert.deepEqual(rimaste.map((r) => r.raw_value), ["nbstat: Samba"], "le prove di altre sonde restano");
+  });
 });
 
 test("un sensore più vecchio non ha la rotta: nessun errore", async () => {

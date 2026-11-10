@@ -120,8 +120,13 @@ export function proveDaDichiarazioni(righe: ReadonlyArray<Pick<Dichiarazione, "c
 
   // Annuncio del «browser» di Windows: chi lo manda è Windows (o lo imita, come Samba: prova
   // debole), e il ruolo dichiarato dice se è un server o una postazione.
-  const ruoli = di("nbt_ruolo").flatMap((v) => v.split(","));
-  if (di("nbt_os").length > 0) {
+  // Samba (NAS Synology e QNAP, Linux) manda lo stesso annuncio e si dichiara «6.1» o «4.9»: sull'hub
+  // il 10/11/2026 tre NAS risultavano Windows e «server» e perdevano la categoria «storage». Solo
+  // dalla versione 10 in su l'annuncio è di un Windows vero; sotto, non si sa e non si dice niente.
+  const versione = Number((di("nbt_os")[0] ?? "").split(".")[0]);
+  const windowsVero = Number.isFinite(versione) && versione >= 10;
+  const ruoli = windowsVero ? di("nbt_ruolo").flatMap((v) => v.split(",")) : [];
+  if (windowsVero) {
     out.push({ source: "netbios", phase: "scan_naabu", dimension: "os", claim: "windows", confidence: 0.6, raw_value: `annuncio NetBIOS, versione ${di("nbt_os")[0]}` });
   }
   if (ruoli.some((r) => r === "dc" || r === "sql" || r === "server")) {
@@ -173,12 +178,27 @@ export function portaDichiarazioniSugliHost(hostIds: readonly number[]): EsitoDi
     const nome = righe.find((r) => r.chiave === "dhcp_fqdn" || r.chiave === "dhcp6_fqdn")?.valore;
     if (nome && riempiNome.run(nome.slice(0, 120), hostId).changes > 0) esito.campi += 1;
     const prove = proveDaDichiarazioni(righe);
-    if (prove.length === 0) continue;
+    // Le prove NetBIOS scritte da qui e che oggi non valgono più (regola cambiata) si tolgono: non
+    // hanno scadenza e resterebbero per sempre. Si riconoscono dal testo che questo modulo scrive.
+    const valide = new Set(prove.filter((p) => p.source === "netbios").map((p) => `${p.dimension}=${p.claim}`));
+    let tolte = 0;
+    for (const v of d.prepare(
+      "SELECT id, dimension, claim FROM attribution_evidence WHERE host_id = ? AND source = 'netbios' AND (raw_value LIKE 'annuncio NetBIOS%' OR raw_value LIKE 'ruolo %')",
+    ).all(hostId) as Array<{ id: number; dimension: string; claim: string }>) {
+      if (valide.has(`${v.dimension}=${v.claim}`)) continue;
+      d.prepare("UPDATE attribution_evidence SET superseded_by = NULL WHERE superseded_by = ?").run(v.id);
+      d.prepare("DELETE FROM attribution_evidence WHERE id = ?").run(v.id);
+      tolte += 1;
+    }
+    if (prove.length === 0) {
+      if (tolte > 0) recomputeAttributionForDb(d, hostId, "scan");
+      continue;
+    }
     try {
       const r = recordEvidence(d, hostId, prove);
       esito.prove += prove.length;
       // Si ricalcola solo se è cambiato qualcosa: il giro passa ogni due minuti.
-      if (r.inserted > 0 || r.superseded > 0) recomputeAttributionForDb(d, hostId, "scan");
+      if (r.inserted > 0 || r.superseded > 0 || tolte > 0) recomputeAttributionForDb(d, hostId, "scan");
     } catch (e) {
       console.error(`[trunk] host ${hostId}: prove dalle dichiarazioni non salvate:`, e);
     }

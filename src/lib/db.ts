@@ -583,6 +583,35 @@ export function getDb(): Database.Database {
       _db.pragma("foreign_keys = ON");
     }
   }
+  // Lanciatore /scans: sonda_l2, segmentazione, controlli.
+  {
+    const schema = _db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql: string } | undefined;
+    if (schema?.sql && (!schema.sql.includes("'controlli'") || !schema.sql.includes("'sonda_l2'") || !schema.sql.includes("'segmentazione'"))) {
+      _db.pragma("foreign_keys = OFF");
+      try {
+        _db.exec("DROP TABLE IF EXISTS scan_history_v9");
+        _db.exec(`CREATE TABLE scan_history_v9 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+          network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+          scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich', 'sonda_l2', 'segmentazione', 'controlli')),
+          status TEXT NOT NULL,
+          ports_open TEXT,
+          raw_output TEXT,
+          duration_ms INTEGER,
+          timestamp TEXT DEFAULT (datetime('now'))
+        )`);
+        _db.exec("INSERT INTO scan_history_v9 SELECT * FROM scan_history");
+        _db.exec("DROP TABLE scan_history");
+        _db.exec("ALTER TABLE scan_history_v9 RENAME TO scan_history");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+        _db.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      } catch {
+        /* already migrated */
+      }
+      _db.pragma("foreign_keys = ON");
+    }
+  }
   try {
     _db.exec(`CREATE TABLE IF NOT EXISTS network_host_credentials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

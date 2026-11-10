@@ -1681,6 +1681,38 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK v5 fallita:`, e);
   }
 
+  // v6: il lanciatore `/scans` scrive sonda_l2, segmentazione, controlli.
+  // Senza questi valori INSERT in scan_history esplode (CHECK constraint failed)
+  // dopo che il giro è già partito.
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
+    const needsGiriUi = row?.sql && (!row.sql.includes("'controlli'") || !row.sql.includes("'sonda_l2'") || !row.sql.includes("'segmentazione'"));
+    if (needsGiriUi) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v6");
+      newDb.exec(`CREATE TABLE scan_history_v6 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich', 'sonda_l2', 'segmentazione', 'controlli')),
+        status TEXT NOT NULL,
+        ports_open TEXT,
+        raw_output TEXT,
+        duration_ms INTEGER,
+        timestamp TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scan_history_v6 SELECT * FROM scan_history");
+      newDb.exec("DROP TABLE scan_history");
+      newDb.exec("ALTER TABLE scan_history_v6 RENAME TO scan_history");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v6 (+ controlli/sonda_l2/segmentazione)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK v6 fallita:`, e);
+  }
+
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'vuln_sync' (sync findings da scanner-edge).
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;

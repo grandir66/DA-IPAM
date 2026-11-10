@@ -1403,7 +1403,7 @@ CREATE TABLE IF NOT EXISTS scan_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich')),
+  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich', 'sonda_l2', 'segmentazione', 'controlli')),
   status TEXT NOT NULL,
   ports_open TEXT,
   raw_output TEXT,

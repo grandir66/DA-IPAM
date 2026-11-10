@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Lanciatore: CHECK scan_history
+
+Riccardo (10/11): una scansione da `/scans` falliva con CHECK constraint su `scan_type`.
+
+### Corretto
+- **`scan_history`**: il CHECK accetta `sonda_l2`, `segmentazione` e `controlli` (migrazione v6, come per `scan_enrich`). Senza, l'INSERT dello storico esplodeva dopo che il giro era già partito.
+
 ## [Non rilasciato] — 2026-11-10 · Findings: tab per motore (Tutti · IPAM/Nety · Edge · Wazuh)
 
 Riccardo (10/11): i tab separati per motore, con Edge e Wazuh distinti.

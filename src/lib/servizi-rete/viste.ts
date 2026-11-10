@@ -82,7 +82,9 @@ export function preparaServizi(righe: readonly ServizioReteCompleto[], adesso: D
     const segnali: Segnale[] = [];
     if (r.protocollo === "tcp" && PORTE_IN_CHIARO[r.porta]) segnali.push("chiaro");
     if (certificato) segnali.push("certificati");
-    if (r.metodo === "silenzio" || r.ultima_sonda == null) segnali.push("non-identificati");
+    // Solo TCP: le sonde non toccano l'UDP, che resterebbe «da sondare» per sempre (sull'hub le 50
+    // porte 161/udp comparivano tutte come non identificate).
+    if (r.protocollo === "tcp" && (r.metodo === "silenzio" || r.ultima_sonda == null)) segnali.push("non-identificati");
     const visto = dataDb(r.ultimo_visto);
     if (visto != null && visto < soglia) segnali.push("non-rivisti");
     const rilievi = rilieviDelServizio({
@@ -113,7 +115,7 @@ export function eTipo(r: ServizioRete, tipo: TipoServizio): boolean {
     case "ntlm": return r.ntlm_json != null;
     case "banner": return r.metodo === "banner";
     case "silenzio": return r.metodo === "silenzio";
-    case "da-sondare": return r.ultima_sonda == null;
+    case "da-sondare": return r.protocollo === "tcp" && r.ultima_sonda == null;
   }
 }
 

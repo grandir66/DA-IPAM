@@ -94,6 +94,12 @@ test("filtri: rete, tipo, segnale, CIDR e solo con rilievi", () => {
   assert.deepEqual(conteggiPerTipo(viste), { http: 0, tls: 2, ssh: 0, ntlm: 0, banner: 1, silenzio: 1, "da-sondare": 1 });
 });
 
+test("l'UDP non è «da sondare»: le sonde non lo toccano", () => {
+  const [snmp] = preparaServizi([riga({ porta: 161, protocollo: "udp", nome: "snmp", metodo: "nmap", ultima_sonda: null })], ADESSO);
+  assert.ok(!snmp.segnali.includes("non-identificati"));
+  assert.equal(conteggiPerTipo([snmp])["da-sondare"], 0);
+});
+
 test("barre per rete: identificati e non, con gli host", () => {
   const barre = barreReteServizi(preparaServizi(RIGHE, ADESSO));
   assert.deepEqual(barre.map((b) => [b.nome, b.totale, b.identificati, b.nonIdentificati, b.host]), [

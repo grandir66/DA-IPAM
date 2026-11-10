@@ -4,6 +4,10 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
+
+- **Findings**. «Elenco» e «Vulnerabilità» erano due elenchi diversi delle stesse CVE, ognuno coi suoi filtri. Ora la pagina è una: gli stessi rilievi si leggono per rilievo, per cosa aggiornare, per host e per rete, con gli stessi filtri, e in testata una fascia richiudibile dice dove guardare (da rivedere, sfruttate attivamente, aggiornamenti che pesano, host più esposto, rilievi per rete). La tabella di prima resta dietro «Tabella completa» finché non sono portati EPSS, sistema operativo e ordinamenti.
+
 ## [Non rilasciato] — 2026-11-10 · Findings a gruppi
 
 ### Modificato

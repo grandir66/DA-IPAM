@@ -10106,6 +10106,8 @@ export interface AggregatedVuln {
   host_count: number;
   orphan_count: number;
   hosts_preview: AggregatedVulnHostRef[];
+  /** Tutti gli host censiti toccati dalla CVE (l'anteprima si ferma a 10): servono ai gruppi per host e per rete. */
+  host_ids?: number[];
   latest_scanned_at: string;
   /** Exploit noti (KEV, Exploit-DB, EPSS); null = nessuna fonte la cita, o chiave `nvt:`. */
   exploit: ExploitInfo | null;
@@ -10552,8 +10554,8 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
   }
 
   const data = pageRows.map(({ _hostKeys: _a, _hostIds: _b, _orphanCount: _c, _firstHostHits: _d, ...rest }) => {
-    void _a; void _b; void _c; void _d;
-    return rest;
+    void _a; void _c; void _d;
+    return { ...rest, host_ids: [..._b] };
   });
 
   return { data, total, severity_rollup };

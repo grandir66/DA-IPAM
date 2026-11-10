@@ -10,6 +10,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
 import {
   BadgeGravita,
+  BarraGravita,
   DatoDettaglio,
   Etichetta,
   LegendaGravita,
@@ -23,7 +24,7 @@ import { useEAdmin } from "@/hooks/use-e-admin";
 import { toast } from "sonner";
 import { fetchJson } from "@/lib/fetch-json";
 import { FONTI_RILIEVO_UI, MOTORI_RILIEVO, MOTORI_RILIEVO_UI, type ElencoRilievi, type MotoreRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
-import type { GruppoRilievi } from "@/lib/rilievi/gruppi";
+import type { GruppoRilievi, IndicatoriRilievi, Raggruppamento } from "@/lib/rilievi/gruppi";
 import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
@@ -35,9 +36,16 @@ function schedaDaIndirizzo(): Scheda {
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "vulnerabilita") return "vulnerabilita";
   if (hash === "findings") return "findings";
-  const vista = new URLSearchParams(window.location.search).get("vista");
-  if (vista === "host" || vista === "cve") return "vulnerabilita";
   return "findings";
+}
+
+type Vista = "cve" | Raggruppamento;
+
+/** I collegamenti di prima (`?vista=host`) aprono il raggruppamento giusto della pagina unica. */
+function vistaDaIndirizzo(): Vista {
+  if (typeof window === "undefined") return "cve";
+  const v = new URLSearchParams(window.location.search).get("vista");
+  return v === "host" || v === "software" || v === "rete" ? v : "cve";
 }
 
 const PER_PAGINA = 50;
@@ -64,32 +72,50 @@ export function FindingsClient() {
       {/* Una riga sola (Riccardo, 10/11/2026: «occupa metà schermo»): titolo, le due schede, l'azione. */}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold tracking-tight">Findings</h1>
-        <div role="tablist" aria-label="Findings" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
-          {([["findings", "Elenco", "CVE, trunk e giri in un elenco solo"], ["vulnerabilita", "Vulnerabilità", "Per CVE o per host, con exploit, triage e filtri"]] as const).map(([v, nome, descrizione], i) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={scheda === v}
-              title={descrizione}
-              onClick={() => scegli(v)}
-              className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${scheda === v ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-            >
-              {nome}
-            </button>
-          ))}
-        </div>
+        {scheda === "vulnerabilita" ? (
+          <Button type="button" size="sm" variant="outline" onClick={() => scegli("findings")}>
+            ‹ Torna ai Findings
+          </Button>
+        ) : (
+          <button
+            type="button"
+            className="text-[13px] underline underline-offset-2"
+            title="La tabella di prima, per CVE o per host: EPSS, sistema operativo, ordinamento per colonna, archivio degli exploit"
+            onClick={() => scegli("vulnerabilita")}
+          >
+            Tabella completa ›
+          </button>
+        )}
         <span className="flex-1" />
         <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
           Lancia un giro
         </Button>
       </div>
-      {!pronta ? null : scheda === "vulnerabilita" ? <VulnerabilitiesListClient embedded /> : <ElencoFindings />}
+      {!pronta ? null : scheda === "vulnerabilita" ? <VulnerabilitiesListClient embedded /> : <ElencoFindings vistaIniziale={vistaDaIndirizzo()} />}
     </div>
   );
 }
 
-function ElencoFindings() {
+interface RilievoRete {
+  network_id: number;
+  network_name: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+const VISTE: ReadonlyArray<readonly [Vista, string]> = [
+  ["cve", "Rilievo"],
+  ["software", "Cosa aggiornare"],
+  ["host", "Host"],
+  ["rete", "Rete"],
+];
+const NOME_GRUPPO: Record<Raggruppamento, string> = { software: "Cosa aggiornare", host: "Host", rete: "Rete" };
+const FASCIA_CHIUSA = "da-ipam.findings.fascia-chiusa";
+
+function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const admin = useEAdmin();
   const [motore, setMotore] = useState<MotoreRilievo>("tutti");
   const [gravita, setGravita] = useState<Set<Severity>>(new Set());
@@ -97,7 +123,34 @@ function ElencoFindings() {
   const [cerca, setCerca] = useState("");
   const [page, setPage] = useState(1);
   // «cve» = una riga per rilievo, com'è sempre stata; «software» = raccolti per cosa aggiornare (10/11/2026).
-  const [vista, setVista] = useState<"cve" | "software">("cve");
+  const [vista, setVista] = useState<Vista>(vistaIniziale);
+  // Filtri uguali in ogni vista: cambiando raggruppamento non si perdono.
+  const [exploit, setExploit] = useState<Set<"kev" | "edb">>(new Set());
+  const [stato, setStato] = useState<Set<StatoTriage>>(new Set());
+  const [rete, setRete] = useState<{ id: number; nome: string } | null>(null);
+  const [ospite, setOspite] = useState<{ id: number; nome: string } | null>(null);
+  const [perRete, setPerRete] = useState<RilievoRete[]>([]);
+  const [fasciaChiusa, setFasciaChiusa] = useState(false);
+  useEffect(() => {
+    try {
+      setFasciaChiusa(window.localStorage.getItem(FASCIA_CHIUSA) === "1");
+    } catch {
+      // senza archivio del browser la fascia resta aperta
+    }
+    void fetchJson<{ reti: RilievoRete[] }>("/api/vulnerabilities/per-rete").then((r) => {
+      if (r.ok) setPerRete(r.data.reti);
+    });
+  }, []);
+  function alternaFascia() {
+    setFasciaChiusa((v) => {
+      try {
+        window.localStorage.setItem(FASCIA_CHIUSA, v ? "0" : "1");
+      } catch {
+        // come sopra
+      }
+      return !v;
+    });
+  }
   const [dati, setDati] = useState<ElencoRilievi | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [aperti, setAperti] = useState<Set<string>>(new Set());
@@ -113,14 +166,19 @@ function ElencoFindings() {
     if (q.trim()) sp.set("q", q.trim());
     sp.set("page", String(page));
     sp.set("pageSize", String(PER_PAGINA));
-    if (vista === "software") sp.set("raggruppa", "software");
+    if (vista !== "cve") sp.set("raggruppa", vista);
+    if (exploit.size) sp.set("exploit", [...exploit].join(","));
+    if (stato.size) sp.set("stato", [...stato].join(","));
+    if (rete) sp.set("rete", String(rete.id));
+    if (ospite) sp.set("ospite", String(ospite.id));
+    sp.set("indicatori", "1");
     const r = await fetchJson<ElencoRilievi>(`/api/rilievi?${sp}`, { cache: "no-store" });
     if (id !== richiesta.current) return;
     if (r.ok) {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [motore, gravita, q, page, vista]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite]);
 
   useEffect(() => {
     void load();
@@ -130,7 +188,39 @@ function ElencoFindings() {
   // La selezione vale per la vista corrente: cambiando tab, filtri, ricerca o pagina si azzera.
   useEffect(() => {
     setSelezione(new Set());
-  }, [motore, gravita, q, page]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite]);
+
+  function alterna<T>(set: (f: (prev: Set<T>) => Set<T>) => void, v: T) {
+    set((prev) => {
+      const n = new Set(prev);
+      if (n.has(v)) n.delete(v);
+      else n.add(v);
+      return n;
+    });
+    setPage(1);
+  }
+  const filtriAttivi = gravita.size + exploit.size + stato.size + (rete ? 1 : 0) + (ospite ? 1 : 0) + (q.trim() ? 1 : 0);
+  function azzeraFiltri() {
+    setGravita(new Set());
+    setExploit(new Set());
+    setStato(new Set());
+    setRete(null);
+    setOspite(null);
+    setQ("");
+    setCerca("");
+    setPage(1);
+  }
+  /** «Apri l'elenco» di un gruppo: l'elenco per rilievo, ristretto a quel gruppo. */
+  function apriGruppo(g: GruppoRilievi) {
+    if (g.filtro?.rete != null) setRete({ id: g.filtro.rete, nome: g.nome });
+    if (g.filtro?.ospite != null) setOspite({ id: g.filtro.ospite, nome: g.nome });
+    if (g.filtro?.q) {
+      setCerca(g.filtro.q);
+      setQ(g.filtro.q);
+    }
+    setPage(1);
+    setVista("cve");
+  }
 
   function alternaGravita(s: Severity) {
     setGravita((prev) => {
@@ -242,6 +332,21 @@ function ElencoFindings() {
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
+      <FasciaIndicatori
+        chiusa={fasciaChiusa}
+        onAlterna={alternaFascia}
+        numeri={dati?.indicatori ?? null}
+        daRivedere={conteggiTriage.da_fare}
+        totale={triTot}
+        reti={perRete}
+        reteScelta={rete?.id ?? null}
+        onDaRivedere={() => { setStato(new Set<StatoTriage>(["da_fare"])); setPage(1); setVista("cve"); }}
+        onSfruttate={() => { setExploit(new Set<"kev" | "edb">(["kev"])); setPage(1); setVista("cve"); }}
+        onAggiornamenti={() => { setGravita(new Set<Severity>(["Critical"])); setPage(1); setVista("software"); }}
+        onHost={(o) => { if (o.ospite != null) setOspite({ id: o.ospite, nome: o.nome }); setPage(1); setVista("cve"); }}
+        onRete={(r) => { setRete(rete?.id === r.network_id ? null : { id: r.network_id, nome: r.network_name }); setPage(1); }}
+      />
+
       <Pannello
         titolo="Elenco"
         conteggio={totale}
@@ -282,7 +387,7 @@ function ElencoFindings() {
           <div className="flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-muted-foreground">Raggruppa per</span>
             <div role="group" aria-label="Raggruppa per" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
-              {([["cve", "Rilievo"], ["software", "Cosa aggiornare"]] as const).map(([v, nome], i) => (
+              {VISTE.map(([v, nome], i) => (
                 <button
                   key={v}
                   type="button"
@@ -294,7 +399,6 @@ function ElencoFindings() {
                 </button>
               ))}
             </div>
-            <Link href="/vulnerabilities?vista=host#vulnerabilita" className="underline underline-offset-2">Per host ›</Link>
           </div>
           <div role="group" aria-label="Motore" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
             {MOTORI_RILIEVO.map((m, i) => {
@@ -324,6 +428,35 @@ function ElencoFindings() {
                 <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
               </button>
             ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {([["kev", "Sfruttate attivamente"], ["edb", "Exploit pubblico"]] as const).map(([v, nome]) => (
+              <button key={v} type="button" aria-pressed={exploit.has(v)} onClick={() => alterna(setExploit, v)}
+                className={`h-7 rounded-md border px-2 text-[13px] ${exploit.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
+                {nome}
+              </button>
+            ))}
+            {STATI_TRIAGE.map((v) => (
+              <button key={v} type="button" aria-pressed={stato.has(v)} onClick={() => alterna(setStato, v)}
+                className={`h-7 rounded-md border px-2 text-[13px] ${stato.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
+                {TRIAGE_UI[v].parola}
+              </button>
+            ))}
+            {rete && (
+              <button type="button" onClick={() => { setRete(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per rete">
+                Rete {rete.nome} ✕
+              </button>
+            )}
+            {ospite && (
+              <button type="button" onClick={() => { setOspite(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per host">
+                Host {ospite.nome} ✕
+              </button>
+            )}
+            {filtriAttivi > 0 && (
+              <button type="button" onClick={azzeraFiltri} className="h-7 px-1 text-[13px] underline underline-offset-2">
+                Togli i filtri
+              </button>
+            )}
           </div>
           {dati && triTot > 0 && (
             <span className="ml-auto flex items-center gap-2" title={`Da rivedere ${conteggiTriage.da_fare} · in corso ${conteggiTriage.in_corso} · rivisti ${conteggiTriage.fatto} · ignorati ${conteggiTriage.ignorato}`}>
@@ -368,18 +501,8 @@ function ElencoFindings() {
                 </Button>
               }
             />
-          ) : vista === "software" ? (
-            <GruppiSoftware
-              gruppi={dati.gruppi ?? []}
-              admin={admin}
-              onPrendi={(g) => void prendiInCarico(g)}
-              onApri={(g) => {
-                setCerca(g.nome);
-                setQ(g.nome);
-                setPage(1);
-                setVista("cve");
-              }}
-            />
+          ) : vista !== "cve" ? (
+            <GruppiRilievi per={vista} gruppi={dati.gruppi ?? []} admin={admin} onPrendi={(g) => void prendiInCarico(g)} onApri={apriGruppo} />
           ) : (
             <>
               {dati.totalPages > 1 && (
@@ -525,13 +648,115 @@ function Riga({
   );
 }
 
-/** I rilievi raccolti per cosa aggiornare: un software = una riga, con l'azione sul gruppo. */
-function GruppiSoftware({
+/** La fascia in testata: quattro numeri che dicono dove guardare e le barre per rete della Dashboard. Si richiude. */
+function FasciaIndicatori({
+  chiusa,
+  onAlterna,
+  numeri,
+  daRivedere,
+  totale,
+  reti,
+  reteScelta,
+  onDaRivedere,
+  onSfruttate,
+  onAggiornamenti,
+  onHost,
+  onRete,
+}: {
+  chiusa: boolean;
+  onAlterna: () => void;
+  numeri: IndicatoriRilievi | null;
+  daRivedere: number;
+  totale: number;
+  reti: RilievoRete[];
+  reteScelta: number | null;
+  onDaRivedere: () => void;
+  onSfruttate: () => void;
+  onAggiornamenti: () => void;
+  onHost: (h: NonNullable<IndicatoriRilievi["hostPiuEsposto"]>) => void;
+  onRete: (r: RilievoRete) => void;
+}) {
+  const massimo = Math.max(1, ...reti.map((r) => r.total));
+  const casella = "rounded-lg border bg-card px-3 py-2 text-left hover:bg-muted disabled:hover:bg-card";
+  return (
+    <div className="rounded-xl border bg-card">
+      <button type="button" onClick={onAlterna} aria-expanded={!chiusa} className="flex w-full items-center gap-2 px-3 py-1.5 text-[13px] text-muted-foreground">
+        {chiusa ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        Dove guardare
+        {chiusa && numeri && (
+          <span className="text-foreground">
+            · <strong className="font-mono">{daRivedere}</strong> da rivedere · <strong className="font-mono">{numeri.kev}</strong> sfruttate attivamente
+          </span>
+        )}
+      </button>
+      {!chiusa && (
+        <div className="grid gap-3 px-3 pb-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={casella} onClick={onDaRivedere}>
+              <span className="block text-[13px] text-muted-foreground">Da rivedere</span>
+              <span className="block font-mono text-xl font-semibold">{numeri ? daRivedere : "…"}</span>
+              <span className="block text-[13px] text-muted-foreground">{totale - daRivedere} di {totale} già decisi</span>
+            </button>
+            <button type="button" className={casella} onClick={onSfruttate} disabled={!numeri || numeri.kev === 0}>
+              <span className="block text-[13px] text-muted-foreground">Sfruttate attivamente</span>
+              <span className="block font-mono text-xl font-semibold">{numeri ? numeri.kev : "…"}</span>
+              <span className="block text-[13px] text-muted-foreground">{numeri ? `su ${numeri.kevHost} host` : " "}</span>
+            </button>
+            <button type="button" className={casella} onClick={onAggiornamenti} disabled={!numeri || numeri.aggiornamentiPerMeta === 0}>
+              <span className="block text-[13px] text-muted-foreground">Aggiornamenti che pesano</span>
+              <span className="block font-mono text-xl font-semibold">{numeri ? numeri.aggiornamentiPerMeta : "…"}</span>
+              <span className="block text-[13px] text-muted-foreground">
+                {numeri ? `chiudono metà dei ${numeri.criticiConSoftware} critici con un software` : " "}
+              </span>
+            </button>
+            <button type="button" className={casella} onClick={() => numeri?.hostPiuEsposto && onHost(numeri.hostPiuEsposto)} disabled={!numeri?.hostPiuEsposto}>
+              <span className="block text-[13px] text-muted-foreground">Host più esposto</span>
+              <span className="block truncate font-mono text-xl font-semibold">{numeri?.hostPiuEsposto ? numeri.hostPiuEsposto.nome : numeri ? "nessuno" : "…"}</span>
+              <span className="block text-[13px] text-muted-foreground">{numeri?.hostPiuEsposto ? `${numeri.hostPiuEsposto.critici} rilievi critici` : " "}</span>
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[13px] text-muted-foreground">
+              <span>Rilievi per rete (uno per host e CVE), un clic filtra l&apos;elenco</span>
+              <LegendaGravita />
+            </div>
+            {reti.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">Nessun rilievo di vulnerabilità sulle reti.</p>
+            ) : (
+              reti.slice(0, 7).map((r) => (
+                <button
+                  key={r.network_id}
+                  type="button"
+                  aria-pressed={reteScelta === r.network_id}
+                  onClick={() => onRete(r)}
+                  className={`flex w-full items-center gap-3 rounded-md px-1 text-left hover:bg-muted ${reteScelta === r.network_id ? "bg-muted ring-1 ring-foreground" : ""}`}
+                >
+                  <span className="w-40 shrink-0 truncate text-[13px] font-medium" title={r.network_name}>{r.network_name}</span>
+                  <span className="flex-1">
+                    <span className="block" style={{ width: `${Math.max(4, Math.round((r.total / massimo) * 100))}%` }}>
+                      <BarraGravita conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
+                    </span>
+                  </span>
+                  <span className="w-14 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** I rilievi raccolti per software, host o rete: stesse colonne, una riga per gruppo. */
+function GruppiRilievi({
+  per,
   gruppi,
   admin,
   onPrendi,
   onApri,
 }: {
+  per: Raggruppamento;
   gruppi: GruppoRilievi[];
   admin: boolean;
   onPrendi: (g: GruppoRilievi) => void;
@@ -543,15 +768,15 @@ function GruppiSoftware({
     <>
       <p className="text-[13px] text-muted-foreground">
         <strong className="font-mono text-foreground">{gruppi.length}</strong> gruppi, {daRivedere} con rilievi ancora da rivedere. In cima
-        quelli con CVE sfruttate attivamente, poi le critiche su più host.
+        quelli con CVE sfruttate attivamente, poi quelli con più rilievi critici.
       </p>
       <Table fissa>
         <TableHeader>
           <TableRow>
             <TableHead className="w-8" />
-            <TableHead>Cosa aggiornare</TableHead>
+            <TableHead>{NOME_GRUPPO[per]}</TableHead>
             <TableHead className="w-72">Gravità</TableHead>
-            <TableHead className="w-24" title="Host della CVE più diffusa del gruppo">Host</TableHead>
+            {per !== "host" && <TableHead className="w-24" title="Host distinti toccati dal gruppo">Host</TableHead>}
             <TableHead className="w-40">Rivisti</TableHead>
             <TableHead className="w-44">Azione sul gruppo</TableHead>
           </TableRow>
@@ -581,7 +806,7 @@ function GruppiSoftware({
                     </button>
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium">{g.nome}</div>
+                    <div className="font-medium">{g.nome}{g.dettaglio && <span className="ml-2 font-mono text-[13px] font-normal text-muted-foreground">{g.dettaglio}</span>}</div>
                     <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
                       <span>{g.rilievi} {g.rilievi === 1 ? "rilievo" : "rilievi"}</span>
                       {g.kev > 0 && <Etichetta>▲ {g.kev} {g.kev === 1 ? "sfruttata" : "sfruttate"} attivamente</Etichetta>}
@@ -595,7 +820,7 @@ function GruppiSoftware({
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono">{g.hostMax}</TableCell>
+                  {per !== "host" && <TableCell className="font-mono">{g.host}</TableCell>}
                   <TableCell className="text-[13px]">
                     <span className="font-mono">{decisi}</span> di <span className="font-mono">{g.rilievi}</span>
                     {g.triage.in_corso > 0 && <span className="text-muted-foreground"> · {g.triage.in_corso} in corso</span>}
@@ -606,8 +831,8 @@ function GruppiSoftware({
                         Prendi in carico
                       </Button>
                     ) : (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => onApri(g)} disabled={g.tipo !== "software"}>
-                        {g.tipo === "software" ? "Apri l'elenco" : "Riga per riga"}
+                      <Button type="button" size="sm" variant="ghost" onClick={() => onApri(g)} disabled={!g.filtro}>
+                        {g.filtro ? "Apri l'elenco" : "Riga per riga"}
                       </Button>
                     )}
                   </TableCell>
@@ -615,7 +840,7 @@ function GruppiSoftware({
                 {aperto && (
                   <TableRow>
                     <TableCell />
-                    <TableCell colSpan={5} className="bg-muted/40 text-[13px]">
+                    <TableCell colSpan={per === "host" ? 4 : 5} className="bg-muted/40 text-[13px]">
                       <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono">
                         {g.anteprima.map((t) => (
                           <span key={t}>{t}</span>
@@ -624,12 +849,12 @@ function GruppiSoftware({
                       {g.rilievi > g.anteprima.length && (
                         <p className="mt-1 text-muted-foreground">e altri {g.rilievi - g.anteprima.length}.</p>
                       )}
-                      {g.tipo === "software" ? (
+                      {g.filtro ? (
                         <Button type="button" size="sm" variant="ghost" className="mt-1" onClick={() => onApri(g)}>
                           Vedi tutti nell&apos;elenco per rilievo ›
                         </Button>
                       ) : (
-                        <p className="mt-1 text-muted-foreground">Questi non hanno un software da aggiornare: si rivedono dalla vista «Rilievo».</p>
+                        <p className="mt-1 text-muted-foreground">Questi si rivedono dalla vista «Rilievo».</p>
                       )}
                     </TableCell>
                   </TableRow>

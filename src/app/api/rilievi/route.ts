@@ -6,6 +6,8 @@ import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { FONTI_RILIEVO, type FonteRilievo } from "@/lib/rilievi/tipi";
 import { elencoRilievi } from "@/lib/rilievi/unione";
+import { RAGGRUPPAMENTI, type Raggruppamento } from "@/lib/rilievi/gruppi";
+import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { exploitPerRotte } from "@/lib/vuln/exploit-feed/archivio";
 
@@ -25,7 +27,14 @@ export async function GET(request: Request) {
     const page = Number(q.get("page") ?? 1);
     const pageSize = Number(q.get("pageSize") ?? 50);
     const host = Number(q.get("host_id"));
-    const aGruppi = q.get("raggruppa") === "software";
+    const per = q.get("raggruppa");
+    const raggruppa = (RAGGRUPPAMENTI as readonly string[]).includes(per ?? "") ? (per as Raggruppamento) : undefined;
+    const exploit = q.get("exploit")?.split(",").filter((s): s is "kev" | "edb" => s === "kev" || s === "edb");
+    const stato = q.get("stato")?.split(",").filter((s): s is StatoTriage => (STATI_TRIAGE as readonly string[]).includes(s));
+    const intero = (nome: string): number | undefined => {
+      const v = Number(q.get(nome));
+      return q.get(nome) && Number.isInteger(v) && v > 0 ? v : undefined;
+    };
     return NextResponse.json(
       elencoRilievi({
         fonti,
@@ -34,7 +43,13 @@ export async function GET(request: Request) {
         ...(Number.isInteger(host) && host > 0 ? { hostId: host } : {}),
         page: Number.isInteger(page) ? page : 1,
         pageSize: Number.isInteger(pageSize) ? pageSize : 50,
-        ...(aGruppi ? { raggruppa: "software" as const, exploitDi: exploitPerRotte().exploitDi } : {}),
+        raggruppa,
+        exploit,
+        stato,
+        rete: intero("rete"),
+        ospite: intero("ospite"),
+        conIndicatori: q.get("indicatori") === "1",
+        exploitDi: exploitPerRotte().exploitDi,
       }),
     );
   });

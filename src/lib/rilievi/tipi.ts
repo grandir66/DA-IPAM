@@ -26,6 +26,15 @@ export const MOTORI_RILIEVO_UI: Record<MotoreRilievo, { nome: string; fonti: rea
   wazuh: { nome: "Wazuh", fonti: ["wazuh"] },
 };
 
+/** Un host toccato da un rilievo. */
+export interface OspiteRilievo {
+  host_id: number | null;
+  ip: string;
+  nome: string | null;
+  network_id: number | null;
+  network_name: string | null;
+}
+
 export interface RilievoUnito {
   id: string;
   fonte: FonteRilievo;
@@ -45,6 +54,8 @@ export interface RilievoUnito {
   pacchetto?: string | null;
   /** Exploit noti della CVE: sfruttata attivamente (CISA KEV), exploit pubblico (Exploit-DB). */
   exploit?: { kev: boolean; edb: boolean } | null;
+  /** Tutti gli host del rilievo (una CVE ne tocca molti). Solo lato server: non viaggia nell'elenco. */
+  ospiti?: OspiteRilievo[];
   /**
    * Chiave stabile del triage del rilievo (una per `triage_rilievi`): per le CVE è `cve_key`
    * (`CVE-…`/`nvt:…`), così il triage è lo stesso della scheda Vulnerabilità; per trunk e giri è
@@ -75,6 +86,8 @@ export interface ElencoRilievi {
   parziali: FonteRilievo[];
   /** Conteggi del triage per stato su tutti i rilievi dell'elenco (dopo i filtri, tutte le pagine). */
   conteggiTriage: Record<StatoTriage, number>;
-  /** I rilievi raccolti per cosa aggiornare; presente solo se chiesto (`raggruppa=software`). */
+  /** I rilievi raccolti per software, host o rete; presente solo se chiesto (`raggruppa=…`). */
   gruppi?: import("./gruppi").GruppoRilievi[];
+  /** I numeri della fascia in testata, sul motore scelto e prima degli altri filtri. */
+  indicatori?: import("./gruppi").IndicatoriRilievi;
 }

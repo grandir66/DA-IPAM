@@ -99,6 +99,7 @@ const inventorySubItems: readonly SubItem[] = [
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
+  { href: "/network-changes", label: "Network Changes", icon: History },
   { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/port-map", label: "Mappa porte", icon: EthernetPort },
   { href: "/software", label: "Software", icon: Package },

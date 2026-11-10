@@ -6,7 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Comparatore dei giri IPv4
 
-- Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Voce «Network Changes» disponibile nel dettaglio subnet. Raccolta delle differenze da Discovery ancora da collegare.
+- Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Pagina unica «Network Changes» disponibile sotto Network e dal dettaglio subnet. Raccolta delle differenze da Discovery ancora da collegare.
 
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 

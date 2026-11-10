@@ -1134,7 +1134,7 @@ export function NetworkDetailClient({
               variant="outline"
               size="sm"
               nativeButton={false}
-              render={<Link href={`/networks/${network.id}/changes`} />}
+              render={<Link href="/network-changes" />}
             >
               Network Changes
             </Button>

@@ -260,27 +260,42 @@ export interface BarraRete {
 
 /**
  * Le barre «rilievi per rete» della fascia in testata, sugli stessi rilievi dell'elenco: una
- * tacca per ogni host toccato (una CVE su tre host di una rete conta tre). `soloOspite` restringe
+ * tacca per ogni cosa da sistemare su un host (un pacchetto con tutte le sue CVE, o un rilievo). `soloOspite` restringe
  * il conto a un host, quando l'elenco è filtrato su di lui.
  */
 export function barrePerRete(righe: readonly RilievoUnito[], soloOspite?: number): BarraRete[] {
-  const reti = new Map<number, BarraRete>();
+  // Si contano le COSE DA SISTEMARE, non le CVE (Riccardo, 10/11/2026: «il numero di rilievi è ancora
+  // completamente fuori senso», LAN Server 26.808). Un kernel o una build di Windows portano migliaia
+  // di CVE e si chiudono con un aggiornamento: tutte le CVE dello stesso pacchetto sullo stesso host
+  // sono una tacca sola, con la gravità più alta. I rilievi senza pacchetto (Edge, giri, trunk)
+  // contano uno per host come prima.
+  const RANGO: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+  const cose = new Map<string, { network_id: number; network_name: string; rango: number }>();
   for (const r of righe) {
     for (const o of ospitiDi(r)) {
       if (o.network_id == null) continue;
       if (soloOspite != null && o.host_id !== soloOspite) continue;
-      let b = reti.get(o.network_id);
-      if (!b) {
-        b = { network_id: o.network_id, network_name: o.network_name ?? `rete ${o.network_id}`, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
-        reti.set(o.network_id, b);
-      }
-      const grav = o.gravita ?? r.gravita;
-      if (grav === "Critical") b.critical += 1;
-      else if (grav === "High") b.high += 1;
-      else if (grav === "Medium") b.medium += 1;
-      else b.low += 1;
-      b.total += 1;
+      const sw = nomeSoftware(r.pacchetto);
+      const cosa = sw && !eNomeDiTest(sw) ? `sw:${sw.toLowerCase()}` : r.id;
+      const chiave = `${o.network_id}|${chiaveOspite(o)}|${cosa}`;
+      const rango = RANGO[o.gravita ?? r.gravita] ?? 3;
+      const c = cose.get(chiave);
+      if (!c) cose.set(chiave, { network_id: o.network_id, network_name: o.network_name ?? `rete ${o.network_id}`, rango });
+      else if (rango < c.rango) c.rango = rango;
     }
+  }
+  const reti = new Map<number, BarraRete>();
+  for (const c of cose.values()) {
+    let b = reti.get(c.network_id);
+    if (!b) {
+      b = { network_id: c.network_id, network_name: c.network_name, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
+      reti.set(c.network_id, b);
+    }
+    if (c.rango === 0) b.critical += 1;
+    else if (c.rango === 1) b.high += 1;
+    else if (c.rango === 2) b.medium += 1;
+    else b.low += 1;
+    b.total += 1;
   }
   return [...reti.values()].sort((a, b) => b.total - a.total || a.network_name.localeCompare(b.network_name));
 }

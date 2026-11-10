@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Cancello: tre prove rosse sistemate prima della promozione su main
 
 ### Corretto
+- **Findings, barre per rete**: contavano ancora una tacca per CVE e per host (LAN Server 26.808). Ora, come in Dashboard, contano le cose da sistemare: tutte le CVE dello stesso software sullo stesso host sono una tacca, con la gravità più alta. Sui dati dell'hub: LAN Server 460, Lan Management 426, LAN Base 193, LAN Client 115, LAN DMZ 85.
+
+### Corretto
 - **I triage dei rilievi viaggiano col tenant** nell'esportazione: `triage_rilievi` non era nel registro dei trasferimenti, e stato e note decisi a mano sarebbero rimasti indietro.
 - `scanner/rilancia-giri` dichiarato fuori da Schedulazioni col perché (gira una volta all'avvio).
 - La prova del profilo «sconosciuti» guarda le porte da provare, non la riga intera: la 9100 ora compare in `--exclude-ports` proprio per non toccarla.

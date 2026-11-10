@@ -2,7 +2,15 @@
  * Elenco unico Findings: CVE + trunk + giri (TLS e controlli dalle sonde).
  * Niente tabella nuova: si legge quello che c'è già.
  */
-import { getAggregatedVulnerabilities, getCurrentTenantCode, getTenantDb, getTriageRilievi } from "@/lib/db-tenant";
+import {
+  classifyOsFamily,
+  getAggregatedVulnerabilities,
+  getCurrentTenantCode,
+  getTenantDb,
+  getTriageRilievi,
+  OS_FAMILIES,
+  type OsFamily,
+} from "@/lib/db-tenant";
 import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
 import { SEVERITY_RANK, type Severity } from "@/lib/severity-style";
 import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
@@ -37,23 +45,33 @@ type RilievoConFonti = RilievoUnito & { fonti?: FonteRilievo[] };
 type ExploitDi = (cves: string[]) => Map<string, ExploitInfo>;
 
 /** Tutti gli host del tenant con la loro rete, in una lettura sola (regola: niente query nel ciclo). */
-function anagraficaHost(): Map<number, OspiteRilievo> {
+function anagraficaHost(): Map<number, OspiteRilievo & { os: OsFamily }> {
   const tenant = getCurrentTenantCode();
-  const mappa = new Map<number, OspiteRilievo>();
+  const mappa = new Map<number, OspiteRilievo & { os: OsFamily }>();
   if (!tenant) return mappa;
   const righe = getTenantDb(tenant)
     .prepare(
-      `SELECT h.id, h.ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, '')) AS nome, h.network_id, n.name AS network_name
+      `SELECT h.id, h.ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, '')) AS nome, h.network_id, n.name AS network_name, h.os_info
        FROM hosts h LEFT JOIN networks n ON n.id = h.network_id`,
     )
-    .all() as Array<{ id: number; ip: string; nome: string | null; network_id: number | null; network_name: string | null }>;
-  for (const h of righe) mappa.set(h.id, { host_id: h.id, ip: h.ip, nome: h.nome, network_id: h.network_id, network_name: h.network_name });
+    .all() as Array<{ id: number; ip: string; nome: string | null; network_id: number | null; network_name: string | null; os_info: string | null }>;
+  for (const h of righe) {
+    mappa.set(h.id, { host_id: h.id, ip: h.ip, nome: h.nome, network_id: h.network_id, network_name: h.network_name, os: classifyOsFamily(h.os_info) });
+  }
   return mappa;
 }
 
-function daCve(exploitDi?: ExploitDi): { righe: RilievoConFonti[]; parziale: boolean } {
-  const { data, total } = getAggregatedVulnerabilities({ page: 1, pageSize: 2000, ...(exploitDi ? { exploitDi } : {}) });
-  const anagrafica = anagraficaHost();
+function daCve(
+  anagrafica: Map<number, OspiteRilievo & { os: OsFamily }>,
+  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean },
+): { righe: RilievoConFonti[]; parziale: boolean } {
+  const { data, total } = getAggregatedVulnerabilities({
+    page: 1,
+    pageSize: 2000,
+    ...(opzioni.exploitDi ? { exploitDi: opzioni.exploitDi } : {}),
+    ...(opzioni.os?.length ? { osFamilies: opzioni.os } : {}),
+    ...(opzioni.precedenti ? { precedenti: true } : {}),
+  });
   const righe = data.map((v): RilievoConFonti => {
     const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
     const host = v.hosts_preview[0];
@@ -84,8 +102,14 @@ function daCve(exploitDi?: ExploitDi): { righe: RilievoConFonti[]; parziale: boo
       host_count: v.host_count,
       // Il pacchetto è un software da aggiornare solo se lo dice Wazuh: per Edge l'etichetta è il nome del test.
       pacchetto: v.sources.includes("Wazuh") ? v.package_label : null,
-      exploit: v.exploit ? { kev: v.exploit.kev, edb: v.exploit.edb > 0 } : null,
-      ospiti: (v.host_ids ?? []).map((id) => anagrafica.get(id)).filter((o): o is OspiteRilievo => !!o),
+      exploit: v.exploit ? { kev: v.exploit.kev, edb: v.exploit.edb > 0, epss: v.exploit.epss } : null,
+      ospiti: (v.host_ids ?? [])
+        .map((id) => anagrafica.get(id))
+        .filter((o): o is OspiteRilievo & { os: OsFamily } => !!o)
+        .map(({ os: _os, ...o }) => {
+          void _os;
+          return o;
+        }),
       // Stessa chiave di triage della scheda Vulnerabilità (per CVE = cve_key).
       chiaveTriage: v.key,
     };
@@ -174,6 +198,9 @@ function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
   return { righe: out, parziale: righe.length > 4000 };
 }
 
+export const ORDINI_RILIEVI = ["gravita", "epss", "host", "visto", "titolo"] as const;
+export type OrdineRilievi = (typeof ORDINI_RILIEVI)[number];
+
 export interface FiltroRilievi {
   fonti?: FonteRilievo[];
   gravita?: Severity[];
@@ -193,6 +220,13 @@ export interface FiltroRilievi {
   ospite?: number;
   /** Aggiunge i numeri della fascia in testata. */
   conIndicatori?: boolean;
+  /** Solo i rilievi su host di queste famiglie di sistema operativo. */
+  os?: OsFamily[];
+  /** Anche le CVE delle scansioni superate; di base solo l'ultima di ogni rete. */
+  precedenti?: boolean;
+  /** Ordinamento dell'elenco per rilievo; di base gravità, poi il più recente. */
+  ordina?: OrdineRilievi;
+  verso?: "asc" | "desc";
   /** Gli exploit noti per CVE: la rotta passa l'archivio vero, le prove uno finto o niente. */
   exploitDi?: ExploitDi;
 }
@@ -225,10 +259,13 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const fonti = filtro.fonti?.length ? filtro.fonti : [...FONTI_RILIEVO];
   const setFonte = new Set(fonti);
   let tutti: RilievoConFonti[] = [];
+  const anagrafica = anagraficaHost();
+  // Tutte le famiglie scelte = nessun filtro.
+  const osScelti = filtro.os?.length && filtro.os.length < OS_FAMILIES.length ? filtro.os : undefined;
   const nonDisponibili: FonteRilievo[] = [];
   const parziali: FonteRilievo[] = [];
   const sorgenti = [
-    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(filtro.exploitDi) },
+    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti }) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
     { fonti: ["giro"] as const, leggi: () => daGiri(filtro.hostId) },
   ];
@@ -244,6 +281,13 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   }
 
   if (filtro.hostId) tutti = tutti.filter((x) => x.host_id === filtro.hostId);
+  // Sistema operativo: le CVE le filtra già la lettura; trunk e giri si filtrano per l'host che toccano
+  // (senza un host censito il sistema è «Unknown»).
+  if (osScelti) {
+    const vuole = new Set<OsFamily>(osScelti);
+    tutti = tutti.filter((x) => !!x.cve_key || vuole.has((x.host_id != null ? anagrafica.get(x.host_id)?.os : undefined) ?? "Unknown"));
+  }
+
   // Gli indicatori guardano il motore scelto, prima degli altri filtri: dicono dove guardare.
   const numeri = filtro.conIndicatori ? indicatori(tutti.filter((x) => (x.fonti ?? [x.fonte]).some((f) => setFonte.has(f)))) : undefined;
 
@@ -283,10 +327,27 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   }
 
   const rollup = rollupDi(selezionati);
-  selezionati.sort((a, b) => {
+  const perGravita = (a: RilievoUnito, b: RilievoUnito): number => {
     const g = (SEVERITY_RANK[b.gravita] ?? 0) - (SEVERITY_RANK[a.gravita] ?? 0);
     if (g !== 0) return g;
     return (b.visto ?? "").localeCompare(a.visto ?? "") || a.id.localeCompare(b.id);
+  };
+  const ordina = filtro.ordina ?? "gravita";
+  // Di base dal più grave / più alto / più recente; il titolo dalla A.
+  const su = (filtro.verso ?? (ordina === "titolo" ? "asc" : "desc")) === "asc" ? 1 : -1;
+  selezionati.sort((a, b) => {
+    let c = 0;
+    if (ordina === "gravita") return su === -1 ? perGravita(a, b) : -perGravita(a, b);
+    // Chi non ha il dato (EPSS assente) sta sempre in fondo, in tutti e due i versi.
+    if (ordina === "epss") {
+      const ea = a.exploit?.epss ?? null;
+      const eb = b.exploit?.epss ?? null;
+      if (ea == null || eb == null) c = ea == null && eb == null ? 0 : ea == null ? 1 : -1;
+      else c = (ea - eb) * su;
+    } else if (ordina === "host") c = (a.host_count - b.host_count) * su;
+    else if (ordina === "visto") c = (a.visto ?? "").localeCompare(b.visto ?? "") * su;
+    else c = a.titolo.localeCompare(b.titolo) * su;
+    return c || perGravita(a, b);
   });
 
   // Il triage si aggancia ai rilievi selezionati per il tab corrente (tutte le pagine): così «N di M

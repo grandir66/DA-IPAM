@@ -5,7 +5,8 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { FONTI_RILIEVO, type FonteRilievo } from "@/lib/rilievi/tipi";
-import { elencoRilievi } from "@/lib/rilievi/unione";
+import { elencoRilievi, ORDINI_RILIEVI, type OrdineRilievi } from "@/lib/rilievi/unione";
+import { OS_FAMILIES, type OsFamily } from "@/lib/db-tenant";
 import { RAGGRUPPAMENTI, type Raggruppamento } from "@/lib/rilievi/gruppi";
 import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
@@ -31,6 +32,9 @@ export async function GET(request: Request) {
     const raggruppa = (RAGGRUPPAMENTI as readonly string[]).includes(per ?? "") ? (per as Raggruppamento) : undefined;
     const exploit = q.get("exploit")?.split(",").filter((s): s is "kev" | "edb" => s === "kev" || s === "edb");
     const stato = q.get("stato")?.split(",").filter((s): s is StatoTriage => (STATI_TRIAGE as readonly string[]).includes(s));
+    const os = q.get("os")?.split(",").filter((s): s is OsFamily => (OS_FAMILIES as readonly string[]).includes(s));
+    const ordina = (ORDINI_RILIEVI as readonly string[]).includes(q.get("ordina") ?? "") ? (q.get("ordina") as OrdineRilievi) : undefined;
+    const verso = q.get("verso") === "asc" ? ("asc" as const) : q.get("verso") === "desc" ? ("desc" as const) : undefined;
     const intero = (nome: string): number | undefined => {
       const v = Number(q.get(nome));
       return q.get(nome) && Number.isInteger(v) && v > 0 ? v : undefined;
@@ -49,6 +53,10 @@ export async function GET(request: Request) {
         rete: intero("rete"),
         ospite: intero("ospite"),
         conIndicatori: q.get("indicatori") === "1",
+        os,
+        precedenti: q.get("precedenti") === "1",
+        ordina,
+        verso,
         exploitDi: exploitPerRotte().exploitDi,
       }),
     );

@@ -27,17 +27,10 @@ import { FONTI_RILIEVO_UI, MOTORI_RILIEVO, MOTORI_RILIEVO_UI, type ElencoRilievi
 import type { GruppoRilievi, IndicatoriRilievi, Raggruppamento } from "@/lib/rilievi/gruppi";
 import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
-import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
-
-type Scheda = "findings" | "vulnerabilita";
-
-function schedaDaIndirizzo(): Scheda {
-  if (typeof window === "undefined") return "findings";
-  const hash = window.location.hash.replace(/^#/, "");
-  if (hash === "vulnerabilita") return "vulnerabilita";
-  if (hash === "findings") return "findings";
-  return "findings";
-}
+import { EpssCell } from "@/components/shared/vuln-badges";
+import { SortableTableHead, type SortDirection } from "@/components/shared/sortable-table-head";
+import { CvePotenziali } from "./cve-potenziali";
+import { StatoFeedExploit } from "./stato-feed-exploit";
 
 type Vista = "cve" | Raggruppamento;
 
@@ -51,47 +44,23 @@ function vistaDaIndirizzo(): Vista {
 const PER_PAGINA = 50;
 
 export function FindingsClient() {
-  const [scheda, setScheda] = useState<Scheda>("findings");
-  const [pronta, setPronta] = useState(false);
+  // La vista si legge dall'indirizzo solo nel browser: prima del montaggio non si disegna l'elenco.
+  const [vistaIniziale, setVistaIniziale] = useState<Vista | null>(null);
   useEffect(() => {
-    setScheda(schedaDaIndirizzo());
-    setPronta(true);
-    const onHash = () => setScheda(schedaDaIndirizzo());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    setVistaIniziale(vistaDaIndirizzo());
   }, []);
-
-  function scegli(v: Scheda) {
-    setScheda(v);
-    const url = `${window.location.pathname}${window.location.search}#${v}`;
-    window.history.replaceState(null, "", url);
-  }
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      {/* Una riga sola (Riccardo, 10/11/2026: «occupa metà schermo»): titolo, le due schede, l'azione. */}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold tracking-tight">Findings</h1>
-        {scheda === "vulnerabilita" ? (
-          <Button type="button" size="sm" variant="outline" onClick={() => scegli("findings")}>
-            ‹ Torna ai Findings
-          </Button>
-        ) : (
-          <button
-            type="button"
-            className="text-[13px] underline underline-offset-2"
-            title="La tabella di prima, per CVE o per host: EPSS, sistema operativo, ordinamento per colonna, archivio degli exploit"
-            onClick={() => scegli("vulnerabilita")}
-          >
-            Tabella completa ›
-          </button>
-        )}
         <span className="flex-1" />
         <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
           Lancia un giro
         </Button>
       </div>
-      {!pronta ? null : scheda === "vulnerabilita" ? <VulnerabilitiesListClient embedded /> : <ElencoFindings vistaIniziale={vistaDaIndirizzo()} />}
+      {vistaIniziale && <ElencoFindings vistaIniziale={vistaIniziale} />}
+      <CvePotenziali />
     </div>
   );
 }
@@ -114,6 +83,10 @@ const VISTE: ReadonlyArray<readonly [Vista, string]> = [
 ];
 const NOME_GRUPPO: Record<Raggruppamento, string> = { software: "Cosa aggiornare", host: "Host", rete: "Rete" };
 const FASCIA_CHIUSA = "da-ipam.findings.fascia-chiusa";
+const OS_FAMIGLIE = ["Windows", "Linux", "Apple", "Unknown"] as const;
+type OsFamiglia = (typeof OS_FAMIGLIE)[number];
+const NOME_OS: Record<OsFamiglia, string> = { Windows: "Windows", Linux: "Linux", Apple: "Apple", Unknown: "Sistema non noto" };
+type OrdineElenco = "gravita" | "epss" | "host" | "visto" | "titolo";
 
 function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const admin = useEAdmin();
@@ -129,6 +102,10 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const [stato, setStato] = useState<Set<StatoTriage>>(new Set());
   const [rete, setRete] = useState<{ id: number; nome: string } | null>(null);
   const [ospite, setOspite] = useState<{ id: number; nome: string } | null>(null);
+  const [os, setOs] = useState<Set<OsFamiglia>>(new Set());
+  const [precedenti, setPrecedenti] = useState(false);
+  const [ordina, setOrdina] = useState<OrdineElenco>("gravita");
+  const [verso, setVerso] = useState<SortDirection>("desc");
   const [perRete, setPerRete] = useState<RilievoRete[]>([]);
   const [fasciaChiusa, setFasciaChiusa] = useState(false);
   useEffect(() => {
@@ -171,6 +148,12 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
     if (stato.size) sp.set("stato", [...stato].join(","));
     if (rete) sp.set("rete", String(rete.id));
     if (ospite) sp.set("ospite", String(ospite.id));
+    if (os.size) sp.set("os", [...os].join(","));
+    if (precedenti) sp.set("precedenti", "1");
+    if (ordina !== "gravita" || verso !== "desc") {
+      sp.set("ordina", ordina);
+      sp.set("verso", verso);
+    }
     sp.set("indicatori", "1");
     const r = await fetchJson<ElencoRilievi>(`/api/rilievi?${sp}`, { cache: "no-store" });
     if (id !== richiesta.current) return;
@@ -178,7 +161,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, precedenti, ordina, verso]);
 
   useEffect(() => {
     void load();
@@ -188,7 +171,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   // La selezione vale per la vista corrente: cambiando tab, filtri, ricerca o pagina si azzera.
   useEffect(() => {
     setSelezione(new Set());
-  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, precedenti, ordina, verso]);
 
   function alterna<T>(set: (f: (prev: Set<T>) => Set<T>) => void, v: T) {
     set((prev) => {
@@ -199,11 +182,22 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
     });
     setPage(1);
   }
-  const filtriAttivi = gravita.size + exploit.size + stato.size + (rete ? 1 : 0) + (ospite ? 1 : 0) + (q.trim() ? 1 : 0);
+  const filtriAttivi = gravita.size + exploit.size + stato.size + os.size + (rete ? 1 : 0) + (ospite ? 1 : 0) + (q.trim() ? 1 : 0);
+  /** Clic su un'intestazione: stessa colonna = cambia verso; colonna nuova = dal più alto (il titolo dalla A). */
+  function ordinaPer(colonna: string) {
+    const c = colonna as OrdineElenco;
+    if (c === ordina) setVerso((v) => (v === "asc" ? "desc" : "asc"));
+    else {
+      setOrdina(c);
+      setVerso(c === "titolo" ? "asc" : "desc");
+    }
+    setPage(1);
+  }
   function azzeraFiltri() {
     setGravita(new Set());
     setExploit(new Set());
     setStato(new Set());
+    setOs(new Set());
     setRete(null);
     setOspite(null);
     setQ("");
@@ -332,6 +326,8 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
+      <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
+
       <FasciaIndicatori
         chiusa={fasciaChiusa}
         onAlterna={alternaFascia}
@@ -442,6 +438,17 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
                 {TRIAGE_UI[v].parola}
               </button>
             ))}
+            {OS_FAMIGLIE.map((v) => (
+              <button key={v} type="button" aria-pressed={os.has(v)} onClick={() => alterna(setOs, v)}
+                className={`h-7 rounded-md border px-2 text-[13px] ${os.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
+                {NOME_OS[v]}
+              </button>
+            ))}
+            <button type="button" aria-pressed={precedenti} onClick={() => { setPrecedenti((v) => !v); setPage(1); }}
+              title="Di base solo l'ultima scansione di ogni rete"
+              className={`h-7 rounded-md border px-2 text-[13px] ${precedenti ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
+              Anche le scansioni precedenti
+            </button>
             {rete && (
               <button type="button" onClick={() => { setRete(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per rete">
                 Rete {rete.nome} ✕
@@ -522,11 +529,12 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
                       </TableHead>
                     )}
                     <TableHead>Stato</TableHead>
-                    <TableHead>Rilievo</TableHead>
+                    <SortableTableHead columnId="titolo" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Rilievo</SortableTableHead>
                     <TableHead>Fonte</TableHead>
-                    <TableHead>Gravità</TableHead>
-                    <TableHead>Dove</TableHead>
-                    <TableHead>Visto</TableHead>
+                    <SortableTableHead columnId="gravita" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Gravità</SortableTableHead>
+                    <SortableTableHead columnId="epss" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer} title="Probabilità che la CVE venga sfruttata nei prossimi 30 giorni">EPSS</SortableTableHead>
+                    <SortableTableHead columnId="host" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Dove</SortableTableHead>
+                    <SortableTableHead columnId="visto" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Visto</SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -604,6 +612,9 @@ function Riga({
         <TableCell>
           <BadgeGravita gravita={r.gravita} />
         </TableCell>
+        <TableCell>
+          <EpssCell epss={r.exploit?.epss} />
+        </TableCell>
         <TableCell className="font-mono text-[13px]">
           {r.ip ?? r.network_name ?? "—"}
           {r.host_count > 1 ? ` · ${r.host_count} host` : ""}
@@ -615,7 +626,7 @@ function Riga({
       {aperto && (
         <TableRow>
           <TableCell />
-          <TableCell colSpan={admin ? 7 : 6}>
+          <TableCell colSpan={admin ? 8 : 7}>
             <div className="space-y-3">
               <div className="rounded-lg border bg-card p-3">
                 <p className="mb-2 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Triage</p>
@@ -759,6 +770,24 @@ function GruppiRilievi({
   onApri: (g: GruppoRilievi) => void;
 }) {
   const [aperti, setAperti] = useState<Set<string>>(new Set());
+  // Senza una colonna scelta vale l'ordine del server: sfruttate attivamente, poi i più critici.
+  const [colonna, setColonna] = useState<"" | "nome" | "critici" | "host" | "rivisti">("");
+  const [versoGruppi, setVersoGruppi] = useState<SortDirection>("desc");
+  function ordinaGruppi(c: string) {
+    const nuova = c as typeof colonna;
+    if (nuova === colonna) setVersoGruppi((v) => (v === "asc" ? "desc" : "asc"));
+    else {
+      setColonna(nuova);
+      setVersoGruppi(nuova === "nome" ? "asc" : "desc");
+    }
+  }
+  const su = versoGruppi === "asc" ? 1 : -1;
+  const valore = (g: GruppoRilievi): number =>
+    colonna === "critici" ? g.gravita.Critical * 1e6 + g.gravita.High : colonna === "host" ? g.host : g.rilievi - g.triage.da_fare;
+  const ordinati =
+    colonna === ""
+      ? gruppi
+      : [...gruppi].sort((a, b) => (colonna === "nome" ? a.nome.localeCompare(b.nome) * su : (valore(a) - valore(b)) * su) || a.nome.localeCompare(b.nome));
   const daRivedere = gruppi.filter((g) => g.triage.da_fare > 0).length;
   return (
     <>
@@ -770,15 +799,15 @@ function GruppiRilievi({
         <TableHeader>
           <TableRow>
             <TableHead className="w-8" />
-            <TableHead>{NOME_GRUPPO[per]}</TableHead>
-            <TableHead className="w-72">Gravità</TableHead>
-            {per !== "host" && <TableHead className="w-24" title="Host distinti toccati dal gruppo">Host</TableHead>}
-            <TableHead className="w-40">Rivisti</TableHead>
+            <SortableTableHead columnId="nome" sortColumn={colonna} sortDirection={versoGruppi} onSort={ordinaGruppi}>{NOME_GRUPPO[per]}</SortableTableHead>
+            <SortableTableHead columnId="critici" sortColumn={colonna} sortDirection={versoGruppi} onSort={ordinaGruppi} className="w-72">Gravità</SortableTableHead>
+            {per !== "host" && <SortableTableHead columnId="host" sortColumn={colonna} sortDirection={versoGruppi} onSort={ordinaGruppi} className="w-24" title="Host distinti toccati dal gruppo">Host</SortableTableHead>}
+            <SortableTableHead columnId="rivisti" sortColumn={colonna} sortDirection={versoGruppi} onSort={ordinaGruppi} className="w-40">Rivisti</SortableTableHead>
             <TableHead className="w-44">Azione sul gruppo</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {gruppi.map((g) => {
+          {ordinati.map((g) => {
             const aperto = aperti.has(g.chiave);
             const decisi = g.rilievi - g.triage.da_fare;
             return (

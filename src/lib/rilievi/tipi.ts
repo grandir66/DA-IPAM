@@ -53,7 +53,7 @@ export interface RilievoUnito {
   /** Pacchetto «nome versione» quando la fonte lo dice (Wazuh): serve alla vista «Cosa aggiornare». */
   pacchetto?: string | null;
   /** Exploit noti della CVE: sfruttata attivamente (CISA KEV), exploit pubblico (Exploit-DB). */
-  exploit?: { kev: boolean; edb: boolean } | null;
+  exploit?: { kev: boolean; edb: boolean; epss?: number | null } | null;
   /** Tutti gli host del rilievo (una CVE ne tocca molti). Solo lato server: non viaggia nell'elenco. */
   ospiti?: OspiteRilievo[];
   /**

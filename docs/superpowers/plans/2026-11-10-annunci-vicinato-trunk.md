@@ -88,7 +88,7 @@
   a 0,95; il generico «apparato di rete» resta a 0,85. Verifica sull'hub (0.9.1121): dei 15 host che si
   annunciano, 6 sono `network.switch` (`CRS304-4XG`, `CRS504-4XQ`, `CRS309-1G-8S+`) e 9 `network.router`
   (`CCR2004…`, `RB5009UPr+S+`, `CHR`). Prima erano tutti router.
-- [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
+- [ ] **2.5 Dove si vede** (tavola mostrata a Riccardo il 10/11, in attesa del sì): una riga per apparato, non per annuncio; filtri per protocollo e per «non in DA-IPAM» / «non registrato come apparato»; aperta, le interfacce con VLAN e indirizzo. Testo di prima: In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 
 ## Tappa 3 — cos'altro dice il trunk (Riccardo, 10/11: «arrivano tante informazioni passive per tanti protocolli… non so cosa si può estrarre in più»)
@@ -115,7 +115,15 @@ il broadcast e multicast (9.968 telai):
 Non visti sull'hub ma probabili dai clienti con impianti (72729): Profinet DCP, EtherNet/IP, BACnet,
 che dicono nome, modello e produttore di PLC e pannelli senza interrogarli. Serve una cattura là.
 
-- [ ] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60, 61, 81): i tre che toccano più apparati.
+- [~] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60 e 81). **Scritto nel sensore**, non
+  rilasciato: DA-Vul-can, ramo `macbook/sensore-passivo`. Tabella nuova `dichiarazione` (mac, chiave,
+  valore, VLAN, prima e ultima vista; al più 16 valori per apparato e chiave), `GET /dichiarazioni`.
+  Chiavi: `ssdp_server`, `ssdp_tipo`, `ssdp_agente`, `mdns_servizio`, `mdns_modello`, `dhcp_classe`,
+  `dhcp_fqdn`. *Verifica (10/11):* la cattura vera del trunk dell'hub (9.923 telai, 185 secondi)
+  passata agli interpreti: nessun errore; ne escono `HP-iLO-5/3.22` e `HP-iLO-4/2.81` (i BMC di due
+  server), una stampante 3D, un Chromecast Ultra, Spotify Connect, due client `ARM__boot` e un
+  `udhcp 1.34.1`. In tre minuti parlano pochi apparati: i numeri veri si vedono lasciandolo girare.
+  Prove del sensore: 62 verdi, resta rossa quella di `raggiungibilita.py` che non è di questo lavoro.
 - [ ] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery.
 - [ ] **3.3** Spanning tree (radice, costo, cambi) e annunci dei router IPv6.
 - [ ] **3.4** Cattura di tre minuti a DTS e, se c'è l'accesso, a 72729 e 70151: cosa gira dai clienti.

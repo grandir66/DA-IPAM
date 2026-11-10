@@ -631,6 +631,9 @@ export interface TrunkOsservazioneRiga {
 const COME_DICHIARA: Record<string, string> = {
   ssdp_server: "SSDP", ssdp_tipo: "SSDP tipo", ssdp_agente: "cerca con", mdns_servizio: "mDNS", mdns_modello: "modello",
   dhcp_classe: "DHCP", dhcp_fqdn: "nome DHCP",
+  nbt_dominio: "dominio", nbt_os: "Windows", nbt_ruolo: "ruolo", nbt_commento: "descrizione",
+  dhcp6_fqdn: "nome DHCPv6", dhcp6_classe: "DHCPv6", wsd_tipo: "WSD",
+  stp_radice: "radice STP", stp_ponte: "ponte STP", stp_costo: "costo STP", ra_prefisso: "annuncia IPv6",
 };
 const TETTO_DICHIARA = 8;
 

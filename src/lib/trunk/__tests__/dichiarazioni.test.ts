@@ -103,6 +103,20 @@ test("pulizia una volta: via le mDNS ripetute dal gateway e le loro prove, poi s
   });
 });
 
+test("annunci di Windows, WS-Discovery e iLO: valori veri dell'hub", () => {
+  const di = (righe: Array<{ chiave: string; valore: string }>) =>
+    proveDaDichiarazioni(righe).map((p) => `${p.source}:${p.dimension}=${p.claim}`).sort();
+  assert.deepEqual(di([{ chiave: "nbt_os", valore: "10.0" }, { chiave: "nbt_ruolo", valore: "sql,server" }, { chiave: "nbt_dominio", valore: "DOMARC" }]),
+    ["netbios:category=compute.server", "netbios:os=windows"]);
+  assert.deepEqual(di([{ chiave: "nbt_os", valore: "10.0" }, { chiave: "nbt_ruolo", valore: "workstation" }]),
+    ["netbios:category=compute.workstation", "netbios:os=windows"]);
+  assert.deepEqual(di([{ chiave: "wsd_tipo", valore: "Device" }, { chiave: "wsd_tipo", valore: "PrintDeviceType" }]), ["wsd:category=peripheral.printer"]);
+  assert.deepEqual(di([{ chiave: "wsd_tipo", valore: "Device" }, { chiave: "wsd_tipo", valore: "Computer" }]), [], "«Device Computer» non dice il mestiere");
+  assert.deepEqual(di([{ chiave: "dhcp6_classe", valore: "CPQRIB3" }]), ["dhcp:vendor=hpe"]);
+  // lo spanning tree e i prefissi IPv6 si mostrano, non sono prove di cosa è l'apparato
+  assert.deepEqual(di([{ chiave: "stp_radice", valore: "0/08:55:31:00:00:01" }, { chiave: "ra_prefisso", valore: "2001:db8::/64" }]), []);
+});
+
 test("un sensore più vecchio non ha la rotta: nessun errore", async () => {
   await withTenant(T, async () => {
     const leggi = (async () => { throw new Error("sensore: HTTP 404"); }) as Parameters<typeof sincronizzaDichiarazioni>[0];

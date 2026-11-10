@@ -29,7 +29,12 @@ export const CHIAVE_CURSORE = "trunk_dichiarazioni_dopo";
 /** Segno della pulizia fatta una volta (vedi `pulisciMdnsRipetuto`). */
 export const CHIAVE_PULIZIA = "trunk_dichiarazioni_pulizia";
 const VERSIONE_PULIZIA = "1";
-const CHIAVI = new Set(["ssdp_server", "ssdp_tipo", "ssdp_agente", "mdns_servizio", "mdns_modello", "dhcp_classe", "dhcp_fqdn"]);
+const CHIAVI = new Set([
+  "ssdp_server", "ssdp_tipo", "ssdp_agente", "mdns_servizio", "mdns_modello", "dhcp_classe", "dhcp_fqdn",
+  // Sonda 0.8.294: annunci di Windows, DHCPv6, WS-Discovery, spanning tree, router IPv6.
+  "nbt_dominio", "nbt_os", "nbt_ruolo", "nbt_commento", "dhcp6_fqdn", "dhcp6_classe", "wsd_tipo",
+  "stp_radice", "stp_ponte", "stp_costo", "ra_prefisso",
+]);
 const TETTO_TESTO = 160;
 
 function db(): Database.Database {
@@ -113,6 +118,29 @@ export function proveDaDichiarazioni(righe: ReadonlyArray<Pick<Dichiarazione, "c
     }
   }
 
+  // Annuncio del «browser» di Windows: chi lo manda è Windows (o lo imita, come Samba: prova
+  // debole), e il ruolo dichiarato dice se è un server o una postazione.
+  const ruoli = di("nbt_ruolo").flatMap((v) => v.split(","));
+  if (di("nbt_os").length > 0) {
+    out.push({ source: "netbios", phase: "scan_naabu", dimension: "os", claim: "windows", confidence: 0.6, raw_value: `annuncio NetBIOS, versione ${di("nbt_os")[0]}` });
+  }
+  if (ruoli.some((r) => r === "dc" || r === "sql" || r === "server")) {
+    out.push({ source: "netbios", phase: "scan_naabu", dimension: "category", claim: "compute.server", confidence: 0.7, raw_value: `ruolo ${ruoli.join(",")}` });
+  } else if (ruoli.includes("workstation")) {
+    out.push({ source: "netbios", phase: "scan_naabu", dimension: "category", claim: "compute.workstation", confidence: 0.6, raw_value: "ruolo workstation" });
+  }
+  // WS-Discovery: solo i tipi che dicono il mestiere con certezza, come nelle sonde attive.
+  const wsd = di("wsd_tipo");
+  if (wsd.some((t) => /^Print(DeviceType|er)/i.test(t))) {
+    out.push({ source: "wsd", phase: "scan_naabu", dimension: "category", claim: "peripheral.printer", confidence: 0.9, raw_value: wsd.join(" ") });
+  } else if (wsd.includes("NetworkVideoTransmitter")) {
+    out.push({ source: "wsd", phase: "scan_naabu", dimension: "category", claim: "av.camera", confidence: 0.95, raw_value: wsd.join(" ") });
+  }
+  // «CPQRIB3» è la classe DHCPv6 delle schede di gestione HP iLO.
+  if (di("dhcp6_classe").some((v) => /^CPQRIB/i.test(v))) {
+    out.push({ source: "dhcp", phase: "scan_naabu", dimension: "vendor", claim: "hpe", confidence: 0.8, raw_value: di("dhcp6_classe")[0] });
+  }
+
   // Una prova per fonte, dimensione e valore: la più forte.
   const migliori = new Map<string, EvidenceInput>();
   for (const e of out) {
@@ -142,7 +170,7 @@ export function portaDichiarazioniSugliHost(hostIds: readonly number[]): EsitoDi
     esito.host += 1;
     const modello = righe.find((r) => r.chiave === "mdns_modello")?.valore;
     if (modello && riempiModello.run(modello.slice(0, 120), hostId).changes > 0) esito.campi += 1;
-    const nome = righe.find((r) => r.chiave === "dhcp_fqdn")?.valore;
+    const nome = righe.find((r) => r.chiave === "dhcp_fqdn" || r.chiave === "dhcp6_fqdn")?.valore;
     if (nome && riempiNome.run(nome.slice(0, 120), hostId).changes > 0) esito.campi += 1;
     const prove = proveDaDichiarazioni(righe);
     if (prove.length === 0) continue;

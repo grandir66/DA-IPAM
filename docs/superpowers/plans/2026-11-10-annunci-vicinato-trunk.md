@@ -73,6 +73,39 @@
 - [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 
+## Tappa 3 — cos'altro dice il trunk (Riccardo, 10/11: «arrivano tante informazioni passive per tanti protocolli… non so cosa si può estrarre in più»)
+
+Misura del 10/11. Storico dei sensori (il sensore tiene solo ciò che ha capito, non i pacchetti): hub
+357 apparati, 145 senza nome; DTS 656, 215 senza nome. Cattura di 185 secondi sul trunk dell'hub, tutto
+il broadcast e multicast (9.968 telai):
+
+| Cosa arriva | Apparati (hub) | Oggi | Cosa se ne ricava |
+| --- | --- | --- | --- |
+| SSDP (UDP 1900) | 114 nello storico | solo «visto» | tipo di apparato e prodotto (`SERVER`, `NT`, `USN`) |
+| mDNS (UDP 5353) | 132 nello storico | solo il nome | servizi offerti e modello dai campi TXT (stampanti, Apple, Chromecast) |
+| DHCP (UDP 67/68) | 185 nello storico | nome e impronta | classe del produttore (opz. 60), nome completo (81), identificativo (61) |
+| NetBIOS datagrammi (UDP 138) | 13 in 3 minuti | scartato | nome Windows, dominio o gruppo di lavoro, versione del sistema, ruolo (DC, SQL, stampa) |
+| DHCPv6 (UDP 547) | 11 in 3 minuti | scartato | identificativo stabile dell'host (DUID), nome, produttore |
+| WS-Discovery (UDP 3702) | 3 in 3 minuti | scartato | stampanti, telecamere ONVIF e Windows: tipo e modello |
+| Spanning tree | 1 sorgente | solo «visto» | chi è la radice, costo e porta: verso dove sta il centro della rete; cambi di topologia |
+| ICMPv6, annunci dei router | 3 in 3 minuti | solo «visto» | router IPv6 e prefissi annunciati (anche quelli che non dovrebbero esserci) |
+| IGMP | 130 telai | scartato | chi ascolta quali gruppi multicast (audio/video, TV) |
+| CDP, campi in più | 55 | nome, porta, modello | VLAN voce, dominio VTP, alimentazione PoE |
+| Protezione dai cicli MikroTik (0x9003) | 1 | scartato | quali porte la mandano |
+| UDP 2647, 2021, 1990, 48000 | 4, 1, 1, 2 | scartato | da identificare: annunci di prodotto |
+
+Non visti sull'hub ma probabili dai clienti con impianti (72729): Profinet DCP, EtherNet/IP, BACnet,
+che dicono nome, modello e produttore di PLC e pannelli senza interrogarli. Serve una cattura là.
+
+- [ ] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60, 61, 81): i tre che toccano più apparati.
+- [ ] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery.
+- [ ] **3.3** Spanning tree (radice, costo, cambi) e annunci dei router IPv6.
+- [ ] **3.4** Cattura di tre minuti a DTS e, se c'è l'accesso, a 72729 e 70151: cosa gira dai clienti.
+- [ ] **3.5** DA-IPAM: questi dati entrano come prove nel riconoscimento degli apparati (oggi un terzo
+  resta senza nome) e in «Reti dal trunk».
+
+Accessi: DTS raggiunta (`ssh dts`); 72729 rifiuta la chiave; il nome della 70151 non si risolve dal MacBook.
+
 ## Domande per Riccardo (prima di partire)
 
 1. Un MikroTik che si annuncia in MNDP su una VLAN degli utenti è un **rilievo** (come «Switch che si

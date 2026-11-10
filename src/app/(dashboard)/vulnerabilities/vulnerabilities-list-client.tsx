@@ -138,15 +138,6 @@ type FiltroExploit = "kev" | "edb";
 const PAGE_SIZE = 50;
 const SOURCE_FILTERS = ["Edge-G", "Edge-N", "Edge-C", "Wazuh"] as const;
 
-// Tab per motore (Riccardo, 10/11): una vista comune più un filtro per motore. Si appoggiano al
-// filtro fonte. «IPAM / Nety» = fonti interne (sonde/trunk/controlli): si accende quando quei
-// rilievi confluiscono in Findings. Edge/Wazuh sono le fonti note di oggi.
-const MOTORI = [
-  { key: "tutti", label: "Tutti", fonti: [] as readonly string[] },
-  { key: "ipam", label: "IPAM / Nety", fonti: ["Probe", "Agent"] as readonly string[] },
-  { key: "edge", label: "Edge (VA)", fonti: ["Edge-G", "Edge-N", "Edge-C"] as readonly string[] },
-  { key: "wazuh", label: "Wazuh", fonti: ["Wazuh"] as readonly string[] },
-] as const;
 type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 const EXPLOIT_FILTERS: Array<{ id: FiltroExploit; label: string }> = [
@@ -416,8 +407,8 @@ export function VulnerabilitiesListClient({ embedded = false }: { embedded?: boo
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {vista === "host"
-              ? "Gli host con problemi rilevati dai motori (Edge, IPAM/Nety, Wazuh), con l'elenco completo per host."
-              : "Tutti i problemi rilevati dai motori (Edge, IPAM/Nety, Wazuh), aggregati per CVE con elenco host affetti."}
+              ? "Gli host con vulnerabilità rilevate da edge-scan e Wazuh, con l'elenco completo per host."
+              : "Tutte le CVE rilevate da edge-scan e Wazuh, aggregate per CVE con elenco host affetti."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -428,24 +419,7 @@ export function VulnerabilitiesListClient({ embedded = false }: { embedded?: boo
         </div>
       </div>
 
-      <div role="group" aria-label="Motore" className="inline-flex flex-wrap gap-1 rounded-lg border border-foreground/70 p-0.5">
-        {MOTORI.map((m) => {
-          const attivo = m.fonti.length === sourceFilter.size && m.fonti.every((x) => sourceFilter.has(x));
-          return (
-            <button
-              key={m.key}
-              type="button"
-              aria-pressed={attivo}
-              onClick={() => { setPage(1); setSourceFilter(new Set(m.fonti)); }}
-              className={`h-8 rounded-md px-3 text-sm ${attivo ? "bg-foreground text-background font-medium" : "hover:bg-muted"}`}
-            >
-              {m.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {perRete.length > 0 && (
+{perRete.length > 0 && (
         <Pannello titolo="Rilievi per rete" conteggio={perRete.length} sottotitolo="Dove si concentrano, per gravità" piede={<LegendaGravita />}>
           <div className="space-y-2 p-3">
             {perRete.map((r) => (

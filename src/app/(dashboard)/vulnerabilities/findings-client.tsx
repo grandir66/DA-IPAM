@@ -179,25 +179,31 @@ function ElencoFindings() {
         }
       >
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant={fonte === "tutti" ? "default" : "outline"} onClick={() => { setFonte("tutti"); setPage(1); }}>
-              Tutti
-            </Button>
+          {/* Fonte come tab segmentati su una riga sua (Riccardo, 10/11): «Tutti» è la vista
+              comune, gli altri separano per motore (Trunk e Giri sono IPAM/Nety; CVE è Edge+Wazuh). */}
+          <div role="group" aria-label="Fonte dei rilievi" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
+            <button
+              type="button"
+              aria-pressed={fonte === "tutti"}
+              onClick={() => { setFonte("tutti"); setPage(1); }}
+              className={`h-8 px-3 text-sm ${fonte === "tutti" ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
+            >
+              Tutti{dati ? ` ${totale}` : ""}
+            </button>
             {FONTI_RILIEVO.map((f) => (
-              <Button
+              <button
                 key={f}
                 type="button"
-                size="sm"
-                variant={fonte === f ? "default" : "outline"}
-                onClick={() => {
-                  setFonte(f);
-                  setPage(1);
-                }}
+                aria-pressed={fonte === f}
+                title={FONTI_RILIEVO_UI[f].riga}
+                onClick={() => { setFonte(f); setPage(1); }}
+                className={`h-8 border-l border-foreground/70 px-3 text-sm ${fonte === f ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
               >
-                {FONTI_RILIEVO_UI[f].nome}
-                {dati ? ` ${perFonte[f]}` : ""}
-              </Button>
+                {FONTI_RILIEVO_UI[f].nome}{dati ? ` ${perFonte[f]}` : ""}
+              </button>
             ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             {SEVERITIES.map((s) => (
               <Button key={`f-${s}`} type="button" size="sm" variant={gravita.has(s) ? "default" : "outline"} onClick={() => alternaGravita(s)}>
                 {s} {dati ? rollup[s] : ""}

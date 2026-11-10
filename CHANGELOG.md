@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings: la fonte diventa tab, via il doppione
+
+Riccardo (10/11): nella scheda Elenco la separazione per fonte era in pastiglie piccole in mezzo alla gravità; «non ci sono i tab».
+
+### Cambiato
+- **Scheda Elenco di Findings**: il filtro per fonte (Tutti · CVE · Trunk · Giri) è ora una barra di tab segmentata su una riga sua, con i conteggi; la gravità resta sotto. Trunk e Giri sono i rilievi interni IPAM/Nety, CVE sono Edge+Wazuh.
+- Tolto il doppione di «tab per motore» che avevo messo per errore nella scheda Vulnerabilità (la separazione vera vive nell'Elenco).
+
 ## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 3)
 
 Riccardo (10/11): i check Nety ancora aperti, stessa impostazione (senza credenziali; invasivi solo con la levetta su `/scans`).

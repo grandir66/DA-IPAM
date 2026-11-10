@@ -2,7 +2,7 @@
 
 > Piano del 10/11/2026. Richiesta di Riccardo: «non avrebbe senso montare LLDP/CDP, i protocolli
 > che identificano gli oggetti di rete per trovare le porte e chi si presenta utilizzando queste
-> tecnologie? Quindi LLDP/CDP/MNDP e varianti». **Stato: tappa 1 in corso (sì di Riccardo il 10/11); il rilascio della sonda aspetta la sua conferma.** Livello proposto:
+> tecnologie? Quindi LLDP/CDP/MNDP e varianti». **Stato: tappa 1 fatta e rilasciata il 10/11 (sonda 0.8.291, attiva sull'hub); tappe 2 e 3 da fare.** Livello proposto:
 > **leggero** (due tappe, due repo, nessuna zona rossa fino al rilascio della sonda ai clienti).
 
 ## Cosa c'è oggi (misurato sull'hub il 10/11)
@@ -50,11 +50,13 @@
 - [-] **1.4 LLDP-MED e campi in più.** Rinviato: sul trunk dell'hub non arriva LLDP, quindi non c'è un
   telaio vero su cui provarlo. Si riprende dove il sensore è attaccato a uno switch che lo manda.
 - [-] **1.5 EDP / FDP.** Annullato: la misura non ne ha trovati.
-- [!] **1.6 Rilascio della sonda** (fermo: aspetta la conferma di Riccardo). Prima del rilascio: il ramo
-  va unito a `main`; la prova `test_il_sensore_non_ascolta_in_rete` è già rossa su `main` per
-  `sensore/raggiungibilita.py` (usa `AF_INET`), non per questo lavoro. Prove della sonda, `version:release`, `bash scripts/deploy.sh`
-  (dry-run), poi `--applica`. **Qui si chiede conferma**: il pacchetto va alle sonde dei clienti.
-  *Verifica:* `GET /vicini` del sensore dell'hub mostra righe `mndp`.
+- [x] **1.6 Rilascio della sonda** (sì di Riccardo, 10/11). DA-Vul-can 0.8.291 pubblicato con
+  `scripts/deploy.sh --applica`. Le sonde restano dove sono: il loro timer gira con `SOLO_SU_COMANDO=1`
+  e aspetta la versione fissata da DA-Link. Aggiornata a mano solo la sonda dell'hub (VM 533) con
+  `aggiorna-sonda.sh`. *Verifica (10/11):* il sensore dell'hub risponde 0.8.291 e `GET /vicini` dà
+  `cdp` 42, `mndp` 32, `ubnt` 2 dopo un minuto e mezzo (es. `CRS504-4XQ` su `ether1`, `CCR2004-1G-12S+2XS`
+  su `VL_4_SERVER`, RouterOS 7.25.1). Resta rossa su `main` la prova `test_il_sensore_non_ascolta_in_rete`,
+  per `sensore/raggiungibilita.py`, non per questo lavoro.
 
 ## Tappa 2 — DA-IPAM
 

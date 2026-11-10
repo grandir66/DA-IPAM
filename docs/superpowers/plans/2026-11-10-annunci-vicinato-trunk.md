@@ -83,11 +83,11 @@
   sull'hub (0.9.1117): «13 campi riempiti su 21 host»; 15 host hanno ora il modello vero
   (`CRS504-4XQ`, `CRS304-4XG`, `CRS309-1G-8S+`, `CCR2004-1G-12S+2XS`, `CCR2004-16G-2S+`, `RB5009UPr+S+`,
   `CHR`) al posto di «MikroTik» / «RouterOS (…)». Un modello vero già scritto non si tocca.
-- [ ] **Aperto, da decidere:** i CRS (switch) restano `network.router` in `hosts.attr_category`. La
-  prova `mndp` «switch» c'è (0,85 × peso 0,9), ma le altre fonti votano router (porte di RouterOS,
-  banner HTTP, vicini) e insieme vincono. Un CRS con RouterOS può fare tutti e due i mestieri: se il
-  modello deve decidere, `mndp` va reso autoritativo sulla categoria. (Il 10/11 avevo guardato
-  `hosts.classification`, che è un altro campo.)
+- [x] **Il modello decide la categoria** (Riccardo, 10/11: «decide il modello»). `mndp` e `ubnt` sono
+  fonti dichiarative sulla categoria (`AUTHORITATIVE_SOURCES`), solo per le sigle riconosciute, emesse
+  a 0,95; il generico «apparato di rete» resta a 0,85. Verifica sull'hub (0.9.1121): dei 15 host che si
+  annunciano, 6 sono `network.switch` (`CRS304-4XG`, `CRS504-4XQ`, `CRS309-1G-8S+`) e 9 `network.router`
+  (`CCR2004…`, `RB5009UPr+S+`, `CHR`). Prima erano tutti router.
 - [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 

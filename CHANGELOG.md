@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings: tab per motore (Tutti · IPAM/Nety · Edge · Wazuh)
+
+Riccardo (10/11): i tab separati per motore, con Edge e Wazuh distinti.
+
+### Cambiato
+- **Fonte dei rilievi spezzata per motore**: la fonte «cve» diventa «edge» e «wazuh» (dalla sorgente del rilievo; Edge vince se una CVE è vista da entrambi, Wazuh resta citato nella prova). `lib/rilievi/tipi.ts`, `unione.ts`.
+- **Scheda Elenco di Findings**: la barra di tab ora è per **motore** — Tutti · IPAM / Nety (trunk + giri) · Edge (VA) · Wazuh — coi conteggi; la gravità resta sotto. Tessera «Fonti» aggiornata (Edge · Wazuh · trunk · giri).
+
 ## [Non rilasciato] — 2026-11-10 · Findings: la fonte diventa tab, via il doppione
 
 Riccardo (10/11): nella scheda Elenco la separazione per fonte era in pastiglie piccole in mezzo alla gravità; «non ci sono i tab».

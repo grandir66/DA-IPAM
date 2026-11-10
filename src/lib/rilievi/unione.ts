@@ -33,6 +33,8 @@ function daCve(): RilievoUnito[] {
     return data.map((v) => {
       const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
       const host = v.hosts_preview[0];
+      // Edge vince se una CVE è vista da entrambi i motori (Wazuh resta citato nella prova).
+      const fonte: FonteRilievo = v.sources.some((x) => x.startsWith("Edge")) ? "edge" : v.sources.includes("Wazuh") ? "wazuh" : "edge";
       const provaParti = [
         v.package_label ? `pacchetto ${v.package_label}` : null,
         v.cvss_score != null ? `CVSS ${v.cvss_score}` : null,
@@ -41,7 +43,7 @@ function daCve(): RilievoUnito[] {
       ].filter(Boolean);
       return {
         id: `cve:${v.key}`,
-        fonte: "cve" as const,
+        fonte,
         gravita: v.severity,
         titolo,
         prova: provaParti.join(" · ") || "Rilievo della scansione di vulnerabilità",
@@ -166,11 +168,12 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const fonti = filtro.fonti?.length ? filtro.fonti : [...FONTI_RILIEVO];
   const setFonte = new Set(fonti);
   let tutti: RilievoUnito[] = [];
-  if (setFonte.has("cve")) tutti = tutti.concat(daCve());
+  if (setFonte.has("edge") || setFonte.has("wazuh")) tutti = tutti.concat(daCve());
   if (setFonte.has("trunk")) tutti = tutti.concat(daTrunk());
   if (setFonte.has("giro")) tutti = tutti.concat(daGiri());
+  tutti = tutti.filter((x) => setFonte.has(x.fonte));
 
-  const perFonte: Record<FonteRilievo, number> = { cve: 0, trunk: 0, giro: 0 };
+  const perFonte: Record<FonteRilievo, number> = { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
   for (const x of tutti) perFonte[x.fonte] += 1;
 
   const grav = filtro.gravita?.length ? new Set(filtro.gravita) : null;

@@ -20,7 +20,7 @@ import {
   Vuoto,
 } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
-import { FONTI_RILIEVO, FONTI_RILIEVO_UI, type ElencoRilievi, type FonteRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
+import { FONTI_RILIEVO_UI, MOTORI_RILIEVO, MOTORI_RILIEVO_UI, type ElencoRilievi, type MotoreRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
 
@@ -81,7 +81,7 @@ export function FindingsClient() {
 }
 
 function ElencoFindings() {
-  const [fonte, setFonte] = useState<FonteRilievo | "tutti">("tutti");
+  const [motore, setMotore] = useState<MotoreRilievo>("tutti");
   const [gravita, setGravita] = useState<Set<Severity>>(new Set());
   const [q, setQ] = useState("");
   const [cerca, setCerca] = useState("");
@@ -92,7 +92,7 @@ function ElencoFindings() {
 
   const load = useCallback(async () => {
     const sp = new URLSearchParams();
-    if (fonte !== "tutti") sp.set("fonte", fonte);
+    if (motore !== "tutti") sp.set("fonte", MOTORI_RILIEVO_UI[motore].fonti.join(","));
     if (gravita.size) sp.set("gravita", [...gravita].join(","));
     if (q.trim()) sp.set("q", q.trim());
     sp.set("page", String(page));
@@ -102,7 +102,7 @@ function ElencoFindings() {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [fonte, gravita, q, page]);
+  }, [motore, gravita, q, page]);
 
   useEffect(() => {
     void load();
@@ -128,7 +128,7 @@ function ElencoFindings() {
   }
 
   const rollup = dati?.rollup ?? { Critical: 0, High: 0, Medium: 0, Low: 0 };
-  const perFonte = dati?.perFonte ?? { cve: 0, trunk: 0, giro: 0 };
+  const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
   const totale = dati?.total ?? 0;
 
   return (
@@ -139,8 +139,8 @@ function ElencoFindings() {
         <TesseraNumero titolo="Aperti" valore={dati ? totale : null} nota="In questa pagina, dopo i filtri" />
         <TesseraNumero
           titolo="Fonti"
-          valore={dati ? perFonte.cve + perFonte.trunk + perFonte.giro : null}
-          nota={`CVE ${perFonte.cve} · trunk ${perFonte.trunk} · giri ${perFonte.giro}`}
+          valore={dati ? perFonte.edge + perFonte.wazuh + perFonte.trunk + perFonte.giro : null}
+          nota={`Edge ${perFonte.edge} · Wazuh ${perFonte.wazuh} · trunk ${perFonte.trunk} · giri ${perFonte.giro}`}
         />
       </div>
 
@@ -181,27 +181,21 @@ function ElencoFindings() {
         <div className="space-y-3">
           {/* Fonte come tab segmentati su una riga sua (Riccardo, 10/11): «Tutti» è la vista
               comune, gli altri separano per motore (Trunk e Giri sono IPAM/Nety; CVE è Edge+Wazuh). */}
-          <div role="group" aria-label="Fonte dei rilievi" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
-            <button
-              type="button"
-              aria-pressed={fonte === "tutti"}
-              onClick={() => { setFonte("tutti"); setPage(1); }}
-              className={`h-8 px-3 text-sm ${fonte === "tutti" ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-            >
-              Tutti{dati ? ` ${totale}` : ""}
-            </button>
-            {FONTI_RILIEVO.map((f) => (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={fonte === f}
-                title={FONTI_RILIEVO_UI[f].riga}
-                onClick={() => { setFonte(f); setPage(1); }}
-                className={`h-8 border-l border-foreground/70 px-3 text-sm ${fonte === f ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-              >
-                {FONTI_RILIEVO_UI[f].nome}{dati ? ` ${perFonte[f]}` : ""}
-              </button>
-            ))}
+          <div role="group" aria-label="Motore" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
+            {MOTORI_RILIEVO.map((m, i) => {
+              const conteggio = m === "tutti" ? totale : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={motore === m}
+                  onClick={() => { setMotore(m); setPage(1); }}
+                  className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${motore === m ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
+                >
+                  {MOTORI_RILIEVO_UI[m].nome}{dati ? ` ${conteggio}` : ""}
+                </button>
+              );
+            })}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {SEVERITIES.map((s) => (

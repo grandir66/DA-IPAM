@@ -21,10 +21,14 @@ import {
   segnaHostProvatoServizi,
   raccogliIdentita,
   riempiOsVuotiServizi,
+  getPorteServiziDaControllare,
+  salvaControlloServizioRete,
 } from "@/lib/db-tenant";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
 import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
+import { TETTO_FABBRICA_PER_HOST } from "@/lib/rilievi/controlli";
+import { PORTE_CONTROLLO, sondaControllo, type EsitoSondaControllo } from "@/lib/rilievi/sonde-controlli";
 
 /**
  * Freno: le porte di campo e di stampa non si sondano (sulla 9100 il nostro GET verrebbe
@@ -60,9 +64,15 @@ export function statoGiro(tenant: string): StatoGiro {
 export interface Strumenti {
   sonda: (ip: string, porta: number) => Promise<EsitoSonda | null>;
   aperta: (ip: string, porta: number) => Promise<boolean>;
+  /** Assente nelle prove iniettate: i controlli veri non partono. */
+  controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; tentativiRestanti: number }) => Promise<EsitoSondaControllo>;
 }
 
-const STRUMENTI: Strumenti = { sonda: (ip, p) => sondaPorta(ip, p), aperta: (ip, p) => portaAperta(ip, p) };
+const STRUMENTI: Strumenti = {
+  sonda: (ip, p) => sondaPorta(ip, p),
+  aperta: (ip, p) => portaAperta(ip, p),
+  controllo: (ip, p, opz) => sondaControllo(ip, p, opz),
+};
 
 /** Esegue `lavoro` su ogni voce con al massimo `n` in parallelo. */
 async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<void>): Promise<void> {
@@ -82,10 +92,17 @@ export function avviaGiro(
   networkId: number | null,
   /** `porteComuni`: «rete» = gli host della rete (conferma dal trunk); «senza-porte» = gli host
    *  del tenant che non hanno porte note (giro automatico). */
-  opzioni: { porteComuni?: "rete" | "senza-porte"; strumenti?: Strumenti; porte?: number[] } = {},
+  opzioni: {
+    porteComuni?: "rete" | "senza-porte";
+    strumenti?: Strumenti;
+    porte?: number[];
+    /** Login di fabbrica: solo da `/scans`, mai dai giri automatici. */
+    proveFabbrica?: boolean;
+  } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
-  const { sonda, aperta } = opzioni.strumenti ?? STRUMENTI;
+  const { sonda, aperta, controllo } = opzioni.strumenti ?? STRUMENTI;
+  const proveFabbrica = opzioni.proveFabbrica === true;
   const stato: StatoGiro = { inCorso: true, networkId, fase: null, totale: 0, fatte: 0, iniziato: new Date().toISOString(), finito: null, errore: null };
   giri.set(tenant, stato);
   void withTenant(tenant, async () => {
@@ -131,6 +148,23 @@ export function avviaGiro(
         salvaEsitoSondaServizio(p.host_id, p.porta, esito);
         stato.fatte += 1;
       });
+      if (controllo) {
+        const extra = getPorteServiziDaControllare(networkId ?? undefined, PORTE_CONTROLLO, proveFabbrica).filter(
+          (p) => !daSaltare(p.porta, p.vendor),
+        );
+        const restanti = new Map<number, number>();
+        await inParallelo(extra, PARALLELE, async (p) => {
+          const budget = restanti.get(p.host_id) ?? TETTO_FABBRICA_PER_HOST;
+          let esito: EsitoSondaControllo = { info: null, tentativiUsati: 0 };
+          try {
+            esito = await controllo(p.ip, p.porta, { proveFabbrica, tentativiRestanti: budget });
+          } catch {
+            esito = { info: null, tentativiUsati: 0 };
+          }
+          if (esito.tentativiUsati > 0) restanti.set(p.host_id, Math.max(0, budget - esito.tentativiUsati));
+          if (esito.info) salvaControlloServizioRete(p.host_id, p.porta, p.protocollo, esito.info);
+        });
+      }
       raccogliIdentita();
       riempiOsVuotiServizi();
     } catch (e) {

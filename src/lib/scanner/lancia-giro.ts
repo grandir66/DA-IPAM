@@ -31,6 +31,8 @@ export interface LancioGiro {
   network_ids?: number[];
   fasi?: string[];
   conferma_completo?: boolean;
+  /** Login di fabbrica: solo se true, e solo da questo lanciatore. */
+  prove_fabbrica?: boolean;
 }
 
 export interface AvvioGiro {
@@ -128,9 +130,11 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
     return { avvii, saltati, tipo, profilo };
   }
 
+  const proveFabbrica = corpo.prove_fabbrica === true;
+
   if (tipo === "controlli") {
     const networkId = reti.length === 1 ? reti[0]! : null;
-    const avviato = d.servizi(tenant, networkId);
+    const avviato = d.servizi(tenant, networkId, { proveFabbrica });
     if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
     d.history({
       host_id: null,
@@ -150,7 +154,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
   const vuolePorte = fasi.includes("porte") || profilo !== "su_misura";
   if (profilo === "su_misura" && !vuolePorte && vuoleSonde) {
     const networkId = reti.length === 1 ? reti[0]! : null;
-    const avviato = d.servizi(tenant, networkId);
+    const avviato = d.servizi(tenant, networkId, { proveFabbrica });
     if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
     avvii.push({ network_id: networkId, job_id: null, messaggio: "Solo sonde (senza nmap)" });
     return { avvii, saltati, tipo, profilo };
@@ -166,6 +170,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
       const { id: jobId } = await d.discovery(id, "network_discovery", params.nmapArgs, undefined, {
         tcpPorts: params.tcpPorts,
         udpPorts: params.udpPorts,
+        proveFabbrica,
       });
       avvii.push({ network_id: id, job_id: jobId, messaggio: `Discovery ${profilo} su ${rete.cidr}` });
     } catch (e) {

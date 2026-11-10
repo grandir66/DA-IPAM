@@ -10,7 +10,7 @@ export type FonteRilievo = (typeof FONTI_RILIEVO)[number];
 export const FONTI_RILIEVO_UI: Record<FonteRilievo, { nome: string; riga: string }> = {
   cve: { nome: "CVE", riga: "Vulnerabilità da Edge e Wazuh" },
   trunk: { nome: "Trunk", riga: "Allarmi del sensore sulla porta trunk" },
-  giro: { nome: "Giri", riga: "Certificati e protocolli visti dalle sonde" },
+  giro: { nome: "Giri", riga: "Certificati, servizi aperti e login di fabbrica visti dalle sonde" },
 };
 
 export interface RilievoUnito {

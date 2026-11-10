@@ -82,7 +82,17 @@ function startTls(sock: net.Socket, ms: number): Promise<tls.TLSSocket | null> {
   });
 }
 
-export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port?: number }): Promise<NtlmChallengeInfo | null> {
+/** NLA (CredSSP) se il server ha scelto HYBRID o HYBRID_EX. */
+export function rdpNlaRichiesta(proto: number): boolean {
+  return (proto & (PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) !== 0;
+}
+
+export interface EsitoRdpNtlm {
+  challenge: NtlmChallengeInfo | null;
+  nla: boolean;
+}
+
+export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port?: number }): Promise<EsitoRdpNtlm | null> {
   const ms = opts?.timeoutMs ?? 4000;
   const porta = opts?.port ?? 3389;
   const s1 = await connetti(ip, porta, ms);
@@ -93,14 +103,17 @@ export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port
     const cc = await leggi(s1, ms, (b) => b.length >= 4 && b.length >= b.readUInt16BE(2));
     const proto = protocolloRdpDaConferma(cc);
     if (proto === null) return null;
-    if ((proto & (PROTOCOL_SSL | PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) === 0) return null;
+    const nla = rdpNlaRichiesta(proto);
+    if ((proto & (PROTOCOL_SSL | PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) === 0) {
+      return { challenge: null, nla: false };
+    }
     tlsSock = await startTls(s1, ms);
-    if (!tlsSock) return null;
+    if (!tlsSock) return { challenge: null, nla };
     const type1 = wrapNtlmInSpnego(buildNtlmNegotiateMessage());
     tlsSock.write(credsspTsRequest(type1));
     const risp = await leggi(tlsSock, ms, (b) => ntlmDaGssORaw(b) !== null);
     const ntlm = ntlmDaGssORaw(risp);
-    return ntlm ? parseNtlmChallenge(ntlm) : null;
+    return { challenge: ntlm ? parseNtlmChallenge(ntlm) : null, nla };
   } catch {
     return null;
   } finally {

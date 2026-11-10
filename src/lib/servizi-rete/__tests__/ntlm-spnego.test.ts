@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildNtlmNegotiateMessage, parseNtlmChallenge } from "@/lib/scanner/probes/smb2";
-import { protocolloRdpDaConferma, rdpConnectionRequest } from "@/lib/scanner/probes/rdp-ntlm";
+import { protocolloRdpDaConferma, rdpConnectionRequest, rdpNlaRichiesta } from "@/lib/scanner/probes/rdp-ntlm";
 import { credsspTsRequest, ntlmDaGssORaw, wrapNtlmInSpnego } from "../ntlm-spnego";
 
 test("SPNEGO avvolge NTLM e ntlmDaGssORaw lo ritrova", () => {
@@ -40,6 +40,8 @@ test("Connection Confirm: selectedProtocol; senza NEG_RSP resta null", () => {
   ]);
   cc.writeUInt16BE(cc.length, 2);
   assert.equal(protocolloRdpDaConferma(cc), 2);
+  assert.equal(rdpNlaRichiesta(2), true);
+  assert.equal(rdpNlaRichiesta(1), false);
   assert.equal(protocolloRdpDaConferma(Buffer.from([0x03, 0x00, 0x00, 0x0b, 0x06, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00])), null);
   assert.equal(protocolloRdpDaConferma(Buffer.from("not tpkt")), null);
 });

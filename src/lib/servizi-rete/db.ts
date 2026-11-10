@@ -4,7 +4,8 @@
  * della logica, così le due strade non divergono (regola 12 di CLAUDE.md).
  */
 import type Database from "better-sqlite3";
-import { assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
+import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
+import type { InfoControllo } from "@/lib/rilievi/controlli";
 import type { EsitoSonda } from "./sonde";
 
 export interface PortaDaSondare {
@@ -131,6 +132,7 @@ export function porteDaSondare(db: Database.Database, networkId?: number, limite
 /** Scrive l'esito di una sonda. `null` = la porta non risponde più: si segna solo la prova. */
 export function salvaEsitoSonda(db: Database.Database, hostId: number, porta: number, esito: EsitoSonda | null): void {
   assicuraColonnaNtlmServizi(db);
+  assicuraColonnaControlloServizi(db);
   if (!esito) {
     db.prepare(
       "UPDATE servizi_rete SET ultima_sonda = datetime('now') WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'",
@@ -190,6 +192,7 @@ function condizioni(f: FiltriServiziRete): { where: string; args: unknown[] } {
 
 export function serviziRetePaginati(db: Database.Database, f: FiltriServiziRete): { righe: ServizioRete[]; totale: number } {
   assicuraColonnaNtlmServizi(db);
+  assicuraColonnaControlloServizi(db);
   const { where, args } = condizioni(f);
   const da = `FROM servizi_rete s JOIN hosts h ON h.id = s.host_id LEFT JOIN networks n ON n.id = h.network_id ${where}`;
   const totale = (db.prepare(`SELECT COUNT(*) AS c ${da}`).get(...args) as { c: number }).c;
@@ -285,4 +288,70 @@ export function segnaHostProvato(db: Database.Database, hostId: number, provate:
     `INSERT INTO servizi_rete_prove (host_id, provato_il, porte_provate, porte_aperte) VALUES (?, datetime('now'), ?, ?)
      ON CONFLICT(host_id) DO UPDATE SET provato_il = excluded.provato_il, porte_provate = excluded.porte_provate, porte_aperte = excluded.porte_aperte`,
   ).run(hostId, provate, aperte);
+}
+
+export interface PortaDaControllare extends PortaDaSondare {
+  protocollo: string;
+}
+
+/**
+ * Porte su cui ha senso un controllo (LDAP, Redis, Mongo, NFS, SNMP, VNC, FTP).
+ * Se `ancheHttp401`, anche i pannelli HTTP che hanno già risposto 401 (login di fabbrica).
+ */
+export function porteDaControllare(
+  db: Database.Database,
+  networkId: number | undefined,
+  porte: ReadonlySet<number>,
+  ancheHttp401: boolean,
+): PortaDaControllare[] {
+  const elenco = [...porte].filter((n) => Number.isInteger(n));
+  if (elenco.length === 0 && !ancheHttp401) return [];
+  const rete = networkId ? "AND h.network_id = ?" : "";
+  const args: unknown[] = [];
+  const or: string[] = [];
+  if (elenco.length > 0) {
+    or.push(`s.porta IN (${elenco.map(() => "?").join(",")})`);
+    args.push(...elenco);
+  }
+  if (ancheHttp401) {
+    or.push(`json_extract(s.http_json, '$.status_code') = 401`);
+  }
+  if (networkId) args.push(networkId);
+  return db
+    .prepare(
+      `SELECT s.host_id, h.ip, s.porta, s.protocollo, COALESCE(h.vendor, h.device_manufacturer) AS vendor
+       FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
+       WHERE (${or.join(" OR ")}) ${rete}
+       ORDER BY h.ip, s.porta`,
+    )
+    .all(...args) as PortaDaControllare[];
+}
+
+/** Unisce l'esito del controllo a `controllo_json` senza toccare banner/TLS. */
+export function salvaControlloServizio(db: Database.Database, hostId: number, porta: number, protocollo: string, info: InfoControllo): void {
+  assicuraColonnaControlloServizi(db);
+  const proto = protocollo === "udp" ? "udp" : "tcp";
+  const r = db
+    .prepare("SELECT controllo_json FROM servizi_rete WHERE host_id = ? AND porta = ? AND protocollo = ?")
+    .get(hostId, porta, proto) as { controllo_json: string | null } | undefined;
+  let prev: Record<string, unknown> = {};
+  if (r?.controllo_json) {
+    try {
+      const v = JSON.parse(r.controllo_json) as unknown;
+      if (v && typeof v === "object" && !Array.isArray(v)) prev = v as Record<string, unknown>;
+    } catch {
+      prev = {};
+    }
+  }
+  const json = JSON.stringify({ ...prev, ...info });
+  if (r) {
+    db.prepare(
+      "UPDATE servizi_rete SET controllo_json = ?, ultimo_visto = datetime('now') WHERE host_id = ? AND porta = ? AND protocollo = ?",
+    ).run(json, hostId, porta, proto);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, controllo_json)
+     VALUES (?, ?, ?, 'controllo', ?)`,
+  ).run(hostId, porta, proto, json);
 }

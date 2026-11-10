@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 1)
+
+Riccardo (10/11): integrare i check di Nety in Findings, prima ondata da archivio e prove senza login; login di fabbrica solo con levetta a mano.
+
+### Aggiunto
+- **Findings dai giri**: oltre al TLS, SMB senza firma, RDP senza NLA, SSH vecchio, LDAP anonimo, Redis e Mongo aperti, NFS, SNMP community `public`, VNC senza password, pannelli web esposti.
+- **Levetta su `/scans`**: «Prova anche i login di fabbrica» (FTP anonymous, admin/admin). Spenta di serie, mai nei giri automatici, al massimo 3 tentativi per host.
+
 ## [Non rilasciato] — 2026-11-10 · Prima lettura host (OS dalle sonde)
 
 Riccardo (10/11): i dati ci sono già in Subnet e Discovery; manca la prima riga, come in Nety Hosts/Assets.

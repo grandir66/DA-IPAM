@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   hostkeyDaKexEcdhReply,
   improntaHostkey,
+  infoNtlmDaSmb2,
   kexCurve25519,
   leggiKexinit,
   leggiRispostaHttp,
@@ -50,6 +51,20 @@ test("WWW-Authenticate: NTLM riconosciuto, blob Type 2 estratto, Basic ignorato"
   const daNeg = ntlmChallengeDaWwwAuthenticate({ "WWW-Authenticate": `Negotiate ${gss.toString("base64")}` });
   assert.ok(daNeg);
   assert.equal(daNeg.subarray(0, 7).toString("latin1"), "NTLMSSP");
+});
+
+test("NTLM da SMB2 tiene se la firma è obbligatoria", () => {
+  const n = infoNtlmDaSmb2({
+    osVersion: "10.0.19041",
+    netbiosName: "PC",
+    dnsDomain: "lan.local",
+    dnsComputerName: "pc.lan.local",
+    nbDomainName: "LAN",
+    signingRequired: false,
+  });
+  assert.equal(n.fonte, "smb");
+  assert.equal(n.smb_signing, false);
+  assert.equal(n.netbios, "PC");
 });
 
 test("prodotto e versione da Server e da SSH", () => {

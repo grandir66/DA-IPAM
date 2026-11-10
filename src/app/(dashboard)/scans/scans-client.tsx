@@ -55,6 +55,7 @@ export function ScansClient() {
   const [profilo, setProfilo] = useState<ProfiloGiro>("standard");
   const [fasi, setFasi] = useState<FaseGiro[]>([...FASI_GIRO]);
   const [confermaCompleto, setConfermaCompleto] = useState(false);
+  const [proveFabbrica, setProveFabbrica] = useState(false);
   const [reti, setReti] = useState<Rete[]>([]);
   const [scelte, setScelte] = useState<Set<number>>(new Set());
   const [history, setHistory] = useState<ScanHistory[]>([]);
@@ -104,6 +105,7 @@ export function ScansClient() {
         network_ids: [...scelte],
         fasi: profilo === "su_misura" ? fasi : undefined,
         conferma_completo: profilo === "completo" ? true : undefined,
+        prove_fabbrica: (tipo === "discovery" || tipo === "controlli") && proveFabbrica ? true : undefined,
       }),
     });
     if (!r.ok) {
@@ -221,6 +223,17 @@ export function ScansClient() {
         </Button>
         {avvio && <InCorso titolo={avvio} />}
       </div>
+      {serveRete && (
+        <label className="flex items-start gap-2 text-[13px]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={proveFabbrica}
+            onChange={(e) => setProveFabbrica(e.target.checked)}
+          />
+          <span>Prova anche i login di fabbrica (FTP anonymous, pannelli con admin/admin). Mai nei giri automatici; al massimo 3 tentativi per host.</span>
+        </label>
+      )}
 
       <Pannello titolo="Storico" conteggio={history.length} sottotitolo="Gli ultimi giri di questa installazione">
         {error ? (

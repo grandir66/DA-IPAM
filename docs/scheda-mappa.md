@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: Collaudo matrice su VM 963 (trunk 102/103), interruttore in Opzioni, NTLM opzionale
+prossimo: Ondata 2 dei check Nety (SMBv1, null session, default DB, IPMI…); diff tra giri
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

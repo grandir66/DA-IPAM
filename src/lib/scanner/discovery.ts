@@ -192,6 +192,8 @@ export type DiscoverNetworkOptions = {
   udpPorts?: string | null;
   /** Il giro è una fase di questa sequenza: in bacheca si vede la sequenza, non la fase. */
   sequenzaId?: string;
+  /** Login di fabbrica dopo nmap: solo dal lanciatore `/scans`, mai dai giri automatici. */
+  proveFabbrica?: boolean;
 };
 
 /**
@@ -791,7 +793,7 @@ export async function discoverNetwork(
     void done.then((esito) => {
       if (esito.status !== "completed") return;
       try {
-        avviaGiroServizi(tenantCode, networkId);
+        avviaGiroServizi(tenantCode, networkId, { proveFabbrica: options?.proveFabbrica === true });
       } catch (e) {
         console.error(`[servizi-rete] avvio dopo la scansione (tenant: ${tenantCode}, network: ${networkId}):`, e);
       }

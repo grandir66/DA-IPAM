@@ -25,6 +25,7 @@ Riccardo (09/11): «puoi verificare come riutilizzare parti della UI di NETY in 
 - [x] Findings + lanciatore (10/11, livello leggero): elenco unico su `/vulnerabilities` (titolo Findings, visibile anche senza Edge) da CVE + trunk + TLS delle sonde; `/scans` lancia i 4 tipi e i 5 profili sui motori già fatti. Completo chiede conferma e non è nei giri automatici. Scansioni VA restano al loro posto.
 - [x] La vista precedente (per CVE / per host, exploit, triage) è di nuovo in pagina, scheda «Vulnerabilità» (`#vulnerabilita`; `?vista=host` apre quella)
 - [x] Prima lettura Hosts/Assets di Nety, senza pagine nuove: OS da NTLM/SNMP/SSH su `os_info` vuoto; cassetto sulla riga in Discovery e Subnet (servizi, chiavi, dominio). Inventario «Asset» non si tocca.
+- [x] Controlli ondata 1 in Findings (10/11): SMB signing, RDP NLA, SSH vecchio, LDAP anonimo, Redis/Mongo, NFS, SNMP public, VNC, console web; login di fabbrica solo con levetta su `/scans` (max 3/host, mai automatici).
 - [ ] Riccardo da scegliere da dove partire. Ordine consigliato: piccoli mattoni → triage → rilievi a riga espandibile con gravità a tacche → panoramica per rete → «Cosa è cambiato» → lanciatore
 
 ## 2026-11-09 — Servizi di rete e identità senza credenziali, sul modello di Nety (Riccardo, leggero)

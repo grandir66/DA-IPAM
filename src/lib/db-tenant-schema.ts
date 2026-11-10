@@ -282,6 +282,7 @@ export const DDL_SERVIZI_RETE = `CREATE TABLE IF NOT EXISTS servizi_rete (
   http_json TEXT,
   ssh_json TEXT,
   ntlm_json TEXT,
+  controllo_json TEXT,
   primo_visto TEXT NOT NULL DEFAULT (datetime('now')),
   ultimo_visto TEXT NOT NULL DEFAULT (datetime('now')),
   ultima_sonda TEXT,
@@ -555,6 +556,7 @@ export function migraCredenzialiWmi(db: Database.Database, chi: string): void {
     db.exec(DDL_IDENTITA);
     db.exec(DDL_SEGMENTAZIONE);
     if (assicuraColonnaNtlmServizi(db)) console.info(`${chi}: servizi_rete.ntlm_json aggiunto`);
+    if (assicuraColonnaControlloServizi(db)) console.info(`${chi}: servizi_rete.controllo_json aggiunto`);
   } catch (e) {
     console.error(`${chi}: migrazione accesso_windows_esiti fallita:`, e);
   }
@@ -613,6 +615,16 @@ export function assicuraColonnaNtlmServizi(db: Database.Database): boolean {
   );
   if (colonne.size === 0 || colonne.has("ntlm_json")) return false;
   db.exec("ALTER TABLE servizi_rete ADD COLUMN ntlm_json TEXT");
+  return true;
+}
+
+/** Esiti dei controlli (LDAP/Redis/Mongo/NFS/SNMP/VNC/fabbrica). Additiva e ripetibile. */
+export function assicuraColonnaControlloServizi(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(servizi_rete)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("controllo_json")) return false;
+  db.exec("ALTER TABLE servizi_rete ADD COLUMN controllo_json TEXT");
   return true;
 }
 

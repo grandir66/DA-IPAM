@@ -1,12 +1,23 @@
 /**
- * Elenco unico Findings: CVE + trunk + giri (TLS dalle sonde).
+ * Elenco unico Findings: CVE + trunk + giri (TLS e controlli dalle sonde).
  * Niente tabella nuova: si legge quello che c'è già.
  */
 import { getAggregatedVulnerabilities, getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
+import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
 import { SEVERITY_RANK, type Severity } from "@/lib/severity-style";
 import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
 import type { GravitaRilievo } from "@/lib/trunk/rilievi-tipi";
 import { rilieviDaTls, tlsDaJson } from "./da-servizi";
+import {
+  controlloDaJson,
+  httpDaJson,
+  ntlmDaJson,
+  rilieviDaControllo,
+  rilieviDaHttp,
+  rilieviDaNtlm,
+  rilieviDaSsh,
+  sshDaJson,
+} from "./controlli";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 
 function gravitaDaTrunk(g: GravitaRilievo): Severity {
@@ -79,17 +90,28 @@ function daGiri(): RilievoUnito[] {
     const tenant = getCurrentTenantCode();
     if (!tenant) return [];
     const d = getTenantDb(tenant);
+    assicuraColonnaNtlmServizi(d);
+    assicuraColonnaControlloServizi(d);
     const righe = d.prepare(
-      `SELECT s.host_id, s.porta, s.tls_json, h.ip, h.hostname, h.network_id, n.name AS network_name
+      `SELECT s.host_id, s.porta, s.tls_json, s.ntlm_json, s.ssh_json, s.http_json, s.controllo_json,
+              h.ip, h.hostname, h.network_id, n.name AS network_name
        FROM servizi_rete s
        JOIN hosts h ON h.id = s.host_id
        LEFT JOIN networks n ON n.id = h.network_id
-       WHERE s.tls_json IS NOT NULL AND s.tls_json != ''
-       LIMIT 2000`,
+       WHERE (s.tls_json IS NOT NULL AND s.tls_json != '')
+          OR (s.ntlm_json IS NOT NULL AND s.ntlm_json != '')
+          OR (s.ssh_json IS NOT NULL AND s.ssh_json != '')
+          OR (s.http_json IS NOT NULL AND s.http_json != '')
+          OR (s.controllo_json IS NOT NULL AND s.controllo_json != '')
+       LIMIT 4000`,
     ).all() as Array<{
       host_id: number;
       porta: number;
-      tls_json: string;
+      tls_json: string | null;
+      ntlm_json: string | null;
+      ssh_json: string | null;
+      http_json: string | null;
+      controllo_json: string | null;
       ip: string;
       hostname: string | null;
       network_id: number | null;
@@ -97,18 +119,20 @@ function daGiri(): RilievoUnito[] {
     }>;
     const out: RilievoUnito[] = [];
     for (const r of righe) {
+      const ctx = {
+        host_id: r.host_id,
+        ip: r.ip,
+        hostname: r.hostname,
+        network_id: r.network_id,
+        network_name: r.network_name,
+        porta: r.porta,
+      };
       const tls = tlsDaJson(r.tls_json);
-      if (!tls) continue;
-      out.push(
-        ...rilieviDaTls(tls, {
-          host_id: r.host_id,
-          ip: r.ip,
-          hostname: r.hostname,
-          network_id: r.network_id,
-          network_name: r.network_name,
-          porta: r.porta,
-        }),
-      );
+      if (tls) out.push(...rilieviDaTls(tls, ctx));
+      out.push(...rilieviDaNtlm(ntlmDaJson(r.ntlm_json), ctx));
+      out.push(...rilieviDaSsh(sshDaJson(r.ssh_json), ctx));
+      out.push(...rilieviDaHttp(httpDaJson(r.http_json), ctx));
+      out.push(...rilieviDaControllo(controlloDaJson(r.controllo_json), ctx));
     }
     return out;
   } catch {

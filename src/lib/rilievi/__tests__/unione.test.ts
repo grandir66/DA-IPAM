@@ -57,6 +57,22 @@ test("il tenant B non vede i rilievi di A", () => {
   });
 });
 
+test("SMB senza firma compare come giro Medium", () => {
+  withTenant(A, () => {
+    const d = getTenantDb(A);
+    const esistente = d.prepare("SELECT id FROM networks WHERE cidr = '10.9.0.0/24'").get() as { id: number } | undefined;
+    const n = esistente?.id ?? Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'lan')").run().lastInsertRowid);
+    const h = Number(d.prepare("INSERT INTO hosts (network_id, ip, status) VALUES (?, ?, 'online')").run(n, "10.9.0.12").lastInsertRowid);
+    d.prepare(
+      "INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)",
+    ).run(h, JSON.stringify({ fonte: "smb", smb_signing: false, netbios: "PC" }));
+  });
+  withTenant(A, () => {
+    const e = elencoRilievi({ fonti: ["giro"], q: "SMB" });
+    assert.ok(e.data.some((r) => r.gravita === "Medium" && /SMB/.test(r.titolo)));
+  });
+});
+
 test("filtro gravità: Low non entra se si chiede High", () => {
   reteConTls(A, "10.9.0.10", { self_signed: true, expired: false, version: "TLSv1.3", subject_cn: "x" });
   withTenant(A, () => {

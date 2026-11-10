@@ -49,6 +49,34 @@ test("Discovery chiama il motore con gli argomenti del profilo Rapido", async ()
   assert.equal(visti[0]!.udp, "");
 });
 
+test("Solo controlli passa prove_fabbrica al giro; senza levetta no", async () => {
+  const visti: Array<{ proveFabbrica?: boolean } | undefined> = [];
+  await lanciaGiro(
+    { tipo: "controlli", profilo: "standard", network_ids: [3], prove_fabbrica: true },
+    {
+      tenant: () => "T",
+      servizi: (_t, _n, o) => {
+        visti.push(o);
+        return true;
+      },
+      history: () => undefined,
+    },
+  );
+  await lanciaGiro(
+    { tipo: "controlli", profilo: "standard", network_ids: [3] },
+    {
+      tenant: () => "T",
+      servizi: (_t, _n, o) => {
+        visti.push(o);
+        return true;
+      },
+      history: () => undefined,
+    },
+  );
+  assert.equal(visti[0]?.proveFabbrica, true);
+  assert.equal(visti[1]?.proveFabbrica, false);
+});
+
 test("segmentazione già in corso → 409", async () => {
   await assert.rejects(
     () =>

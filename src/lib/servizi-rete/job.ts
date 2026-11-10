@@ -24,6 +24,7 @@ export function giroServiziTutti(): string[] {
     try {
       const acceso = withTenant(t.codice_cliente, () => (getTenantSetting(CHIAVE_AUTOMATICO) ?? "1").trim() !== "0");
       if (!acceso) continue;
+      // proveFabbrica resta spento: i login di fabbrica partono solo da /scans.
       if (avviaGiro(t.codice_cliente, null, { porteComuni: "senza-porte" })) avviati.push(t.codice_cliente);
     } catch (e) {
       console.warn(`[servizi-rete] ${t.codice_cliente}: giro automatico non avviato: ${e instanceof Error ? e.message : String(e)}`);

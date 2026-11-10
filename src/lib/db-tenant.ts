@@ -12992,6 +12992,21 @@ export function raccogliIdentita(): { prove: number; proposte: number } {
 export function riempiOsVuotiServizi(hostId?: number): number {
   return osProve.riempiOsVuoti(db(), hostId);
 }
+export function getPorteServiziDaControllare(
+  networkId: number | undefined,
+  porte: ReadonlySet<number>,
+  ancheHttp401: boolean,
+): servizi.PortaDaControllare[] {
+  return servizi.porteDaControllare(db(), networkId, porte, ancheHttp401);
+}
+export function salvaControlloServizioRete(
+  hostId: number,
+  porta: number,
+  protocollo: string,
+  info: Parameters<typeof servizi.salvaControlloServizio>[4],
+): void {
+  servizi.salvaControlloServizio(db(), hostId, porta, protocollo, info);
+}
 export function getPrimaLetturaHost(hostId: number): osProve.PrimaLettura | null {
   return osProve.leggiPrimaLettura(db(), hostId);
 }

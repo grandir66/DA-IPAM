@@ -69,6 +69,10 @@ export interface InfoNtlm {
   dominio_dns: string | null;
   versione_os: string | null;
   fonte: "smb" | "http" | "rdp";
+  /** SMB: true se il server esige la firma dei messaggi. */
+  smb_signing?: boolean;
+  /** RDP: true se il server ha scelto CredSSP (NLA). */
+  rdp_nla?: boolean;
 }
 
 /** Come è stato riconosciuto ciò che risponde: la prova, non la tabella delle porte. */
@@ -438,6 +442,7 @@ export function infoNtlmDaSmb2(f: Smb2Finding): InfoNtlm {
     dominio_dns: testoNtlm(f.dnsDomain),
     versione_os: testoNtlm(f.osVersion),
     fonte: "smb",
+    smb_signing: f.signingRequired,
   };
 }
 
@@ -556,7 +561,17 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
       const rdp = await probeRdpNtlm(ip, { timeoutMs: ms });
       if (rdp) {
         esito.metodo = "ntlm";
-        esito.ntlm = infoNtlmDaChallenge(rdp, "rdp");
+        esito.ntlm = rdp.challenge
+          ? { ...infoNtlmDaChallenge(rdp.challenge, "rdp"), rdp_nla: rdp.nla }
+          : {
+              netbios: null,
+              dominio_netbios: null,
+              dns_computer: null,
+              dominio_dns: null,
+              versione_os: null,
+              fonte: "rdp",
+              rdp_nla: rdp.nla,
+            };
         esito.versione = esito.ntlm.versione_os;
         return esito;
       }

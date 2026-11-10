@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings: tab per motore (Tutti / IPAM-Nety / Edge / Wazuh)
+
+Riccardo (10/11): una pagina Findings con la vista comune più un tab per motore, per separare nativamente le visualizzazioni.
+
+### Aggiunto
+- **Tab per motore** in testa a Findings: «Tutti» (vista comune), «IPAM / Nety» (fonti interne: sonde, trunk, controlli), «Edge (VA)» (Greenbone/Nuclei), «Wazuh». Si appoggiano al filtro fonte; il tab IPAM/Nety si popola quando quei rilievi confluiscono in Findings. Sottotitolo aggiornato ai tre motori.
+
 ## [Non rilasciato] — 2026-11-10 · Menu: analisi tutta sotto Sicurezza, divisa per motore
 
 Riccardo (10/11): separare nel menu l'analisi del motore Edge da quella interna (IPAM/Nety/trunk), con la gestione scansioni dentro ogni motore, così senza Edge resta comunque un motore.

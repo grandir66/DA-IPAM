@@ -109,6 +109,23 @@ export function leggiProposte(networkId: number): RigaProposta[] {
   ).all(networkId) as RigaProposta[];
 }
 
+/**
+ * Gli host che una persona ha escluso dalle scansioni («escluso» nella proposta dell'Edge).
+ * Li rispettano anche le scansioni interne (Riccardo, 10/11/2026: «la stessa cautela che ho per le
+ * scansioni dell'edge»). Senza rete: tutti quelli dell'installazione. Tabella assente = nessuno.
+ */
+export function leggiEsclusi(networkId?: number): Array<{ host_id: number; ip: string; nome: string | null; network_id: number }> {
+  try {
+    return getDb().prepare(
+      `SELECT p.host_id, h.ip, COALESCE(NULLIF(h.custom_name,''), h.hostname) AS nome, h.network_id
+       FROM va_proposte p JOIN hosts h ON h.id = p.host_id
+       WHERE p.stato = 'escluso' ${networkId ? "AND h.network_id = ?" : ""} ORDER BY h.ip`,
+    ).all(...(networkId ? [networkId] : [])) as Array<{ host_id: number; ip: string; nome: string | null; network_id: number }>;
+  } catch {
+    return [];
+  }
+}
+
 /** Quanto è avanti la proposta di ogni rete, per l'elenco delle reti: una query sola, niente N+1. */
 export interface ContoProposte {
   totale: number;

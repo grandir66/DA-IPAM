@@ -31,6 +31,7 @@ import {
 } from "./ports";
 import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
+import { leggiEsclusi } from "@/lib/vuln/proposta/store";
 import { readArpCache as _localReadArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity as localSnmpInfo, querySnmpSysGroupMultiCommunity as localSnmpSysGroup, snmpGet as localSnmpGet, normalizeOidString } from "./snmp-query";
@@ -1045,7 +1046,11 @@ async function runDiscovery(
   let impiantiLetti = { il: 0, ip: new Set<string>() };
   const eIpImpianto = (ip: string): boolean => {
     if (Date.now() - impiantiLetti.il > 5000) {
-      impiantiLetti = { il: Date.now(), ip: new Set(getHostsByNetwork(networkId).filter(eImpianto).map((h) => h.ip)) };
+      // Con gli impianti, anche gli host che una persona ha escluso dalle scansioni dell'Edge (10/11/2026).
+      impiantiLetti = {
+        il: Date.now(),
+        ip: new Set([...getHostsByNetwork(networkId).filter(eImpianto).map((h) => h.ip), ...leggiEsclusi(networkId).map((e) => e.ip)]),
+      };
     }
     return impiantiLetti.ip.has(ip);
   };

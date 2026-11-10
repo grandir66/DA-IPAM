@@ -33,7 +33,8 @@ import { COMANDO_SSH, eRifiutoSsh, eShellPosix, leggiUscitaSsh } from "@/lib/ril
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
 import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
-import { eImpianto } from "@/lib/vuln/impianti-in-rete";
+import { eImpianto as eImpiantoPuro } from "@/lib/vuln/impianti-in-rete";
+import { leggiEsclusi } from "@/lib/vuln/proposta/store";
 import { protocolloControllo, TETTO_FABBRICA_PER_HOST } from "@/lib/rilievi/controlli";
 import { PORTE_CONTROLLO, sondaControllo, type EsitoSondaControllo } from "@/lib/rilievi/sonde-controlli";
 
@@ -183,7 +184,11 @@ export function avviaGiro(
   const stato: StatoGiro = { inCorso: true, networkId, fase: null, totale: 0, fatte: 0, iniziato: new Date().toISOString(), finito: null, errore: null };
   giri.set(tenant, stato);
   void withTenant(tenant, async () => {
+    // Fuori dal giro, come per l'Edge: impianti (IoT, OT, PLC) e host esclusi a mano da una persona.
+    let esclusi = new Set<number>();
+    const eImpianto = (h: Parameters<typeof eImpiantoPuro>[0] & { host_id: number }): boolean => eImpiantoPuro(h) || esclusi.has(h.host_id);
     try {
+      if (!opzioni.strumenti) esclusi = new Set(reti.flatMap((rete) => leggiEsclusi(rete)).map((e) => e.host_id));
       if (opzioni.porteComuni) {
         const candidati =
           opzioni.porteComuni === "rete" ? (networkId ? getHostServiziDellaRete(networkId) : []) : getHostSenzaPorteServizi();

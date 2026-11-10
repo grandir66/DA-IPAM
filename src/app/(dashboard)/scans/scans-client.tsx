@@ -15,6 +15,7 @@ import {
   InCorso,
   Etichetta,
 } from "@/components/shared/console";
+import type { CautelaRete } from "@/lib/vuln/cautela-interna";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
 import { formatPortsDisplay } from "@/lib/utils";
@@ -129,6 +130,25 @@ export function ScansClient() {
 
   // Sonda L2 — durata dell'ascolto (vuoto = sync immediato).
   const [durataS, setDurataS] = useState("");
+
+  // Chi il giro non tocca nelle reti scelte: impianti ed esclusi a mano, come per l'Edge.
+  const [cautela, setCautela] = useState<CautelaRete[]>([]);
+  const chiaveScelte = [...scelte].sort((x, y) => x - y).join(",");
+  useEffect(() => {
+    if (!chiaveScelte) {
+      setCautela([]);
+      return;
+    }
+    let annullato = false;
+    void (async () => {
+      const r = await fetchJson<{ reti: CautelaRete[] }>(`/api/scans/cautela?reti=${chiaveScelte}`);
+      if (!annullato && r.ok) setCautela(r.data.reti);
+    })();
+    return () => {
+      annullato = true;
+    };
+  }, [chiaveScelte]);
+  const fuoriDalGiro = cautela.filter((c) => c.impianti > 0 || c.esclusi > 0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -316,6 +336,36 @@ export function ScansClient() {
               ))}
             </div>
           )}
+        </Pannello>
+      )}
+
+      {serveRete && fuoriDalGiro.length > 0 && (
+        <Pannello
+          titolo="Fuori dal giro"
+          conteggio={fuoriDalGiro.reduce((n, c) => n + c.impianti + c.esclusi, 0)}
+          sottotitolo="Stessa cautela dell'Edge: IoT, OT e PLC non si toccano, e nemmeno gli host che hai escluso lì. Restano solo ping e dati passivi"
+        >
+          <ul className="space-y-1 p-1 text-[13px]">
+            {fuoriDalGiro.map((c) => (
+              <li key={c.network_id}>
+                <span className="font-semibold">{reti.find((r) => r.id === c.network_id)?.name ?? `Rete ${c.network_id}`}</span>
+                {c.impianti > 0 && (
+                  <span>
+                    {" · "}
+                    {c.impianti} {c.impianti === 1 ? "impianto" : "impianti"}{" "}
+                    <span className="font-mono text-muted-foreground">({c.esempi_impianti.join(", ")}{c.impianti > c.esempi_impianti.length ? ", …" : ""})</span>
+                  </span>
+                )}
+                {c.esclusi > 0 && (
+                  <span>
+                    {" · "}
+                    {c.esclusi} {c.esclusi === 1 ? "escluso" : "esclusi"} a mano{" "}
+                    <span className="font-mono text-muted-foreground">({c.esempi_esclusi.join(", ")}{c.esclusi > c.esempi_esclusi.length ? ", …" : ""})</span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </Pannello>
       )}
 

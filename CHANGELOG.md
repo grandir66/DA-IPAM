@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
 ### Aggiunto
+- **Scansioni interne, stessa cautela dell'Edge** (Riccardo, 10/11): oltre agli impianti (IoT, OT, PLC, che Discovery e giro già saltavano), restano fuori anche gli host esclusi a mano nella proposta dell'Edge. In `/scans` il riquadro «Fuori dal giro» dice, per le reti scelte, quanti e quali sono prima del lancio.
+
+### Aggiunto
 - **Sonde UDP di protocollo** nel giro dei servizi: DNS 53, NTP 123, NetBIOS 137, SQL Browser 1434. Confrontando gli stessi host con Nety (192.168.4.1 e 192.168.4.4, 10/11) loro sull'UDP leggevano nome, dominio, ruolo di controller di dominio, MAC e istanza SQL; noi avevamo solo «aperta» da nmap. Il MAC letto dal NetBIOS riempie quello dell'host solo se è vuoto.
 - **Certificato sulla 3389**: la sonda RDP ora ne legge soggetto e scadenza, come sulle altre porte TLS.
 - Porta 47001 (WinRM locale) fra quelle di gestione provate.

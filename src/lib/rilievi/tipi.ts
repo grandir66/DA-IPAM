@@ -33,6 +33,8 @@ export interface OspiteRilievo {
   nome: string | null;
   network_id: number | null;
   network_name: string | null;
+  /** La gravità del rilievo su questo host, se diversa da quella della riga (che è la più alta). */
+  gravita?: Severity;
 }
 
 export interface RilievoUnito {

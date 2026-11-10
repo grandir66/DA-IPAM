@@ -10108,6 +10108,8 @@ export interface AggregatedVuln {
   hosts_preview: AggregatedVulnHostRef[];
   /** Tutti gli host censiti toccati dalla CVE (l'anteprima si ferma a 10): servono ai gruppi per host e per rete. */
   host_ids?: number[];
+  /** La gravità della CVE su ciascun host: la gravità della riga è la più alta fra tutti, e non vale per ognuno. */
+  host_gravita?: Record<number, Severity>;
   latest_scanned_at: string;
   /** Exploit noti (KEV, Exploit-DB, EPSS); null = nessuna fonte la cita, o chiave `nvt:`. */
   exploit: ExploitInfo | null;
@@ -10170,6 +10172,27 @@ export interface AggregatedVulnOpts {
   sortDir?: "asc" | "desc";
   /** Anche i rilievi delle scansioni superate (pulsante); di base solo l'ultima di ogni rete. */
   precedenti?: boolean;
+  /**
+   * Solo le righe di un motore, PRIMA di aggregare: gravità e host sono allora quelli che dice
+   * quel motore. Il filtro `sources` agisce dopo, e a una CVE vista da Edge lascerebbe la
+   * gravità e gli host di Wazuh (10/11/2026).
+   */
+  soloMotore?: "edge" | "wazuh";
+  /**
+   * Il punteggio proprio di ogni CVE (archivio NVD locale). Serve per gli avvisi di pacchetto di
+   * Greenbone («Ubuntu: Security Advisory (USN-…)»): lì il punteggio è quello dell'avviso, cioè
+   * il più alto fra tutte le sue CVE, e ognuna risultava critica (10/11/2026: CVE-2026-56367
+   * scritta 9,1 da Greenbone, 6,3 per l'NVD).
+   */
+  cvssDi?: (cves: string[]) => Map<string, { cvss: number | null }>;
+}
+
+/** Gli avvisi di pacchetto di Greenbone (Local Security Checks): un test per avviso, non per CVE. */
+const OID_AVVISO_PACCHETTO = "1.3.6.1.4.1.25623.1.1.";
+
+/** La gravità che corrisponde a un punteggio CVSS (soglie CVSS v3). */
+export function gravitaDaCvss(cvss: number): Severity {
+  return cvss >= 9 ? "Critical" : cvss >= 7 ? "High" : cvss >= 4 ? "Medium" : "Low";
 }
 
 export interface AggregatedVulnResult {
@@ -10384,11 +10407,27 @@ function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
 }
 
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
-  const rows = leggiRigheVuln(opts.osFamilies, opts.precedenti);
+  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti);
+  const rows = opts.soloMotore ? lette.filter((r) => (r.source === "Wazuh") === (opts.soloMotore === "wazuh")) : lette;
+  if (opts.cvssDi) {
+    const daAvviso = rows.filter((r) => r.source === "Edge-G" && !!r.cve_id && !!r.nvt_oid?.startsWith(OID_AVVISO_PACCHETTO));
+    if (daAvviso.length > 0) {
+      const propri = opts.cvssDi([...new Set(daAvviso.map((r) => r.cve_id as string))]);
+      for (const r of daAvviso) {
+        const suo = propri.get(r.cve_id as string)?.cvss;
+        // Si abbassa soltanto: il punteggio dell'avviso è un tetto, mai un minimo.
+        if (suo != null && (r.cvss_score == null || suo < r.cvss_score)) {
+          r.cvss_score = suo;
+          r.severity = gravitaDaCvss(suo);
+        }
+      }
+    }
+  }
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
     _hostIds: Set<number>;
+    _hostSev: Map<number, Severity>;
     _orphanCount: number;
     _firstHostHits: AggregatedVulnHostRef[];
   }
@@ -10415,6 +10454,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
         exploit: null,
         _hostKeys: new Set(),
         _hostIds: new Set(),
+        _hostSev: new Map(),
         _orphanCount: 0,
         _firstHostHits: [],
       };
@@ -10430,6 +10470,10 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
     if (!entry.cve_id && r.cve_id) entry.cve_id = r.cve_id;
     if (!entry.nvt_oid && r.nvt_oid) entry.nvt_oid = r.nvt_oid;
 
+    if (r.host_id != null) {
+      const prima = entry._hostSev.get(r.host_id);
+      entry._hostSev.set(r.host_id, prima ? (maxSeverity(prima, sev) as Severity) : sev);
+    }
     if (!entry._hostKeys.has(hostKey)) {
       entry._hostKeys.add(hostKey);
       if (r.host_id != null) entry._hostIds.add(r.host_id);
@@ -10553,9 +10597,9 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
     });
   }
 
-  const data = pageRows.map(({ _hostKeys: _a, _hostIds: _b, _orphanCount: _c, _firstHostHits: _d, ...rest }) => {
+  const data = pageRows.map(({ _hostKeys: _a, _hostIds: _b, _hostSev: _s, _orphanCount: _c, _firstHostHits: _d, ...rest }) => {
     void _a; void _c; void _d;
-    return { ...rest, host_ids: [..._b] };
+    return { ...rest, host_ids: [..._b], host_gravita: Object.fromEntries(_s) as Record<number, Severity> };
   });
 
   return { data, total, severity_rollup };

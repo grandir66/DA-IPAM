@@ -71,6 +71,8 @@ export function eNomeDiTest(nome: string): boolean {
 }
 
 interface Appartenenza {
+  /** La gravità del rilievo dentro questo gruppo, quando non è quella della riga. */
+  gravita?: RilievoUnito["gravita"];
   chiave: string;
   tipo: TipoGruppo;
   nome: string;
@@ -106,13 +108,18 @@ function appartenenze(r: RilievoUnito, per: Raggruppamento): Appartenenza[] {
       nome: o.nome || o.ip || "host senza nome",
       dettaglio: [o.nome ? o.ip : null, o.network_name].filter(Boolean).join(" · ") || null,
       filtro: o.host_id != null ? { ospite: o.host_id } : o.ip ? { q: o.ip } : null,
+      gravita: o.gravita,
     }));
   }
   const reti = new Map<string, Appartenenza>();
   for (const o of ospiti) {
     if (o.network_id != null) {
+      // In una rete il rilievo vale quanto il suo host più grave lì.
+      const sua = o.gravita ?? r.gravita;
+      const prima = reti.get(`rete:${o.network_id}`)?.gravita;
       reti.set(`rete:${o.network_id}`, {
         chiave: `rete:${o.network_id}`, tipo: "rete", nome: o.network_name ?? `rete ${o.network_id}`, dettaglio: null, filtro: { rete: o.network_id },
+        gravita: prima && (SEVERITY_RANK[prima] ?? 0) >= (SEVERITY_RANK[sua] ?? 0) ? prima : sua,
       });
     } else if (o.network_name) {
       reti.set(`nome:${o.network_name}`, { chiave: `nome:${o.network_name}`, tipo: "rete", nome: o.network_name, dettaglio: null, filtro: { q: o.network_name } });
@@ -159,7 +166,9 @@ export function raggruppa(righe: readonly RilievoUnito[], per: Raggruppamento): 
         mappa.set(a.chiave, gr);
       }
       gr.rilievi += 1;
-      if (r.gravita in gr.gravita) gr.gravita[r.gravita as keyof RollupRilievi] += 1;
+      // Per host e per rete conta la gravità che il rilievo ha LÌ, non la più alta fra tutti gli host.
+      const grav = a.gravita ?? r.gravita;
+      if (grav in gr.gravita) gr.gravita[grav as keyof RollupRilievi] += 1;
       if (r.exploit?.kev) gr.kev += 1;
       if (r.exploit?.edb) gr.edb += 1;
       const stato = r.triage?.stato ?? "da_fare";
@@ -265,9 +274,10 @@ export function barrePerRete(righe: readonly RilievoUnito[], soloOspite?: number
         b = { network_id: o.network_id, network_name: o.network_name ?? `rete ${o.network_id}`, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
         reti.set(o.network_id, b);
       }
-      if (r.gravita === "Critical") b.critical += 1;
-      else if (r.gravita === "High") b.high += 1;
-      else if (r.gravita === "Medium") b.medium += 1;
+      const grav = o.gravita ?? r.gravita;
+      if (grav === "Critical") b.critical += 1;
+      else if (grav === "High") b.high += 1;
+      else if (grav === "Medium") b.medium += 1;
       else b.low += 1;
       b.total += 1;
     }

@@ -11,6 +11,18 @@ import { RAGGRUPPAMENTI, type Raggruppamento } from "@/lib/rilievi/gruppi";
 import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { exploitPerRotte } from "@/lib/vuln/exploit-feed/archivio";
+import { archivioCve, datiCve } from "@/lib/vuln/cve-locali/archivio";
+
+/** Il punteggio proprio di ogni CVE dall'archivio NVD locale; senza archivio non si corregge niente. */
+function cvssPerRotte(): ((cves: string[]) => Map<string, { cvss: number | null }>) | undefined {
+  try {
+    const db = archivioCve();
+    return (cves) => datiCve(db, cves);
+  } catch (e) {
+    console.error("[findings] archivio NVD non leggibile:", e instanceof Error ? e.message : "errore imprevisto");
+    return undefined;
+  }
+}
 
 export async function GET(request: Request) {
   const session = await requireAuth();
@@ -58,6 +70,7 @@ export async function GET(request: Request) {
         ordina,
         verso,
         exploitDi: exploitPerRotte().exploitDi,
+        cvssDi: cvssPerRotte(),
       }),
     );
   });

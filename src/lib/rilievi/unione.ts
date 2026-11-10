@@ -42,6 +42,10 @@ function gravitaDaTrunk(g: GravitaRilievo): Severity {
 
 type RilievoConFonti = RilievoUnito & { fonti?: FonteRilievo[] };
 
+/** Tetto di sicurezza alle CVE lette: oltre, l'elenco si dichiara parziale. */
+const TETTO_CVE = 100_000;
+
+type CvssDi = (cves: string[]) => Map<string, { cvss: number | null }>;
 type ExploitDi = (cves: string[]) => Map<string, ExploitInfo>;
 
 /** Tutti gli host del tenant con la loro rete, in una lettura sola (regola: niente query nel ciclo). */
@@ -63,11 +67,16 @@ function anagraficaHost(): Map<number, OspiteRilievo & { os: OsFamily }> {
 
 function daCve(
   anagrafica: Map<number, OspiteRilievo & { os: OsFamily }>,
-  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean },
+  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean; soloMotore?: "edge" | "wazuh"; cvssDi?: CvssDi },
 ): { righe: RilievoConFonti[]; parziale: boolean } {
+  // Tutte, non le prime 2.000: l'aggregazione le ordina per gravità, e il taglio lasciava di Edge
+  // quasi solo le critiche (47 su 290) e di Wazuh 1.970 su oltre 17.000 (Riccardo, 10/11/2026:
+  // «è realistico che quasi tutti i rilievi della sonda Edge siano critici?»).
   const { data, total } = getAggregatedVulnerabilities({
     page: 1,
-    pageSize: 2000,
+    pageSize: TETTO_CVE,
+    ...(opzioni.soloMotore ? { soloMotore: opzioni.soloMotore } : {}),
+    ...(opzioni.cvssDi ? { cvssDi: opzioni.cvssDi } : {}),
     ...(opzioni.exploitDi ? { exploitDi: opzioni.exploitDi } : {}),
     ...(opzioni.os?.length ? { osFamilies: opzioni.os } : {}),
     ...(opzioni.precedenti ? { precedenti: true } : {}),
@@ -108,7 +117,8 @@ function daCve(
         .filter((o): o is OspiteRilievo & { os: OsFamily } => !!o)
         .map(({ os: _os, ...o }) => {
           void _os;
-          return o;
+          const sua = o.host_id != null ? v.host_gravita?.[o.host_id] : undefined;
+          return sua && sua !== v.severity ? { ...o, gravita: sua } : o;
         }),
       // Stessa chiave di triage della scheda Vulnerabilità (per CVE = cve_key).
       chiaveTriage: v.key,
@@ -229,6 +239,8 @@ export interface FiltroRilievi {
   verso?: "asc" | "desc";
   /** Gli exploit noti per CVE: la rotta passa l'archivio vero, le prove uno finto o niente. */
   exploitDi?: ExploitDi;
+  /** Il punteggio proprio di ogni CVE (archivio NVD locale), per gli avvisi di pacchetto di Greenbone. */
+  cvssDi?: CvssDi;
 }
 
 const ROLLUP_VUOTO: RollupRilievi = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -262,10 +274,12 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const anagrafica = anagraficaHost();
   // Tutte le famiglie scelte = nessun filtro.
   const osScelti = filtro.os?.length && filtro.os.length < OS_FAMILIES.length ? filtro.os : undefined;
+  // Un motore solo fra Edge e Wazuh: gravità e host sono quelli che dice lui, non il massimo fra i due.
+  const soloMotore = setFonte.has("edge") && !setFonte.has("wazuh") ? ("edge" as const) : setFonte.has("wazuh") && !setFonte.has("edge") ? ("wazuh" as const) : undefined;
   const nonDisponibili: FonteRilievo[] = [];
   const parziali: FonteRilievo[] = [];
   const sorgenti = [
-    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti }) },
+    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, cvssDi: filtro.cvssDi }) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
     { fonti: ["giro"] as const, leggi: () => daGiri(filtro.hostId) },
   ];
@@ -281,33 +295,39 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   }
 
   if (filtro.hostId) tutti = tutti.filter((x) => x.host_id === filtro.hostId);
-  // Sistema operativo: le CVE le filtra già la lettura; trunk e giri si filtrano per l'host che toccano
-  // (senza un host censito il sistema è «Unknown»).
-  if (osScelti) {
-    const vuole = new Set<OsFamily>(osScelti);
-    tutti = tutti.filter((x) => !!x.cve_key || vuole.has((x.host_id != null ? anagrafica.get(x.host_id)?.os : undefined) ?? "Unknown"));
-  }
+  // Gli stessi filtri valgono per la lettura unita e per quella di un motore solo.
+  const filtra = (ingresso: RilievoConFonti[]): RilievoConFonti[] => {
+    let righe = ingresso;
+    // Sistema operativo: le CVE le filtra già la lettura; trunk e giri si filtrano per l'host che toccano
+    // (senza un host censito il sistema è «Unknown»).
+    if (osScelti) {
+      const vuole = new Set<OsFamily>(osScelti);
+      righe = righe.filter((x) => !!x.cve_key || vuole.has((x.host_id != null ? anagrafica.get(x.host_id)?.os : undefined) ?? "Unknown"));
+    }
 
-  if (filtro.exploit?.length) {
-    const vuole = new Set(filtro.exploit);
-    tutti = tutti.filter((x) => (vuole.has("kev") && !!x.exploit?.kev) || (vuole.has("edb") && !!x.exploit?.edb));
-  }
-  if (filtro.ospite != null) {
-    const ospite = filtro.ospite;
-    tutti = tutti.filter((x) => (x.ospiti?.length ? x.ospiti.some((o) => o.host_id === ospite) : x.host_id === ospite));
-  }
-  const grav = filtro.gravita?.length ? new Set(filtro.gravita) : null;
-  if (grav) tutti = tutti.filter((x) => grav.has(x.gravita));
-  const q = filtro.q?.trim().toLowerCase();
-  if (q) {
-    tutti = tutti.filter(
-      (x) =>
-        x.titolo.toLowerCase().includes(q) ||
-        x.prova.toLowerCase().includes(q) ||
-        (x.ip ?? "").includes(q) ||
-        (x.network_name ?? "").toLowerCase().includes(q),
-    );
-  }
+    if (filtro.exploit?.length) {
+      const vuole = new Set(filtro.exploit);
+      righe = righe.filter((x) => (vuole.has("kev") && !!x.exploit?.kev) || (vuole.has("edb") && !!x.exploit?.edb));
+    }
+    if (filtro.ospite != null) {
+      const ospite = filtro.ospite;
+      righe = righe.filter((x) => (x.ospiti?.length ? x.ospiti.some((o) => o.host_id === ospite) : x.host_id === ospite));
+    }
+    const grav = filtro.gravita?.length ? new Set(filtro.gravita) : null;
+    if (grav) righe = righe.filter((x) => grav.has(x.gravita));
+    const q = filtro.q?.trim().toLowerCase();
+    if (q) {
+      righe = righe.filter(
+        (x) =>
+          x.titolo.toLowerCase().includes(q) ||
+          x.prova.toLowerCase().includes(q) ||
+          (x.ip ?? "").includes(q) ||
+          (x.network_name ?? "").toLowerCase().includes(q),
+      );
+    }
+    return righe;
+  };
+  tutti = filtra(tutti);
 
   const totaleGlobale = tutti.length;
   const perFonte: Record<FonteRilievo, number> = { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
@@ -317,6 +337,19 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     for (const fonte of fontiRiga) perFonte[fonte] += 1;
     const fonte = fontiRiga.find((f) => setFonte.has(f));
     if (fonte) selezionati.push({ ...x, fonte });
+  }
+  // Un motore solo: le sue righe si rileggono da sole, così gravità e host sono i suoi. I conteggi
+  // delle schede restano quelli della lettura unita (quante CVE vede ciascun motore).
+  if (soloMotore && !nonDisponibili.includes(soloMotore)) {
+    try {
+      const sole = daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, soloMotore, cvssDi: filtro.cvssDi });
+      selezionati = filtra(sole.righe).map(({ fonti: _f, ...x }) => {
+        void _f;
+        return { ...x, fonte: soloMotore };
+      });
+    } catch (err) {
+      console.error("[findings] lettura per motore non riuscita:", soloMotore, err);
+    }
   }
 
   const perGravita = (a: RilievoUnito, b: RilievoUnito): number => {
@@ -370,9 +403,15 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const total = selezionati.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Gli host di ogni rilievo servono solo qui: nell'elenco non viaggiano.
-  const data = selezionati.slice((page - 1) * pageSize, page * pageSize).map(({ ospiti: _o, ...x }) => {
-    void _o;
-    return x;
+  // Con un filtro per host o per rete la riga mostra QUELL'host e la gravità che il rilievo ha lì:
+  // prima restava il primo host della CVE, e filtrando su eve-ng si leggeva un altro indirizzo.
+  const data = selezionati.slice((page - 1) * pageSize, page * pageSize).map(({ ospiti, ...x }) => {
+    const suo =
+      filtro.ospite != null ? ospiti?.find((o) => o.host_id === filtro.ospite)
+        : filtro.rete != null ? ospiti?.find((o) => o.network_id === filtro.rete)
+          : undefined;
+    if (!suo) return x;
+    return { ...x, ip: suo.ip, host_id: suo.host_id, network_id: suo.network_id, network_name: suo.network_name, gravita: suo.gravita ?? x.gravita };
   });
   const gruppi = filtro.raggruppa ? raggruppa(selezionati, filtro.raggruppa) : undefined;
   return {

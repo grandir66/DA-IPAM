@@ -2271,4 +2271,4 @@ Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con 
   - 1 rossa da `01898a25` (altra sessione): `schedulazioni/__tests__/elenco.test.ts`, `scanner/rilancia-giri` avviato da `server.ts` senza riga in Schedulazioni.
   - 2 rosse da prima di oggi: `transfer/__tests__/registry.test.ts` (`triage_rilievi` non classificata) e `scanner/profili/__tests__/sconosciuti.test.ts` (porta 9100/UDP).
   - La build nel worktree fallisce per `node_modules` (artefatto locale): l'hub costruisce lo stesso codice senza errori.
-- [ ] Sonda 79993-ipam-9 (bridge 44): versione voluta 0.8.294 scritta alle 23:16, dopo 25+ minuti ancora 0.8.263. Stessa versione di partenza della 70151 bloccata. 71343 non toccata.
+- [x] Sonda 79993-ipam-9 (bridge 44): 0.8.294 scritta alle 23:16, sonda alla 0.8.294 alle 23:31 (letto da `dalink sonde stato`; partiva dalla 0.8.263, ci mette un quarto d'ora). 71343 non ancora toccata; 70151 ferma alla 0.8.263 con voluta 0.8.270, da capire.

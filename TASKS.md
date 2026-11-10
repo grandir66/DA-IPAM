@@ -55,7 +55,9 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
 - [ ] **Quando**: ultimo evento letto dal DC01 alle 19:14:33 UTC; alle 19:17:13 UTC la risoluzione dei nomi già falliva. Alle 19:14:25 UTC DA-IPAM è stato riavviato da un rilascio (0.9.1108), alle 19:10 UTC era stata aggiornata la sonda alla 0.8.291.
 - [ ] **Cosa si vede sui DC**: nel registro di sicurezza, dall'indirizzo dell'hub, 196 accessi non riusciti (4625, account «Guest» e vuoto, categoria `self_probe`) dalle 09:32 UTC: sono le prove SMB anonime del giro «Servizi di rete», che riparte **a ogni avvio di DA-IPAM** oltre che ogni 6 ore. Oggi DA-IPAM è stato riavviato molte volte (una decina di rilasci solo di questa sessione).
 - [ ] **Ipotesi, non accertata**: una protezione sui DC (risposta attiva di Wazuh, regola del firewall di Windows, EDR) ha bloccato l'indirizzo dell'hub dopo troppi accessi falliti. Dall'hub non si può verificare: va guardato sui DC o in Wazuh. Non è stato tentato nessun rimedio.
-- [ ] **Da fare dopo**: il giro «Servizi di rete» non deve ripartire a ogni riavvio (o non deve fare la prova SMB anonima sui DC); e l'hub non dovrebbe dipendere dai soli DC per risolvere i nomi.
+- [x] Il giro «Servizi di rete» non riparte più a ogni riavvio: all'avvio parte solo se l'ultimo giro (segno `servizi_rete.ultimo_giro_automatico`, o l'ultima sonda vista) ha più di 6 ore; il giro ogni 6 ore resta. `src/lib/servizi-rete/job.ts`, prova `giro-all-avvio.test.ts`.
+- [x] 20:30 circa: `192.168.4.2` è tornato a rispondere all'hub (Riccardo ha scritto «192.168.4.2»), i nomi si risolvono di nuovo. Nessun DNS di riserva aggiunto. `192.168.4.1` in quel momento non rispondeva ancora.
+- [ ] Resta: capire sui DC cosa ha bloccato l'hub; valutare se la prova SMB anonima va esclusa sui DC; l'hub dipende dai soli DC per i nomi (il gateway `192.168.4.254` risponde e conosce anche i nomi interni).
 
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)
 

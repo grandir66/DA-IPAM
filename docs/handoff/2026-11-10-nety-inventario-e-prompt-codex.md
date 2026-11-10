@@ -1,114 +1,110 @@
 # DA-IPAM ← Nety: cosa c'è già e prompt per Codex sui pezzi aperti (10/11/2026)
 
 Due parti: (1) **inventario** di cosa è stato portato da Nety in DA-IPAM (così non si rifà), e
-(2) **prompt per Codex** sui pezzi ancora aperti — quelli che un classificatore di sicurezza
-ferma quando li scrivo io, quindi li sviluppa Codex.
+(2) **prompt per Codex** sulle 5 idee ancora utili, in ordine di priorità — compresi i controlli
+(firme), anche quelli autenticati, che un classificatore di sicurezza ferma quando li scrivo io.
 
 > **Licenza.** Nety è GPL-3.0 (anche la sua `web/`). DA-IPAM va sulle appliance dei clienti:
-> **non si copia codice da Nety**, si riprendono idee e disposizione, riscritte da zero coi
-> mattoni di DA-IPAM (`src/components/shared/console.tsx`, `docs/STILE-UI.md`). Vale per tutto.
+> **non si copia codice da Nety**, si riprendono idee e flussi, riscritti da zero coi mattoni di
+> DA-IPAM (`src/components/shared/console.tsx`, `docs/STILE-UI.md`) e i motori che ci sono già.
+> DA-IPAM è inventario multi-tenant con nmap e autenticazione; Nety è un pentest in un binario Go.
 
 ---
 
-## 1. Cosa c'è già su `dev` (v0.9.1060) e su `main` di DA-Vul-can — NON rifare
+## 1. Già in DA-IPAM (v0.9.1060 / DA-Vul-can main) — NON rifare
 
-### Acquisizione senza credenziali (`src/lib/servizi-rete/`)
-- `sonde.ts` — banner, HTTP, TLS, SSH (KEXINIT + impronta host key da KEX_ECDH_REPLY).
-- `ntlm-spnego.ts` — nome computer / dominio / versione OS dalla CHALLENGE NTLM su SMB 445,
-  HTTP `WWW-Authenticate: NTLM` e RDP (CHANGELOG 10/11). Nessun Type 3, nessuna password.
-- `identita.ts` — due IP con la stessa impronta SSH/TLS/engineID o lo stesso nome Windows
-  diventano **proposta** «stesso apparato»; conferma collega `physical_device_id`, rifiuto no,
-  **niente fusioni automatiche**.
-- `porte.ts` — giro leggero sulle 1000 porte TCP più usate (`nmap-services`) + porte di gestione
-  fuori standard; freno su porte di campo/stampa e produttori di campo.
-- `giro.ts` / `job.ts` — giro automatico (all'avvio e ogni 6 ore), porte comuni sugli host senza
-  porte, poi sonde; levetta `servizi_rete.automatico`.
-- `os-da-prove.ts` — prima lettura dell'OS dalle sonde.
-- Tabelle tenant: `servizi_rete`, `servizi_rete_prove`, `identita_prove`, `identita_proposte`.
-- Pagine: `/servizi-rete` (+ `identita-client.tsx`, `servizi-rete-schede.tsx`); rotte
-  `/api/servizi-rete`, `/api/identita`.
+| Nety | Dove da noi | Nota |
+|---|---|---|
+| Services | `/servizi-rete` (`lib/servizi-rete/sonde.ts`) | sonde senza password, riga che si apre |
+| Matrix | `/segmentazione` + sonda `raggiungibilita.py` (DA-Vul-can) | raggiungibilità da dentro ogni VLAN via trunk |
+| Findings + launcher | `/vulnerabilities` e `/scans` | due schede; 4 tipi × 5 profili |
+| Hosts/Assets (prima lettura) | cassetto in Discovery e Subnet | OS da NTLM/SNMP/SSH; niente pagine nuove |
+| Identity NTLM/SSH/TLS/engineID | «stesso apparato» in Servizi di rete (`lib/servizi-rete/identita.ts`, `ntlm-spnego.ts`) | CHALLENGE senza login; solo proposte |
+| Networks + sniff L2 | Subnet + «reti dal trunk» (`lib/trunk/`) | proposte da confermare, non create da sole |
+| Gravità a tacche, Espandi tutto | Findings e badge (`console.tsx`) | overview per rete conta ancora solo i CVE |
 
-### Matrice di segmentazione (`src/lib/segmentazione/` + DA-Vul-can)
-- DA-IPAM: `bersagli.ts`, `db.ts`, `giro.ts`, `job.ts`; pagina `/segmentazione`; rotte
-  `/api/segmentazione`, `/cella`, `/giro`; levetta `segmentazione.automatico`.
-- DA-Vul-can (`infra/scanner-edge/app/scanner_edge/sensore/raggiungibilita.py` + test): la sonda
-  prova i servizi noti **da dentro ogni VLAN** (sotto-interfaccia col tag nello spazio `trunk`,
-  IP libero verificato, poi tolta) e torna raggiunto/chiuso/filtrato/senza rotta.
-
-### Rappresentazione (idee da Nety, mattoni Domarc)
-- `BadgeGravita`/`LegendaGravita`/`BarraGravita` (gravità a tacche, `console.tsx`) in lista
-  Vulnerabilità, CVE potenziali, scheda host, dashboard.
-- Triage per riga + riepilogo (`src/lib/triage/`, `triage-riga.tsx`, `/api/triage`).
-- Rilievi per rete (barre) in Vulnerabilità e dashboard (`getRilieviPerRete`).
-- Copia-IP (`copia.tsx`) e tempo relativo (`TempoRelativo`) in Servizi di rete, ARP, Software,
-  Host monitorati, scheda asset.
-- «Reti viste, da confermare» (dal trunk) **sotto** l'elenco delle subnet definite.
-
-### Deploy / infra
-- Sonda trunk già esistente (`src/lib/trunk/`, DA-Vul-can `sensore/`): ascolta CDP/LLDP/DTP/STP,
-  ARP, DHCP, mDNS, NetBIOS, LLMNR.
-- NIC trunk dedicata di serie: annotato come riconfig del deploy (consegna matrice).
-- Test di guardia nginx→`Host` in Deploy-Appliance (PR #91).
+**Non serve**: pagine Hosts/Assets a sé, missioni, SYN nativo, WebSocket.
 
 ---
 
-## 2. Prompt per Codex — pezzi ancora aperti
+## 2. Prompt per Codex — le 5 idee ancora utili, in ordine
 
 Copia da qui in giù e dallo a Codex.
 
 ---
 
 Sei su **DA-IPAM** (`~/Progetti/Domarc/DA-IPAM`, Next.js 16 / React 19 / TS strict /
-better-sqlite3, ramo di lavoro `dev`, mai push su `main`) e su **DA-Vul-can**
-(`~/Progetti/Domarc/DA-Vul-can`, ramo `main`, sonda in `infra/scanner-edge/app/scanner_edge/`).
-Leggi prima `CLAUDE.md`, `AGENTS.md`, `docs/STILE-UI.md`, `.claude/rules/` e `CONTEXT.md` di
-ciascun repo. Rispetta cancello (`lint && tsc && build`), versioning (`npm run version:release
--- --staged-only` + push) e le regole anti-regressione. Tutto è analisi/inventario **difensivo**
-sulle reti dei clienti Domarc, dentro il prodotto. **Nety è GPL-3.0: idee, non codice.**
+better-sqlite3; ramo `dev`, mai push su `main`) e, dove serve la sonda, su **DA-Vul-can**
+(`~/Progetti/Domarc/DA-Vul-can`, ramo `main`, `infra/scanner-edge/app/scanner_edge/`). Leggi
+prima `CLAUDE.md`, `AGENTS.md`, `docs/STILE-UI.md`, `.claude/rules/`, `CONTEXT.md` di ciascun
+repo. Cancello (`lint && tsc && build`), versioning (`version:release -- --staged-only` + push),
+`withTenantFromSession` su ogni route, stile UI su ogni pagina. Tutto è analisi/inventario
+**difensivo** sulle reti dei clienti Domarc. **Nety è GPL-3.0: idee, non codice.** L'inventario
+«già fatto» è sopra: non rifarlo. Sviluppa in quest'ordine, ogni voce come task a sé con ciclo
+test→codice→commit e fixture come fa Nety (`internal/checks/*_test.go`).
 
-Gran parte del lavoro ispirato a Nety è già fatto (vedi l'inventario sopra): **non rifarlo**.
-Restano questi pezzi, da sviluppare come task separati, ognuno col suo ciclo test→codice→commit:
+### 1 — Catalogo controlli (firme), il motore che riempie Findings senza Edge
+Oggi i rilievi veri arrivano dalla VA dell'Edge (Greenbone/Nuclei/default-login) su host scelti;
+dalle sonde abbiamo solo tre rilievi TLS. Nety ha ~45 controlli per servizio che girano subito,
+legati alla porta, con la prova. Portane il **catalogo** come controlli leggeri della sonda,
+che scrivono un rilievo con porta/protocollo/prova/rimedio (lega al servizio in `servizi_rete`;
+usa le viste di Vulnerabilità che già esistono). Tre famiglie:
 
-**1. Ascolto all'avvio → reti proposte da sole.**
-Oggi la sonda trunk (`src/lib/trunk/`, DA-Vul-can `sensore/`) sente CDP/LLDP/DTP/STP, VLAN
-etichettate e lease DHCP, e le reti viste si confermano a mano in Subnet. Obiettivo: appena il
-sistema parte, da quei dati passivi **proporre** le reti (VLAN + sottorete + gateway) senza
-scansioni esplicite, popolando la lista «Reti viste, da confermare» già presente. Riusa
-`lib/trunk/*` e `reti-proposte.ts`; non creare reti in automatico, restano proposte.
-Accettazione: su una sonda con trunk attivo, le VLAN sentite compaiono come proposte con
-sottorete e gateway dedotti; nessuna rete creata senza conferma; isolamento tenant.
+- **Esposizione / anonimo / no-auth (senza credenziali):** `redis-no-auth`, `mongodb-no-auth`,
+  `elasticsearch-no-auth`, `couchdb-no-auth`, `memcached-open`, `zookeeper-no-auth`,
+  `ftp-anonymous`, `tftp-anonymous-read`, `ldap-anonymous-bind`, `smb-anonymous-share-access`,
+  `nfs` export aperto, `vnc-no-auth`, `x11-open`, `ipmi-exposed`, `winrm-exposed`,
+  `weblogic-console-exposed`, `rservices-exposed`, `smtp-open-relay`, `http-vcs-exposed`.
+- **Configurazione / protocollo debole:** `smb-signing-not-required`, `smb1`/`ms17-010`,
+  `ldap-signing-not-required`, `tls-weak-ciphers`/`-protocols`/`-key`, `ssh-weak-algorithms`,
+  `telnet-cleartext`, `snmp-default-community` (ro), `ntp`/`snmp` amplificazione, stampanti/spooler.
+- **Credenziali di default / autenticati (INTRUSIVI):** `http-default-credentials`,
+  `mssql`/`mysql`/`postgres-default-credentials`, `snmp-write` (community rw), `vnc-weak-auth`,
+  NLA su RDP. **Vincolo tassativo:** questa famiglia è spenta di serie, si accende solo con la
+  levetta «prove intrusive» già prevista nel lanciatore (come il «Try vendor default credentials»
+  di Nety e il default-login dell'Edge), si concorda col cliente, **prova pochi default noti** (no
+  brute force, no lockout), **non salva mai le credenziali** (solo l'esito «accetta default X»),
+  e finisce nell'audit. Prima di portare un controllo, verifica che non duplichi Greenbone/Nuclei:
+  dove c'è già, lascialo all'Edge.
 
-**2. Collaudo end-to-end della matrice di segmentazione.**
-Il motore c'è (DA-IPAM `lib/segmentazione/`, sonda DA-Vul-can `sensore/raggiungibilita.py`), ma
-non è mai girato su un trunk vero: la sonda 963 (192.168.99.2) vede solo la VLAN nativa. Serve
-un trunk con più VLAN (piano: VLAN 102 e 103 sul Proxmox di casa, scheda della VM 963 resa
-trunk, snapshot prima). Lancia un giro vero, verifica che la matrice rete×rete si riempia con
-raggiunto/chiuso/filtrato/senza-rotta, e che i numeri tornino con quelli di Nety sulla stessa
-rete. Correggi quel che il collaudo mostra. Non è codice nuovo di motore ma verifica + fix.
+Accettazione: ogni controllo ha la sua fixture e il suo test (verde sul caso vero, rosso se si
+toglie la riga vulnerabile); il rilievo compare in Findings legato al servizio, con gravità a
+tacche; gli intrusivi non partono senza la levetta; nessuna credenziale nei log o nel DB.
 
-**3. Confronto con Nety sulla stessa sonda (facoltativo).**
-Prima di spegnere la VM di Nety (192.168.99.83 / .178), un confronto a parità: stessa rete,
-stesse porte, senza credenziali — tempo al primo host, copertura, versioni riconosciute, matrice.
-Serve solo a tarare; nessun codice da rilasciare se non piccoli fix.
+### 2 — Diff tra due giri («cosa è cambiato» sulla subnet)
+`scan_history` oggi è un evento per giro, non un confronto. Dai due giri di una subnet: host
+aggiunti / tolti / spostati (una macchina che cambia IP è **spostata**, non nuova, riconosciuta
+dall'identità già presente), porte aperte/chiuse, versioni cambiate, rilievi alzati/chiusi.
+Pagina «Cosa è cambiato» (riusa storico, porte e identità). Accettazione: due giri confrontabili
+mostrano le quattro categorie; la copertura incompleta si dichiara prima di dire «sparito».
 
-**4. Rifinitura identità (se il collaudo lo chiede).**
-`lib/servizi-rete/identita.ts` propone «stesso apparato» da impronte forti. Verifica su dati veri
-che le proposte siano giuste (niente falsi accostamenti da WORKGROUP/localhost/community
-`public` condivise) e che conferma/rifiuto scrivano `physical_device_id` come atteso.
+### 3 — Pausa / ripresa del giro (il Completo che riprende)
+Il profilo Completo (65.535 porte) oggi si può solo fermare. Persisti le unità di lavoro del giro
+così il Completo **riprende da dove si è fermato**, anche dopo un riavvio/crash (schema di Nety:
+work units per fase). Accettazione: un Completo fermato e ripreso non riparte da zero e non perde
+le porte già fatte.
 
-Vincoli trasversali: il freno su porte di campo/stampa e apparati di campo vale **sempre**; le
-scansioni restano sull'IP ufficiale, la sonda trunk solo ascolta e prova da dentro le VLAN; mai
-PII o credenziali nei log o verso l'esterno; `withTenantFromSession` su ogni route nuova; stile
-`docs/STILE-UI.md` su ogni pagina. Per il deploy della NIC trunk dedicata di serie vedi la
-consegna della matrice e la decisione del 21/10 su `AUTH_URL`/NetBird (non reintrodurre AUTH_URL
-sull'IP nel provisioning).
+### 4 — Ascolto all'avvio → reti proposte da sole
+La Sonda L2 oggi è un sync, non un listener all'avvio. Appena parte il processo, da CDP/LLDP/DHCP/
+802.1Q **proponi** le reti (VLAN + sottorete + gateway) nella lista «Reti viste, da confermare»,
+senza scansioni (riusa `lib/trunk/` e `reti-proposte.ts`). Richiesta di Riccardo del 09/11:
+«appena partito molte cose si popolano». Accettazione: su una sonda con trunk, le VLAN sentite
+compaiono come proposte; nessuna rete creata senza conferma; isolamento tenant.
 
-Riferimenti: `CHANGELOG.md` e `TASKS.md` di DA-IPAM (sezioni 09-10/11),
-`docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`, e questo file.
+### 5 — Tecniche di segmentazione (solo se serve il taglio «auditor»)
+Oltre al connect diretto che la matrice già fa: porta sorgente 53/88/123, frammenti, IPv6, DTP,
+double-tag 802.1Q. Utile se la matrice deve rispondere da auditor; per l'inventario quella di oggi
+può bastare. Da fare per ultimo, e solo se Riccardo lo chiede.
+
+Vincoli trasversali: freno su porte di campo/stampa e apparati di campo **sempre**; le scansioni
+restano sull'IP ufficiale, la sonda trunk solo ascolta e prova da dentro le VLAN; mai PII o
+credenziali nei log o verso l'esterno; decisione del 21/10 su `AUTH_URL`/NetBird (non reintrodurre
+AUTH_URL sull'IP nel provisioning). Riferimenti: `CHANGELOG.md`/`TASKS.md` di DA-IPAM (09-10/11),
+`docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`, il sorgente di Nety `internal/checks/`
+(solo da leggere, GPL).
 
 ---
 
-## 3. Collaudo che resta (lato Riccardo / fork, non Codex da solo)
-- Guardare a schermo tutto il lavoro sull'hub (accesso ora sistemato, `AUTH_URL`) e promuovere
-  `dev`→`main` dalla UI.
-- Trunk 102/103 sulla 963 per il collaudo della matrice (snapshot prima).
+## 3. Collaudo che resta (lato Riccardo / fork)
+- Guardare a schermo tutto sull'hub (accesso ora sistemato) e promuovere `dev`→`main` dalla UI.
+- Trunk 102/103 sulla 963 per il collaudo pieno della matrice (snapshot prima).

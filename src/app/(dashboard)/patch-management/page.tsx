@@ -136,6 +136,17 @@ function formatProbeStatus(status: string | null): {
   return { label: status, variant: "outline" };
 }
 
+/** Oltre quanti giorni un probe è un dato vecchio: i conteggi accanto valgono per allora, non per oggi. */
+const PROBE_VECCHIO_DOPO_GIORNI = 30;
+
+/** Età del probe in giorni, o null se non si sa. */
+function giorniDalProbe(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = parseDbDate(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
@@ -767,6 +778,11 @@ function DeviceTab() {
                         <span className="text-muted-foreground">
                           {formatDate(d.lastProbeAt)}
                         </span>
+                        {(giorniDalProbe(d.lastProbeAt) ?? 0) > PROBE_VECCHIO_DOPO_GIORNI && (
+                          <span className="font-semibold text-foreground" title="Software e CVE di questa riga sono quelli letti allora">
+                            ▲ dato di {giorniDalProbe(d.lastProbeAt)} giorni fa
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

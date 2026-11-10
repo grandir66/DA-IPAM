@@ -40,7 +40,10 @@ export function rigaModulo(
     label: m.label,
     opzione: m.offerta === "opzione",
     stato,
-    dettaglio: salute?.detail ?? m.note ?? dettaglio ?? null,
+    // «Da verificare» senza una riga accanto non dice cosa fare (revisione del 10/11/2026).
+    dettaglio:
+      salute?.detail ?? m.note ?? dettaglio ??
+      (stato === "da_verificare" ? "Acceso, ma nessun controllo dice se funziona: apri la sua pagina" : null),
     href,
   };
 }

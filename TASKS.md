@@ -11,9 +11,13 @@ Giro di 20 pagine dell'hub (0.9.1082) a 1920, in sola lettura. Fatto su `dev`, p
 - [x] Zabbix: «Mostra tutti» i problemi (fino a 500) invece di «altri N non mostrati».
 - [x] Cosa esce: l'esito accanto all'ultima scansione è detto per quello che è (di quella sola scansione).
 - [-] «Una sola definizione di offline»: annullato, la Dashboard è già coerente (47 offline recenti + 142 assenti = 189 delle Subnet); l'unico numero fuorviante era quello di «Cosa esce», corretto sopra.
-- [ ] Dati vecchi marcati come vecchi in Patch Management (probe di luglio/settembre mostrati come attuali) e nella scheda host: non fatto, va deciso dove e con che soglia.
-- [ ] Decisioni di Riccardo: accendere le notifiche sull'hub («Salute dell'appliance» e «Allarme sui job fermi» non avvisano nessuno); due passaggi per i Super Admin (oggi nessun utente li ha).
-- [ ] Proposte più grosse, da pianificare: Findings raggruppati per rimedio/host con revisione a blocchi (2.705 da rivedere, 0 rivisti, 1.970 da Wazuh); probe di Patch Management pianificato; compilazione a più righe dell'inventario NIS2 (proprietario, scope); scheda host a tutta larghezza a 1920; stato «Da verificare» dei moduli con l'azione da fare.
+- [x] Dati vecchi in Patch Management: sotto «Ultimo probe» compare «▲ dato di N giorni fa» oltre i 30 giorni (prove dei moduli verdi, `tsc`; non visto a schermo).
+- [x] Moduli «Da verificare» senza spiegazione: ora la riga dice «Acceso, ma nessun controllo dice se funziona: apri la sua pagina». Lo stato resta «Da verificare» (scelta del 19/10: mai «ok» senza prova).
+- [-] Scheda host: «Ultimo aggiornamento 182 g fa» non è un dato vecchio, è l'ultimo hotfix installato sull'host: non toccato. La larghezza a 1920 è un ridisegno: si propone prima oggetto per oggetto.
+- [-] Inventario NIS2 a più righe: c'è già (selezione e modifica in blocco in `/inventory`): la proposta era sbagliata, il difetto è che i campi sono vuoti, non che manchi lo strumento.
+- [ ] Decisioni di Riccardo: accendere le notifiche sull'hub (Opzioni › Notifiche: «Salute dell'appliance» e «Allarme sui job fermi» oggi non avvisano nessuno); due passaggi per i Super Admin (Impostazioni › Utenti › «Richiedi»).
+- [ ] Findings: 2.705 da rivedere, 0 rivisti. Selezione e modifica in blocco ci sono già; manca un modo di smaltire per gruppi (per rimedio o per host, exploit noto in cima). Da proporre a tavola prima di scrivere.
+- [ ] Probe di Patch Management pianificato: oggi non esiste un job. Attenzione prima di farlo: ogni probe è un logon WinRM su ogni host Windows (limite dei logon rifiutati, vedi CONTEXT «Accesso Windows»). Nasce spento, serve un piano.
 - [ ] Da guardare, non è un difetto dell'app: 987 accessi falliti al dominio in 24 ore e 18 account bloccati (10/11, picco 13-16).
 
 ## 2026-11-10 — AD Health, confronto con PingCastle

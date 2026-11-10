@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
+### Corretto
+- **RDP: falso «RDP in chiaro»**. La risposta alla trattativa RDP dei Windows moderni ha i flags diversi da zero (0x1f su Server 2019) e la sonda non la riconosceva: un server con TLS e NLA risultava «Standard, in chiaro» (rilievo High) e senza certificato. Visto su 192.168.4.4 confrontando con Nety il 10/11. Ora la 3389 dà TLS, NLA e certificato.
+
 ### Aggiunto
 - **Scansioni interne, stessa cautela dell'Edge** (Riccardo, 10/11): oltre agli impianti (IoT, OT, PLC, che Discovery e giro già saltavano), restano fuori anche gli host esclusi a mano nella proposta dell'Edge. In `/scans` il riquadro «Fuori dal giro» dice, per le reti scelte, quanti e quali sono prima del lancio.
 

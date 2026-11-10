@@ -34,8 +34,11 @@ export function protocolloRdpDaConferma(buf: Buffer): number | null {
   if (buf.length < 4 || buf[0] !== 0x03) return null;
   const lungh = buf.readUInt16BE(2);
   if (lungh < 11 || buf.length < Math.min(lungh, 11)) return null;
-  const i = buf.indexOf(Buffer.from([0x02, 0x00, 0x08, 0x00])); // TYPE_RDP_NEG_RSP
-  if (i < 0 || i + 8 > buf.length) return null;
+  // RDP_NEG_RSP sta subito dopo il Connection Confirm (TPKT 4 + X.224 7): tipo 0x02, flags, lunghezza 8.
+  // I flags NON sono zero sui Windows moderni (0x1f su Server 2019): cercare «02 00 08 00» non trovava
+  // niente, e un server con TLS e NLA risultava «RDP in chiaro» (visto su 192.168.4.4 il 10/11/2026).
+  const i = 11;
+  if (buf.length < i + 8 || buf[i] !== 0x02 || buf.readUInt16LE(i + 2) !== 8) return null;
   return buf.readUInt32LE(i + 4);
 }
 

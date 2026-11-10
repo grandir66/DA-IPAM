@@ -54,3 +54,11 @@ test("Connection Confirm: selectedProtocol; senza NEG_RSP resta null", () => {
   assert.equal(protocolloRdpDaConferma(Buffer.from([0x03, 0x00, 0x00, 0x0b, 0x06, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00])), null);
   assert.equal(protocolloRdpDaConferma(Buffer.from("not tpkt")), null);
 });
+
+test("RDP_NEG_RSP con flags non zero (Windows Server 2019): TLS e NLA letti, non «in chiaro»", () => {
+  // Risposta vera di 192.168.4.4 il 10/11/2026: flags 0x1f, protocollo scelto HYBRID (2).
+  const cc = Buffer.from("030000130ed00000123400021f080002000000", "hex");
+  assert.equal(protocolloRdpDaConferma(cc), 2);
+  assert.equal(rdpNlaRichiesta(2), true);
+  assert.equal(rdpTlsAbilitato(2), true);
+});

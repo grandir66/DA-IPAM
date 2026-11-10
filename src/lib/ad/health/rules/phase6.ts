@@ -137,8 +137,9 @@ export const phase6Rules: RuleDef[] = [
   {
     id: "DA-A-AdcsEsc1",
     axis: "anomaly",
-    points: 40,
-    title: "ADCS ESC1 misconfigured certificate template",
+    points: 0,
+    diagnostic: true,
+    title: "Template AD CS da verificare per ESC1",
     run(ctx) {
       const adcs = ctx.adcs;
       if (!adcs || adcs.status !== "ok") return null;
@@ -146,21 +147,23 @@ export const phase6Rules: RuleDef[] = [
       return aggFinding({
         ruleId: "DA-A-AdcsEsc1",
         axis: "anomaly",
-        points: 40,
-        title: "ADCS ESC1 misconfigured certificate template",
+        points: 0,
+        diagnostic: true,
+        title: "Template AD CS da verificare per ESC1",
         description:
           `${adcs.esc1Names.length} template(s) allow enrollee-supplied subject + auth EKU without approval: ` +
-          adcs.esc1Names.slice(0, 10).join(", "),
-        dns: adcs.templates.filter((t) => t.esc1).map((t) => t.distinguishedName),
-        raw: { esc1Names: adcs.esc1Names },
+          adcs.esc1Names.slice(0, 10).join(", ") + ". Permessi Enroll da verificare.",
+        dns: adcs.templates.filter((t) => t.esc1 && t.publishedBy?.length !== 0).map((t) => t.distinguishedName),
+        raw: { esc1Names: adcs.esc1Names, enrollment: "non_verificabile", criteriaRevision: 2 },
       });
     },
   },
   {
     id: "DA-A-AdcsEsc2",
     axis: "anomaly",
-    points: 25,
-    title: "ADCS ESC2 Any Purpose / empty EKU template",
+    points: 0,
+    diagnostic: true,
+    title: "Template AD CS da verificare per ESC2",
     run(ctx) {
       const adcs = ctx.adcs;
       if (!adcs || adcs.status !== "ok") return null;
@@ -168,13 +171,14 @@ export const phase6Rules: RuleDef[] = [
       return aggFinding({
         ruleId: "DA-A-AdcsEsc2",
         axis: "anomaly",
-        points: 25,
-        title: "ADCS ESC2 Any Purpose / empty EKU template",
+        points: 0,
+        diagnostic: true,
+        title: "Template AD CS da verificare per ESC2",
         description:
           `${adcs.esc2Names.length} template(s) with Any Purpose or empty EKU: ` +
-          adcs.esc2Names.slice(0, 10).join(", "),
-        dns: adcs.templates.filter((t) => t.esc2).map((t) => t.distinguishedName),
-        raw: { esc2Names: adcs.esc2Names },
+          adcs.esc2Names.slice(0, 10).join(", ") + ". Permessi Enroll da verificare.",
+        dns: adcs.templates.filter((t) => t.esc2 && t.publishedBy?.length !== 0).map((t) => t.distinguishedName),
+        raw: { esc2Names: adcs.esc2Names, enrollment: "non_verificabile", criteriaRevision: 2 },
       });
     },
   },

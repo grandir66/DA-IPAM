@@ -10,6 +10,12 @@
 
 **Controllo proposto** — Base per sviluppo locale su fixture e laboratorio. Completo prima di qualsiasi prova o rilascio su domini e dati di produzione. L'approvazione di questo piano autorizza le tappe locali. L'eventuale rilascio va concordato separatamente perché `dev` può aggiornare un'appliance cliente.
 
+## Stato della prima consegna
+
+- [x] Copertura LAPS da metadati, lettura dello schema e conteggi salvati. Attributi password rimossi dal collector.
+- [x] Pubblicazione dei template AD CS verificata nel contesto Configuration. I candidati ESC1/ESC2 senza verifica dei permessi restano visibili come diagnostica a zero punti.
+- [ ] Diritti di lettura LAPS, permessi effettivi Enroll e controlli ESC4/ESC8 da completare. Collaudo su dominio di laboratorio ancora da eseguire.
+
 ## Vincoli comuni
 
 - Verifiche in sola lettura con i permessi minimi già disponibili. Nessuna richiesta di certificati, modifica di ACL o GPO, prova di relay o lettura di password LAPS/gMSA.

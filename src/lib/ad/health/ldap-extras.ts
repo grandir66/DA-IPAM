@@ -15,7 +15,7 @@ import {
 } from "@/lib/ad/ldap-utils";
 import { hasFlag, UAC } from "@/lib/ad/health/uac";
 import { collectAdcsExtras, type AdcsExtras } from "@/lib/ad/health/adcs";
-import type { AdGpoRow, AdTrustRow } from "@/lib/ad/health/types";
+import type { AdGpoRow, AdTrustRow, LapsComputerState } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
   userUacBySam: Map<string, number>;
@@ -31,7 +31,7 @@ export interface LdapExtras {
   computerPwdLastSetBySam: Map<string, string | null>;
   computerAllowedToDelegateToBySam: Map<string, string[]>;
   computerAllowedToActOnBehalfOfBySam: Map<string, boolean>;
-  computerLapsPasswordPresentBySam: Map<string, boolean | null>;
+  computerLapsStateBySam: Map<string, LapsComputerState>;
   trusts: AdTrustRow[];
   krbtgtPasswordLastSetAt: string | null;
   guestEnabled: boolean | null;
@@ -80,11 +80,6 @@ function isDomainController(entry: Record<string, unknown>): boolean {
   if (pgid === DOMAIN_CONTROLLERS_RID) return true;
   const memberOf = ldapStrArray(entry.memberOf);
   return memberOf.some((dn) => /CN=Domain Controllers,/i.test(dn));
-}
-
-function isInsufficientAccess(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /insufficient|access|denied|unauthorized|50|consent/i.test(msg);
 }
 
 /**
@@ -167,6 +162,18 @@ async function readDomainPolicy(
   }
 }
 
+export function lapsMetadataState(windows: unknown, legacy: unknown, now: number): LapsComputerState {
+  const modern = ldapStr(windows);
+  const old = ldapStr(legacy);
+  // Se Windows LAPS ha scritto un metadato, il timestamp legacy può essere un residuo.
+  const value = modern ?? old;
+  if (value == null) return "non_verificabile";
+  if (value === "0") return "nessun_metadato";
+  const expiration = ldapTimestampToIso(value);
+  if (!expiration) return "non_verificabile";
+  return Date.parse(expiration) > now ? "valido" : "scaduto";
+}
+
 export async function collectLdapExtras(integrationId: number): Promise<LdapExtras> {
   const integration = getAdIntegrationById(integrationId);
   if (!integration) {
@@ -187,6 +194,20 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     const userAllowedToDelegateToBySam = new Map<string, string[]>();
     const shadowCredentialDns: string[] = [];
     const collectErrors: string[] = [];
+    let schemaDn: string | null = null;
+    let configurationDn: string | null = null;
+    try {
+      const { searchEntries } = await client.search("", {
+        scope: "base",
+        attributes: ["schemaNamingContext", "configurationNamingContext"],
+        timeLimit: 10,
+      });
+      schemaDn = ldapStr(searchEntries[0]?.schemaNamingContext);
+      configurationDn = ldapStr(searchEntries[0]?.configurationNamingContext);
+    } catch {
+      collectErrors.push("rootDse");
+    }
+
     try {
       const { searchEntries: users } = await client.search(baseDn, {
         scope: "sub",
@@ -243,8 +264,22 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     const computerPwdLastSetBySam = new Map<string, string | null>();
     const computerAllowedToDelegateToBySam = new Map<string, string[]>();
     const computerAllowedToActOnBehalfOfBySam = new Map<string, boolean>();
-    const computerLapsPasswordPresentBySam = new Map<string, boolean | null>();
+    const computerLapsStateBySam = new Map<string, LapsComputerState>();
     let lapsSchemaPresent: boolean | null = null;
+    if (schemaDn) {
+      try {
+        const { searchEntries } = await client.search(schemaDn, {
+          scope: "one",
+          filter: "(&(objectClass=attributeSchema)(|(lDAPDisplayName=msLAPS-PasswordExpirationTime)(lDAPDisplayName=ms-Mcs-AdmPwdExpirationTime)))",
+          attributes: ["lDAPDisplayName"],
+          timeLimit: 10,
+        });
+        // Una ricerca vuota può dipendere dalla visibilità dello schema.
+        if (searchEntries.some((entry) => ldapStr(entry.lDAPDisplayName))) lapsSchemaPresent = true;
+      } catch {
+        collectErrors.push("lapsSchema");
+      }
+    }
 
     try {
       const { searchEntries: computers } = await client.search(baseDn, {
@@ -260,13 +295,13 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
           "msDS-isRODC",
           "msDS-AllowedToDelegateTo",
           "msDS-AllowedToActOnBehalfOfOtherIdentity",
-          "ms-Mcs-AdmPwd",
-          "msLAPS-Password",
+          "ms-Mcs-AdmPwdExpirationTime",
+          "msLAPS-PasswordExpirationTime",
         ],
         paged: { pageSize: 500 },
         timeLimit: 120,
       });
-      let anyLaps = false;
+      const lapsNow = Date.now();
       for (const entry of computers) {
         const sam = ldapStr(entry.sAMAccountName);
         if (!sam) continue;
@@ -290,18 +325,14 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
         if (attrPresent(entry["msDS-AllowedToActOnBehalfOfOtherIdentity"])) {
           computerAllowedToActOnBehalfOfBySam.set(sam, true);
         }
-        const hasLaps =
-          attrPresent(entry["ms-Mcs-AdmPwd"]) || attrPresent(entry["msLAPS-Password"]);
-        computerLapsPasswordPresentBySam.set(sam, hasLaps);
-        if (hasLaps) anyLaps = true;
+        const stato = lapsMetadataState(
+          entry["msLAPS-PasswordExpirationTime"],
+          entry["ms-Mcs-AdmPwdExpirationTime"],
+          lapsNow,
+        );
+        computerLapsStateBySam.set(sam, stato);
       }
-      // Successful read: any LAPS value ⇒ schema present; else absent/undeployed (rule fires).
-      if (computers.length === 0) lapsSchemaPresent = null;
-      else lapsSchemaPresent = anyLaps;
-    } catch (err) {
-      if (isInsufficientAccess(err)) {
-        lapsSchemaPresent = null;
-      }
+    } catch {
       // computer maps stay empty / partial
       collectErrors.push("computers");
     }
@@ -465,7 +496,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       collectErrors.push("pso");
     }
 
-    const adcs = await collectAdcsExtras(client, baseDn);
+    const adcs = await collectAdcsExtras(client, configurationDn);
 
     return {
       userUacBySam,
@@ -481,7 +512,7 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       computerPwdLastSetBySam,
       computerAllowedToDelegateToBySam,
       computerAllowedToActOnBehalfOfBySam,
-      computerLapsPasswordPresentBySam,
+      computerLapsStateBySam,
       trusts,
       krbtgtPasswordLastSetAt,
       guestEnabled,

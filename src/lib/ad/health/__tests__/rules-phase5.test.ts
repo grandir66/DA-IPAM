@@ -39,7 +39,7 @@ function computer(
     isRodc: false,
     allowedToDelegateTo: [],
     allowedToActOnBehalfOf: false,
-    lapsPasswordPresent: null,
+    lapsState: "non_verificabile",
     ...partial,
   };
 }

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ALL_RULES, phase2Rules } from "../rules";
+import { lapsMetadataState } from "../ldap-extras";
 import { UAC } from "../uac";
 import type { AdComputerRow, AdGroupRow, AdUserRow, RuleContext } from "../types";
 
@@ -39,7 +40,7 @@ function computer(
     isRodc: false,
     allowedToDelegateTo: [],
     allowedToActOnBehalfOf: false,
-    lapsPasswordPresent: null,
+    lapsState: "non_verificabile",
     ...partial,
   };
 }
@@ -123,7 +124,7 @@ test("DA-A-PwdPolicy: match on short minPwd or lockout 0; skip when unread", () 
   assert.equal(lockout?.ruleId, "DA-A-PwdPolicy");
 });
 
-test("DA-A-LapsCoverage: null schema skips; absent matches; >25% gap matches", () => {
+test("DA-A-LapsCoverage: missing metadata stays unknown; confirmed gaps above 25% match", () => {
   assert.equal(ruleById("DA-A-LapsCoverage").run(baseCtx({ lapsSchemaPresent: null })), null);
 
   const absent = ruleById("DA-A-LapsCoverage").run(
@@ -134,8 +135,7 @@ test("DA-A-LapsCoverage: null schema skips; absent matches; >25% gap matches", (
       ],
     }),
   );
-  assert.equal(absent?.ruleId, "DA-A-LapsCoverage");
-  assert.equal(absent?.points, 15);
+  assert.equal(absent, null);
 
   // 1 with LAPS, 3 without → 75% > 25%
   const gap = ruleById("DA-A-LapsCoverage").run(
@@ -145,28 +145,28 @@ test("DA-A-LapsCoverage: null schema skips; absent matches; >25% gap matches", (
         computer({
           samAccountName: "ok$",
           distinguishedName: "CN=ok,DC=contoso,DC=local",
-          lapsPasswordPresent: true,
+          lapsState: "valido",
         }),
         computer({
           samAccountName: "a$",
           distinguishedName: "CN=a,DC=contoso,DC=local",
-          lapsPasswordPresent: false,
+          lapsState: "scaduto",
         }),
         computer({
           samAccountName: "b$",
           distinguishedName: "CN=b,DC=contoso,DC=local",
-          lapsPasswordPresent: false,
+          lapsState: "scaduto",
         }),
         computer({
           samAccountName: "c$",
           distinguishedName: "CN=c,DC=contoso,DC=local",
-          lapsPasswordPresent: false,
+          lapsState: "scaduto",
         }),
         computer({
           samAccountName: "dc$",
           distinguishedName: "CN=dc,DC=contoso,DC=local",
           isDomainController: true,
-          lapsPasswordPresent: false,
+          lapsState: "scaduto",
         }),
       ],
     }),
@@ -183,22 +183,22 @@ test("DA-A-LapsCoverage: null schema skips; absent matches; >25% gap matches", (
           computer({
             samAccountName: "ok1$",
             distinguishedName: "CN=ok1,DC=contoso,DC=local",
-            lapsPasswordPresent: true,
+            lapsState: "valido",
           }),
           computer({
             samAccountName: "ok2$",
             distinguishedName: "CN=ok2,DC=contoso,DC=local",
-            lapsPasswordPresent: true,
+            lapsState: "valido",
           }),
           computer({
             samAccountName: "ok3$",
             distinguishedName: "CN=ok3,DC=contoso,DC=local",
-            lapsPasswordPresent: true,
+            lapsState: "valido",
           }),
           computer({
             samAccountName: "miss$",
             distinguishedName: "CN=miss,DC=contoso,DC=local",
-            lapsPasswordPresent: false,
+            lapsState: "scaduto",
           }),
         ],
       }),
@@ -458,4 +458,14 @@ test("DA-P-ProtectedUsersGap matches enabled DA not in Protected Users", () => {
     }),
   );
   assert.equal(allCovered, null);
+});
+
+test("LAPS interpreta solo i metadati di scadenza e conserva il dato mancante come ignoto", () => {
+  const filetime = (date: string) => ((BigInt(Date.parse(date)) + BigInt(11644473600000)) * BigInt(10000)).toString();
+  const future = filetime("2026-12-15");
+  const past = filetime("2025-01-01");
+  assert.equal(lapsMetadataState(null, future, NOW.getTime()), "valido");
+  assert.equal(lapsMetadataState(past, future, NOW.getTime()), "scaduto");
+  assert.equal(lapsMetadataState("0", null, NOW.getTime()), "nessun_metadato");
+  assert.equal(lapsMetadataState(undefined, undefined, NOW.getTime()), "non_verificabile");
 });

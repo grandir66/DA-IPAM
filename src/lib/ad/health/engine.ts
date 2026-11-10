@@ -107,9 +107,7 @@ function toComputerRows(computers: AdComputer[], extras: LdapExtras): AdComputer
       isRodc: extras.computerIsRodcBySam.get(sam) ?? false,
       allowedToDelegateTo: extras.computerAllowedToDelegateToBySam.get(sam) ?? [],
       allowedToActOnBehalfOf: extras.computerAllowedToActOnBehalfOfBySam.get(sam) ?? false,
-      lapsPasswordPresent: extras.computerLapsPasswordPresentBySam.has(sam)
-        ? (extras.computerLapsPasswordPresentBySam.get(sam) ?? null)
-        : null,
+      lapsState: extras.computerLapsStateBySam.get(sam) ?? "non_verificabile",
     };
   });
 }
@@ -252,6 +250,14 @@ export async function runAdHealthcheck(
       esc1Names: extras.adcs.esc1Names,
       esc2Names: extras.adcs.esc2Names,
       templateCount: extras.adcs.templates.length,
+    };
+
+    stats.laps = {
+      schemaPresent: extras.lapsSchemaPresent,
+      validi: [...extras.computerLapsStateBySam.values()].filter((s) => s === "valido").length,
+      scaduti: [...extras.computerLapsStateBySam.values()].filter((s) => s === "scaduto").length,
+      nonImpostati: [...extras.computerLapsStateBySam.values()].filter((s) => s === "nessun_metadato").length,
+      nonVerificabili: [...extras.computerLapsStateBySam.values()].filter((s) => s === "non_verificabile").length,
     };
 
     const users = toUserRows(dbUsers, extras);

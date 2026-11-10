@@ -19,7 +19,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## AD Health — piano del 10/11/2026
 
-Piano proposto in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`. Prima consegna prevista su LAPS e valutazione dei template AD CS. Seguono ESC8, percorsi di controllo e confronto con copertura esplicita. Implementazione da avviare.
+Piano proposto in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`. Prima consegna prevista su LAPS e valutazione dei template AD CS. Seguono ESC8, percorsi di controllo e confronto con copertura esplicita. Avviato sul ramo isolato: LAPS da metadati e pubblicazione dei template AD CS con candidati fuori dal punteggio. Restano i diritti effettivi e le tappe successive.
 
 ## Accesso Windows e diritti — 04/11/2026
 

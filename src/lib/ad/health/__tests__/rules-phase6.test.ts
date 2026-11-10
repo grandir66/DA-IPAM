@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyTemplate,
+  collectAdcsExtras,
   CT_ENROLLEE_SUPPLIES_SUBJECT,
   CT_PEND_ALL_REQUESTS,
   EKU_ANY_PURPOSE,
@@ -9,6 +10,7 @@ import {
 } from "../adcs";
 import { ALL_RULES, phase6Rules } from "../rules";
 import { parseWinrmProbeJson } from "../winrm-probe";
+import type { Client } from "ldapts";
 import type { RuleContext, WinrmProbeResult } from "../types";
 
 const NOW = new Date("2026-07-26T12:00:00.000Z");
@@ -155,6 +157,8 @@ test("DA-A-AdcsEsc1 fires on esc1 names", () => {
   );
   assert.ok(f);
   assert.equal(f!.objectCount, 1);
+  assert.equal(f!.diagnostic, true);
+  assert.equal(f!.points, 0);
 });
 
 test("DA-A-ShadowCredentials fires", () => {
@@ -173,4 +177,30 @@ test("DA-A-NoPso fires when count is 0", () => {
 test("DA-A-NoPso skips when unread", () => {
   const f = run("DA-A-NoPso", baseCtx({ psoCount: null }));
   assert.equal(f, null);
+});
+
+test("AD CS usa il contesto della foresta e incrocia pubblicazione per CN", async () => {
+  const dn = "CN=Configuration,DC=forest,DC=local";
+  const search = async (base: string) => {
+    assert.ok(base.endsWith(dn));
+    const searchEntries = base.startsWith("CN=Enrollment Services")
+      ? [{ cn: "CA1", certificateTemplates: ["pubblicato"] }]
+      : [
+          { cn: "Pubblicato", displayName: "Nome visualizzato", distinguishedName: "CN=Pubblicato", "msPKI-Certificate-Name-Flag": "1" },
+          { cn: "Sospeso", distinguishedName: "CN=Sospeso", "msPKI-Certificate-Name-Flag": "1" },
+        ];
+    return { searchEntries };
+  };
+  const client = { search } as unknown as Client;
+  const adcs = await collectAdcsExtras(client, dn);
+  assert.deepEqual(adcs.templates.map((t) => t.publishedBy), [["CA1"], []]);
+  assert.deepEqual(adcs.esc1Names, ["Nome visualizzato"]);
+  assert.deepEqual(adcs.esc2Names, ["Nome visualizzato"]);
+  const missingCa = { search: async (base: string) => {
+    if (base.startsWith("CN=Enrollment Services")) throw new Error("access denied");
+    return search(base);
+  } } as unknown as Client;
+  const partial = await collectAdcsExtras(missingCa, dn);
+  assert.deepEqual(partial.templates.map((t) => t.publishedBy), [null, null]);
+  assert.equal(partial.esc1Names.length, 2);
 });

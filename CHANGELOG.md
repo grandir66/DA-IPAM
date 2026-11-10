@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Evidenze AD Health
+
+- **LAPS**. La raccolta usa metadati di scadenza e tratta la mancata visibilità come esito ignoto.
+- **AD CS**. I template sono correlati alle CA della foresta. ESC1 e ESC2 senza verifica dei diritti di enrollment restano candidati diagnostici, fuori dal punteggio.
+
 ## [Non rilasciato] — 2026-11-10 · Discovery, VNC e NFS
 
 - **Discovery**. Le sonde successive a una scansione riuscita si accodano quando il tenant è occupato, con rete e opzioni originali.

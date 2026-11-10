@@ -52,6 +52,8 @@ export interface AdUserRow {
   allowedToDelegateTo: string[];
 }
 
+export type LapsComputerState = "valido" | "scaduto" | "nessun_metadato" | "non_verificabile";
+
 export interface AdComputerRow {
   samAccountName: string;
   distinguishedName: string;
@@ -66,11 +68,7 @@ export interface AdComputerRow {
   allowedToDelegateTo: string[];
   /** True if msDS-AllowedToActOnBehalfOfOtherIdentity is present (RBCD). */
   allowedToActOnBehalfOf: boolean;
-  /**
-   * LAPS password attribute present (ms-Mcs-AdmPwd / msLAPS-Password).
-   * null = unknown (ACL denied / query failed for that object).
-   */
-  lapsPasswordPresent: boolean | null;
+  lapsState: LapsComputerState;
 }
 
 export interface AdGroupRow {
@@ -229,7 +227,7 @@ export interface RuleDef {
   run: (ctx: RuleContext) => HealthFinding | null; // null = no match
 }
 
-export const ENGINE_VERSION = "0.8.0";
+export const ENGINE_VERSION = "0.9.0";
 export const SAMPLE_CAP = 50;
 
 /** Threshold for DA-A-LargePrivilegedSet. */

@@ -17,6 +17,7 @@ export const EKU_ANY_PURPOSE = "2.5.29.37.0";
 
 export interface AdcsTemplateRow {
   name: string;
+  publishedBy?: string[] | null;
   distinguishedName: string;
   enrolleeSuppliesSubject: boolean;
   managerApproval: boolean;
@@ -62,9 +63,10 @@ export function classifyTemplate(input: {
     (input.nameFlags & CT_ENROLLEE_SUPPLIES_SUBJECT) !== 0;
   const managerApproval = (input.enrollmentFlags & CT_PEND_ALL_REQUESTS) !== 0;
   const ekus = input.ekus;
-  const esc2 = ekus.length === 0 || ekus.includes(EKU_ANY_PURPOSE);
+  const anyPurpose = ekus.length === 0 || ekus.includes(EKU_ANY_PURPOSE);
+  const esc2 = anyPurpose && !managerApproval && input.raSignatures === 0;
   const authEku =
-    esc2 ||
+    anyPurpose ||
     ekus.includes(EKU_CLIENT_AUTH) ||
     ekus.includes(EKU_SMART_CARD_LOGON);
   const esc1 =
@@ -87,10 +89,12 @@ export function classifyTemplate(input: {
 
 export async function collectAdcsExtras(
   client: Client,
-  baseDn: string,
+  configurationDn: string | null,
 ): Promise<AdcsExtras> {
   try {
-    const templatesDn = `CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,${baseDn}`;
+    if (!configurationDn) throw new Error("Contesto Configuration di AD non disponibile");
+    const pkiDn = `CN=Public Key Services,CN=Services,${configurationDn}`;
+    const templatesDn = `CN=Certificate Templates,${pkiDn}`;
     const { searchEntries } = await client.search(templatesDn, {
       scope: "one",
       filter: "(objectClass=pKICertificateTemplate)",
@@ -108,29 +112,58 @@ export async function collectAdcsExtras(
       timeLimit: 60,
     });
 
+    const publication = new Map<string, Set<string>>();
+    let publicationComplete = false;
+    try {
+      const { searchEntries: cas } = await client.search(`CN=Enrollment Services,${pkiDn}`, {
+        scope: "one",
+        filter: "(objectClass=pKIEnrollmentService)",
+        attributes: ["cn", "certificateTemplates"],
+        paged: { pageSize: 200 },
+        timeLimit: 30,
+      });
+      publicationComplete = cas.length > 0;
+      for (const ca of cas) {
+        const name = ldapStr(ca.cn);
+        if (!name || !Object.hasOwn(ca, "certificateTemplates")) {
+          publicationComplete = false;
+          continue;
+        }
+        for (const template of ldapStrArray(ca.certificateTemplates)) {
+          const key = template.toLowerCase();
+          const names = publication.get(key) ?? new Set<string>();
+          names.add(name);
+          publication.set(key, names);
+        }
+      }
+    } catch {
+      // La lettura dei template resta disponibile, la pubblicazione è ignota.
+    }
+
     const templates: AdcsTemplateRow[] = [];
     for (const entry of searchEntries) {
       const dn = ldapStr(entry.distinguishedName);
       if (!dn) continue;
-      const name =
-        ldapStr(entry.displayName) ?? ldapStr(entry.cn) ?? dn;
-      templates.push(
-        classifyTemplate({
-          name,
-          distinguishedName: dn,
-          nameFlags: parseIntAttr(entry["msPKI-Certificate-Name-Flag"]),
-          enrollmentFlags: parseIntAttr(entry["msPKI-Enrollment-Flag"]),
-          raSignatures: parseIntAttr(entry["msPKI-RA-Signature"]),
-          ekus: collectEkus(entry as Record<string, unknown>),
-        }),
-      );
+      const cn = ldapStr(entry.cn);
+      const name = ldapStr(entry.displayName) ?? cn ?? dn;
+      const names = cn ? publication.get(cn.toLowerCase()) : undefined;
+      const publishedBy = names ? [...names].sort() : cn && publicationComplete ? [] : null;
+      const template = classifyTemplate({
+        name,
+        distinguishedName: dn,
+        nameFlags: parseIntAttr(entry["msPKI-Certificate-Name-Flag"]),
+        enrollmentFlags: parseIntAttr(entry["msPKI-Enrollment-Flag"]),
+        raSignatures: parseIntAttr(entry["msPKI-RA-Signature"]),
+        ekus: collectEkus(entry as Record<string, unknown>),
+      });
+      templates.push({ ...template, publishedBy });
     }
 
     return {
       status: "ok",
       templates,
-      esc1Names: templates.filter((t) => t.esc1).map((t) => t.name),
-      esc2Names: templates.filter((t) => t.esc2).map((t) => t.name),
+      esc1Names: templates.filter((t) => t.esc1 && t.publishedBy?.length !== 0).map((t) => t.name),
+      esc2Names: templates.filter((t) => t.esc2 && t.publishedBy?.length !== 0).map((t) => t.name),
     };
   } catch (err) {
     return {

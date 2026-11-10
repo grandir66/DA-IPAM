@@ -5,8 +5,11 @@
 Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev` `0cf74c06`: 58 regole registrate. Analisi statica.
 - [x] Piano di implementazione in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`.
 - [x] Riccardo (10/11): confrontati ad-doctor e ADcheck. Esiti, vincoli e prova offline nel piano.
-- [ ] Correggere la copertura Windows LAPS usando schema e metadati di scadenza, evitando la lettura degli attributi password. Separare copertura, visibilità e diritti di lettura.
-- [ ] Distinguere template AD CS sospetti da template pubblicati e ottenibili. Poi aggiungere ESC4 e, con accesso in lettura a IIS, ESC8.
+- [x] Riccardo (10/11): avviato lo sviluppo. Corretto il riscontro Windows LAPS con metadati di scadenza, senza acquisire password. Dato mancante ignoto.
+- [ ] Mostrare chi può leggere o decrittare le password LAPS, con ACL verificabili.
+- [x] AD CS legge il contesto Configuration e incrocia le pubblicazioni per CN. I candidati ESC1/ESC2 senza prova di Enroll restano diagnostici.
+- [ ] Risolvere i diritti Enroll effettivi e aggiungere ESC4 ed ESC8.
+- [x] Suite AD Health locale, 136 test passati. Nessun dominio contattato.
 - [ ] Valutare percorsi di controllo verso i privilegi di dominio attraverso gruppi, ACL e GPO. Mostrare la catena di evidenze e distinguere il dato non verificato.
 - [ ] Confrontare due raccolte con copertura compatibile e mostrare rilievi nuovi, risolti e non verificabili.
 

@@ -286,12 +286,12 @@ const CATALOG: Record<string, RuleGuide> = {
     fix: "Disabilita il servizio Spooler sui Domain Controller se non serve la stampa.",
   },
   "DA-A-AdcsEsc1": {
-    titleIt: "Template ADCS ESC1",
-    why: "L’enrolleee può scegliere il subject e ottenere autenticazione come altro utente.",
+    titleIt: "Template AD CS da verificare per ESC1",
+    why: "Il template consente di scegliere il soggetto. Verifica chi può richiedere il certificato.",
     fix: "Rimuovi ENROLLEE_SUPPLIES_SUBJECT o richiedi approval/RA signature; limita enrollment.",
   },
   "DA-A-AdcsEsc2": {
-    titleIt: "Template ADCS ESC2 (EKU ampio)",
+    titleIt: "Template AD CS da verificare per ESC2",
     why: "Template con Any Purpose / EKU vuoto possono essere abusati per autenticazione.",
     fix: "Restringi le EKU ai soli usi necessari; rivedi chi può fare enrollment.",
   },

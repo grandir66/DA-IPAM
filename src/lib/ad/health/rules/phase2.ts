@@ -182,34 +182,20 @@ export const phase2Rules: RuleDef[] = [
     points: 15,
     title: "LAPS coverage gap",
     run(ctx) {
-      if (ctx.lapsSchemaPresent == null) return null;
+      const computers = ctx.computers.filter((c) => c.enabled && !c.isDomainController);
+      if (computers.length === 0) return null;
 
-      const nonDc = ctx.computers.filter((c) => !c.isDomainController);
-      if (ctx.lapsSchemaPresent === false) {
-        return aggFinding({
-          ruleId: "DA-A-LapsCoverage",
-          axis: "anomaly",
-          points: 15,
-          title: "LAPS coverage gap",
-          description: "LAPS schema absent or no LAPS passwords readable on computers",
-          dns: nonDc.slice(0, 50).map((c) => c.distinguishedName),
-          raw: { lapsSchemaPresent: false, nonDcCount: nonDc.length },
-        });
-      }
-
-      const considered = nonDc.filter((c) => c.lapsPasswordPresent !== null);
-      if (considered.length === 0) return null;
-      const missing = considered.filter((c) => c.lapsPasswordPresent === false);
-      const ratio = missing.length / considered.length;
-      if (ratio <= 0.25) return null;
+      const gaps = computers.filter((c) => c.lapsState === "scaduto" || c.lapsState === "nessun_metadato");
+      const unknown = computers.filter((c) => c.lapsState === "non_verificabile").length;
+      if (gaps.length / computers.length <= 0.25) return null;
       return aggFinding({
         ruleId: "DA-A-LapsCoverage",
         axis: "anomaly",
         points: 15,
         title: "LAPS coverage gap",
-        description: `${missing.length}/${considered.length} non-DC computer(s) without LAPS password (>25%)`,
-        dns: missing.map((c) => c.distinguishedName),
-        raw: { missing: missing.length, considered: considered.length, ratio },
+        description: `${gaps.length}/${computers.length} computer non DC attivi con scadenza LAPS superata o non impostata`,
+        dns: gaps.map((c) => c.distinguishedName),
+        raw: { missing: gaps.length, considered: computers.length, unknown, criteriaRevision: 2 },
       });
     },
   },

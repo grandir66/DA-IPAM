@@ -26,6 +26,9 @@ export interface Dichiarazione {
 }
 
 export const CHIAVE_CURSORE = "trunk_dichiarazioni_dopo";
+/** Segno della pulizia fatta una volta (vedi `pulisciMdnsRipetuto`). */
+export const CHIAVE_PULIZIA = "trunk_dichiarazioni_pulizia";
+const VERSIONE_PULIZIA = "1";
 const CHIAVI = new Set(["ssdp_server", "ssdp_tipo", "ssdp_agente", "mdns_servizio", "mdns_modello", "dhcp_classe", "dhcp_fqdn"]);
 const TETTO_TESTO = 160;
 
@@ -72,7 +75,13 @@ export function proveDaDichiarazioni(righe: ReadonlyArray<Pick<Dichiarazione, "c
   const di = (chiave: string) => righe.filter((r) => r.chiave === chiave).map((r) => r.valore);
   const out: EvidenceInput[] = [];
 
-  const servizi = di("mdns_servizio");
+  // Un computer che offre AirPlay non è uno schermo (hub, 10/11/2026: un MacBook risultava
+  // «display»). Chi offre anche SSH, condivisione file o controllo remoto, o cerca in SSDP con un
+  // browser, è un computer: per lui AirPlay non dice il mestiere.
+  const tutti = di("mdns_servizio");
+  const eComputer = di("ssdp_agente").length > 0
+    || tutti.some((x) => /^_(ssh|sftp-ssh|smb|afpovertcp|rfb|companion-link|workstation|adisk)\._tcp/.test(x));
+  const servizi = eComputer ? tutti.filter((x) => !/^_(airplay|raop)\._tcp/.test(x)) : tutti;
   const modelli = di("mdns_modello");
   if (servizi.length > 0 || modelli.length > 0) {
     out.push(...evidenceFromMdns({
@@ -149,6 +158,34 @@ export function portaDichiarazioniSugliHost(hostIds: readonly number[]): EsitoDi
   return esito;
 }
 
+/**
+ * Una volta sola (10/11/2026): la sonda 0.8.292 attribuiva al gateway gli annunci mDNS che ripeteva
+ * fra le VLAN, e DA-IPAM li ha letti per mezz'ora. Si tolgono le dichiarazioni mDNS raccolte e le
+ * prove `mdns` degli host che le avevano, si ricalcola il loro riconoscimento e si rilegge dal
+ * sensore da capo: le dichiarazioni buone tornano al giro dopo (sonda 0.8.293), le prove delle
+ * sonde attive alla prossima scansione. Ritorna gli host ricalcolati.
+ */
+export function pulisciMdnsRipetuto(): number {
+  if (getTenantSetting(CHIAVE_PULIZIA) === VERSIONE_PULIZIA) return 0;
+  const d = db();
+  const host = (d.prepare("SELECT DISTINCT host_id AS id FROM trunk_dichiarazioni WHERE chiave LIKE 'mdns\\_%' ESCAPE '\\' AND host_id IS NOT NULL").all() as Array<{ id: number }>).map((r) => r.id);
+  d.transaction(() => {
+    d.prepare("DELETE FROM trunk_dichiarazioni WHERE chiave LIKE 'mdns\\_%' ESCAPE '\\'").run();
+    const togli = d.prepare("DELETE FROM attribution_evidence WHERE host_id = ? AND source = 'mdns'");
+    for (const id of host) togli.run(id);
+  })();
+  for (const id of host) {
+    try {
+      recomputeAttributionForDb(d, id, "scan");
+    } catch (e) {
+      console.error(`[trunk] host ${id}: riconoscimento non ricalcolato dopo la pulizia mDNS:`, e);
+    }
+  }
+  setTenantSetting(CHIAVE_CURSORE, "");
+  setTenantSetting(CHIAVE_PULIZIA, VERSIONE_PULIZIA);
+  return host.length;
+}
+
 type Lettore = <T>(percorso: string, params?: Record<string, string | number>) => Promise<T>;
 
 /**
@@ -158,6 +195,8 @@ type Lettore = <T>(percorso: string, params?: Record<string, string | number>) =
 export async function sincronizzaDichiarazioni(leggi: Lettore): Promise<EsitoDichiarazioni | null> {
   let righe: Dichiarazione[];
   try {
+    const puliti = pulisciMdnsRipetuto();
+    if (puliti > 0) console.info(`[trunk] dichiarazioni: tolte le mDNS ripetute dal gateway, ${puliti} host ricalcolati`);
     const dopo = getTenantSetting(CHIAVE_CURSORE) ?? "";
     const r = await leggi<{ dichiarazioni?: Dichiarazione[] }>("/dichiarazioni", { dopo, limite: 5000 });
     righe = Array.isArray(r.dichiarazioni) ? r.dichiarazioni : [];

@@ -6,9 +6,11 @@
 import "@/lib/__tests__/support/data-dir-isolata";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
+import { closeTenantDb, deleteTenantDatabase, getTenantDb, getTenantSetting, setTenantSetting, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
-import { portaDichiarazioniSugliHost, proveDaDichiarazioni, salvaDichiarazioni, sincronizzaDichiarazioni, sistemaDa } from "@/lib/trunk/dichiarazioni";
+import {
+  CHIAVE_CURSORE, portaDichiarazioniSugliHost, proveDaDichiarazioni, pulisciMdnsRipetuto, salvaDichiarazioni, sincronizzaDichiarazioni, sistemaDa,
+} from "@/lib/trunk/dichiarazioni";
 
 const T = "TRUNKDICH10";
 const ORA = "2026-11-10T20:00:00Z";
@@ -70,6 +72,34 @@ test("dal sensore agli host: si aggancia per MAC, riempie modello e nome solo do
     portaDichiarazioniSugliHost([cast]);
     assert.equal((d.prepare("SELECT COUNT(*) AS n FROM attribution_evidence WHERE host_id = ? AND superseded_by IS NULL").get(cast) as { n: number }).n <= prima, true);
     assert.deepEqual(salvaDichiarazioni([]), []);
+  });
+});
+
+test("un computer che offre AirPlay non è uno schermo", () => {
+  const categoria = (righe: Array<{ chiave: string; valore: string }>) =>
+    proveDaDichiarazioni(righe).filter((p) => p.dimension === "category").map((p) => p.claim);
+  const airplay = [{ chiave: "mdns_servizio", valore: "_airplay._tcp" }, { chiave: "mdns_servizio", valore: "_raop._tcp" }];
+  const soloAirplay = categoria(airplay);
+  // un Mac: offre anche SSH e il collegamento fra dispositivi Apple
+  assert.deepEqual(categoria([...airplay, { chiave: "mdns_servizio", valore: "_ssh._tcp" }, { chiave: "mdns_servizio", valore: "_companion-link._tcp" }]), []);
+  // un computer che cerca in SSDP col browser
+  assert.deepEqual(categoria([...airplay, { chiave: "ssdp_agente", valore: "Chromium/151.0 Mac OS X" }]), []);
+  assert.ok(soloAirplay.length <= 1, "da solo AirPlay resta com'era nelle regole delle sonde attive");
+});
+
+test("pulizia una volta: via le mDNS ripetute dal gateway e le loro prove, poi si rilegge da capo", async () => {
+  await withTenant(T, async () => {
+    const d = getTenantDb(T);
+    setTenantSetting("trunk_dichiarazioni_pulizia", "");
+    const prima = (d.prepare("SELECT COUNT(*) AS n FROM trunk_dichiarazioni WHERE chiave LIKE 'mdns%'").get() as { n: number }).n;
+    assert.ok(prima > 0);
+    const ricalcolati = pulisciMdnsRipetuto();
+    assert.ok(ricalcolati >= 1);
+    assert.equal((d.prepare("SELECT COUNT(*) AS n FROM trunk_dichiarazioni WHERE chiave LIKE 'mdns%'").get() as { n: number }).n, 0);
+    assert.ok((d.prepare("SELECT COUNT(*) AS n FROM trunk_dichiarazioni").get() as { n: number }).n > 0, "le altre restano");
+    assert.equal((d.prepare("SELECT COUNT(*) AS n FROM attribution_evidence WHERE source = 'mdns'").get() as { n: number }).n, 0);
+    assert.equal(getTenantSetting(CHIAVE_CURSORE), "");
+    assert.equal(pulisciMdnsRipetuto(), 0, "la seconda volta non fa niente");
   });
 });
 

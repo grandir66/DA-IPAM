@@ -115,6 +115,7 @@ import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "./filtro-cluster";
 import { BadgeAltriIp } from "./cluster-ip";
 import { AggiuntaLibrenmsBlocco } from "@/components/discovery/aggiunta-librenms-blocco";
+import { CassettoHost } from "@/components/hosts/cassetto-host";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -538,6 +539,7 @@ export default function DiscoveryPage() {
    * conferma, e conferma in blocco sulle selezionate. */
   const [soloDaRivedere, setSoloDaRivedere] = useState(false);
   const [confermaRivisti, setConfermaRivisti] = useState(false);
+  const [cassettoId, setCassettoId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -2669,7 +2671,16 @@ export default function DiscoveryPage() {
                 }}>
                 <ContextMenuTrigger render={<TableBody />}>
                   {pagedRows.map((h) => (
-                    <TableRow key={h.id} className={`hover:bg-muted/40 ${selectedIds.has(h.id) ? "bg-primary/5" : ""}`}>
+                    <TableRow
+                      key={h.id}
+                      className={`cursor-pointer hover:bg-muted/40 ${selectedIds.has(h.id) ? "bg-primary/5" : ""}`}
+                      title="Prima lettura: OS, servizi, identità"
+                      onClick={(e) => {
+                        const el = e.target as HTMLElement;
+                        if (el.closest("a, button, input, [role=checkbox], [role=menuitem]")) return;
+                        setCassettoId(h.id);
+                      }}
+                    >
                       <TableCell className="py-2" onContextMenu={(e) => puntaMenu(e, h, null)} onTouchStart={(e) => puntaMenu(e, h, null)}>
                         <Checkbox
                           checked={selectedIds.has(h.id)}
@@ -3450,6 +3461,8 @@ export default function DiscoveryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CassettoHost hostId={cassettoId} onClose={() => setCassettoId(null)} />
     </div>
   );
 }

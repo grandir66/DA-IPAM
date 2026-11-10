@@ -7493,6 +7493,8 @@ export {
   getHostSenzaPorteServizi,
   segnaHostProvatoServizi,
   raccogliIdentita,
+  riempiOsVuotiServizi,
+  getPrimaLetturaHost,
   getProposteIdentita,
   getConteggiIdentita,
   decidiPropostaIdentita,

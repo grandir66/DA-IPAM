@@ -10,7 +10,7 @@ import {
 } from "@/lib/db";
 import { NetworkDetailClient } from "./network-detail-client";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { withTenant } from "@/lib/db-tenant";
+import { riempiOsVuotiServizi, withTenant } from "@/lib/db-tenant";
 
 export default async function NetworkDetailPage({
   params,
@@ -26,7 +26,10 @@ export default async function NetworkDetailPage({
   }
 
   const nid = Number(id);
-  const hosts = withTenant(tenantCode, () => getHostsByNetworkWithDevices(nid));
+  const hosts = withTenant(tenantCode, () => {
+    riempiOsVuotiServizi();
+    return getHostsByNetworkWithDevices(nid);
+  });
   const routerId = withTenant(tenantCode, () => getNetworkRouterId(nid));
   const routers = withTenant(tenantCode, () => getArpSourceDevices());
   // v2: lista unificata credenziali subnet

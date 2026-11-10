@@ -7,6 +7,7 @@ import {
   getAllMultihomedLinks,
   getClusterDiscovery,
   getAllHostsVulnSummary,
+  riempiOsVuotiServizi,
 } from "@/lib/db-tenant";
 
 export async function GET(req: Request) {
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
       const url = new URL(req.url);
       const lite = url.searchParams.get("lite") === "1";
 
+      riempiOsVuotiServizi();
       const hosts = getAllHostsEnriched(10000);
       const credMap = getAllHostValidatedProtocols();
       const mhMap = getAllMultihomedLinks();

@@ -15,6 +15,7 @@ import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import * as servizi from "./servizi-rete/db";
+import * as osProve from "./servizi-rete/os-da-prove";
 import * as triage from "./triage/db";
 import * as identita from "./servizi-rete/identita";
 import * as segmentazione from "./segmentazione/db";
@@ -12987,6 +12988,12 @@ export function segnaHostProvatoServizi(hostId: number, provate: number, aperte:
 }
 export function raccogliIdentita(): { prove: number; proposte: number } {
   return identita.raccogliECalcola(db());
+}
+export function riempiOsVuotiServizi(hostId?: number): number {
+  return osProve.riempiOsVuoti(db(), hostId);
+}
+export function getPrimaLetturaHost(hostId: number): osProve.PrimaLettura | null {
+  return osProve.leggiPrimaLettura(db(), hostId);
 }
 export function getProposteIdentita(stato?: "proposto" | "confermato" | "rifiutato"): identita.PropostaIdentita[] {
   return identita.proposteIdentita(db(), stato);

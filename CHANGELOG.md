@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Prima lettura host (OS dalle sonde)
+
+Riccardo (10/11): i dati ci sono già in Subnet e Discovery; manca la prima riga, come in Nety Hosts/Assets.
+
+### Aggiunto
+- **OS dalle prove**: se `os_info` è vuoto si riempie da NTLM, sysDescr SNMP o banner SSH, senza nmap -O e senza toccare l'anagrafica già piena.
+- **Cassetto sulla riga** in Discovery e Subnet: OS, dominio, TTL, servizi, chiavi, altri IP; «Scheda completa» resta `/objects`.
+
 ## [Non rilasciato] — 2026-11-10 · Vista Vulnerabilità di nuovo in pagina
 
 Riccardo (10/11): la vista per CVE e per host deve restare, con exploit e filtri.

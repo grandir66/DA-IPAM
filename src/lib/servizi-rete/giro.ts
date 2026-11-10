@@ -20,6 +20,7 @@ import {
   getHostSenzaPorteServizi,
   segnaHostProvatoServizi,
   raccogliIdentita,
+  riempiOsVuotiServizi,
 } from "@/lib/db-tenant";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
@@ -131,6 +132,7 @@ export function avviaGiro(
         stato.fatte += 1;
       });
       raccogliIdentita();
+      riempiOsVuotiServizi();
     } catch (e) {
       stato.errore = e instanceof Error ? e.message : String(e);
       console.error(`[servizi-rete] giro fallito per ${tenant}:`, e);

@@ -129,6 +129,7 @@ const CONTRACT: Contract[] = [
   { route: "dalink/vulcan/invia", method: "POST", guard: "requireAdmin" },
   { route: "scans/lancia", method: "POST", guard: "requireAdmin" },
   { route: "rilievi", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/prima-lettura", method: "GET", guard: "requireAuth" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

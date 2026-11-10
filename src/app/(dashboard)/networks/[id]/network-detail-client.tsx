@@ -83,6 +83,7 @@ import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import { CassettoHost } from "@/components/hosts/cassetto-host";
 
 type HostWithDevice = Host & {
   device_id?: number;
@@ -182,6 +183,7 @@ export function NetworkDetailClient({
   const [network, setNetwork] = useState(initialNetwork);
   const [routerId, setRouterId] = useState<number | null>(initialRouterId);
   const [hosts, setHosts] = useState<HostWithDevice[]>(initialHosts);
+  const [cassettoId, setCassettoId] = useState<number | null>(null);
   const [scanning, setScanning] = useState<ScanProgressType | null>(null);
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { giri, apri: apriGiro } = useGiri();
@@ -1702,7 +1704,17 @@ export function NetworkDetailClient({
                 </TableRow>
               ) : (
                 displayHosts.map((host) => (
-                  <TableRow key={host.id} onContextMenu={(e) => puntaMenu(e, host)}>
+                  <TableRow
+                    key={host.id}
+                    className="cursor-pointer"
+                    title="Prima lettura: OS, servizi, identità"
+                    onContextMenu={(e) => puntaMenu(e, host)}
+                    onClick={(e) => {
+                      const el = e.target as HTMLElement;
+                      if (el.closest("a, button, input, [role=checkbox], [role=menuitem]")) return;
+                      setCassettoId(host.id);
+                    }}
+                  >
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedHostIds.has(host.id)}
@@ -1857,14 +1869,14 @@ export function NetworkDetailClient({
                              * vuota: si mostra in corsivo per dire che non è normalizzato. */
                             const vendor = host.attr_vendor_name || host.attr_vendor;
                             const famiglia = host.attr_os_family;
-                            const grezzo = famiglia ? null : (host.attr_os_name || host.os_info);
+                            const grezzo = host.os_info || host.attr_os_name || null;
                             if (!vendor && !famiglia && !grezzo) return null;
                             return (
-                              <span className="text-muted-foreground truncate max-w-[200px] block" title={[vendor, famiglia ?? grezzo].filter(Boolean).join(" · ")}>
+                              <span className="text-muted-foreground truncate max-w-[200px] block" title={[vendor, famiglia, grezzo].filter(Boolean).join(" · ")}>
                                 {[vendor, famiglia].filter(Boolean).join(" · ")}
-                                {grezzo && (
+                                {grezzo && grezzo !== famiglia && (
                                   <>
-                                    {vendor ? " · " : ""}
+                                    {vendor || famiglia ? " · " : ""}
                                     <em className="not-italic opacity-80">{grezzo}</em>
                                   </>
                                 )}
@@ -2041,6 +2053,8 @@ export function NetworkDetailClient({
           setScanPhasesRefreshKey((k) => k + 1);
         }}
       />
+
+      <CassettoHost hostId={cassettoId} onClose={() => setCassettoId(null)} />
     </div>
   );
 }

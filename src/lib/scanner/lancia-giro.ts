@@ -8,6 +8,7 @@ import { sincronizzaTrunk } from "@/lib/trunk/sensore-trunk";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { seguiSottosistema, type SeguiSottosistema } from "@/lib/scanner/segui-sottosistema";
 import { isScanInCorso } from "@/lib/scanner/network-scan-lock";
+import { eRilanciabile, salvaGiroInCorso } from "@/lib/scanner/giri-da-rilanciare";
 import { haPrivilegi } from "@/lib/scanner/profili/motore";
 import {
   eProfiloGiro,
@@ -236,7 +237,31 @@ function porteDaPreset(preset: string | undefined, udp: boolean): string | null 
   return undefined;
 }
 
-export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLancio> = {}): Promise<EsitoLancio> {
+/**
+ * Lancia il giro e, se è un lancio vero (nessun motore sostituito), lo scrive fra quelli da far
+ * ripartire se il servizio si riavvia mentre gira. `rilanci` lo passa solo chi rilancia all'avvio.
+ */
+export async function lanciaGiro(
+  corpo: LancioGiro,
+  dip: Partial<DipendenzeLancio> = {},
+  opz: { rilanci?: number } = {},
+): Promise<EsitoLancio> {
+  const esito = await lanciaGiroInterno(corpo, dip);
+  if (Object.keys(dip).length === 0 && eRilanciabile(esito.tipo)) {
+    const tenant = getCurrentTenantCode();
+    const jobIds = [...new Set(esito.avvii.map((a) => a.job_id).filter((id): id is string => !!id))];
+    if (tenant) {
+      try {
+        salvaGiroInCorso(tenant, corpo as unknown as Record<string, unknown>, jobIds, opz.rilanci ?? 0);
+      } catch (e) {
+        console.error("[scans] giro non salvato per il rilancio:", e instanceof Error ? e.message : "errore");
+      }
+    }
+  }
+  return esito;
+}
+
+async function lanciaGiroInterno(corpo: LancioGiro, dip: Partial<DipendenzeLancio> = {}): Promise<EsitoLancio> {
   const d = { ...DIP, ...dip };
   const letto = leggiLancio(corpo);
   const { tipo, profilo, reti, fasi, timeoutMs, concorrenza } = letto;

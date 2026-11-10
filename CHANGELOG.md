@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 
+### Aggiunto
+- **I giri lanciati a mano ripartono dopo un riavvio** (Riccardo, 10/11): Discovery e Solo controlli lanciati da `/scans` si scrivono finché girano; se il servizio si riavvia a metà, novanta secondi dopo l'avvio ripartono da capo con le stesse opzioni. Una volta sola, solo se lanciati da meno di due ore, e senza le prove invasive.
+
 ### Modificato
 - **Dashboard, barre per rete**: contavano le CVE per host, e un solo kernel o una build di Windows ne portano 2.000-3.600: LAN Server risultava a 28.760 (Riccardo, 10/11: «non ritengo possibile che la rete Domarc abbia questi numeri»). Ora contano le cose da sistemare, cioè un pacchetto o un controllo per host con la gravità più alta fra le sue CVE: LAN Server 701. Le CVE restano scritte accanto.
 

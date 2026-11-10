@@ -42,7 +42,7 @@ export function phaseIndex(p: AttributionPhase): number {
 export type AttributionSource =
   | "oui" | "mac_product" | "hostname" | "dhcp" | "ttl" | "ports"
   | "http_banner" | "tls_cert" | "snmp_sysobj" | "snmp_sysdescr"
-  | "lldp" | "cdp" | "mdns" | "ssdp" | "wsd" | "netbios" | "smb"
+  | "lldp" | "cdp" | "mndp" | "ubnt" | "mdns" | "ssdp" | "wsd" | "netbios" | "smb"
   | "nmap_os" | "nmap_service" | "ad" | "wazuh" | "inv_agent"
   | "ssh" | "winrm" | "fingerbank" | "ai" | "manual" | "redfish" | "onvif"
   /* `rdp-ntlm-info`: parla con il servizio RDP e restituisce nome DNS, nome

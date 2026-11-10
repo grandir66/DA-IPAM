@@ -60,18 +60,22 @@
 
 ## Tappa 2 — DA-IPAM
 
-- [ ] **2.1 Accogliere i protocolli nuovi.** `trunk_vicini` e `sostituisciVicini` accettano `mndp`,
-  `ubnt`, `edp`, `fdp` e i campi nuovi; `PROTOCOLLI_LOCALI` in `trunk/appartenenza.ts`.
-  *Verifica:* prova con la risposta vera di `/vicini`.
-- [ ] **2.2 Dagli annunci agli host.** `apparati-dal-trunk.ts`: evidenze `mndp` e `ubnt` nel motore di
-  attribuzione (peso come `cdp`), modello e firmware riempiti. *Verifica:* sull'hub, quanti host
-  `unknown` cambiano classe (numero prima e dopo).
-- [ ] **2.3 MNDP letto da tutti i MikroTik.** Oggi arriva da un apparato solo, mentre la credenziale
-  «SSH - Mikrotik» è usata da 41. Prima la causa (lettura spenta, comando, parser), poi un fix.
-  *Verifica:* `SELECT COUNT(DISTINCT device_id) FROM device_neighbors WHERE protocol='mndp'`.
-- [ ] **2.4 Mappa porte e Topologia.** Gli annunci sentiti sul trunk entrano come **identità**
-  dell'oggetto (nome, modello, interfaccia che parla); il collegamento porta-porta resta quello letto
-  dagli apparati. *Verifica:* una schermata a 1920 della Mappa porte.
+- [x] **2.1 Accogliere i protocolli nuovi.** Non serviva codice: `salvaVicini` accetta qualunque
+  protocollo. Sull'hub, due minuti dopo la sonda nuova, `trunk_vicini` aveva `mndp` 32 righe e `ubnt` 2.
+  Aggiunti a `PROTOCOLLI_LOCALI`. Trovato e corretto un effetto non voluto: la regola «Switch che si
+  annuncia» faceva un rilievo per ogni riga, anche MNDP: ora vale solo per CDP e LLDP (Riccardo, 10/11:
+  «serve solo per ottenere dati»).
+- [x] **2.2 Dagli annunci agli host.** Fonti `mndp` e `ubnt` nel motore di attribuzione (peso 0,9):
+  categoria dal modello annunciato (`CCR…` router, `CRS…` switch, `cAP…` access point; `USW/USF/USC`
+  switch, `U6/UAP` access point, `UDM/USG` router) e produttore dal protocollo. Un apparato si annuncia
+  da ogni interfaccia col suo MAC: le righe senza host prendono quello delle altre righe dello stesso
+  sistema, se è uno solo. Modello e firmware li riempiva già `portaApparatiDalTrunk`.
+- [-] **2.3 MNDP letto da tutti i MikroTik.** Annullato: non era un difetto. Sull'hub c'è un solo
+  MikroTik registrato come apparato (`MK-RTR-CORE`); gli altri si conoscono solo perché si annunciano
+  sul trunk. È il motivo per cui l'ascolto serve.
+- [-] **2.4 Mappa porte e Topologia.** Niente da cambiare per ora: l'identità arriva sugli host
+  (modello, firmware, categoria), che Mappa porte e Topologia leggono già. I collegamenti restano
+  quelli letti dagli apparati.
 - [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 

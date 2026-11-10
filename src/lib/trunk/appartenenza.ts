@@ -41,7 +41,7 @@ export interface Appartenenza {
  * multicast, gli annunci degli apparati, il giro ARP del sensore). «ipv4» da solo no: è
  * l'indirizzo letto dentro un pacchetto, che può venire da un'altra rete attraverso il router.
  */
-const PROTOCOLLI_LOCALI = new Set(["arp", "giro-arp", "dhcp", "mdns", "llmnr", "nbns", "ssdp", "cdp", "lldp"]);
+const PROTOCOLLI_LOCALI = new Set(["arp", "giro-arp", "dhcp", "mdns", "llmnr", "nbns", "ssdp", "cdp", "lldp", "mndp", "ubnt"]);
 
 export function vistoNellaVlan(protocolli: readonly string[], attivo: number): boolean {
   // Senza protocolli (righe di prima della colonna, o sensori che non li mandano) non si può dire:

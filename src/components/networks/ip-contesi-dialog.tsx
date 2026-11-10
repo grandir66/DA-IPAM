@@ -23,7 +23,7 @@ const NOME_DIMENSIONE: Record<AttributionDimension, string> = {
 
 const NOME_FONTE: Record<AttributionSource, string> = {
   manual: "Manuale", ad: "AD", wazuh: "Wazuh", inv_agent: "Agente", winrm: "WinRM",
-  snmp_sysobj: "SNMP OID", snmp_sysdescr: "SNMP descr.", lldp: "LLDP", cdp: "CDP",
+  snmp_sysobj: "SNMP OID", snmp_sysdescr: "SNMP descr.", lldp: "LLDP", cdp: "CDP", mndp: "MNDP (MikroTik)", ubnt: "Scoperta Ubiquiti",
   oui: "MAC (OUI)", mac_product: "MAC prodotto", http_banner: "HTTP", tls_cert: "TLS",
   wsd: "WSD", mdns: "mDNS", ssdp: "SSDP", smb: "SMB", ssh: "SSH", redfish: "Redfish",
   onvif: "ONVIF", fingerbank: "Fingerbank", netbios: "NetBIOS", nmap_service: "Nmap servizi",

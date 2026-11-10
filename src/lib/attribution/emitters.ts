@@ -21,7 +21,7 @@ import type { AttributionSource, EvidenceInput } from "./types";
  * ogni recompute anche se l'agente è ancora presente).
  */
 export const RECOMPUTED_SOURCES = [
-  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp",
+  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp", "mndp", "ubnt",
 ] as const satisfies readonly AttributionSource[];
 
 export interface AttributionSignals {
@@ -56,7 +56,31 @@ function categoriaDaTestoNmap(testo: string): CategorySlug | null {
 /** La categoria di un annuncio: prima il testo, che è specifico, poi le capacità dichiarate. */
 export const CONFIDENZA_ANNUNCIO = 0.85;
 
+/**
+ * MNDP e la scoperta Ubiquiti (10/11/2026) non dichiarano capacità: il mestiere si legge dal
+ * modello. Sigle dei due cataloghi; dove la sigla non basta si resta su «apparato di rete».
+ */
+function categoriaDaModelloAnnunciato(a: Annuncio): string | null {
+  const m = (a.piattaforma ?? "").trim();
+  if (!m) return null;
+  if (a.protocollo === "mndp") {
+    if (/^(CRS|CSS|netPower|FiberBox)/i.test(m)) return "network.switch";
+    if (/^(cAP|wAP|mANT|SXT|LHG|LDF|DISC|NetMetal|BaseBox|OmniTIK|Groove|QRT|DynaDish|Audience|wsAP)/i.test(m)) return "network.access_point";
+    if (/^(CCR|RB|hEX|hAP|L009|CHR|PowerBox|Chateau|LtAP|KNOT)/i.test(m)) return "network.router";
+    return "network";
+  }
+  if (a.protocollo === "ubnt") {
+    if (/^(USW|US-?\d|US[A-Z]|USF|USC|USL|USM|USPM|ES-|EdgeSwitch)/i.test(m)) return "network.switch";
+    if (/^(U6|U7|UAP|UAL|UWB|UK-|nanoHD|BZ2|E7|UBB|NBE|LBE|PBE|LAP|Rocket|NanoStation|LiteBeam)/i.test(m)) return "network.access_point";
+    if (/^(UDM|UDR|UXG|USG|UCG|UDW|ER-|EdgeRouter|UX)/i.test(m)) return "network.router";
+    return "network";
+  }
+  return null;
+}
+
 export function categoriaDaAnnuncio(a: Annuncio): string | null {
+  const daModello = categoriaDaModelloAnnunciato(a);
+  if (daModello) return daModello;
   return (a.piattaforma ? categoryFromLegacyText({ sysDescr: a.piattaforma }) : null) ?? categoriaDaCapacita(a.capacita, a.piattaforma);
 }
 
@@ -464,8 +488,12 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   for (const a of signals.annunci ?? []) {
     const cat = categoriaDaAnnuncio(a);
     if (!cat) continue;
-    const source = a.protocollo === "cdp" ? "cdp" : "lldp";
+    const source = a.protocollo === "cdp" || a.protocollo === "mndp" || a.protocollo === "ubnt" ? a.protocollo : "lldp";
     out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: CONFIDENZA_ANNUNCIO, raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
+    // Chi parla MNDP è un MikroTik, chi risponde alla scoperta Ubiquiti è un Ubiquiti: lo dice il protocollo.
+    if (source === "mndp" || source === "ubnt") {
+      out.push({ source, phase: "integration", dimension: "vendor", claim: source === "mndp" ? "mikrotik" : "ubiquiti", confidence: CONFIDENZA_ANNUNCIO, raw_value: a.protocollo });
+    }
     break;
   }
 

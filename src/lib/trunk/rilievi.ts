@@ -272,6 +272,9 @@ export function calcolaRilievi(x: IngressoRegole): Rilievo[] {
 
   // 6. Switch che si annunciano.
   for (const v of x.vicini) {
+    // Solo CDP e LLDP sono «uno switch che si annuncia»: MNDP e la scoperta Ubiquiti si raccolgono
+    // per sapere cosa c'è in rete, non sono rilievi (Riccardo, 10/11/2026).
+    if (v.protocollo !== "cdp" && v.protocollo !== "lldp") continue;
     if (ora - ms(v.ultima_vista) > FINESTRA_GIORNI * 86_400_000) continue;
     crea({
       chiave: `vicino_esposto|${v.protocollo}|${v.sistema}|${v.porta}`,

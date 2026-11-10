@@ -414,6 +414,17 @@ export function salvaVicini(vicini: TrunkVicino[]): void {
         typeof v.vlan_nativa === "number" ? v.vlan_nativa : null, v.ultima_vista ?? new Date().toISOString(),
         v.piattaforma ?? null, v.versione ?? null, v.capacita ?? null, v.mac ?? null, hostDelVicino(d, v));
     }
+    // Un apparato si annuncia da ogni sua interfaccia, ognuna col suo MAC e spesso senza indirizzo
+    // (MNDP sulle VLAN, 10/11/2026: DA-RT-CORE agganciato su 3 righe e non su altre 7). Le righe
+    // senza host prendono quello delle altre righe dello stesso sistema, solo se è uno solo.
+    d.prepare(`
+      UPDATE trunk_vicini SET host_id = (
+        SELECT MIN(a.host_id) FROM trunk_vicini a
+         WHERE a.protocollo = trunk_vicini.protocollo AND a.sistema = trunk_vicini.sistema AND a.host_id IS NOT NULL)
+       WHERE host_id IS NULL AND sistema <> '?'
+         AND (SELECT COUNT(DISTINCT a.host_id) FROM trunk_vicini a
+               WHERE a.protocollo = trunk_vicini.protocollo AND a.sistema = trunk_vicini.sistema AND a.host_id IS NOT NULL) = 1
+    `).run();
   })();
 }
 

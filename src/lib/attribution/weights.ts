@@ -2,7 +2,7 @@ import type { AttributionDimension, AttributionSource } from "./types";
 
 export const ATTR_SOURCE_WEIGHTS: Record<AttributionSource, number> = {
   manual: 1, ad: 1, wazuh: 1, inv_agent: 0.95, winrm: 0.95,
-  snmp_sysobj: 0.95, snmp_sysdescr: 0.85, lldp: 0.9, cdp: 0.9,
+  snmp_sysobj: 0.95, snmp_sysdescr: 0.85, lldp: 0.9, cdp: 0.9, mndp: 0.9, ubnt: 0.9,
   oui: 0.9, mac_product: 0.85, http_banner: 0.9, tls_cert: 0.85,
   wsd: 0.9, mdns: 0.8, ssdp: 0.75, smb: 0.75, ssh: 0.6, redfish: 0.95, onvif: 0.95,
   fingerbank: 0.6, netbios: 0.5,

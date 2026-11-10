@@ -19,7 +19,7 @@ interface CurrentAttrRow {
 /** Colonne legacy lette nella STESSA SELECT del guard "invariato" (niente query extra):
  * servono sia per il lock manuale sia per il confronto "il valore è cambiato davvero". */
 interface CurrentLegacyRow {
-  classification_manual: number;
+  classification_manual: number | null;
   classification: string | null;
   inferred_device_type: string | null;
   inferred_vendor: string | null;
@@ -92,7 +92,10 @@ export function applyAttribution(
   // manualmente — che diverge per definizione dalla fusione v2 — causerebbe
   // scritture ripetute su attr_*/history a ogni chiamata, ripristinando la
   // write-amplification che il guard esisteva per evitare).
-  const projectable = current !== undefined && current.classification_manual === 0;
+  /* `classification_manual` NULL vale 0 (10/11/2026): sull'hub 101 host su 384 l'hanno
+   * NULL e col confronto stretto `=== 0` la proiezione non girava mai — 57 VM con
+   * categoria `compute.vm` restavano «unknown». Solo l'1 è il lucchetto. */
+  const projectable = current !== undefined && (current.classification_manual ?? 0) === 0;
   const legacyToWrite: Array<[column: string, value: string | number | null]> = [];
   let ruoloProiezione: Canonica | null = null;
   if (projectable) {

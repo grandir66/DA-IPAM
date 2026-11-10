@@ -94,6 +94,14 @@ describe("applyAttribution — proiezione legacy (fase 4)", () => {
     assert.equal(applyAttribution(db, 31, fusionResult({ category: null, os: null, vendor: "hp" }), "scan"), false, "secondo giro: niente da scrivere");
   });
 
+  it("classification_manual NULL vale 0: la proiezione gira (hub 533, 10/11/2026)", () => {
+    insertHost({ id: 33, classification: "unknown" });
+    db.prepare("UPDATE hosts SET classification_manual = NULL WHERE id = 33").run();
+    applyAttribution(db, 33, fusionResult({ category: "compute.vm", os: null, vendor: null }), "scan");
+    const row = db.prepare("SELECT classification FROM hosts WHERE id = 33").get() as { classification: string | null };
+    assert.equal(row.classification, "vm");
+  });
+
   it("nessuna categoria ma classe manuale → resta", () => {
     insertHost({ id: 32, classification: "voip", classificationManual: 1 });
     applyAttribution(db, 32, fusionResult({ category: null, os: null, vendor: "hp" }), "scan");

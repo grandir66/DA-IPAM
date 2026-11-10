@@ -10,6 +10,7 @@ Riccardo (10/11): «Sì, svuotale». Misura sull'hub 533: 75 host non manuali mo
 
 ### Cambiato
 - **Una classe non manuale senza più categoria si svuota** al ricalcolo, invece di restare quella di luglio col motivo «Insufficient evidence». Le scelte manuali non si toccano; una categoria generica senza slug (es. `network`) non svuota.
+- **La classe si aggiorna anche sugli host col lucchetto mai impostato** (`classification_manual` NULL, 101 su 384 sull'hub): prima la proiezione li saltava e 57 VM riconosciute restavano «unknown».
 - **Fanvil e Yealink sono telefoni, Meross è IoT** già dal produttore del MAC: il motore nuovo aveva solo il nome host, sotto soglia.
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola

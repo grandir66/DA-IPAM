@@ -1779,18 +1779,22 @@ async function runDiscovery(
 
     const quickArgsBase = buildNetworkDiscoveryQuickTcpArgs();
     const quickArgs = nmapArgsConOpzioniGiro(quickArgsBase, discoverOpts);
+    // Quante porte prova davvero questo giro: a schermo c'era «Nmap quick TCP» anche con le 1000 del
+    // profilo, e sembrava che la scelta non contasse (Riccardo, 10/11).
+    const nPorteGiro = /(^|\s)-p-(\s|$)/.test(quickArgs) ? 65535 : (/-p\s+(\S+)/.exec(quickArgs)?.[1].split(",").length ?? 0);
+    const nmapTcp = `Nmap TCP, ${nPorteGiro.toLocaleString("it-IT")} porte`;
     const quickExecMs = timeoutMsGiro != null ? timeoutMsGiro + 2000 : getNetworkDiscoveryQuickExecMs();
     const quickBatch = discoverOpts?.concorrenza ?? getNetworkDiscoveryQuickConcurrency();
     const skipUdpNd = !discoverOpts?.udpDalLancio;
 
     if (nmapAvailable && onlineIps.length > 0) {
-      progress.phase = `Nmap quick TCP — 0/${onlineIps.length}`;
+      progress.phase = `${nmapTcp} — 0/${onlineIps.length}`;
       progress.total = onlineIps.length;
       progress.scanned = 0;
       log(
         naabuPrepNd.enabled
           ? `ICMP: ${onlineIps.length} host; Nmap -sV mirato post-naabu (batch ${quickBatch})`
-          : `ICMP: ${onlineIps.length} host rispondenti; Nmap TCP (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
+          : `ICMP: ${onlineIps.length} host rispondenti; ${nmapTcp} per host (batch ${quickBatch}, ~${Math.ceil(quickExecMs / 1000)}s max/host)`
       );
       for (let i = 0; i < onlineIps.length; i += quickBatch) {
         controllaFermo();
@@ -1817,7 +1821,7 @@ async function runDiscovery(
           }
         }
         progress.scanned = Math.min(i + quickBatch, onlineIps.length);
-        progress.phase = `Nmap quick TCP — ${progress.scanned}/${onlineIps.length}`;
+        progress.phase = `${nmapTcp} — ${progress.scanned}/${onlineIps.length}`;
         if (i + quickBatch < onlineIps.length) {
           await new Promise<void>((resolve) => setImmediate(resolve));
         }

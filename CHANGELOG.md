@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings, una pagina sola
 
+### Corretto
+- **Discovery, avanzamento**: la fase diceva «Nmap quick TCP» anche quando il profilo provava 1000 porte, e sembrava che la scelta non contasse. Ora dice quante porte prova («Nmap TCP, 1.000 porte»). Il motore le usava già: misurato sull'hub il 10/11.
+
 ### Modificato
 - **Gravità dei rilievi** (Riccardo, 10/11: «se manca la password il rilievo è critico, non solo high; anche se funziona una password easy o di default»): diventano Critical l'accesso senza password (Redis, MongoDB, Memcached, Elasticsearch, Kubelet, X11, VNC, Jenkins Script Console, share SMB anonima, SSH con password vuote) e quello con credenziali di fabbrica (login di fabbrica, community SNMP `public` e `private` in scrittura).
 

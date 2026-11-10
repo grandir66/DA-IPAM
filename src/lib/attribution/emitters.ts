@@ -58,6 +58,13 @@ function categoriaDaTestoNmap(testo: string): CategorySlug | null {
 
 /** La categoria di un annuncio: prima il testo, che è specifico, poi le capacità dichiarate. */
 export const CONFIDENZA_ANNUNCIO = 0.85;
+/** Il modello annunciato con una sigla riconosciuta: sopra AUTHORITY_MIN_CONFIDENCE, decide la categoria. */
+export const CONFIDENZA_MODELLO_ANNUNCIATO = 0.95;
+
+/** La confidenza con cui un annuncio dice la sua categoria. */
+export function confidenzaAnnuncio(a: Annuncio, categoria: string): number {
+  return (a.protocollo === "mndp" || a.protocollo === "ubnt") && categoria !== "network" ? CONFIDENZA_MODELLO_ANNUNCIATO : CONFIDENZA_ANNUNCIO;
+}
 
 /**
  * MNDP e la scoperta Ubiquiti (10/11/2026) non dichiarano capacità: il mestiere si legge dal
@@ -544,7 +551,7 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     const cat = categoriaDaAnnuncio(a);
     if (!cat) continue;
     const source = a.protocollo === "cdp" || a.protocollo === "mndp" || a.protocollo === "ubnt" ? a.protocollo : "lldp";
-    out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: CONFIDENZA_ANNUNCIO, raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
+    out.push({ source, phase: "integration", dimension: "category", claim: cat, confidence: confidenzaAnnuncio(a, cat), raw_value: (a.piattaforma ?? a.capacita ?? "").slice(0, 200) });
     // Chi parla MNDP è un MikroTik, chi risponde alla scoperta Ubiquiti è un Ubiquiti: lo dice il protocollo.
     if (source === "mndp" || source === "ubnt") {
       out.push({ source, phase: "integration", dimension: "vendor", claim: source === "mndp" ? "mikrotik" : "ubiquiti", confidence: CONFIDENZA_ANNUNCIO, raw_value: a.protocollo });

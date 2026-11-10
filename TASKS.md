@@ -9,6 +9,8 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
 - [x] Riccardo (10/11): «tutti i rilievi devono finire nel profilo degli oggetti delle subnet e della discovery». `RilieviHost` (`/api/rilievi?host_id=`) nella tab «Rilievi» della scheda e nel cassetto. **Non guardato a schermo.**
 - [ ] Rilievi: manca il conteggio sulla riga di Subnet e Discovery (oggi si vede aprendo il cassetto); le CVE aggregate su più host hanno `host_id` vuoto e nel cassetto non compaiono (restano nella tab Vulnerabilità).
 - [ ] Differenze rimaste con Nety: fasi separate riconoscimento / identità / controlli (noi «Sonde e identità» è una sola); tecniche di segmentazione oltre a diretta e ICMP; VLAN attive nella Sonda L2.
+- [ ] Riccardo (10/11): «ho il dubbio che i rilievi siano molto minori rispetto a Nety sulle macchine». Misura sull'hub 70791 (10/11): 384 host, 235 con servizi noti, 149 senza (nessun rilievo possibile); 1052 servizi, controlli con esito su 203. Sospetto: SNMP 161 su 58 host ma `snmp_public` solo su 3, e solo 4 controlli UDP con esito su 83 servizi UDP. La prova vera è il confronto a parità con Nety sulla stessa rete (voce «Tappa motore» del 09/11).
+- [ ] Riccardo (10/11): `/servizi-rete` «probabilmente dovremmo ridisegnarla con la logica dei findings». Da proporre oggetto per oggetto prima di scriverla.
 - [ ] Da Nety, non fatto: le fasi di «Solo controlli» accendibili una per una (riconoscimento / identità / controlli). Il nostro giro le fa sempre tutte: serve un filtro nel motore.
 - [ ] Un giro in corso si perde al riavvio dell'aggiornamento automatico da `dev` (oggi tre riavvii in 40 minuti), senza riga in cronologia.
 

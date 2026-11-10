@@ -8,6 +8,12 @@ import { Etichetta, Pannello } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import type { ReteProposta } from "@/lib/trunk/reti-proposte";
 
+/** Rete privata (RFC 1918, CGNAT, link-local)? Le altre sono indirizzi pubblici. */
+function retePrivata(cidr: string): boolean {
+  const [a, b] = cidr.split(".").map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254);
+}
+
 const MASCHERA: Record<ReteProposta["maschera"], string> = {
   dhcp: "maschera dal DHCP",
   config: "maschera scritta a mano",
@@ -24,7 +30,10 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
   const router = useRouter();
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [fatte, setFatte] = useState<Set<string>>(new Set());
-  const restanti = proposte.filter((p) => !fatte.has(p.cidr));
+  // Le reti pubbliche in fondo: di solito sono la WAN, non una rete del cliente.
+  const restanti = proposte
+    .filter((p) => !fatte.has(p.cidr))
+    .sort((x, y) => Number(!retePrivata(x.cidr)) - Number(!retePrivata(y.cidr)));
   if (restanti.length === 0) return null;
 
   const conferma = async (p: ReteProposta) => {
@@ -64,6 +73,7 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-mono font-semibold">{p.cidr}</span>
               <Etichetta>{p.vid === 0 ? "senza tag" : `VLAN ${p.vid}`}</Etichetta>
+              {!retePrivata(p.cidr) && <Etichetta>▲ indirizzi pubblici</Etichetta>}
               {p.gateway_ip && <span className="font-mono text-[13px] text-muted-foreground">gw {p.gateway_ip}</span>}
               <span className="text-[13px] text-muted-foreground">
                 {p.ip} indirizzi visti · {MASCHERA[p.maschera]}

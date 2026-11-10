@@ -62,6 +62,27 @@ export function accessoDomarcAttivo(): boolean {
  * browser, dove `process.env.DAAUTH_URL` non esiste: la pagina di accesso
  * riceve l'indirizzo da `/api/setup`, che lo legge dall'ambiente del server.
  */
+/**
+ * L'accesso con l'account Domarc può funzionare da questo indirizzo?
+ *
+ * Il cookie di DA-Auth vale per il dominio del servizio (`.domarc.it`): aperta
+ * dall'indirizzo IP o da un altro dominio, l'applicazione non lo riceve mai e
+ * l'accesso torna sempre alla pagina di login senza dire perché (incidente del
+ * 10/11/2026: `https://192.168.4.8` invece di `https://da-ipam.domarc.it`).
+ */
+export function accessoDomarcPossibileDa(hostname: string, base: string): boolean {
+  let servizio: string;
+  try {
+    servizio = new URL(base).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const dominio = servizio.split(".").slice(-2).join(".");
+  const h = (hostname || "").trim().toLowerCase();
+  if (!dominio || !h) return false;
+  return h === dominio || h.endsWith(`.${dominio}`);
+}
+
 export function urlAccessoDomarc(base: string, ritorno: string): string {
   const pulito = (base || "").trim().replace(/\/+$/, "");
   if (!pulito) return "";

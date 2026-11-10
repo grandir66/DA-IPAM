@@ -1,5 +1,21 @@
 # TASKS — DA-IPAM
 
+## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)
+
+Giro di 20 pagine dell'hub (0.9.1082) a 1920, in sola lettura. Fatto su `dev`, prove mirate + `tsc`; **non visto a schermo dopo la modifica**.
+
+- [x] Accesso: dall'indirizzo IP il pulsante «account Domarc» non compare e la pagina dice perché (il cookie di DA-Auth vale solo sotto `domarc.it`: da `https://192.168.4.8` Riccardo veniva rimesso sul login senza motivo); ogni rifiuto lascia una riga `[Auth]` nel registro.
+- [x] Menu: «Software» una volta sola (resta sotto Network). Nomi in chiaro per `wazuh_alerts_sync`, `meshcentral_sync`, `mdm_sync`.
+- [x] Anomalie: quelle aperte da più di 30 giorni si chiudono da sole al giro di `anomaly_check` (restano fra i «Gestiti», autore «automatico»). Sull'hub c'erano 25 MAC flip di giugno.
+- [x] Subnet, reti da confermare: quelle con indirizzi pubblici sono marcate e vanno in fondo.
+- [x] Zabbix: «Mostra tutti» i problemi (fino a 500) invece di «altri N non mostrati».
+- [x] Cosa esce: l'esito accanto all'ultima scansione è detto per quello che è (di quella sola scansione).
+- [-] «Una sola definizione di offline»: annullato, la Dashboard è già coerente (47 offline recenti + 142 assenti = 189 delle Subnet); l'unico numero fuorviante era quello di «Cosa esce», corretto sopra.
+- [ ] Dati vecchi marcati come vecchi in Patch Management (probe di luglio/settembre mostrati come attuali) e nella scheda host: non fatto, va deciso dove e con che soglia.
+- [ ] Decisioni di Riccardo: accendere le notifiche sull'hub («Salute dell'appliance» e «Allarme sui job fermi» non avvisano nessuno); due passaggi per i Super Admin (oggi nessun utente li ha).
+- [ ] Proposte più grosse, da pianificare: Findings raggruppati per rimedio/host con revisione a blocchi (2.705 da rivedere, 0 rivisti, 1.970 da Wazuh); probe di Patch Management pianificato; compilazione a più righe dell'inventario NIS2 (proprietario, scope); scheda host a tutta larghezza a 1920; stato «Da verificare» dei moduli con l'azione da fare.
+- [ ] Da guardare, non è un difetto dell'app: 987 accessi falliti al dominio in 24 ore e 18 account bloccati (10/11, picco 13-16).
+
 ## 2026-11-10 — AD Health, confronto con PingCastle
 
 Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev` `0cf74c06`: 58 regole registrate. Analisi statica.

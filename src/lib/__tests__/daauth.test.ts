@@ -202,3 +202,14 @@ test("la creazione avviene solo su dichiarazione, e i clienti si risolvono per c
   // Un codice cliente che non esiste viene saltato, non diventa «tutti».
   assert.ok(blocco.includes("continue"), "un codice sconosciuto non viene saltato");
 });
+
+// Incidente 10/11/2026: aperto da https://192.168.4.8 il cookie di DA-Auth non arriva
+// e l'accesso con l'account Domarc tornava al login senza dire perché.
+test("accessoDomarcPossibileDa: solo da un nome sotto il dominio del servizio", async () => {
+  const { accessoDomarcPossibileDa } = await import("../daauth");
+  const base = "https://entra.domarc.it";
+  assert.equal(accessoDomarcPossibileDa("da-ipam.domarc.it", base), true);
+  assert.equal(accessoDomarcPossibileDa("192.168.4.8", base), false);
+  assert.equal(accessoDomarcPossibileDa("da-ipam.altrodomarc.it", base), false);
+  assert.equal(accessoDomarcPossibileDa("da-ipam.domarc.it", ""), false);
+});

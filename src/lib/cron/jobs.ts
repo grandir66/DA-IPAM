@@ -58,6 +58,7 @@ import {
 import {
   insertAnomalyEvent,
   hasOpenAnomaly,
+  chiudiAnomalieVecchie,
 } from "@/lib/analytics/anomaly-db";
 import {
   getAllHostsFlat,
@@ -1835,6 +1836,12 @@ async function runAnomalyCheck(networkId: number | null): Promise<void> {
   console.info(`[Anomaly] Avvio check anomalie${networkId ? ` rete #${networkId}` : " (tutte le reti)"}`);
   const start = Date.now();
   let created = 0;
+  try {
+    const chiuse = chiudiAnomalieVecchie();
+    if (chiuse > 0) console.info(`[Anomaly] ${chiuse} anomalie vecchie chiuse in automatico`);
+  } catch (e) {
+    console.warn(`[Anomaly] chiusura delle anomalie vecchie non riuscita: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   const allHosts = getAllHostsFlat();
   const hosts: HostForAnomaly[] = allHosts

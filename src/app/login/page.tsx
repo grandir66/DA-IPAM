@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { urlAccessoDomarc } from "@/lib/daauth";
+import { accessoDomarcPossibileDa, urlAccessoDomarc } from "@/lib/daauth";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,14 @@ export default function LoginPage() {
   // Indirizzo del servizio di autenticazione Domarc, letto da /api/setup.
   // Vuoto = questa installazione non lo usa: è il caso delle appliance dei
   // clienti, dove il bottone non deve nemmeno comparire.
-  const [daauthUrl, setDaauthUrl] = useState("");
+  const [daauthDichiarato, setDaauthUrl] = useState("");
+  // Dall'indirizzo IP (o da un altro dominio) il cookie di DA-Auth non arriva: lì il
+  // pulsante non può funzionare e non si mostra (incidente del 10/11/2026). Da qui in
+  // giù `daauthUrl` è l'indirizzo solo se l'accesso Domarc è davvero possibile.
+  const daauthUrl =
+    daauthDichiarato && typeof window !== "undefined" && accessoDomarcPossibileDa(window.location.hostname, daauthDichiarato)
+      ? daauthDichiarato
+      : "";
 
   /**
    * Accesso con l'account Domarc.
@@ -270,6 +277,11 @@ export default function LoginPage() {
             <>
               <h2 className="text-2xl font-bold tracking-tight mb-1">Accedi a DA-IPAM</h2>
               <p className="text-sm text-muted-foreground mb-6">{daauthUrl ? "Con il tuo account Domarc o con nome e password." : "Con il tuo nome utente e la password."}</p>
+              {daauthDichiarato && !daauthUrl && (
+                <Avviso tono="attenzione">
+                  L&apos;accesso con l&apos;account Domarc funziona solo aprendo DA-IPAM col suo nome (per esempio da-ipam.domarc.it), non dall&apos;indirizzo IP.
+                </Avviso>
+              )}
               {daauthUrl && (
                 <>
                   <Button type="button" className="w-full" disabled={domarcInCorso} onClick={() => void entraConDomarc(true, daauthUrl)}>

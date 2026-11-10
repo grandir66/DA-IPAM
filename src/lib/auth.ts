@@ -29,7 +29,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!accessoDomarcAttivo()) return null;
 
         const identita = await identitaDaAuth(request?.headers?.get("cookie"));
-        if (!identita) return null;
+        if (!identita) {
+          // Rifiuto non muto (10/11/2026): senza questa riga un accesso aperto
+          // dall'indirizzo IP, dove il cookie non arriva, non lasciava traccia.
+          console.warn(
+            `[Auth] account Domarc non riconosciuto (host ${request?.headers?.get("host") ?? "?"}): ` +
+              "cookie di DA-Auth assente o non valido",
+          );
+          return null;
+        }
 
         const { getUserByUsername, getUserTenantAccess, getActiveTenants, createUser, setUserTenantAccess } =
           await import("./db-hub");
@@ -157,7 +165,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             tenantCode: "__ALL__",
           };
         }
-        if (esito.esito !== "entra") return null;
+        if (esito.esito !== "entra") {
+          console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: accesso rifiutato (${esito.esito})`);
+          return null;
+        }
 
         const user = esito.utente;
         const { getUserTenantAccess } = await import("./db-hub");

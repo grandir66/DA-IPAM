@@ -225,6 +225,7 @@ export function ZabbixPanel() {
 
   const [pannello, setPannello] = useState<PannelloZabbix | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
+  const [tuttiIProblemi, setTuttiIProblemi] = useState(false);
   const [caricamento, setCaricamento] = useState(true);
   const [pagina, setPagina] = useState(1);
   const [soloMacchina, setSoloMacchina] = useState(false);
@@ -442,7 +443,15 @@ export function ZabbixPanel() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Problemi aperti</CardTitle>
-            {p.problemiTroncati > 0 && <CardDescription>Altri {p.problemiTroncati} non mostrati.</CardDescription>}
+            {p.problemi.length > 50 && (
+              <CardDescription>
+                {tuttiIProblemi ? `Tutti i ${p.problemi.length} problemi.` : `I primi 50 di ${p.problemi.length}.`}{" "}
+                <button type="button" className="underline" onClick={() => setTuttiIProblemi((v) => !v)}>
+                  {tuttiIProblemi ? "Mostra solo i primi 50" : "Mostra tutti"}
+                </button>
+              </CardDescription>
+            )}
+            {p.problemiTroncati > 0 && <CardDescription>Altri {p.problemiTroncati} non arrivano dal centro.</CardDescription>}
           </CardHeader>
           <CardContent>
             <Table>
@@ -455,7 +464,7 @@ export function ZabbixPanel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {p.problemi.map((pr) => (
+                {(tuttiIProblemi ? p.problemi : p.problemi.slice(0, 50)).map((pr) => (
                   <TableRow key={pr.eventid}>
                     <TableCell>
                       <Badge variant={pr.gravita >= 4 ? "destructive" : "outline"}>{ETICHETTA_GRAVITA[pr.gravita]}</Badge>

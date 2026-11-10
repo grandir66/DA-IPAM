@@ -158,3 +158,25 @@ export function hasOpenAnomaly(hostId: number, type: AnomalyType, windowHours: n
     .get(hostId, type, windowHours) as unknown;
   return row !== undefined;
 }
+
+/** Dopo quanti giorni un'anomalia mai guardata si chiude da sola. */
+export const ANOMALIA_CHIUSA_DOPO_GIORNI = 30;
+
+/**
+ * Chiude le anomalie aperte più vecchie di `giorni`: restano in archivio (filtro
+ * «Gestiti»), segnate come chiuse in automatico. Il 10/11/2026 sull'hub c'erano 25
+ * «MAC flip» di giugno ancora aperti: un pallino rosso fisso nel menu è rumore.
+ */
+export function chiudiAnomalieVecchie(giorni: number = ANOMALIA_CHIUSA_DOPO_GIORNI): number {
+  const r = db()
+    .prepare(
+      `UPDATE anomaly_events
+          SET acknowledged = 1,
+              acknowledged_at = datetime('now'),
+              acknowledged_by = ?
+        WHERE acknowledged = 0
+          AND detected_at < datetime('now', '-' || ? || ' days')`
+    )
+    .run(`automatico (oltre ${giorni} giorni)`, giorni);
+  return r.changes;
+}

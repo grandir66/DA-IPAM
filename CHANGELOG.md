@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Revisione d'uso dell'hub: correzioni piccole
+
+- **Accesso**. Aperta dall'indirizzo IP, la pagina non offre più l'account Domarc (il cookie di DA-Auth lì non arriva e si tornava al login senza motivo) e lo dice; i rifiuti lasciano una riga nel registro.
+- **Anomalie**. Quelle aperte da più di 30 giorni si chiudono da sole: un pallino rosso fisso da giugno non avvisava più di niente.
+- **Menu, Subnet, Zabbix, Cosa esce**. «Software» una volta sola; reti pubbliche marcate fra quelle da confermare; «Mostra tutti» i problemi di Zabbix; l'esito dell'ultima scansione non sembra più il totale dell'inventario.
+
 ## [Non rilasciato] — 2026-11-10 · Evidenze AD Health
 
 - **Deleghe AD Health**. Evidenze di Enroll e modifica dei template, candidati ESC4 e concessioni estese LAPS sui computer. Le ACE osservate restano diagnostiche finché non si può confermare l'accesso effettivo.

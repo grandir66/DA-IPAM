@@ -461,7 +461,7 @@ export function CosaEsce() {
                   <span>
                     {ant.inventario.dispositivi} dispositivi · {ant.inventario.reti} reti · ultima scansione{" "}
                     {quando(ant.inventario.ultima_scansione)}
-                    {ant.inventario.esito_scansione ? ` (${ant.inventario.esito_scansione})` : ""}
+                    {ant.inventario.esito_scansione ? ` — esito di quella sola scansione: ${ant.inventario.esito_scansione}` : ""}
                   </span>
                 ) : (
                   <span>

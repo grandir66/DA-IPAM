@@ -87,7 +87,6 @@ const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
 
 const inventorySubItems: readonly SubItem[] = [
   { href: "/inventory", label: "Asset", icon: Package },
-  { href: "/software", label: "Software", icon: Package },
   { href: "/inventory/assignees", label: "Assegnatari", icon: User },
   { href: "/inventory/abbinamenti", label: "Abbinamenti", icon: Link2 },
   { href: "/inventory/locations", label: "Ubicazioni", icon: FolderTree },

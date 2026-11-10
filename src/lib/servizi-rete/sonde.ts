@@ -560,8 +560,10 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
   // 3389: X.224 + TLS + CredSSP, stessa CHALLENGE, sempre senza password.
   if (porta === 3389) {
     try {
-      const rdp = await probeRdpNtlm(ip, { timeoutMs: ms });
+      let certRdp: InfoTls | null = null;
+      const rdp = await probeRdpNtlm(ip, { timeoutMs: ms, suTls: (s) => { certRdp = leggiTls(s); } });
       if (rdp) {
+        esito.tls = certRdp;
         esito.metodo = "ntlm";
         esito.ntlm = rdp.challenge
           ? { ...infoNtlmDaChallenge(rdp.challenge, "rdp"), rdp_nla: rdp.nla, rdp_tls: rdp.tls }

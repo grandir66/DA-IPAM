@@ -98,7 +98,11 @@ export interface EsitoRdpNtlm {
   tls: boolean;
 }
 
-export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port?: number }): Promise<EsitoRdpNtlm | null> {
+export async function probeRdpNtlm(
+  ip: string,
+  /** `suTls`: riceve il socket appena il TLS è su, per leggerne il certificato (come fa Nety sulla 3389). */
+  opts?: { timeoutMs?: number; port?: number; suTls?: (s: tls.TLSSocket) => void },
+): Promise<EsitoRdpNtlm | null> {
   const ms = opts?.timeoutMs ?? 4000;
   const porta = opts?.port ?? 3389;
   const s1 = await connetti(ip, porta, ms);
@@ -122,6 +126,11 @@ export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port
     }
     tlsSock = await startTls(s1, ms);
     if (!tlsSock) return { challenge: null, nla, tls: true };
+    try {
+      opts?.suTls?.(tlsSock);
+    } catch {
+      // il certificato è un di più: la prova NTLM continua
+    }
     const type1 = wrapNtlmInSpnego(buildNtlmNegotiateMessage());
     tlsSock.write(credsspTsRequest(type1));
     const risp = await leggi(tlsSock, ms, (b) => ntlmDaGssORaw(b) !== null);

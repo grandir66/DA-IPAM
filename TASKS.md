@@ -34,7 +34,9 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
   - DA-IPAM: 11 porte TCP (anche 88, 135, 389, 445, 636, 3389, 10050), 443 con certificato e HTTP, versione Windows da NTLM, 4 rilievi (LDAP anonimo e senza firma, AD CS, TLS vecchio e 3DES). Nessuna delle tre UDP.
   - **Perché diversi**: il giro di Nety su 192.168.4.0/24 era «custom» con 27 porte, `retries: 0`, 1400 ms: ha perso 135/389/445/636/3389 che pure erano nel suo elenco. Le UDP vengono da un altro suo giro (rete «LAN Base», Standard, rimasto in pausa). DA-IPAM su quella rete non ha mai fatto una Discovery dal lanciatore con l'UDP. Due fotografie con impostazioni diverse, non due motori in disaccordo.
   - 636 «tace» è giusto: provato con openssl dall'hub, il DC chiude senza certificato.
-- [ ] Buco vero nostro emerso dal confronto: **sonde UDP di protocollo** (DNS 53, NTP 123, NetBIOS-NS 137). Nety le interroga e legge nome, dominio, ruolo DC e MAC; noi per l'UDP abbiamo solo l'esito di nmap, senza contenuto. Da fare nel giro delle sonde.
+- [x] Sonde UDP di protocollo (DNS 53, NTP 123, NetBIOS 137, SQL Browser 1434) in `servizi-rete/sonde-udp.ts`, dentro il giro. Provate dal vivo dall'hub: 192.168.4.1 → «DOMARC\\DA-DC01 · controller di dominio · MAC 00:50:56:a5:4b:ab», NTP strato 2, DNS con ricorsione; 192.168.4.4 → «DOMARC\\DA-SEVEN» e SQL Browser «istanza MSSQLSERVER · versione 14.0.1000.169». Stessi dati di Nety. Prove `sonde-udp.test.ts` verdi.
+- [x] Secondo host confrontato su schermata di Riccardo, 192.168.4.4 (DA-SEVEN): a noi mancavano 137/udp, 1434/udp, il certificato sulla 3389 e la 47001; a Nety manca la 10050. Aggiunti certificato RDP (`suTls` in `rdp-ntlm.ts`) e 47001 fra le porte di gestione. **Il certificato RDP non è provato dal vivo.**
+- [ ] Il giro UDP interroga solo gli host che hanno già un servizio noto; chi ha solo UDP resta fuori.
 - [ ] Confronto pulito ancora da fare: stesso profilo Standard (1000 TCP + 20 UDP) sulla stessa rete da tutti e due, poi contare.
 
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)

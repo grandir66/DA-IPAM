@@ -300,6 +300,31 @@ export function registraPorteAperte(
 }
 
 /**
+ * Scrive l'esito di una sonda UDP di protocollo (DNS, NTP, NetBIOS, SQL Browser): la riga nasce
+ * qui se nmap non l'aveva vista. Il MAC dichiarato dal NetBIOS riempie `hosts.mac` solo se è
+ * vuoto: per gli host fuori dalla rete dell'appliance è l'unico modo di averlo.
+ */
+export function salvaSondaUdp(
+  db: Database.Database,
+  hostId: number,
+  e: { porta: number; nome: string; prodotto: string | null; versione: string | null; banner: string; mac?: string },
+): void {
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO servizi_rete (host_id, porta, protocollo, nome, prodotto, versione, metodo, banner, ultima_sonda)
+       VALUES (?, ?, 'udp', ?, ?, ?, 'udp', ?, datetime('now'))
+       ON CONFLICT(host_id, porta, protocollo) DO UPDATE SET
+         nome = COALESCE(servizi_rete.nome, excluded.nome),
+         prodotto = COALESCE(excluded.prodotto, servizi_rete.prodotto),
+         versione = COALESCE(excluded.versione, servizi_rete.versione),
+         metodo = 'udp', banner = excluded.banner,
+         ultimo_visto = datetime('now'), ultima_sonda = datetime('now')`,
+    ).run(hostId, e.porta, e.nome, e.prodotto, e.versione, e.banner);
+    if (e.mac) db.prepare("UPDATE hosts SET mac = ? WHERE id = ? AND (mac IS NULL OR mac = '')").run(e.mac.toUpperCase(), hostId);
+  })();
+}
+
+/**
  * Host visti di recente che non hanno nessuna porta nota: arrivano da ARP, DHCP o trunk.
  * Il giro automatico prova su di loro le porte comuni.
  */

@@ -13043,6 +13043,9 @@ export function allineaServiziRete(networkId?: number): number {
 export function getPorteServiziDaSondare(networkId?: number, limite?: number): servizi.PortaDaSondare[] {
   return servizi.porteDaSondare(db(), networkId, limite);
 }
+export function salvaSondaUdpServizio(hostId: number, e: Parameters<typeof servizi.salvaSondaUdp>[2]): void {
+  servizi.salvaSondaUdp(db(), hostId, e);
+}
 export function getCredenzialiValidateServizi(networkId?: number): servizi.CredenzialeValidata[] {
   return servizi.credenzialiValidate(db(), networkId, new Date().toISOString());
 }

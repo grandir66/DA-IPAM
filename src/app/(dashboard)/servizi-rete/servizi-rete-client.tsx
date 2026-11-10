@@ -86,6 +86,7 @@ const METODI: Record<string, { segno: string; testo: string; classe: string; spi
   ssh: { segno: "■", testo: "SSH", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "versione e algoritmi SSH letti" },
   ntlm: { segno: "◇", testo: "NTLM", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "nome e dominio dalla CHALLENGE NTLM, senza autenticarsi" },
   banner: { segno: "▲", testo: "banner", classe: "border-[#C9A800] bg-[#FFD400] text-[#0D2537]", spiega: "il servizio si presenta da solo" },
+  udp: { segno: "▼", testo: "UDP", classe: "border-primary/40 bg-primary/10 text-cian-testo", spiega: "ha risposto a una domanda UDP di protocollo (DNS, NTP, NetBIOS, SQL Browser)" },
   silenzio: { segno: "○", testo: "tace", classe: "border-border bg-muted text-muted-foreground", spiega: "aperta, ma non risponde alle sonde" },
   aperta: { segno: "–", testo: "aperta", classe: "border-dashed border-border bg-transparent text-muted-foreground", spiega: "trovata aperta dal giro leggero, non ancora sondata" },
   nmap: { segno: "–", testo: "solo nmap", classe: "border-dashed border-border bg-transparent text-muted-foreground", spiega: "nome dalla scansione, non ancora sondata" },

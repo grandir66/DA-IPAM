@@ -24,8 +24,10 @@ import {
   getPorteServiziDaControllare,
   salvaControlloServizioRete,
   getCredenzialiValidateServizi,
+  salvaSondaUdpServizio,
   accessoSshCredenziale,
 } from "@/lib/db-tenant";
+import { sondeUdpHost, type EsitoUdp } from "./sonde-udp";
 import { runSshCommand } from "@/lib/devices/ssh-run";
 import { COMANDO_SSH, eRifiutoSsh, eShellPosix, leggiUscitaSsh } from "@/lib/rilievi/autenticati";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
@@ -86,6 +88,8 @@ export function statoGiro(tenant: string): StatoGiro {
 export interface Strumenti {
   sonda: (ip: string, porta: number) => Promise<EsitoSonda | null>;
   aperta: (ip: string, porta: number) => Promise<boolean>;
+  /** Le domande UDP di protocollo a un host. Assente nelle prove iniettate: non partono. */
+  udp?: (ip: string) => Promise<EsitoUdp[]>;
   /** Esegue `COMANDO_SSH` e torna lo stdout. Sostituibile nelle prove. */
   ssh?: (o: { host: string; port: number; username: string; password: string }) => Promise<string>;
   /** Assente nelle prove iniettate: i controlli veri non partono. */
@@ -93,6 +97,7 @@ export interface Strumenti {
 }
 
 const STRUMENTI: Strumenti = {
+  udp: (ip) => sondeUdpHost(ip),
   sonda: (ip, p) => sondaPorta(ip, p),
   aperta: (ip, p) => portaAperta(ip, p),
   controllo: (ip, p, opz) => sondaControllo(ip, p, opz),
@@ -223,6 +228,21 @@ export function avviaGiro(
         if (esito) riepilogo.risposte += 1;
         stato.fatte += 1;
       });
+      // UDP di protocollo (DNS, NTP, NetBIOS, SQL Browser): una domanda per protocollo agli host
+      // che hanno già un servizio noto. Nmap sull'UDP dice solo «aperta», qui si legge la risposta.
+      const udp = opzioni.strumenti ? opzioni.strumenti.udp : STRUMENTI.udp;
+      if (udp) {
+        const hostUdp = [...new Map(coda.map((p) => [p.host_id, p.ip])).entries()];
+        stato.totale += hostUdp.length;
+        await inParallelo(hostUdp, parallele, async ([hostId, ip]) => {
+          try {
+            for (const e of await udp(ip)) salvaSondaUdpServizio(hostId, e);
+          } catch {
+            // un host muto sull'UDP non ferma il giro
+          }
+          stato.fatte += 1;
+        });
+      }
       if (controllo) {
         const extra = reti.flatMap((rete) => getPorteServiziDaControllare(rete, PORTE_CONTROLLO, true))
           .filter((p) => !daSaltare(p.porta, null) && !eImpianto(p) && p.protocollo === protocolloControllo(p.porta));

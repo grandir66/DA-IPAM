@@ -107,6 +107,9 @@ export function creaApparatiAutomatici(opz: { applica: boolean }): RigaAutomatic
   const leggiLegami = db.prepare(
     "SELECT credential_id, protocol_type, port, validated, validated_at FROM host_credentials WHERE host_id = ? ORDER BY sort_order, id",
   );
+  /* Un apparato con più IP è UN apparato (prova a vuoto sull'hub 533, 10/11: «DA-RT-CORE» su quattro reti, «DA-FILES»
+   * su tre). Vale il primo IP; gli altri si saltano col motivo, e una persona li aggiunge all'apparato se servono. */
+  const nomi = new Set((db.prepare("SELECT name FROM network_devices").all() as Array<{ name: string }>).map((d) => d.name.trim().toLowerCase()));
   const righe: RigaAutomatica[] = [];
   for (const h of host) {
     const base = { hostId: h.id, ip: h.ip, classe: h.classification ?? null };
@@ -115,6 +118,9 @@ export function creaApparatiAutomatici(opz: { applica: boolean }): RigaAutomatic
       const piano = pianoApparatoAutomatico(h, archivio);
       if ("motivo" in piano) { righe.push({ ...base, esito: "saltato", motivo: piano.motivo }); continue; }
       const descr = { nome: String(piano.corpo.name), protocollo: String(piano.corpo.protocol), legami: 1 + (piano.corpo.snmp_credential_id ? 1 : 0) + piano.altri.length };
+      const chiave = descr.nome.trim().toLowerCase();
+      if (nomi.has(chiave)) { righe.push({ ...base, esito: "saltato", motivo: `stesso nome di un apparato: «${descr.nome}»` }); continue; }
+      nomi.add(chiave);
       if (!opz.applica) { righe.push({ ...base, esito: "da_creare", ...descr }); continue; }
       const esito = creaApparato(piano.corpo);
       if (!esito.ok) { righe.push({ ...base, esito: "saltato", motivo: esito.error }); continue; }

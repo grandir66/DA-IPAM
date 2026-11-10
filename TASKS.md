@@ -1,5 +1,12 @@
 # TASKS — DA-IPAM
 
+## 2026-11-10 — Confronto tra giri di rete
+
+Riccardo: iniziare lo sviluppo senza sovrapporsi agli altri lavori. Piano in DA-IPAM, commit `510eca57`.
+- [x] Comparatore IPv4 e prove locali in `src/lib/scanner/confronto-giri.ts`. Distingue cambi certi e porte appena osservate. Rifiuta giri incompleti e perimetri diversi. Nessuna modifica a Discovery, Subnet o Edge.
+- [ ] Collegare le osservazioni al completamento del giro. `hosts.open_ports` unisce dati di sessione e archivio e non è la fonte del delta. Raccogliere esiti espliciti per IP e porta/protocollo.
+- [ ] Definire persistenza idempotente, retention e vista Subnet, con verifica su copia prima della migrazione.
+
 ## 2026-11-10 — «Solo controlli» sembrava non fare nulla (Riccardo, base)
 
 Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha restituito in pochi secondi il controllo su 1000 porte»; poi «controlla la logica che usa Nety per riprodurla meglio anche nella UI». Misurato sull'hub: rete 4, 90 servizi noti su 37 host di 102, giro di ~25 s; il profilo era ignorato.

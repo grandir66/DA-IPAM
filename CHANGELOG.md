@@ -4,6 +4,10 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Comparatore dei giri IPv4
+
+- Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Integrazione con Discovery e UI ancora da fare.
+
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 
 ### Corretto

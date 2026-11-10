@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { annunciDelHost } from "./annunci";
+import { gemelloDiMac } from "./gemelli";
 import { getActiveEvidence, recordEvidence, retireStaleEvidence } from "./evidence";
 import { emitEvidenceFromSignals, RECOMPUTED_SOURCES } from "./emitters";
 import type { AttributionSignals } from "./emitters";
@@ -100,7 +101,7 @@ function getAttributionSignalsFromHandle(
        AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
-  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(dbh, hostId) };
+  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(dbh, hostId), gemello: gemelloDiMac(dbh, hostId) };
 }
 
 /**

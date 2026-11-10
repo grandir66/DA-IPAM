@@ -28,7 +28,7 @@ const NOME_FONTE: Record<AttributionSource, string> = {
   wsd: "WSD", mdns: "mDNS", ssdp: "SSDP", smb: "SMB", ssh: "SSH", redfish: "Redfish",
   onvif: "ONVIF", fingerbank: "Fingerbank", netbios: "NetBIOS", nmap_service: "Nmap servizi",
   nmap_os: "Nmap OS", hostname: "Nome host", ports: "Porte", dhcp: "DHCP", ttl: "TTL",
-  ai: "IA", rdp_ntlm: "RDP", ot_probe: "Sonda OT",
+  ai: "IA", rdp_ntlm: "RDP", ot_probe: "Sonda OT", mac_gemello: "Stesso MAC",
 };
 
 const STILE_ATTUALE = "border-dashed border-foreground/60";

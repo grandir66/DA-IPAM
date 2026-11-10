@@ -37,6 +37,7 @@ import { STATI_ESITO, type EsitoLettura, type EsitoRiga, type StatoApparato, typ
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { annunciDelHost, type Annuncio } from "./attribution/annunci";
+import { gemelloDiMac, type GemelloDiMac } from "./attribution/gemelli";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
@@ -4322,6 +4323,7 @@ export interface AttributionSignals {
   wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
   annunci: Annuncio[];
+  gemello: GemelloDiMac | null;
 }
 
 export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
@@ -4352,7 +4354,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
        AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
-  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(d, hostId) };
+  return { host, adComputer, wazuh, neighborSightings, annunci: annunciDelHost(d, hostId), gemello: gemelloDiMac(d, hostId) };
 }
 
 /**

@@ -9,6 +9,7 @@ import type { KbSysObjMatch } from "./kb";
 import { matchMacProduct } from "./mac-product";
 import { categoryDepth, isValidCategory, mapLegacyClassification } from "./taxonomy";
 import type { CategorySlug } from "./taxonomy";
+import type { GemelloDiMac } from "./gemelli";
 import type { AttributionSource, EvidenceInput } from "./types";
 
 /**
@@ -21,7 +22,7 @@ import type { AttributionSource, EvidenceInput } from "./types";
  * ogni recompute anche se l'agente è ancora presente).
  */
 export const RECOMPUTED_SOURCES = [
-  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp", "mndp", "ubnt",
+  "oui", "mac_product", "snmp_sysobj", "snmp_sysdescr", "nmap_os", "hostname", "ports", "ad", "wazuh", "lldp", "cdp", "mndp", "ubnt", "mac_gemello",
 ] as const satisfies readonly AttributionSource[];
 
 export interface AttributionSignals {
@@ -35,6 +36,8 @@ export interface AttributionSignals {
   neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
   /** Cosa gli apparati dicono di sé (attribution/annunci.ts). Opzionale: i segnali di chi non li legge restano validi. */
   annunci?: Annuncio[];
+  /** La categoria di un'altra riga con lo stesso MAC (attribution/gemelli.ts). Opzionale come gli annunci. */
+  gemello?: GemelloDiMac | null;
 }
 
 /**
@@ -232,6 +235,9 @@ export function prodottoDaVersione(versione: string | null | undefined) {
 const PESO_FIRMA = 0.85;
 const FIRME_NOME: ReadonlyArray<readonly [RegExp, CategorySlug]> = [
   [/^desktop-[a-z0-9]{7}$/i, "compute.workstation"], // nome di serie di Windows 10/11
+  [/^(mac-?mini|imac|mac-?studio|surface)\b/i, "compute.workstation"],
+  [/^macbook/i, "compute.laptop"],
+  [/^android-[0-9a-f]{16}$/i, "mobile.phone"], // nome di serie di Android
   [/^ipad\b/i, "mobile.tablet"],
   [/^iphone\b|^pixel[-\s]?\d|^galaxy[-\s]|fairphone|nothing[-\s]phone|^redmi|^oneplus/i, "mobile.phone"],
 ];
@@ -239,6 +245,8 @@ const FIRME_PORTE: ReadonlyArray<readonly [(aperte: ReadonlySet<number>) => bool
   [(a) => a.has(8291) && (a.has(8728) || a.has(8729)), "network.router"], // Winbox + API RouterOS
   [(a) => a.has(8006) && a.has(22), "compute.hypervisor"], // interfaccia di Proxmox VE
   [(a) => a.has(17988), "compute.server"], // virtual media di HPE iLO
+  [(a) => a.has(8007) && a.has(22), "compute.server"], // Proxmox Backup Server
+  [(a) => a.has(6789) && a.has(8443) && a.has(8880), "network.controller"], // console UniFi
 ];
 
 function safeJson<T>(raw: string | null): T | null {
@@ -413,6 +421,11 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
     if (fam) out.push({ source: "nmap_os", phase: "scan_nmap_base", dimension: "os", claim: fam, confidence: 0.7, raw_value: host.os_info.slice(0, 200) });
     const mestiere = categoriaDaTestoNmap(host.os_info);
     if (mestiere) out.push({ source: "nmap_os", phase: "scan_nmap_base", dimension: "category", claim: mestiere, confidence: 0.7, raw_value: host.os_info.slice(0, 200) });
+  }
+
+  // 3b. gemello di MAC: la stessa scheda di rete su un altro IP
+  if (signals.gemello && isValidCategory(signals.gemello.categoria)) {
+    out.push({ source: "mac_gemello", phase: "scan_icmp", dimension: "category", claim: signals.gemello.categoria, confidence: 0.7, raw_value: `stesso MAC di ${signals.gemello.ip}` });
   }
 
   // 4. hostname: prima le firme (nomi che dicono il tipo), poi la regola debole

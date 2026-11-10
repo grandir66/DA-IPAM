@@ -31,6 +31,8 @@ export const ATTR_SOURCE_WEIGHTS: Record<AttributionSource, number> = {
    * vero. ot_probe: una risposta s7-info/enip-info/bacnet-info identifica il
    * protocollo di campo, non lo suggerisce. */
   rdp_ntlm: 0.9, ot_probe: 0.95,
+  /* 0.85 x 0.7 = 0.595: sopra soglia da sola, sotto ogni fonte che parla con l'apparato. */
+  mac_gemello: 0.85,
 };
 
 /**

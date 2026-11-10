@@ -32,6 +32,12 @@ describe("firme di nome", () => {
     assert.equal(categoria({ hostname: "iPad" }), "mobile.tablet");
     assert.equal(categoria({ hostname: "DESKTOP-Q940L5H" }), "compute.workstation");
   });
+  it("Mac mini, Surface, MacBook, Android di serie", () => {
+    assert.equal(categoria({ hostname: "Mac-mini" }), "compute.workstation");
+    assert.equal(categoria({ hostname: "SURFACE-ALAIN" }), "compute.workstation");
+    assert.equal(categoria({ hostname: "MacBook-Pro-di-Anna" }), "compute.laptop");
+    assert.equal(categoria({ hostname: "android-88a8f2bac640b96b" }), "mobile.phone");
+  });
   it("un nome qualunque resta sotto soglia", () => {
     assert.equal(categoria({ hostname: "phone-reception" }), null);
     assert.equal(categoria({ hostname: "desktop" }), null);
@@ -43,6 +49,10 @@ describe("firme di porte", () => {
     assert.equal(categoria({ open_ports: porte(22, 80, 8291, 8728, 8729) }), "network.router");
     assert.equal(categoria({ open_ports: porte(22, 8006) }), "compute.hypervisor");
     assert.equal(categoria({ open_ports: porte(22, 80, 443, 17988) }), "compute.server");
+  });
+  it("8007 + ssh è un server (PBS), le porte della console UniFi un controller", () => {
+    assert.equal(categoria({ open_ports: porte(22, 111, 8007) }), "compute.server");
+    assert.equal(categoria({ open_ports: porte(22, 53, 80, 443, 6789, 8080, 8443, 8880, 9443) }), "network.controller");
   });
   it("porte generiche restano sotto soglia", () => {
     assert.equal(categoria({ open_ports: porte(22, 80, 443) }), null);

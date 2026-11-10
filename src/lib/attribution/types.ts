@@ -50,7 +50,9 @@ export type AttributionSource =
    * `ot_probe`: gli script di campo di sola lettura (s7-info, enip-info,
    * bacnet-info, omron-info). Una risposta S7 o CIP non e' un indizio: e' il
    * protocollo stesso che si dichiara. */
-  | "rdp_ntlm" | "ot_probe";
+  | "rdp_ntlm" | "ot_probe"
+  /* La categoria del gemello di MAC (attribution/gemelli.ts, 10/11/2026). */
+  | "mac_gemello";
 
 export interface AttributionEvidenceRow {
   id: number;

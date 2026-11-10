@@ -142,8 +142,10 @@ che dicono nome, modello e produttore di PLC e pannelli senza interrogarli. Serv
   server), una stampante 3D, un Chromecast Ultra, Spotify Connect, due client `ARM__boot` e un
   `udhcp 1.34.1`. In tre minuti parlano pochi apparati: i numeri veri si vedono lasciandolo girare.
   Prove del sensore: 62 verdi, resta rossa quella di `raggiungibilita.py` che non è di questo lavoro.
-- [ ] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery.
-- [ ] **3.3** Spanning tree (radice, costo, cambi) e annunci dei router IPv6.
+- [x] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery. Rilasciato con la sonda 0.8.294 e DA-IPAM 0.9.1133. Sull'hub dopo sette minuti: annunci di Windows da 22 apparati (17 agganciati a un host: due server SQL, i due DC, sette postazioni), classe DHCPv6 `CPQRIB3` da 3 schede iLO. **Corretto subito:** Samba sui NAS manda lo stesso annuncio con versione «6.1»: vale come prova solo dalla 10 in su; le prove sbagliate si tolgono al giro dopo (verificato: tolte sui tre NAS).
+- [x] **3.3** Spanning tree (radice, ponte, costo) e annunci dei router IPv6: raccolti e mostrati accanto all'oggetto, non usati come prove. Sull'hub la radice è `0/08:55:31:2b:17:f5`, il MAC che in MNDP è di `DA-RT-CORE`. I cambi di topologia non sono raccolti.
+- [ ] **Aperto:** le dichiarazioni di MAC che DA-IPAM non conosce (le tre iLO in DHCPv6, il ponte dello spanning tree) restano in tabella ma non si vedono da nessuna parte: mostrarle nell'elenco «Annunci».
+- [ ] **Aperto, non di questo lavoro:** i NAS `192.168.40.24` e `.26` risultano `compute` e non `storage` per prove di altre sonde (`smb`, `wsd` «Device Computer») che insieme battono `snmp_sysobj`/`mdns`.
 - [ ] **3.4** Cattura di tre minuti a DTS e, se c'è l'accesso, a 72729 e 70151: cosa gira dai clienti.
 - [ ] **3.5** DA-IPAM: questi dati entrano come prove nel riconoscimento degli apparati (oggi un terzo
   resta senza nome) e in «Reti dal trunk».

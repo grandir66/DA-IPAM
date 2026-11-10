@@ -21,7 +21,7 @@ import { proponiApparato } from "@/lib/devices/proposta-apparato";
 
 const T = "TESTSCRITTURACANONICA";
 
-interface H { classification: string; server_roles: string | null; classification_manual: number }
+interface H { classification: string | null; server_roles: string | null; classification_manual: number }
 const host = (id: number) =>
   getTenantDb(T).prepare("SELECT classification, server_roles, classification_manual FROM hosts WHERE id = ?").get(id) as H;
 const dev = (id: number) =>
@@ -40,7 +40,10 @@ describe("scrittura canonica", () => {
     withTenant(T, () => {
       const h = upsertHost({ network_id: 1, ip: "10.50.0.10", classification: "dns_server" });
       assert.ok(h);
-      assert.deepEqual(host(h.id).classification, "server");
+      // Dalla 0.9.1113 (Riccardo, 10/11/2026) il ricalcolo all'inserimento svuota una classe non manuale senza
+      // categoria: qui non ci sono prove, quindi la classe scritta (`server`) non resta. Il ruolo sì, ed è la
+      // conversione che questa prova presidia; la classe convertita la guarda la prova dell'update qui sotto.
+      assert.equal(host(h.id).classification, null);
       assert.equal(host(h.id).server_roles, '["dns"]');
     });
   });

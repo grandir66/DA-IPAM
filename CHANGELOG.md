@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Una VM con un ruolo prende il ruolo
+
+Riccardo (10/11): «99.13 è un proxmox pbs» — sul 79993 restava «vm».
+
+### Cambiato
+- **«VM» dice dove gira, non cosa fa**: se accanto a `compute.vm` (dalla scheda di rete virtuale) c'è un ruolo sopra soglia di calcolo, rete o storage — un server, un router CHR, un firewall virtuale — vince il ruolo. Senza ruolo resta «vm»; un UPS o un telefono non la scavalcano.
+
 ## [Non rilasciato] — 2026-11-10 · Apparati creati da soli (interruttore spento di serie)
 
 Riccardo (10/11): «automatizzare … la trasformazione in device se le credenziali funzionano»; «se l'apparato risponde a più protocolli devono essere registrati tutti».

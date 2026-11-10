@@ -27,6 +27,8 @@ export interface AttributionResult {
   engine_version: string;
 }
 
+const RADICI_RUOLO_DI_UNA_VM: ReadonlySet<string> = new Set(["compute", "network", "storage"]);
+
 function emptyResult(): DimensionResult {
   return { claim: null, confidence: 0, min_phase: null, evidence_ids: [], conflicts: [], authoritative: false };
 }
@@ -104,9 +106,17 @@ function fuseDimension(
       l1.set(parent, (l1.get(parent) ?? 0) + s);
     }
     // classifica dei claim livello-2 sopra soglia, per profondità poi score
-    const l2Sorted = [...scores.entries()]
+    let l2Sorted = [...scores.entries()]
       .filter(([c]) => isValidCategory(c) && categoryDepth(c as CategorySlug) === 2)
       .sort((a, b) => b[1] - a[1]);
+    /* «VM» dice dove gira, non cosa fa (Riccardo, 10/11/2026: «99.13 è un Proxmox PBS»). Sul 79993 il PBS aveva
+     * `compute.vm` dall'OUI della scheda virtuale (0.77) e `compute.server` dalle porte 8007 + ssh (0.595): vinceva
+     * «vm». Se accanto a `compute.vm` c'è un ruolo sopra soglia che una VM può avere — calcolo, rete, storage: un
+     * server, un router CHR, un firewall virtuale — il ruolo vince. Un UPS o un telefono no: una VM non lo è. */
+    if (l2Sorted[0]?.[0] === "compute.vm") {
+      const ruolo = l2Sorted.some(([c, s]) => c !== "compute.vm" && s >= MIN_CLAIM_SCORE && RADICI_RUOLO_DI_UNA_VM.has(categoryParent(c as CategorySlug)));
+      if (ruolo) l2Sorted = l2Sorted.filter(([c]) => c === "compute.vm" ? false : RADICI_RUOLO_DI_UNA_VM.has(categoryParent(c as CategorySlug)));
+    }
     const conflicts: AttributionConflict[] = [];
     let claim: string | null = null;
     let citing: AttributionEvidenceRow[] = [];

@@ -10,9 +10,9 @@ import { fuseAttribution } from "../fuse";
 import type { AttributionEvidenceRow } from "../types";
 import { ATTR_SOURCE_WEIGHTS } from "../weights";
 
-function categoria(host: { hostname?: string | null; open_ports?: string | null }): string | null {
+function categoria(host: { hostname?: string | null; open_ports?: string | null; vendor?: string | null }): string | null {
   const segnali = {
-    host: { id: 1, ip: "192.168.5.10", mac: null, vendor: null, hostname: host.hostname ?? null, os_info: null, open_ports: host.open_ports ?? null, snmp_data: null, detection_json: null },
+    host: { id: 1, ip: "192.168.5.10", mac: null, vendor: host.vendor ?? null, hostname: host.hostname ?? null, os_info: null, open_ports: host.open_ports ?? null, snmp_data: null, detection_json: null },
     adComputer: null, wazuh: null, neighborSightings: [], annunci: [],
   } as unknown as Parameters<typeof emitEvidenceFromSignals>[0];
   const righe = emitEvidenceFromSignals(segnali).map((e, i) => ({
@@ -57,5 +57,19 @@ describe("firme di porte", () => {
   it("porte generiche restano sotto soglia", () => {
     assert.equal(categoria({ open_ports: porte(22, 80, 443) }), null);
     assert.equal(categoria({ open_ports: porte(8291) }), null);
+  });
+});
+
+describe("una VM con un ruolo (79993, 10/11/2026: il PBS restava «vm»)", () => {
+  const proxmox = "Proxmox Server Solutions GmbH";
+  it("scheda virtuale + porte del PBS → server, non vm", () => {
+    assert.equal(categoria({ vendor: proxmox, hostname: "pbs.domarc.it", open_ports: porte(22, 111, 8007) }), "compute.server");
+  });
+  it("scheda virtuale + Winbox e API → router (CHR)", () => {
+    assert.equal(categoria({ vendor: proxmox, open_ports: porte(22, 80, 8291, 8728) }), "network.router");
+  });
+  it("scheda virtuale senza ruolo → resta vm; un nome da smartphone non la fa telefono", () => {
+    assert.equal(categoria({ vendor: proxmox, open_ports: porte(22, 80) }), "compute.vm");
+    assert.equal(categoria({ vendor: proxmox, hostname: "iPhone" }), "compute.vm");
   });
 });

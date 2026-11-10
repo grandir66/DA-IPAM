@@ -276,6 +276,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
     const avviato = d.segmentazione(tenant, undefined, {
       sourceNetworkId: letto.sourceNetworkId,
       retiBersaglio: letto.retiBersaglio.length ? letto.retiBersaglio : undefined,
+      protocollo: letto.protocollo,
     });
     if (!avviato) throw new ErroreLancio("Un giro di segmentazione è già in corso", 409);
     d.history({

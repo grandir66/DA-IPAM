@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Segmentazione: tecnica di raggiungibilità (diretta / ICMP)
+
+Riccardo (10/11): «la prendo io» — le tecniche di raggiungibilità passano a me (la UI/orchestrazione), l'evasione resta a Cursor.
+
+### Aggiunto
+- **Matrice di segmentazione, scelta della tecnica**: «Connessione TCP diretta» (prova il servizio noto ip:porta, default) o **«Ping ICMP»** (misura solo se l'host risponde). Il parametro `protocollo` scende dalla UI fino alla sonda (`lancia-giro` → `giro` → `sensore-trunk` → `/raggiungibilita`).
+- Le altre tecniche (IPv6, SYN frammentato, porta sorgente, next-hop, L2) restano **disabilitate** in UI: il giro è IPv4 e la sonda non le fa ancora.
+
+### Nota
+- L'esecuzione di `icmp_echo` vive nell'**agente della sonda** (Scanner-Edge, repo DA-Vul-can): cambio su ramo `claude/sonda-icmp-raggiungibilita`, **non ancora sulle sonde**. Finché l'edge non è aggiornato, `icmp_echo` torna un errore chiaro dalla sonda vecchia.
+
 ## [Non rilasciato] — 2026-11-10 · Scansioni: UI delle opzioni per modalità
 
 Riccardo (10/11): «fai tutta la pagina». Ora `/scans` manda i knob che il motore (Cursor, v0.9.1079) accetta, con il layout preso dalle schermate di Nety.

@@ -128,10 +128,11 @@ export function ScansClient() {
   const [timeoutMs, setTimeoutMs] = useState("");
   const [concorrenza, setConcorrenza] = useState("");
 
-  // Segmentazione — sorgente e reti da raggiungere.
+  // Segmentazione — sorgente, reti da raggiungere e tecnica di raggiungibilità.
   const [sourceNet, setSourceNet] = useState<number | null>(null);
   const [bersagli, setBersagli] = useState<Set<number>>(new Set());
   const [retiBersaglio, setRetiBersaglio] = useState<ReteBersaglio[]>([]);
+  const [tecnica, setTecnica] = useState<"direct" | "icmp_echo">("direct");
 
   // Sonda L2 — durata dell'ascolto (vuoto = sync immediato).
   const [durataS, setDurataS] = useState("");
@@ -212,6 +213,7 @@ export function ScansClient() {
     if (tipo === "segmentazione") {
       if (sourceNet != null) b.source_network_id = sourceNet;
       if (bersagli.size) b.reti_bersaglio = [...bersagli];
+      b.protocollo = tecnica;
     }
     if (tipo === "sonda_l2") {
       const d = numeroOpzionale(durataS);
@@ -482,13 +484,25 @@ export function ScansClient() {
                 ))}
             </div>
           </Pannello>
+          <Pannello titolo="Come prova la raggiungibilità" sottotitolo="Come la sonda verifica ogni bersaglio">
+            <div className="grid gap-2 p-1 sm:grid-cols-2">
+              <VoceSelezionabile scelta={tecnica === "direct"} onScegli={() => setTecnica("direct")}>
+                <p className="font-semibold">Connessione TCP diretta</p>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">Prova il servizio noto sulla sua porta (ip:porta). È la prova di default.</p>
+              </VoceSelezionabile>
+              <VoceSelezionabile scelta={tecnica === "icmp_echo"} onScegli={() => setTecnica("icmp_echo")}>
+                <p className="font-semibold">Ping ICMP</p>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">Misura solo se l'host risponde (la porta è ignorata).</p>
+              </VoceSelezionabile>
+            </div>
+          </Pannello>
           <Pannello
-            titolo="Tecniche da auditor"
-            sottotitolo="Oltre alla connessione diretta. Non ancora disponibili sulla sonda"
+            titolo="Altre tecniche da auditor"
+            sottotitolo="IPv6 ed evasione. Non ancora disponibili sulla sonda"
             piede={<span className="text-[13px] text-muted-foreground">Quando la sonda le saprà fare, qui si accenderanno. Il Layer-2 attivo può disturbare lo switch.</span>}
           >
             <div className="grid gap-2 p-1 text-[13px] text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-              {PROTOCOLLI_SEG.filter((p) => p !== "direct").map((p) => (
+              {PROTOCOLLI_SEG.filter((p) => p !== "direct" && p !== "icmp_echo").map((p) => (
                 <label key={p} className="flex items-center gap-2 opacity-60" title="Non ancora disponibile sulla sonda">
                   <input type="checkbox" disabled />
                   {PROTO_SEG_UI[p]}

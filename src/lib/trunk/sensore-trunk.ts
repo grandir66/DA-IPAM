@@ -211,8 +211,9 @@ export async function chiediRaggiungibilita(
   cidr: string,
   gateway: string,
   bersagli: Array<{ ip: string; porta: number }>,
+  protocollo: string = "direct",
 ): Promise<{ id: number; fonte: "socket" | "edge" }> {
-  const corpo = { vid, cidr, gateway, bersagli };
+  const corpo = { vid, cidr, gateway, bersagli, protocollo };
   try {
     const r = await scriviSulSocket<{ id: number }>("/raggiungibilita", corpo);
     return { id: r.id, fonte: "socket" };

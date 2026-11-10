@@ -34,6 +34,7 @@ export interface ClientRaggiungibilita {
     cidr: string,
     gateway: string,
     bersagli: Array<{ ip: string; porta: number }>,
+    protocollo: string,
   ) => Promise<{ id: number; fonte: "socket" | "edge" }>;
   leggi: (id: number, fonte: "socket" | "edge") => Promise<GiroRaggiungibilita>;
 }
@@ -52,7 +53,7 @@ async function attendi(client: ClientRaggiungibilita, id: number, fonte: "socket
 export function avviaGiroSeg(
   tenant: string,
   client?: ClientRaggiungibilita,
-  opzioni: { sourceNetworkId?: number; retiBersaglio?: number[] } = {},
+  opzioni: { sourceNetworkId?: number; retiBersaglio?: number[]; protocollo?: string } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
   const sonda = client ?? CLIENT;
@@ -83,6 +84,7 @@ export function avviaGiroSeg(
           s.cidr,
           s.gateway,
           s.bersagli.map((b) => ({ ip: b.ip, porta: b.porta })),
+          opzioni.protocollo ?? "direct",
         );
         const fatto = await attendi(sonda, avvio.id, avvio.fonte);
         if (fatto.esito !== "ok") throw new Error(fatto.errore || "giro della sonda fallito");

@@ -278,11 +278,14 @@ export function leggiPrimaLettura(db: Database.Database, hostId: number): PrimaL
     | undefined;
   if (!h) return null;
 
+  const giaPieno = testo(h.os_info);
   riempiOsVuoti(db, hostId);
   const osInfo =
+    giaPieno ??
     (
       db.prepare("SELECT os_info FROM hosts WHERE id = ?").get(hostId) as { os_info: string | null } | undefined
-    )?.os_info ?? h.os_info;
+    )?.os_info ??
+    h.os_info;
 
   const servizi = db
     .prepare(
@@ -313,12 +316,14 @@ export function leggiPrimaLettura(db: Database.Database, hostId: number): PrimaL
     if (!sshBanner) sshBanner = sshIdent(s.ssh_json) ?? (s.banner?.startsWith("SSH-") ? s.banner : null);
   }
 
-  const scelta = scegliOs({
-    ntlm: ntlmVer,
-    snmp: sysDescrDaSnmp(h.snmp_data) ?? nmapOsDaDetection(h.detection_json),
-    ssh: sshBanner,
-    os_info: osInfo,
-  });
+  const scelta = giaPieno
+    ? { os: giaPieno, fonte: "archivio" as const }
+    : scegliOs({
+        ntlm: ntlmVer,
+        snmp: sysDescrDaSnmp(h.snmp_data) ?? nmapOsDaDetection(h.detection_json),
+        ssh: sshBanner,
+        os_info: osInfo,
+      });
 
   const chiavi = db
     .prepare(

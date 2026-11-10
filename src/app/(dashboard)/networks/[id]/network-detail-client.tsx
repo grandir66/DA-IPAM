@@ -1734,7 +1734,9 @@ export function NetworkDetailClient({
                       </Button>
                     </TableCell>
                     <TableCell>
-                      <div className="font-mono font-medium">{host.ip}</div>
+                      <Link href={`/objects/${host.id}`} className="font-mono font-medium text-primary hover:underline">
+                        {host.ip}
+                      </Link>
                       {host.mac && <div className="font-mono text-[10px] text-muted-foreground">{host.mac}</div>}
                     </TableCell>
                     <TableCell>

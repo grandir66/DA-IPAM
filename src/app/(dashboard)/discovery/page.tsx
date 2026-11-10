@@ -2681,7 +2681,7 @@ export default function DiscoveryPage() {
                         setCassettoId(h.id);
                       }}
                     >
-                      <TableCell className="py-2" onContextMenu={(e) => puntaMenu(e, h, null)} onTouchStart={(e) => puntaMenu(e, h, null)}>
+                      <TableCell className="py-2" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => puntaMenu(e, h, null)} onTouchStart={(e) => puntaMenu(e, h, null)}>
                         <Checkbox
                           checked={selectedIds.has(h.id)}
                           onCheckedChange={() => toggleSelect(h.id)}

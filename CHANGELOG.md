@@ -9,8 +9,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 Riccardo (10/11): i dati ci sono già in Subnet e Discovery; manca la prima riga, come in Nety Hosts/Assets.
 
 ### Aggiunto
-- **OS dalle prove**: se `os_info` è vuoto si riempie da NTLM, sysDescr SNMP o banner SSH, senza nmap -O e senza toccare l'anagrafica già piena.
-- **Cassetto sulla riga** in Discovery e Subnet: OS, dominio, TTL, servizi, chiavi, altri IP; «Scheda completa» resta `/objects`.
+- **OS dalle prove**: se `os_info` è vuoto si riempie da NTLM, sysDescr SNMP o banner SSH, senza nmap -O e senza toccare l'anagrafica già piena. Solo a fine giro (e sul cassetto di un host), non sul GET di Discovery.
+- **Cassetto sulla riga** in Discovery e Subnet: OS, dominio, TTL, servizi, chiavi, altri IP; «Scheda completa» resta `/objects`. Se l'anagrafica ha già un OS, il cassetto mostra quello, non la stima NTLM.
 
 ## [Non rilasciato] — 2026-11-10 · Vista Vulnerabilità di nuovo in pagina
 

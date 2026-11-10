@@ -43,7 +43,7 @@ test("scegliOs: NTLM prima di SNMP, SSH, archivio", () => {
   assert.equal(scegliOs({}), null);
 });
 
-test("riempiOsVuoti scrive NTLM e non tocca os_info già pieno; prima lettura ha servizi e dominio", () => {
+test("riempiOsVuoti scrive NTLM e non tocca os_info già pieno; in scheda l'anagrafica vince", () => {
   withTenant(T, () => {
     const d = getTenantDb(T);
     const n = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'lan')").run().lastInsertRowid);
@@ -79,10 +79,26 @@ test("riempiOsVuoti scrive NTLM e non tocca os_info già pieno; prima lettura ha
     const lettura = leggiPrimaLettura(d, vuoto);
     assert.ok(lettura);
     assert.equal(lettura.os, "Windows Server 2022");
-    assert.equal(lettura.os_fonte, "ntlm");
+    assert.equal(lettura.os_fonte, "archivio");
     assert.equal(lettura.dominio, "corp.local");
     assert.equal(lettura.servizi.length, 1);
     assert.equal(lettura.servizi[0]!.porta, 445);
     assert.equal(lettura.altri_ip.length, 0);
+
+    const autenticato = leggiPrimaLettura(d, pieno);
+    assert.ok(autenticato);
+    assert.equal(autenticato.os, "Windows Server 2019 Standard");
+    assert.equal(autenticato.os_fonte, "archivio");
+
+    const w11 = Number(ins.run(n, "10.9.0.12", null).lastInsertRowid);
+    d.prepare(
+      "INSERT INTO servizi_rete (host_id, porta, protocollo, metodo, ntlm_json) VALUES (?, 445, 'tcp', 'ntlm', ?)",
+    ).run(w11, JSON.stringify({ versione_os: "10.0.22621", fonte: "smb" }));
+    const primaW11 = leggiPrimaLettura(d, w11);
+    assert.ok(primaW11);
+    assert.equal(primaW11.os, "Windows 11");
+    assert.equal(primaW11.os_fonte, "ntlm");
+    const osW11 = (d.prepare("SELECT os_info FROM hosts WHERE id = ?").get(w11) as { os_info: string }).os_info;
+    assert.equal(osW11, "Windows 11");
   });
 });

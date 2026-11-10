@@ -158,6 +158,27 @@ if [ "$LOCAL" = "$AVVIATO" ] && [ -n "$CAMBIATI" ] && ! printf '%s\n' "$CAMBIATI
   fi
 fi
 
+# Non si riavvia sopra una scansione. Il 10/11/2026 quattro Discovery lanciate a mano sull'hub sono
+# morte col riavvio di un aggiornamento, senza traccia. Se l'app dice che un giro è in corso si
+# rimanda al prossimo tick; dopo 3 ore si aggiorna comunque (un giro rimasto appeso non deve
+# congelare gli aggiornamenti). «Aggiorna ora» dell'interfaccia non aspetta: l'ha chiesto una persona.
+RIMANDATO="${DA_INVENT_DATA_DIR:-$APP_DIR/data}/aggiornamento-rimandato"
+if [ "$ORIGINE" != "interfaccia" ]; then
+  GIRI="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT:-3001}/api/health" 2>/dev/null | grep -o '"giri_in_corso":[0-9]*' | cut -d: -f2 || true)"
+  if [ -n "$GIRI" ] && [ "$GIRI" -gt 0 ]; then
+    ORA="$(date +%s)"
+    [ -f "$RIMANDATO" ] || echo "$ORA" > "$RIMANDATO"
+    DAL="$(cat "$RIMANDATO" 2>/dev/null || echo "$ORA")"
+    case "$DAL" in ''|*[!0-9]*) DAL="$ORA" ;; esac
+    if [ $((ORA - DAL)) -lt "${DA_INVENT_ATTESA_GIRI_S:-10800}" ]; then
+      echo "[auto-update] $GIRI giri in corso: rimando l'aggiornamento a $(git rev-parse --short "$REMOTE") al prossimo tick."
+      exit 0
+    fi
+    echo "[auto-update] $GIRI giri in corso da più di 3 ore: aggiorno comunque."
+  fi
+fi
+rm -f "$RIMANDATO"
+
 echo "[auto-update] nuovo commit su origin/$BRANCH ($(git rev-parse --short "$REMOTE")): aggiorno..."
 stato controllo aggiornamento_avviato $ORIGINE || true
 exec "$SCRIPT_DIR/update.sh" --restart

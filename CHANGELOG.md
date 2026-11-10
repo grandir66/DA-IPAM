@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
 
 ### Corretto
+- **L'aggiornamento automatico non riavvia più sopra una scansione**: il 10/11 quattro Discovery lanciate a mano sull'hub sono morte al riavvio di un aggiornamento, senza una riga in cronologia. Ora `auto-update.sh` chiede all'app se c'è un giro in corso (`giri_in_corso` in `/api/health`) e rimanda al tick dopo; oltre 3 ore aggiorna comunque. «Aggiorna ora» dall'interfaccia non aspetta.
+
+### Corretto
 - **Scansioni con più reti**: partivano tutte, ma il pannello di avanzamento ne mostra una sola e si apriva sull'ultima: sembrava che le altre non fossero state eseguite (Riccardo, 10/11). Con più reti il pannello non si apre più da solo; l'elenco «Giri in corso» mostra una riga per rete, anche per 5 minuti dopo la fine.
 
 Riccardo (10/11): «Sì, svuotale». Misura sull'hub 533: 75 host non manuali mostravano la classe scritta dal motore ritirato il 28/07, e dei 30 «voip» solo 13 erano telefoni.

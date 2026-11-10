@@ -21,6 +21,7 @@
  */
 import { NextResponse } from "next/server";
 import { getActiveTenants, getHubDb } from "@/lib/db-hub";
+import { contaGiriInCorso } from "@/lib/scanner/giri-in-corso";
 import { contaRipieghi } from "@/lib/db-maintenance/ripieghi";
 import { getTenantDb } from "@/lib/db-tenant";
 import { probeEncryptionKeyHealth } from "@/lib/encryption-key-health";
@@ -121,6 +122,8 @@ export async function GET(request: Request) {
       // Accessi al DB senza contesto tenant da quando il processo è partito
       // (NUC-1). Solo il numero: chi e da dove sta su /api/modules/health.
       ripieghi: contaRipieghi(),
+      // Solo il numero: l'aggiornamento automatico non riavvia sopra una scansione in corso.
+      giri_in_corso: contaGiriInCorso(),
       timestamp: new Date().toISOString(),
     }, { status: overallOk ? 200 : 503 });
   } catch (error) {

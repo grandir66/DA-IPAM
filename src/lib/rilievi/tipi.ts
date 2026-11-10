@@ -41,6 +41,10 @@ export interface RilievoUnito {
   /** Chiave CVE aggregata, per aprire gli host. */
   cve_key: string | null;
   host_count: number;
+  /** Pacchetto «nome versione» quando la fonte lo dice (Wazuh): serve alla vista «Cosa aggiornare». */
+  pacchetto?: string | null;
+  /** Exploit noti della CVE: sfruttata attivamente (CISA KEV), exploit pubblico (Exploit-DB). */
+  exploit?: { kev: boolean; edb: boolean } | null;
   /**
    * Chiave stabile del triage del rilievo (una per `triage_rilievi`): per le CVE è `cve_key`
    * (`CVE-…`/`nvt:…`), così il triage è lo stesso della scheda Vulnerabilità; per trunk e giri è
@@ -71,4 +75,6 @@ export interface ElencoRilievi {
   parziali: FonteRilievo[];
   /** Conteggi del triage per stato su tutti i rilievi dell'elenco (dopo i filtri, tutte le pagine). */
   conteggiTriage: Record<StatoTriage, number>;
+  /** I rilievi raccolti per cosa aggiornare; presente solo se chiesto (`raggruppa=software`). */
+  gruppi?: import("./gruppi").GruppoRilievi[];
 }

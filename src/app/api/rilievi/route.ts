@@ -7,6 +7,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { FONTI_RILIEVO, type FonteRilievo } from "@/lib/rilievi/tipi";
 import { elencoRilievi } from "@/lib/rilievi/unione";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
+import { exploitPerRotte } from "@/lib/vuln/exploit-feed/archivio";
 
 export async function GET(request: Request) {
   const session = await requireAuth();
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
       .filter((s): s is Severity => (SEVERITIES as readonly string[]).includes(s));
     const page = Number(q.get("page") ?? 1);
     const pageSize = Number(q.get("pageSize") ?? 50);
+    const aGruppi = q.get("raggruppa") === "software";
     return NextResponse.json(
       elencoRilievi({
         fonti,
@@ -30,6 +32,7 @@ export async function GET(request: Request) {
         q: q.get("q") ?? undefined,
         page: Number.isInteger(page) ? page : 1,
         pageSize: Number.isInteger(pageSize) ? pageSize : 50,
+        ...(aGruppi ? { raggruppa: "software" as const, exploitDi: exploitPerRotte().exploitDi } : {}),
       }),
     );
   });

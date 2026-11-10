@@ -22,6 +22,8 @@ import {
 } from "./controlli";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 import { agganciaTriage } from "./triage-aggancio";
+import { raggruppaPerSoftware } from "./gruppi";
+import type { ExploitInfo } from "@/lib/vuln/exploit-feed/archivio";
 import type { StatoTriage } from "@/lib/triage/db";
 
 function gravitaDaTrunk(g: GravitaRilievo): Severity {
@@ -32,8 +34,10 @@ function gravitaDaTrunk(g: GravitaRilievo): Severity {
 
 type RilievoConFonti = RilievoUnito & { fonti?: FonteRilievo[] };
 
-function daCve(): { righe: RilievoConFonti[]; parziale: boolean } {
-  const { data, total } = getAggregatedVulnerabilities({ page: 1, pageSize: 2000 });
+type ExploitDi = (cves: string[]) => Map<string, ExploitInfo>;
+
+function daCve(exploitDi?: ExploitDi): { righe: RilievoConFonti[]; parziale: boolean } {
+  const { data, total } = getAggregatedVulnerabilities({ page: 1, pageSize: 2000, ...(exploitDi ? { exploitDi } : {}) });
   const righe = data.map((v): RilievoConFonti => {
     const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
     const host = v.hosts_preview[0];
@@ -62,6 +66,9 @@ function daCve(): { righe: RilievoConFonti[]; parziale: boolean } {
       visto: v.latest_scanned_at,
       cve_key: v.key,
       host_count: v.host_count,
+      // Il pacchetto è un software da aggiornare solo se lo dice Wazuh: per Edge l'etichetta è il nome del test.
+      pacchetto: v.sources.includes("Wazuh") ? v.package_label : null,
+      exploit: v.exploit ? { kev: v.exploit.kev, edb: v.exploit.edb > 0 } : null,
       // Stessa chiave di triage della scheda Vulnerabilità (per CVE = cve_key).
       chiaveTriage: v.key,
     };
@@ -156,6 +163,10 @@ export interface FiltroRilievi {
   q?: string;
   page?: number;
   pageSize?: number;
+  /** «software» = aggiunge all'elenco i gruppi per cosa aggiornare (tutte le pagine). */
+  raggruppa?: "software";
+  /** Gli exploit noti per CVE: la rotta passa l'archivio vero, le prove uno finto o niente. */
+  exploitDi?: ExploitDi;
 }
 
 const ROLLUP_VUOTO: RollupRilievi = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -189,7 +200,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const nonDisponibili: FonteRilievo[] = [];
   const parziali: FonteRilievo[] = [];
   const sorgenti = [
-    { fonti: ["edge", "wazuh"] as const, leggi: daCve },
+    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(filtro.exploitDi) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
     { fonti: ["giro"] as const, leggi: daGiri },
   ];
@@ -244,5 +255,9 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const total = selezionati.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const data = selezionati.slice((page - 1) * pageSize, page * pageSize);
-  return { data, total, page, pageSize, totalPages, rollup, perFonte, totaleGlobale, nonDisponibili, parziali, conteggiTriage };
+  const gruppi = filtro.raggruppa === "software" ? raggruppaPerSoftware(selezionati) : undefined;
+  return {
+    data, total, page, pageSize, totalPages, rollup, perFonte, totaleGlobale, nonDisponibili, parziali, conteggiTriage,
+    ...(gruppi ? { gruppi } : {}),
+  };
 }

@@ -4,6 +4,10 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings a gruppi
+
+- **Findings › Elenco, «Raggruppa per: Cosa aggiornare»**. Con 2.705 rilievi da rivedere e nessuno rivisto, una riga per CVE non si smaltiva: ora le CVE si raccolgono per software da aggiornare, con quelle sfruttate attivamente in cima, e un gruppo si prende in carico in un colpo. Lo stato resta per CVE.
+
 ## [Non rilasciato] — 2026-11-10 · Revisione d'uso dell'hub: correzioni piccole
 
 - **Accesso**. Aperta dall'indirizzo IP, la pagina non offre più l'account Domarc (il cookie di DA-Auth lì non arriva e si tornava al login senza motivo) e lo dice; i rifiuti lasciano una riga nel registro.

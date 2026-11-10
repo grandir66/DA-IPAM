@@ -61,13 +61,15 @@ stessa levetta: EternalBlue (MS17-010, TRANSACTION PeekNamedPipe), IPMI RMCP pin
 MySQL/MSSQL (LOGIN7 `sa`) / Postgres di fabbrica (tetto 6). Prove su server finti verdi; collaudo
 dal vivo su SQL Server / Windows 7 non patchato ancora da fare sull'hub.
 
-**Resto del catalogo DA FARE (solo nomi, stessa impostazione):**
-- RDP: sicurezza Standard (senza TLS). SSH: login con password offerto. LDAP: signing non obbligatorio.
-- NFS: export leggibile da tutti. SNMP: community di scrittura.
-- TLS: cifrari deboli, chiave debole.
-- Web: Jenkins script console, pannello stampante, AD CS enrollment.
-- Altri: spooler RPC, Cisco Smart Install, trasferimento zona DNS, TFTP, NTP monlist, rsync,
-  r-services, IPMI RAKP, SMTP relay e VRFY, VNC con auth debole.
+**Terza ondata GIÀ FATTA (10/11 — non rifare):** RDP Standard (senza TLS), SSH password offerta
+(ssh2, nessun login), LDAP signing non obbligatorio, NFS export `*`, TLS cifrario/chiave deboli,
+DNS AXFR, TFTP, NTP monlist, rsync, Smart Install, r-services, RPC 135, IPP, AD CS `/certsrv/`,
+SMTP VRFY, VNC tipo 2, pannelli stampante; con la levetta: SNMP write (`private` SET sysName),
+Jenkins `/script`, IPMI RAKP dopo cipher-zero. SMTP relay aperto non fatto (troppo vicino a un
+invio). Collaudo dal vivo su hub ancora da fare.
+
+**Resto Nety NON check (fuori perimetro Findings):** diff tra giri, Completo che riprende,
+ascolto all'avvio, matrice tecniche.
 
 **Vincolo tassativo sugli autenticati/intrusivi** (default di fabbrica DB, `admin`/`admin`, SNMP
 write): spenti di serie, si accendono solo con la levetta «prove intrusive» del lanciatore, si

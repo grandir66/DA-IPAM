@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eTlsVecchio, rilieviDaTls, tlsDaJson } from "../da-servizi";
+import { eTlsChiaveDebole, eTlsCifrarioDebole, eTlsVecchio, rilieviDaTls, tlsDaJson } from "../da-servizi";
 import type { InfoTls } from "@/lib/servizi-rete/sonde";
 
 const CTX = {
@@ -67,6 +67,19 @@ test("autofirmato scaduto: solo High (scaduto vince, niente riga Low in più)", 
   const r = rilieviDaTls(tls({ expired: true, self_signed: true }), CTX);
   assert.equal(r.length, 1);
   assert.equal(r[0]!.gravita, "High");
+});
+
+test("cifrario RC4/3DES sì, AES-GCM no; chiave 1024 sì, EC 256 no", () => {
+  assert.equal(eTlsCifrarioDebole("ECDHE-RSA-DES-CBC3-SHA"), true);
+  assert.equal(eTlsCifrarioDebole("RC4-SHA"), true);
+  assert.equal(eTlsCifrarioDebole("TLS_AES_256_GCM_SHA384"), false);
+  assert.equal(eTlsChiaveDebole(1024), true);
+  assert.equal(eTlsChiaveDebole(1536), true);
+  assert.equal(eTlsChiaveDebole(256), false);
+  assert.equal(eTlsChiaveDebole(2048), false);
+  const r = rilieviDaTls(tls({ cipher: "RC4-SHA", key_bits: 1024 }), CTX);
+  assert.ok(r.some((x) => /cifrario debole/.test(x.titolo)));
+  assert.ok(r.some((x) => /Chiave TLS debole/.test(x.titolo)));
 });
 
 test("tlsDaJson: JSON rotto → null, senza throw", () => {

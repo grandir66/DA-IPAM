@@ -9,7 +9,10 @@ import net from "node:net";
 import {
   ipmiCipher0Accettato,
   ipmiPong,
+  adcsDaHttp,
+  jenkinsScriptDaHttp,
   ldapBindRiuscito,
+  ldapSenzaFirma,
   memcachedAperto,
   mongoSenzaAuth,
   nfsNullAccettato,
@@ -26,6 +29,7 @@ import {
   rpcSuTcp,
   sondaControllo,
   tdsLoginRiuscito,
+  vncAuthDeboleDaHandshake,
   vncSenzaAuthDaHandshake,
   x11Accettato,
 } from "../sonde-controlli";
@@ -40,6 +44,10 @@ test("LDAP bind success: resultCode 0 dopo BindResponse", () => {
   assert.equal(ldapBindRiuscito(ok), true);
   const ko = Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0a, 0x01, 0x31, 0x04, 0x00, 0x04, 0x00]);
   assert.equal(ldapBindRiuscito(ko), false);
+  const firma = Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0a, 0x01, 0x0d, 0x04, 0x00, 0x04, 0x00]);
+  assert.equal(ldapSenzaFirma(firma), false);
+  assert.equal(ldapSenzaFirma(ok), true);
+  assert.equal(ldapSenzaFirma(ko), true);
 });
 
 test("NFS RPC NULL accettato", () => {
@@ -74,9 +82,18 @@ test("Mongo listDatabases: opcode OP_REPLY e niente unauthorized", () => {
 test("VNC: tipo None in 003.008 e in 003.003", () => {
   assert.equal(vncSenzaAuthDaHandshake(Buffer.from("RFB 003.008\n"), Buffer.from([1, 1])), true);
   assert.equal(vncSenzaAuthDaHandshake(Buffer.from("RFB 003.008\n"), Buffer.from([1, 2])), false);
+  assert.equal(vncAuthDeboleDaHandshake(Buffer.from("RFB 003.008\n"), Buffer.from([1, 2])), true);
   const t = Buffer.alloc(4);
   t.writeUInt32BE(1, 0);
   assert.equal(vncSenzaAuthDaHandshake(Buffer.from("RFB 003.003\n"), t), true);
+});
+
+test("AD CS e Jenkins script da HTTP", () => {
+  assert.equal(adcsDaHttp(401, ""), true);
+  assert.equal(adcsDaHttp(200, "Active Directory Certificate Services"), true);
+  assert.equal(adcsDaHttp(404, ""), false);
+  assert.equal(jenkinsScriptDaHttp(200, "Script Console — Groovy"), true);
+  assert.equal(jenkinsScriptDaHttp(403, "Jenkins"), false);
 });
 
 test("Memcached stats, IPMI pong, X11 success", () => {

@@ -5,9 +5,20 @@
 import dgram from "node:dgram";
 import net from "node:net";
 import * as snmp from "net-snmp";
-import { provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneCommunity, provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
 import type { InfoControllo } from "./controlli";
 import { sondaSmb } from "./smb-controlli";
+import {
+  provaDnsAxfr,
+  provaIpmiRakp,
+  provaNfsExportStella,
+  provaNtpMonlist,
+  provaRsync,
+  provaSmartInstall,
+  provaSmtpVrfy,
+  provaSshPasswordOfferta,
+  provaTftp,
+} from "./sonde-extra";
 
 const TETTO = 16 * 1024;
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
@@ -24,8 +35,8 @@ export interface EsitoSondaControllo {
 }
 
 export const PORTE_CONTROLLO = new Set([
-  21, 23, 139, 161, 389, 445, 623, 1433, 2049, 2181, 2375, 2379, 3306, 5432, 5900, 5901, 5984, 5985, 5986, 6000, 6379,
-  8530, 9200, 10250, 11211, 27017,
+  21, 22, 23, 25, 53, 69, 111, 123, 135, 139, 161, 389, 445, 512, 513, 514, 623, 631, 873, 1433, 2049, 2181, 2375, 2379,
+  3306, 4786, 5432, 5900, 5901, 5984, 5985, 5986, 6000, 6379, 8530, 9200, 10250, 11211, 27017,
 ]);
 
 function connetti(ip: string, porta: number, ms: number): Promise<net.Socket | null> {
@@ -88,14 +99,35 @@ async function conTesto(ip: string, porta: number, ms: number, invio: string | B
 export const LDAP_BIND_ANONIMO = Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x60, 0x07, 0x02, 0x01, 0x03, 0x04, 0x00, 0x80, 0x00]);
 
 export function ldapBindRiuscito(buf: Buffer): boolean {
-  const i = buf.indexOf(Buffer.from([0x61]));
-  if (i < 0) return false;
-  return buf.includes(Buffer.from([0x0a, 0x01, 0x00]), i);
+  return ldapResultCode(buf) === 0;
+}
+
+/** resultCode del BindResponse (byte dopo 0x0a 0x01). 13 = confidentialityRequired. */
+export function ldapResultCode(buf: Buffer): number | null {
+  const i = buf.indexOf(0x61);
+  if (i < 0) return null;
+  const j = buf.indexOf(Buffer.from([0x0a, 0x01]), i);
+  if (j < 0 || j + 2 >= buf.length) return null;
+  return buf[j + 2]!;
+}
+
+export function ldapSenzaFirma(buf: Buffer): boolean {
+  const c = ldapResultCode(buf);
+  return c != null && c !== 13;
+}
+
+export async function provaLdap(
+  ip: string,
+  porta: number,
+  ms: number,
+): Promise<{ anonimo: boolean; senzaFirma: boolean }> {
+  const r = await conTesto(ip, porta, ms, LDAP_BIND_ANONIMO, (b) => b.includes(0x61));
+  if (!r) return { anonimo: false, senzaFirma: false };
+  return { anonimo: ldapBindRiuscito(r), senzaFirma: ldapSenzaFirma(r) };
 }
 
 export async function provaLdapAnonimo(ip: string, porta: number, ms: number): Promise<boolean> {
-  const r = await conTesto(ip, porta, ms, LDAP_BIND_ANONIMO, (b) => b.includes(0x61));
-  return r ? ldapBindRiuscito(r) : false;
+  return (await provaLdap(ip, porta, ms)).anonimo;
 }
 
 export function redisSenzaAuth(buf: Buffer): boolean {
@@ -194,30 +226,87 @@ export async function provaNfs(ip: string, porta: number, ms: number): Promise<b
   return r ? nfsNullAccettato(r) : false;
 }
 
-export function vncSenzaAuthDaHandshake(banner: Buffer, tipi: Buffer): boolean {
+function vncTipiOfferti(banner: Buffer, tipi: Buffer): number[] {
   const ident = banner.toString("latin1").split("\n")[0] ?? "";
-  if (!ident.startsWith("RFB ")) return false;
+  if (!ident.startsWith("RFB ")) return [];
   if (/RFB 003\.003/.test(ident)) {
-    if (tipi.length < 4) return false;
-    return tipi.readUInt32BE(0) === 1;
+    if (tipi.length < 4) return [];
+    return [tipi.readUInt32BE(0)];
   }
-  if (tipi.length < 1) return false;
-  const n = tipi[0];
-  if (n < 1 || tipi.length < 1 + n) return false;
-  return tipi.subarray(1, 1 + n).includes(1);
+  if (tipi.length < 1) return [];
+  const n = tipi[0]!;
+  if (n < 1 || tipi.length < 1 + n) return [];
+  return [...tipi.subarray(1, 1 + n)];
 }
 
-export async function provaVnc(ip: string, porta: number, ms: number): Promise<boolean> {
+export function vncSenzaAuthDaHandshake(banner: Buffer, tipi: Buffer): boolean {
+  return vncTipiOfferti(banner, tipi).includes(1);
+}
+
+/** Tipo 2 = password VNC (DES a 8 caratteri). */
+export function vncAuthDeboleDaHandshake(banner: Buffer, tipi: Buffer): boolean {
+  return vncTipiOfferti(banner, tipi).includes(2);
+}
+
+export async function provaVnc(
+  ip: string,
+  porta: number,
+  ms: number,
+): Promise<{ none: boolean; debole: boolean }> {
   const s = await connetti(ip, porta, ms);
-  if (!s) return false;
+  if (!s) return { none: false, debole: false };
   try {
     const banner = await leggi(s, ms, (b) => b.includes(0x0a));
-    if (!banner.toString("latin1").startsWith("RFB ")) return false;
+    if (!banner.toString("latin1").startsWith("RFB ")) return { none: false, debole: false };
     s.write("RFB 003.008\n");
     const tipi = await leggi(s, ms, (b) => b.length >= 1);
-    return vncSenzaAuthDaHandshake(banner, tipi);
+    return {
+      none: vncSenzaAuthDaHandshake(banner, tipi),
+      debole: vncAuthDeboleDaHandshake(banner, tipi),
+    };
   } finally {
     s.destroy();
+  }
+}
+
+const OID_SYSNAME = "1.3.6.1.2.1.1.5.0";
+
+/** GET sysName con community private, poi SET dello stesso valore. */
+export async function provaSnmpWrite(ip: string, ms: number): Promise<boolean> {
+  try {
+    const letto = await provaVersioniSnmp(snmp, ip, "private", {
+      port: 161,
+      timeoutMs: ms,
+      oids: [OID_SYSNAME],
+    });
+    if (!letto.ok) return false;
+    const raw = letto.varbinds[0]?.value;
+    const valore = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw ?? "");
+    if (!valore.trim()) return false;
+    return await new Promise((resolve) => {
+      const session = apriSessioneCommunity(snmp, ip, "private", {
+        port: 161,
+        timeout: ms,
+        retries: 0,
+        versione: letto.versione,
+      });
+      let chiuso = false;
+      const fine = (ok: boolean) => {
+        if (chiuso) return;
+        chiuso = true;
+        clearTimeout(t);
+        try {
+          session.close();
+        } catch {
+          /* già chiusa */
+        }
+        resolve(ok);
+      };
+      const t = setTimeout(() => fine(false), ms + 500);
+      session.set([{ oid: OID_SYSNAME, type: 4, value: valore }], (err) => fine(!err));
+    });
+  } catch {
+    return false;
   }
 }
 
@@ -359,6 +448,31 @@ export async function provaPercorsiHttp(ip: string, porta: number, ms: number): 
     if (out.git_env || out.actuator) return out;
   }
   return {};
+}
+
+export function adcsDaHttp(code: number, corpo: string): boolean {
+  if (code === 200) return /certsrv|certificate services|microsoft certificate/i.test(corpo);
+  return code === 401;
+}
+
+export function jenkinsScriptDaHttp(code: number, corpo: string): boolean {
+  return code >= 200 && code < 400 && /script console|groovy|Jenkins/i.test(corpo);
+}
+
+async function provaAdcs(ip: string, porta: number, ms: number): Promise<boolean> {
+  for (const https of schemiHttp(porta)) {
+    const r = await httpGet(ip, porta, https, ms, undefined, "/certsrv/");
+    if (r && adcsDaHttp(r.code, r.corpo)) return true;
+  }
+  return false;
+}
+
+async function provaJenkinsScript(ip: string, porta: number, ms: number): Promise<boolean> {
+  for (const https of schemiHttp(porta)) {
+    const r = await httpGet(ip, porta, https, ms, undefined, "/script");
+    if (r && jenkinsScriptDaHttp(r.code, r.corpo)) return true;
+  }
+  return false;
 }
 
 export function x11Accettato(buf: Buffer): boolean {
@@ -604,7 +718,21 @@ function controlloHaEsito(info: InfoControllo): boolean {
       info.x11 ||
       info.ms17_010 ||
       info.ipmi_esposto ||
-      info.ipmi_cipher0,
+      info.ipmi_cipher0 ||
+      info.ldap_senza_firma ||
+      info.nfs_export_stella ||
+      info.snmp_write ||
+      info.dns_axfr ||
+      info.tftp ||
+      info.ntp_monlist ||
+      info.rsync ||
+      info.smart_install ||
+      info.smtp_vrfy ||
+      info.adcs ||
+      info.jenkins_script ||
+      info.vnc_auth_debole ||
+      info.ipmi_rakp ||
+      info.ssh_password,
   );
 }
 
@@ -621,18 +749,24 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
 
   try {
     if (porta === 389) {
-      if (await provaLdapAnonimo(ip, porta, ms)) info.ldap_anonimo = true;
+      const ldap = await provaLdap(ip, porta, ms);
+      if (ldap.anonimo) info.ldap_anonimo = true;
+      if (ldap.senzaFirma) info.ldap_senza_firma = true;
     } else if (porta === 6379) {
       if (await provaRedis(ip, porta, ms)) info.redis_aperto = true;
     } else if (porta === 27017) {
       if (await provaMongo(ip, porta, ms)) info.mongo_aperto = true;
-    } else if (porta === 2049) {
-      if (await provaNfs(ip, porta, ms)) info.nfs_risponde = true;
+    } else if (porta === 2049 || porta === 111) {
+      if (porta === 2049 && (await provaNfs(ip, porta, ms))) info.nfs_risponde = true;
+      if (await provaNfsExportStella(ip, ms)) info.nfs_export_stella = true;
     } else if (porta === 161) {
       const sys = await provaSnmpPublic(ip, ms);
       if (sys) info.snmp_public = sys;
+      if (opz.proveFabbrica && (await provaSnmpWrite(ip, ms))) info.snmp_write = true;
     } else if (porta === 5900 || porta === 5901) {
-      if (await provaVnc(ip, porta, ms)) info.vnc_senza_auth = true;
+      const vnc = await provaVnc(ip, porta, ms);
+      if (vnc.none) info.vnc_senza_auth = true;
+      if (vnc.debole) info.vnc_auth_debole = true;
     } else if (porta === 445 || porta === 139) {
       Object.assign(info, await sondaSmb(ip, porta, ms, opz.proveFabbrica === true));
     } else if (porta === 11211) {
@@ -651,10 +785,27 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (await httpJsonSenzaAuth(ip, porta, true, "/runningpods/", ms, /items|kind/i)) info.kubelet = true;
     } else if (porta === 6000) {
       if (await provaX11(ip, porta, ms)) info.x11 = true;
+    } else if (porta === 22) {
+      if (await provaSshPasswordOfferta(ip, porta, ms)) info.ssh_password = true;
+    } else if (porta === 53) {
+      if (await provaDnsAxfr(ip, porta, ms)) info.dns_axfr = true;
+    } else if (porta === 69) {
+      if (await provaTftp(ip, ms)) info.tftp = true;
+    } else if (porta === 123) {
+      if (await provaNtpMonlist(ip, ms)) info.ntp_monlist = true;
+    } else if (porta === 873) {
+      if (await provaRsync(ip, porta, ms)) info.rsync = true;
+    } else if (porta === 4786) {
+      if (await provaSmartInstall(ip, porta, ms)) info.smart_install = true;
+    } else if (porta === 25) {
+      if (await provaSmtpVrfy(ip, porta, ms)) info.smtp_vrfy = true;
     } else if (opz.proveFabbrica && porta === 623) {
       const ipmi = await provaIpmi(ip, ms);
       if (ipmi.esposto) info.ipmi_esposto = true;
-      if (ipmi.cipher0) info.ipmi_cipher0 = true;
+      if (ipmi.cipher0) {
+        info.ipmi_cipher0 = true;
+        if (await provaIpmiRakp(ip, ms, porta)) info.ipmi_rakp = true;
+      }
     } else if (opz.proveFabbrica && porta === 21 && restanti > 0) {
       tentativiUsati += 1;
       restanti -= 1;
@@ -673,10 +824,13 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (await provaMssqlSa(ip, porta, ms)) info.fabbrica = { servizio: "mssql", utente: "sa" };
     }
 
-    const httpish = porta === 80 || porta === 443 || porta === 8080 || porta === 8443 || porta === 8000 || porta === 8888;
+    const httpish =
+      porta === 80 || porta === 443 || porta === 8080 || porta === 8443 || porta === 8000 || porta === 8888 || porta === 631;
     if (httpish || !PORTE_CONTROLLO.has(porta)) {
       Object.assign(info, await provaPercorsiHttp(ip, porta, ms));
+      if (await provaAdcs(ip, porta, ms)) info.adcs = true;
     }
+    if (opz.proveFabbrica && httpish && (await provaJenkinsScript(ip, porta, ms))) info.jenkins_script = true;
     if (opz.proveFabbrica && restanti > 0 && httpish) {
       const stato = await httpGet(ip, porta, https, ms);
       if (stato?.code === 401) {

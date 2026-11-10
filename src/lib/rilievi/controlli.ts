@@ -32,6 +32,20 @@ export interface InfoControllo {
   ms17_010?: boolean;
   ipmi_esposto?: boolean;
   ipmi_cipher0?: boolean;
+  ldap_senza_firma?: boolean;
+  nfs_export_stella?: boolean;
+  snmp_write?: boolean;
+  dns_axfr?: boolean;
+  tftp?: boolean;
+  ntp_monlist?: boolean;
+  rsync?: boolean;
+  smart_install?: boolean;
+  smtp_vrfy?: boolean;
+  adcs?: boolean;
+  jenkins_script?: boolean;
+  vnc_auth_debole?: boolean;
+  ipmi_rakp?: boolean;
+  ssh_password?: boolean;
 }
 
 export const TETTO_FABBRICA_PER_HOST = 6;
@@ -60,6 +74,11 @@ const CONSOLE_WEB: ReadonlyArray<{ re: RegExp; nome: string }> = [
   { re: /weblogic/i, nome: "WebLogic" },
   { re: /synology|\bdsm\b/i, nome: "Synology DSM" },
   { re: /mikrotik|routeros/i, nome: "MikroTik" },
+  { re: /\bcups\b|common unix printing/i, nome: "CUPS" },
+  { re: /jetdirect|hp embedded web|hp laserjet/i, nome: "HP JetDirect" },
+  { re: /\bxerox\b/i, nome: "Xerox" },
+  { re: /kyocera|command center/i, nome: "Kyocera" },
+  { re: /\bbrother\b/i, nome: "Brother" },
 ];
 
 function riga(
@@ -121,7 +140,18 @@ export function rilieviDaNtlm(n: InfoNtlm | null, ctx: ContestoServizio): Riliev
       ),
     );
   }
-  if (n.fonte === "rdp" && n.rdp_nla === false) {
+  if (n.fonte === "rdp" && n.rdp_tls === false) {
+    out.push(
+      riga(
+        ctx,
+        "rdp-standard",
+        "High",
+        `RDP in chiaro (Standard) su ${dove}`,
+        "Il server ha scelto il protocollo RDP classico, senza TLS né CredSSP: la sessione viaggia in chiaro.",
+        "Imposta «Negotiate» o «SSL» e richiedi NLA. Spegni «RDP Security Layer».",
+      ),
+    );
+  } else if (n.fonte === "rdp" && n.rdp_nla === false) {
     out.push(
       riga(
         ctx,
@@ -215,6 +245,43 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
         `WSUS in HTTP su ${dove}`,
         "Il servizio aggiornamenti risponde in chiaro: un attaccante in LAN può iniettare aggiornamenti.",
         "Pubblica WSUS solo in HTTPS (8531) e vincola i client al certificato.",
+      ),
+    ];
+  }
+  if (ctx.porta === 135) {
+    return [
+      riga(
+        ctx,
+        "rpc-135",
+        "Medium",
+        `Mapper RPC esposto su ${dove}`,
+        "La porta 135 è aperta: si possono enumerare i servizi RPC (spooler, DCOM).",
+        "Filtra la 135 verso la LAN utente; tieni RPC sulla rete di gestione.",
+      ),
+    ];
+  }
+  if (ctx.porta === 512 || ctx.porta === 513 || ctx.porta === 514) {
+    const nome = ctx.porta === 512 ? "rexec" : ctx.porta === 513 ? "rlogin" : "rsh";
+    return [
+      riga(
+        ctx,
+        "r-services",
+        "High",
+        `${nome} in chiaro su ${dove}`,
+        `La porta ${ctx.porta} è aperta: login e comandi viaggiano senza cifratura, spesso senza password.`,
+        "Spegni rsh/rlogin/rexec; usa SSH.",
+      ),
+    ];
+  }
+  if (ctx.porta === 631) {
+    return [
+      riga(
+        ctx,
+        "ipp",
+        "Low",
+        `IPP / pannello stampante su ${dove}`,
+        "La porta 631 (Internet Printing Protocol) è aperta. Non si interroga la 9100.",
+        "Tieni CUPS/JetDirect fuori dalla LAN utente, con login; spegni IPP se non serve.",
       ),
     ];
   }
@@ -428,6 +495,84 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   } else if (c.ipmi_esposto) {
     out.push(riga(ctx, "ipmi", "Medium", `IPMI raggiungibile su ${dove}`, "RMCP Presence Pong sulla 623 UDP.", "Tieni IPMI sulla rete di gestione, password lunghe, disabilita LAN se non serve."));
   }
+  if (c.ipmi_rakp) {
+    out.push(riga(ctx, "ipmi-rakp", "High", `IPMI RAKP utente admin su ${dove}`, "RAKP Message 2 con status 0 per l'utente admin: HMAC recuperabile.", "Togli gli utenti di fabbrica dal BMC; password lunghe; IPMI fuori dalla LAN."));
+  }
+  if (c.ldap_senza_firma) {
+    out.push(
+      riga(
+        ctx,
+        "ldap-firma",
+        "Medium",
+        `LDAP senza firma obbligatoria su ${dove}`,
+        "Il bind senza confidentiality ha avuto un resultCode diverso da 13: il server accetta LDAP in chiaro.",
+        "Imposta LDAP signing required (o LDAPS 636) sul directory.",
+      ),
+    );
+  }
+  if (c.nfs_export_stella) {
+    out.push(
+      riga(
+        ctx,
+        "nfs-stella",
+        "High",
+        `NFS esportato a * su ${dove}`,
+        "MOUNT EXPORT elenca uno share visibile a tutti (`*`).",
+        "Limita gli export agli host che servono, con root_squash; non esportare a *.",
+      ),
+    );
+  }
+  if (c.snmp_write) {
+    out.push(
+      riga(
+        ctx,
+        "snmp-write",
+        "High",
+        `SNMP accetta la community private in scrittura su ${dove}`,
+        "SET di sysName con community private riuscito (stesso valore letto prima).",
+        "Togli le community di scrittura, usa SNMPv3 con authPriv.",
+      ),
+    );
+  }
+  if (c.dns_axfr) {
+    out.push(riga(ctx, "dns-axfr", "High", `Trasferimento zona DNS aperto su ${dove}`, "AXFR (tipo 252) accettato: la zona è scaricabile da chiunque.", "Limita AXFR ai secondari noti; spegni il trasferimento verso il mondo."));
+  }
+  if (c.tftp) {
+    out.push(riga(ctx, "tftp", "Medium", `TFTP risponde su ${dove}`, "RRQ ha ricevuto DATA o ERROR: il servizio TFTP è raggiungibile.", "Spegni TFTP se non serve, o vincolalo alla rete di gestione."));
+  }
+  if (c.ntp_monlist) {
+    out.push(riga(ctx, "ntp-monlist", "High", `NTP monlist attivo su ${dove}`, "Mode 7 MON_GETLIST ha restituito la lista dei client: si usa per amplificare DDoS.", "Aggiorna ntpd e disabilita monlist (restrict default noquery)."));
+  }
+  if (c.rsync) {
+    out.push(riga(ctx, "rsync", "Medium", `rsync elenca i moduli su ${dove}`, "Il saluto @RSYNCD è stato accettato senza autenticazione.", "Metti un login sui moduli, o non esporre 873 in LAN."));
+  }
+  if (c.smart_install) {
+    out.push(riga(ctx, "smart-install", "High", `Cisco Smart Install su ${dove}`, "La porta 4786 ha risposto al handshake Smart Install.", "Spegni Smart Install (`no vstack`) sugli switch."));
+  }
+  if (c.smtp_vrfy) {
+    out.push(riga(ctx, "smtp-vrfy", "Low", `SMTP VRFY aperto su ${dove}`, "VRFY postmaster ha risposto 250 o 252: si enumerano gli utenti.", "Disabilita VRFY (e EXPN) sul relay."));
+  }
+  if (c.adcs) {
+    out.push(riga(ctx, "adcs", "High", `AD CS enrollment web su ${dove}`, "GET /certsrv/ ha risposto: la console di iscrizione certificati è in rete.", "Tieni certsrv sulla rete di gestione, con HTTPS e autenticazione forte."));
+  }
+  if (c.jenkins_script) {
+    out.push(riga(ctx, "jenkins-script", "High", `Jenkins Script Console su ${dove}`, "GET /script ha aperto la console Groovy.", "Togli Script Console agli anonimi; autentica Jenkins; non esporlo in LAN."));
+  }
+  if (c.vnc_auth_debole && !c.vnc_senza_auth) {
+    out.push(riga(ctx, "vnc-debole", "Medium", `VNC con autenticazione debole su ${dove}`, "Il server offre il tipo 2 (password DES a 8 caratteri).", "Usa un tunnel SSH o un VNC con TLS; password lunghe non bastano sul tipo 2."));
+  }
+  if (c.ssh_password) {
+    out.push(
+      riga(
+        ctx,
+        "ssh-password",
+        "Low",
+        `SSH offre il login con password su ${dove}`,
+        "Il server ha dichiarato password o keyboard-interactive. Nessun login è stato completato.",
+        "In sshd_config: PasswordAuthentication no, e solo chiavi.",
+      ),
+    );
+  }
   return out;
 }
 
@@ -448,6 +593,7 @@ export function ntlmDaJson(grezzo: string | null): InfoNtlm | null {
       fonte,
       smb_signing: typeof o.smb_signing === "boolean" ? o.smb_signing : undefined,
       rdp_nla: typeof o.rdp_nla === "boolean" ? o.rdp_nla : undefined,
+      rdp_tls: typeof o.rdp_tls === "boolean" ? o.rdp_tls : undefined,
     };
   } catch {
     return null;
@@ -538,6 +684,20 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
       ms17_010: o.ms17_010 === true,
       ipmi_esposto: o.ipmi_esposto === true,
       ipmi_cipher0: o.ipmi_cipher0 === true,
+      ldap_senza_firma: o.ldap_senza_firma === true,
+      nfs_export_stella: o.nfs_export_stella === true,
+      snmp_write: o.snmp_write === true,
+      dns_axfr: o.dns_axfr === true,
+      tftp: o.tftp === true,
+      ntp_monlist: o.ntp_monlist === true,
+      rsync: o.rsync === true,
+      smart_install: o.smart_install === true,
+      smtp_vrfy: o.smtp_vrfy === true,
+      adcs: o.adcs === true,
+      jenkins_script: o.jenkins_script === true,
+      vnc_auth_debole: o.vnc_auth_debole === true,
+      ipmi_rakp: o.ipmi_rakp === true,
+      ssh_password: o.ssh_password === true,
     };
   } catch {
     return null;

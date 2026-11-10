@@ -104,7 +104,7 @@ function daGiri(): RilievoUnito[] {
           OR (s.ssh_json IS NOT NULL AND s.ssh_json != '')
           OR (s.http_json IS NOT NULL AND s.http_json != '')
           OR (s.controllo_json IS NOT NULL AND s.controllo_json != '')
-          OR s.porta IN (23, 5985, 5986, 8530)
+          OR s.porta IN (23, 135, 512, 513, 514, 5985, 5986, 631, 8530)
        LIMIT 4000`,
     ).all() as Array<{
       host_id: number;

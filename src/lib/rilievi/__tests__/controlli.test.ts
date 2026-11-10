@@ -66,6 +66,23 @@ test("RDP senza NLA: Medium", () => {
   assert.match(r[0]!.titolo, /NLA/);
 });
 
+test("RDP Standard (senza TLS) vince su NLA: High", () => {
+  const n: InfoNtlm = {
+    netbios: null,
+    dominio_netbios: null,
+    dns_computer: null,
+    dominio_dns: null,
+    versione_os: null,
+    fonte: "rdp",
+    rdp_nla: false,
+    rdp_tls: false,
+  };
+  const r = rilieviDaNtlm(n, { ...CTX, porta: 3389 });
+  assert.equal(r.length, 1);
+  assert.equal(r[0]!.gravita, "High");
+  assert.match(r[0]!.titolo, /Standard/);
+});
+
 test("consola web da titolo Jenkins; nginx no", () => {
   const http = (title: string | null, server: string | null): InfoHttp => ({
     scheme: "http",
@@ -79,6 +96,7 @@ test("consola web da titolo Jenkins; nginx no", () => {
     body_sha256: null,
   });
   assert.equal(nomeConsolaWeb(http("Dashboard [Jenkins]", null)), "Jenkins");
+  assert.equal(nomeConsolaWeb(http("CUPS 2.4", null)), "CUPS");
   assert.equal(nomeConsolaWeb(http("Welcome", "nginx/1.27")), null);
   const r = rilieviDaHttp(http("phpMyAdmin", null), { ...CTX, porta: 80 });
   assert.equal(r.length, 1);
@@ -125,6 +143,13 @@ test("Telnet 23 Medium, WinRM Low, WSUS HTTP High, WSUS con TLS niente", () => {
   assert.equal(wsus[0]!.gravita, "High");
   assert.equal(rilieviDaPorta({ ...CTX, porta: 8530 }, true).length, 0);
   assert.equal(rilieviDaPorta({ ...CTX, porta: 22 }, false).length, 0);
+  const rpc = rilieviDaPorta({ ...CTX, porta: 135 }, false);
+  assert.equal(rpc[0]!.gravita, "Medium");
+  const rsh = rilieviDaPorta({ ...CTX, porta: 514 }, false);
+  assert.equal(rsh[0]!.gravita, "High");
+  assert.match(rsh[0]!.titolo, /rsh/);
+  const ipp = rilieviDaPorta({ ...CTX, porta: 631 }, false);
+  assert.equal(ipp[0]!.gravita, "Low");
 });
 
 test("SMBv1, sessione anonima e EternalBlue dal JSON", () => {
@@ -151,4 +176,26 @@ test("Memcached e IPMI esposto; cipher0 vince su ping", () => {
 
 test("tetto login di fabbrica è 6", () => {
   assert.equal(TETTO_FABBRICA_PER_HOST, 6);
+});
+
+test("LDAP senza firma, NFS *, DNS AXFR, SSH password dal JSON", () => {
+  const r = rilieviDaControllo(
+    { ldap_senza_firma: true, nfs_export_stella: true, dns_axfr: true, ssh_password: true },
+    { ...CTX, porta: 389 },
+  );
+  assert.ok(r.some((x) => x.id.includes("ldap-firma") && x.gravita === "Medium"));
+  assert.ok(r.some((x) => x.id.includes("nfs-stella") && x.gravita === "High"));
+  assert.ok(r.some((x) => x.id.includes("dns-axfr") && x.gravita === "High"));
+  assert.ok(r.some((x) => x.id.includes("ssh-password") && x.gravita === "Low"));
+  assert.equal(controlloDaJson(JSON.stringify({ adcs: true, jenkins_script: true }))?.adcs, true);
+});
+
+test("VNC tipo 2 solo se non c'è None; IPMI RAKP", () => {
+  const debole = rilieviDaControllo({ vnc_auth_debole: true }, { ...CTX, porta: 5900 });
+  assert.equal(debole[0]!.gravita, "Medium");
+  const entrambi = rilieviDaControllo({ vnc_senza_auth: true, vnc_auth_debole: true }, { ...CTX, porta: 5900 });
+  assert.ok(entrambi.some((x) => x.id.includes("vnc-aperto")));
+  assert.ok(!entrambi.some((x) => x.id.includes("vnc-debole")));
+  const rakp = rilieviDaControllo({ ipmi_rakp: true, ipmi_cipher0: true }, { ...CTX, porta: 623 });
+  assert.ok(rakp.some((x) => x.id.includes("ipmi-rakp")));
 });

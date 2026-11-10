@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 3)
+
+Riccardo (10/11): i check Nety ancora aperti, stessa impostazione (senza credenziali; invasivi solo con la levetta su `/scans`).
+
+### Aggiunto
+- **Da archivio**: RDP Standard (senza TLS), RPC 135, r-services 512/513/514, IPP 631, pannelli stampante (CUPS/JetDirect/Xerox/Kyocera/Brother).
+- **Da sonda**: SSH che offre password, LDAP senza firma, NFS export `*`, DNS AXFR, TFTP, NTP monlist, rsync, Cisco Smart Install, SMTP VRFY, VNC tipo 2, AD CS `/certsrv/`. TLS: cifrario RC4/3DES/NULL e chiave RSA 512/1024/1536 (non EC 256).
+- **Dietro la levetta**: SNMP write (`private` SET di sysName), Jenkins Script Console, IPMI RAKP dopo cipher-zero.
+
 ## [Non rilasciato] — 2026-11-10 · Findings: tab per motore (Tutti / IPAM-Nety / Edge / Wazuh)
 
 Riccardo (10/11): una pagina Findings con la vista comune più un tab per motore, per separare nativamente le visualizzazioni.

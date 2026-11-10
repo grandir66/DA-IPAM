@@ -87,9 +87,15 @@ export function rdpNlaRichiesta(proto: number): boolean {
   return (proto & (PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) !== 0;
 }
 
+/** TLS/CredSSP: SSL, HYBRID o HYBRID_EX. Protocollo 0 = RDP Standard in chiaro. */
+export function rdpTlsAbilitato(proto: number): boolean {
+  return (proto & (PROTOCOL_SSL | PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) !== 0;
+}
+
 export interface EsitoRdpNtlm {
   challenge: NtlmChallengeInfo | null;
   nla: boolean;
+  tls: boolean;
 }
 
 export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port?: number }): Promise<EsitoRdpNtlm | null> {
@@ -102,18 +108,25 @@ export async function probeRdpNtlm(ip: string, opts?: { timeoutMs?: number; port
     s1.write(rdpConnectionRequest());
     const cc = await leggi(s1, ms, (b) => b.length >= 4 && b.length >= b.readUInt16BE(2));
     const proto = protocolloRdpDaConferma(cc);
-    if (proto === null) return null;
+    if (proto === null) {
+      // Connection Confirm senza NEG_RSP: RDP classico, in chiaro.
+      if (cc.length >= 7 && cc[0] === 0x03 && cc[5] === 0xd0) {
+        return { challenge: null, nla: false, tls: false };
+      }
+      return null;
+    }
     const nla = rdpNlaRichiesta(proto);
-    if ((proto & (PROTOCOL_SSL | PROTOCOL_HYBRID | PROTOCOL_HYBRID_EX)) === 0) {
-      return { challenge: null, nla: false };
+    const tlsOn = rdpTlsAbilitato(proto);
+    if (!tlsOn) {
+      return { challenge: null, nla: false, tls: false };
     }
     tlsSock = await startTls(s1, ms);
-    if (!tlsSock) return { challenge: null, nla };
+    if (!tlsSock) return { challenge: null, nla, tls: true };
     const type1 = wrapNtlmInSpnego(buildNtlmNegotiateMessage());
     tlsSock.write(credsspTsRequest(type1));
     const risp = await leggi(tlsSock, ms, (b) => ntlmDaGssORaw(b) !== null);
     const ntlm = ntlmDaGssORaw(risp);
-    return { challenge: ntlm ? parseNtlmChallenge(ntlm) : null, nla };
+    return { challenge: ntlm ? parseNtlmChallenge(ntlm) : null, nla, tls: true };
   } catch {
     return null;
   } finally {

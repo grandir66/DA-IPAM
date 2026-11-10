@@ -5,6 +5,20 @@
 import type { InfoTls } from "@/lib/servizi-rete/sonde";
 import type { RilievoUnito } from "./tipi";
 
+/** RC4, DES, 3DES, NULL, EXPORT, MD5. AES-GCM/CTR no. */
+export function eTlsCifrarioDebole(cipher: string | null): boolean {
+  if (!cipher) return false;
+  const c = cipher.toUpperCase();
+  if (/RC4/.test(c) || /EXPORT/.test(c) || /NULL/.test(c) || /MD5/.test(c) || /IDEA/.test(c)) return true;
+  if (/3DES|DES-CBC3|CBC3/.test(c)) return true;
+  return /(?:^|[_-])DES(?:$|[_-])/.test(c);
+}
+
+/** RSA 512/1024/1536. Non le curve EC (256). */
+export function eTlsChiaveDebole(bits: number | null | undefined): boolean {
+  return bits === 512 || bits === 1024 || bits === 1536;
+}
+
 /** TLSv1 / 1.0 / 1.1 e SSLv3. TLS 1.2 e 1.3 no. */
 export function eTlsVecchio(version: string | null): boolean {
   if (!version) return false;
@@ -70,6 +84,40 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       titolo: `Certificato autofirmato su ${dove}`,
       prova: `${cn}; emesso da ${tls.issuer ?? "sconosciuto"}`,
       rimedio: "Normale su un pannello interno. Se è un servizio verso gli utenti, metti un certificato dell'azienda.",
+      ip: ctx.ip,
+      host_id: ctx.host_id,
+      network_id: ctx.network_id,
+      network_name: ctx.network_name,
+      visto: tls.not_after,
+      cve_key: null,
+      host_count: 1,
+    });
+  }
+  if (eTlsCifrarioDebole(tls.cipher)) {
+    out.push({
+      id: `giro:tls-cifrario:${ctx.host_id}:${ctx.porta}`,
+      fonte: "giro",
+      gravita: "Medium",
+      titolo: `TLS con cifrario debole su ${dove}`,
+      prova: `Cifrario ${tls.cipher ?? "—"}`,
+      rimedio: "Lascia solo AES-GCM o ChaCha20. Togli RC4, 3DES, NULL ed EXPORT.",
+      ip: ctx.ip,
+      host_id: ctx.host_id,
+      network_id: ctx.network_id,
+      network_name: ctx.network_name,
+      visto: tls.not_after,
+      cve_key: null,
+      host_count: 1,
+    });
+  }
+  if (eTlsChiaveDebole(tls.key_bits)) {
+    out.push({
+      id: `giro:tls-chiave:${ctx.host_id}:${ctx.porta}`,
+      fonte: "giro",
+      gravita: "Medium",
+      titolo: `Chiave TLS debole (${tls.key_bits} bit) su ${dove}`,
+      prova: `key_bits ${tls.key_bits} (RSA 512/1024/1536). Le curve EC da 256 bit non si segnalano.`,
+      rimedio: "Usa RSA almeno 2048 bit, o meglio ECDSA P-256 / Ed25519.",
       ip: ctx.ip,
       host_id: ctx.host_id,
       network_id: ctx.network_id,

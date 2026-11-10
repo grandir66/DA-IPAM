@@ -231,7 +231,7 @@ export function ScansClient() {
             checked={proveFabbrica}
             onChange={(e) => setProveFabbrica(e.target.checked)}
           />
-          <span>Prove invasive: login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue e IPMI. Mai nei giri automatici; al massimo 6 tentativi di login per host.</span>
+          <span>Prove invasive: login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host.</span>
         </label>
       )}
 

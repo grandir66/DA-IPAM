@@ -73,6 +73,8 @@ export interface InfoNtlm {
   smb_signing?: boolean;
   /** RDP: true se il server ha scelto CredSSP (NLA). */
   rdp_nla?: boolean;
+  /** RDP: false se il server ha scelto il protocollo Standard, senza TLS. */
+  rdp_tls?: boolean;
 }
 
 /** Come è stato riconosciuto ciò che risponde: la prova, non la tabella delle porte. */
@@ -562,7 +564,7 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
       if (rdp) {
         esito.metodo = "ntlm";
         esito.ntlm = rdp.challenge
-          ? { ...infoNtlmDaChallenge(rdp.challenge, "rdp"), rdp_nla: rdp.nla }
+          ? { ...infoNtlmDaChallenge(rdp.challenge, "rdp"), rdp_nla: rdp.nla, rdp_tls: rdp.tls }
           : {
               netbios: null,
               dominio_netbios: null,
@@ -571,6 +573,7 @@ export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = 
               versione_os: null,
               fonte: "rdp",
               rdp_nla: rdp.nla,
+              rdp_tls: rdp.tls,
             };
         esito.versione = esito.ntlm.versione_os;
         return esito;

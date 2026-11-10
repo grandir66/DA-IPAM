@@ -28,6 +28,10 @@ declare module "net-snmp" {
       doneCallback: (error: Error | undefined) => void
     ): void;
     get(oids: string[], callback: (error: Error | null, varbinds: Varbind[]) => void): void;
+    set(
+      varbinds: Array<{ oid: string; type: number; value: string | Buffer | number }>,
+      callback: (error: Error | null, varbinds: Varbind[]) => void,
+    ): void;
     close(): void;
   }
 

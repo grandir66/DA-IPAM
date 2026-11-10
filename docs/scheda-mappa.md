@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: Check Nety restanti (LDAP signing, DNS AXFR, TLS deboli…); collaudo hub; diff tra giri
+prossimo: Collaudo hub dei controlli Findings; diff tra giri; triage riga
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

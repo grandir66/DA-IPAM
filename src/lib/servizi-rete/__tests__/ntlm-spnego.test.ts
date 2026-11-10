@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildNtlmNegotiateMessage, parseNtlmChallenge } from "@/lib/scanner/probes/smb2";
-import { protocolloRdpDaConferma, rdpConnectionRequest, rdpNlaRichiesta } from "@/lib/scanner/probes/rdp-ntlm";
+import { protocolloRdpDaConferma, rdpConnectionRequest, rdpNlaRichiesta, rdpTlsAbilitato } from "@/lib/scanner/probes/rdp-ntlm";
 import { credsspTsRequest, ntlmDaGssORaw, wrapNtlmInSpnego } from "../ntlm-spnego";
 
 test("SPNEGO avvolge NTLM e ntlmDaGssORaw lo ritrova", () => {
@@ -42,6 +42,15 @@ test("Connection Confirm: selectedProtocol; senza NEG_RSP resta null", () => {
   assert.equal(protocolloRdpDaConferma(cc), 2);
   assert.equal(rdpNlaRichiesta(2), true);
   assert.equal(rdpNlaRichiesta(1), false);
+  assert.equal(rdpTlsAbilitato(2), true);
+  assert.equal(rdpTlsAbilitato(1), true);
+  assert.equal(rdpTlsAbilitato(0), false);
+  const std = Buffer.concat([
+    Buffer.from([0x03, 0x00, 0x00, 0x13, 0x0e, 0xd0, 0x00, 0x00, 0x12, 0x34, 0x00]),
+    Buffer.from([0x02, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00]),
+  ]);
+  std.writeUInt16BE(std.length, 2);
+  assert.equal(protocolloRdpDaConferma(std), 0);
   assert.equal(protocolloRdpDaConferma(Buffer.from([0x03, 0x00, 0x00, 0x0b, 0x06, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00])), null);
   assert.equal(protocolloRdpDaConferma(Buffer.from("not tpkt")), null);
 });

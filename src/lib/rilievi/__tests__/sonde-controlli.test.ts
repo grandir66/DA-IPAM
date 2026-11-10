@@ -6,15 +6,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import {
+  ipmiPong,
   ldapBindRiuscito,
+  memcachedAperto,
   mongoSenzaAuth,
   nfsNullAccettato,
   pacchettoMongoListDatabases,
+  provaMemcached,
   provaRedis,
   redisSenzaAuth,
   rpcCall,
   rpcSuTcp,
   vncSenzaAuthDaHandshake,
+  x11Accettato,
 } from "../sonde-controlli";
 
 test("Redis: PONG sì, NOAUTH no", () => {
@@ -64,6 +68,32 @@ test("VNC: tipo None in 003.008 e in 003.003", () => {
   const t = Buffer.alloc(4);
   t.writeUInt32BE(1, 0);
   assert.equal(vncSenzaAuthDaHandshake(Buffer.from("RFB 003.003\n"), t), true);
+});
+
+test("Memcached stats, IPMI pong, X11 success", () => {
+  assert.equal(memcachedAperto(Buffer.from("STAT pid 1\r\nEND\r\n")), true);
+  assert.equal(memcachedAperto(Buffer.from("ERROR\r\n")), false);
+  const pong = Buffer.from([0x06, 0x00, 0xff, 0x06, 0x00, 0x00, 0x11, 0xbe, 0x40, 0x00, 0x00, 0x00]);
+  assert.equal(ipmiPong(pong), true);
+  assert.equal(ipmiPong(Buffer.from([0x06, 0x00, 0xff, 0x06, 0x00, 0x00, 0x11, 0xbe, 0x80, 0x00, 0x00, 0x00])), false);
+  assert.equal(x11Accettato(Buffer.from([0x01, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00])), true);
+  assert.equal(x11Accettato(Buffer.from([0x00, 0x00, 0x0b, 0x00])), false);
+});
+
+test("provaMemcached parla con un server finto", async () => {
+  const srv = net.createServer((s) => {
+    s.on("data", (d) => {
+      if (d.toString().includes("stats")) s.end("STAT pid 1\r\nEND\r\n");
+    });
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  const addr = srv.address();
+  assert.ok(addr && typeof addr === "object");
+  try {
+    assert.equal(await provaMemcached("127.0.0.1", addr.port, 800), true);
+  } finally {
+    srv.close();
+  }
 });
 
 test("provaRedis parla con un server finto che risponde PONG", async () => {

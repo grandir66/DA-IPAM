@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 2)
+
+Riccardo (10/11): seconda ondata in Findings; SMB anonimo sempre come Redis; EternalBlue, IPMI e login DB solo con la levetta già presente su `/scans`.
+
+### Aggiunto
+- **Da archivio**: SSH con KEX/cifrari/MAC deboli, Telnet 23, WinRM 5985/5986, WSUS in HTTP (8530).
+- **SMB** (probe a parte, `smb2.ts` resta solo CHALLENGE): SMBv1, sessione anonima, Guest, share senza credenziali. Sempre, come Redis.
+- **API e cache aperti**: Memcached, ZooKeeper, Elasticsearch, Docker, etcd, CouchDB, Kubelet, X11, `.git`/`.env`/Spring Actuator.
+- **Dietro la levetta**: EternalBlue (MS17-010), IPMI (RMCP ping), MySQL/MSSQL/Postgres di fabbrica. Tetto login 3 → 6 per host. Testo della casella: login di fabbrica, EternalBlue e IPMI.
+
 ## [Non rilasciato] — 2026-11-10 · Controlli dei giri (ondata 1)
 
 Riccardo (10/11): integrare i check di Nety in Findings, prima ondata da archivio e prove senza login; login di fabbrica solo con levetta a mano.

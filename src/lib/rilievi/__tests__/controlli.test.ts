@@ -5,12 +5,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  TETTO_FABBRICA_PER_HOST,
+  algoritmiSshDeboli,
   controlloDaJson,
   eSshVecchio,
   nomeConsolaWeb,
   rilieviDaControllo,
   rilieviDaHttp,
   rilieviDaNtlm,
+  rilieviDaPorta,
   rilieviDaSsh,
 } from "../controlli";
 import type { InfoHttp, InfoNtlm } from "@/lib/servizi-rete/sonde";
@@ -92,4 +95,60 @@ test("Redis aperto: High; JSON rotto: null", () => {
 test("SSH vecchio produce un rilievo; ident nuovo no", () => {
   assert.equal(rilieviDaSsh({ ident: "SSH-2.0-OpenSSH_7.9" }, { ...CTX, porta: 22 }).length, 1);
   assert.equal(rilieviDaSsh({ ident: "SSH-2.0-OpenSSH_9.6" }, { ...CTX, porta: 22 }).length, 0);
+});
+
+test("SSH con group1 e 3des: Low; curve25519 niente", () => {
+  const deboli = algoritmiSshDeboli({
+    kex: ["diffie-hellman-group1-sha1", "curve25519-sha256"],
+    cifrari: ["3des-cbc", "aes256-ctr"],
+    mac: ["hmac-md5", "hmac-sha2-256"],
+  });
+  assert.ok(deboli.some((a) => /group1/.test(a)));
+  assert.ok(deboli.some((a) => /3des/.test(a)));
+  assert.ok(deboli.some((a) => /hmac-md5/.test(a)));
+  const r = rilieviDaSsh(
+    { ident: "SSH-2.0-OpenSSH_9.6", kex: ["diffie-hellman-group1-sha1"], cifrari: [], mac: [] },
+    { ...CTX, porta: 22 },
+  );
+  assert.equal(r.length, 1);
+  assert.equal(r[0]!.gravita, "Low");
+  assert.equal(algoritmiSshDeboli({ kex: ["curve25519-sha256"], cifrari: ["aes256-gcm@openssh.com"], mac: ["hmac-sha2-256"] }).length, 0);
+});
+
+test("Telnet 23 Medium, WinRM Low, WSUS HTTP High, WSUS con TLS niente", () => {
+  const telnet = rilieviDaPorta({ ...CTX, porta: 23 }, false);
+  assert.equal(telnet[0]!.gravita, "Medium");
+  assert.match(telnet[0]!.titolo, /Telnet/);
+  const winrm = rilieviDaPorta({ ...CTX, porta: 5985 }, false);
+  assert.equal(winrm[0]!.gravita, "Low");
+  const wsus = rilieviDaPorta({ ...CTX, porta: 8530 }, false);
+  assert.equal(wsus[0]!.gravita, "High");
+  assert.equal(rilieviDaPorta({ ...CTX, porta: 8530 }, true).length, 0);
+  assert.equal(rilieviDaPorta({ ...CTX, porta: 22 }, false).length, 0);
+});
+
+test("SMBv1, sessione anonima e EternalBlue dal JSON", () => {
+  const r = rilieviDaControllo(
+    { smbv1: true, smb_null: true, ms17_010: true },
+    CTX,
+  );
+  assert.ok(r.some((x) => x.id.includes("smbv1") && x.gravita === "Medium"));
+  assert.ok(r.some((x) => x.id.includes("smb-null")));
+  assert.ok(r.some((x) => x.id.includes("ms17-010") && x.gravita === "Critical"));
+  assert.equal(controlloDaJson(JSON.stringify({ smbv1: true, smb_share_anon: ["Users"] }))?.smb_share_anon?.[0], "Users");
+});
+
+test("Memcached e IPMI esposto; cipher0 vince su ping", () => {
+  const m = rilieviDaControllo({ memcached: true }, { ...CTX, porta: 11211 });
+  assert.equal(m[0]!.gravita, "Medium");
+  const ipmi = rilieviDaControllo({ ipmi_esposto: true }, { ...CTX, porta: 623 });
+  assert.equal(ipmi.length, 1);
+  assert.match(ipmi[0]!.titolo, /IPMI/);
+  const c0 = rilieviDaControllo({ ipmi_esposto: true, ipmi_cipher0: true }, { ...CTX, porta: 623 });
+  assert.equal(c0.length, 1);
+  assert.match(c0[0]!.titolo, /cipher zero/);
+});
+
+test("tetto login di fabbrica è 6", () => {
+  assert.equal(TETTO_FABBRICA_PER_HOST, 6);
 });

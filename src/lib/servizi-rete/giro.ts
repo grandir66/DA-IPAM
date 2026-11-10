@@ -149,7 +149,7 @@ export function avviaGiro(
         stato.fatte += 1;
       });
       if (controllo) {
-        const extra = getPorteServiziDaControllare(networkId ?? undefined, PORTE_CONTROLLO, proveFabbrica).filter(
+        const extra = getPorteServiziDaControllare(networkId ?? undefined, PORTE_CONTROLLO, true).filter(
           (p) => !daSaltare(p.porta, p.vendor),
         );
         const restanti = new Map<number, number>();

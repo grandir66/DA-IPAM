@@ -26,6 +26,7 @@ Riccardo (09/11): «puoi verificare come riutilizzare parti della UI di NETY in 
 - [x] La vista precedente (per CVE / per host, exploit, triage) è di nuovo in pagina, scheda «Vulnerabilità» (`#vulnerabilita`; `?vista=host` apre quella)
 - [x] Prima lettura Hosts/Assets di Nety, senza pagine nuove: OS da NTLM/SNMP/SSH su `os_info` vuoto; cassetto sulla riga in Discovery e Subnet (servizi, chiavi, dominio). Inventario «Asset» non si tocca.
 - [x] Controlli ondata 1 in Findings (10/11): SMB signing, RDP NLA, SSH vecchio, LDAP anonimo, Redis/Mongo, NFS, SNMP public, VNC, console web; login di fabbrica solo con levetta su `/scans` (max 3/host, mai automatici).
+- [x] Controlli ondata 2 (10/11): SMBv1 + null/guest/share sempre; SSH deboli, Telnet, WinRM, WSUS; Memcached/ZK/ES/Docker/etcd/CouchDB/Kubelet/X11/.git/.env/actuator; MS17-010, IPMI, MySQL/MSSQL/Postgres dietro la stessa levetta (tetto 6). Probe SMB a parte, `smb2.ts` non autentica.
 - [ ] Riccardo da scegliere da dove partire. Ordine consigliato: piccoli mattoni → triage → rilievi a riga espandibile con gravità a tacche → panoramica per rete → «Cosa è cambiato» → lanciatore
 
 ## 2026-11-09 — Servizi di rete e identità senza credenziali, sul modello di Nety (Riccardo, leggero)

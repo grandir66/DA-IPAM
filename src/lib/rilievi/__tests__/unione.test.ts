@@ -73,6 +73,20 @@ test("SMB senza firma compare come giro Medium", () => {
   });
 });
 
+test("Telnet in inventario compare come giro Medium", () => {
+  withTenant(A, () => {
+    const d = getTenantDb(A);
+    const esistente = d.prepare("SELECT id FROM networks WHERE cidr = '10.9.0.0/24'").get() as { id: number } | undefined;
+    const n = esistente?.id ?? Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'lan')").run().lastInsertRowid);
+    const h = Number(d.prepare("INSERT INTO hosts (network_id, ip, status) VALUES (?, ?, 'online')").run(n, "10.9.0.23").lastInsertRowid);
+    d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, metodo) VALUES (?, 23, 'tcp', 'connect')").run(h);
+  });
+  withTenant(A, () => {
+    const e = elencoRilievi({ fonti: ["giro"], q: "Telnet" });
+    assert.ok(e.data.some((r) => r.gravita === "Medium" && r.ip === "10.9.0.23"));
+  });
+});
+
 test("filtro gravità: Low non entra se si chiede High", () => {
   reteConTls(A, "10.9.0.10", { self_signed: true, expired: false, version: "TLSv1.3", subject_cn: "x" });
   withTenant(A, () => {

@@ -15,9 +15,34 @@ export interface InfoControllo {
   snmp_public?: string | null;
   vnc_senza_auth?: boolean;
   fabbrica?: { servizio: string; utente: string } | null;
+  smbv1?: boolean;
+  smb_null?: boolean;
+  smb_guest?: boolean;
+  smb_share_anon?: string[];
+  memcached?: boolean;
+  zookeeper?: boolean;
+  elasticsearch?: boolean;
+  docker?: boolean;
+  etcd?: boolean;
+  couchdb?: boolean;
+  kubelet?: boolean;
+  actuator?: boolean;
+  git_env?: string | null;
+  x11?: boolean;
+  ms17_010?: boolean;
+  ipmi_esposto?: boolean;
+  ipmi_cipher0?: boolean;
 }
 
-export const TETTO_FABBRICA_PER_HOST = 3;
+export const TETTO_FABBRICA_PER_HOST = 6;
+
+const SSH_KEX_DEBOLI = new Set([
+  "diffie-hellman-group1-sha1",
+  "diffie-hellman-group14-sha1",
+  "diffie-hellman-group-exchange-sha1",
+]);
+const SSH_CIFRARI_DEBOLI = new Set(["3des-cbc", "3des-ctr", "arcfour", "arcfour128", "arcfour256", "blowfish-cbc", "none"]);
+const SSH_MAC_DEBOLI = new Set(["hmac-md5", "hmac-md5-96", "hmac-sha1-96"]);
 
 const CONSOLE_WEB: ReadonlyArray<{ re: RegExp; nome: string }> = [
   { re: /phpmyadmin/i, nome: "phpMyAdmin" },
@@ -111,18 +136,89 @@ export function rilieviDaNtlm(n: InfoNtlm | null, ctx: ContestoServizio): Riliev
   return out;
 }
 
-export function rilieviDaSsh(s: Pick<InfoSsh, "ident"> | null, ctx: ContestoServizio): RilievoUnito[] {
-  if (!s || !eSshVecchio(s.ident)) return [];
-  return [
-    riga(
-      ctx,
-      "ssh-vecchio",
-      "Medium",
-      `SSH vecchio su ${ctx.ip}:${ctx.porta}`,
-      `Banner ${s.ident}`,
-      "Aggiorna OpenSSH alla 8 o successiva, o spegni SSH-1. Le versioni vecchie hanno cifrari e KEX deboli.",
-    ),
-  ];
+export function algoritmiSshDeboli(s: Partial<Pick<InfoSsh, "kex" | "cifrari" | "mac">> | null): string[] {
+  if (!s) return [];
+  const out: string[] = [];
+  for (const a of s.kex ?? []) if (SSH_KEX_DEBOLI.has(a) || a.startsWith("gss-group1-sha1")) out.push(`kex ${a}`);
+  for (const a of s.cifrari ?? []) if (SSH_CIFRARI_DEBOLI.has(a) || a.startsWith("arcfour")) out.push(`cifrario ${a}`);
+  for (const a of s.mac ?? []) if (SSH_MAC_DEBOLI.has(a)) out.push(`mac ${a}`);
+  return out;
+}
+
+export function rilieviDaSsh(
+  s: (Pick<InfoSsh, "ident"> & Partial<Pick<InfoSsh, "kex" | "cifrari" | "mac">>) | null,
+  ctx: ContestoServizio,
+): RilievoUnito[] {
+  if (!s) return [];
+  const out: RilievoUnito[] = [];
+  if (eSshVecchio(s.ident)) {
+    out.push(
+      riga(
+        ctx,
+        "ssh-vecchio",
+        "Medium",
+        `SSH vecchio su ${ctx.ip}:${ctx.porta}`,
+        `Banner ${s.ident}`,
+        "Aggiorna OpenSSH alla 8 o successiva, o spegni SSH-1. Le versioni vecchie hanno cifrari e KEX deboli.",
+      ),
+    );
+  }
+  const deboli = algoritmiSshDeboli(s);
+  if (deboli.length > 0) {
+    out.push(
+      riga(
+        ctx,
+        "ssh-debole",
+        "Low",
+        `SSH con algoritmi deboli su ${ctx.ip}:${ctx.porta}`,
+        deboli.slice(0, 8).join(", "),
+        "In sshd_config lascia solo curve25519, aes-gcm/ctr e hmac-sha2. Togli group1, 3DES, RC4 e HMAC-MD5.",
+      ),
+    );
+  }
+  return out;
+}
+
+/** Telnet, WinRM, WSUS: la porta è già in inventario. */
+export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnito[] {
+  const dove = `${ctx.ip}:${ctx.porta}`;
+  if (ctx.porta === 23) {
+    return [
+      riga(
+        ctx,
+        "telnet",
+        "Medium",
+        `Telnet in chiaro su ${dove}`,
+        "La porta 23 è aperta: login e comandi viaggiano senza cifratura.",
+        "Spegni Telnet e usa SSH.",
+      ),
+    ];
+  }
+  if (ctx.porta === 5985 || ctx.porta === 5986) {
+    return [
+      riga(
+        ctx,
+        "winrm",
+        "Low",
+        `WinRM raggiungibile su ${dove}`,
+        `Porta ${ctx.porta} aperta${ctx.porta === 5985 ? " (HTTP, senza TLS)" : ""}.`,
+        "Limita WinRM agli amministratori e alla rete di gestione. Sulla 5985 passa a HTTPS (5986).",
+      ),
+    ];
+  }
+  if (ctx.porta === 8530 && !tls) {
+    return [
+      riga(
+        ctx,
+        "wsus-http",
+        "High",
+        `WSUS in HTTP su ${dove}`,
+        "Il servizio aggiornamenti risponde in chiaro: un attaccante in LAN può iniettare aggiornamenti.",
+        "Pubblica WSUS solo in HTTPS (8531) e vincola i client al certificato.",
+      ),
+    ];
+  }
+  return [];
 }
 
 export function rilieviDaHttp(h: InfoHttp | null, ctx: ContestoServizio): RilievoUnito[] {
@@ -228,6 +324,110 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       ),
     );
   }
+  if (c.smbv1) {
+    out.push(
+      riga(
+        ctx,
+        "smbv1",
+        "Medium",
+        `SMBv1 attivo su ${dove}`,
+        "Il server ha accettato il dialetto NT LM 0.12 (SMB1).",
+        "Disabilita SMBv1 (Set-SmbServerConfiguration -EnableSMB1Protocol $false, o min protocol SMB2 su Samba).",
+      ),
+    );
+  }
+  if (c.smb_null) {
+    out.push(
+      riga(
+        ctx,
+        "smb-null",
+        "Medium",
+        `SMB accetta la sessione anonima su ${dove}`,
+        "Session setup senza nome né password riuscito.",
+        "Imposta RestrictAnonymous e «Do not allow anonymous enumeration of SAM accounts and shares».",
+      ),
+    );
+  }
+  if (c.smb_guest) {
+    out.push(
+      riga(
+        ctx,
+        "smb-guest",
+        "Medium",
+        `SMB accetta l'account Guest su ${dove}`,
+        "Login Guest con password vuota riuscito.",
+        "Disabilita Guest e AllowInsecureGuestAuth; su Samba map to guest = never.",
+      ),
+    );
+  }
+  if (c.smb_share_anon && c.smb_share_anon.length > 0) {
+    out.push(
+      riga(
+        ctx,
+        "smb-share",
+        "High",
+        `Condivisione SMB senza credenziali su ${dove}`,
+        `Aperte: ${c.smb_share_anon.slice(0, 8).join(", ")}`,
+        "Togli Everyone/Guest dalle share e dagli ACL NTFS.",
+      ),
+    );
+  }
+  if (c.memcached) {
+    out.push(riga(ctx, "memcached", "Medium", `Memcached aperto su ${dove}`, "Il comando stats ha risposto senza autenticazione.", "Metti Memcached in localhost o con SASL, e non esporlo in LAN."));
+  }
+  if (c.zookeeper) {
+    out.push(riga(ctx, "zookeeper", "Medium", `ZooKeeper risponde su ${dove}`, "Il comando ruok ha risposto imok.", "Chiudi i four-letter-word o metti ACL; non esporre 2181."));
+  }
+  if (c.elasticsearch) {
+    out.push(riga(ctx, "elasticsearch", "High", `Elasticsearch senza autenticazione su ${dove}`, "GET / ha restituito il cluster senza login.", "Abilita xpack.security e non esporre 9200 sulla LAN utente."));
+  }
+  if (c.docker) {
+    out.push(riga(ctx, "docker", "High", `API Docker senza autenticazione su ${dove}`, "GET /version è andato a buon fine.", "Non esporre il socket Docker in TCP. Usa TLS e autorizzazione, o solo lo unix socket."));
+  }
+  if (c.etcd) {
+    out.push(riga(ctx, "etcd", "High", `etcd senza autenticazione su ${dove}`, "GET /version è andato a buon fine.", "Abilita autenticazione e TLS su etcd."));
+  }
+  if (c.couchdb) {
+    out.push(riga(ctx, "couchdb", "High", `CouchDB senza autenticazione su ${dove}`, "GET / è andato a buon fine (admin party).", "Crea un admin e spegni l'accesso anonimo."));
+  }
+  if (c.kubelet) {
+    out.push(riga(ctx, "kubelet", "High", `Kubelet senza autenticazione su ${dove}`, "GET /runningpods ha risposto.", "Chiudi l'API read-only del kubelet (--read-only-port=0) e autentica la 10250."));
+  }
+  if (c.actuator) {
+    out.push(riga(ctx, "actuator", "High", `Spring Actuator esposto su ${dove}`, "GET /actuator/health (o /env) senza login.", "Disabilita gli endpoint o mettili dietro autenticazione."));
+  }
+  if (c.git_env) {
+    out.push(
+      riga(
+        ctx,
+        "git-env",
+        "High",
+        `File ${c.git_env} esposto su ${dove}`,
+        `GET /${c.git_env} ha risposto 200.`,
+        "Togli .git e .env dalla root del sito; ruota i segreti se erano lì.",
+      ),
+    );
+  }
+  if (c.x11) {
+    out.push(riga(ctx, "x11", "High", `X11 senza autenticazione su ${dove}`, "Il server X ha accettato la connessione.", "Spegni X11 in rete o usa SSH -X; xhost -"));
+  }
+  if (c.ms17_010) {
+    out.push(
+      riga(
+        ctx,
+        "ms17-010",
+        "Critical",
+        `EternalBlue (MS17-010) su ${dove}`,
+        "PeekNamedPipe su IPC$ ha restituito STATUS_INSUFF_SERVER_RESOURCES: il server SMB1 non è patchato.",
+        "Installa gli aggiornamenti MS17-010 e disabilita SMBv1.",
+      ),
+    );
+  }
+  if (c.ipmi_cipher0) {
+    out.push(riga(ctx, "ipmi-cipher0", "High", `IPMI accetta cipher zero su ${dove}`, "Open Session con cipher suite 0 accettato: comandi BMC senza autenticazione.", "Disabilita cipher 0 sul BMC e tieni IPMI fuori dalla LAN utente."));
+  } else if (c.ipmi_esposto) {
+    out.push(riga(ctx, "ipmi", "Medium", `IPMI raggiungibile su ${dove}`, "RMCP Presence Pong sulla 623 UDP.", "Tieni IPMI sulla rete di gestione, password lunghe, disabilita LAN se non serve."));
+  }
   return out;
 }
 
@@ -254,13 +454,17 @@ export function ntlmDaJson(grezzo: string | null): InfoNtlm | null {
   }
 }
 
-export function sshDaJson(grezzo: string | null): Pick<InfoSsh, "ident"> | null {
+export function sshDaJson(grezzo: string | null): Pick<InfoSsh, "ident" | "kex" | "cifrari" | "mac"> | null {
   if (!grezzo) return null;
   try {
     const v = JSON.parse(grezzo) as unknown;
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-    const ident = (v as { ident?: unknown }).ident;
-    return typeof ident === "string" ? { ident } : null;
+    const o = v as Record<string, unknown>;
+    const ident = typeof o.ident === "string" ? o.ident : "";
+    const liste = (k: string): string[] =>
+      Array.isArray(o[k]) ? (o[k] as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    if (!ident && liste("kex").length === 0) return null;
+    return { ident, kex: liste("kex"), cifrari: liste("cifrari"), mac: liste("mac") };
   } catch {
     return null;
   }
@@ -306,6 +510,9 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
         fabbrica = { servizio: f.servizio, utente: f.utente };
       }
     }
+    const share = Array.isArray(o.smb_share_anon)
+      ? o.smb_share_anon.filter((x): x is string => typeof x === "string")
+      : undefined;
     return {
       ldap_anonimo: o.ldap_anonimo === true,
       redis_aperto: o.redis_aperto === true,
@@ -314,6 +521,23 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
       snmp_public: typeof o.snmp_public === "string" ? o.snmp_public : o.snmp_public === null ? null : undefined,
       vnc_senza_auth: o.vnc_senza_auth === true,
       fabbrica: fabbrica ?? undefined,
+      smbv1: o.smbv1 === true,
+      smb_null: o.smb_null === true,
+      smb_guest: o.smb_guest === true,
+      smb_share_anon: share && share.length > 0 ? share : undefined,
+      memcached: o.memcached === true,
+      zookeeper: o.zookeeper === true,
+      elasticsearch: o.elasticsearch === true,
+      docker: o.docker === true,
+      etcd: o.etcd === true,
+      couchdb: o.couchdb === true,
+      kubelet: o.kubelet === true,
+      actuator: o.actuator === true,
+      git_env: typeof o.git_env === "string" ? o.git_env : undefined,
+      x11: o.x11 === true,
+      ms17_010: o.ms17_010 === true,
+      ipmi_esposto: o.ipmi_esposto === true,
+      ipmi_cipher0: o.ipmi_cipher0 === true,
     };
   } catch {
     return null;

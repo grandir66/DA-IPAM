@@ -295,8 +295,8 @@ export interface PortaDaControllare extends PortaDaSondare {
 }
 
 /**
- * Porte su cui ha senso un controllo (LDAP, Redis, Mongo, NFS, SNMP, VNC, FTP).
- * Se `ancheHttp401`, anche i pannelli HTTP che hanno già risposto 401 (login di fabbrica).
+ * Porte su cui ha senso un controllo (LDAP, Redis, Mongo, NFS, SNMP, VNC, FTP, SMB, API).
+ * Se `ancheHttp401`, anche i servizi che hanno già un `http_json` (percorsi .git/.env/actuator e, con levetta, login di fabbrica).
  */
 export function porteDaControllare(
   db: Database.Database,
@@ -314,7 +314,7 @@ export function porteDaControllare(
     args.push(...elenco);
   }
   if (ancheHttp401) {
-    or.push(`json_extract(s.http_json, '$.status_code') = 401`);
+    or.push(`(s.http_json IS NOT NULL AND s.http_json != '')`);
   }
   if (networkId) args.push(networkId);
   return db

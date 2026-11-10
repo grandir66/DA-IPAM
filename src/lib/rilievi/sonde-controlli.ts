@@ -2,10 +2,12 @@
  * Prove senza credenziali (e login di fabbrica solo se chiesti) sulle porte
  * già aperte. Scritte da zero: Nety è GPL-3.0, se ne riprende l'idea.
  */
+import dgram from "node:dgram";
 import net from "node:net";
 import * as snmp from "net-snmp";
 import { provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
 import type { InfoControllo } from "./controlli";
+import { sondaSmb } from "./smb-controlli";
 
 const TETTO = 16 * 1024;
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
@@ -21,7 +23,10 @@ export interface EsitoSondaControllo {
   tentativiUsati: number;
 }
 
-export const PORTE_CONTROLLO = new Set([21, 161, 389, 2049, 5900, 5901, 6379, 27017]);
+export const PORTE_CONTROLLO = new Set([
+  21, 23, 139, 161, 389, 445, 623, 1433, 2049, 2181, 2375, 2379, 3306, 5432, 5900, 5901, 5984, 5985, 5986, 6000, 6379,
+  8530, 9200, 10250, 11211, 27017,
+]);
 
 function connetti(ip: string, porta: number, ms: number): Promise<net.Socket | null> {
   return new Promise((resolve) => {
@@ -256,10 +261,17 @@ export async function provaFtpAnonimo(ip: string, porta: number, ms: number): Pr
   }
 }
 
-async function httpGet(ip: string, porta: number, https: boolean, ms: number, extraHeader?: string): Promise<number | null> {
+async function httpGet(
+  ip: string,
+  porta: number,
+  https: boolean,
+  ms: number,
+  extraHeader?: string,
+  percorso = "/",
+): Promise<{ code: number; corpo: string } | null> {
   const tls = https ? await import("node:tls") : null;
   const extra = extraHeader ? `${extraHeader}\r\n` : "";
-  const req = `GET / HTTP/1.1\r\nHost: ${ip}\r\n${extra}User-Agent: DA-IPAM\r\nConnection: close\r\n\r\n`;
+  const req = `GET ${percorso} HTTP/1.1\r\nHost: ${ip}\r\n${extra}User-Agent: DA-IPAM\r\nConnection: close\r\n\r\n`;
   const sock: net.Socket | null = https
     ? await new Promise((resolve) => {
         const s = tls!.connect({ host: ip, port: porta, rejectUnauthorized: false, ALPNProtocols: ["http/1.1"] });
@@ -281,9 +293,12 @@ async function httpGet(ip: string, porta: number, https: boolean, ms: number, ex
   if (!sock) return null;
   try {
     sock.write(req);
-    const r = await leggi(sock, ms, (b) => b.includes("\r\n"));
-    const m = /^HTTP\/\d(?:\.\d)?\s+(\d{3})/.exec(r.toString("latin1"));
-    return m ? Number(m[1]) : null;
+    const r = await leggi(sock, ms, (b) => b.includes("\r\n\r\n") || b.length > 2048);
+    const testo = r.toString("latin1");
+    const m = /^HTTP\/\d(?:\.\d)?\s+(\d{3})/.exec(testo);
+    if (!m) return null;
+    const i = testo.indexOf("\r\n\r\n");
+    return { code: Number(m[1]), corpo: i >= 0 ? testo.slice(i + 4, i + 400) : "" };
   } finally {
     sock.destroy();
   }
@@ -294,8 +309,226 @@ const LOGIN_FABBRICA_HTTP: ReadonlyArray<{ utente: string; password: string }> =
   { utente: "admin", password: "password" },
 ];
 
+export function memcachedAperto(buf: Buffer): boolean {
+  return /STAT /m.test(buf.toString("latin1"));
+}
+
+export async function provaMemcached(ip: string, porta: number, ms: number): Promise<boolean> {
+  const r = await conTesto(ip, porta, ms, "stats\r\n", (b) => b.includes("END") || b.length > 64);
+  return r ? memcachedAperto(r) : false;
+}
+
+export async function provaZookeeper(ip: string, porta: number, ms: number): Promise<boolean> {
+  const r = await conTesto(ip, porta, ms, "ruok", (b) => b.length >= 4);
+  return r ? r.toString("latin1").includes("imok") : false;
+}
+
+async function httpJsonSenzaAuth(ip: string, porta: number, https: boolean, percorso: string, ms: number, indizio: RegExp): Promise<boolean> {
+  const r = await httpGet(ip, porta, https, ms, undefined, percorso);
+  return r != null && r.code >= 200 && r.code < 400 && indizio.test(r.corpo);
+}
+
+export async function provaPercorsiHttp(ip: string, porta: number, ms: number): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
+  const https = porta === 443 || porta === 8443;
+  const out: Pick<InfoControllo, "actuator" | "git_env"> = {};
+  const git = await httpGet(ip, porta, https, ms, undefined, "/.git/HEAD");
+  if (git && git.code === 200 && /ref: /.test(git.corpo)) out.git_env = ".git/HEAD";
+  if (!out.git_env) {
+    const env = await httpGet(ip, porta, https, ms, undefined, "/.env");
+    if (env && env.code === 200 && /=/.test(env.corpo) && !/</.test(env.corpo.slice(0, 80))) out.git_env = ".env";
+  }
+  const act = await httpGet(ip, porta, https, ms, undefined, "/actuator/health");
+  if (act && act.code === 200 && /status|UP/i.test(act.corpo)) out.actuator = true;
+  return out;
+}
+
+export function x11Accettato(buf: Buffer): boolean {
+  return buf.length >= 8 && buf[0] === 1;
+}
+
+export async function provaX11(ip: string, porta: number, ms: number): Promise<boolean> {
+  // Connection setup little-endian, byte-order l, unused, proto 11.0
+  const req = Buffer.from([0x6c, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+  const r = await conTesto(ip, porta, ms, req, (b) => b.length >= 8);
+  return r ? x11Accettato(r) : false;
+}
+
+export const RMCP_PING = Buffer.from([0x06, 0x00, 0xff, 0x06, 0x00, 0x00, 0x11, 0xbe, 0x80, 0x00, 0x00, 0x00]);
+
+export function ipmiPong(buf: Buffer): boolean {
+  return buf.length >= 12 && buf[0] === 0x06 && buf[3] === 0x06 && buf[8] === 0x40;
+}
+
+export async function provaIpmi(ip: string, ms: number): Promise<{ esposto: boolean; cipher0: boolean }> {
+  const esposto = await new Promise<boolean>((resolve) => {
+    const s = dgram.createSocket("udp4");
+    const t = setTimeout(() => {
+      s.close();
+      resolve(false);
+    }, ms);
+    s.once("message", (m) => {
+      clearTimeout(t);
+      s.close();
+      resolve(ipmiPong(m));
+    });
+    s.once("error", () => {
+      clearTimeout(t);
+      s.close();
+      resolve(false);
+    });
+    s.send(RMCP_PING, 623, ip, (e) => {
+      if (e) {
+        clearTimeout(t);
+        s.close();
+        resolve(false);
+      }
+    });
+  });
+  return { esposto, cipher0: false };
+}
+
+function mysqlLenenc(buf: Buffer): { n: number; o: number } | null {
+  if (buf.length < 4) return null;
+  return { n: buf.readUInt8(0) + (buf.readUInt8(1) << 8) + (buf.readUInt8(2) << 16), o: 4 };
+}
+
+export async function provaMysqlRootVuoto(ip: string, porta: number, ms: number): Promise<boolean> {
+  const s = await connetti(ip, porta, ms);
+  if (!s) return false;
+  try {
+    const hs = await leggi(s, ms, (b) => b.length >= 5);
+    const L = mysqlLenenc(hs);
+    if (!L || hs[4] !== 0x0a) return false;
+    const user = Buffer.from("root\0");
+    const body = Buffer.alloc(32 + user.length + 2);
+    body.writeUInt32LE(0x000aa285, 0);
+    body.writeUInt32LE(0x01000000, 4);
+    body[8] = 33;
+    user.copy(body, 32);
+    body[32 + user.length] = 0;
+    const pkt = Buffer.alloc(4 + body.length);
+    pkt.writeUInt8(body.length & 0xff, 0);
+    pkt.writeUInt8((body.length >> 8) & 0xff, 1);
+    pkt[3] = 1;
+    body.copy(pkt, 4);
+    s.write(pkt);
+    const r = await leggi(s, ms, (b) => b.length >= 5);
+    return r.length >= 5 && r[4] === 0x00;
+  } finally {
+    s.destroy();
+  }
+}
+
+export async function provaPostgresFabbrica(ip: string, porta: number, ms: number): Promise<boolean> {
+  const s = await connetti(ip, porta, ms);
+  if (!s) return false;
+  try {
+    const payload = Buffer.from("\0\x03\0\0user\0postgres\0database\0postgres\0\0");
+    const msg = Buffer.alloc(4 + payload.length);
+    msg.writeInt32BE(msg.length, 0);
+    payload.copy(msg, 4);
+    s.write(msg);
+    const r = await leggi(s, ms, (b) => b.length >= 9);
+    if (r.length < 9) return false;
+    const tipo = String.fromCharCode(r[0]);
+    if (tipo === "R" && r.readInt32BE(5) === 0) return true; // AuthenticationOk
+    if (tipo === "R" && r.readInt32BE(5) === 3) {
+      const pwd = Buffer.from("postgres");
+      const p = Buffer.alloc(5 + pwd.length + 1);
+      p[0] = 0x70;
+      p.writeInt32BE(p.length - 1, 1);
+      pwd.copy(p, 5);
+      s.write(p);
+      const r2 = await leggi(s, ms, (b) => b.length >= 9);
+      return r2.length >= 9 && r2[0] === 0x52 && r2.readInt32BE(5) === 0;
+    }
+    return false;
+  } finally {
+    s.destroy();
+  }
+}
+
+function tdsPassword(s: string): Buffer {
+  const b = Buffer.from(s, "utf16le");
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i]! ^ 0xa5;
+    b[i] = ((c << 4) | (c >> 4)) & 0xff;
+  }
+  return b;
+}
+
+/** LOGIN7 sa con password vuota; LOGINACK (0xAD) = successo. */
+export async function provaMssqlSa(ip: string, porta: number, ms: number): Promise<boolean> {
+  const s = await connetti(ip, porta, ms);
+  if (!s) return false;
+  try {
+    const pre = Buffer.alloc(8);
+    pre[0] = 0x12;
+    pre[1] = 0x01;
+    pre.writeUInt16BE(8, 2);
+    s.write(pre);
+    await leggi(s, ms, (b) => b.length >= 8);
+    const user = Buffer.from("sa", "utf16le");
+    const pass = tdsPassword("");
+    const app = Buffer.from("DA-IPAM", "utf16le");
+    const fisso = 94;
+    const payload = Buffer.alloc(fisso + user.length + pass.length + app.length);
+    payload.writeUInt32LE(payload.length, 0);
+    payload.writeUInt32LE(0x71000001, 4);
+    payload.writeUInt32LE(4096, 8);
+    payload.writeUInt32LE(fisso, 36);
+    payload.writeUInt16LE(user.length / 2, 38);
+    payload.writeUInt32LE(fisso + user.length, 40);
+    payload.writeUInt16LE(pass.length / 2, 42);
+    payload.writeUInt32LE(fisso + user.length + pass.length, 44);
+    payload.writeUInt16LE(app.length / 2, 46);
+    user.copy(payload, fisso);
+    pass.copy(payload, fisso + user.length);
+    app.copy(payload, fisso + user.length + pass.length);
+    const pkt = Buffer.alloc(8 + payload.length);
+    pkt[0] = 0x10;
+    pkt[1] = 0x01;
+    pkt.writeUInt16BE(pkt.length, 2);
+    payload.copy(pkt, 8);
+    s.write(pkt);
+    const r2 = await leggi(s, ms, (b) => b.length >= 9);
+    return r2.length >= 9 && r2[8] === 0xad;
+  } finally {
+    s.destroy();
+  }
+}
+
+function controlloHaEsito(info: InfoControllo): boolean {
+  return Boolean(
+    info.ldap_anonimo ||
+      info.redis_aperto ||
+      info.mongo_aperto ||
+      info.nfs_risponde ||
+      info.snmp_public ||
+      info.vnc_senza_auth ||
+      info.fabbrica ||
+      info.smbv1 ||
+      info.smb_null ||
+      info.smb_guest ||
+      (info.smb_share_anon && info.smb_share_anon.length) ||
+      info.memcached ||
+      info.zookeeper ||
+      info.elasticsearch ||
+      info.docker ||
+      info.etcd ||
+      info.couchdb ||
+      info.kubelet ||
+      info.actuator ||
+      info.git_env ||
+      info.x11 ||
+      info.ms17_010 ||
+      info.ipmi_esposto ||
+      info.ipmi_cipher0,
+  );
+}
+
 /**
- * Una porta: LDAP/Redis/Mongo/NFS/SNMP/VNC sempre; FTP e Basic HTTP solo con
+ * Una porta: prove senza login sempre; FTP/HTTP/DB/MS17/IPMI solo con
  * `proveFabbrica`, e solo se restano tentativi per l'host.
  */
 export async function sondaControllo(ip: string, porta: number, opz: OpzioniControllo = {}): Promise<EsitoSondaControllo> {
@@ -303,6 +536,7 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
   const info: InfoControllo = {};
   let tentativiUsati = 0;
   let restanti = opz.tentativiRestanti ?? 0;
+  const https = porta === 443 || porta === 8443;
 
   try {
     if (porta === 389) {
@@ -318,21 +552,60 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (sys) info.snmp_public = sys;
     } else if (porta === 5900 || porta === 5901) {
       if (await provaVnc(ip, porta, ms)) info.vnc_senza_auth = true;
+    } else if (porta === 445 || porta === 139) {
+      Object.assign(info, await sondaSmb(ip, porta, ms, opz.proveFabbrica === true));
+    } else if (porta === 11211) {
+      if (await provaMemcached(ip, porta, ms)) info.memcached = true;
+    } else if (porta === 2181) {
+      if (await provaZookeeper(ip, porta, ms)) info.zookeeper = true;
+    } else if (porta === 9200) {
+      if (await httpJsonSenzaAuth(ip, porta, false, "/", ms, /cluster_name|tagline|You Know, for Search/i)) info.elasticsearch = true;
+    } else if (porta === 2375) {
+      if (await httpJsonSenzaAuth(ip, porta, false, "/version", ms, /ApiVersion|Version/i)) info.docker = true;
+    } else if (porta === 2379) {
+      if (await httpJsonSenzaAuth(ip, porta, false, "/version", ms, /etcdcluster|etcdserver/i)) info.etcd = true;
+    } else if (porta === 5984) {
+      if (await httpJsonSenzaAuth(ip, porta, false, "/", ms, /couchdb/i)) info.couchdb = true;
+    } else if (porta === 10250) {
+      if (await httpJsonSenzaAuth(ip, porta, true, "/runningpods/", ms, /items|kind/i)) info.kubelet = true;
+    } else if (porta === 6000) {
+      if (await provaX11(ip, porta, ms)) info.x11 = true;
+    } else if (opz.proveFabbrica && porta === 623) {
+      const ipmi = await provaIpmi(ip, ms);
+      if (ipmi.esposto) info.ipmi_esposto = true;
+      if (ipmi.cipher0) info.ipmi_cipher0 = true;
     } else if (opz.proveFabbrica && porta === 21 && restanti > 0) {
       tentativiUsati += 1;
       restanti -= 1;
       if (await provaFtpAnonimo(ip, porta, ms)) info.fabbrica = { servizio: "ftp", utente: "anonymous" };
-    } else if (opz.proveFabbrica && restanti > 0) {
-      const https = porta === 443 || porta === 8443;
+    } else if (opz.proveFabbrica && porta === 3306 && restanti > 0) {
+      tentativiUsati += 1;
+      restanti -= 1;
+      if (await provaMysqlRootVuoto(ip, porta, ms)) info.fabbrica = { servizio: "mysql", utente: "root" };
+    } else if (opz.proveFabbrica && porta === 5432 && restanti > 0) {
+      tentativiUsati += 1;
+      restanti -= 1;
+      if (await provaPostgresFabbrica(ip, porta, ms)) info.fabbrica = { servizio: "postgres", utente: "postgres" };
+    } else if (opz.proveFabbrica && porta === 1433 && restanti > 0) {
+      tentativiUsati += 1;
+      restanti -= 1;
+      if (await provaMssqlSa(ip, porta, ms)) info.fabbrica = { servizio: "mssql", utente: "sa" };
+    }
+
+    const httpish = porta === 80 || porta === 443 || porta === 8080 || porta === 8443 || porta === 8000 || porta === 8888;
+    if (httpish) {
+      Object.assign(info, await provaPercorsiHttp(ip, porta, ms));
+    }
+    if (opz.proveFabbrica && restanti > 0 && httpish) {
       const stato = await httpGet(ip, porta, https, ms);
-      if (stato === 401) {
+      if (stato?.code === 401) {
         for (const l of LOGIN_FABBRICA_HTTP) {
           if (restanti <= 0) break;
           tentativiUsati += 1;
           restanti -= 1;
           const auth = `Authorization: Basic ${Buffer.from(`${l.utente}:${l.password}`).toString("base64")}`;
-          const code = await httpGet(ip, porta, https, ms, auth);
-          if (code != null && code >= 200 && code < 400) {
+          const r = await httpGet(ip, porta, https, ms, auth);
+          if (r && r.code >= 200 && r.code < 400) {
             info.fabbrica = { servizio: "http", utente: l.utente };
             break;
           }
@@ -343,13 +616,5 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
     // una porta che parla un altro protocollo non ferma il giro
   }
 
-  const vuoto =
-    !info.ldap_anonimo &&
-    !info.redis_aperto &&
-    !info.mongo_aperto &&
-    !info.nfs_risponde &&
-    info.snmp_public == null &&
-    !info.vnc_senza_auth &&
-    !info.fabbrica;
-  return { info: vuoto ? null : info, tentativiUsati };
+  return { info: controlloHaEsito(info) ? info : null, tentativiUsati };
 }

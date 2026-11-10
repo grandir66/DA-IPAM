@@ -48,25 +48,26 @@ Nety ha ~45 controlli per servizio che girano subito, legati alla porta, con la 
 controlli leggeri della sonda che scrivono un rilievo (porta/protocollo/prova/rimedio) legato al
 servizio in `servizi_rete`, mostrato nelle viste di Vulnerabilità con gravità a tacche.
 
-**Prima ondata GIÀ FATTA (10/11, prove unitarie + tsc/lint/build verdi — non rifare):** SMB senza
-firma obbligatoria, RDP senza NLA, SSH vecchio (SSH-1 o OpenSSH < 8), LDAP bind anonimo, Redis e
-MongoDB senza password, NFS che risponde, SNMP community `public`, VNC senza auth, pannelli web
-esposti (Jenkins, iLO, iDRAC, phpMyAdmin, Grafana…); con la levetta intrusiva: FTP anonymous e
-`admin`/`admin` sui pannelli in 401. (TLS scaduto/vecchio/autofirmato c'era già.) Verifica dal
-vivo ancora da fare: dopo l'aggiornamento dell'hub, un giro **«Solo controlli»** su una rete già
-sondata fa comparire i nuovi findings.
+**Prima ondata GIÀ FATTA (10/11 — non rifare):** SMB senza firma obbligatoria, RDP senza NLA, SSH
+vecchio (SSH-1 o OpenSSH < 8), LDAP bind anonimo, Redis e MongoDB senza password, NFS che risponde,
+SNMP community `public`, VNC senza auth, pannelli web esposti; con la levetta: FTP anonymous e
+`admin`/`admin` sui pannelli in 401. (TLS scaduto/vecchio/autofirmato c'era già.)
+
+**Seconda ondata GIÀ FATTA (10/11 — non rifare):** SMBv1, sessione SMB anonima/Guest/share (sempre,
+probe in `smb-controlli.ts`; `probes/smb2.ts` resta solo CHALLENGE); SSH KEX/cifrari/MAC deboli;
+Telnet 23, WinRM 5985/5986, WSUS HTTP 8530; Memcached, ZooKeeper, Elasticsearch, Docker API, etcd,
+CouchDB, Kubelet, X11, `.git`/`.env`/Spring Actuator; con la stessa levetta: EternalBlue
+(MS17-010), IPMI RMCP ping, MySQL/MSSQL/Postgres di fabbrica (tetto 6). IPMI cipher-zero è
+dichiarato ma non ancora provato (resta `false`). Verifica dal vivo: giro **«Solo controlli»**
+sull'hub, con e senza levetta.
 
 **Resto del catalogo DA FARE (solo nomi, stessa impostazione):**
-- SMB: SMBv1, null session, guest, share anonima. RDP: sicurezza Standard (senza TLS).
-- SSH: algoritmi deboli, login con password. LDAP: signing non obbligatorio.
-- NFS: export leggibile da tutti (oggi vediamo solo se NFS risponde). SNMP: community di scrittura.
+- RDP: sicurezza Standard (senza TLS). SSH: login con password offerto. LDAP: signing non obbligatorio.
+- NFS: export leggibile da tutti. SNMP: community di scrittura.
 - TLS: cifrari deboli, chiave debole.
-- Web: file `.git`/`.env`, Jenkins script console, Spring Actuator, pannello stampante, AD CS
-  enrollment, Elasticsearch, Docker API, Kubelet, etcd, CouchDB.
-- DB di fabbrica (INTRUSIVI): MySQL root vuoto, MSSQL `sa`, PostgreSQL.
-- Altri: EternalBlue (MS17-010), spooler RPC, WinRM esposto, Cisco Smart Install, trasferimento
-  zona DNS, Telnet, TFTP, NTP monlist, Memcached, ZooKeeper, rsync, r-services, IPMI
-  (cipher zero / esposto / RAKP), SMTP relay e VRFY, WSUS in HTTP, X11, VNC con auth debole.
+- Web: Jenkins script console, pannello stampante, AD CS enrollment.
+- Altri: spooler RPC, Cisco Smart Install, trasferimento zona DNS, TFTP, NTP monlist, rsync,
+  r-services, IPMI cipher zero / RAKP, SMTP relay e VRFY, VNC con auth debole.
 
 **Vincolo tassativo sugli autenticati/intrusivi** (default di fabbrica DB, `admin`/`admin`, SNMP
 write): spenti di serie, si accendono solo con la levetta «prove intrusive» del lanciatore, si

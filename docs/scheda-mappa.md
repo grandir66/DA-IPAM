@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: Ondata 2 dei check Nety (SMBv1, null session, default DB, IPMI…); diff tra giri
+prossimo: Check Nety restanti (LDAP signing, DNS AXFR, TLS deboli…); diff tra giri
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

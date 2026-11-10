@@ -10,14 +10,10 @@ import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
 import {
   BadgeGravita,
-  BarraDivisa,
   DatoDettaglio,
   Etichetta,
-  IntestazionePagina,
   LegendaGravita,
   Pannello,
-  SchedePagina,
-  TesseraNumero,
   TempoRelativo,
   Vuoto,
 } from "@/components/shared/console";
@@ -65,24 +61,29 @@ export function FindingsClient() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <IntestazionePagina
-        titolo="Findings"
-        sottotitolo="Rilievi di rete e vulnerabilità. La vista per CVE e per host è la scheda Vulnerabilità."
-        azioni={
-          <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
-            Lancia un giro
-          </Button>
-        }
-      />
-      <SchedePagina<Scheda>
-        etichetta="Findings"
-        scelta={scheda}
-        onScegli={scegli}
-        voci={[
-          { valore: "findings", titolo: "Elenco", descrizione: "CVE, trunk e giri in un elenco solo" },
-          { valore: "vulnerabilita", titolo: "Vulnerabilità", descrizione: "Per CVE o per host, con exploit, triage e filtri" },
-        ]}
-      />
+      {/* Una riga sola (Riccardo, 10/11/2026: «occupa metà schermo»): titolo, le due schede, l'azione. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-bold tracking-tight">Findings</h1>
+        <div role="tablist" aria-label="Findings" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
+          {([["findings", "Elenco", "CVE, trunk e giri in un elenco solo"], ["vulnerabilita", "Vulnerabilità", "Per CVE o per host, con exploit, triage e filtri"]] as const).map(([v, nome, descrizione], i) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={scheda === v}
+              title={descrizione}
+              onClick={() => scegli(v)}
+              className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${scheda === v ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
+            >
+              {nome}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
+          Lancia un giro
+        </Button>
+      </div>
       {!pronta ? null : scheda === "vulnerabilita" ? <VulnerabilitiesListClient embedded /> : <ElencoFindings />}
     </div>
   );
@@ -234,58 +235,16 @@ function ElencoFindings() {
 
   return (
     <div className="space-y-4">
-      {dati && triTot > 0 && (
-        <Pannello titolo="Revisione">
-          <div className="space-y-2 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[13px]">
-                <strong className="font-mono text-foreground">{triRivisti}</strong> di{" "}
-                <strong className="font-mono text-foreground">{triTot}</strong> rivisti{" "}
-                <span className="text-muted-foreground">({triPct}%)</span>
-              </p>
-              <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-                <span className="rounded-md border px-2 py-0.5">
-                  Tutti <strong className="font-mono text-foreground">{triTot}</strong>
-                </span>
-                <span className="rounded-md border px-2 py-0.5">
-                  Da rivedere <strong className="font-mono text-foreground">{conteggiTriage.da_fare}</strong>
-                </span>
-              </div>
-            </div>
-            <BarraDivisa
-              parti={[
-                { nome: TRIAGE_UI.da_fare.parola, valore: conteggiTriage.da_fare, classe: "bg-[#C5CED4]" },
-                { nome: TRIAGE_UI.in_corso.parola, valore: conteggiTriage.in_corso, classe: "bg-[#FFD400]" },
-                { nome: TRIAGE_UI.fatto.parola, valore: conteggiTriage.fatto, classe: "bg-[#1F7A4D]" },
-                { nome: TRIAGE_UI.ignorato.parola, valore: conteggiTriage.ignorato, classe: "bg-muted-foreground/50" },
-              ]}
-            />
-          </div>
-        </Pannello>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <TesseraNumero titolo="Critici" valore={dati ? rollup.Critical : null} nota="CVE Critical" />
-        <TesseraNumero titolo="Alti" valore={dati ? rollup.High : null} nota="CVE High, trunk gravi, TLS scaduto" />
-        <TesseraNumero titolo="Aperti" valore={dati ? totale : null} nota="Nell’elenco dopo i filtri" />
-        <TesseraNumero
-          titolo="Fonti"
-          valore={dati ? Object.values(perFonte).filter((n) => n > 0).length : null}
-          nota={`Edge ${perFonte.edge} · Wazuh ${perFonte.wazuh} · trunk ${perFonte.trunk} · giri ${perFonte.giro}`}
-        />
-      </div>
-
       {!!dati?.nonDisponibili.length && (
-        <p role="status" className="text-sm">Fonti non disponibili · {dati.nonDisponibili.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
+        <p role="status" className="text-[13px]">Fonti non disponibili · {dati.nonDisponibili.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
       {!!dati?.parziali.length && (
-        <p role="status" className="text-sm">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
+        <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
       <Pannello
         titolo="Elenco"
         conteggio={totale}
-        sottotitolo="Una riga, clic per prova e rimedio"
         azioni={
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -319,6 +278,7 @@ function ElencoFindings() {
         <div className="space-y-3">
           {/* Fonte come tab segmentati su una riga sua (Riccardo, 10/11): «Tutti» è la vista
               comune, gli altri separano per motore (Trunk e Giri sono IPAM/Nety; CVE è Edge+Wazuh). */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
           <div className="flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-muted-foreground">Raggruppa per</span>
             <div role="group" aria-label="Raggruppa per" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
@@ -364,6 +324,18 @@ function ElencoFindings() {
                 <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
               </button>
             ))}
+          </div>
+          {dati && triTot > 0 && (
+            <span className="ml-auto flex items-center gap-2" title={`Da rivedere ${conteggiTriage.da_fare} · in corso ${conteggiTriage.in_corso} · rivisti ${conteggiTriage.fatto} · ignorati ${conteggiTriage.ignorato}`}>
+              <span>
+                <strong className="font-mono">{triRivisti}</strong> di <strong className="font-mono">{triTot}</strong> rivisti
+                {conteggiTriage.in_corso > 0 && <span className="text-muted-foreground"> · {conteggiTriage.in_corso} in corso</span>}
+              </span>
+              <span className="h-2 w-32 overflow-hidden rounded-full bg-[#C5CED4]" aria-hidden>
+                <span className="block h-full bg-[#1F7A4D]" style={{ width: `${triPct}%` }} />
+              </span>
+            </span>
+          )}
           </div>
 
           {admin && selezione.size > 0 && (

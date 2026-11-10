@@ -77,6 +77,20 @@ export interface AdGroupRow {
   memberDns: string[];
 }
 
+export interface PasswordAttributeRow {
+  dn: string;
+  attribute: string;
+}
+
+export interface GmsaReadersRow {
+  dn: string;
+  /** false = msDS-GroupMSAMembership assente o non leggibile con questa utenza. */
+  readable: boolean;
+  readerSids: string[];
+  /** Everyone, Authenticated Users, Users, Domain Users, Domain Computers. */
+  broadSids: string[];
+}
+
 export interface AdTrustRow {
   name: string;
   trustDirection: number | null;
@@ -204,6 +218,10 @@ export interface RuleContext {
   psoCount?: number | null;
   /** Users with msDS-KeyCredentialLink (shadow credentials). */
   shadowCredentialDns?: string[];
+  /** Oggetti con un attributo che contiene una password (solo presenza); null = non letto. */
+  passwordAttributeRows?: PasswordAttributeRow[] | null;
+  /** Delega di lettura della password dei gMSA; null = non letta. */
+  gmsaReaders?: GmsaReadersRow[] | null;
   /**
    * Labels of LDAP collect queries that failed (e.g. "users", "groups").
    * Empty/undefined = every query succeeded. Without this, a timed-out query

@@ -305,6 +305,56 @@ const CATALOG: Record<string, RuleGuide> = {
     why: "Template con Any Purpose / EKU vuoto possono essere abusati per autenticazione.",
     fix: "Restringi le EKU ai soli usi necessari; rivedi chi può fare enrollment.",
   },
+  "DA-P-PrimaryGroupHidden": {
+    titleIt: "Privilegio nascosto nel gruppo primario",
+    why: "Chi ha un gruppo privilegiato come gruppo primario non compare fra i membri del gruppo: una revisione dell'elenco non lo vede.",
+    fix: "Riporta il gruppo primario a Domain Users e, se il privilegio serve davvero, aggiungi l'account fra i membri in chiaro.",
+  },
+  "DA-P-DisabledInPrivilegedGroup": {
+    titleIt: "Account disabilitati nei gruppi privilegiati",
+    why: "Un account disabilitato che resta in un gruppo privilegiato riprende il privilegio appena qualcuno lo riabilita, senza toccare il gruppo.",
+    fix: "Togli gli account disabilitati dai gruppi privilegiati.",
+  },
+  "DA-P-ComputerInPrivilegedGroup": {
+    titleIt: "Computer nei gruppi privilegiati",
+    why: "Chi controlla quella macchina (amministratore locale, relay, autenticazione forzata) agisce col privilegio del gruppo.",
+    fix: "Togli gli account computer dai gruppi privilegiati; se serve una delega a un servizio, dalla a un gMSA con i soli diritti necessari.",
+  },
+  "DA-P-SchemaAdminsPopulated": {
+    titleIt: "Schema Admins non è vuoto",
+    why: "Schema Admins serve solo mentre si estende lo schema: un membro fisso è un privilegio di foresta sempre acceso.",
+    fix: "Svuota Schema Admins e aggiungi un account solo per il tempo dell'estensione dello schema.",
+  },
+  "DA-P-EnterpriseAdminsPopulated": {
+    titleIt: "Enterprise Admins ha membri oltre ad Administrator",
+    why: "Enterprise Admins comanda tutta la foresta e serve solo per modifiche di foresta. L'Administrator predefinito è riconosciuto dal nome: se è stato rinominato compare qui.",
+    fix: "Togli i membri che non servono; aggiungili solo per il tempo dell'intervento.",
+  },
+  "DA-P-UnresolvedPrivilegedMember": {
+    titleIt: "Membri privilegiati non identificati",
+    why: "Nei gruppi privilegiati ci sono membri che non sono utenti, computer o gruppi letti da questo controllo (altri domini, gMSA, contatti): hanno il privilegio ma non sono contati altrove.",
+    fix: "Controlla a mano chi sono e togli quelli che non servono. È un rilievo da verificare, non entra nel punteggio.",
+  },
+  "DA-S-DesOnly": {
+    titleIt: "Account limitati a Kerberos DES",
+    why: "Con «Usa solo crittografia DES» i ticket Kerberos dell'account usano DES, che si rompe in poche ore.",
+    fix: "Togli il flag dall'account, cambia la password e verifica che il servizio che lo usa accetti AES.",
+  },
+  "DA-A-PwdAttributePresent": {
+    titleIt: "Password in un attributo leggibile",
+    why: "userPassword, unixUserPassword e msSFU30Password contengono spesso una password in chiaro o con hash debole, leggibile da ogni utente del dominio. Si è controllata solo la presenza, mai il valore.",
+    fix: "Svuota l'attributo, cambia la password dell'account e ferma lo strumento che lo scrive.",
+  },
+  "DA-S-PreCreatedComputer": {
+    titleIt: "Computer pre-creati e mai usati",
+    why: "Un account computer abilitato, senza obbligo di password e senza mai un accesso, può avere ancora la password di serie (il nome del computer). È un indizio: non è stato tentato nessun accesso.",
+    fix: "Elimina o disabilita gli account computer mai usati. È un rilievo da verificare, non entra nel punteggio.",
+  },
+  "DA-P-GmsaBroadReaders": {
+    titleIt: "Password di un gMSA leggibile da un gruppo ampio",
+    why: "La delega del gMSA lascia leggere la sua password a Everyone, Authenticated Users, Users, Domain Users o Domain Computers. Si è letta solo la delega, mai la password.",
+    fix: "Restringi PrincipalsAllowedToRetrieveManagedPassword ai soli server che usano il gMSA.",
+  },
   "DA-A-ShadowCredentials": {
     titleIt: "Shadow credentials presenti",
     why: "msDS-KeyCredentialLink consente login con chiave (utile a Entra ID, abusabile se scritto da attaccanti).",

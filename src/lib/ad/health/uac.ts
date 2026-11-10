@@ -5,6 +5,8 @@ export const UAC = {
   ENCRYPTED_TEXT_PWD_ALLOWED: 0x0080,
   DONT_EXPIRE_PASSWORD: 0x10000,
   TRUSTED_FOR_DELEGATION: 0x80000,
+  /** Solo chiavi DES per Kerberos. */
+  USE_DES_KEY_ONLY: 0x200000,
   DONT_REQ_PREAUTH: 0x400000,
   /** Protocol transition (S4U2Self) — constrained delegation with any auth. */
   TRUSTED_TO_AUTH_FOR_DELEGATION: 0x1000000,

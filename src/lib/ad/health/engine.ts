@@ -299,6 +299,8 @@ export async function runAdHealthcheck(
       adcs: extras.adcs,
       psoCount: extras.psoCount,
       shadowCredentialDns: extras.shadowCredentialDns,
+      passwordAttributeRows: extras.passwordAttributeRows,
+      gmsaReaders: extras.gmsaReaders,
       ldapCollectErrors: extras.collectErrors,
       wazuh: wazuhSignals,
     };

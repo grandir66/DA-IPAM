@@ -15,8 +15,9 @@ import {
 } from "@/lib/ad/ldap-utils";
 import { hasFlag, UAC } from "@/lib/ad/health/uac";
 import { collectAdcsExtras, type AdcsExtras } from "@/lib/ad/health/adcs";
-import { guidFromMsBytes } from "./acl/security-descriptor";
-import type { AdGpoRow, AdTrustRow, LapsComputerState } from "@/lib/ad/health/types";
+import { guidFromMsBytes, parseSecurityDescriptor } from "./acl/security-descriptor";
+import { appliesAllow, isBroadTrustee } from "./acl/delegation-evidence";
+import type { AdGpoRow, AdTrustRow, GmsaReadersRow, LapsComputerState, PasswordAttributeRow } from "@/lib/ad/health/types";
 
 export interface LdapExtras {
   userUacBySam: Map<string, number>;
@@ -53,6 +54,10 @@ export interface LdapExtras {
   psoCount: number | null;
   /** DNs of users with msDS-KeyCredentialLink present. */
   shadowCredentialDns: string[];
+  /** Oggetti con un attributo che contiene una password; null = non letto. Mai il valore. */
+  passwordAttributeRows: PasswordAttributeRow[] | null;
+  /** Chi può leggere la password di ogni gMSA (solo la delega); null = non letto. */
+  gmsaReaders: GmsaReadersRow[] | null;
   adcs: AdcsExtras;
   /**
    * Labels of queries that failed. Each failure leaves the corresponding maps
@@ -75,6 +80,28 @@ function attrPresent(val: unknown): boolean {
   if (Array.isArray(val)) return val.some((v) => attrPresent(v));
   if (typeof val === "string") return val.length > 0;
   return true;
+}
+
+/** Attributi che possono contenere una password leggibile. Se ne legge solo la presenza. */
+export const PASSWORD_ATTRIBUTES = ["userPassword", "unixUserPassword", "msSFU30Password"] as const;
+
+/**
+ * msDS-GroupMSAMembership è un descrittore di sicurezza: dice chi può chiedere la password
+ * del gMSA. Qui si legge solo quella delega, mai msDS-ManagedPassword.
+ */
+export function gmsaReadersRow(entry: Record<string, unknown>): GmsaReadersRow {
+  const dn = ldapStr(entry.distinguishedName) ?? ldapStr(entry.sAMAccountName) ?? "";
+  const raw = entry["msDS-GroupMSAMembership"];
+  const buf = Array.isArray(raw) ? raw[0] : raw;
+  if (!Buffer.isBuffer(buf) || buf.length === 0) return { dn, readable: false, readerSids: [], broadSids: [] };
+  try {
+    const sids = [...new Set(parseSecurityDescriptor(buf).aces.filter(appliesAllow).map((ace) => ace.sid))];
+    // Senza il SID del dominio, Domain Users e Domain Computers si riconoscono dal RID.
+    const broad = sids.filter((sid) => isBroadTrustee(sid) || /^S-1-5-21-[\d-]+-(513|515)$/.test(sid));
+    return { dn, readable: true, readerSids: sids, broadSids: broad };
+  } catch {
+    return { dn, readable: false, readerSids: [], broadSids: [] };
+  }
 }
 
 function isDomainController(entry: Record<string, unknown>): boolean {
@@ -478,18 +505,44 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
     }
 
     let gmsaCount: number | null = null;
+    let gmsaReaders: GmsaReadersRow[] | null = null;
     try {
       const { searchEntries: gmsas } = await client.search(baseDn, {
         scope: "sub",
         filter: "(objectClass=msDS-GroupManagedServiceAccount)",
-        attributes: ["sAMAccountName"],
+        attributes: ["sAMAccountName", "distinguishedName", "msDS-GroupMSAMembership"],
+        explicitBufferAttributes: ["msDS-GroupMSAMembership"],
         paged: { pageSize: 200 },
         timeLimit: 60,
       });
       gmsaCount = gmsas.length;
+      gmsaReaders = gmsas.map((entry) => gmsaReadersRow(entry));
     } catch {
       gmsaCount = null;
+      gmsaReaders = null;
       collectErrors.push("gmsa");
+    }
+
+    // Solo la presenza: il filtro chiede «ha un valore», la risposta porta il DN e basta.
+    let passwordAttributeRows: PasswordAttributeRow[] | null = [];
+    for (const attribute of PASSWORD_ATTRIBUTES) {
+      try {
+        const { searchEntries } = await client.search(baseDn, {
+          scope: "sub",
+          filter: `(${attribute}=*)`,
+          attributes: ["distinguishedName"],
+          paged: { pageSize: 200 },
+          timeLimit: 60,
+        });
+        for (const entry of searchEntries) {
+          const dn = ldapStr(entry.distinguishedName);
+          if (dn) passwordAttributeRows?.push({ dn, attribute });
+        }
+      } catch {
+        passwordAttributeRows = null;
+        collectErrors.push("passwordAttributes");
+        break;
+      }
     }
 
     let psoCount: number | null = null;
@@ -542,6 +595,8 @@ export async function collectLdapExtras(integrationId: number): Promise<LdapExtr
       gmsaCount,
       psoCount,
       shadowCredentialDns: shadowCredentialDns.slice(0, 50),
+      passwordAttributeRows,
+      gmsaReaders,
       adcs,
       collectErrors,
     };

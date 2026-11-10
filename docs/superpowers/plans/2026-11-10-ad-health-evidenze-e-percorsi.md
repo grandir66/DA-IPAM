@@ -63,3 +63,8 @@
 ## Ordine e collaudo finale
 
 Tappe 1 e 2 come prima consegna. La 3 riusa il perimetro AD CS della 2. La 4 riusa gruppi e ACL, la 5 usa le informazioni di copertura prodotte nelle tappe precedenti. Verificare su un dominio di laboratorio che i rilievi confermati e i dati mancanti restino distinguibili, che il modulo funzioni senza leggere password e che l'export di un'esecuzione storica resti valido. Aggiornare `TASKS.md`, `CONTEXT.md` e `CHANGELOG.md` a ogni consegna pertinente.
+
+## Strumenti di confronto per il laboratorio
+
+- **ad-doctor** (`54b006a`, MIT, Python ≥3.12). Usarlo come secondo parere a versione bloccata per le tappe AD CS, LAPS e percorsi. Confrontare a parità di perimetro i rilievi, l'evidenza e i controlli non valutati. Prendere come riferimento anche identificatori stabili, diff e report SARIF. Per ESC8 distinguere l'indizio da rete dalla conferma della configurazione IIS. Verifica del sorgente e 24 test di `tests/test_checks.py` passati in ambiente isolato, senza accesso a un dominio. [Sorgente](https://github.com/brkozer/ad-doctor/tree/54b006a) · [PyPI](https://pypi.org/project/ad-doctor/)
+- **ADcheck** (`f03fcb8`, GPL-3.0, Python ≥3.10). Consultare la checklist per controlli puntuali su registro, audit, GPO e permessi. Qualsiasi futura prova va limitata a moduli selezionati e a un account senza privilegi elevati. In modalità privilegiata, i controlli di password uguali o vuote chiamano DCSync. Per IPAM riusare le idee attraverso i collector esistenti, evitando di incorporare codice o acquisire hash. Verifica statica. [Sorgente](https://github.com/CobblePot59/ADcheck/tree/f03fcb8)

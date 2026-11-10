@@ -1667,6 +1667,19 @@ CREATE TABLE IF NOT EXISTS trunk_vicini (
   PRIMARY KEY (protocollo, sistema, porta)
 );
 
+-- Cosa gli apparati dicono di sé sul trunk in SSDP, mDNS e DHCP (10/11/2026, sonda 0.8.292):
+-- una riga per MAC, chiave e valore, agganciata all'host con quel MAC. Dati, non rilievi.
+CREATE TABLE IF NOT EXISTS trunk_dichiarazioni (
+  mac TEXT NOT NULL,
+  chiave TEXT NOT NULL,
+  valore TEXT NOT NULL,
+  vid INTEGER NOT NULL DEFAULT 0,
+  host_id INTEGER,
+  ultima_vista TEXT NOT NULL,
+  PRIMARY KEY (mac, chiave, valore)
+);
+CREATE INDEX IF NOT EXISTS idx_trunk_dichiarazioni_host ON trunk_dichiarazioni(host_id);
+
 -- Riconoscimento automatico degli host unknown (06/11): l'ultimo tentativo, perché il giro notturno non
 -- ritorni ogni notte sullo stesso apparato. Senza chiave esterna: una riga orfana non pesa.
 CREATE TABLE IF NOT EXISTS riconoscimento_tentativi (

@@ -568,6 +568,16 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                                 </Etichetta>
                               ))}
                             </div>
+                            {/* Cosa l'oggetto dice di sé in modo passivo: annunci (MNDP, Ubiquiti, CDP) e dichiarazioni (SSDP, mDNS, DHCP). */}
+                            {o.dichiara.length > 0 && (
+                              <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px]">
+                                {o.dichiara.map((x) => (
+                                  <span key={`${x.come}|${x.valore}`}>
+                                    <span className="text-muted-foreground">{x.come}</span> <span className="font-mono">{x.valore}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
                         </TableRow>

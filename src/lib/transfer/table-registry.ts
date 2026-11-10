@@ -194,6 +194,7 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   "trunk_osservazioni",
   "trunk_vlan",
   "trunk_vicini",
+  "trunk_dichiarazioni",
   // Prove di raggiungibilità misurate da questa sonda trunk (09/11): copiate altrove descriverebbero un'altra rete.
   "segmentazione_giri",
   "segmentazione_prove",

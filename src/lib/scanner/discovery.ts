@@ -194,6 +194,10 @@ export type DiscoverNetworkOptions = {
   sequenzaId?: string;
   /** Login di fabbrica dopo nmap: solo dal lanciatore `/scans`, mai dai giri automatici. */
   proveFabbrica?: boolean;
+  /** Timeout per bersaglio di questo giro (ms). Assente = default nmap/Opzioni. */
+  timeoutMs?: number;
+  /** Worker in parallelo di questo giro (ping e batch nmap). Assente = default. */
+  concorrenza?: number;
 };
 
 /**
@@ -791,7 +795,11 @@ export async function discoverNetwork(
     void done.then((esito) => {
       if (esito.status !== "completed") return;
       try {
-        avviaSondeDopoDiscovery(tenantCode, networkId, { proveFabbrica: options?.proveFabbrica === true });
+        avviaSondeDopoDiscovery(tenantCode, networkId, {
+          proveFabbrica: options?.proveFabbrica === true,
+          timeoutMs: options?.timeoutMs,
+          concorrenza: options?.concorrenza,
+        });
       } catch (e) {
         console.error(`[servizi-rete] avvio dopo la scansione (tenant: ${tenantCode}, network: ${networkId}):`, e);
       }
@@ -911,6 +919,12 @@ function buildSnmpContextForClassifier(d: HostScanData | undefined): string | nu
   if (d.snmpIfDescrSummary) parts.push(`interfaces ${d.snmpIfDescrSummary}`);
   if (d.snmpHostResourcesSummary) parts.push(d.snmpHostResourcesSummary);
   return parts.length ? parts.join("\n") : null;
+}
+
+/** Sostituisce `--host-timeout` nmap con il valore per-giro (ms). */
+function nmapArgsConTimeoutMs(args: string, timeoutMs: number): string {
+  const flag = `--host-timeout ${timeoutMs}ms`;
+  return /--host-timeout\s+\S+/.test(args) ? args.replace(/--host-timeout\s+\S+/g, flag) : `${args} ${flag}`;
 }
 
 async function runDiscovery(
@@ -1671,8 +1685,10 @@ async function runDiscovery(
   // NETWORK_DISCOVERY: ICMP → Nmap TCP quick (sequenziale) → poi DNS/DB; ARP router a fine run
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "network_discovery") {
+    const pingConc = discoverOpts?.concorrenza ?? 50;
+    const timeoutMsGiro = discoverOpts?.timeoutMs;
     progress.phase = "Ping sweep (ICMP)";
-    const results = await pingSweep(ips, 50, (scanned, found) => {
+    const results = await pingSweep(ips, pingConc, (scanned, found) => {
       progress.scanned = scanned;
       progress.found = found;
     });
@@ -1690,7 +1706,8 @@ async function runDiscovery(
     if (tcpCandidates.length > 0) {
       progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
       log(`ICMP miss: ${tcpCandidates.length} host noti come online non hanno risposto, tento TCP su ${FALLBACK_TCP_PORTS.join("/")}`);
-      const TCP_BATCH = 32;
+      const TCP_BATCH = discoverOpts?.concorrenza ?? 32;
+      const tcpTimeoutMs = timeoutMsGiro ?? 2000;
       let recovered = 0;
       let scanned = 0;
       for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
@@ -1699,7 +1716,7 @@ async function runDiscovery(
         const probed = await Promise.all(
           batch.map(async (ip) => {
             for (const port of FALLBACK_TCP_PORTS) {
-              if (await tcpConnect(ip, port, 2000)) return ip;
+              if (await tcpConnect(ip, port, tcpTimeoutMs)) return ip;
             }
             return null;
           })
@@ -1725,9 +1742,10 @@ async function runDiscovery(
     const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecNd);
     if (naabuPrepNd.enabled) seedNaabuOpenPorts(naabuPrepNd.byIp);
 
-    const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
-    const quickExecMs = getNetworkDiscoveryQuickExecMs();
-    const quickBatch = getNetworkDiscoveryQuickConcurrency();
+    const quickArgsBase = buildNetworkDiscoveryQuickTcpArgs();
+    const quickArgs = timeoutMsGiro != null ? nmapArgsConTimeoutMs(quickArgsBase, timeoutMsGiro) : quickArgsBase;
+    const quickExecMs = timeoutMsGiro != null ? timeoutMsGiro + 2000 : getNetworkDiscoveryQuickExecMs();
+    const quickBatch = discoverOpts?.concorrenza ?? getNetworkDiscoveryQuickConcurrency();
 
     if (nmapAvailable && onlineIps.length > 0) {
       progress.phase = `Nmap quick TCP — 0/${onlineIps.length}`;

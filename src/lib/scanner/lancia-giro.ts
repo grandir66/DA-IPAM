@@ -33,6 +33,32 @@ export interface LancioGiro {
   conferma_completo?: boolean;
   /** Login di fabbrica: solo se true, e solo da questo lanciatore. */
   prove_fabbrica?: boolean;
+  /** Timeout per bersaglio/sonda di questo giro (ms). Assente = default del motore. */
+  timeout_ms?: number;
+  /** Worker in parallelo di questo giro. Assente = default del motore. */
+  concorrenza?: number;
+}
+
+const TIMEOUT_MS_MIN = 500;
+const TIMEOUT_MS_MAX = 60_000;
+const CONCORRENZA_MIN = 1;
+const CONCORRENZA_MAX = 256;
+
+export interface LancioLetto {
+  tipo: TipoGiro;
+  profilo: ProfiloGiro;
+  reti: number[];
+  fasi: FaseGiro[];
+  timeoutMs?: number;
+  concorrenza?: number;
+}
+
+function interoNelRange(v: unknown, nome: string, min: number, max: number): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
+    throw new ErroreLancio(`${nome} deve essere un intero tra ${min} e ${max}`);
+  }
+  return v;
 }
 
 export interface AvvioGiro {
@@ -70,7 +96,7 @@ const DIP: DipendenzeLancio = {
   tenant: getCurrentTenantCode,
 };
 
-export function leggiLancio(corpo: LancioGiro): { tipo: TipoGiro; profilo: ProfiloGiro; reti: number[]; fasi: FaseGiro[] } {
+export function leggiLancio(corpo: LancioGiro): LancioLetto {
   if (!eTipoGiro(corpo.tipo)) throw new ErroreLancio("Tipo di giro sconosciuto");
   if (!eProfiloGiro(corpo.profilo)) throw new ErroreLancio("Profilo sconosciuto");
   if (corpo.profilo === "completo" && corpo.conferma_completo !== true) {
@@ -80,12 +106,14 @@ export function leggiLancio(corpo: LancioGiro): { tipo: TipoGiro; profilo: Profi
   if ((corpo.tipo === "discovery" || corpo.tipo === "controlli") && reti.length === 0) {
     throw new ErroreLancio("Scegli almeno una rete");
   }
-  return { tipo: corpo.tipo, profilo: corpo.profilo, reti, fasi: fasiValide(corpo.fasi) };
+  const timeoutMs = interoNelRange(corpo.timeout_ms, "timeout_ms", TIMEOUT_MS_MIN, TIMEOUT_MS_MAX);
+  const concorrenza = interoNelRange(corpo.concorrenza, "concorrenza", CONCORRENZA_MIN, CONCORRENZA_MAX);
+  return { tipo: corpo.tipo, profilo: corpo.profilo, reti, fasi: fasiValide(corpo.fasi), timeoutMs, concorrenza };
 }
 
 export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLancio> = {}): Promise<EsitoLancio> {
   const d = { ...DIP, ...dip };
-  const { tipo, profilo, reti, fasi } = leggiLancio(corpo);
+  const { tipo, profilo, reti, fasi, timeoutMs, concorrenza } = leggiLancio(corpo);
   const tenant = d.tenant();
   if (!tenant) throw new ErroreLancio("Nessun tenant scelto", 400);
   const avvii: AvvioGiro[] = [];
@@ -131,6 +159,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
   }
 
   const proveFabbrica = corpo.prove_fabbrica === true;
+  const opzioniSonde = { proveFabbrica, timeoutMs, concorrenza };
 
   const vuoleSonde = fasi.includes("sonde");
   const soloSonde = profilo === "su_misura" && !fasi.includes("porte") && vuoleSonde;
@@ -142,7 +171,7 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
     });
     if (!scope.length) throw new ErroreLancio("Nessuna rete trovata");
     const networkId = scope.length === 1 ? scope[0]! : null;
-    const avviato = d.servizi(tenant, networkId ?? scope, { proveFabbrica });
+    const avviato = d.servizi(tenant, networkId ?? scope, opzioniSonde);
     if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
     if (tipo === "controlli") {
       d.history({
@@ -172,6 +201,8 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
         tcpPorts: params.tcpPorts,
         udpPorts: params.udpPorts,
         proveFabbrica,
+        timeoutMs,
+        concorrenza,
       });
       avvii.push({ network_id: id, job_id: jobId, messaggio: `Discovery ${profilo} su ${rete.cidr}` });
     } catch (e) {

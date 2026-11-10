@@ -99,11 +99,16 @@ async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<vo
 export function avviaSondeDopoDiscovery(
   tenant: string,
   networkId: number,
-  opzioni: { proveFabbrica?: boolean; strumenti?: Strumenti } = {},
+  opzioni: {
+    proveFabbrica?: boolean;
+    strumenti?: Strumenti;
+    timeoutMs?: number;
+    concorrenza?: number;
+  } = {},
 ): void {
   if (avviaGiro(tenant, networkId, opzioni)) return;
   const coda = codeDiscovery.get(tenant) ?? new Map<string, () => void>();
-  const chiave = `${networkId}:${opzioni.proveFabbrica === true}`;
+  const chiave = `${networkId}:${opzioni.proveFabbrica === true}:${opzioni.timeoutMs ?? ""}:${opzioni.concorrenza ?? ""}`;
   coda.set(chiave, () => { avviaGiro(tenant, networkId, opzioni); });
   codeDiscovery.set(tenant, coda);
 }
@@ -123,12 +128,26 @@ export function avviaGiro(
     porte?: number[];
     /** Login di fabbrica: solo da `/scans`, mai dai giri automatici. */
     proveFabbrica?: boolean;
+    /** Timeout per bersaglio/sonda di questo giro (ms). Assente = default della sonda. */
+    timeoutMs?: number;
+    /** Worker in parallelo di questo giro. Assente = 32 sonde / 256 prove porte. */
+    concorrenza?: number;
   } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
   const reti = typeof ambito === "number" ? [ambito] : ambito ?? [undefined];
   const networkId = reti.length === 1 ? reti[0] ?? null : null;
-  const { sonda, aperta, controllo } = opzioni.strumenti ?? STRUMENTI;
+  const timeoutMs = opzioni.timeoutMs;
+  const parallele = opzioni.concorrenza ?? PARALLELE;
+  const parallelePorte = opzioni.concorrenza ?? PARALLELE_PORTE;
+  const { sonda, aperta, controllo } = opzioni.strumenti ?? (timeoutMs != null
+    ? {
+        sonda: (ip: string, p: number) => sondaPorta(ip, p, { timeoutMs }),
+        aperta: (ip: string, p: number) => portaAperta(ip, p, timeoutMs),
+        controllo: (ip: string, p: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean }) =>
+          sondaControllo(ip, p, { ...opz, timeoutMs }),
+      }
+    : STRUMENTI);
   const proveFabbrica = opzioni.proveFabbrica === true;
   const stato: StatoGiro = { inCorso: true, networkId, fase: null, totale: 0, fatte: 0, iniziato: new Date().toISOString(), finito: null, errore: null };
   giri.set(tenant, stato);
@@ -144,7 +163,7 @@ export function avviaGiro(
         stato.totale = prove.length;
         stato.fatte = 0;
         const trovate = new Map<number, number[]>();
-        await inParallelo(prove, PARALLELE_PORTE, async ({ h, porta }) => {
+        await inParallelo(prove, parallelePorte, async ({ h, porta }) => {
           let si = false;
           try {
             si = await aperta(h.ip, porta);
@@ -165,7 +184,7 @@ export function avviaGiro(
       stato.fase = "sonde";
       stato.totale = coda.length;
       stato.fatte = 0;
-      await inParallelo(coda, PARALLELE, async (p) => {
+      await inParallelo(coda, parallele, async (p) => {
         let esito: EsitoSonda | null = null;
         try {
           esito = await sonda(p.ip, p.porta);
@@ -180,7 +199,7 @@ export function avviaGiro(
           .filter((p) => !daSaltare(p.porta, null) && !eImpianto(p) && p.protocollo === protocolloControllo(p.porta));
         const restanti = new Map<string, number>();
         stato.totale += extra.length;
-        await inParallelo(extra, PARALLELE, async (p) => {
+        await inParallelo(extra, parallele, async (p) => {
           let esito: EsitoSondaControllo;
           try {
             esito = await controllo(p.ip, p.porta, {

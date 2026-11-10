@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Scansioni: timeout e concorrenza per-giro
+
+Riccardo (10/11): il profilo «Su misura» deve poter scegliere timeout e worker; oggi restano i default del motore.
+
+### Aggiunto
+- **POST `/api/scans/lancia`**: campi opzionali `timeout_ms` (500–60000) e `concorrenza` (1–256). Fuori range → errore, il giro non parte. Assenti → default (giri automatici e schedulatore invariati).
+- Il lanciatore li passa alle sonde (`avviaGiro`) e alla discovery (`network_discovery`: ping, batch nmap, `--host-timeout`); dopo nmap le sonde ricevono gli stessi valori.
+
 ## [Non rilasciato] — 2026-11-10 · Scansioni interne: avanzamento in pagina e levetta invasiva (modello Nety)
 
 Riccardo (10/11): la pagina scansioni deve mostrare l'avanzamento, come Nety.

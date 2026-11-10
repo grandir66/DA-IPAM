@@ -8,7 +8,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
-import { avviaGiro, statoGiro } from "../giro";
+import { avviaGiro, avviaSondeDopoDiscovery, statoGiro } from "../giro";
 import type { EsitoSonda } from "../sonde";
 
 const T = "PROVASERVIZI";
@@ -99,4 +99,39 @@ test("giro multirete: perimetro, protocollo, impianti e sei tentativi concorrent
   assert.ok(controllate.length > 6);
   assert.equal(tentativi, 6);
   assert.equal(statoGiro(T).fatte, statoGiro(T).totale);
+});
+
+test("Discovery accoda le reti occupate senza perdere la levetta del singolo giro", async () => {
+  const [a, b] = withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = d.prepare("INSERT INTO networks (cidr, name) VALUES (?, ?)");
+    const host = d.prepare("INSERT INTO hosts (network_id, ip) VALUES (?, ?)");
+    const servizio = d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo) VALUES (?, 21, 'tcp')");
+    return ["10.12.0", "10.13.0"].map((prefisso) => {
+      const id = Number(rete.run(`${prefisso}.0/24`, prefisso).lastInsertRowid);
+      servizio.run(host.run(id, `${prefisso}.8`).lastInsertRowid);
+      return id;
+    });
+  });
+  let sblocca!: () => void;
+  const attesa = new Promise<void>((resolve) => { sblocca = resolve; });
+  const controlli: Array<[string, boolean]> = [];
+  const strumenti = {
+    aperta: async () => false,
+    sonda: async () => { await attesa; return null; },
+    controllo: async (ip: string, _porta: number, opz: { proveFabbrica: boolean }) => {
+      controlli.push([ip, opz.proveFabbrica]);
+      return { info: null, tentativiUsati: 0 };
+    },
+  };
+  assert.ok(a && b);
+  avviaSondeDopoDiscovery(T, a, { strumenti });
+  avviaSondeDopoDiscovery(T, b, { strumenti, proveFabbrica: true });
+  avviaSondeDopoDiscovery(T, b, { strumenti, proveFabbrica: true });
+  assert.equal(statoGiro(T).networkId, a);
+  sblocca();
+  await attendi();
+  assert.equal(statoGiro(T).inCorso, false);
+  assert.equal(statoGiro(T).errore, null);
+  assert.deepEqual(controlli, [["10.12.0.8", false], ["10.13.0.8", true]]);
 });

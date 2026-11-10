@@ -214,44 +214,49 @@ export async function provaNfs(ip: string, porta: number, ms: number): Promise<b
   return r ? nfsNullAccettato(r) : false;
 }
 
-function vncTipiOfferti(banner: Buffer, tipi: Buffer): number[] {
-  const ident = banner.toString("latin1").split("\n")[0] ?? "";
-  if (!ident.startsWith("RFB ")) return [];
-  if (/RFB 003\.003/.test(ident)) {
+function vncVersione(banner: Buffer): string | null {
+  const r = /^RFB 003\.(\d{3})\n$/.exec(banner.toString("latin1"));
+  if (!r) return null;
+  return r[1] === "007" || r[1] === "008" ? r[1] : "003";
+}
+
+function vncTipiOfferti(versione: string, tipi: Buffer): number[] {
+  if (versione === "003") {
     if (tipi.length < 4) return [];
-    return [tipi.readUInt32BE(0)];
+    const tipo = tipi.readUInt32BE(0);
+    return tipo === 0 ? [] : [tipo];
   }
-  if (tipi.length < 1) return [];
-  const n = tipi[0]!;
-  if (n < 1 || tipi.length < 1 + n) return [];
-  return [...tipi.subarray(1, 1 + n)];
+  const n = tipi[0] ?? 0;
+  return n > 0 && tipi.length >= 1 + n ? [...tipi.subarray(1, 1 + n)] : [];
 }
 
 export function vncSenzaAuthDaHandshake(banner: Buffer, tipi: Buffer): boolean {
-  return vncTipiOfferti(banner, tipi).includes(1);
+  const versione = vncVersione(banner);
+  return versione !== null && vncTipiOfferti(versione, tipi).includes(1);
 }
 
 /** Tipo 2 = password VNC (DES a 8 caratteri). */
 export function vncAuthDeboleDaHandshake(banner: Buffer, tipi: Buffer): boolean {
-  return vncTipiOfferti(banner, tipi).includes(2);
+  const versione = vncVersione(banner);
+  return versione !== null && vncTipiOfferti(versione, tipi).includes(2);
 }
 
 export async function provaVnc(
   ip: string,
   porta: number,
   ms: number,
-): Promise<{ none: boolean; debole: boolean }> {
+): Promise<{ none: boolean; debole: boolean } | null> {
   const s = await connetti(ip, porta, ms);
-  if (!s) return { none: false, debole: false };
+  if (!s) return null;
   try {
     const banner = await leggi(s, ms, (b) => b.includes(0x0a));
-    if (!banner.toString("latin1").startsWith("RFB ")) return { none: false, debole: false };
-    s.write("RFB 003.008\n");
-    const tipi = await leggi(s, ms, (b) => b.length >= 1);
-    return {
-      none: vncSenzaAuthDaHandshake(banner, tipi),
-      debole: vncAuthDeboleDaHandshake(banner, tipi),
-    };
+    const versione = vncVersione(banner);
+    if (!versione) return null;
+    s.write(`RFB 003.${versione}\n`);
+    const dati = await leggi(s, ms, (b) => versione === "003" ? b.length >= 4 : b.length > (b[0] ?? 0));
+    const tipi = vncTipiOfferti(versione, dati);
+    if (!tipi.length) return null;
+    return { none: tipi.includes(1), debole: tipi.includes(2) };
   } finally {
     s.destroy();
   }
@@ -730,15 +735,18 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (await provaMongo(ip, porta, ms)) info.mongo_aperto = true;
     } else if (porta === 2049 || porta === 111) {
       if (porta === 2049 && (await provaNfs(ip, porta, ms))) info.nfs_risponde = true;
-      if (await provaNfsExportStella(ip, ms)) info.nfs_export_pubblico = true;
+      const pubblico = await provaNfsExportStella(ip, ms);
+      if (pubblico !== undefined) info.nfs_export_pubblico = pubblico;
     } else if (porta === 161) {
       const sys = await provaSnmpPublic(ip, ms);
       if (sys) info.snmp_public = sys;
       if (opz.proveFabbrica && (await provaSnmpWrite(ip, ms))) info.snmp_write = true;
     } else if (porta === 5900 || porta === 5901) {
       const vnc = await provaVnc(ip, porta, ms);
-      if (vnc.none) info.vnc_senza_auth = true;
-      if (vnc.debole) info.vnc_auth_debole = true;
+      if (vnc) {
+        info.vnc_senza_auth = vnc.none;
+        info.vnc_auth_debole = vnc.debole;
+      }
     } else if (porta === 445 || porta === 139) {
       Object.assign(info, await sondaSmb(ip, porta, ms, opz.proveFabbrica === true));
     } else if (porta === 11211) {

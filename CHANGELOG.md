@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Discovery, VNC e NFS
+
+- **Discovery**. Le sonde successive a una scansione riuscita si accodano quando il tenant è occupato, con rete e opzioni originali.
+- **VNC e NFS**. Una risposta completa può chiudere un rilievo precedente. Una risposta incompleta conserva l’ultimo riscontro.
+
 ## [Non rilasciato] — 2026-11-10 · Findings e perimetro dei giri
 
 - **Giri**. Le sonde rispettano le reti selezionate, escludono gli impianti riconosciuti e condividono il tetto dei tentativi di fabbrica per IP. I controlli usano le porte note del protocollo corretto.

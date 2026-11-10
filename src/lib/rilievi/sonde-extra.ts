@@ -283,9 +283,9 @@ export function portmapPorta(buf: Buffer): number | null {
 }
 
 /** MOUNT EXPORT contiene una lista XDR di path, ciascuno con la propria lista di gruppi. */
-export function nfsExportStella(buf: Buffer): boolean {
+export function nfsExportStella(buf: Buffer): boolean | undefined {
   const dati = rpcRisultato(buf, 0xda190005);
-  if (!dati) return false;
+  if (!dati) return undefined;
   let offset = 0;
   let aperto = false;
   const numero = () => {
@@ -302,25 +302,25 @@ export function nfsExportStella(buf: Buffer): boolean {
     return valore;
   };
   for (let exportPresente = numero(); exportPresente !== 0; exportPresente = numero()) {
-    if (exportPresente !== 1 || stringa() === null) return false;
+    if (exportPresente !== 1 || stringa() === null) return undefined;
     let gruppoPresente = numero();
     if (gruppoPresente === 0) aperto = true;
     for (; gruppoPresente !== 0; gruppoPresente = numero()) {
-      if (gruppoPresente !== 1) return false;
+      if (gruppoPresente !== 1) return undefined;
       const gruppo = stringa();
-      if (gruppo === null) return false;
+      if (gruppo === null) return undefined;
       if (gruppo === "*") aperto = true;
     }
   }
   return aperto;
 }
 
-export async function provaNfsExportStella(ip: string, ms: number): Promise<boolean> {
+export async function provaNfsExportStella(ip: string, ms: number): Promise<boolean | undefined> {
   const mappa = await conTesto(ip, 111, ms, portmapGetPort(100005, 3), rpcCompleto);
   const dest = (mappa && portmapPorta(mappa)) || 2049;
   const pkt = rpcSuTcp(rpcCall(0xda190005, 100005, 3, 5));
   const r = await conTesto(ip, dest, ms, pkt, rpcCompleto);
-  return r ? nfsExportStella(r) : false;
+  return r ? nfsExportStella(r) : undefined;
 }
 
 export function metodiSshPassword(metodi: string[]): boolean {

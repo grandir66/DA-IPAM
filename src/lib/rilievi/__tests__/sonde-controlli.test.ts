@@ -23,6 +23,7 @@ import {
   provaMssqlSa,
   provaPercorsiHttp,
   provaRedis,
+  provaVnc,
   redisSenzaAuth,
   rpcCall,
   rpcSuTcp,
@@ -82,6 +83,33 @@ test("VNC: tipo None in 003.008 e in 003.003", () => {
   const t = Buffer.alloc(4);
   t.writeUInt32BE(1, 0);
   assert.equal(vncSenzaAuthDaHandshake(Buffer.from("RFB 003.003\n"), t), true);
+});
+
+test("VNC negozia la versione del server e attende tutti i tipi frammentati", async () => {
+  for (const [versione, parti, atteso] of [
+    ["003", [[0, 0], [0, 1]], { none: true, debole: false }],
+    ["008", [[1], [19]], { none: false, debole: false }],
+    ["008", [[2], [19]], null],
+  ] as const) {
+    let versioneClient = "";
+    const srv = net.createServer((c) => {
+      c.write(`RFB 003.${versione}\n`);
+      c.once("data", (d) => {
+        versioneClient = d.toString();
+        c.write(Buffer.from(parti[0]));
+        setTimeout(() => c.end(Buffer.from(parti[1])), 10);
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const addr = srv.address();
+    assert.ok(addr && typeof addr === "object");
+    try {
+      assert.deepEqual(await provaVnc("127.0.0.1", addr.port, 500), atteso);
+      assert.equal(versioneClient, `RFB 003.${versione}\n`);
+    } finally {
+      srv.close();
+    }
+  }
 });
 
 test("AD CS e Jenkins script da HTTP", () => {

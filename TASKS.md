@@ -7,7 +7,9 @@ Riccardo: approfondire la verifica e correggere i difetti confermati. Base origi
 - [x] Confrontare il brief con i rilasci e ricostruire i percorsi di scansione e lettura.
 - [x] Corretto perimetro delle reti, freno OT, budget per IP, associazione TCP/UDP, parser e contatori per motore.
 - [x] Verifica mirata su SQLite isolato, parser e server locali finti. Nessuna prova su apparati o browser.
-- [ ] Collaudare in laboratorio su apparati reali. In Discovery il post-giro salta ancora una rete se c'è già un giro in corso. DNS prova la sola zona inversa /24 e UDP dipende dalle porte note. Per gli altri controlli restano da distinguere esito negativo, timeout e controllo saltato. Le soglie delle fonti restano e sono segnalate in Findings.
+- [x] Accodate le sonde di Discovery quando un giro è già in corso, con rete e levetta originali. Coda in memoria e una sola esecuzione per richiesta equivalente in attesa.
+- [x] VNC e NFS aggiornano il rilievo precedente solo con una risposta completa e interpretabile. Prove mirate su coda e sonde, 35 passate.
+- [ ] Collaudare in laboratorio su apparati reali. DNS prova la sola zona inversa /24 e UDP dipende dalle porte note. Per le sonde ancora binarie restano da distinguere esito negativo, timeout e controllo saltato. Le soglie delle fonti restano e sono segnalate in Findings.
 
 
 ## 2026-11-09 — Riusare l'interfaccia di Nety in DA-IPAM: cosa si può e come (Riccardo, analisi)

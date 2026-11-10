@@ -55,8 +55,12 @@ const PARALLELE = 32;
 const PARALLELE_PORTE = 256;
 // Su globalThis: rotte, discovery e `server.ts` possono avere istanze diverse del modulo, e la
 // pagina deve vedere anche un giro partito dal programmatore (come `trunk/job.ts`).
-const g = globalThis as typeof globalThis & { __giriServiziRete?: Map<string, StatoGiro> };
+const g = globalThis as typeof globalThis & {
+  __giriServiziRete?: Map<string, StatoGiro>;
+  __codaSondeDiscovery?: Map<string, Map<string, () => void>>;
+};
 const giri = (g.__giriServiziRete ??= new Map<string, StatoGiro>());
+const codeDiscovery = (g.__codaSondeDiscovery ??= new Map<string, Map<string, () => void>>());
 
 export function statoGiro(tenant: string): StatoGiro {
   return giri.get(tenant) ?? { inCorso: false, networkId: null, fase: null, totale: 0, fatte: 0, iniziato: null, finito: null, errore: null };
@@ -89,6 +93,19 @@ async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<vo
   const esiti = await Promise.allSettled(Array.from({ length: Math.min(n, voci.length) }, lavoratore));
   const errore = esiti.find((e) => e.status === "rejected");
   if (errore) throw errore.reason;
+}
+
+/** Una Discovery conclusa conserva il proprio perimetro anche se le sonde sono occupate. */
+export function avviaSondeDopoDiscovery(
+  tenant: string,
+  networkId: number,
+  opzioni: { proveFabbrica?: boolean; strumenti?: Strumenti } = {},
+): void {
+  if (avviaGiro(tenant, networkId, opzioni)) return;
+  const coda = codeDiscovery.get(tenant) ?? new Map<string, () => void>();
+  const chiave = `${networkId}:${opzioni.proveFabbrica === true}`;
+  coda.set(chiave, () => { avviaGiro(tenant, networkId, opzioni); });
+  codeDiscovery.set(tenant, coda);
 }
 
 /**
@@ -191,6 +208,14 @@ export function avviaGiro(
       stato.inCorso = false;
       stato.fase = null;
       stato.finito = new Date().toISOString();
+      const coda = codeDiscovery.get(tenant);
+      const prossima = coda?.entries().next().value;
+      if (coda && prossima) {
+        const [chiave, avvia] = prossima;
+        coda.delete(chiave);
+        if (coda.size === 0) codeDiscovery.delete(tenant);
+        avvia();
+      }
     }
   });
   return true;

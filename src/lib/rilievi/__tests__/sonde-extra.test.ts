@@ -88,7 +88,7 @@ test("NFS export `*` e portmap GETPORT", () => {
   const chiuso = risposta(0xda190005, xdr(1, 2, 0x2f2a0000, 1, 3, 0x6c616e00, 0, 0));
   assert.equal(nfsExportStella(aperto), true);
   assert.equal(nfsExportStella(chiuso), false, "l'asterisco nel path non è un gruppo");
-  assert.equal(nfsExportStella(aperto.subarray(0, -4)), false);
+  assert.equal(nfsExportStella(aperto.subarray(0, -4)), undefined);
   assert.equal(nfsExportStella(risposta(0xda190005, xdr(1, 1, 0x2f000000, 0, 0))), true);
   assert.equal(portmapPorta(risposta(0xda190004, xdr(2049))), 2049);
 });

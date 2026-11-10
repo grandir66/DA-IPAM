@@ -1,5 +1,5 @@
 import { getAllHostIps } from "@/lib/utils";
-import { avviaGiro as avviaGiroServizi } from "@/lib/servizi-rete/giro";
+import { avviaSondeDopoDiscovery } from "@/lib/servizi-rete/giro";
 import {
   getCurrentTenantCode,
   getTenantSetting,
@@ -787,13 +787,11 @@ export async function discoverNetwork(
       rilasciaRete();
     });
 
-    // Servizi di rete (09/11/2026): a giro riuscito, le sonde senza credenziali leggono cosa
-    // rispondono le porte appena trovate. Se un giro di sonde è già in corso si salta:
-    // le porte restano «da sondare» e le prende il prossimo.
+    // Una Discovery riuscita fa sondare la propria rete, in coda se il tenant è già occupato.
     void done.then((esito) => {
       if (esito.status !== "completed") return;
       try {
-        avviaGiroServizi(tenantCode, networkId, { proveFabbrica: options?.proveFabbrica === true });
+        avviaSondeDopoDiscovery(tenantCode, networkId, { proveFabbrica: options?.proveFabbrica === true });
       } catch (e) {
         console.error(`[servizi-rete] avvio dopo la scansione (tenant: ${tenantCode}, network: ${networkId}):`, e);
       }

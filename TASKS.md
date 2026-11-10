@@ -8,7 +8,7 @@ Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev
 - [x] Riccardo (10/11): scritte nel piano le lacune rispetto ad ad-doctor e ADcheck, nove blocchi (A-I) con l'ordine proposto. Nessun blocco è approvato come tappa: lo decide Riccardo uno per uno.
 - [x] Riccardo (10/11): avviato lo sviluppo. Corretto il riscontro Windows LAPS con metadati di scadenza, senza acquisire password. Dato mancante ignoto.
 - [x] Riccardo (10/11): proseguita l'implementazione. Evidenze ACL LAPS e AD CS, regola diagnostica ESC4 e SID Enroll osservati. Suite AD Health con 139 test passati, TypeScript ed ESLint verdi.
-- [x] Riccardo (10/11, «procedi»): blocchi A e B delle lacune scritti sul ramo `claude/ad-health-lacune-ab` (10 regole, 2 diagnostiche, raccolta LDAP di sola presenza), 11 prove verdi. Dettaglio e non fatto nel piano. Da fare: fondere il ramo con `codex/ipam-findings-verifica` e provarlo su un dominio vero quando torna un trasporto cifrato.
+- [x] Riccardo (10/11, «procedi»): blocchi A e B delle lacune scritti sul ramo `claude/ad-health-lacune-ab`, fuso in `dev` il 10/11 insieme al lavoro di Codex (`codex/ipam-findings-verifica`) (10 regole, 2 diagnostiche, raccolta LDAP di sola presenza), 11 prove verdi. Dettaglio e non fatto nel piano. Da fare: fondere il ramo con `codex/ipam-findings-verifica` e provarlo su un dominio vero quando torna un trasporto cifrato.
 - [ ] Mostrare chi può leggere o decrittare le password LAPS, con ACL verificabili.
 - [x] AD CS legge il contesto Configuration e incrocia le pubblicazioni per CN. I candidati ESC1/ESC2 senza prova di Enroll restano diagnostici.
 - [ ] Risolvere i diritti Enroll effettivi e aggiungere ESC4 ed ESC8.

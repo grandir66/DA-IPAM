@@ -53,9 +53,9 @@ function okWinrm(hardening: NonNullable<WinrmProbeResult["hardening"]>): WinrmPr
   };
 }
 
-test("ALL_RULES has 60 unique rule ids", () => {
-  assert.equal(ALL_RULES.length, 60);
-  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 60);
+test("ALL_RULES has 70 unique rule ids", () => {
+  assert.equal(ALL_RULES.length, 70);
+  assert.equal(new Set(ALL_RULES.map((r) => r.id)).size, 70);
 });
 
 test("classifyTemplate ESC1 on enrollee subject + client auth", () => {

@@ -96,3 +96,13 @@ test("indicatori: sfruttate, aggiornamenti che chiudono metà dei critici, host 
   assert.equal(i.aggiornamentiPerMeta, 1);
   assert.deepEqual(i.hostPiuEsposto, { nome: "pc1", critici: 3, ospite: 1 });
 });
+
+test("barrePerRete: una tacca per host toccato, e solo l'host scelto se l'elenco è filtrato su di lui", async () => {
+  const { barrePerRete } = await import("../gruppi");
+  const righe = [
+    r({ id: "CVE-1", gravita: "Critical", ospiti: [h(1, 5), h(2, 5), h(3, 4)] }),
+    r({ id: "CVE-2", gravita: "Medium", ospiti: [h(1, 5)] }),
+  ];
+  assert.deepEqual(barrePerRete(righe).map((b) => [b.network_id, b.critical, b.medium, b.total]), [[5, 2, 1, 3], [4, 1, 0, 1]]);
+  assert.deepEqual(barrePerRete(righe, 3).map((b) => [b.network_id, b.total]), [[4, 1]]);
+});

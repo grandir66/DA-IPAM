@@ -88,6 +88,8 @@ export interface ElencoRilievi {
   conteggiTriage: Record<StatoTriage, number>;
   /** I rilievi raccolti per software, host o rete; presente solo se chiesto (`raggruppa=…`). */
   gruppi?: import("./gruppi").GruppoRilievi[];
-  /** I numeri della fascia in testata, sul motore scelto e prima degli altri filtri. */
+  /** I numeri della fascia in testata, sugli stessi rilievi dell'elenco: seguono i filtri. */
   indicatori?: import("./gruppi").IndicatoriRilievi;
+  /** Le barre per rete della fascia: seguono tutti i filtri tranne quello per rete, così si può cambiare rete. */
+  perRete?: import("./gruppi").BarraRete[];
 }

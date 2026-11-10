@@ -106,7 +106,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const [precedenti, setPrecedenti] = useState(false);
   const [ordina, setOrdina] = useState<OrdineElenco>("gravita");
   const [verso, setVerso] = useState<SortDirection>("desc");
-  const [perRete, setPerRete] = useState<RilievoRete[]>([]);
   const [fasciaChiusa, setFasciaChiusa] = useState(false);
   useEffect(() => {
     try {
@@ -114,9 +113,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
     } catch {
       // senza archivio del browser la fascia resta aperta
     }
-    void fetchJson<{ reti: RilievoRete[] }>("/api/vulnerabilities/per-rete").then((r) => {
-      if (r.ok) setPerRete(r.data.reti);
-    });
   }, []);
   function alternaFascia() {
     setFasciaChiusa((v) => {
@@ -334,7 +330,8 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         numeri={dati?.indicatori ?? null}
         daRivedere={conteggiTriage.da_fare}
         totale={triTot}
-        reti={perRete}
+        reti={dati?.perRete ?? []}
+        filtrata={filtriAttivi > 0 || motore !== "tutti"}
         reteScelta={rete?.id ?? null}
         onDaRivedere={() => { setStato(new Set<StatoTriage>(["da_fare"])); setPage(1); setVista("cve"); }}
         onSfruttate={() => { setExploit(new Set<"kev" | "edb">(["kev"])); setPage(1); setVista("cve"); }}
@@ -667,6 +664,7 @@ function FasciaIndicatori({
   daRivedere,
   totale,
   reti,
+  filtrata,
   reteScelta,
   onDaRivedere,
   onSfruttate,
@@ -680,6 +678,8 @@ function FasciaIndicatori({
   daRivedere: number;
   totale: number;
   reti: RilievoRete[];
+  /** Con un filtro acceso i numeri sono quelli della vista filtrata: la fascia lo dice. */
+  filtrata: boolean;
   reteScelta: number | null;
   onDaRivedere: () => void;
   onSfruttate: () => void;
@@ -692,7 +692,7 @@ function FasciaIndicatori({
     <div className="rounded-xl border bg-card">
       <button type="button" onClick={onAlterna} aria-expanded={!chiusa} className="flex w-full items-center gap-2 px-3 py-1.5 text-[13px] text-muted-foreground">
         {chiusa ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        Dove guardare
+        Dove guardare{filtrata ? " · con i filtri scelti" : ""}
         {chiusa && numeri && (
           <span className="text-foreground">
             · <strong className="font-mono">{daRivedere}</strong> da rivedere · <strong className="font-mono">{numeri.kev}</strong> sfruttate attivamente
@@ -727,11 +727,11 @@ function FasciaIndicatori({
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[13px] text-muted-foreground">
-              <span>Rilievi per rete (uno per host e CVE), un clic filtra l&apos;elenco</span>
+              <span>Rilievi per rete (uno per host toccato), un clic filtra l&apos;elenco</span>
               <LegendaGravita />
             </div>
             {reti.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">Nessun rilievo di vulnerabilità sulle reti.</p>
+              <p className="text-[13px] text-muted-foreground">Nessun rilievo sulle reti con questi filtri.</p>
             ) : (
               reti.slice(0, 7).map((r) => (
                 <button

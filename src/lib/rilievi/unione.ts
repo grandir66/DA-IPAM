@@ -30,7 +30,7 @@ import {
 } from "./controlli";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type OspiteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 import { agganciaTriage } from "./triage-aggancio";
-import { indicatori, raggruppa, type Raggruppamento } from "./gruppi";
+import { barrePerRete, indicatori, raggruppa, type Raggruppamento } from "./gruppi";
 import type { ExploitInfo } from "@/lib/vuln/exploit-feed/archivio";
 import type { StatoTriage } from "@/lib/triage/db";
 
@@ -288,16 +288,9 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     tutti = tutti.filter((x) => !!x.cve_key || vuole.has((x.host_id != null ? anagrafica.get(x.host_id)?.os : undefined) ?? "Unknown"));
   }
 
-  // Gli indicatori guardano il motore scelto, prima degli altri filtri: dicono dove guardare.
-  const numeri = filtro.conIndicatori ? indicatori(tutti.filter((x) => (x.fonti ?? [x.fonte]).some((f) => setFonte.has(f)))) : undefined;
-
   if (filtro.exploit?.length) {
     const vuole = new Set(filtro.exploit);
     tutti = tutti.filter((x) => (vuole.has("kev") && !!x.exploit?.kev) || (vuole.has("edb") && !!x.exploit?.edb));
-  }
-  if (filtro.rete != null) {
-    const rete = filtro.rete;
-    tutti = tutti.filter((x) => (x.ospiti?.length ? x.ospiti.some((o) => o.network_id === rete) : x.network_id === rete));
   }
   if (filtro.ospite != null) {
     const ospite = filtro.ospite;
@@ -326,7 +319,6 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     if (fonte) selezionati.push({ ...x, fonte });
   }
 
-  const rollup = rollupDi(selezionati);
   const perGravita = (a: RilievoUnito, b: RilievoUnito): number => {
     const g = (SEVERITY_RANK[b.gravita] ?? 0) - (SEVERITY_RANK[a.gravita] ?? 0);
     if (g !== 0) return g;
@@ -353,12 +345,25 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   // Il triage si aggancia ai rilievi selezionati per il tab corrente (tutte le pagine): così «N di M
   // rivisti» è vero e il badge c'è anche oltre la prima pagina. `agganciaTriage` scrive `.triage`
   // sulle stesse istanze (le copie `{ ...x, fonte }`) che poi finiscono in `data`.
-  const conteggiTriage = conteggiTriageElenco(selezionati);
-  // Il filtro per stato viene dopo: i conteggi sopra restano quelli di tutta la vista.
-  if (filtro.stato?.length) {
-    const stati = new Set(filtro.stato);
-    selezionati = selezionati.filter((x) => stati.has(x.triage?.stato ?? "da_fare"));
+  conteggiTriageElenco(selezionati);
+  const stati = filtro.stato?.length ? new Set(filtro.stato) : null;
+  const conStato = (righe: RilievoUnito[]): RilievoUnito[] => (stati ? righe.filter((x) => stati.has(x.triage?.stato ?? "da_fare")) : righe);
+
+  // La fascia in testata segue i filtri (Riccardo, 10/11/2026: «il grafico in alto non si aggiorna in
+  // base alle opzioni dei filtri»). Le barre per rete seguono tutto tranne il filtro per rete:
+  // altrimenti, scelta una rete, sparirebbero le altre e non si potrebbe passare a un'altra.
+  const perRete = filtro.conIndicatori ? barrePerRete(conStato(selezionati), filtro.ospite) : undefined;
+
+  if (filtro.rete != null) {
+    const rete = filtro.rete;
+    selezionati = selezionati.filter((x) => (x.ospiti?.length ? x.ospiti.some((o) => o.network_id === rete) : x.network_id === rete));
   }
+  const rollup = rollupDi(selezionati);
+  // I conteggi di revisione restano quelli della vista prima del filtro per stato.
+  const conteggiTriage: Record<StatoTriage, number> = { da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 };
+  for (const x of selezionati) conteggiTriage[x.triage?.stato ?? "da_fare"] += 1;
+  selezionati = conStato(selezionati);
+  const numeri = filtro.conIndicatori ? indicatori(selezionati) : undefined;
 
   const pageSize = Math.min(Math.max(filtro.pageSize ?? 50, 1), 200);
   const page = Math.max(filtro.page ?? 1, 1);
@@ -374,5 +379,6 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     data, total, page, pageSize, totalPages, rollup, perFonte, totaleGlobale, nonDisponibili, parziali, conteggiTriage,
     ...(gruppi ? { gruppi } : {}),
     ...(numeri ? { indicatori: numeri } : {}),
+    ...(perRete ? { perRete } : {}),
   };
 }

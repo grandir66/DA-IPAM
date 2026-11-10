@@ -238,3 +238,39 @@ export function indicatori(righe: readonly RilievoUnito[]): IndicatoriRilievi {
     hostPiuEsposto: peggiore ? { nome: peggiore.nome, critici: peggiore.gravita.Critical, ospite: peggiore.filtro?.ospite ?? null } : null,
   };
 }
+
+export interface BarraRete {
+  network_id: number;
+  network_name: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+/**
+ * Le barre «rilievi per rete» della fascia in testata, sugli stessi rilievi dell'elenco: una
+ * tacca per ogni host toccato (una CVE su tre host di una rete conta tre). `soloOspite` restringe
+ * il conto a un host, quando l'elenco è filtrato su di lui.
+ */
+export function barrePerRete(righe: readonly RilievoUnito[], soloOspite?: number): BarraRete[] {
+  const reti = new Map<number, BarraRete>();
+  for (const r of righe) {
+    for (const o of ospitiDi(r)) {
+      if (o.network_id == null) continue;
+      if (soloOspite != null && o.host_id !== soloOspite) continue;
+      let b = reti.get(o.network_id);
+      if (!b) {
+        b = { network_id: o.network_id, network_name: o.network_name ?? `rete ${o.network_id}`, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
+        reti.set(o.network_id, b);
+      }
+      if (r.gravita === "Critical") b.critical += 1;
+      else if (r.gravita === "High") b.high += 1;
+      else if (r.gravita === "Medium") b.medium += 1;
+      else b.low += 1;
+      b.total += 1;
+    }
+  }
+  return [...reti.values()].sort((a, b) => b.total - a.total || a.network_name.localeCompare(b.network_name));
+}

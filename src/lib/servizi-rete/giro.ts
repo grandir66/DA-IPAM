@@ -26,6 +26,7 @@ import {
   getCredenzialiValidateServizi,
   salvaSondaUdpServizio,
   accessoSshCredenziale,
+  getTenantDb,
 } from "@/lib/db-tenant";
 import { sondeUdpHost, type EsitoUdp } from "./sonde-udp";
 import { runSshCommand } from "@/lib/devices/ssh-run";
@@ -118,6 +119,36 @@ async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<vo
   const esiti = await Promise.allSettled(Array.from({ length: Math.min(n, voci.length) }, lavoratore));
   const errore = esiti.find((e) => e.status === "rejected");
   if (errore) throw errore.reason;
+}
+
+/** Ogni quanti giorni si ripete, per host, la prova SMB anonima e «Guest». */
+export const SMB_ANONIMO_OGNI_GIORNI = 7;
+
+/** Vero se la prova SMB su quell'host e quella porta è stata fatta da meno di `SMB_ANONIMO_OGNI_GIORNI`. */
+export function smbProvatoDiRecente(tenant: string, hostId: number, porta: number, adesso: number = Date.now()): boolean {
+  try {
+    const r = getTenantDb(tenant)
+      .prepare("SELECT json_extract(NULLIF(controllo_json, ''), '$._smb_provato_il') AS quando FROM servizi_rete WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'")
+      .get(hostId, porta) as { quando: string | null } | undefined;
+    const t = r?.quando ? Date.parse(r.quando) : NaN;
+    return !Number.isNaN(t) && adesso - t < SMB_ANONIMO_OGNI_GIORNI * 86_400_000;
+  } catch {
+    return false; // riga o JSON illeggibili: si prova, come prima
+  }
+}
+
+/** Segna la prova fatta, senza toccare `ultimo_visto` né il resto dell'esito. */
+function segnaSmbProvato(tenant: string, hostId: number, porta: number): void {
+  try {
+    getTenantDb(tenant)
+      .prepare(
+        `UPDATE servizi_rete SET controllo_json = json_set(COALESCE(NULLIF(controllo_json, ''), '{}'), '$._smb_provato_il', ?)
+          WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'`,
+      )
+      .run(new Date().toISOString(), hostId, porta);
+  } catch (e) {
+    console.warn(`[servizi-rete] host #${hostId}: segno della prova SMB non scritto: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** Una Discovery conclusa conserva il proprio perimetro anche se le sonde sono occupate. */
@@ -256,6 +287,16 @@ export function avviaGiro(
         riepilogo.controlli = extra.length;
         await inParallelo(extra, parallele, async (p) => {
           let esito: EsitoSondaControllo;
+          // Freno sulla sessione SMB anonima e «Guest» (10/11/2026): la prova lascia due accessi
+          // rifiutati nel registro del server a ogni giro, e il giro riparte dopo ogni Discovery.
+          // Sull'hub in un giorno 196 accessi «Guest» rifiutati sui due DC, che la sera hanno smesso
+          // di rispondere all'hub (probabile XDR). L'esito non cambia da un'ora all'altra: una volta
+          // ogni SMB_ANONIMO_OGNI_GIORNI per host basta. I login di fabbrica chiesti a mano passano.
+          const eSmb = p.porta === 445 || p.porta === 139;
+          if (eSmb && !proveFabbrica && smbProvatoDiRecente(tenant, p.host_id, p.porta)) {
+            stato.fatte += 1;
+            return;
+          }
           try {
             esito = await controllo(p.ip, p.porta, {
               proveFabbrica,
@@ -271,6 +312,7 @@ export function avviaGiro(
             esito = { info: null, tentativiUsati: 0 };
           }
           if (esito.info) salvaControlloServizioRete(p.host_id, p.porta, p.protocollo, esito.info);
+          if (eSmb) segnaSmbProvato(tenant, p.host_id, p.porta);
           stato.fatte += 1;
         });
       }

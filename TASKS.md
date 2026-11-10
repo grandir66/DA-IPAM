@@ -10,6 +10,7 @@ Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev
 - [x] AD CS legge il contesto Configuration e incrocia le pubblicazioni per CN. I candidati ESC1/ESC2 senza prova di Enroll restano diagnostici.
 - [ ] Risolvere i diritti Enroll effettivi e aggiungere ESC4 ed ESC8.
 - [x] Suite AD Health locale, 136 test passati. Nessun dominio contattato.
+- [x] Riccardo (10/11): indicato IPAM Domarc per il dominio reale. Verificata la baseline AD Health in sola lettura. Per un nuovo collaudo verificare che il bind sia cifrato e usare il perimetro già configurato.
 - [ ] Valutare percorsi di controllo verso i privilegi di dominio attraverso gruppi, ACL e GPO. Mostrare la catena di evidenze e distinguere il dato non verificato.
 - [ ] Confrontare due raccolte con copertura compatibile e mostrare rilievi nuovi, risolti e non verificabili.
 

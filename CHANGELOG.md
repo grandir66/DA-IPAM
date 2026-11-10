@@ -6,6 +6,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-10 · Findings a gruppi
 
+### Modificato
+- **Scansioni, pagina allineata al lanciatore di Nety** (Riccardo, 10/11: «senza interazioni diverse che portano informazioni sbagliate»): ordine tipo → rete → profilo → parametri; «Targets e parametri» sempre visibile e in sola lettura fuori da «Su misura», così si legge cosa farà il profilo; fasi e «Prove invasive» dentro il riquadro, prima del pulsante; targets ed esclusioni valgono con ogni profilo. Tolto il riquadro delle tecniche da auditor, che mostrava caselle spente senza effetto.
+- **Rilievi nel profilo dell'oggetto**: i rilievi dei giri (certificati, servizi esposti, login di fabbrica) compaiono nella tab «Rilievi» della scheda e nel cassetto di Subnet e Discovery, non più solo in Findings.
+
 ### Corretto
 - **Scansioni, «Solo controlli»**: mostrava il profilo (1000 porte) ma lo ignorava, e in pochi secondi restituiva il controllo senza dire cosa aveva fatto (Riccardo, 10/11: «ho l'impressione che non faccia praticamente nulla»). Come in Nety, il profilo ora compare solo per la Discovery; «Solo controlli» ha un riquadro che dice che non cerca porte nuove, con timeout e concorrenza. La riga in cronologia si scrive a giro finito con servizi risondati, host, risposte e durata (prima restava «avviato» per sempre).
 

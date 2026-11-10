@@ -26,15 +26,12 @@ import {
   PRESET_PORTE_GIRO,
   PROFILI_GIRO,
   PROFILI_GIRO_UI,
-  PROTOCOLLI_SEG,
   SCAN_MODE_GIRO,
-  SRC_PORT_GIRO,
   TIPI_GIRO,
   TIPI_GIRO_UI,
   type FaseGiro,
   type PresetPorteGiro,
   type ProfiloGiro,
-  type ProtocolloSeg,
   type ScanModeGiro,
   type TipoGiro,
 } from "@/lib/scanner/profili-giro-ui";
@@ -77,19 +74,13 @@ const PRESET_PORTE_UI: Record<PresetPorteGiro, string> = {
   top1000: "Top 1000 TCP",
   all: "Tutte (65.535)",
 };
-const PROTO_SEG_UI: Record<ProtocolloSeg, string> = {
-  direct: "Connessione diretta",
-  icmp_echo: "ICMP echo",
-  ipv6: "IPv6",
-  fragmented_syn: "SYN frammentato",
-};
-const SRC_PORT_UI: Record<number, string> = {
-  53: "Porta sorgente 53 (DNS)",
-  88: "Porta sorgente 88 (Kerberos)",
-  123: "Porta sorgente 123 (NTP)",
-  20: "Porta sorgente 20 (FTP-data)",
-  67: "Porta sorgente 67 (DHCP)",
-  500: "Porta sorgente 500 (IKE)",
+/** Cosa fa ogni profilo, come lo calcola `parametriProfilo`: si mostra in sola lettura. */
+const DEL_PROFILO: Record<ProfiloGiro, { tcp: PresetPorteGiro; udp: string; rate: string }> = {
+  rapido: { tcp: "top100", udp: "nessuna", rate: "" },
+  standard: { tcp: "top1000", udp: "le 20 più comuni", rate: "" },
+  completo: { tcp: "all", udp: "le 100 più comuni", rate: "" },
+  lento: { tcp: "top1000", udp: "le 20 più comuni", rate: "300" },
+  su_misura: { tcp: "top1000", udp: "", rate: "" },
 };
 
 /** Numero da una stringa di input: `undefined` se vuota o non valida (così la chiave si omette). */
@@ -175,6 +166,11 @@ export function ScansClient() {
   // Come in Nety: il profilo (quante porte, a che ritmo) è della Discovery. Gli altri tipi lavorano
   // su ciò che è già in inventario: mostrarlo lì faceva credere a una scansione che non parte.
   const haProfilo = tipo === "discovery";
+  const suMisura = haProfilo && profilo === "su_misura";
+  // Fuori da «Su misura» i campi mostrano ciò che il profilo farà davvero, in sola lettura (come Nety).
+  const delProfilo = DEL_PROFILO[profilo];
+  const fasiAttive: FaseGiro[] = suMisura ? fasi : FASI_GIRO.filter((f) => f !== "udp" || profilo !== "rapido");
+  const controlliAccesi = tipo === "controlli" || fasiAttive.includes("sonde");
   const vuoleTutteLePorte =
     haProfilo && (profilo === "completo" || (profilo === "su_misura" && presetPorte === "all"));
 
@@ -183,11 +179,11 @@ export function ScansClient() {
     if (avvio) return "Un avvio è già in corso";
     if (serveRete && scelte.size === 0) return "Scegli almeno una rete";
     if (tipo === "segmentazione" && sourceNet == null) return "Scegli la rete sorgente";
-    if (tipo === "discovery" && profilo === "su_misura" && !autoTargets && targets.trim() === "")
+    if (haProfilo && !autoTargets && targets.trim() === "")
       return "Senza auto-target indica almeno un bersaglio";
     if (vuoleTutteLePorte && !confermaCompleto) return "Tutte le porte: conferma le 65.535 porte TCP";
     return null;
-  }, [admin, avvio, serveRete, scelte.size, tipo, sourceNet, profilo, autoTargets, targets, vuoleTutteLePorte, confermaCompleto]);
+  }, [admin, avvio, serveRete, scelte.size, tipo, sourceNet, haProfilo, autoTargets, targets, vuoleTutteLePorte, confermaCompleto]);
 
   function corpoLancio(): Record<string, unknown> {
     const b: Record<string, unknown> = { tipo, profilo: haProfilo ? profilo : "standard" };
@@ -200,12 +196,14 @@ export function ScansClient() {
       if (co !== undefined) b.concorrenza = co;
     }
     if (vuoleTutteLePorte) b.conferma_completo = true;
-    if (serveRete && proveFabbrica) b.prove_fabbrica = true;
+    if (serveRete && proveFabbrica && controlliAccesi) b.prove_fabbrica = true;
 
-    if (tipo === "discovery" && profilo === "su_misura") {
+    if (haProfilo) {
       if (targets.trim()) b.targets = targets.trim();
       if (exclusions.trim()) b.exclusions = exclusions.trim();
       b.auto_targets = autoTargets;
+    }
+    if (suMisura) {
       const tcp = presetPorte === "custom" ? tcpCustom.trim() : presetPorte;
       if (tcp) b.tcp_ports = tcp;
       if (udpPorts.trim()) b.udp_ports = udpPorts.trim();
@@ -286,8 +284,8 @@ export function ScansClient() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-12">
-        <Pannello numero={1} titolo="Tipo" className={haProfilo ? "lg:col-span-6" : "lg:col-span-12"} sottotitolo="Cosa fa questo giro">
+      <div>
+        <Pannello numero={1} titolo="Tipo" sottotitolo="Cosa fa questo giro">
           <div className="grid gap-2 sm:grid-cols-2">
             {TIPI_GIRO.map((t) => (
               <VoceSelezionabile key={t} scelta={tipo === t} onScegli={() => setTipo(t)}>
@@ -297,9 +295,30 @@ export function ScansClient() {
             ))}
           </div>
         </Pannello>
-        {haProfilo && (
-          <Pannello numero={2} titolo="Profilo" className="lg:col-span-6" sottotitolo="Quante porte e a che ritmo">
-            <div className="grid gap-2 sm:grid-cols-2">
+      </div>
+
+      {serveRete && (
+        <Pannello numero={2} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
+          {loading ? (
+            <p className="p-3 text-[13px] text-muted-foreground">Caricamento…</p>
+          ) : reti.length === 0 ? (
+            <Vuoto titolo="Nessuna rete" testo="Censisci una subnet, poi torna qui." />
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {reti.map((r) => (
+                <VoceSelezionabile key={r.id} scelta={scelte.has(r.id)} onScegli={() => toggleRete(r.id)}>
+                  <p className="font-semibold">{r.name}</p>
+                  <p className="font-mono text-[13px] text-muted-foreground">{r.cidr}</p>
+                </VoceSelezionabile>
+              ))}
+            </div>
+          )}
+        </Pannello>
+      )}
+
+      {haProfilo && (
+          <Pannello numero={3} titolo="Profilo" sottotitolo="Quante porte e a che ritmo">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               {PROFILI_GIRO.map((p) => (
                 <VoceSelezionabile
                   key={p}
@@ -314,22 +333,6 @@ export function ScansClient() {
                 </VoceSelezionabile>
               ))}
             </div>
-            {profilo === "su_misura" && (
-              <div className="mt-3 flex flex-wrap gap-3 text-[13px]">
-                {FASI_GIRO.map((f) => (
-                  <label key={f} className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={fasi.includes(f)}
-                      onChange={() =>
-                        setFasi((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]))
-                      }
-                    />
-                    {FASI_UI[f]}
-                  </label>
-                ))}
-              </div>
-            )}
             {vuoleTutteLePorte && (
               <label className="mt-3 flex items-start gap-2 text-[13px]">
                 <input
@@ -343,11 +346,14 @@ export function ScansClient() {
             )}
           </Pannello>
         )}
-      </div>
 
       {/* Discovery «Su misura»: targets e parametri (il motore li accetta dalla v0.9.1079). */}
-      {tipo === "discovery" && profilo === "su_misura" && (
-        <Pannello titolo="Targets e parametri" sottotitolo="Lascia vuoto per i valori del profilo">
+      {haProfilo && (
+        <Pannello
+          numero={4}
+          titolo="Targets e parametri"
+          sottotitolo={suMisura ? "Tutti i parametri sono tuoi. Vuoto = valore del motore" : "Porte e ritmo vengono dal profilo. Scegli «Su misura» per cambiarli"}
+        >
           <div className="grid gap-3 p-1 lg:grid-cols-2">
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Targets</span>
@@ -383,7 +389,8 @@ export function ScansClient() {
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Porte TCP</span>
               <select
-                value={presetPorte}
+                value={suMisura ? presetPorte : delProfilo.tcp}
+                disabled={!suMisura}
                 onChange={(e) => setPresetPorte(e.target.value as PresetPorteGiro | "custom")}
                 className="h-9 w-full rounded-lg border bg-card px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
@@ -393,7 +400,7 @@ export function ScansClient() {
                   </option>
                 ))}
               </select>
-              {presetPorte === "custom" && (
+              {suMisura && presetPorte === "custom" && (
                 <Input
                   value={tcpCustom}
                   onChange={(e) => setTcpCustom(e.target.value)}
@@ -404,12 +411,13 @@ export function ScansClient() {
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Porte UDP</span>
-              <Input value={udpPorts} onChange={(e) => setUdpPorts(e.target.value)} placeholder="vuoto = niente UDP" className="font-mono" />
+              <Input value={suMisura ? udpPorts : delProfilo.udp} disabled={!suMisura} onChange={(e) => setUdpPorts(e.target.value)} placeholder="vuoto = niente UDP" className="font-mono" />
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Modo di scansione</span>
               <select
-                value={scanMode}
+                value={suMisura ? scanMode : "auto"}
+                disabled={!suMisura}
                 onChange={(e) => setScanMode(e.target.value as ScanModeGiro)}
                 className="h-9 w-full rounded-lg border bg-card px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
@@ -422,26 +430,63 @@ export function ScansClient() {
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Rate (pps)</span>
-              <Input value={ratePps} onChange={(e) => setRatePps(e.target.value)} inputMode="numeric" placeholder="10–10000" className="font-mono" />
+              <Input value={suMisura ? ratePps : delProfilo.rate} disabled={!suMisura} onChange={(e) => setRatePps(e.target.value)} inputMode="numeric" placeholder="10–10000" className="font-mono" />
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Timeout (ms)</span>
-              <Input value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} inputMode="numeric" placeholder="500–60000" className="font-mono" />
+              <Input value={suMisura ? timeoutMs : ""} disabled={!suMisura} onChange={(e) => setTimeoutMs(e.target.value)} inputMode="numeric" placeholder="500–60000" className="font-mono" />
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Concorrenza</span>
-              <Input value={concorrenza} onChange={(e) => setConcorrenza(e.target.value)} inputMode="numeric" placeholder="1–256" className="font-mono" />
+              <Input value={suMisura ? concorrenza : ""} disabled={!suMisura} onChange={(e) => setConcorrenza(e.target.value)} inputMode="numeric" placeholder="1–256" className="font-mono" />
             </label>
             <label className="space-y-1">
               <span className="text-[13px] font-medium">Tentativi</span>
-              <Input value={retries} onChange={(e) => setRetries(e.target.value)} inputMode="numeric" placeholder="0–5" className="font-mono" />
+              <Input value={suMisura ? retries : ""} disabled={!suMisura} onChange={(e) => setRetries(e.target.value)} inputMode="numeric" placeholder="0–5" className="font-mono" />
             </label>
+          </div>
+          <fieldset className="mt-2 p-1">
+            <legend className="text-[13px] font-medium">Fasi</legend>
+            <div className="mt-1 flex flex-wrap gap-3 text-[13px]">
+              {FASI_GIRO.map((f) => (
+                <label key={f} className={`flex items-center gap-1.5 ${suMisura ? "" : "opacity-70"}`}>
+                  <input
+                    type="checkbox"
+                    disabled={!suMisura}
+                    checked={fasiAttive.includes(f)}
+                    onChange={() => setFasi((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]))}
+                  />
+                  {FASI_UI[f]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-2 p-1">
+            <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={proveFabbrica && controlliAccesi}
+            disabled={!controlliAccesi}
+            onChange={(e) => setProveFabbrica(e.target.checked)}
+          />
+          <span>
+            <span className="flex items-center gap-2 font-semibold">
+              Prove invasive
+              <Etichetta tono="ruolo">▲ invasiva</Etichetta>
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host. Da concordare col cliente.
+            </span>
+            {!controlliAccesi && <span className="mt-0.5 block">Accendi la fase «Sonde e identità»: le prove invasive fanno parte dei controlli.</span>}
+          </span>
+        </label>
           </div>
         </Pannello>
       )}
 
       {tipo === "controlli" && (
-        <Pannello titolo="Solo controlli" sottotitolo="Lavora sugli host e sui servizi già in inventario per la rete">
+        <Pannello numero={3} titolo="Solo controlli" sottotitolo="Lavora sugli host e sui servizi già in inventario per la rete">
           <div className="space-y-3 p-1 text-[13px]">
             <p>
               Non scopre host e non cerca porte: ripassa i servizi già noti e rifà riconoscimento, identità e controlli.
@@ -461,26 +506,26 @@ export function ScansClient() {
                 <Input value={concorrenza} onChange={(e) => setConcorrenza(e.target.value)} inputMode="numeric" placeholder="1–256" className="font-mono" />
               </label>
             </div>
+            <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={proveFabbrica && controlliAccesi}
+            disabled={!controlliAccesi}
+            onChange={(e) => setProveFabbrica(e.target.checked)}
+          />
+          <span>
+            <span className="flex items-center gap-2 font-semibold">
+              Prove invasive
+              <Etichetta tono="ruolo">▲ invasiva</Etichetta>
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host. Da concordare col cliente.
+            </span>
+            {!controlliAccesi && <span className="mt-0.5 block">Accendi la fase «Sonde e identità»: le prove invasive fanno parte dei controlli.</span>}
+          </span>
+        </label>
           </div>
-        </Pannello>
-      )}
-
-      {serveRete && (
-        <Pannello numero={haProfilo ? 3 : 2} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
-          {loading ? (
-            <p className="p-3 text-[13px] text-muted-foreground">Caricamento…</p>
-          ) : reti.length === 0 ? (
-            <Vuoto titolo="Nessuna rete" testo="Censisci una subnet, poi torna qui." />
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {reti.map((r) => (
-                <VoceSelezionabile key={r.id} scelta={scelte.has(r.id)} onScegli={() => toggleRete(r.id)}>
-                  <p className="font-semibold">{r.name}</p>
-                  <p className="font-mono text-[13px] text-muted-foreground">{r.cidr}</p>
-                </VoceSelezionabile>
-              ))}
-            </div>
-          )}
         </Pannello>
       )}
 
@@ -518,7 +563,7 @@ export function ScansClient() {
                 ))}
             </div>
           </Pannello>
-          <Pannello titolo="Come prova la raggiungibilità" sottotitolo="Come la sonda verifica ogni bersaglio">
+          <Pannello titolo="Come prova la raggiungibilità" sottotitolo="Come la sonda verifica ogni bersaglio. Le altre tecniche di Nety (porta sorgente, IPv6, Layer-2 attivo) la sonda non le fa: qui non compaiono">
             <div className="grid gap-2 p-1 sm:grid-cols-2">
               <VoceSelezionabile scelta={tecnica === "direct"} onScegli={() => setTecnica("direct")}>
                 <p className="font-semibold">Connessione TCP diretta</p>
@@ -528,36 +573,6 @@ export function ScansClient() {
                 <p className="font-semibold">Ping ICMP</p>
                 <p className="mt-0.5 text-[13px] text-muted-foreground">Misura solo se l&apos;host risponde (la porta è ignorata).</p>
               </VoceSelezionabile>
-            </div>
-          </Pannello>
-          <Pannello
-            titolo="Altre tecniche da auditor"
-            sottotitolo="IPv6 ed evasione. Non ancora disponibili sulla sonda"
-            piede={<span className="text-[13px] text-muted-foreground">Quando la sonda le saprà fare, qui si accenderanno. Il Layer-2 attivo può disturbare lo switch.</span>}
-          >
-            <div className="grid gap-2 p-1 text-[13px] text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-              {PROTOCOLLI_SEG.filter((p) => p !== "direct" && p !== "icmp_echo").map((p) => (
-                <label key={p} className="flex items-center gap-2 opacity-60" title="Non ancora disponibile sulla sonda">
-                  <input type="checkbox" disabled />
-                  {PROTO_SEG_UI[p]}
-                </label>
-              ))}
-              {SRC_PORT_GIRO.map((p) => (
-                <label key={p} className="flex items-center gap-2 opacity-60" title="Non ancora disponibile sulla sonda">
-                  <input type="checkbox" disabled />
-                  {SRC_PORT_UI[p]}
-                </label>
-              ))}
-              <label className="flex items-center gap-2 opacity-60" title="Non ancora disponibile sulla sonda">
-                <input type="checkbox" disabled />
-                Instrada via gateway locale
-              </label>
-              <label className="flex items-center gap-2 opacity-60" title="Non ancora disponibile sulla sonda">
-                <input type="checkbox" disabled />
-                <span className="flex items-center gap-1.5">
-                  Layer-2 attivo <Etichetta tono="ruolo">▲ può disturbare lo switch</Etichetta>
-                </span>
-              </label>
             </div>
           </Pannello>
         </>
@@ -580,26 +595,6 @@ export function ScansClient() {
         </Button>
         {avvio && <InCorso titolo={avvio} />}
       </div>
-      {serveRete && (
-        <label className="flex items-start gap-2 rounded-xl border border-[#C9A800] bg-[#FFD400]/10 p-3 text-[13px]">
-          <input
-            type="checkbox"
-            className="mt-0.5"
-            checked={proveFabbrica}
-            onChange={(e) => setProveFabbrica(e.target.checked)}
-          />
-          <span>
-            <span className="flex items-center gap-2 font-semibold">
-              Prove invasive
-              <Etichetta tono="ruolo">▲ invasiva</Etichetta>
-            </span>
-            <span className="mt-0.5 block text-muted-foreground">
-              Login di fabbrica (FTP, admin/admin, MySQL/MSSQL/Postgres), EternalBlue, IPMI (cipher zero e RAKP), SNMP in scrittura e Jenkins Script Console. Mai nei giri automatici; al massimo 6 tentativi di login per host. Da concordare col cliente.
-            </span>
-          </span>
-        </label>
-      )}
-
       {giriInCorso.length > 0 && (
         <Pannello titolo="Giri in corso" conteggio={giriInCorso.length} sottotitolo="Avanzamento dal vivo; clic su «Apri» per il dettaglio">
           <div className="space-y-2 p-1">

@@ -16,6 +16,7 @@ import { DatoDettaglio, Etichetta, TempoRelativo, Vuoto } from "@/components/sha
 import { BottoneCopia } from "@/components/shared/copia";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
+import { RilieviHost } from "./rilievi-host";
 
 const FONTE_OS: Record<string, string> = {
   ntlm: "NTLM, senza credenziali",
@@ -169,6 +170,8 @@ export function CassettoHost({ hostId, onClose }: { hostId: number | null; onClo
                   </ul>
                 </div>
               )}
+
+              <RilieviHost hostId={dati.id} compatto />
 
               <div>
                 <p className="mb-1.5 text-[13px] font-semibold">Servizi ({dati.servizi.length})</p>

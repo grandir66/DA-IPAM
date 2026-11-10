@@ -232,6 +232,18 @@ export default function ObjectDetailPage() {
       .catch(() => { if (vivo) setRilieviProfilo(null); });
     return () => { vivo = false; };
   }, [hostId]);
+  // Anche i rilievi dei giri (Findings) fanno comparire la tab: prima restavano solo nell'elenco generale.
+  const [rilieviGiri, setRilieviGiri] = useState(0);
+  useEffect(() => {
+    setRilieviGiri(0);
+    if (!Number.isFinite(hostId) || hostId <= 0) return;
+    let vivo = true;
+    fetch(`/api/rilievi?host_id=${hostId}&pageSize=1`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ total: number }>) : null))
+      .then((d) => { if (vivo && d) setRilieviGiri(d.total); })
+      .catch(() => undefined);
+    return () => { vivo = false; };
+  }, [hostId]);
 
   // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
   // return (loading / !host) per non violare le rules of hooks (React #310).
@@ -485,7 +497,7 @@ export default function ObjectDetailPage() {
   // Stessa condizione di `eMikrotikSsh` (scheda); VLAN e Bridge con la lettura della topologia accesa e almeno un bridge.
   const mikrotik = mikrotikPerTab(device);
   const haSensori = (datiAttivi(librenmsDati)?.sensori.length ?? 0) > 0;
-  const haRilievi = (rilieviProfilo?.totale ?? 0) > 0;
+  const haRilievi = (rilieviProfilo?.totale ?? 0) > 0 || rilieviGiri > 0;
   const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik, haSensori, haRilievi });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;

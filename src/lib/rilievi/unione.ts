@@ -101,7 +101,7 @@ function daTrunk(): { righe: RilievoUnito[]; parziale: boolean } {
   return { righe: risultati, parziale: righe.length < totale };
 }
 
-function daGiri(): { righe: RilievoUnito[]; parziale: boolean } {
+function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
   const tenant = getCurrentTenantCode();
   if (!tenant) return { righe: [], parziale: false };
   const d = getTenantDb(tenant);
@@ -113,15 +113,15 @@ function daGiri(): { righe: RilievoUnito[]; parziale: boolean } {
      FROM servizi_rete s
      JOIN hosts h ON h.id = s.host_id
      LEFT JOIN networks n ON n.id = h.network_id
-     WHERE (s.tls_json IS NOT NULL AND s.tls_json != '')
+     WHERE ${hostId ? "s.host_id = ? AND" : ""} ((s.tls_json IS NOT NULL AND s.tls_json != '')
         OR (s.ntlm_json IS NOT NULL AND s.ntlm_json != '')
         OR (s.ssh_json IS NOT NULL AND s.ssh_json != '')
         OR (s.http_json IS NOT NULL AND s.http_json != '')
         OR (s.controllo_json IS NOT NULL AND s.controllo_json != '')
-        OR (s.protocollo = 'tcp' AND s.porta IN (23, 135, 512, 513, 514, 5985, 5986, 631, 8530))
+        OR (s.protocollo = 'tcp' AND s.porta IN (23, 135, 512, 513, 514, 5985, 5986, 631, 8530)))
      ORDER BY s.ultimo_visto DESC, s.host_id, s.porta, s.protocollo
      LIMIT 4001`,
-  ).all() as Array<{
+  ).all(...(hostId ? [hostId] : [])) as Array<{
     host_id: number;
     porta: number;
     protocollo: string;
@@ -161,6 +161,8 @@ export interface FiltroRilievi {
   fonti?: FonteRilievo[];
   gravita?: Severity[];
   q?: string;
+  /** Solo i rilievi di questo host: scheda dell'oggetto e cassetto in Subnet e Discovery. */
+  hostId?: number;
   page?: number;
   pageSize?: number;
   /** «software» = aggiunge all'elenco i gruppi per cosa aggiornare (tutte le pagine). */
@@ -202,7 +204,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const sorgenti = [
     { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(filtro.exploitDi) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
-    { fonti: ["giro"] as const, leggi: daGiri },
+    { fonti: ["giro"] as const, leggi: () => daGiri(filtro.hostId) },
   ];
   for (const sorgente of sorgenti) {
     try {
@@ -215,6 +217,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     }
   }
 
+  if (filtro.hostId) tutti = tutti.filter((x) => x.host_id === filtro.hostId);
   const grav = filtro.gravita?.length ? new Set(filtro.gravita) : null;
   if (grav) tutti = tutti.filter((x) => grav.has(x.gravita));
   const q = filtro.q?.trim().toLowerCase();

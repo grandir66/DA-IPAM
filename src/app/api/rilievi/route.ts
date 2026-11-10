@@ -24,12 +24,14 @@ export async function GET(request: Request) {
       .filter((s): s is Severity => (SEVERITIES as readonly string[]).includes(s));
     const page = Number(q.get("page") ?? 1);
     const pageSize = Number(q.get("pageSize") ?? 50);
+    const host = Number(q.get("host_id"));
     const aGruppi = q.get("raggruppa") === "software";
     return NextResponse.json(
       elencoRilievi({
         fonti,
         gravita,
         q: q.get("q") ?? undefined,
+        ...(Number.isInteger(host) && host > 0 ? { hostId: host } : {}),
         page: Number.isInteger(page) ? page : 1,
         pageSize: Number.isInteger(pageSize) ? pageSize : 50,
         ...(aGruppi ? { raggruppa: "software" as const, exploitDi: exploitPerRotte().exploitDi } : {}),

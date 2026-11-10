@@ -5,6 +5,10 @@
 Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha restituito in pochi secondi il controllo su 1000 porte»; poi «controlla la logica che usa Nety per riprodurla meglio anche nella UI». Misurato sull'hub: rete 4, 90 servizi noti su 37 host di 102, giro di ~25 s; il profilo era ignorato.
 - [x] Come Nety (`ScanLauncherPage.tsx`): profilo solo per Discovery; riquadro «Solo controlli» (non cerca porte, timeout, concorrenza). Prove `lancia-giro.test.ts` e `giro.test.ts` verdi, tsc ed eslint puliti. **Non guardata a schermo.**
 - [x] Cronologia scritta a giro finito con l'esito (`alTermine` in `servizi-rete/giro.ts`).
+- [x] Riccardo (10/11): «riproporre l'interfaccia di scansione equivalente tra Nety e DA-IPAM, senza interazioni che portano informazioni sbagliate». `/scans` riordinata come `ScanLauncherPage.tsx`: parametri sempre visibili (sola lettura fuori da «Su misura»), fasi e prove invasive nel riquadro, via le caselle spente delle tecniche da auditor. tsc ed eslint puliti. **Layout non guardato a schermo.**
+- [x] Riccardo (10/11): «tutti i rilievi devono finire nel profilo degli oggetti delle subnet e della discovery». `RilieviHost` (`/api/rilievi?host_id=`) nella tab «Rilievi» della scheda e nel cassetto. **Non guardato a schermo.**
+- [ ] Rilievi: manca il conteggio sulla riga di Subnet e Discovery (oggi si vede aprendo il cassetto); le CVE aggregate su più host hanno `host_id` vuoto e nel cassetto non compaiono (restano nella tab Vulnerabilità).
+- [ ] Differenze rimaste con Nety: fasi separate riconoscimento / identità / controlli (noi «Sonde e identità» è una sola); tecniche di segmentazione oltre a diretta e ICMP; VLAN attive nella Sonda L2.
 - [ ] Da Nety, non fatto: le fasi di «Solo controlli» accendibili una per una (riconoscimento / identità / controlli). Il nostro giro le fa sempre tutte: serve un filtro nel motore.
 - [ ] Un giro in corso si perde al riavvio dell'aggiornamento automatico da `dev` (oggi tre riavvii in 40 minuti), senza riga in cronologia.
 

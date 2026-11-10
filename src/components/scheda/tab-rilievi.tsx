@@ -11,6 +11,7 @@
  * cosa diversa da quella che è stata scritta.
  */
 import { Riquadro } from "./riquadro";
+import { RilieviHost } from "@/components/hosts/rilievi-host";
 import type { ContestoScheda } from "./contesto";
 import { oraBreve } from "./librenms-pezzi";
 import type { FonteCampo, RispostaRilieviProfilo } from "@/lib/scanner/profili/campi-scheda";
@@ -28,11 +29,12 @@ function dove(f: FonteCampo): string {
 export function TabRilievi({ ctx }: { ctx: ContestoScheda }) {
   const d: RispostaRilieviProfilo | null = ctx.rilieviProfilo;
   if (!d || d.totale === 0) {
-    return <p className="text-sm text-muted-foreground">Nessun rilievo: su questo host non è ancora girato un profilo di scansione.</p>;
+    return <RilieviHost hostId={ctx.hostId} />;
   }
   const profili = d.profili.map((p) => NOME_PROFILO[p] ?? p).join(" · ");
   return (
     <div className="space-y-4">
+      <RilieviHost hostId={ctx.hostId} />
       <p className="text-[13px] text-muted-foreground">
         Profili di scansione{profili ? ` · ${profili}` : ""} · {d.totale} script con risposta · ultimo rilievo {oraBreve(d.ultimoAt)}
       </p>

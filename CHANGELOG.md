@@ -10,6 +10,14 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Evidenze**. Ristretti i riscontri HTTP, AXFR, NFS e SMTP, rimossi i riscontri storici insufficienti per LDAP signing e Smart Install. I dinieghi espliciti aggiornano i rilievi Redis, LDAP anonimo e alcuni percorsi HTTP. La scadenza TLS è valutata alla lettura.
 - **Findings**. I contatori restano coerenti tra le schede, una CVE condivisa compare in entrambi i motori e una sola volta in Tutti. Fonti parziali o indisponibili sono indicate.
 
+## [Non rilasciato] — 2026-11-10 · Findings: slug del controllo e severità a tacche (spunto da Nety)
+
+Riccardo (10/11): riprendere la grafica dei Findings di Nety.
+
+### Cambiato
+- **Scheda Elenco di Findings**: accanto al titolo del rilievo compare il **chip dello slug** del controllo (es. `smb-signing`, `redis-no-auth`, `snmp-public`), ricavato dall'id del rilievo; il filtro gravità usa le **pastiglie a tacche** (`BadgeGravita`) coi conteggi, evidenziate quando attive.
+- La barra di avanzamento della revisione (vista in Nety) resta fuori: il triage oggi copre solo le CVE, non trunk/giri — da fare quando il triage sarà esteso.
+
 ## [Non rilasciato] — 2026-11-10 · Lanciatore: CHECK scan_history
 
 Riccardo (10/11): una scansione da `/scans` falliva con CHECK constraint su `scan_type`.

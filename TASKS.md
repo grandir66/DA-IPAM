@@ -5,6 +5,7 @@
 Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev` `0cf74c06`: 58 regole registrate. Analisi statica.
 - [x] Piano di implementazione in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`.
 - [x] Riccardo (10/11): confrontati ad-doctor e ADcheck. Esiti, vincoli e prova offline nel piano.
+- [x] Riccardo (10/11): scritte nel piano le lacune rispetto ad ad-doctor e ADcheck, nove blocchi (A-I) con l'ordine proposto. Nessun blocco è approvato come tappa: lo decide Riccardo uno per uno.
 - [x] Riccardo (10/11): avviato lo sviluppo. Corretto il riscontro Windows LAPS con metadati di scadenza, senza acquisire password. Dato mancante ignoto.
 - [x] Riccardo (10/11): proseguita l'implementazione. Evidenze ACL LAPS e AD CS, regola diagnostica ESC4 e SID Enroll osservati. Suite AD Health con 139 test passati, TypeScript ed ESLint verdi.
 - [ ] Mostrare chi può leggere o decrittare le password LAPS, con ACL verificabili.

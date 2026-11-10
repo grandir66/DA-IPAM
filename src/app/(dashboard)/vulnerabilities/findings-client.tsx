@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -90,7 +90,10 @@ function ElencoFindings() {
   const [errore, setErrore] = useState<string | null>(null);
   const [aperti, setAperti] = useState<Set<string>>(new Set());
 
+  const richiesta = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++richiesta.current;
     const sp = new URLSearchParams();
     if (motore !== "tutti") sp.set("fonte", MOTORI_RILIEVO_UI[motore].fonti.join(","));
     if (gravita.size) sp.set("gravita", [...gravita].join(","));
@@ -98,6 +101,7 @@ function ElencoFindings() {
     sp.set("page", String(page));
     sp.set("pageSize", String(PER_PAGINA));
     const r = await fetchJson<ElencoRilievi>(`/api/rilievi?${sp}`, { cache: "no-store" });
+    if (id !== richiesta.current) return;
     if (r.ok) {
       setDati(r.data);
       setErrore(null);
@@ -106,6 +110,7 @@ function ElencoFindings() {
 
   useEffect(() => {
     void load();
+    return () => { richiesta.current += 1; };
   }, [load]);
 
   function alternaGravita(s: Severity) {
@@ -136,14 +141,20 @@ function ElencoFindings() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Critici" valore={dati ? rollup.Critical : null} nota="CVE Critical" />
         <TesseraNumero titolo="Alti" valore={dati ? rollup.High : null} nota="CVE High, trunk gravi, TLS scaduto" />
-        <TesseraNumero titolo="Aperti" valore={dati ? totale : null} nota="In questa pagina, dopo i filtri" />
+        <TesseraNumero titolo="Aperti" valore={dati ? totale : null} nota="Nell’elenco dopo i filtri" />
         <TesseraNumero
           titolo="Fonti"
-          valore={dati ? perFonte.edge + perFonte.wazuh + perFonte.trunk + perFonte.giro : null}
+          valore={dati ? Object.values(perFonte).filter((n) => n > 0).length : null}
           nota={`Edge ${perFonte.edge} · Wazuh ${perFonte.wazuh} · trunk ${perFonte.trunk} · giri ${perFonte.giro}`}
         />
       </div>
 
+      {!!dati?.nonDisponibili.length && (
+        <p role="status" className="text-sm">Fonti non disponibili · {dati.nonDisponibili.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
+      )}
+      {!!dati?.parziali.length && (
+        <p role="status" className="text-sm">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
+      )}
       <Pannello
         titolo="Elenco"
         conteggio={totale}
@@ -183,7 +194,7 @@ function ElencoFindings() {
               comune, gli altri separano per motore (Trunk e Giri sono IPAM/Nety; CVE è Edge+Wazuh). */}
           <div role="group" aria-label="Motore" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
             {MOTORI_RILIEVO.map((m, i) => {
-              const conteggio = m === "tutti" ? totale : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
+              const conteggio = m === "tutti" ? (dati?.totaleGlobale ?? 0) : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
               return (
                 <button
                   key={m}

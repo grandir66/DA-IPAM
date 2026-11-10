@@ -27,7 +27,8 @@ import {
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
 import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
-import { TETTO_FABBRICA_PER_HOST } from "@/lib/rilievi/controlli";
+import { eImpianto } from "@/lib/vuln/impianti-in-rete";
+import { protocolloControllo, TETTO_FABBRICA_PER_HOST } from "@/lib/rilievi/controlli";
 import { PORTE_CONTROLLO, sondaControllo, type EsitoSondaControllo } from "@/lib/rilievi/sonde-controlli";
 
 /**
@@ -65,7 +66,7 @@ export interface Strumenti {
   sonda: (ip: string, porta: number) => Promise<EsitoSonda | null>;
   aperta: (ip: string, porta: number) => Promise<boolean>;
   /** Assente nelle prove iniettate: i controlli veri non partono. */
-  controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; tentativiRestanti: number }) => Promise<EsitoSondaControllo>;
+  controllo?: (ip: string, porta: number, opz: { proveFabbrica: boolean; consumaTentativo: () => boolean }) => Promise<EsitoSondaControllo>;
 }
 
 const STRUMENTI: Strumenti = {
@@ -78,9 +79,16 @@ const STRUMENTI: Strumenti = {
 async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<void>): Promise<void> {
   let i = 0;
   const lavoratore = async () => {
-    while (i < voci.length) await lavoro(voci[i++]);
+    try {
+      while (i < voci.length) await lavoro(voci[i++]);
+    } catch (errore) {
+      i = voci.length;
+      throw errore;
+    }
   };
-  await Promise.all(Array.from({ length: Math.min(n, voci.length) }, lavoratore));
+  const esiti = await Promise.allSettled(Array.from({ length: Math.min(n, voci.length) }, lavoratore));
+  const errore = esiti.find((e) => e.status === "rejected");
+  if (errore) throw errore.reason;
 }
 
 /**
@@ -89,7 +97,7 @@ async function inParallelo<T>(voci: T[], n: number, lavoro: (v: T) => Promise<vo
  */
 export function avviaGiro(
   tenant: string,
-  networkId: number | null,
+  ambito: number | readonly number[] | null,
   /** `porteComuni`: «rete» = gli host della rete (conferma dal trunk); «senza-porte» = gli host
    *  del tenant che non hanno porte note (giro automatico). */
   opzioni: {
@@ -101,6 +109,8 @@ export function avviaGiro(
   } = {},
 ): boolean {
   if (giri.get(tenant)?.inCorso) return false;
+  const reti = typeof ambito === "number" ? [ambito] : ambito ?? [undefined];
+  const networkId = reti.length === 1 ? reti[0] ?? null : null;
   const { sonda, aperta, controllo } = opzioni.strumenti ?? STRUMENTI;
   const proveFabbrica = opzioni.proveFabbrica === true;
   const stato: StatoGiro = { inCorso: true, networkId, fase: null, totale: 0, fatte: 0, iniziato: new Date().toISOString(), finito: null, errore: null };
@@ -110,8 +120,8 @@ export function avviaGiro(
       if (opzioni.porteComuni) {
         const candidati =
           opzioni.porteComuni === "rete" ? (networkId ? getHostServiziDellaRete(networkId) : []) : getHostSenzaPorteServizi();
-        const host = candidati.filter((h) => !(h.vendor && PRODUTTORE_DI_CAMPO.test(h.vendor)));
-        const elenco = opzioni.porte ?? portePerGiro();
+        const host = candidati.filter((h) => !eImpianto(h));
+        const elenco = (opzioni.porte ?? portePerGiro()).filter((porta) => !daSaltare(porta, null));
         const prove = host.flatMap((h) => elenco.map((porta) => ({ h, porta })));
         stato.fase = "porte";
         stato.totale = prove.length;
@@ -133,8 +143,8 @@ export function avviaGiro(
           segnaHostProvatoServizi(h.host_id, elenco.length, porte.length);
         }
       }
-      allineaServiziRete(networkId ?? undefined);
-      const coda = getPorteServiziDaSondare(networkId ?? undefined).filter((p) => !daSaltare(p.porta, p.vendor));
+      for (const rete of reti) allineaServiziRete(rete);
+      const coda = reti.flatMap((rete) => getPorteServiziDaSondare(rete)).filter((p) => !daSaltare(p.porta, null) && !eImpianto(p));
       stato.fase = "sonde";
       stato.totale = coda.length;
       stato.fatte = 0;
@@ -149,20 +159,27 @@ export function avviaGiro(
         stato.fatte += 1;
       });
       if (controllo) {
-        const extra = getPorteServiziDaControllare(networkId ?? undefined, PORTE_CONTROLLO, true).filter(
-          (p) => !daSaltare(p.porta, p.vendor),
-        );
-        const restanti = new Map<number, number>();
+        const extra = reti.flatMap((rete) => getPorteServiziDaControllare(rete, PORTE_CONTROLLO, true))
+          .filter((p) => !daSaltare(p.porta, null) && !eImpianto(p) && p.protocollo === protocolloControllo(p.porta));
+        const restanti = new Map<string, number>();
+        stato.totale += extra.length;
         await inParallelo(extra, PARALLELE, async (p) => {
-          const budget = restanti.get(p.host_id) ?? TETTO_FABBRICA_PER_HOST;
-          let esito: EsitoSondaControllo = { info: null, tentativiUsati: 0 };
+          let esito: EsitoSondaControllo;
           try {
-            esito = await controllo(p.ip, p.porta, { proveFabbrica, tentativiRestanti: budget });
+            esito = await controllo(p.ip, p.porta, {
+              proveFabbrica,
+              consumaTentativo: () => {
+                const budget = restanti.get(p.ip) ?? TETTO_FABBRICA_PER_HOST;
+                if (!proveFabbrica || budget <= 0) return false;
+                restanti.set(p.ip, budget - 1);
+                return true;
+              },
+            });
           } catch {
             esito = { info: null, tentativiUsati: 0 };
           }
-          if (esito.tentativiUsati > 0) restanti.set(p.host_id, Math.max(0, budget - esito.tentativiUsati));
           if (esito.info) salvaControlloServizioRete(p.host_id, p.porta, p.protocollo, esito.info);
+          stato.fatte += 1;
         });
       }
       raccogliIdentita();

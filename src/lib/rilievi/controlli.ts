@@ -26,29 +26,31 @@ export interface InfoControllo {
   etcd?: boolean;
   couchdb?: boolean;
   kubelet?: boolean;
-  actuator?: boolean;
+  actuator_health?: boolean;
   git_env?: string | null;
   x11?: boolean;
   ms17_010?: boolean;
   ipmi_esposto?: boolean;
   ipmi_cipher0?: boolean;
-  ldap_senza_firma?: boolean;
-  nfs_export_stella?: boolean;
+  nfs_export_pubblico?: boolean;
   snmp_write?: boolean;
   dns_axfr?: boolean;
   tftp?: boolean;
   ntp_monlist?: boolean;
   rsync?: boolean;
-  smart_install?: boolean;
   smtp_vrfy?: boolean;
-  adcs?: boolean;
-  jenkins_script?: boolean;
+  adcs_enrollment?: boolean;
+  jenkins_script_console?: boolean;
   vnc_auth_debole?: boolean;
   ipmi_rakp?: boolean;
   ssh_password?: boolean;
 }
 
 export const TETTO_FABBRICA_PER_HOST = 6;
+
+export function protocolloControllo(porta: number): "tcp" | "udp" {
+  return porta === 69 || porta === 123 || porta === 161 || porta === 623 ? "udp" : "tcp";
+}
 
 const SSH_KEX_DEBOLI = new Set([
   "diffie-hellman-group1-sha1",
@@ -90,7 +92,7 @@ function riga(
   rimedio: string,
 ): RilievoUnito {
   return {
-    id: `giro:${id}:${ctx.host_id}:${ctx.porta}`,
+    id: `giro:${id}:${ctx.host_id}:${ctx.porta}${ctx.protocollo === "udp" ? ":udp" : ""}`,
     fonte: "giro",
     gravita,
     titolo,
@@ -218,8 +220,8 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
         ctx,
         "telnet",
         "Medium",
-        `Telnet in chiaro su ${dove}`,
-        "La porta 23 è aperta: login e comandi viaggiano senza cifratura.",
+        `Possibile Telnet su ${dove}`,
+        "La porta TCP 23 è nell’inventario. Verifica che il servizio sia Telnet.",
         "Spegni Telnet e usa SSH.",
       ),
     ];
@@ -230,7 +232,7 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
         ctx,
         "winrm",
         "Low",
-        `WinRM raggiungibile su ${dove}`,
+        `Possibile WinRM su ${dove}`,
         `Porta ${ctx.porta} aperta${ctx.porta === 5985 ? " (HTTP, senza TLS)" : ""}.`,
         "Limita WinRM agli amministratori e alla rete di gestione. Sulla 5985 passa a HTTPS (5986).",
       ),
@@ -241,9 +243,9 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
       riga(
         ctx,
         "wsus-http",
-        "High",
-        `WSUS in HTTP su ${dove}`,
-        "Il servizio aggiornamenti risponde in chiaro: un attaccante in LAN può iniettare aggiornamenti.",
+        "Low",
+        `Possibile WSUS su ${dove}`,
+        "Porta TCP 8530 in inventario, senza TLS osservato. Verifica che sia WSUS e controlla la configurazione dei client.",
         "Pubblica WSUS solo in HTTPS (8531) e vincola i client al certificato.",
       ),
     ];
@@ -254,8 +256,8 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
         ctx,
         "rpc-135",
         "Medium",
-        `Mapper RPC esposto su ${dove}`,
-        "La porta 135 è aperta: si possono enumerare i servizi RPC (spooler, DCOM).",
+        `Possibile mapper RPC su ${dove}`,
+        "La porta TCP 135 è nell’inventario. Verifica il servizio prima di valutare l’esposizione RPC.",
         "Filtra la 135 verso la LAN utente; tieni RPC sulla rete di gestione.",
       ),
     ];
@@ -266,9 +268,9 @@ export function rilieviDaPorta(ctx: ContestoServizio, tls: boolean): RilievoUnit
       riga(
         ctx,
         "r-services",
-        "High",
-        `${nome} in chiaro su ${dove}`,
-        `La porta ${ctx.porta} è aperta: login e comandi viaggiano senza cifratura, spesso senza password.`,
+        "Medium",
+        `Possibile ${nome} su ${dove}`,
+        `La porta TCP ${ctx.porta} è nell’inventario. Verifica il servizio prima di intervenire.`,
         "Spegni rsh/rlogin/rexec; usa SSH.",
       ),
     ];
@@ -324,8 +326,8 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
       riga(
         ctx,
         "redis-aperto",
-        "High",
-        `Redis senza password su ${dove}`,
+        "Medium",
+        `Redis risponde a PING senza autenticazione su ${dove}`,
         "PING ha risposto PONG senza AUTH.",
         "Imposta requirepass (o ACL) e non esporre Redis sulla LAN utente.",
       ),
@@ -449,19 +451,19 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     out.push(riga(ctx, "elasticsearch", "High", `Elasticsearch senza autenticazione su ${dove}`, "GET / ha restituito il cluster senza login.", "Abilita xpack.security e non esporre 9200 sulla LAN utente."));
   }
   if (c.docker) {
-    out.push(riga(ctx, "docker", "High", `API Docker senza autenticazione su ${dove}`, "GET /version è andato a buon fine.", "Non esporre il socket Docker in TCP. Usa TLS e autorizzazione, o solo lo unix socket."));
+    out.push(riga(ctx, "docker", "Medium", `Versione Docker accessibile su ${dove}`, "GET /version ha restituito ApiVersion senza credenziali.", "Non esporre il socket Docker in TCP. Usa TLS e autorizzazione, o solo lo unix socket."));
   }
   if (c.etcd) {
-    out.push(riga(ctx, "etcd", "High", `etcd senza autenticazione su ${dove}`, "GET /version è andato a buon fine.", "Abilita autenticazione e TLS su etcd."));
+    out.push(riga(ctx, "etcd", "Low", `Versione etcd accessibile su ${dove}`, "GET /version ha risposto senza credenziali.", "Abilita autenticazione e TLS su etcd."));
   }
   if (c.couchdb) {
-    out.push(riga(ctx, "couchdb", "High", `CouchDB senza autenticazione su ${dove}`, "GET / è andato a buon fine (admin party).", "Crea un admin e spegni l'accesso anonimo."));
+    out.push(riga(ctx, "couchdb", "Low", `Pagina iniziale CouchDB accessibile su ${dove}`, "GET / ha restituito una risposta CouchDB senza credenziali.", "Verifica che database e funzioni amministrative richiedano autenticazione."));
   }
   if (c.kubelet) {
     out.push(riga(ctx, "kubelet", "High", `Kubelet senza autenticazione su ${dove}`, "GET /runningpods ha risposto.", "Chiudi l'API read-only del kubelet (--read-only-port=0) e autentica la 10250."));
   }
-  if (c.actuator) {
-    out.push(riga(ctx, "actuator", "High", `Spring Actuator esposto su ${dove}`, "GET /actuator/health (o /env) senza login.", "Disabilita gli endpoint o mettili dietro autenticazione."));
+  if (c.actuator_health) {
+    out.push(riga(ctx, "actuator", "Low", `Spring Actuator health accessibile su ${dove}`, "GET /actuator/health restituisce lo stato senza login.", "Verifica che health esponga solo lo stato previsto e proteggi gli endpoint amministrativi."));
   }
   if (c.git_env) {
     out.push(
@@ -498,26 +500,14 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   if (c.ipmi_rakp) {
     out.push(riga(ctx, "ipmi-rakp", "High", `IPMI RAKP utente admin su ${dove}`, "RAKP Message 2 con status 0 per l'utente admin: HMAC recuperabile.", "Togli gli utenti di fabbrica dal BMC; password lunghe; IPMI fuori dalla LAN."));
   }
-  if (c.ldap_senza_firma) {
-    out.push(
-      riga(
-        ctx,
-        "ldap-firma",
-        "Medium",
-        `LDAP senza firma obbligatoria su ${dove}`,
-        "Il bind senza confidentiality ha avuto un resultCode diverso da 13: il server accetta LDAP in chiaro.",
-        "Imposta LDAP signing required (o LDAPS 636) sul directory.",
-      ),
-    );
-  }
-  if (c.nfs_export_stella) {
+  if (c.nfs_export_pubblico) {
     out.push(
       riga(
         ctx,
         "nfs-stella",
         "High",
         `NFS esportato a * su ${dove}`,
-        "MOUNT EXPORT elenca uno share visibile a tutti (`*`).",
+        "MOUNT EXPORT elenca almeno un percorso con gruppo `*` o senza gruppi.",
         "Limita gli export agli host che servono, con root_squash; non esportare a *.",
       ),
     );
@@ -535,7 +525,7 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
     );
   }
   if (c.dns_axfr) {
-    out.push(riga(ctx, "dns-axfr", "High", `Trasferimento zona DNS aperto su ${dove}`, "AXFR (tipo 252) accettato: la zona è scaricabile da chiunque.", "Limita AXFR ai secondari noti; spegni il trasferimento verso il mondo."));
+    out.push(riga(ctx, "dns-axfr", "High", `Trasferimento zona DNS aperto su ${dove}`, "La sonda ha ricevuto il primo record SOA del trasferimento AXFR per la zona inversa provata.", "Limita AXFR ai secondari noti; spegni il trasferimento verso il mondo."));
   }
   if (c.tftp) {
     out.push(riga(ctx, "tftp", "Medium", `TFTP risponde su ${dove}`, "RRQ ha ricevuto DATA o ERROR: il servizio TFTP è raggiungibile.", "Spegni TFTP se non serve, o vincolalo alla rete di gestione."));
@@ -546,16 +536,13 @@ export function rilieviDaControllo(c: InfoControllo | null, ctx: ContestoServizi
   if (c.rsync) {
     out.push(riga(ctx, "rsync", "Medium", `rsync elenca i moduli su ${dove}`, "Il saluto @RSYNCD è stato accettato senza autenticazione.", "Metti un login sui moduli, o non esporre 873 in LAN."));
   }
-  if (c.smart_install) {
-    out.push(riga(ctx, "smart-install", "High", `Cisco Smart Install su ${dove}`, "La porta 4786 ha risposto al handshake Smart Install.", "Spegni Smart Install (`no vstack`) sugli switch."));
-  }
   if (c.smtp_vrfy) {
-    out.push(riga(ctx, "smtp-vrfy", "Low", `SMTP VRFY aperto su ${dove}`, "VRFY postmaster ha risposto 250 o 252: si enumerano gli utenti.", "Disabilita VRFY (e EXPN) sul relay."));
+    out.push(riga(ctx, "smtp-vrfy", "Low", `SMTP VRFY aperto su ${dove}`, "VRFY postmaster ha risposto 250 e conferma il destinatario postmaster.", "Disabilita VRFY (e EXPN) sul relay."));
   }
-  if (c.adcs) {
-    out.push(riga(ctx, "adcs", "High", `AD CS enrollment web su ${dove}`, "GET /certsrv/ ha risposto: la console di iscrizione certificati è in rete.", "Tieni certsrv sulla rete di gestione, con HTTPS e autenticazione forte."));
+  if (c.adcs_enrollment) {
+    out.push(riga(ctx, "adcs", "Low", `AD CS enrollment web su ${dove}`, "GET /certsrv/ mostra una pagina di iscrizione certificati AD CS.", "Tieni certsrv sulla rete di gestione, con HTTPS e autenticazione forte."));
   }
-  if (c.jenkins_script) {
+  if (c.jenkins_script_console) {
     out.push(riga(ctx, "jenkins-script", "High", `Jenkins Script Console su ${dove}`, "GET /script ha aperto la console Groovy.", "Togli Script Console agli anonimi; autentica Jenkins; non esporlo in LAN."));
   }
   if (c.vnc_auth_debole && !c.vnc_senza_auth) {
@@ -678,23 +665,21 @@ export function controlloDaJson(grezzo: string | null): InfoControllo | null {
       etcd: o.etcd === true,
       couchdb: o.couchdb === true,
       kubelet: o.kubelet === true,
-      actuator: o.actuator === true,
+      actuator_health: o.actuator_health === true,
       git_env: typeof o.git_env === "string" ? o.git_env : undefined,
       x11: o.x11 === true,
       ms17_010: o.ms17_010 === true,
       ipmi_esposto: o.ipmi_esposto === true,
       ipmi_cipher0: o.ipmi_cipher0 === true,
-      ldap_senza_firma: o.ldap_senza_firma === true,
-      nfs_export_stella: o.nfs_export_stella === true,
+      nfs_export_pubblico: o.nfs_export_pubblico === true,
       snmp_write: o.snmp_write === true,
       dns_axfr: o.dns_axfr === true,
       tftp: o.tftp === true,
       ntp_monlist: o.ntp_monlist === true,
       rsync: o.rsync === true,
-      smart_install: o.smart_install === true,
       smtp_vrfy: o.smtp_vrfy === true,
-      adcs: o.adcs === true,
-      jenkins_script: o.jenkins_script === true,
+      adcs_enrollment: o.adcs_enrollment === true,
+      jenkins_script_console: o.jenkins_script_console === true,
       vnc_auth_debole: o.vnc_auth_debole === true,
       ipmi_rakp: o.ipmi_rakp === true,
       ssh_password: o.ssh_password === true,

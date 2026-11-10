@@ -135,20 +135,52 @@ export function pacchettoDnsAxfr(zona: string): Buffer {
   return tcp;
 }
 
+function dnsFrameCompleto(buf: Buffer): boolean {
+  return buf.length >= 2 && buf.length >= 2 + buf.readUInt16BE(0);
+}
+
+/** Salta il nome DNS, inclusi i riferimenti compressi, senza inseguire puntatori. */
+function dopoNomeDns(msg: Buffer, da: number): number | null {
+  let pos = da;
+  while (pos < msg.length) {
+    const n = msg[pos++]!;
+    if (n === 0) return pos;
+    if ((n & 0xc0) === 0xc0) {
+      if (pos >= msg.length) return null;
+      const puntatore = ((n & 0x3f) << 8) | msg[pos]!;
+      return puntatore >= 12 && puntatore < pos - 1 ? pos + 1 : null;
+    }
+    if (n > 63 || pos + n > msg.length) return null;
+    pos += n;
+  }
+  return null;
+}
+
 export function dnsAxfrAccettato(buf: Buffer): boolean {
-  if (buf.length < 14) return false;
-  const msg = buf.readUInt16BE(0) + 2 <= buf.length ? buf.subarray(2) : buf;
-  if (msg.length < 12) return false;
-  const rcode = msg[3]! & 0x0f;
-  if (rcode === 5 || rcode === 9) return false; // REFUSED / NOTAUTH
-  const answers = msg.readUInt16BE(6);
-  return rcode === 0 && answers > 0;
+  if (!dnsFrameCompleto(buf)) return false;
+  const msg = buf.subarray(2, 2 + buf.readUInt16BE(0));
+  if (msg.length < 12 || msg.readUInt16BE(0) !== 0xda19) return false;
+  const flags = msg.readUInt16BE(2);
+  if ((flags & 0xfa0f) !== 0x8000 || msg.readUInt16BE(6) === 0) return false;
+  const domande = msg.readUInt16BE(4);
+  if (domande > 1) return false;
+  let pos = 12;
+  if (domande === 1) {
+    const fineNome = dopoNomeDns(msg, pos);
+    if (fineNome === null || msg.length < fineNome + 4 || msg.readUInt16BE(fineNome) !== 252 || msg.readUInt16BE(fineNome + 2) !== 1) return false;
+    pos = fineNome + 4;
+  }
+  const rr = dopoNomeDns(msg, pos);
+  if (rr === null || msg.length < rr + 10 || msg.readUInt16BE(rr) !== 6 || msg.readUInt16BE(rr + 2) !== 1) return false;
+  const lunghezza = msg.readUInt16BE(rr + 8);
+  return lunghezza >= 22 && msg.length >= rr + 10 + lunghezza;
 }
 
 export async function provaDnsAxfr(ip: string, porta: number, ms: number): Promise<boolean> {
   const ott = ip.split(".");
-  const zona = ott.length === 4 ? `${ott[2]}.${ott[1]}.${ott[0]}.in-addr.arpa` : ".";
-  const r = await conTesto(ip, porta, ms, pacchettoDnsAxfr(zona), (b) => b.length >= 14);
+  if (ott.length !== 4) return false;
+  const zona = `${ott[2]}.${ott[1]}.${ott[0]}.in-addr.arpa`;
+  const r = await conTesto(ip, porta, ms, pacchettoDnsAxfr(zona), dnsFrameCompleto);
   return r ? dnsAxfrAccettato(r) : false;
 }
 
@@ -198,32 +230,23 @@ export async function provaRsync(ip: string, porta: number, ms: number): Promise
   return r ? rsyncModuli(r) : false;
 }
 
-export const SMART_INSTALL = Buffer.from("000000010000000100000004000000080000000100000000", "hex");
-
-export function smartInstallRisponde(buf: Buffer): boolean {
-  return buf.length >= 4 && buf[0] === 0x00;
-}
-
-export async function provaSmartInstall(ip: string, porta: number, ms: number): Promise<boolean> {
-  const r = await conTesto(ip, porta, ms, SMART_INSTALL, (b) => b.length >= 4);
-  return r ? smartInstallRisponde(r) : false;
-}
-
 export function smtpVrfyAperto(banner: Buffer, vrfy: Buffer): boolean {
   if (!/^220/m.test(banner.toString("latin1"))) return false;
-  return /^(250|252)/m.test(vrfy.toString("latin1"));
+  return /^250 [^\r\n]+\r\n/m.test(vrfy.toString("latin1"));
 }
 
 export async function provaSmtpVrfy(ip: string, porta: number, ms: number): Promise<boolean> {
   const s = await connetti(ip, porta, ms);
   if (!s) return false;
   try {
-    const banner = await leggi(s, ms, (b) => b.includes(0x0a));
-    if (!/^220/m.test(banner.toString("latin1"))) return false;
+    const risposta = (b: Buffer) => /^\d{3} [^\r\n]*\r\n/m.test(b.toString("latin1"));
+    const banner = await leggi(s, ms, risposta);
+    if (!/^220 [^\r\n]*\r\n/m.test(banner.toString("latin1"))) return false;
     s.write("EHLO da-ipam.local\r\n");
-    await leggi(s, ms, (b) => b.includes(0x0a));
+    const saluto = await leggi(s, ms, risposta);
+    if (!/^250 [^\r\n]*\r\n/m.test(saluto.toString("latin1"))) return false;
     s.write("VRFY postmaster\r\n");
-    const v = await leggi(s, ms, (b) => b.includes(0x0a));
+    const v = await leggi(s, ms, risposta);
     return smtpVrfyAperto(banner, v);
   } finally {
     s.destroy();
@@ -238,28 +261,65 @@ export function portmapGetPort(prog: number, vers: number): Buffer {
   return rpcSuTcp(Buffer.concat([rpcCall(0xda190004, 100000, 2, 3), args]));
 }
 
+function rpcCompleto(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.length >= 4 + (buf.readUInt32BE(0) & 0x7fffffff);
+}
+
+function rpcRisultato(buf: Buffer, xid: number): Buffer | null {
+  if (!rpcCompleto(buf) || (buf[0]! & 0x80) === 0) return null;
+  const rec = buf.subarray(4, 4 + (buf.readUInt32BE(0) & 0x7fffffff));
+  if (rec.length < 24 || rec.readUInt32BE(0) !== xid || rec.readUInt32BE(4) !== 1 || rec.readUInt32BE(8) !== 0) return null;
+  const lunghezzaVerificatore = rec.readUInt32BE(16);
+  const status = 20 + Math.ceil(lunghezzaVerificatore / 4) * 4;
+  if (rec.length < status + 4 || rec.readUInt32BE(status) !== 0) return null;
+  return rec.subarray(status + 4);
+}
+
 export function portmapPorta(buf: Buffer): number | null {
-  const rec = buf[0]! & 0x80 ? buf.subarray(4) : buf;
-  if (rec.length < 28) return null;
-  if (rec.readUInt32BE(4) !== 1) return null;
-  const porta = rec.readUInt32BE(24);
+  const esito = rpcRisultato(buf, 0xda190004);
+  if (esito?.length !== 4) return null;
+  const porta = esito.readUInt32BE(0);
   return porta > 0 && porta < 65536 ? porta : null;
 }
 
-/** Lista export: `*` o gruppo vuoto = mondo. */
+/** MOUNT EXPORT contiene una lista XDR di path, ciascuno con la propria lista di gruppi. */
 export function nfsExportStella(buf: Buffer): boolean {
-  const t = buf.toString("latin1");
-  if (t.includes("*\0") || t.includes("*\u0000")) return true;
-  const rec = buf[0]! & 0x80 ? buf.subarray(4) : buf;
-  return rec.length > 40 && rec.includes(0x2a);
+  const dati = rpcRisultato(buf, 0xda190005);
+  if (!dati) return false;
+  let offset = 0;
+  let aperto = false;
+  const numero = () => {
+    if (offset + 4 > dati.length) return null;
+    const valore = dati.readUInt32BE(offset);
+    offset += 4;
+    return valore;
+  };
+  const stringa = () => {
+    const n = numero();
+    if (n === null || offset + Math.ceil(n / 4) * 4 > dati.length) return null;
+    const valore = dati.toString("utf8", offset, offset + n);
+    offset += Math.ceil(n / 4) * 4;
+    return valore;
+  };
+  for (let exportPresente = numero(); exportPresente !== 0; exportPresente = numero()) {
+    if (exportPresente !== 1 || stringa() === null) return false;
+    let gruppoPresente = numero();
+    if (gruppoPresente === 0) aperto = true;
+    for (; gruppoPresente !== 0; gruppoPresente = numero()) {
+      if (gruppoPresente !== 1) return false;
+      const gruppo = stringa();
+      if (gruppo === null) return false;
+      if (gruppo === "*") aperto = true;
+    }
+  }
+  return aperto;
 }
 
 export async function provaNfsExportStella(ip: string, ms: number): Promise<boolean> {
-  const mappa = await conTesto(ip, 111, ms, portmapGetPort(100005, 3), (b) => b.length >= 28);
-  const porta = mappa ? portmapPorta(mappa) : 2049;
-  const dest = porta && porta > 0 ? porta : 2049;
+  const mappa = await conTesto(ip, 111, ms, portmapGetPort(100005, 3), rpcCompleto);
+  const dest = (mappa && portmapPorta(mappa)) || 2049;
   const pkt = rpcSuTcp(rpcCall(0xda190005, 100005, 3, 5));
-  const r = await conTesto(ip, dest, ms, pkt, (b) => b.length >= 28);
+  const r = await conTesto(ip, dest, ms, pkt, rpcCompleto);
   return r ? nfsExportStella(r) : false;
 }
 

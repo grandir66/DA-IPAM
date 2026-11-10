@@ -1,5 +1,5 @@
 /**
- * Parser della terza ondata (DNS, TFTP, NTP, rsync, SMTP, NFS export, Smart Install, SSH password, IPMI RAKP).
+ * Parser della terza ondata (DNS, TFTP, NTP, rsync, SMTP, NFS export, SSH password, IPMI RAKP).
  * Run: node --import tsx --test src/lib/rilievi/__tests__/sonde-extra.test.ts
  */
 import { test } from "node:test";
@@ -18,26 +18,29 @@ import {
   portmapPorta,
   provaSmtpVrfy,
   rsyncModuli,
-  smartInstallRisponde,
   smtpVrfyAperto,
   tftpRisponde,
 } from "../sonde-extra";
 
-test("AXFR: rcode 0 con answer sì, REFUSED no", () => {
-  const msg = Buffer.alloc(12);
-  msg.writeUInt16BE(0xda19, 0);
-  msg.writeUInt16BE(0x8180, 2);
-  msg.writeUInt16BE(1, 4);
-  msg.writeUInt16BE(2, 6);
-  const ok = Buffer.alloc(14);
-  ok.writeUInt16BE(12, 0);
-  msg.copy(ok, 2);
+test("AXFR: il primo frame deve corrispondere alla richiesta e iniziare con SOA", () => {
+  const domanda = pacchettoDnsAxfr("example.com").subarray(2);
+  const soa = Buffer.alloc(34);
+  soa.writeUInt16BE(0xc00c, 0);
+  soa.writeUInt16BE(6, 2);
+  soa.writeUInt16BE(1, 4);
+  soa.writeUInt16BE(22, 10);
+  const ok = Buffer.concat([Buffer.alloc(2), domanda, soa]);
+  ok.writeUInt16BE(ok.length - 2, 0);
+  ok.writeUInt16BE(0x8400, 4);
+  ok.writeUInt16BE(1, 8);
   assert.equal(dnsAxfrAccettato(ok), true);
+  assert.equal(dnsAxfrAccettato(ok.subarray(0, -1)), false);
   const no = Buffer.from(ok);
-  no.writeUInt16BE(0x8185, 4);
-  no.writeUInt16BE(0, 8);
+  no.writeUInt16BE(0x8405, 4);
   assert.equal(dnsAxfrAccettato(no), false);
-  assert.ok(pacchettoDnsAxfr("example.com").length > 20);
+  no.writeUInt16BE(0x8400, 4);
+  no.writeUInt16BE(0x1001, 2);
+  assert.equal(dnsAxfrAccettato(no), false);
 });
 
 test("TFTP RRQ: DATA e ERROR sì, altro no", () => {
@@ -67,23 +70,27 @@ test("rsync: EXIT o modulo sì, ERROR no, solo saluto no", () => {
   assert.equal(rsyncModuli(Buffer.from("@RSYNCD: 31.0\n")), false);
 });
 
-test("Smart Install e SMTP VRFY", () => {
-  assert.equal(smartInstallRisponde(Buffer.from([0, 0, 0, 1])), true);
+test("SMTP VRFY: 250 conferma, 252 dichiara che non può verificare", () => {
   assert.equal(smtpVrfyAperto(Buffer.from("220 mail.local\r\n"), Buffer.from("250 postmaster\r\n")), true);
   assert.equal(smtpVrfyAperto(Buffer.from("220 mail.local\r\n"), Buffer.from("550 not allowed\r\n")), false);
+  assert.equal(smtpVrfyAperto(Buffer.from("220 mail.local\r\n"), Buffer.from("252 cannot verify\r\n")), false);
 });
 
 test("NFS export `*` e portmap GETPORT", () => {
-  const dump = Buffer.alloc(48);
-  dump[0] = 0x80;
-  dump[20] = 0x2a;
-  assert.equal(nfsExportStella(dump), true);
-  assert.equal(nfsExportStella(Buffer.from("share\0*\0everyone")), true);
-  const mappa = Buffer.alloc(32);
-  mappa[0] = 0x80;
-  mappa.writeUInt32BE(1, 8);
-  mappa.writeUInt32BE(2049, 28);
-  assert.equal(portmapPorta(mappa), 2049);
+  const xdr = (...words: number[]) => {
+    const b = Buffer.alloc(words.length * 4);
+    words.forEach((v, i) => b.writeUInt32BE(v, i * 4));
+    return b;
+  };
+  const risposta = (xid: number, dati: Buffer) =>
+    Buffer.concat([xdr(0x80000000 + 24 + dati.length, xid, 1, 0, 0, 0, 0), dati]);
+  const aperto = risposta(0xda190005, xdr(1, 1, 0x2f000000, 1, 1, 0x2a000000, 0, 0));
+  const chiuso = risposta(0xda190005, xdr(1, 2, 0x2f2a0000, 1, 3, 0x6c616e00, 0, 0));
+  assert.equal(nfsExportStella(aperto), true);
+  assert.equal(nfsExportStella(chiuso), false, "l'asterisco nel path non è un gruppo");
+  assert.equal(nfsExportStella(aperto.subarray(0, -4)), false);
+  assert.equal(nfsExportStella(risposta(0xda190005, xdr(1, 1, 0x2f000000, 0, 0))), true);
+  assert.equal(portmapPorta(risposta(0xda190004, xdr(2049))), 2049);
 });
 
 test("SSH password/keyboard-interactive sì, solo publickey no", () => {

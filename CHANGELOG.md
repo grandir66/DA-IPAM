@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Findings e perimetro dei giri
+
+- **Giri**. Le sonde rispettano le reti selezionate, escludono gli impianti riconosciuti e condividono il tetto dei tentativi di fabbrica per IP. I controlli usano le porte note del protocollo corretto.
+- **Evidenze**. Ristretti i riscontri HTTP, AXFR, NFS e SMTP, rimossi i riscontri storici insufficienti per LDAP signing e Smart Install. I dinieghi espliciti aggiornano i rilievi Redis, LDAP anonimo e alcuni percorsi HTTP. La scadenza TLS è valutata alla lettura.
+- **Findings**. I contatori restano coerenti tra le schede, una CVE condivisa compare in entrambi i motori e una sola volta in Tutti. Fonti parziali o indisponibili sono indicate.
+
 ## [Non rilasciato] — 2026-11-10 · Lanciatore: CHECK scan_history
 
 Riccardo (10/11): una scansione da `/scans` falliva con CHECK constraint su `scan_type`.

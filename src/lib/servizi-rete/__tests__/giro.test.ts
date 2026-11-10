@@ -59,3 +59,44 @@ test("giro senza porte: trova, salva, rispetta il freno", async () => {
     assert.deepEqual((JSON.parse(op.open_ports) as Array<{ port: number }>).map((p) => p.port), [22, 443]);
   });
 });
+
+test("giro multirete: perimetro, protocollo, impianti e sei tentativi concorrenti", async () => {
+  const reti = withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = d.prepare("INSERT INTO networks (cidr, name) VALUES (?, ?)");
+    const host = d.prepare("INSERT INTO hosts (network_id, ip, classification) VALUES (?, ?, ?)");
+    const servizio = d.prepare("INSERT INTO servizi_rete (host_id, porta, protocollo, http_json) VALUES (?, ?, ?, ?)");
+    const a = Number(rete.run("10.10.0.0/24", "lan a").lastInsertRowid);
+    const b = Number(rete.run("10.11.0.0/24", "lan b").lastInsertRowid);
+    const h = host.run(a, "10.10.0.8", "unknown").lastInsertRowid;
+    for (const porta of [21, 80, 443, 1433, 3306, 5432, 8080, 8443]) servizio.run(h, porta, "tcp", [80, 443, 8080, 8443].includes(porta) ? "{}" : null);
+    servizio.run(h, 161, "tcp", null);
+    servizio.run(h, 161, "udp", null);
+    servizio.run(host.run(b, "10.11.0.8", "plc").lastInsertRowid, 80, "tcp", "{}");
+    return [a, b];
+  });
+  const sondate: string[] = [];
+  const controllate: Array<[string, number]> = [];
+  let tentativi = 0;
+  assert.equal(avviaGiro(T, reti, {
+    proveFabbrica: true,
+    strumenti: {
+      aperta: async () => false,
+      sonda: async (ip) => { sondate.push(ip); return null; },
+      controllo: async (ip, porta, opzioni) => {
+        controllate.push([ip, porta]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const usa = opzioni.consumaTentativo();
+        if (usa) tentativi += 1;
+        return { info: null, tentativiUsati: Number(usa) };
+      },
+    },
+  }), true);
+  await attendi();
+  assert.equal(statoGiro(T).errore, null);
+  assert.deepEqual([...new Set(sondate)], ["10.10.0.8"]);
+  assert.deepEqual(controllate.filter(([, porta]) => porta === 161), [["10.10.0.8", 161]]);
+  assert.ok(controllate.length > 6);
+  assert.equal(tentativi, 6);
+  assert.equal(statoGiro(T).fatte, statoGiro(T).totale);
+});

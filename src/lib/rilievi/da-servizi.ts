@@ -36,13 +36,15 @@ export interface ContestoServizio {
   network_id: number | null;
   network_name: string | null;
   porta: number;
+  protocollo?: string;
 }
 
 export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[] {
   const dove = `${ctx.ip}:${ctx.porta}`;
   const cn = tls.subject_cn ? `CN ${tls.subject_cn}` : "senza CN";
   const out: RilievoUnito[] = [];
-  if (tls.expired) {
+  const scaduto = tls.expired || (tls.not_after != null && Date.parse(tls.not_after) <= Date.now());
+  if (scaduto) {
     out.push({
       id: `giro:tls-scaduto:${ctx.host_id}:${ctx.porta}`,
       fonte: "giro",
@@ -54,7 +56,7 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       host_id: ctx.host_id,
       network_id: ctx.network_id,
       network_name: ctx.network_name,
-      visto: tls.not_after,
+      visto: null,
       cve_key: null,
       host_count: 1,
     });
@@ -71,12 +73,12 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       host_id: ctx.host_id,
       network_id: ctx.network_id,
       network_name: ctx.network_name,
-      visto: tls.not_after,
+      visto: null,
       cve_key: null,
       host_count: 1,
     });
   }
-  if (tls.self_signed && !tls.expired) {
+  if (tls.self_signed && !scaduto) {
     out.push({
       id: `giro:tls-autofirmato:${ctx.host_id}:${ctx.porta}`,
       fonte: "giro",
@@ -88,7 +90,7 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       host_id: ctx.host_id,
       network_id: ctx.network_id,
       network_name: ctx.network_name,
-      visto: tls.not_after,
+      visto: null,
       cve_key: null,
       host_count: 1,
     });
@@ -105,7 +107,7 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       host_id: ctx.host_id,
       network_id: ctx.network_id,
       network_name: ctx.network_name,
-      visto: tls.not_after,
+      visto: null,
       cve_key: null,
       host_count: 1,
     });
@@ -122,7 +124,7 @@ export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[
       host_id: ctx.host_id,
       network_id: ctx.network_id,
       network_name: ctx.network_name,
-      visto: tls.not_after,
+      visto: null,
       cve_key: null,
       host_count: 1,
     });

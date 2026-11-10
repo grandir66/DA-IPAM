@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
+import { salvaControlloServizio } from "@/lib/servizi-rete/db";
 import { elencoRilievi } from "../unione";
 
 const A = "PROVAUNILEA";
@@ -33,7 +34,7 @@ function reteConTls(tenant: string, ip: string, tls: Record<string, unknown>): v
 }
 
 test("un certificato scaduto compare come giro High", () => {
-  reteConTls(A, "10.9.0.8", { expired: true, subject_cn: "box.local", version: "TLSv1.3", not_after: "2020-01-01" });
+  reteConTls(A, "10.9.0.8", { expired: false, subject_cn: "box.local", version: "TLSv1.3", not_after: "2020-01-01" });
   withTenant(A, () => {
     const e = elencoRilievi({ fonti: ["giro"] });
     assert.equal(e.total, 1);
@@ -97,3 +98,30 @@ test("filtro gravità: Low non entra se si chiede High", () => {
     assert.ok(low.data.every((r) => r.gravita === "Low"));
   });
 });
+
+test("una CVE condivisa appare in Edge e Wazuh e una sola volta in Tutti", () => withTenant(B, () => {
+  const d = getTenantDb(B);
+  const scanner = d.prepare("INSERT INTO vuln_scanners (name, base_url, token_encrypted) VALUES ('Edge', 'https://192.0.2.1', 'x')").run().lastInsertRowid;
+  const run = d.prepare("INSERT INTO vuln_scan_runs (scanner_id, edge_scan_id, finding_count, status) VALUES (?, 1, 1, 'done')").run(scanner).lastInsertRowid;
+  d.prepare(`INSERT INTO vuln_findings (scan_run_id, ip, port, cve_id, severity, scanned_at)
+    VALUES (?, '192.0.2.2', '443/tcp', 'CVE-2021-44228', 'Critical', datetime('now'))`).run(run);
+  d.prepare("INSERT INTO wazuh_agent (agent_id, name, ip) VALUES ('001', 'wazuh', '192.0.2.3')").run();
+  d.prepare(`INSERT INTO wazuh_vuln (agent_id, cve, severity, package_name, package_version, status, detection_time)
+    VALUES ('001', 'CVE-2021-44228', 'Critical', 'log4j', '2.1', 'VALID', datetime('now'))`).run();
+  const q = "CVE-2021-44228";
+  const elenco = elencoRilievi({ q, fonti: ["wazuh"] });
+  assert.equal(elenco.total, 1);
+  assert.equal(elenco.data[0]?.fonte, "wazuh");
+  assert.deepEqual(elenco.perFonte, { edge: 1, wazuh: 1, trunk: 0, giro: 0 });
+  assert.equal(elencoRilievi({ q }).total, 1);
+}));
+
+test("Redis protetto rimuove il rilievo e conserva gli altri riscontri", () => withTenant(B, () => {
+  const d = getTenantDb(B);
+  const h = d.prepare("SELECT id FROM hosts WHERE ip = '10.9.0.9'").pluck().get() as number;
+  salvaControlloServizio(d, h, 6379, "tcp", { redis_aperto: true, git_env: ".env" });
+  assert.equal(elencoRilievi({ q: "Redis" }).total, 1);
+  salvaControlloServizio(d, h, 6379, "tcp", { redis_aperto: false });
+  assert.equal(elencoRilievi({ q: "Redis" }).total, 0);
+  assert.equal(elencoRilievi({ q: ".env" }).total, 1);
+}));

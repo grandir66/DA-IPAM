@@ -27,7 +27,7 @@ function tls(p: Partial<InfoTls>): InfoTls {
     sans: [],
     serial: null,
     not_before: "2024-01-01",
-    not_after: "2025-01-01",
+    not_after: new Date(Date.now() + 86_400_000).toISOString(),
     self_signed: false,
     expired: false,
     key_bits: 2048,

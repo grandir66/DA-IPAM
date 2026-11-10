@@ -55,6 +55,7 @@ test("Solo controlli passa prove_fabbrica al giro; senza levetta no", async () =
     { tipo: "controlli", profilo: "standard", network_ids: [3], prove_fabbrica: true },
     {
       tenant: () => "T",
+      rete: (id) => ({ id }) as never,
       servizi: (_t, _n, o) => {
         visti.push(o);
         return true;
@@ -66,6 +67,7 @@ test("Solo controlli passa prove_fabbrica al giro; senza levetta no", async () =
     { tipo: "controlli", profilo: "standard", network_ids: [3] },
     {
       tenant: () => "T",
+      rete: (id) => ({ id }) as never,
       servizi: (_t, _n, o) => {
         visti.push(o);
         return true;
@@ -86,4 +88,25 @@ test("segmentazione già in corso → 409", async () => {
       ),
     (e: unknown) => e instanceof ErroreLancio && e.status === 409,
   );
+});
+
+test("le sonde conservano le reti scelte e scartano gli ID estranei", async () => {
+  for (const tipo of ["controlli", "discovery"]) {
+    let ambito: unknown;
+    const r = await lanciaGiro(
+      { tipo, profilo: "su_misura", fasi: ["sonde"], network_ids: [3, 4, 90] },
+      {
+        tenant: () => "T",
+        rete: (id) => (id === 90 ? undefined : { id }) as never,
+        servizi: (_t, scope) => {
+          ambito = scope;
+          return true;
+        },
+        history: () => undefined,
+      },
+    );
+    assert.deepEqual(ambito, [3, 4]);
+    assert.deepEqual(r.avvii.map((x) => x.network_id), [3, 4]);
+    assert.equal(r.saltati[0]?.network_id, 90);
+  }
 });

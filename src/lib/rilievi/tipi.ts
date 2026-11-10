@@ -57,4 +57,7 @@ export interface ElencoRilievi {
   totalPages: number;
   rollup: RollupRilievi;
   perFonte: Record<FonteRilievo, number>;
+  totaleGlobale: number;
+  nonDisponibili: FonteRilievo[];
+  parziali: FonteRilievo[];
 }

@@ -132,34 +132,35 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
 
   const proveFabbrica = corpo.prove_fabbrica === true;
 
-  if (tipo === "controlli") {
-    const networkId = reti.length === 1 ? reti[0]! : null;
-    const avviato = d.servizi(tenant, networkId, { proveFabbrica });
-    if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
-    d.history({
-      host_id: null,
-      network_id: networkId,
-      scan_type: "controlli",
-      status: "avviato",
-      ports_open: null,
-      raw_output: null,
-      duration_ms: null,
+  const vuoleSonde = fasi.includes("sonde");
+  const soloSonde = profilo === "su_misura" && !fasi.includes("porte") && vuoleSonde;
+  if (tipo === "controlli" || soloSonde) {
+    const scope = reti.filter((id) => {
+      if (d.rete(id)) return true;
+      saltati.push({ network_id: id, motivo: "Rete non trovata" });
+      return false;
     });
-    avvii.push({ network_id: networkId, job_id: null, messaggio: "Sonde e identità avviate" });
+    if (!scope.length) throw new ErroreLancio("Nessuna rete trovata");
+    const networkId = scope.length === 1 ? scope[0]! : null;
+    const avviato = d.servizi(tenant, networkId ?? scope, { proveFabbrica });
+    if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
+    if (tipo === "controlli") {
+      d.history({
+        host_id: null,
+        network_id: networkId,
+        scan_type: "controlli",
+        status: "avviato",
+        ports_open: null,
+        raw_output: null,
+        duration_ms: null,
+      });
+    }
+    const messaggio = tipo === "controlli" ? "Sonde e identità avviate" : "Solo sonde (senza nmap)";
+    for (const id of scope) avvii.push({ network_id: id, job_id: null, messaggio });
     return { avvii, saltati, tipo, profilo };
   }
 
   const params = parametriProfilo(profilo, { fasi });
-  const vuoleSonde = fasi.includes("sonde");
-  const vuolePorte = fasi.includes("porte") || profilo !== "su_misura";
-  if (profilo === "su_misura" && !vuolePorte && vuoleSonde) {
-    const networkId = reti.length === 1 ? reti[0]! : null;
-    const avviato = d.servizi(tenant, networkId, { proveFabbrica });
-    if (!avviato) throw new ErroreLancio("Un giro delle sonde è già in corso", 409);
-    avvii.push({ network_id: networkId, job_id: null, messaggio: "Solo sonde (senza nmap)" });
-    return { avvii, saltati, tipo, profilo };
-  }
-
   for (const id of reti) {
     const rete = d.rete(id);
     if (!rete) {

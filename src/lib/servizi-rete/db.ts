@@ -7,12 +7,15 @@ import type Database from "better-sqlite3";
 import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
 import type { InfoControllo } from "@/lib/rilievi/controlli";
 import type { EsitoSonda } from "./sonde";
+import type { HostPerImpianti } from "@/lib/vuln/impianti-in-rete";
 
-export interface PortaDaSondare {
+type IndiziImpianto = Omit<HostPerImpianti, "network_id" | "ip">;
+const INDIZI_IMPIANTO = "h.vendor, h.device_manufacturer, h.inferred_vendor, h.attr_vendor_name, h.classification, h.attr_category, h.open_ports";
+
+export interface PortaDaSondare extends IndiziImpianto {
   host_id: number;
   ip: string;
   porta: number;
-  vendor: string | null;
 }
 
 export interface ServizioRete {
@@ -121,7 +124,7 @@ export function allineaServiziDaPorte(db: Database.Database, networkId?: number)
 export function porteDaSondare(db: Database.Database, networkId?: number, limite = 5000): PortaDaSondare[] {
   return db
     .prepare(
-      `SELECT s.host_id, h.ip, s.porta, COALESCE(h.vendor, h.device_manufacturer) AS vendor FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
+      `SELECT s.host_id, h.ip, s.porta, ${INDIZI_IMPIANTO} FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
        WHERE s.protocollo = 'tcp' ${networkId ? "AND h.network_id = ?" : ""}
        ORDER BY s.ultima_sonda IS NOT NULL, s.ultima_sonda, h.ip, s.porta
        LIMIT ?`,
@@ -226,16 +229,15 @@ export function conteggiServiziRete(db: Database.Database, networkId?: number): 
   };
 }
 
-export interface HostDaProvare {
+export interface HostDaProvare extends IndiziImpianto {
   host_id: number;
   ip: string;
-  vendor: string | null;
 }
 
 /** Gli host di una rete, per il giro leggero delle porte comuni. */
 export function hostDellaRete(db: Database.Database, networkId: number): HostDaProvare[] {
   return db
-    .prepare("SELECT id AS host_id, ip, COALESCE(vendor, device_manufacturer) AS vendor FROM hosts WHERE network_id = ? ORDER BY ip")
+    .prepare(`SELECT h.id AS host_id, h.ip, ${INDIZI_IMPIANTO} FROM hosts h WHERE h.network_id = ? ORDER BY h.ip`)
     .all(networkId) as HostDaProvare[];
 }
 
@@ -271,7 +273,7 @@ export function registraPorteAperte(
 export function hostSenzaPorte(db: Database.Database, giorni = 7, limite = 300): HostDaProvare[] {
   return db
     .prepare(
-      `SELECT h.id AS host_id, h.ip, COALESCE(h.vendor, h.device_manufacturer) AS vendor FROM hosts h
+      `SELECT h.id AS host_id, h.ip, ${INDIZI_IMPIANTO} FROM hosts h
        WHERE (h.open_ports IS NULL OR h.open_ports IN ('', '[]'))
          AND h.status <> 'offline'
          AND COALESCE(h.last_seen, h.updated_at) >= datetime('now', ?)
@@ -319,7 +321,7 @@ export function porteDaControllare(
   if (networkId) args.push(networkId);
   return db
     .prepare(
-      `SELECT s.host_id, h.ip, s.porta, s.protocollo, COALESCE(h.vendor, h.device_manufacturer) AS vendor
+      `SELECT s.host_id, h.ip, s.porta, s.protocollo, ${INDIZI_IMPIANTO}
        FROM servizi_rete s JOIN hosts h ON h.id = s.host_id
        WHERE (${or.join(" OR ")}) ${rete}
        ORDER BY h.ip, s.porta`,

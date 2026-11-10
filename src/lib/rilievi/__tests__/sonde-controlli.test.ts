@@ -12,7 +12,6 @@ import {
   adcsDaHttp,
   jenkinsScriptDaHttp,
   ldapBindRiuscito,
-  ldapSenzaFirma,
   memcachedAperto,
   mongoSenzaAuth,
   nfsNullAccettato,
@@ -44,10 +43,7 @@ test("LDAP bind success: resultCode 0 dopo BindResponse", () => {
   assert.equal(ldapBindRiuscito(ok), true);
   const ko = Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0a, 0x01, 0x31, 0x04, 0x00, 0x04, 0x00]);
   assert.equal(ldapBindRiuscito(ko), false);
-  const firma = Buffer.from([0x30, 0x0c, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0a, 0x01, 0x0d, 0x04, 0x00, 0x04, 0x00]);
-  assert.equal(ldapSenzaFirma(firma), false);
-  assert.equal(ldapSenzaFirma(ok), true);
-  assert.equal(ldapSenzaFirma(ko), true);
+
 });
 
 test("NFS RPC NULL accettato", () => {
@@ -89,10 +85,12 @@ test("VNC: tipo None in 003.008 e in 003.003", () => {
 });
 
 test("AD CS e Jenkins script da HTTP", () => {
-  assert.equal(adcsDaHttp(401, ""), true);
+  assert.equal(adcsDaHttp(401, ""), false);
   assert.equal(adcsDaHttp(200, "Active Directory Certificate Services"), true);
   assert.equal(adcsDaHttp(404, ""), false);
-  assert.equal(jenkinsScriptDaHttp(200, "Script Console — Groovy"), true);
+  assert.equal(jenkinsScriptDaHttp(200, "Jenkins login"), false);
+  assert.equal(jenkinsScriptDaHttp(302, "Script Console <textarea>"), false);
+  assert.equal(jenkinsScriptDaHttp(200, "Script Console <textarea>"), true);
   assert.equal(jenkinsScriptDaHttp(403, "Jenkins"), false);
 });
 
@@ -205,7 +203,8 @@ test(".git/HEAD su porta HTTP fuori dallo standard", async () => {
       const t = d.toString("latin1");
       const corpo = t.includes("GET /.git/HEAD") ? "ref: refs/heads/main\n" : "";
       const code = corpo ? "200 OK" : "404 Not Found";
-      c.end(`HTTP/1.1 ${code}\r\nContent-Length: ${corpo.length}\r\n\r\n${corpo}`);
+      c.write(`HTTP/1.1 ${code}\r\nContent-Length: ${corpo.length}\r\n\r\n`);
+      setImmediate(() => c.end(corpo));
     });
   });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));

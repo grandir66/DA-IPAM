@@ -4,6 +4,8 @@
  */
 import dgram from "node:dgram";
 import net from "node:net";
+import { request as richiestaHttp } from "node:http";
+import { request as richiestaHttps } from "node:https";
 import * as snmp from "net-snmp";
 import { apriSessioneCommunity, provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
 import type { InfoControllo } from "./controlli";
@@ -14,7 +16,6 @@ import {
   provaNfsExportStella,
   provaNtpMonlist,
   provaRsync,
-  provaSmartInstall,
   provaSmtpVrfy,
   provaSshPasswordOfferta,
   provaTftp,
@@ -26,7 +27,7 @@ const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
 export interface OpzioniControllo {
   timeoutMs?: number;
   proveFabbrica?: boolean;
-  tentativiRestanti?: number;
+  consumaTentativo?: () => boolean;
 }
 
 export interface EsitoSondaControllo {
@@ -36,7 +37,7 @@ export interface EsitoSondaControllo {
 
 export const PORTE_CONTROLLO = new Set([
   21, 22, 23, 25, 53, 69, 111, 123, 135, 139, 161, 389, 445, 512, 513, 514, 623, 631, 873, 1433, 2049, 2181, 2375, 2379,
-  3306, 4786, 5432, 5900, 5901, 5984, 5985, 5986, 6000, 6379, 8530, 9200, 10250, 11211, 27017,
+  3306, 5432, 5900, 5901, 5984, 5985, 5986, 6000, 6379, 8530, 9200, 10250, 11211, 27017,
 ]);
 
 function connetti(ip: string, porta: number, ms: number): Promise<net.Socket | null> {
@@ -111,34 +112,21 @@ export function ldapResultCode(buf: Buffer): number | null {
   return buf[j + 2]!;
 }
 
-export function ldapSenzaFirma(buf: Buffer): boolean {
-  const c = ldapResultCode(buf);
-  return c != null && c !== 13;
-}
-
-export async function provaLdap(
-  ip: string,
-  porta: number,
-  ms: number,
-): Promise<{ anonimo: boolean; senzaFirma: boolean }> {
-  const r = await conTesto(ip, porta, ms, LDAP_BIND_ANONIMO, (b) => b.includes(0x61));
-  if (!r) return { anonimo: false, senzaFirma: false };
-  return { anonimo: ldapBindRiuscito(r), senzaFirma: ldapSenzaFirma(r) };
-}
-
-export async function provaLdapAnonimo(ip: string, porta: number, ms: number): Promise<boolean> {
-  return (await provaLdap(ip, porta, ms)).anonimo;
+async function provaLdapAnonimo(ip: string, porta: number, ms: number): Promise<boolean | undefined> {
+  const r = await conTesto(ip, porta, ms, LDAP_BIND_ANONIMO, (b) => ldapResultCode(b) !== null);
+  const codice = r ? ldapResultCode(r) : null;
+  return codice === null ? undefined : codice === 0;
 }
 
 export function redisSenzaAuth(buf: Buffer): boolean {
-  const t = buf.toString("latin1");
-  if (/^-NOAUTH/i.test(t) || /^-ERR.*auth/i.test(t)) return false;
-  return /^\+PONG/m.test(t);
+  return /^\+PONG\r?\n/.test(buf.toString("latin1"));
 }
 
-export async function provaRedis(ip: string, porta: number, ms: number): Promise<boolean> {
+export async function provaRedis(ip: string, porta: number, ms: number): Promise<boolean | undefined> {
   const r = await conTesto(ip, porta, ms, "PING\r\n", (b) => b.includes(0x0a));
-  return r ? redisSenzaAuth(r) : false;
+  if (!r) return undefined;
+  if (redisSenzaAuth(r)) return true;
+  return /^-(NOAUTH|NOPERM)\b/i.test(r.toString("latin1")) ? false : undefined;
 }
 
 function bsonDocumento(campi: Array<{ nome: string; valore: number }>): Buffer {
@@ -350,47 +338,50 @@ export async function provaFtpAnonimo(ip: string, porta: number, ms: number): Pr
   }
 }
 
-async function httpGet(
+function httpGet(
   ip: string,
   porta: number,
   https: boolean,
   ms: number,
-  extraHeader?: string,
+  authorization?: string,
   percorso = "/",
-): Promise<{ code: number; corpo: string } | null> {
-  const tls = https ? await import("node:tls") : null;
-  const extra = extraHeader ? `${extraHeader}\r\n` : "";
-  const req = `GET ${percorso} HTTP/1.1\r\nHost: ${ip}\r\n${extra}User-Agent: DA-IPAM\r\nConnection: close\r\n\r\n`;
-  const sock: net.Socket | null = https
-    ? await new Promise((resolve) => {
-        const s = tls!.connect({ host: ip, port: porta, rejectUnauthorized: false, ALPNProtocols: ["http/1.1"] });
-        const timer = setTimeout(() => {
-          s.destroy();
-          resolve(null);
-        }, ms);
-        s.once("secureConnect", () => {
-          clearTimeout(timer);
-          resolve(s);
-        });
-        s.once("error", () => {
-          clearTimeout(timer);
-          s.destroy();
-          resolve(null);
-        });
-      })
-    : await connetti(ip, porta, ms);
-  if (!sock) return null;
-  try {
-    sock.write(req);
-    const r = await leggi(sock, ms, (b) => b.includes("\r\n\r\n") || b.length > 2048);
-    const testo = r.toString("latin1");
-    const m = /^HTTP\/\d(?:\.\d)?\s+(\d{3})/.exec(testo);
-    if (!m) return null;
-    const i = testo.indexOf("\r\n\r\n");
-    return { code: Number(m[1]), corpo: i >= 0 ? testo.slice(i + 4, i + 400) : "" };
-  } finally {
-    sock.destroy();
-  }
+): Promise<{ code: number; corpo: string; challenge: string } | null> {
+  return new Promise((resolve) => {
+    const request = https ? richiestaHttps : richiestaHttp;
+    const headers = { "User-Agent": "DA-IPAM", ...(authorization ? { Authorization: authorization } : {}) };
+    const req = request({ hostname: ip, port: porta, path: percorso, headers, agent: false, rejectUnauthorized: false }, (res) => {
+      const code = res.statusCode ?? 0;
+      const challenge = res.headers["www-authenticate"] ?? "";
+      const parti: Buffer[] = [];
+      let bytes = 0;
+      const termina = () => {
+        clearTimeout(timer);
+        resolve({ code, corpo: Buffer.concat(parti).toString("utf8"), challenge });
+      };
+      res.on("data", (chunk: Buffer) => {
+        parti.push(chunk.subarray(0, TETTO - bytes));
+        bytes += chunk.length;
+        if (bytes >= TETTO) {
+          termina();
+          req.destroy();
+        }
+      });
+      res.once("end", termina);
+      res.once("error", () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+    const timer = setTimeout(() => {
+      req.destroy();
+      resolve(null);
+    }, ms);
+    req.once("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    req.end();
+  });
 }
 
 const LOGIN_FABBRICA_HTTP: ReadonlyArray<{ utente: string; password: string }> = [
@@ -414,7 +405,7 @@ export async function provaZookeeper(ip: string, porta: number, ms: number): Pro
 
 async function httpJsonSenzaAuth(ip: string, porta: number, https: boolean, percorso: string, ms: number, indizio: RegExp): Promise<boolean> {
   const r = await httpGet(ip, porta, https, ms, undefined, percorso);
-  return r != null && r.code >= 200 && r.code < 400 && indizio.test(r.corpo);
+  return r != null && r.code >= 200 && r.code < 300 && indizio.test(r.corpo);
 }
 
 function schemiHttp(porta: number): boolean[] {
@@ -423,40 +414,60 @@ function schemiHttp(porta: number): boolean[] {
   return [false, true];
 }
 
+function accessoNegato(code: number): boolean {
+  return code === 401 || code === 403 || code === 404 || code === 410;
+}
+
 async function percorsiSuSchema(
   ip: string,
   porta: number,
   https: boolean,
   ms: number,
-): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
-  const out: Pick<InfoControllo, "actuator" | "git_env"> = {};
+): Promise<Pick<InfoControllo, "actuator_health" | "git_env">> {
+  const out: Pick<InfoControllo, "actuator_health" | "git_env"> = {};
   const git = await httpGet(ip, porta, https, ms, undefined, "/.git/HEAD");
-  if (git && git.code === 200 && /ref: /.test(git.corpo)) out.git_env = ".git/HEAD";
-  if (!out.git_env) {
+  if (git?.code === 200 && /^(?:ref: refs\/[\w./-]+|[0-9a-f]{40}|[0-9a-f]{64})\s*$/.test(git.corpo)) {
+    out.git_env = ".git/HEAD";
+  } else {
     const env = await httpGet(ip, porta, https, ms, undefined, "/.env");
-    if (env && env.code === 200 && /=/.test(env.corpo) && !/</.test(env.corpo.slice(0, 80))) out.git_env = ".env";
+    if (env?.code === 200 && /^(?:export +)?[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(env.corpo) && !/^\s*</.test(env.corpo)) {
+      out.git_env = ".env";
+    } else if (git && env && accessoNegato(git.code) && accessoNegato(env.code)) {
+      out.git_env = null;
+    }
   }
   const act = await httpGet(ip, porta, https, ms, undefined, "/actuator/health");
-  if (act && act.code === 200 && /status|UP/i.test(act.corpo)) out.actuator = true;
+  if (act?.code === 200) {
+    try {
+      const body = JSON.parse(act.corpo) as { status?: unknown } | null;
+      if (typeof body?.status === "string" && /^(UP|DOWN|OUT_OF_SERVICE|UNKNOWN)$/.test(body.status)) {
+        out.actuator_health = true;
+      }
+    } catch {
+      // Una pagina HTML o una risposta incompleta non è evidenza di Actuator.
+    }
+  } else if (act && accessoNegato(act.code)) out.actuator_health = false;
   return out;
 }
 
-/** `.git` / `.env` / actuator: su 80/443 e anche sulle altre porte già viste come HTTP. */
-export async function provaPercorsiHttp(ip: string, porta: number, ms: number): Promise<Pick<InfoControllo, "actuator" | "git_env">> {
-  for (const https of schemiHttp(porta)) {
-    const out = await percorsiSuSchema(ip, porta, https, ms);
-    if (out.git_env || out.actuator) return out;
-  }
-  return {};
+/** Prova anche le porte non standard già riconosciute come HTTP. */
+export async function provaPercorsiHttp(ip: string, porta: number, ms: number): Promise<Pick<InfoControllo, "actuator_health" | "git_env">> {
+  const esiti = [];
+  for (const https of schemiHttp(porta)) esiti.push(await percorsiSuSchema(ip, porta, https, ms));
+  const git = esiti.find((x) => x.git_env)?.git_env;
+  return {
+    ...(git ? { git_env: git } : esiti.every((x) => x.git_env === null) ? { git_env: null } : {}),
+    ...(esiti.some((x) => x.actuator_health === true) ? { actuator_health: true }
+      : esiti.every((x) => x.actuator_health === false) ? { actuator_health: false } : {}),
+  };
 }
 
 export function adcsDaHttp(code: number, corpo: string): boolean {
-  if (code === 200) return /certsrv|certificate services|microsoft certificate/i.test(corpo);
-  return code === 401;
+  return code === 200 && /certificate services|microsoft certificate|certfnsh\.asp|certcarc\.asp/i.test(corpo);
 }
 
 export function jenkinsScriptDaHttp(code: number, corpo: string): boolean {
-  return code >= 200 && code < 400 && /script console|groovy|Jenkins/i.test(corpo);
+  return code === 200 && /script console/i.test(corpo) && /<textarea\b/i.test(corpo);
 }
 
 async function provaAdcs(ip: string, porta: number, ms: number): Promise<boolean> {
@@ -693,49 +704,6 @@ export async function provaMssqlSa(ip: string, porta: number, ms: number): Promi
   }
 }
 
-function controlloHaEsito(info: InfoControllo): boolean {
-  return Boolean(
-    info.ldap_anonimo ||
-      info.redis_aperto ||
-      info.mongo_aperto ||
-      info.nfs_risponde ||
-      info.snmp_public ||
-      info.vnc_senza_auth ||
-      info.fabbrica ||
-      info.smbv1 ||
-      info.smb_null ||
-      info.smb_guest ||
-      (info.smb_share_anon && info.smb_share_anon.length) ||
-      info.memcached ||
-      info.zookeeper ||
-      info.elasticsearch ||
-      info.docker ||
-      info.etcd ||
-      info.couchdb ||
-      info.kubelet ||
-      info.actuator ||
-      info.git_env ||
-      info.x11 ||
-      info.ms17_010 ||
-      info.ipmi_esposto ||
-      info.ipmi_cipher0 ||
-      info.ldap_senza_firma ||
-      info.nfs_export_stella ||
-      info.snmp_write ||
-      info.dns_axfr ||
-      info.tftp ||
-      info.ntp_monlist ||
-      info.rsync ||
-      info.smart_install ||
-      info.smtp_vrfy ||
-      info.adcs ||
-      info.jenkins_script ||
-      info.vnc_auth_debole ||
-      info.ipmi_rakp ||
-      info.ssh_password,
-  );
-}
-
 /**
  * Una porta: prove senza login sempre; FTP/HTTP/DB/MS17/IPMI solo con
  * `proveFabbrica`, e solo se restano tentativi per l'host.
@@ -744,21 +712,25 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
   const ms = opz.timeoutMs ?? 2500;
   const info: InfoControllo = {};
   let tentativiUsati = 0;
-  let restanti = opz.tentativiRestanti ?? 0;
   const https = porta === 443 || porta === 8443;
+  const tentaLogin = () => {
+    if (!opz.proveFabbrica || !opz.consumaTentativo?.()) return false;
+    tentativiUsati += 1;
+    return true;
+  };
 
   try {
     if (porta === 389) {
-      const ldap = await provaLdap(ip, porta, ms);
-      if (ldap.anonimo) info.ldap_anonimo = true;
-      if (ldap.senzaFirma) info.ldap_senza_firma = true;
+      const anonimo = await provaLdapAnonimo(ip, porta, ms);
+      if (anonimo !== undefined) info.ldap_anonimo = anonimo;
     } else if (porta === 6379) {
-      if (await provaRedis(ip, porta, ms)) info.redis_aperto = true;
+      const aperto = await provaRedis(ip, porta, ms);
+      if (aperto !== undefined) info.redis_aperto = aperto;
     } else if (porta === 27017) {
       if (await provaMongo(ip, porta, ms)) info.mongo_aperto = true;
     } else if (porta === 2049 || porta === 111) {
       if (porta === 2049 && (await provaNfs(ip, porta, ms))) info.nfs_risponde = true;
-      if (await provaNfsExportStella(ip, ms)) info.nfs_export_stella = true;
+      if (await provaNfsExportStella(ip, ms)) info.nfs_export_pubblico = true;
     } else if (porta === 161) {
       const sys = await provaSnmpPublic(ip, ms);
       if (sys) info.snmp_public = sys;
@@ -776,7 +748,7 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
     } else if (porta === 9200) {
       if (await httpJsonSenzaAuth(ip, porta, false, "/", ms, /cluster_name|tagline|You Know, for Search/i)) info.elasticsearch = true;
     } else if (porta === 2375) {
-      if (await httpJsonSenzaAuth(ip, porta, false, "/version", ms, /ApiVersion|Version/i)) info.docker = true;
+      if (await httpJsonSenzaAuth(ip, porta, false, "/version", ms, /"ApiVersion"\s*:\s*"/i)) info.docker = true;
     } else if (porta === 2379) {
       if (await httpJsonSenzaAuth(ip, porta, false, "/version", ms, /etcdcluster|etcdserver/i)) info.etcd = true;
     } else if (porta === 5984) {
@@ -795,8 +767,6 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       if (await provaNtpMonlist(ip, ms)) info.ntp_monlist = true;
     } else if (porta === 873) {
       if (await provaRsync(ip, porta, ms)) info.rsync = true;
-    } else if (porta === 4786) {
-      if (await provaSmartInstall(ip, porta, ms)) info.smart_install = true;
     } else if (porta === 25) {
       if (await provaSmtpVrfy(ip, porta, ms)) info.smtp_vrfy = true;
     } else if (opz.proveFabbrica && porta === 623) {
@@ -806,21 +776,13 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
         info.ipmi_cipher0 = true;
         if (await provaIpmiRakp(ip, ms, porta)) info.ipmi_rakp = true;
       }
-    } else if (opz.proveFabbrica && porta === 21 && restanti > 0) {
-      tentativiUsati += 1;
-      restanti -= 1;
+    } else if (porta === 21 && tentaLogin()) {
       if (await provaFtpAnonimo(ip, porta, ms)) info.fabbrica = { servizio: "ftp", utente: "anonymous" };
-    } else if (opz.proveFabbrica && porta === 3306 && restanti > 0) {
-      tentativiUsati += 1;
-      restanti -= 1;
+    } else if (porta === 3306 && tentaLogin()) {
       if (await provaMysqlRootVuoto(ip, porta, ms)) info.fabbrica = { servizio: "mysql", utente: "root" };
-    } else if (opz.proveFabbrica && porta === 5432 && restanti > 0) {
-      tentativiUsati += 1;
-      restanti -= 1;
+    } else if (porta === 5432 && tentaLogin()) {
       if (await provaPostgresFabbrica(ip, porta, ms)) info.fabbrica = { servizio: "postgres", utente: "postgres" };
-    } else if (opz.proveFabbrica && porta === 1433 && restanti > 0) {
-      tentativiUsati += 1;
-      restanti -= 1;
+    } else if (porta === 1433 && tentaLogin()) {
       if (await provaMssqlSa(ip, porta, ms)) info.fabbrica = { servizio: "mssql", utente: "sa" };
     }
 
@@ -828,19 +790,17 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
       porta === 80 || porta === 443 || porta === 8080 || porta === 8443 || porta === 8000 || porta === 8888 || porta === 631;
     if (httpish || !PORTE_CONTROLLO.has(porta)) {
       Object.assign(info, await provaPercorsiHttp(ip, porta, ms));
-      if (await provaAdcs(ip, porta, ms)) info.adcs = true;
+      if (await provaAdcs(ip, porta, ms)) info.adcs_enrollment = true;
     }
-    if (opz.proveFabbrica && httpish && (await provaJenkinsScript(ip, porta, ms))) info.jenkins_script = true;
-    if (opz.proveFabbrica && restanti > 0 && httpish) {
+    if (opz.proveFabbrica && httpish && (await provaJenkinsScript(ip, porta, ms))) info.jenkins_script_console = true;
+    if (opz.proveFabbrica && httpish) {
       const stato = await httpGet(ip, porta, https, ms);
-      if (stato?.code === 401) {
+      if (stato?.code === 401 && /(?:^|,)\s*Basic(?:\s|$)/i.test(stato.challenge)) {
         for (const l of LOGIN_FABBRICA_HTTP) {
-          if (restanti <= 0) break;
-          tentativiUsati += 1;
-          restanti -= 1;
+          if (!tentaLogin()) break;
           const auth = `Authorization: Basic ${Buffer.from(`${l.utente}:${l.password}`).toString("base64")}`;
           const r = await httpGet(ip, porta, https, ms, auth);
-          if (r && r.code >= 200 && r.code < 400) {
+          if (r && r.code >= 200 && r.code < 300) {
             info.fabbrica = { servizio: "http", utente: l.utente };
             break;
           }
@@ -851,5 +811,5 @@ export async function sondaControllo(ip: string, porta: number, opz: OpzioniCont
     // una porta che parla un altro protocollo non ferma il giro
   }
 
-  return { info: controlloHaEsito(info) ? info : null, tentativiUsati };
+  return { info: Object.keys(info).length > 0 ? info : null, tentativiUsati };
 }

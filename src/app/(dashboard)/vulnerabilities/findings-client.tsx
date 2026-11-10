@@ -20,11 +20,13 @@ import {
   TempoRelativo,
   Vuoto,
 } from "@/components/shared/console";
+import { Checkbox } from "@/components/ui/checkbox";
 import { BadgeTriage, EditorTriage, TRIAGE_UI } from "@/components/shared/triage-riga";
 import { useEAdmin } from "@/hooks/use-e-admin";
+import { toast } from "sonner";
 import { fetchJson } from "@/lib/fetch-json";
 import { FONTI_RILIEVO_UI, MOTORI_RILIEVO, MOTORI_RILIEVO_UI, type ElencoRilievi, type MotoreRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
-import type { StatoTriage } from "@/lib/triage/db";
+import { STATI_TRIAGE, type StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
 
@@ -94,6 +96,7 @@ function ElencoFindings() {
   const [dati, setDati] = useState<ElencoRilievi | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [aperti, setAperti] = useState<Set<string>>(new Set());
+  const [selezione, setSelezione] = useState<Set<string>>(new Set());
 
   const richiesta = useRef(0);
 
@@ -117,6 +120,11 @@ function ElencoFindings() {
     void load();
     return () => { richiesta.current += 1; };
   }, [load]);
+
+  // La selezione vale per la vista corrente: cambiando tab, filtri, ricerca o pagina si azzera.
+  useEffect(() => {
+    setSelezione(new Set());
+  }, [motore, gravita, q, page]);
 
   function alternaGravita(s: Severity) {
     setGravita((prev) => {
@@ -154,6 +162,41 @@ function ElencoFindings() {
       return { ...prev, data, conteggiTriage };
     });
   }, []);
+
+  function alternaSelezione(id: string, v: boolean) {
+    setSelezione((prev) => {
+      const n = new Set(prev);
+      if (v) n.add(id);
+      else n.delete(id);
+      return n;
+    });
+  }
+
+  const idPagina = dati?.data.map((r) => r.id) ?? [];
+  const tuttiSelezionati = idPagina.length > 0 && idPagina.every((id) => selezione.has(id));
+  function alternaTutti(v: boolean) {
+    setSelezione(v ? new Set(idPagina) : new Set());
+  }
+
+  // Imposta lo stesso stato sui rilievi selezionati (la nota di ciascuno resta). Poi ricarica.
+  const applicaBlocco = useCallback(
+    async (stato: StatoTriage) => {
+      if (!dati || selezione.size === 0) return;
+      const chiavi = dati.data.filter((r) => selezione.has(r.id)).map((r) => r.chiaveTriage);
+      const r = await fetchJson<{ ok: boolean }>("/api/triage/blocco", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chiavi, stato }),
+      });
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      setSelezione(new Set());
+      await load();
+    },
+    [dati, selezione, load],
+  );
 
   const rollup = dati?.rollup ?? { Critical: 0, High: 0, Medium: 0, Low: 0 };
   const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
@@ -280,6 +323,22 @@ function ElencoFindings() {
             ))}
           </div>
 
+          {admin && selezione.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-2 text-[13px]">
+              <span>
+                <strong className="font-mono">{selezione.size}</strong> selezionati · imposta stato:
+              </span>
+              {STATI_TRIAGE.map((s) => (
+                <Button key={`b-${s}`} type="button" size="sm" variant="outline" onClick={() => void applicaBlocco(s)}>
+                  {TRIAGE_UI[s].parola}
+                </Button>
+              ))}
+              <Button type="button" size="sm" variant="ghost" onClick={() => setSelezione(new Set())}>
+                Deseleziona
+              </Button>
+            </div>
+          )}
+
           {errore ? (
             <LoadError what="i findings" message={errore} onRetry={() => void load()} />
           ) : !dati ? (
@@ -303,6 +362,15 @@ function ElencoFindings() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
+                    {admin && (
+                      <TableHead className="w-8">
+                        <Checkbox
+                          checked={tuttiSelezionati}
+                          onCheckedChange={(c) => alternaTutti(!!c)}
+                          aria-label="Seleziona tutti i rilievi della pagina"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Stato</TableHead>
                     <TableHead>Rilievo</TableHead>
                     <TableHead>Fonte</TableHead>
@@ -319,6 +387,8 @@ function ElencoFindings() {
                       aperto={aperti.has(r.id)}
                       onToggle={() => toggle(r.id)}
                       admin={admin}
+                      selezionato={selezione.has(r.id)}
+                      onSeleziona={(v) => alternaSelezione(r.id, v)}
                       onCambio={(t) => onCambioTriage(r.id, t)}
                     />
                   ))}
@@ -343,12 +413,16 @@ function Riga({
   aperto,
   onToggle,
   admin,
+  selezionato,
+  onSeleziona,
   onCambio,
 }: {
   r: RilievoUnito;
   aperto: boolean;
   onToggle: () => void;
   admin: boolean;
+  selezionato: boolean;
+  onSeleziona: (v: boolean) => void;
   onCambio: (t: { stato: StatoTriage; nota: string }) => void;
 }) {
   const slug = slugControllo(r);
@@ -358,6 +432,15 @@ function Riga({
         <TableCell className="w-8 text-muted-foreground">
           {aperto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </TableCell>
+        {admin && (
+          <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selezionato}
+              onCheckedChange={(c) => onSeleziona(!!c)}
+              aria-label={`Seleziona ${r.titolo}`}
+            />
+          </TableCell>
+        )}
         <TableCell>
           {r.triage ? <BadgeTriage stato={r.triage.stato} /> : <BadgeTriage stato="da_fare" />}
         </TableCell>
@@ -382,7 +465,7 @@ function Riga({
       {aperto && (
         <TableRow>
           <TableCell />
-          <TableCell colSpan={6}>
+          <TableCell colSpan={admin ? 7 : 6}>
             <div className="space-y-3">
               <div className="rounded-lg border bg-card p-3">
                 <p className="mb-2 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Triage</p>

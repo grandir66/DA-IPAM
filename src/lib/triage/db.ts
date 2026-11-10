@@ -61,3 +61,19 @@ export function setTriage(db: Database.Database, chiave: string, stato: StatoTri
        aggiornato_il = excluded.aggiornato_il, aggiornato_da = excluded.aggiornato_da`,
   ).run(chiave, stato, notaPulita, utente);
 }
+
+/**
+ * Imposta lo stesso stato su più chiavi in una sola transazione, **preservando la nota** di ciascuna
+ * (il blocco cambia lo stato, non la nota). Riusa `setTriage`, così vale ancora la regola «da_fare con
+ * nota vuota = la riga si cancella» e i conteggi di «N di M rivisti» restano veri.
+ */
+export function setTriageStatoBlocco(db: Database.Database, chiavi: string[], stato: StatoTriage, utente: string | null): void {
+  if (chiavi.length === 0) return;
+  const esistenti = getTriage(db, chiavi);
+  const tx = db.transaction(() => {
+    for (const chiave of chiavi) {
+      setTriage(db, chiave, stato, esistenti[chiave]?.nota ?? "", utente);
+    }
+  });
+  tx();
+}

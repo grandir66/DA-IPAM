@@ -64,7 +64,18 @@ export function pianoApparatoAutomatico(host: HostAutomatico, archivio: Credenzi
   });
   if (validate.length === 0) return { motivo: "nessuna_credenziale" };
 
-  const scelta = { ...host, classification: classe };
+  /* Una VM non è il suo hypervisor (hub 533, 10/11/2026): la scheda di rete virtuale porta il produttore «Proxmox», la
+   * proposta ne faceva un nodo Proxmox VE e «da-sns» (192.168.4.42) nasceva hypervisor con letture da Proxmox. Nella
+   * finestra lo corregge una persona, qui nessuno: se la classe non è hypervisor, il produttore dell'hypervisor non
+   * decide la piattaforma — la decide la famiglia del sistema operativo. */
+  const eHypervisor = (v: string | null | undefined) => /proxmox|vmware|qemu|hyper-v|xen|nutanix/i.test(v ?? "");
+  const scelta = classe === "hypervisor" ? { ...host, classification: classe } : {
+    ...host, classification: classe,
+    inferred_vendor: eHypervisor(host.inferred_vendor) ? null : host.inferred_vendor,
+    device_manufacturer: eHypervisor(host.device_manufacturer) ? null : host.device_manufacturer,
+    vendor: eHypervisor(host.vendor) ? null : host.vendor,
+    inferred_scan_target: eHypervisor(host.inferred_scan_target) ? null : host.inferred_scan_target,
+  };
   let p = proponiApparato(scelta, archivio);
   if (!p.credentialId) {
     // La proposta vuole un protocollo senza credenziale validata: si passa al primo che ne ha una (ssh, winrm, snmp).
@@ -78,6 +89,9 @@ export function pianoApparatoAutomatico(host: HostAutomatico, archivio: Credenzi
     { classificazione: classe, piattaforma: p.vendor, variante: null, ruoli: [], protocollo: p.protocol, porta: p.port },
     { nome: p.name, ip: host.ip, credentialId: p.credentialId, snmpCredentialId: p.snmpCredentialId, scanTargetProposto: p.scanTarget },
   );
+  /* Una postazione non è uno switch: la tabella degli apparati non ha un tipo «postazione» e il ripiego del profilo
+   * dava `switch` (quattro PC sull'hub). Il tipo meno sbagliato è `server`; la classe resta quella vera. */
+  if (corpo.device_type === "switch" && classe !== "switch") corpo.device_type = "server";
   const giaLegate = new Set([p.credentialId, p.snmpCredentialId].filter(Boolean).map(Number));
   const altri = validate
     .filter((hc) => !giaLegate.has(hc.credential_id))

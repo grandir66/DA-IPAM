@@ -11,6 +11,7 @@ Riccardo (10/11): «automatizzare … la trasformazione in device se le credenzi
 ### Aggiunto
 - **Opzioni → Automatismi → «Apparati creati da soli»**, per cliente, spento di serie. Acceso, a fine scansione ogni host con una credenziale validata (SNMP, SSH o WinRM) e una classe sicura (scelta a mano, o del motore con confidenza ≥ 80) diventa apparato, con le stesse scelte della finestra «Rendi apparato» e **tutte** le credenziali validate legate. Sull'hub 533 i candidati erano 38 e con la regola del 09/11 (solo classificazione a mano, solo SNMP) nessuno lo sarebbe diventato.
 - `scripts/apparati-automatici-cli.ts <tenant> [--applica]`: la prova a vuoto, coi nomi.
+- Una VM non prende la piattaforma del suo hypervisor e una postazione non nasce `switch`: alla prima creazione sull'hub «da-sns» era diventato un nodo Proxmox e quattro PC degli switch.
 - Un apparato con più IP nasce una volta sola: gli IP dello stesso gruppo (`multihomed_links`, il motore che c'è già) danno un apparato solo, dall'IP primario; gli altri si saltano col motivo.
 
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore

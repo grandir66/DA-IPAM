@@ -53,6 +53,37 @@ describe("piano dell'apparato automatico (regola pura)", () => {
   });
 });
 
+describe("difetti visti sull'hub 533 alla prima creazione (10/11/2026)", () => {
+  it("una VM su Proxmox classificata server non diventa un nodo Proxmox", () => {
+    const r = pianoApparatoAutomatico(host({
+      classification: "server", inferred_vendor: "proxmox", inferred_os_family: "linux", vendor: "Proxmox Server Solutions GmbH",
+      inferred_scan_target: "proxmox", host_credentials: [{ credential_id: 9, protocol_type: "ssh", port: 22, validated: 1 }],
+    }), ARCHIVIO);
+    assert.ok("corpo" in r);
+    assert.equal(r.corpo.vendor, "linux");
+    assert.equal(r.corpo.device_type, "server");
+    assert.notEqual(r.corpo.scan_target, "proxmox");
+  });
+  it("un hypervisor vero resta Proxmox", () => {
+    const r = pianoApparatoAutomatico(host({
+      classification: "hypervisor", inferred_vendor: "proxmox", inferred_os_family: "linux",
+      host_credentials: [{ credential_id: 9, protocol_type: "ssh", port: 22, validated: 1 }],
+    }), ARCHIVIO);
+    assert.ok("corpo" in r);
+    assert.equal(r.corpo.vendor, "proxmox");
+    assert.equal(r.corpo.device_type, "hypervisor");
+  });
+  it("una postazione Windows non nasce switch", () => {
+    const r = pianoApparatoAutomatico(host({
+      classification: "workstation", inferred_os_family: "windows", inferred_vendor: "hp",
+      host_credentials: [{ credential_id: 11, protocol_type: "winrm", port: 5985, validated: 1 }],
+    }), ARCHIVIO);
+    assert.ok("corpo" in r);
+    assert.equal(r.corpo.classification, "workstation");
+    assert.equal(r.corpo.device_type, "server");
+  });
+});
+
 describe("interruttore", () => {
   it("nasce spento e si accende solo scrivendolo", () => {
     const db = new Database(":memory:");

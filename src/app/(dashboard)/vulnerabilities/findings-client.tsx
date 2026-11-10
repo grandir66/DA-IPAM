@@ -199,9 +199,15 @@ function ElencoFindings() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {SEVERITIES.map((s) => (
-              <Button key={`f-${s}`} type="button" size="sm" variant={gravita.has(s) ? "default" : "outline"} onClick={() => alternaGravita(s)}>
-                {s} {dati ? rollup[s] : ""}
-              </Button>
+              <button
+                key={`f-${s}`}
+                type="button"
+                aria-pressed={gravita.has(s)}
+                onClick={() => alternaGravita(s)}
+                className={`rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${gravita.has(s) ? "ring-2 ring-foreground" : "opacity-70 hover:opacity-100"}`}
+              >
+                <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
+              </button>
             ))}
           </div>
 
@@ -249,14 +255,26 @@ function ElencoFindings() {
   );
 }
 
+/** Slug del controllo dall'id del rilievo (es. «giro:smb-signing:…» → «smb-signing»); null per CVE/trunk. */
+function slugControllo(r: RilievoUnito): string | null {
+  if (r.id.startsWith("giro:")) return r.id.split(":")[1] ?? null;
+  return null;
+}
+
 function Riga({ r, aperto, onToggle }: { r: RilievoUnito; aperto: boolean; onToggle: () => void }) {
+  const slug = slugControllo(r);
   return (
     <Fragment>
       <TableRow className="cursor-pointer" onClick={onToggle}>
         <TableCell className="w-8 text-muted-foreground">
           {aperto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </TableCell>
-        <TableCell className="font-medium">{r.titolo}</TableCell>
+        <TableCell className="font-medium">
+          <span className="inline-flex flex-wrap items-center gap-2">
+            {r.titolo}
+            {slug && <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[13px] text-muted-foreground">{slug}</span>}
+          </span>
+        </TableCell>
         <TableCell className="text-[13px]">{FONTI_RILIEVO_UI[r.fonte].nome}</TableCell>
         <TableCell>
           <BadgeGravita gravita={r.gravita} />

@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Menu: analisi tutta sotto Sicurezza, divisa per motore
+
+Riccardo (10/11): separare nel menu l'analisi del motore Edge da quella interna (IPAM/Nety/trunk), con la gestione scansioni dentro ogni motore, così senza Edge resta comunque un motore.
+
+### Cambiato
+- **Gruppo Sicurezza** diviso per motore con sotto-intestazioni: Findings; «Analisi interna (IPAM / Nety)» (Servizi di rete, Matrice di segmentazione, Reti dal trunk, Scansioni interne); «Vulnerability Assessment (Edge)» (Scansioni VA); «Endpoint (Wazuh)» (Alert sicurezza); «Dominio» (Sicurezza del dominio).
+- **Da Network** escono «Servizi di rete» e «Scansioni» (ora in Sicurezza, come analisi).
+
 ## [Non rilasciato] — 2026-11-10 · Controlli: cipher-zero, LOGIN7, MS17, HTTP extra
 
 Riccardo (10/11): i quattro ritocchi lasciati dopo l'ondata 2.

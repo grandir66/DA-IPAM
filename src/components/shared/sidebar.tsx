@@ -100,7 +100,6 @@ const inventorySubItems: readonly SubItem[] = [
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
-  { href: "/servizi-rete", label: "Servizi di rete", icon: Plug },
   { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/port-map", label: "Mappa porte", icon: EthernetPort },
   { href: "/software", label: "Software", icon: Package },
@@ -109,7 +108,6 @@ const networkSubItems: readonly SubItem[] = [
   { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
-  { href: "/scans", label: "Scansioni", icon: Scan },
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ];
 
@@ -119,12 +117,20 @@ const networkSubItems: readonly SubItem[] = [
 // una voce sola, su tutte le installazioni. Vulnerabilità, Scansioni VA e Alert sicurezza
 // diventano grigie senza il modulo che le alimenta (`condizione`).
 const sicurezzaSubItems: readonly SubItem[] = [
+  // Tutta l'analisi in un gruppo, divisa per motore (Riccardo, 10/11): così la gestione delle
+  // scansioni vive dentro il blocco del suo motore, e senza Edge resta il motore interno.
   { href: "/vulnerabilities", label: "Findings", icon: ShieldAlert },
-  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch, condizione: "scansioni_va" },
-  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
-  { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
-  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
+  // Motore interno: sonde, trunk, controlli, segmentazione — sempre disponibile, anche senza Edge.
+  { href: "/servizi-rete", label: "Servizi di rete", icon: Plug, divider: "Analisi interna (IPAM / Nety)" },
   { href: "/segmentazione", label: "Matrice di segmentazione", icon: LayoutGrid },
+  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
+  { href: "/scans", label: "Scansioni interne", icon: Scan },
+  // Vulnerability Assessment dall'Edge (Greenbone/Nuclei): grigio se il modulo manca.
+  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch, condizione: "scansioni_va", divider: "Vulnerability Assessment (Edge)" },
+  // Endpoint (Wazuh).
+  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza", divider: "Endpoint (Wazuh)" },
+  // Dominio.
+  { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound, divider: "Dominio" },
 ];
 
 const networkServicesSubItems: readonly SubItem[] = [
@@ -446,7 +452,7 @@ export function Sidebar() {
     !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione"].some((h) => pathname.startsWith(h))
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/servizi-rete", "/scans"].some((h) => pathname.startsWith(h))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))

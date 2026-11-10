@@ -39,95 +39,98 @@ export interface ContestoServizio {
   protocollo?: string;
 }
 
+/** Un rilievo TLS di un giro: `id` e `chiaveTriage` coincidono (`giro:<slug>:<host_id>:<porta>`). */
+function rigaTls(
+  ctx: ContestoServizio,
+  idSlug: string,
+  gravita: RilievoUnito["gravita"],
+  titolo: string,
+  prova: string,
+  rimedio: string,
+): RilievoUnito {
+  const chiave = `giro:${idSlug}:${ctx.host_id}:${ctx.porta}`;
+  return {
+    id: chiave,
+    chiaveTriage: chiave,
+    fonte: "giro",
+    gravita,
+    titolo,
+    prova,
+    rimedio,
+    ip: ctx.ip,
+    host_id: ctx.host_id,
+    network_id: ctx.network_id,
+    network_name: ctx.network_name,
+    visto: null,
+    cve_key: null,
+    host_count: 1,
+  };
+}
+
 export function rilieviDaTls(tls: InfoTls, ctx: ContestoServizio): RilievoUnito[] {
   const dove = `${ctx.ip}:${ctx.porta}`;
   const cn = tls.subject_cn ? `CN ${tls.subject_cn}` : "senza CN";
   const out: RilievoUnito[] = [];
   const scaduto = tls.expired || (tls.not_after != null && Date.parse(tls.not_after) <= Date.now());
   if (scaduto) {
-    out.push({
-      id: `giro:tls-scaduto:${ctx.host_id}:${ctx.porta}`,
-      fonte: "giro",
-      gravita: "High",
-      titolo: `Certificato TLS scaduto su ${dove}`,
-      prova: `${cn}; valido fino a ${tls.not_after ?? "data ignota"}`,
-      rimedio: "Rinnova il certificato sull'apparato e spegni il servizio se non serve più.",
-      ip: ctx.ip,
-      host_id: ctx.host_id,
-      network_id: ctx.network_id,
-      network_name: ctx.network_name,
-      visto: null,
-      cve_key: null,
-      host_count: 1,
-    });
+    out.push(
+      rigaTls(
+        ctx,
+        "tls-scaduto",
+        "High",
+        `Certificato TLS scaduto su ${dove}`,
+        `${cn}; valido fino a ${tls.not_after ?? "data ignota"}`,
+        "Rinnova il certificato sull'apparato e spegni il servizio se non serve più.",
+      ),
+    );
   }
   if (eTlsVecchio(tls.version)) {
-    out.push({
-      id: `giro:tls-vecchio:${ctx.host_id}:${ctx.porta}`,
-      fonte: "giro",
-      gravita: "Medium",
-      titolo: `TLS vecchio (${tls.version ?? "?"}) su ${dove}`,
-      prova: `Protocollo ${tls.version ?? "sconosciuto"}; cifrario ${tls.cipher ?? "—"}`,
-      rimedio: "Lascia solo TLS 1.2 o 1.3. TLS 1.0 e 1.1 si rompono con un attacco in LAN.",
-      ip: ctx.ip,
-      host_id: ctx.host_id,
-      network_id: ctx.network_id,
-      network_name: ctx.network_name,
-      visto: null,
-      cve_key: null,
-      host_count: 1,
-    });
+    out.push(
+      rigaTls(
+        ctx,
+        "tls-vecchio",
+        "Medium",
+        `TLS vecchio (${tls.version ?? "?"}) su ${dove}`,
+        `Protocollo ${tls.version ?? "sconosciuto"}; cifrario ${tls.cipher ?? "—"}`,
+        "Lascia solo TLS 1.2 o 1.3. TLS 1.0 e 1.1 si rompono con un attacco in LAN.",
+      ),
+    );
   }
   if (tls.self_signed && !scaduto) {
-    out.push({
-      id: `giro:tls-autofirmato:${ctx.host_id}:${ctx.porta}`,
-      fonte: "giro",
-      gravita: "Low",
-      titolo: `Certificato autofirmato su ${dove}`,
-      prova: `${cn}; emesso da ${tls.issuer ?? "sconosciuto"}`,
-      rimedio: "Normale su un pannello interno. Se è un servizio verso gli utenti, metti un certificato dell'azienda.",
-      ip: ctx.ip,
-      host_id: ctx.host_id,
-      network_id: ctx.network_id,
-      network_name: ctx.network_name,
-      visto: null,
-      cve_key: null,
-      host_count: 1,
-    });
+    out.push(
+      rigaTls(
+        ctx,
+        "tls-autofirmato",
+        "Low",
+        `Certificato autofirmato su ${dove}`,
+        `${cn}; emesso da ${tls.issuer ?? "sconosciuto"}`,
+        "Normale su un pannello interno. Se è un servizio verso gli utenti, metti un certificato dell'azienda.",
+      ),
+    );
   }
   if (eTlsCifrarioDebole(tls.cipher)) {
-    out.push({
-      id: `giro:tls-cifrario:${ctx.host_id}:${ctx.porta}`,
-      fonte: "giro",
-      gravita: "Medium",
-      titolo: `TLS con cifrario debole su ${dove}`,
-      prova: `Cifrario ${tls.cipher ?? "—"}`,
-      rimedio: "Lascia solo AES-GCM o ChaCha20. Togli RC4, 3DES, NULL ed EXPORT.",
-      ip: ctx.ip,
-      host_id: ctx.host_id,
-      network_id: ctx.network_id,
-      network_name: ctx.network_name,
-      visto: null,
-      cve_key: null,
-      host_count: 1,
-    });
+    out.push(
+      rigaTls(
+        ctx,
+        "tls-cifrario",
+        "Medium",
+        `TLS con cifrario debole su ${dove}`,
+        `Cifrario ${tls.cipher ?? "—"}`,
+        "Lascia solo AES-GCM o ChaCha20. Togli RC4, 3DES, NULL ed EXPORT.",
+      ),
+    );
   }
   if (eTlsChiaveDebole(tls.key_bits)) {
-    out.push({
-      id: `giro:tls-chiave:${ctx.host_id}:${ctx.porta}`,
-      fonte: "giro",
-      gravita: "Medium",
-      titolo: `Chiave TLS debole (${tls.key_bits} bit) su ${dove}`,
-      prova: `key_bits ${tls.key_bits} (RSA 512/1024/1536). Le curve EC da 256 bit non si segnalano.`,
-      rimedio: "Usa RSA almeno 2048 bit, o meglio ECDSA P-256 / Ed25519.",
-      ip: ctx.ip,
-      host_id: ctx.host_id,
-      network_id: ctx.network_id,
-      network_name: ctx.network_name,
-      visto: null,
-      cve_key: null,
-      host_count: 1,
-    });
+    out.push(
+      rigaTls(
+        ctx,
+        "tls-chiave",
+        "Medium",
+        `Chiave TLS debole (${tls.key_bits} bit) su ${dove}`,
+        `key_bits ${tls.key_bits} (RSA 512/1024/1536). Le curve EC da 256 bit non si segnalano.`,
+        "Usa RSA almeno 2048 bit, o meglio ECDSA P-256 / Ed25519.",
+      ),
+    );
   }
   return out;
 }

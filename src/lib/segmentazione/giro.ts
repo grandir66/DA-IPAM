@@ -34,6 +34,7 @@ export interface ClientRaggiungibilita {
     cidr: string,
     gateway: string,
     bersagli: Array<{ ip: string; porta: number }>,
+    protocollo: string,
   ) => Promise<{ id: number; fonte: "socket" | "edge" }>;
   leggi: (id: number, fonte: "socket" | "edge") => Promise<GiroRaggiungibilita>;
 }
@@ -49,28 +50,43 @@ async function attendi(client: ClientRaggiungibilita, id: number, fonte: "socket
   throw new Error("la sonda non ha finito in tempo");
 }
 
-export function avviaGiroSeg(tenant: string, client: ClientRaggiungibilita = CLIENT): boolean {
+export function avviaGiroSeg(
+  tenant: string,
+  client?: ClientRaggiungibilita,
+  opzioni: { sourceNetworkId?: number; retiBersaglio?: number[]; protocollo?: string } = {},
+): boolean {
   if (giri.get(tenant)?.inCorso) return false;
+  const sonda = client ?? CLIENT;
   const stato: StatoGiroSeg = { inCorso: true, iniziato: new Date().toISOString(), finito: null, errore: null, fatte: 0, totale: 0 };
   giri.set(tenant, stato);
   void withTenant(tenant, async () => {
     const db = getTenantDb(tenant);
     const gid = apriGiro(db);
     try {
-      const sorgenti = sorgentiConBersagli(db).filter((s) => s.bersagli.length > 0);
+      let sorgenti = sorgentiConBersagli(db).filter((s) => s.bersagli.length > 0);
+      if (opzioni.sourceNetworkId != null) {
+        sorgenti = sorgenti.filter((s) => s.rete_id === opzioni.sourceNetworkId);
+      }
+      if (opzioni.retiBersaglio?.length) {
+        const ok = new Set(opzioni.retiBersaglio);
+        sorgenti = sorgenti
+          .map((s) => ({ ...s, bersagli: s.bersagli.filter((b) => ok.has(b.rete_bersaglio)) }))
+          .filter((s) => s.bersagli.length > 0);
+      }
       stato.totale = sorgenti.length;
       if (sorgenti.length === 0) {
         chiudiGiro(db, gid, "ok");
         return;
       }
       for (const s of sorgenti) {
-        const avvio = await client.avvia(
+        const avvio = await sonda.avvia(
           s.vlan,
           s.cidr,
           s.gateway,
           s.bersagli.map((b) => ({ ip: b.ip, porta: b.porta })),
+          opzioni.protocollo ?? "direct",
         );
-        const fatto = await attendi(client, avvio.id, avvio.fonte);
+        const fatto = await attendi(sonda, avvio.id, avvio.fonte);
         if (fatto.esito !== "ok") throw new Error(fatto.errore || "giro della sonda fallito");
         const chiave = new Map(s.bersagli.map((b) => [`${b.ip}:${b.porta}`, b]));
         salvaProve(

@@ -26,6 +26,7 @@ import {
   getNmapHostTimeoutSeconds,
   getNetworkDiscoveryQuickConcurrency,
   getNetworkDiscoveryQuickExecMs,
+  PORTE_STAMPA_RAW,
   setGetSettingFn,
 } from "./ports";
 import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
@@ -194,6 +195,15 @@ export type DiscoverNetworkOptions = {
   sequenzaId?: string;
   /** Login di fabbrica dopo nmap: solo dal lanciatore `/scans`, mai dai giri automatici. */
   proveFabbrica?: boolean;
+  /** Timeout per bersaglio di questo giro (ms). Assente = default nmap/Opzioni. */
+  timeoutMs?: number;
+  /** Worker in parallelo di questo giro (ping e batch nmap). Assente = default. */
+  concorrenza?: number;
+  scanMode?: "auto" | "syn" | "connect";
+  ratePps?: number;
+  retries?: number;
+  /** UDP solo se il lanciatore l'ha chiesto esplicitamente (`udp_ports` nel corpo). */
+  udpDalLancio?: boolean;
 };
 
 /**
@@ -791,7 +801,11 @@ export async function discoverNetwork(
     void done.then((esito) => {
       if (esito.status !== "completed") return;
       try {
-        avviaSondeDopoDiscovery(tenantCode, networkId, { proveFabbrica: options?.proveFabbrica === true });
+        avviaSondeDopoDiscovery(tenantCode, networkId, {
+          proveFabbrica: options?.proveFabbrica === true,
+          timeoutMs: options?.timeoutMs,
+          concorrenza: options?.concorrenza,
+        });
       } catch (e) {
         console.error(`[servizi-rete] avvio dopo la scansione (tenant: ${tenantCode}, network: ${networkId}):`, e);
       }
@@ -911,6 +925,37 @@ function buildSnmpContextForClassifier(d: HostScanData | undefined): string | nu
   if (d.snmpIfDescrSummary) parts.push(`interfaces ${d.snmpIfDescrSummary}`);
   if (d.snmpHostResourcesSummary) parts.push(d.snmpHostResourcesSummary);
   return parts.length ? parts.join("\n") : null;
+}
+
+/** Sostituisce `--host-timeout` nmap con il valore per-giro (ms). */
+function nmapArgsConTimeoutMs(args: string, timeoutMs: number): string {
+  const flag = `--host-timeout ${timeoutMs}ms`;
+  return /--host-timeout\s+\S+/.test(args) ? args.replace(/--host-timeout\s+\S+/g, flag) : `${args} ${flag}`;
+}
+
+function nmapArgsConOpzioniGiro(args: string, opts: DiscoverNetworkOptions | undefined): string {
+  if (!opts) return args;
+  let a = args;
+  if (opts.scanMode === "syn") a = a.replace(/(^|\s)-sT(\s|$)/, "$1-sS$2");
+  if (opts.retries != null) {
+    a = /--max-retries\s+\S+/.test(a)
+      ? a.replace(/--max-retries\s+\S+/g, `--max-retries ${opts.retries}`)
+      : `${a} --max-retries ${opts.retries}`;
+  }
+  if (opts.ratePps != null) {
+    a = a.replace(/--min-rate\s+\S+/g, "").replace(/--max-rate\s+\S+/g, "");
+    a = `${a.trim()} --max-rate ${opts.ratePps}`;
+  }
+  if (opts.tcpPorts === null) a = a.replace(/-p\s+\S+/g, "-p-");
+  else if (opts.tcpPorts) {
+    const noStampa = new Set<number>(PORTE_STAMPA_RAW);
+    const elenco = opts.tcpPorts.split(",").filter((p) => !noStampa.has(Number(p))).join(",");
+    a = a.replace(/-p\s+\S+/g, `-p ${elenco || "80,443"}`);
+  }
+  const escludi = `--exclude-ports ${PORTE_STAMPA_RAW.join(",")}`;
+  a = /--exclude-ports\s+\S+/.test(a) ? a.replace(/--exclude-ports\s+\S+/g, escludi) : `${a} ${escludi}`;
+  if (opts.timeoutMs != null) a = nmapArgsConTimeoutMs(a, opts.timeoutMs);
+  return a.replace(/\s+/g, " ").trim();
 }
 
 async function runDiscovery(
@@ -1671,8 +1716,10 @@ async function runDiscovery(
   // NETWORK_DISCOVERY: ICMP → Nmap TCP quick (sequenziale) → poi DNS/DB; ARP router a fine run
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "network_discovery") {
+    const pingConc = discoverOpts?.concorrenza ?? 50;
+    const timeoutMsGiro = discoverOpts?.timeoutMs;
     progress.phase = "Ping sweep (ICMP)";
-    const results = await pingSweep(ips, 50, (scanned, found) => {
+    const results = await pingSweep(ips, pingConc, (scanned, found) => {
       progress.scanned = scanned;
       progress.found = found;
     });
@@ -1684,13 +1731,15 @@ async function runDiscovery(
     // colonna "non rispondenti" e l'utente li vede sparire dalla rete.
     const onlineSet = new Set(onlineIps);
     const dbHosts = getHostsByNetwork(networkId);
+    const ammessi = new Set(ips);
     const tcpCandidates = dbHosts
-      .filter((h) => h.status === "online" && !onlineSet.has(h.ip))
+      .filter((h) => h.status === "online" && !onlineSet.has(h.ip) && ammessi.has(h.ip))
       .map((h) => h.ip);
     if (tcpCandidates.length > 0) {
       progress.phase = `Second-pass TCP — 0/${tcpCandidates.length}`;
       log(`ICMP miss: ${tcpCandidates.length} host noti come online non hanno risposto, tento TCP su ${FALLBACK_TCP_PORTS.join("/")}`);
-      const TCP_BATCH = 32;
+      const TCP_BATCH = discoverOpts?.concorrenza ?? 32;
+      const tcpTimeoutMs = timeoutMsGiro ?? 2000;
       let recovered = 0;
       let scanned = 0;
       for (let i = 0; i < tcpCandidates.length; i += TCP_BATCH) {
@@ -1699,7 +1748,7 @@ async function runDiscovery(
         const probed = await Promise.all(
           batch.map(async (ip) => {
             for (const port of FALLBACK_TCP_PORTS) {
-              if (await tcpConnect(ip, port, 2000)) return ip;
+              if (await tcpConnect(ip, port, tcpTimeoutMs)) return ip;
             }
             return null;
           })
@@ -1721,13 +1770,15 @@ async function runDiscovery(
     }
 
     const nmapAvailable = await isNmapAvailable();
-    const quickPortsSpecNd = getQuickScanTcpPorts();
+    const quickPortsSpecNd = discoverOpts?.tcpPorts || getQuickScanTcpPorts();
     const naabuPrepNd = await prepareNaabuPortDiscovery(onlineIps, quickPortsSpecNd);
     if (naabuPrepNd.enabled) seedNaabuOpenPorts(naabuPrepNd.byIp);
 
-    const quickArgs = buildNetworkDiscoveryQuickTcpArgs();
-    const quickExecMs = getNetworkDiscoveryQuickExecMs();
-    const quickBatch = getNetworkDiscoveryQuickConcurrency();
+    const quickArgsBase = buildNetworkDiscoveryQuickTcpArgs();
+    const quickArgs = nmapArgsConOpzioniGiro(quickArgsBase, discoverOpts);
+    const quickExecMs = timeoutMsGiro != null ? timeoutMsGiro + 2000 : getNetworkDiscoveryQuickExecMs();
+    const quickBatch = discoverOpts?.concorrenza ?? getNetworkDiscoveryQuickConcurrency();
+    const skipUdpNd = !discoverOpts?.udpDalLancio;
 
     if (nmapAvailable && onlineIps.length > 0) {
       progress.phase = `Nmap quick TCP — 0/${onlineIps.length}`;
@@ -1747,7 +1798,7 @@ async function runDiscovery(
               ip,
               tcpArgsForHost(ip, quickArgs, naabuPrepNd.enabled, naabuPrepNd.byIp, naabuPrepNd.basePorts),
               quickExecMs,
-              { skipUdp: true }
+              { skipUdp: skipUdpNd, udpPorts: skipUdpNd ? null : discoverOpts?.udpPorts }
             )
           )
         );

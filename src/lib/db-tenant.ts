@@ -13078,3 +13078,6 @@ export function getConteggiTriage(): Record<triage.StatoTriage, number> {
 export function setTriageRilievo(chiave: string, stato: triage.StatoTriage, nota: string, utente: string | null): void {
   triage.setTriage(db(), chiave, stato, nota, utente);
 }
+export function setTriageRilieviBlocco(chiavi: string[], stato: triage.StatoTriage, utente: string | null): void {
+  triage.setTriageStatoBlocco(db(), chiavi, stato, utente);
+}

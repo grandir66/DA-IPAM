@@ -165,7 +165,14 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
  * Porte TCP "sempre utili" da unire alle hit naabu per Nmap -sV mirato
  * (allineate a DEFAULT_NAABU_PORTS / design §7.1).
  */
-export const ALWAYS_USEFUL_TCP_PORTS = [22, 80, 443, 445, 161, 3389, 554, 623, 9100] as const;
+// 9100 TOLTA (incidente 10/11, stampante 192.168.99.84): nmap -sV manda probe sulla jetdirect
+// e la stampante stampa "fogli con caratteri strani". Le porte di stampa raw non si sondano mai.
+export const ALWAYS_USEFUL_TCP_PORTS = [22, 80, 443, 445, 161, 3389, 554, 623] as const;
+
+/** Porte di stampa raw: dati grezzi qui fanno stampare (jetdirect/AppSocket 9100-9102, LPD 515).
+ *  Mai sondate con nmap -sV né da sonde: si escludono da ogni comando. Incidente 10/11. */
+export const PORTE_STAMPA_RAW = [515, 9100, 9101, 9102] as const;
+const ESCLUDI_STAMPA = PORTE_STAMPA_RAW.join(",");
 
 /** Unione ordinata di elenchi porte (dedupe, solo > 0). */
 export function unionTcpPorts(...lists: Array<readonly number[] | number[] | null | undefined>): number[] {
@@ -187,10 +194,10 @@ export function buildTargetedServiceTcpArgs(
   ports: number[],
   opts?: { hostTimeoutSeconds?: number }
 ): string {
-  const list = unionTcpPorts(ports);
+  const list = unionTcpPorts(ports).filter((p) => !(PORTE_STAMPA_RAW as readonly number[]).includes(p));
   if (list.length === 0) return buildNetworkDiscoveryQuickTcpArgs();
   const ht = opts?.hostTimeoutSeconds ?? getNetworkDiscoveryQuickHostTimeoutSeconds();
-  return `-Pn -sT -p ${list.join(",")} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+  return `-Pn -sT -p ${list.join(",")} --exclude-ports ${ESCLUDI_STAMPA} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /** Parse comma-separated TCP port specs → sorted unique numbers. */
@@ -229,13 +236,15 @@ export function tcpPortListToSpec(ports: number[]): string {
  *   infrastrutturali (es. MikroTik 8291/8728 già nel default).
  */
 export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?: string | null): string {
-  const tcpList = tcpPortListToSpec(getFullScanTcpPortList(explicitTcpPorts, customPorts));
+  const tcpList = tcpPortListToSpec(
+    getFullScanTcpPortList(explicitTcpPorts, customPorts).filter((p) => !(PORTE_STAMPA_RAW as readonly number[]).includes(p)),
+  );
   const ht = getNmapHostTimeoutSeconds();
   /* -Pn: host già verificato online da ping/nmap-sn → salta host discovery di Nmap (evita falsi "down").
    * v0.2.643 audit perf SC5: --max-retries 3→1, --min-rate 35→200. Su host già
    * confermati live i retry pesanti raramente cambiano l'esito; min-rate basso
    * era pensato per reti congestionate ma rallenta enormemente lo scan profondo. */
-  return `-Pn -sT -p ${tcpList} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+  return `-Pn -sT -p ${tcpList} --exclude-ports ${ESCLUDI_STAMPA} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /**

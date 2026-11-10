@@ -91,3 +91,25 @@ export function sorgentiConBersagli(db: Database.Database, tetto = TETTO_CELLA):
   }
   return conGw;
 }
+
+export interface ReteBersaglioConteggi {
+  id: number;
+  name: string;
+  cidr: string;
+  vlan_id: number | null;
+  servizi: number;
+  host: number;
+}
+
+/** Per la UI di Segmentazione: «N servizi · M host noti» per rete. */
+export function conteggiRetiBersaglio(db: Database.Database): ReteBersaglioConteggi[] {
+  return db
+    .prepare(
+      `SELECT n.id, n.name, n.cidr, n.vlan_id,
+              (SELECT COUNT(*) FROM hosts h WHERE h.network_id = n.id) AS host,
+              (SELECT COUNT(*) FROM servizi_rete s JOIN hosts h ON h.id = s.host_id WHERE h.network_id = n.id) AS servizi
+       FROM networks n
+       ORDER BY n.vlan_id IS NULL, n.vlan_id, n.id`,
+    )
+    .all() as ReteBersaglioConteggi[];
+}

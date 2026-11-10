@@ -4,7 +4,7 @@
  * I motori restano quelli già fatti: Discovery, sonde, matrice, trunk.
  * Qui si decide solo quante porte, a che ritmo, e se c'è l'UDP.
  */
-import { getNmapHostTimeoutSeconds, getNmapVersionIntensity } from "@/lib/scanner/ports";
+import { getNmapHostTimeoutSeconds, getNmapVersionIntensity, PORTE_STAMPA_RAW } from "@/lib/scanner/ports";
 import {
   porteTcpPiuFrequenti,
   porteUdpPiuFrequenti,
@@ -17,12 +17,19 @@ export {
   eTipoGiro,
   fasiValide,
   FASI_GIRO,
+  PRESET_PORTE_GIRO,
   PROFILI_GIRO,
   PROFILI_GIRO_UI,
+  PROTOCOLLI_SEG,
+  SCAN_MODE_GIRO,
+  SRC_PORT_GIRO,
   TIPI_GIRO,
   TIPI_GIRO_UI,
   type FaseGiro,
+  type PresetPorteGiro,
   type ProfiloGiro,
+  type ProtocolloSeg,
+  type ScanModeGiro,
   type TipoGiro,
 } from "./profili-giro-ui";
 
@@ -57,21 +64,37 @@ function argomentiTcp(opts: {
   tutte: boolean;
   maxRate: number | null;
   versione: boolean;
+  retries?: number;
+  syn?: boolean;
 }): string {
   const ht = getNmapHostTimeoutSeconds();
-  const parti = ["-Pn", "-sT", opts.tutte ? "-p-" : `-p ${opts.porte ?? "80,443"}`];
+  const scan = opts.syn ? "-sS" : "-sT";
+  const noStampa = new Set<number>(PORTE_STAMPA_RAW);
+  const porte = opts.porte
+    ? opts.porte.split(",").filter((p) => !noStampa.has(Number(p))).join(",")
+    : "80,443";
+  const parti = ["-Pn", scan, opts.tutte ? "-p-" : `-p ${porte || "80,443"}`, `--exclude-ports ${PORTE_STAMPA_RAW.join(",")}`];
   if (opts.versione) parti.push("-sV", `--version-intensity ${getNmapVersionIntensity()}`);
-  parti.push("-T4", "--max-retries 1");
+  parti.push("-T4", `--max-retries ${opts.retries ?? 1}`);
   if (opts.maxRate != null) parti.push(`--max-rate ${opts.maxRate}`);
   else parti.push("--min-rate 200");
   parti.push(`--host-timeout ${ht}s`);
   return parti.join(" ");
 }
 
+export interface SovrascrittureProfilo {
+  tcpPorts?: string | null;
+  udpPorts?: string;
+  tutteLePorteTcp?: boolean;
+  maxRate?: number | null;
+  retries?: number;
+  syn?: boolean;
+}
+
 /** Parametri nmap (e UDP) di un profilo. `testoNmap` si passa nelle prove. */
 export function parametriProfilo(
   profilo: ProfiloGiro,
-  opts: { testoNmap?: string | null; fasi?: FaseGiro[] } = {},
+  opts: { testoNmap?: string | null; fasi?: FaseGiro[]; sovrascrivi?: SovrascrittureProfilo } = {},
 ): ParametriProfilo {
   const testo = opts.testoNmap !== undefined ? opts.testoNmap : testoNmapServices();
   const fasi = profilo === "su_misura" ? fasiValide(opts.fasi) : (["host", "porte", "udp", "sonde"] as FaseGiro[]);
@@ -80,18 +103,30 @@ export function parametriProfilo(
   const completo = profilo === "completo";
   const nTcp = completo ? 65535 : profilo === "rapido" ? 100 : 1000;
   const nUdp = completo ? 100 : 20;
-  const tcpPorts = completo ? null : elencoTcp(nTcp, testo);
-  const udpPorts = vuoleUdp ? elencoUdp(nUdp, testo) : "";
+  let tcpPorts = completo ? null : elencoTcp(nTcp, testo);
+  let udpPorts = vuoleUdp ? elencoUdp(nUdp, testo) : "";
+  let tutteLePorteTcp = completo;
+  let maxRate: number | null = lento ? 300 : null;
+  const s = opts.sovrascrivi;
+  if (s?.tcpPorts !== undefined) {
+    tcpPorts = s.tcpPorts;
+    tutteLePorteTcp = s.tutteLePorteTcp === true || s.tcpPorts === null;
+  }
+  if (s?.udpPorts !== undefined) udpPorts = s.udpPorts;
+  if (s?.maxRate !== undefined) maxRate = s.maxRate;
+  const retries = s?.retries;
   return {
     tcpPorts,
     udpPorts,
-    tutteLePorteTcp: completo,
-    maxRate: lento ? 300 : null,
+    tutteLePorteTcp,
+    maxRate,
     nmapArgs: argomentiTcp({
       porte: tcpPorts,
-      tutte: completo,
-      maxRate: lento ? 300 : null,
-      versione: !completo,
+      tutte: tutteLePorteTcp,
+      maxRate,
+      versione: !tutteLePorteTcp,
+      retries,
+      syn: s?.syn === true,
     }),
   };
 }

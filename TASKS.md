@@ -17,6 +17,16 @@ Riccardo: valutare cosa aggiungere al modulo. Verifica del codice di `origin/dev
 - [ ] Valutare percorsi di controllo verso i privilegi di dominio attraverso gruppi, ACL e GPO. Mostrare la catena di evidenze e distinguere il dato non verificato.
 - [ ] Confrontare due raccolte con copertura compatibile e mostrare rilievi nuovi, risolti e non verificabili.
 
+## 2026-11-10 — Raggiungibilità ICMP e appliance da rigenerare
+
+Riccardo (10/11): tecniche di raggiungibilità a me (UI/orchestrazione), evasione a Cursor. `icmp_echo` fatto end-to-end: UI (`/scans`, dev 0.9.1081) → `protocollo` fino alla sonda; edge in DA-Vul-can (PR #145, release 0.8.290 in produzione, sonda 40 `79993-ipam-2` aggiornata e verificata). Tecnico sul Mac aggiornato a 0.9.1081.
+
+- [x] Catena `protocollo` (direct|icmp_echo) UI→lancia-giro→giro→sensore-trunk→sonda; edge `prova_icmp`.
+- [ ] **Rigenerare l'appliance DA-IPAM completa alla nuova release** (Deploy-Appliance) — Riccardo 10/11.
+- [ ] **Doppia NIC nella VM DA-IPAM da generare** (Riccardo 10/11): la raggiungibilità/segmentazione gira **solo su Linux con NIC trunk dedicata** (`raggiungibilita.esegui` rifiuta `modo == "condivisa"` e macOS). Quindi l'appliance che deve fare segmentazione da sé vuole: 1 NIC gestione + 1 NIC trunk dedicata.
+- [ ] Collaudo ICMP end-to-end: va fatto su una **sonda Linux** (es. 79993), non sul tecnico macOS (il socket locale rifiuta la raggiungibilità su macOS). Verificare che `chiediRaggiungibilita` ripieghi sull'edge quando il socket locale non la fa.
+- [ ] Cursor: non toccare più `lancia-giro.ts`, `giro.ts`, `sensore-trunk.ts` (linea dividente concordata).
+
 ## 2026-11-10 — Seconda verifica Findings e giri
 
 Riccardo: approfondire la verifica e correggere i difetti confermati. Base origin/dev 0.9.1069.

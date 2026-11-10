@@ -10,6 +10,17 @@ export type ProfiloGiro = (typeof PROFILI_GIRO)[number];
 export const FASI_GIRO = ["host", "porte", "udp", "sonde"] as const;
 export type FaseGiro = (typeof FASI_GIRO)[number];
 
+export const SCAN_MODE_GIRO = ["auto", "syn", "connect"] as const;
+export type ScanModeGiro = (typeof SCAN_MODE_GIRO)[number];
+
+export const PRESET_PORTE_GIRO = ["top100", "top1000", "all"] as const;
+export type PresetPorteGiro = (typeof PRESET_PORTE_GIRO)[number];
+
+export const SRC_PORT_GIRO = [53, 88, 123, 20, 67, 500] as const;
+
+export const PROTOCOLLI_SEG = ["direct", "icmp_echo", "ipv6", "fragmented_syn"] as const;
+export type ProtocolloSeg = (typeof PROTOCOLLI_SEG)[number];
+
 export const TIPI_GIRO_UI: Record<TipoGiro, { nome: string; riga: string }> = {
   discovery: { nome: "Discovery", riga: "Host, porte, servizi, identità" },
   segmentazione: { nome: "Segmentazione", riga: "Dalla VLAN prova i servizi delle altre reti" },

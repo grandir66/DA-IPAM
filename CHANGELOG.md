@@ -11,6 +11,58 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Appartenenze e account**. Dieci regole nuove dal confronto con ad-doctor: privilegio nascosto nel gruppo primario, disabilitati e computer nei gruppi privilegiati, Schema ed Enterprise Admins popolati, account col solo DES, password in attributi leggibili (solo la presenza, mai il valore), gMSA leggibili da gruppi ampi. Membri non identificati e computer pre-creati restano rilievi da verificare, fuori dal punteggio.
 - **AD CS**. I template sono correlati alle CA della foresta. ESC1 e ESC2 senza verifica dei diritti di enrollment restano candidati diagnostici, fuori dal punteggio.
 
+## [Non rilasciato] — 2026-11-10 · Segmentazione: tecnica di raggiungibilità (diretta / ICMP)
+
+Riccardo (10/11): «la prendo io» — le tecniche di raggiungibilità passano a me (la UI/orchestrazione), l'evasione resta a Cursor.
+
+### Aggiunto
+- **Matrice di segmentazione, scelta della tecnica**: «Connessione TCP diretta» (prova il servizio noto ip:porta, default) o **«Ping ICMP»** (misura solo se l'host risponde). Il parametro `protocollo` scende dalla UI fino alla sonda (`lancia-giro` → `giro` → `sensore-trunk` → `/raggiungibilita`).
+- Le altre tecniche (IPv6, SYN frammentato, porta sorgente, next-hop, L2) restano **disabilitate** in UI: il giro è IPv4 e la sonda non le fa ancora.
+
+### Nota
+- L'esecuzione di `icmp_echo` vive nell'**agente della sonda** (Scanner-Edge, repo DA-Vul-can): cambio su ramo `claude/sonda-icmp-raggiungibilita`, **non ancora sulle sonde**. Finché l'edge non è aggiornato, `icmp_echo` torna un errore chiaro dalla sonda vecchia.
+
+## [Non rilasciato] — 2026-11-10 · Scansioni: UI delle opzioni per modalità
+
+Riccardo (10/11): «fai tutta la pagina». Ora `/scans` manda i knob che il motore (Cursor, v0.9.1079) accetta, con il layout preso dalle schermate di Nety.
+
+### Aggiunto
+- **Discovery «Su misura» → pannello «Targets e parametri»**: `targets`/`exclusions` (IPv4/CIDR, font mono), `auto_targets` (acceso di serie; spento vuole almeno un target), porte TCP (Top 100/1000/Tutte/su misura) e UDP, modo di scansione (auto/SYN/connect), rate, timeout, concorrenza, tentativi. I numeri partono come `number`; i campi vuoti si omettono (restano i default del profilo). «Tutte le porte» chiede conferma.
+- **Segmentazione → pannelli «Da» (rete sorgente) e «Reti da raggiungere»** (checkbox coi conteggi `servizi · host noti` da `GET /api/scans/reti-bersaglio`; vuoto = tutte le altre). Le tecniche da auditor (ICMP, IPv6, SYN frammentato, porta sorgente, gateway, L2 con avviso) sono mostrate **disabilitate** con «Non ancora disponibile sulla sonda» e non vengono inviate.
+- **Sonda L2 → campo «Durata (secondi)»** (1–600; vuoto = lettura immediata).
+
+## [Non rilasciato] — 2026-11-10 · Scansioni: opzioni per modalità
+
+Riccardo (10/11): ogni tipo di giro ha i suoi knob; la UI li manderà quando l'API li accetta.
+
+### Aggiunto
+- **Discovery**: `targets`, `exclusions`, `auto_targets`, `tcp_ports`, `udp_ports`, `scan_mode`, `rate_pps`, `retries` (oltre a timeout/concorrenza). `syn` senza root non parte. `all` vuole conferma. Assenti = default del profilo.
+- **Segmentazione**: `source_network_id`, `reti_bersaglio`. Tecniche da auditor (ICMP, IPv6, SYN frammentato, porta sorgente, next-hop, L2) → errore chiaro finché la sonda non le sa. `GET /api/scans/reti-bersaglio` dà i conteggi servizi/host per rete.
+- **Sonda L2**: `durata_s` (1–600): ascolto in sottofondo poi sync; assente = sync immediato.
+
+## [Non rilasciato] — 2026-11-10 · Fix: la scansione avanzata non fa più stampare le stampanti
+
+Riccardo (10/11): la scansione avanzata faceva stampare la stampante 192.168.99.84 (fogli con caratteri strani).
+
+### Corretto
+- **Nmap `-sV` non sonda più le porte di stampa raw** (9100/9101/9102 jetdirect, 515 LPD): i probe di versione su jetdirect venivano stampati. La 9100 è tolta da `ALWAYS_USEFUL_TCP_PORTS`, le porte di stampa (`PORTE_STAMPA_RAW`) sono filtrate dal `-p` e aggiunte a `--exclude-ports` in tutti i comandi nmap (scan mirato post-naabu e scan completo) e nel profilo. Le sonde già le saltavano; il buco era in nmap. Prova di regressione in `scanner/__tests__/porte-stampa-no-sv.test.ts`.
+
+## [Non rilasciato] — 2026-11-10 · Scansioni: timeout e concorrenza per-giro
+
+Riccardo (10/11): il profilo «Su misura» deve poter scegliere timeout e worker; oggi restano i default del motore.
+
+### Aggiunto
+- **POST `/api/scans/lancia`**: campi opzionali `timeout_ms` (500–60000) e `concorrenza` (1–256). Fuori range → errore, il giro non parte. Assenti → default (giri automatici e schedulatore invariati).
+- Il lanciatore li passa alle sonde (`avviaGiro`) e alla discovery (`network_discovery`: ping, batch nmap, `--host-timeout`); dopo nmap le sonde ricevono gli stessi valori.
+
+## [Non rilasciato] — 2026-11-10 · Scansioni interne: avanzamento in pagina e levetta invasiva (modello Nety)
+
+Riccardo (10/11): la pagina scansioni deve mostrare l'avanzamento, come Nety.
+
+### Aggiunto
+- **Avanzamento dal vivo** in «Scansioni interne»: avviando un giro si apre il pannello `ScanProgress` (fase corrente, % reale `esaminati/totale`, host trovati, log, stop) e in pagina compare il riquadro **«Giri in corso»** con fase, percentuale e «Apri».
+- La levetta **«Prove invasive»** è in un box evidenziato con il segno «▲ invasiva».
+
 ## [Non rilasciato] — 2026-11-10 · Discovery, VNC e NFS
 
 - **Discovery**. Le sonde successive a una scansione riuscita si accodano quando il tenant è occupato, con rete e opzioni originali.

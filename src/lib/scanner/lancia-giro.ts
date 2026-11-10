@@ -2,10 +2,11 @@
  * Lancia un giro dal tipo + profilo. I motori restano quelli già fatti.
  */
 import { addScanHistory, getCurrentTenantCode, getNetworkById, setTenantSetting, withTenant } from "@/lib/db-tenant";
-import { avviaGiro } from "@/lib/servizi-rete/giro";
-import { avviaGiroSeg } from "@/lib/segmentazione/giro";
+import { avviaGiro, statoGiro } from "@/lib/servizi-rete/giro";
+import { avviaGiroSeg, statoGiroSeg } from "@/lib/segmentazione/giro";
 import { sincronizzaTrunk } from "@/lib/trunk/sensore-trunk";
 import { discoverNetwork } from "@/lib/scanner/discovery";
+import { seguiSottosistema, type SeguiSottosistema } from "@/lib/scanner/segui-sottosistema";
 import { isScanInCorso } from "@/lib/scanner/network-scan-lock";
 import { haPrivilegi } from "@/lib/scanner/profili/motore";
 import {
@@ -128,6 +129,8 @@ export interface DipendenzeLancio {
   privilegi: () => boolean;
   attendi: (ms: number) => Promise<void>;
   inTenant: (codice: string, lavoro: () => Promise<void>) => Promise<void>;
+  /** Aggancia un giro di un sottosistema (sonde, segmentazione) al registro dei progressi. */
+  segui: SeguiSottosistema;
 }
 
 const DIP: DipendenzeLancio = {
@@ -142,6 +145,7 @@ const DIP: DipendenzeLancio = {
   privilegi: haPrivilegi,
   attendi: (ms) => new Promise((r) => setTimeout(r, ms)),
   inTenant: (codice, lavoro) => withTenant(codice, lavoro),
+  segui: seguiSottosistema,
 };
 
 export function leggiLancio(corpo: LancioGiro): LancioLetto {
@@ -288,7 +292,18 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
       raw_output: null,
       duration_ms: null,
     });
-    avvii.push({ network_id: letto.sourceNetworkId ?? null, job_id: null, messaggio: "Matrice di segmentazione avviata" });
+    const jobId = d.segui({
+      tenantCode: tenant,
+      scanType: "segmentazione",
+      networkId: letto.sourceNetworkId ?? null,
+      etichetta: letto.sourceNetworkId != null ? d.rete(letto.sourceNetworkId)?.name ?? undefined : "Tutte le VLAN",
+      faseDefault: "Matrice di segmentazione",
+      leggiStato: () => {
+        const s = statoGiroSeg(tenant);
+        return { inCorso: s.inCorso, totale: s.totale, fatte: s.fatte, iniziato: s.iniziato, finito: s.finito, errore: s.errore };
+      },
+    });
+    avvii.push({ network_id: letto.sourceNetworkId ?? null, job_id: jobId, messaggio: "Matrice di segmentazione avviata" });
     return { avvii, saltati, tipo, profilo };
   }
 
@@ -319,7 +334,20 @@ export async function lanciaGiro(corpo: LancioGiro, dip: Partial<DipendenzeLanci
       });
     }
     const messaggio = tipo === "controlli" ? "Sonde e identità avviate" : "Solo sonde (senza nmap)";
-    for (const id of scope) avvii.push({ network_id: id, job_id: null, messaggio });
+    const faseDefault = tipo === "controlli" ? "Sonde e identità" : "Solo sonde";
+    const jobId = d.segui({
+      tenantCode: tenant,
+      scanType: "controlli",
+      networkId,
+      etichetta: networkId != null ? d.rete(networkId)?.name ?? undefined : `${scope.length} reti`,
+      faseDefault,
+      fase: (s) => (s.fase === "porte" ? "Prova porte comuni" : s.fase === "sonde" ? "Sonde e identità" : faseDefault),
+      leggiStato: () => {
+        const s = statoGiro(tenant);
+        return { inCorso: s.inCorso, totale: s.totale, fatte: s.fatte, iniziato: s.iniziato, finito: s.finito, errore: s.errore, fase: s.fase };
+      },
+    });
+    for (const id of scope) avvii.push({ network_id: id, job_id: jobId, messaggio });
     return { avvii, saltati, tipo, profilo };
   }
 

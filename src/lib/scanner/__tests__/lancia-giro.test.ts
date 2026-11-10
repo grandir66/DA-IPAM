@@ -60,6 +60,7 @@ test("Solo controlli passa prove_fabbrica al giro; senza levetta no", async () =
         visti.push(o);
         return true;
       },
+      segui: () => "job-test",
       history: () => undefined,
     },
   );
@@ -72,6 +73,7 @@ test("Solo controlli passa prove_fabbrica al giro; senza levetta no", async () =
         visti.push(o);
         return true;
       },
+      segui: () => "job-test",
       history: () => undefined,
     },
   );
@@ -147,6 +149,7 @@ test("Discovery e controlli inoltrano timeout e concorrenza; senza campi niente 
         vistiS.push({ timeoutMs: o?.timeoutMs, concorrenza: o?.concorrenza });
         return true;
       },
+      segui: () => "job-test",
       history: () => undefined,
     },
   );
@@ -159,6 +162,7 @@ test("Discovery e controlli inoltrano timeout e concorrenza; senza campi niente 
         vistiS.push({ timeoutMs: o?.timeoutMs, concorrenza: o?.concorrenza });
         return true;
       },
+      segui: () => "job-test",
       history: () => undefined,
     },
   );
@@ -258,7 +262,7 @@ test("Sonda L2 con durata_s non aspetta in linea; segmentazione inoltra la sorge
   assert.match(r.avvii[0]!.messaggio, /30 secondi/);
   assert.deepEqual(attese, [30_000]);
 
-  let visto: { sourceNetworkId?: number; retiBersaglio?: number[] } | undefined;
+  let visto: { sourceNetworkId?: number; retiBersaglio?: number[]; protocollo?: string } | undefined;
   await lanciaGiro(
     { tipo: "segmentazione", profilo: "standard", source_network_id: 4, reti_bersaglio: [5, 6] },
     {
@@ -268,10 +272,13 @@ test("Sonda L2 con durata_s non aspetta in linea; segmentazione inoltra la sorge
         visto = o;
         return true;
       },
+      segui: () => "job-test",
       history: () => undefined,
     },
   );
-  assert.deepEqual(visto, { sourceNetworkId: 4, retiBersaglio: [5, 6] });
+  // protocollo "direct" è il default di leggiProtocolloSeg e lanciaGiro lo inoltra sempre
+  // (asserzione storica non aggiornata quando è stato aggiunto il protocollo — già rossa su dev).
+  assert.deepEqual(visto, { sourceNetworkId: 4, retiBersaglio: [5, 6], protocollo: "direct" });
 });
 
 test("le sonde conservano le reti scelte e scartano gli ID estranei", async () => {
@@ -286,6 +293,7 @@ test("le sonde conservano le reti scelte e scartano gli ID estranei", async () =
           ambito = scope;
           return true;
         },
+        segui: () => "job-test",
         history: () => undefined,
       },
     );
@@ -293,4 +301,40 @@ test("le sonde conservano le reti scelte e scartano gli ID estranei", async () =
     assert.deepEqual(r.avvii.map((x) => x.network_id), [3, 4]);
     assert.equal(r.saltati[0]?.network_id, 90);
   }
+});
+
+test("Controlli e segmentazione agganciano il giro e restituiscono il job_id (pannello)", async () => {
+  const seguiti: Array<{ scanType: string; etichetta?: string }> = [];
+  const segui = (o: { scanType: string; etichetta?: string }) => {
+    seguiti.push({ scanType: o.scanType, etichetta: o.etichetta });
+    return `job-${o.scanType}`;
+  };
+
+  const ctrl = await lanciaGiro(
+    { tipo: "controlli", profilo: "standard", network_ids: [3] },
+    {
+      tenant: () => "T",
+      rete: (id) => ({ id, name: "lan" }) as never,
+      servizi: () => true,
+      segui: segui as never,
+      history: () => undefined,
+    },
+  );
+  assert.equal(ctrl.avvii[0]?.job_id, "job-controlli");
+  assert.equal(seguiti[0]?.scanType, "controlli");
+  assert.equal(seguiti[0]?.etichetta, "lan");
+
+  const seg = await lanciaGiro(
+    { tipo: "segmentazione", profilo: "standard", source_network_id: 4 },
+    {
+      tenant: () => "T",
+      rete: (id) => ({ id, name: "vlan40" }) as never,
+      segmentazione: () => true,
+      segui: segui as never,
+      history: () => undefined,
+    },
+  );
+  assert.equal(seg.avvii[0]?.job_id, "job-segmentazione");
+  assert.equal(seguiti[1]?.scanType, "segmentazione");
+  assert.equal(seguiti[1]?.etichetta, "vlan40");
 });

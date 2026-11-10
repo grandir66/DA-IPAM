@@ -121,7 +121,9 @@ export function ScanProgress({ progress, onClose, onFerma }: ScanProgressProps) 
 
         {/* Tessere: solo i dati veri */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <TesseraNumero titolo="Host trovati" valore={progress.found} />
+          {(progress.found > 0 || progress.scan_type.includes("discovery")) && (
+            <TesseraNumero titolo="Host trovati" valore={progress.found} />
+          )}
           {progress.total > 0 && <TesseraNumero titolo="Esaminati" valore={progress.scanned} />}
           {progress.total > 0 && <TesseraNumero titolo="Totale" valore={progress.total} />}
         </div>

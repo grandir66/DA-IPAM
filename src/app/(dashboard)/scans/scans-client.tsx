@@ -492,7 +492,7 @@ export function ScansClient() {
               </VoceSelezionabile>
               <VoceSelezionabile scelta={tecnica === "icmp_echo"} onScegli={() => setTecnica("icmp_echo")}>
                 <p className="font-semibold">Ping ICMP</p>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">Misura solo se l'host risponde (la porta è ignorata).</p>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">Misura solo se l&apos;host risponde (la porta è ignorata).</p>
               </VoceSelezionabile>
             </div>
           </Pannello>

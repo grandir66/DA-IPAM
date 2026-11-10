@@ -2264,7 +2264,10 @@ Da fare dopo: estendere lo stesso schema ad altri tipi già classificati ma con 
 - [ ] **Verifica resa non fatta**: niente stampante nel DB locale per renderla; la scheda si vede sulla 72729 dopo deploy su main + scansione SNMP di una stampante (Riccardo ci sta lavorando). JSX comunque type-checked.
 - [ ] HP sul solo vendor NON attiva il collector (ambiguo coi PC): una stampante HP si legge quando è classificata `stampante` (OID/porte lo fanno). Gli OID Printer-MIB sono standard; il seriale usa `43.5.1.1.17.1` (corretto vs il `.16.1` del segnalato seed SNMP, che è il nome).
 
-## 2026-11-10 — Promozione su main ferma: cancello rosso
+## 2026-11-10 — Promozione su main: fatta alle 00:xx dell'11/11 dopo il cancello verde
+
+- [x] `git push origin origin/dev:main`, avanzamento pulito `e099d45e..70237504` (0.9.1135), su richiesta di Riccardo («promuovi in main»).
+- [ ] Dopo la promozione: controllare che 70151 e le appliance da immagine (72729, 71343, 79993) abbiano preso la 0.9.1135 e che il servizio sia attivo. Non verificato la notte del 10/11: su quelle macchine la chiave di Claude è rifiutata.
 
 - [ ] Riccardo (10/11 sera): «promuovi in main». Cancello su `origin/dev` `a249ce99`: lint e tipi verdi, **8 prove rosse su 8013**, promozione NON fatta.
   - 5 rosse dalla release 0.9.1113 (`12a517d4`, «Classi vecchie svuotate», altra sessione): `classification/__tests__/scrittura-canonica.test.ts` (upsertHost con `dns_server` dà classe `null` invece di `server`) e 4 di `__tests__/topologia-t2-freno.test.ts` (10 apparati con `classification: null` invece di server/switch/router/nas). Da decidere: prove vecchie da aggiornare, o la svuotatura cancella anche classi appena scritte.

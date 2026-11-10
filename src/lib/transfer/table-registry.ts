@@ -49,6 +49,9 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "identita_proposte", scope: "tenant", tier: "config" },
   // Archivio della pulizia degli host (piano 2026-10-20): istantanee degli host tolti, viaggiano con gli host.
   { table: "hosts_archivio", scope: "tenant", tier: "asset" },
+  // Triage dei rilievi (09/11): stato e nota decisi a mano per chiave di rilievo (`CVE-…`, `nvt:…`). È lavoro
+  // dell'operatore, non si ricostruisce da una scansione: viaggia col tenant.
+  { table: "triage_rilievi", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
   { table: "inventory_assets", scope: "tenant", tier: "asset" },
   { table: "asset_assignees", scope: "tenant", tier: "asset" },

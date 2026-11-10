@@ -355,6 +355,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
   "./src/lib/integrations/segreti-migrazione": "fuori: gira una volta all'avvio (copia dei segreti di LibreNMS e Graylog), non è un giro",
+  "./src/lib/scanner/rilancia-giri": "fuori: gira una volta all'avvio (fa ripartire i giri lanciati a mano interrotti dal riavvio), non è un giro",
   "./src/lib/vault/avvio": "fuori: sblocco del vault all'avvio e cache di DA-Link, solo con DA_VAULT_LOCALE/DA_VAULT_DALINK (spenti di serie, in Opzioni › Da file)",
 };
 

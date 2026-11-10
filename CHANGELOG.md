@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-10 · Cancello: tre prove rosse sistemate prima della promozione su main
+
+### Corretto
+- **I triage dei rilievi viaggiano col tenant** nell'esportazione: `triage_rilievi` non era nel registro dei trasferimenti, e stato e note decisi a mano sarebbero rimasti indietro.
+- `scanner/rilancia-giri` dichiarato fuori da Schedulazioni col perché (gira una volta all'avvio).
+- La prova del profilo «sconosciuti» guarda le porte da provare, non la riga intera: la 9100 ora compare in `--exclude-ports` proprio per non toccarla.
+
 ## [Non rilasciato] — 2026-11-10 · Una VM con un ruolo prende il ruolo
 
 Riccardo (10/11): «99.13 è un proxmox pbs» — sul 79993 restava «vm».

@@ -47,7 +47,7 @@ function Schede({ admin }: { admin: boolean }) {
       onScegli={scegli}
       voci={[
         { valore: "eventi", titolo: "Eventi dei DC", descrizione: "Login, accessi falliti, blocchi, modifiche e attacchi, letti via WinRM" },
-        { valore: "health", titolo: "Health AD", descrizione: "Punteggio, findings, privilegi, ACL e ADCS, letti via LDAP" },
+        { valore: "health", titolo: "Health AD", descrizione: "Rischio, rilievi, privilegi, permessi e copertura, letti via LDAP" },
       ]}
     />
   );
@@ -77,7 +77,7 @@ function SchedaHealth({ schede }: { schede: ReactNode }) {
     <div className="space-y-4">
       <IntestazionePagina
         titolo="Sicurezza del dominio"
-        sottotitolo="Health di Active Directory: punteggio, findings da sistemare, matrice dei privilegi, ACL, topologia, ADCS e probe dei DC, letti via LDAP."
+        sottotitolo="Health di Active Directory: rischio, rilievi da sistemare, privilegi, permessi e copertura della lettura, via LDAP."
         azioni={
           domini && domini.length > 1 ? (
             <Select value={sceltoId != null ? String(sceltoId) : ""} onValueChange={(v) => setSceltoId(Number(v))}>

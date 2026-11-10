@@ -42,7 +42,6 @@ import {
   formatRightsIt,
   OBJECT_KIND_LABEL_IT,
   shortDnName,
-  shortSid,
   summarizeAclRisk,
   type AclRiskBucketId,
 } from "@/lib/ad/health/acl/risk-summary";
@@ -353,7 +352,7 @@ interface RigaAce {
 function righeGrezze(aces: InterestingAce[]): RigaAce[] {
   return aces.map((a, i) => ({
     chiave: `g-${i}`,
-    chi: a.trusteeSam ?? shortSid(a.trusteeSid),
+    chi: a.trusteeSam ?? a.trusteeSid,
     chiSid: a.trusteeSid,
     cosa: shortDnName(a.objectDn),
     cosaDn: a.objectDn,
@@ -453,7 +452,8 @@ export function HealthActiveDirectory({ integrazione }: { integrazione: Integraz
         : (sintesiAcl.buckets.find((b) => b.id === rischioScelto)?.entries ?? []).flatMap((e) =>
             e.targets.map((t, i) => ({
               chiave: `${e.trusteeSid}-${t.objectDn}-${i}`,
-              chi: e.trusteeLabel,
+              // Senza nome risolto l'etichetta è un SID accorciato («…-0»): meglio il SID intero.
+              chi: e.trusteeLabel.startsWith("…") ? e.trusteeSid : e.trusteeLabel,
               chiSid: e.trusteeSid,
               cosa: t.objectLabel,
               cosaDn: t.objectDn,

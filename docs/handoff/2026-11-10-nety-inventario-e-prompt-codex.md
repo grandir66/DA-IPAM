@@ -44,32 +44,39 @@ repo. Cancello (`lint && tsc && build`), versioning (`version:release -- --stage
 test→codice→commit e fixture come fa Nety (`internal/checks/*_test.go`).
 
 ### 1 — Catalogo controlli (firme), il motore che riempie Findings senza Edge
-Oggi i rilievi veri arrivano dalla VA dell'Edge (Greenbone/Nuclei/default-login) su host scelti;
-dalle sonde abbiamo solo tre rilievi TLS. Nety ha ~45 controlli per servizio che girano subito,
-legati alla porta, con la prova. Portane il **catalogo** come controlli leggeri della sonda,
-che scrivono un rilievo con porta/protocollo/prova/rimedio (lega al servizio in `servizi_rete`;
-usa le viste di Vulnerabilità che già esistono). Tre famiglie:
+Nety ha ~45 controlli per servizio che girano subito, legati alla porta, con la prova. Diventano
+controlli leggeri della sonda che scrivono un rilievo (porta/protocollo/prova/rimedio) legato al
+servizio in `servizi_rete`, mostrato nelle viste di Vulnerabilità con gravità a tacche.
 
-- **Esposizione / anonimo / no-auth (senza credenziali):** `redis-no-auth`, `mongodb-no-auth`,
-  `elasticsearch-no-auth`, `couchdb-no-auth`, `memcached-open`, `zookeeper-no-auth`,
-  `ftp-anonymous`, `tftp-anonymous-read`, `ldap-anonymous-bind`, `smb-anonymous-share-access`,
-  `nfs` export aperto, `vnc-no-auth`, `x11-open`, `ipmi-exposed`, `winrm-exposed`,
-  `weblogic-console-exposed`, `rservices-exposed`, `smtp-open-relay`, `http-vcs-exposed`.
-- **Configurazione / protocollo debole:** `smb-signing-not-required`, `smb1`/`ms17-010`,
-  `ldap-signing-not-required`, `tls-weak-ciphers`/`-protocols`/`-key`, `ssh-weak-algorithms`,
-  `telnet-cleartext`, `snmp-default-community` (ro), `ntp`/`snmp` amplificazione, stampanti/spooler.
-- **Credenziali di default / autenticati (INTRUSIVI):** `http-default-credentials`,
-  `mssql`/`mysql`/`postgres-default-credentials`, `snmp-write` (community rw), `vnc-weak-auth`,
-  NLA su RDP. **Vincolo tassativo:** questa famiglia è spenta di serie, si accende solo con la
-  levetta «prove intrusive» già prevista nel lanciatore (come il «Try vendor default credentials»
-  di Nety e il default-login dell'Edge), si concorda col cliente, **prova pochi default noti** (no
-  brute force, no lockout), **non salva mai le credenziali** (solo l'esito «accetta default X»),
-  e finisce nell'audit. Prima di portare un controllo, verifica che non duplichi Greenbone/Nuclei:
-  dove c'è già, lascialo all'Edge.
+**Prima ondata GIÀ FATTA (10/11, prove unitarie + tsc/lint/build verdi — non rifare):** SMB senza
+firma obbligatoria, RDP senza NLA, SSH vecchio (SSH-1 o OpenSSH < 8), LDAP bind anonimo, Redis e
+MongoDB senza password, NFS che risponde, SNMP community `public`, VNC senza auth, pannelli web
+esposti (Jenkins, iLO, iDRAC, phpMyAdmin, Grafana…); con la levetta intrusiva: FTP anonymous e
+`admin`/`admin` sui pannelli in 401. (TLS scaduto/vecchio/autofirmato c'era già.) Verifica dal
+vivo ancora da fare: dopo l'aggiornamento dell'hub, un giro **«Solo controlli»** su una rete già
+sondata fa comparire i nuovi findings.
 
-Accettazione: ogni controllo ha la sua fixture e il suo test (verde sul caso vero, rosso se si
-toglie la riga vulnerabile); il rilievo compare in Findings legato al servizio, con gravità a
-tacche; gli intrusivi non partono senza la levetta; nessuna credenziale nei log o nel DB.
+**Resto del catalogo DA FARE (solo nomi, stessa impostazione):**
+- SMB: SMBv1, null session, guest, share anonima. RDP: sicurezza Standard (senza TLS).
+- SSH: algoritmi deboli, login con password. LDAP: signing non obbligatorio.
+- NFS: export leggibile da tutti (oggi vediamo solo se NFS risponde). SNMP: community di scrittura.
+- TLS: cifrari deboli, chiave debole.
+- Web: file `.git`/`.env`, Jenkins script console, Spring Actuator, pannello stampante, AD CS
+  enrollment, Elasticsearch, Docker API, Kubelet, etcd, CouchDB.
+- DB di fabbrica (INTRUSIVI): MySQL root vuoto, MSSQL `sa`, PostgreSQL.
+- Altri: EternalBlue (MS17-010), spooler RPC, WinRM esposto, Cisco Smart Install, trasferimento
+  zona DNS, Telnet, TFTP, NTP monlist, Memcached, ZooKeeper, rsync, r-services, IPMI
+  (cipher zero / esposto / RAKP), SMTP relay e VRFY, WSUS in HTTP, X11, VNC con auth debole.
+
+**Vincolo tassativo sugli autenticati/intrusivi** (default di fabbrica DB, `admin`/`admin`, SNMP
+write): spenti di serie, si accendono solo con la levetta «prove intrusive» del lanciatore, si
+concordano col cliente, **pochi default noti** (no brute force, no lockout), **non salvano mai le
+credenziali** (solo l'esito «accetta default X»), finiscono nell'audit. Prima di portare un
+controllo, verifica che non duplichi Greenbone/Nuclei: dove c'è già, lascialo all'Edge.
+
+Accettazione: ogni controllo ha fixture e test (verde sul caso vero, rosso se si toglie la riga
+vulnerabile); il rilievo compare in Findings legato al servizio; gli intrusivi non partono senza
+la levetta; nessuna credenziale nei log o nel DB.
 
 ### 2 — Diff tra due giri («cosa è cambiato» sulla subnet)
 `scan_history` oggi è un evento per giro, non un confronto. Dai due giri di una subnet: host

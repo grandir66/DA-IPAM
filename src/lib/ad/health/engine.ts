@@ -260,6 +260,20 @@ export async function runAdHealthcheck(
       nonVerificabili: [...extras.computerLapsStateBySam.values()].filter((s) => s === "non_verificabile").length,
     };
 
+    // Copertura della raccolta: null = non letto. Senza, una regola muta non si distingue da un dato mancante.
+    stats.ldapCollectErrors = extras.collectErrors;
+    stats.infra = {
+      dnsZones: extras.infra.dnsZones?.length ?? null,
+      dnsZonesAllowUpdateRead: extras.infra.dnsZones?.filter((z) => z.allowUpdate != null).length ?? null,
+      dnsZonesAclRead: extras.infra.dnsZones?.filter((z) => z.broadWriters != null).length ?? null,
+      dnsWildcards: extras.infra.dnsWildcardDns?.length ?? null,
+      dsHeuristics: extras.infra.dsHeuristics,
+      sysvolReplication: extras.infra.sysvolReplication,
+      rodcs: extras.infra.rodcPolicies?.length ?? null,
+      dmsas: extras.infra.dmsas?.length ?? null,
+      entraSyncedPrivileged: extras.infra.entraSyncedPrivilegedDns?.length ?? null,
+    };
+
     const users = toUserRows(dbUsers, extras);
     const groups = toGroupRows(dbGroups, extras);
     const now = new Date();

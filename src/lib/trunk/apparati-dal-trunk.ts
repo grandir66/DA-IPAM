@@ -59,6 +59,15 @@ export function portaApparatiDalTrunk(): EsitoApparati {
      WHERE id = ? AND (${colonna} IS NULL OR TRIM(${colonna}) = '')`,
   );
   const riempiModello = riempi("model");
+  // Riccardo, 10/11/2026: «Sì, fallo». Un modello già scritto non si sovrascrive, tranne quando è
+  // solo il nome del produttore («MikroTik», «RouterOS (92QG-KMY6)», «Ubiquiti») e l'apparato dice
+  // il suo modello vero con MNDP o con la scoperta Ubiquiti («CRS504-4XQ»).
+  const sostituisciGenerico = d.prepare(
+    `UPDATE hosts SET model = ?, updated_at = datetime('now')
+      WHERE id = ? AND model IS NOT NULL AND TRIM(model) <> '' AND model <> ?
+        AND (LOWER(TRIM(model)) IN ('mikrotik', 'mikrotik routeros', 'routeros', 'routerboard', 'ubiquiti', 'ubiquiti networks', 'unifi', 'ubnt')
+             OR LOWER(TRIM(model)) LIKE 'routeros (%')`,
+  );
   const riempiFirmware = riempi("firmware");
 
   const esito: EsitoApparati = { hostToccati: 0, campiRiempiti: 0 };
@@ -73,7 +82,10 @@ export function portaApparatiDalTrunk(): EsitoApparati {
     conCategoria.add(r.host_id);
     if (r.protocollo === "mndp" || r.protocollo === "ubnt") conModello.add(r.host_id);
   }
-  for (const r of righe) {
+  // Per ogni host vale la riga che dice il modello (MNDP, Ubiquiti), poi la più recente.
+  const dalModello = (r: RigaAnnuncio) => (r.protocollo === "mndp" || r.protocollo === "ubnt" ? 0 : 1);
+  const inOrdine = righe.map((r, i) => ({ r, i })).sort((a, b) => dalModello(a.r) - dalModello(b.r) || a.i - b.i).map((x) => x.r);
+  for (const r of inOrdine) {
     if (visti.has(r.host_id)) continue;   // uno switch si annuncia su ogni porta: basta una riga
     visti.add(r.host_id);
     esito.hostToccati++;
@@ -81,6 +93,7 @@ export function portaApparatiDalTrunk(): EsitoApparati {
     const fatti = fattiDaAnnuncio(r);
     const riempite: string[] = [];
     if (fatti.modello && riempiModello.run(fatti.modello, r.host_id).changes > 0) riempite.push("model");
+    else if (fatti.modello && dalModello(r) === 0 && sostituisciGenerico.run(fatti.modello, r.host_id, fatti.modello).changes > 0) riempite.push("model");
     if (fatti.firmware && riempiFirmware.run(fatti.firmware, r.host_id).changes > 0) riempite.push("firmware");
     esito.campiRiempiti += riempite.length;
 

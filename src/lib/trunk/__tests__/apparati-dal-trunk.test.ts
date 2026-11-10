@@ -115,3 +115,29 @@ test("un Linux con lldpd non è uno switch e la sua descrizione non è un modell
     assert.notEqual(h.attr_category, "network.router");
   });
 });
+
+// 10/11/2026, hub: un CRS504-4XQ si annuncia in CDP («MikroTik», capacità router) e in MNDP col
+// modello vero. Il modello già scritto era «MikroTik» e la categoria «router».
+test("MNDP: il modello annunciato sostituisce quello generico e decide il mestiere", () => {
+  withTenant(T, () => {
+    const net = rete("10.77.0.0/24");
+    const generico = host(net, "10.77.0.5", { model: "MikroTik" });
+    const routeros = host(net, "10.77.0.6", { model: "RouterOS (92QG-KMY6)" });
+    const preciso = host(net, "10.77.0.7", { model: "CRS326-24G-2S+" });
+    const annuncio = (ip: string, protocollo: string, piattaforma: string, capacita: string | null): TrunkVicino => ({
+      protocollo, sistema: `mk-${ip}`, porta: protocollo === "cdp" ? "bridge/ether1" : "ether1", vid: 0, indirizzo: ip,
+      vlan_nativa: null, ultima_vista: ORA, piattaforma, versione: "7.25.1", capacita, mac: null,
+    });
+    salvaVicini([
+      annuncio("10.77.0.5", "cdp", "MikroTik", "router"),
+      annuncio("10.77.0.5", "mndp", "CRS504-4XQ", null),
+      annuncio("10.77.0.6", "mndp", "CCR2004-1G-12S+2XS", null),
+      annuncio("10.77.0.7", "mndp", "CRS504-4XQ", null),
+    ]);
+    portaApparatiDalTrunk();
+    assert.equal(riga(generico).model, "CRS504-4XQ", "«MikroTik» è solo il produttore: vince il modello annunciato");
+    assert.equal(riga(generico).attr_category, "network.switch", "un CRS è uno switch, anche se in CDP si dichiara router");
+    assert.equal(riga(routeros).model, "CCR2004-1G-12S+2XS");
+    assert.equal(riga(preciso).model, "CRS326-24G-2S+", "un modello vero già scritto non si tocca");
+  });
+});

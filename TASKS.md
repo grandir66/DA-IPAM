@@ -49,6 +49,14 @@ Riccardo: «la sonda delle scansioni interne non fa praticamente nulla, ha resti
 - [x] Riccardo (10/11), è un «forse»: sui device senza autorizzazione (impianti, esclusi) «possiamo testare le porte ma non fare tentativi di alcun tipo per non bloccare nulla». Oggi su quelli resta solo il ping. Non fatto: tocca il freno nato dall'incidente dei PLC al 72729, lo decide lui (quali porte, a che ritmo). **Deciso da Riccardo il 10/11: «Lascia solo il ping». Non riaprire senza che lo chieda lui.**
 - [ ] Riccardo (10/11) ha chiesto se le porte Oracle/MySQL/Postgres vengono verificate. Risposta data: nmap le trova e ne legge la versione; il login di fabbrica si prova solo con «Prove invasive» su MySQL, Postgres e MSSQL (mai Oracle), al massimo 6 tentativi per host. Trappola da valutare: la sonda apre e chiude la 3306 senza completare l'handshake a ogni giro, e MySQL conta quelle connessioni (`max_connect_errors`, 100 di serie) fino a bloccare l'IP dell'appliance.
 
+## 2026-11-10 — URGENTE: i due DC non rispondono più all'hub (dalle 20:15 circa, ora italiana)
+
+- [ ] **Stato**: dalla VM 533 (`192.168.4.8`) i domain controller `192.168.4.1` e `192.168.4.2` non rispondono a niente (ping, 53, 445, 5985), mentre gateway, Internet e gli altri host della LAN sì, e dal MacBook i DC rispondono. I DC sono i DNS dell'hub: senza di loro l'hub non risolve i nomi, quindi `scripts/update.sh` non scarica da GitHub (tappa 2 degli annunci ferma su `dev`, hub alla 0.9.1108), e si fermano lettura degli eventi dei DC, sincronia AD e accessi WinRM con Kerberos. DA-IPAM resta attivo.
+- [ ] **Quando**: ultimo evento letto dal DC01 alle 19:14:33 UTC; alle 19:17:13 UTC la risoluzione dei nomi già falliva. Alle 19:14:25 UTC DA-IPAM è stato riavviato da un rilascio (0.9.1108), alle 19:10 UTC era stata aggiornata la sonda alla 0.8.291.
+- [ ] **Cosa si vede sui DC**: nel registro di sicurezza, dall'indirizzo dell'hub, 196 accessi non riusciti (4625, account «Guest» e vuoto, categoria `self_probe`) dalle 09:32 UTC: sono le prove SMB anonime del giro «Servizi di rete», che riparte **a ogni avvio di DA-IPAM** oltre che ogni 6 ore. Oggi DA-IPAM è stato riavviato molte volte (una decina di rilasci solo di questa sessione).
+- [ ] **Ipotesi, non accertata**: una protezione sui DC (risposta attiva di Wazuh, regola del firewall di Windows, EDR) ha bloccato l'indirizzo dell'hub dopo troppi accessi falliti. Dall'hub non si può verificare: va guardato sui DC o in Wazuh. Non è stato tentato nessun rimedio.
+- [ ] **Da fare dopo**: il giro «Servizi di rete» non deve ripartire a ogni riavvio (o non deve fare la prova SMB anonima sui DC); e l'hub non dovrebbe dipendere dai soli DC per risolvere i nomi.
+
 ## 2026-11-10 — Revisione d'uso dell'hub: correzioni piccole e proposte (Riccardo: «Sì, le piccole»)
 
 Giro di 20 pagine dell'hub (0.9.1082) a 1920, in sola lettura. Fatto su `dev`, prove mirate + `tsc`; **non visto a schermo dopo la modifica**.

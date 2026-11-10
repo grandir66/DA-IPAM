@@ -10,6 +10,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
 import {
   BadgeGravita,
+  BarraDivisa,
   DatoDettaglio,
   IntestazionePagina,
   LegendaGravita,
@@ -19,8 +20,11 @@ import {
   TempoRelativo,
   Vuoto,
 } from "@/components/shared/console";
+import { BadgeTriage, EditorTriage, TRIAGE_UI } from "@/components/shared/triage-riga";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { fetchJson } from "@/lib/fetch-json";
 import { FONTI_RILIEVO_UI, MOTORI_RILIEVO, MOTORI_RILIEVO_UI, type ElencoRilievi, type MotoreRilievo, type RilievoUnito } from "@/lib/rilievi/tipi";
+import type { StatoTriage } from "@/lib/triage/db";
 import { SEVERITIES, type Severity } from "@/lib/severity-style";
 import { VulnerabilitiesListClient } from "./vulnerabilities-list-client";
 
@@ -81,6 +85,7 @@ export function FindingsClient() {
 }
 
 function ElencoFindings() {
+  const admin = useEAdmin();
   const [motore, setMotore] = useState<MotoreRilievo>("tutti");
   const [gravita, setGravita] = useState<Set<Severity>>(new Set());
   const [q, setQ] = useState("");
@@ -132,9 +137,31 @@ function ElencoFindings() {
     });
   }
 
+  // Aggiorna lista e conteggi senza ricaricare: sposta il rilievo dallo stato vecchio al nuovo.
+  const onCambioTriage = useCallback((id: string, t: { stato: StatoTriage; nota: string }) => {
+    setDati((prev) => {
+      if (!prev) return prev;
+      const riga = prev.data.find((x) => x.id === id);
+      const vecchio: StatoTriage = riga?.triage?.stato ?? "da_fare";
+      const conteggiTriage = { ...prev.conteggiTriage };
+      if (conteggiTriage[vecchio] > 0) conteggiTriage[vecchio] -= 1;
+      conteggiTriage[t.stato] += 1;
+      const data = prev.data.map((x) =>
+        x.id === id
+          ? { ...x, triage: { stato: t.stato, nota: t.nota, aggiornato_il: new Date().toISOString(), aggiornato_da: x.triage?.aggiornato_da ?? null } }
+          : x,
+      );
+      return { ...prev, data, conteggiTriage };
+    });
+  }, []);
+
   const rollup = dati?.rollup ?? { Critical: 0, High: 0, Medium: 0, Low: 0 };
   const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
   const totale = dati?.total ?? 0;
+  const conteggiTriage = dati?.conteggiTriage ?? { da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 };
+  const triTot = conteggiTriage.da_fare + conteggiTriage.in_corso + conteggiTriage.fatto + conteggiTriage.ignorato;
+  const triRivisti = conteggiTriage.fatto + conteggiTriage.ignorato;
+  const triPct = triTot > 0 ? Math.round((triRivisti / triTot) * 100) : 0;
 
   return (
     <div className="space-y-4">
@@ -154,6 +181,21 @@ function ElencoFindings() {
       )}
       {!!dati?.parziali.length && (
         <p role="status" className="text-sm">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
+      )}
+
+      {dati && triTot > 0 && (
+        <Pannello titolo="Revisione" sottotitolo={`${triRivisti} di ${triTot} rivisti (${triPct}%)`}>
+          <div className="p-3">
+            <BarraDivisa
+              parti={[
+                { nome: TRIAGE_UI.da_fare.parola, valore: conteggiTriage.da_fare, classe: "bg-[#C5CED4]" },
+                { nome: TRIAGE_UI.in_corso.parola, valore: conteggiTriage.in_corso, classe: "bg-[#FFD400]" },
+                { nome: TRIAGE_UI.fatto.parola, valore: conteggiTriage.fatto, classe: "bg-[#1F7A4D]" },
+                { nome: TRIAGE_UI.ignorato.parola, valore: conteggiTriage.ignorato, classe: "bg-muted-foreground/50" },
+              ]}
+            />
+          </div>
+        </Pannello>
       )}
       <Pannello
         titolo="Elenco"
@@ -248,13 +290,21 @@ function ElencoFindings() {
                     <TableHead>Rilievo</TableHead>
                     <TableHead>Fonte</TableHead>
                     <TableHead>Gravità</TableHead>
+                    <TableHead>Stato</TableHead>
                     <TableHead>Dove</TableHead>
                     <TableHead>Visto</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {dati.data.map((r) => (
-                    <Riga key={r.id} r={r} aperto={aperti.has(r.id)} onToggle={() => toggle(r.id)} />
+                    <Riga
+                      key={r.id}
+                      r={r}
+                      aperto={aperti.has(r.id)}
+                      onToggle={() => toggle(r.id)}
+                      admin={admin}
+                      onCambio={(t) => onCambioTriage(r.id, t)}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -272,7 +322,19 @@ function slugControllo(r: RilievoUnito): string | null {
   return null;
 }
 
-function Riga({ r, aperto, onToggle }: { r: RilievoUnito; aperto: boolean; onToggle: () => void }) {
+function Riga({
+  r,
+  aperto,
+  onToggle,
+  admin,
+  onCambio,
+}: {
+  r: RilievoUnito;
+  aperto: boolean;
+  onToggle: () => void;
+  admin: boolean;
+  onCambio: (t: { stato: StatoTriage; nota: string }) => void;
+}) {
   const slug = slugControllo(r);
   return (
     <Fragment>
@@ -290,6 +352,9 @@ function Riga({ r, aperto, onToggle }: { r: RilievoUnito; aperto: boolean; onTog
         <TableCell>
           <BadgeGravita gravita={r.gravita} />
         </TableCell>
+        <TableCell>
+          {r.triage ? <BadgeTriage stato={r.triage.stato} /> : <span className="text-[13px] text-muted-foreground">—</span>}
+        </TableCell>
         <TableCell className="font-mono text-[13px]">
           {r.ip ?? r.network_name ?? "—"}
           {r.host_count > 1 ? ` · ${r.host_count} host` : ""}
@@ -301,21 +366,32 @@ function Riga({ r, aperto, onToggle }: { r: RilievoUnito; aperto: boolean; onTog
       {aperto && (
         <TableRow>
           <TableCell />
-          <TableCell colSpan={5}>
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <DatoDettaglio nome="Prova" valore={r.prova} />
-              <DatoDettaglio nome="Rimedio" valore={r.rimedio} />
-              {r.host_id != null && (
-                <div>
-                  <dt className="text-[13px] text-muted-foreground">Host</dt>
-                  <dd>
-                    <Link href={`/hosts/${r.host_id}`} className="text-cian-testo underline-offset-2 hover:underline">
-                      Scheda host
-                    </Link>
-                  </dd>
-                </div>
-              )}
-            </dl>
+          <TableCell colSpan={6}>
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-card p-3">
+                <p className="mb-2 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Triage</p>
+                <EditorTriage
+                  chiave={r.chiaveTriage}
+                  admin={admin}
+                  iniziale={r.triage ? { stato: r.triage.stato, nota: r.triage.nota, aggiornato_il: r.triage.aggiornato_il, aggiornato_da: r.triage.aggiornato_da } : undefined}
+                  onCambio={onCambio}
+                />
+              </div>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <DatoDettaglio nome="Prova" valore={r.prova} />
+                <DatoDettaglio nome="Rimedio" valore={r.rimedio} />
+                {r.host_id != null && (
+                  <div>
+                    <dt className="text-[13px] text-muted-foreground">Host</dt>
+                    <dd>
+                      <Link href={`/hosts/${r.host_id}`} className="text-cian-testo underline-offset-2 hover:underline">
+                        Scheda host
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
           </TableCell>
         </TableRow>
       )}

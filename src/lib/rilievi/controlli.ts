@@ -91,8 +91,10 @@ function riga(
   prova: string,
   rimedio: string,
 ): RilievoUnito {
+  const chiave = `giro:${id}:${ctx.host_id}:${ctx.porta}${ctx.protocollo === "udp" ? ":udp" : ""}`;
   return {
-    id: `giro:${id}:${ctx.host_id}:${ctx.porta}${ctx.protocollo === "udp" ? ":udp" : ""}`,
+    id: chiave,
+    chiaveTriage: chiave,
     fonte: "giro",
     gravita,
     titolo,

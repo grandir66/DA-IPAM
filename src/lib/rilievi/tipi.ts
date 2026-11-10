@@ -3,6 +3,7 @@
  * Niente database: lo usano API, adapter e client.
  */
 import type { Severity } from "@/lib/severity-style";
+import type { StatoTriage } from "@/lib/triage/db";
 
 export const FONTI_RILIEVO = ["edge", "wazuh", "trunk", "giro"] as const;
 export type FonteRilievo = (typeof FONTI_RILIEVO)[number];
@@ -40,6 +41,14 @@ export interface RilievoUnito {
   /** Chiave CVE aggregata, per aprire gli host. */
   cve_key: string | null;
   host_count: number;
+  /**
+   * Chiave stabile del triage del rilievo (una per `triage_rilievi`): per le CVE è `cve_key`
+   * (`CVE-…`/`nvt:…`), così il triage è lo stesso della scheda Vulnerabilità; per trunk e giri è
+   * l'`id` del rilievo (`trunk:<id>`, `giro:<slug>:<host_id>:<porta>`).
+   */
+  chiaveTriage: string;
+  /** Stato/nota del triage, agganciati in `elencoRilievi`. Assente = «Da rivedere». */
+  triage?: { stato: StatoTriage; nota: string; aggiornato_il: string; aggiornato_da: string | null };
 }
 
 export interface RollupRilievi {
@@ -60,4 +69,6 @@ export interface ElencoRilievi {
   totaleGlobale: number;
   nonDisponibili: FonteRilievo[];
   parziali: FonteRilievo[];
+  /** Conteggi del triage per stato su tutti i rilievi dell'elenco (dopo i filtri, tutte le pagine). */
+  conteggiTriage: Record<StatoTriage, number>;
 }

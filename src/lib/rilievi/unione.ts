@@ -2,7 +2,7 @@
  * Elenco unico Findings: CVE + trunk + giri (TLS e controlli dalle sonde).
  * Niente tabella nuova: si legge quello che c'è già.
  */
-import { getAggregatedVulnerabilities, getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
+import { getAggregatedVulnerabilities, getCurrentTenantCode, getTenantDb, getTriageRilievi } from "@/lib/db-tenant";
 import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/lib/db-tenant-schema";
 import { SEVERITY_RANK, type Severity } from "@/lib/severity-style";
 import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
@@ -21,6 +21,8 @@ import {
   sshDaJson,
 } from "./controlli";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
+import { agganciaTriage } from "./triage-aggancio";
+import type { StatoTriage } from "@/lib/triage/db";
 
 function gravitaDaTrunk(g: GravitaRilievo): Severity {
   if (g === "alta") return "High";
@@ -60,6 +62,8 @@ function daCve(): { righe: RilievoConFonti[]; parziale: boolean } {
       visto: v.latest_scanned_at,
       cve_key: v.key,
       host_count: v.host_count,
+      // Stessa chiave di triage della scheda Vulnerabilità (per CVE = cve_key).
+      chiaveTriage: v.key,
     };
   });
   return { righe, parziale: data.length < total };
@@ -69,8 +73,10 @@ function daTrunk(): { righe: RilievoUnito[]; parziale: boolean } {
   const { righe, totale } = getRilieviPaginated({ limit: 500, offset: 0 });
   const risultati = righe.map((r) => {
     const meta = TIPI_RILIEVO[r.tipo];
+    const id = `trunk:${r.id}`;
     return {
-      id: `trunk:${r.id}`,
+      id,
+      chiaveTriage: id,
       fonte: "trunk" as const,
       gravita: gravitaDaTrunk(r.gravita),
       titolo: meta?.etichetta ?? r.descrizione,
@@ -162,6 +168,19 @@ function rollupDi(righe: RilievoUnito[]): RollupRilievi {
   return r;
 }
 
+/**
+ * Aggancia a ogni rilievo il suo triage (una query in blocco su `chiaveTriage`) e torna i conteggi
+ * per stato su tutte le righe date. Se la lettura fallisce (niente tenant, tabella assente) vale
+ * «Da rivedere» per tutti, così l'elenco si vede comunque.
+ */
+function conteggiTriageElenco(righe: RilievoUnito[]): Record<StatoTriage, number> {
+  try {
+    return agganciaTriage(righe, getTriageRilievi(righe.map((r) => r.chiaveTriage)));
+  } catch {
+    return agganciaTriage(righe, {});
+  }
+}
+
 /** Unisce le tre fonti, filtra, ordina per gravità e pagina. */
 export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const fonti = filtro.fonti?.length ? filtro.fonti : [...FONTI_RILIEVO];
@@ -215,10 +234,15 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
     return (b.visto ?? "").localeCompare(a.visto ?? "") || a.id.localeCompare(b.id);
   });
 
+  // Il triage si aggancia ai rilievi selezionati per il tab corrente (tutte le pagine): così «N di M
+  // rivisti» è vero e il badge c'è anche oltre la prima pagina. `agganciaTriage` scrive `.triage`
+  // sulle stesse istanze (le copie `{ ...x, fonte }`) che poi finiscono in `data`.
+  const conteggiTriage = conteggiTriageElenco(selezionati);
+
   const pageSize = Math.min(Math.max(filtro.pageSize ?? 50, 1), 200);
   const page = Math.max(filtro.page ?? 1, 1);
   const total = selezionati.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const data = selezionati.slice((page - 1) * pageSize, page * pageSize);
-  return { data, total, page, pageSize, totalPages, rollup, perFonte, totaleGlobale, nonDisponibili, parziali };
+  return { data, total, page, pageSize, totalPages, rollup, perFonte, totaleGlobale, nonDisponibili, parziali, conteggiTriage };
 }

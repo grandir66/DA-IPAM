@@ -76,6 +76,14 @@
 - [-] **2.4 Mappa porte e Topologia.** Niente da cambiare per ora: l'identità arriva sugli host
   (modello, firmware, categoria), che Mappa porte e Topologia leggono già. I collegamenti restano
   quelli letti dagli apparati.
+- [x] **Verifica sull'hub (10/11, 0.9.1112):** prove `mndp` attive nel riconoscimento: produttore
+  `mikrotik` su 14 host, categoria `network.router` su 8 e `network.switch` su 6. Il modello annunciato
+  vale prima della capacità generica del CDP (un CRS in CDP si dichiara router).
+- [ ] **Aperto:** su tre host (`192.168.15.145`, `.155`, `.156`, tutti `CRS504-4XQ`) il campo
+  `hosts.classification` non è cambiato (uno `unknown`, due `router`) pur avendo la prova `mndp`
+  «switch»: capire quale strada scrive quel campo. E il modello resta «MikroTik» / «RouterOS (…)»
+  perché un modello già scritto non si sovrascrive: proposto a Riccardo di far vincere il modello
+  annunciato su quelli che sono solo il nome del produttore.
 - [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
   indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
 

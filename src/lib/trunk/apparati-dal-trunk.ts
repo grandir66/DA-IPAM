@@ -34,9 +34,12 @@ function fattiDaAnnuncio(r: RigaAnnuncio): Pick<FattiProfilo, "modello" | "firmw
 }
 
 /** Solo le evidenze degli annunci: quelle dal nome del vicino (0.7) hanno la stessa fonte, e `expires_at` è ISO con T e Z. */
-function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number): boolean {
+function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number, dalModello: boolean): boolean {
+  // Se l'host si annuncia anche col modello (MNDP, Ubiquiti) serve QUELLA prova: quella del CDP
+  // c'è già da prima e direbbe «a posto» senza che il modello sia mai stato considerato.
+  const fonti = dalModello ? "'mndp', 'ubnt'" : "'cdp', 'lldp', 'mndp', 'ubnt'";
   return !!d.prepare(
-    `SELECT 1 FROM attribution_evidence WHERE host_id = ? AND source IN ('cdp', 'lldp', 'mndp', 'ubnt')
+    `SELECT 1 FROM attribution_evidence WHERE host_id = ? AND source IN (${fonti})
      AND dimension = 'category' AND confidence >= ?
      AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) LIMIT 1`,
   ).get(hostId, CONFIDENZA_ANNUNCIO);
@@ -64,7 +67,12 @@ export function portaApparatiDalTrunk(): EsitoApparati {
   // un MikroTik: «MikroTik») mentre un'altra sì (MNDP: «CRS504-4XQ»). Visto sull'hub il 10/11/2026:
   // guardando solo la prima riga l'host restava `unknown` con la prova già in tabella.
   const conCategoria = new Set<number>();
-  for (const r of righe) if (categoriaDaAnnuncio(r)) conCategoria.add(r.host_id);
+  const conModello = new Set<number>();
+  for (const r of righe) {
+    if (!categoriaDaAnnuncio(r)) continue;
+    conCategoria.add(r.host_id);
+    if (r.protocollo === "mndp" || r.protocollo === "ubnt") conModello.add(r.host_id);
+  }
   for (const r of righe) {
     if (visti.has(r.host_id)) continue;   // uno switch si annuncia su ogni porta: basta una riga
     visti.add(r.host_id);
@@ -84,7 +92,7 @@ export function portaApparatiDalTrunk(): EsitoApparati {
         console.error(`[trunk] host ${r.host_id}: segno «da rivedere» o apparato non aggiornati:`, e);
       }
     }
-    if (riempite.length > 0 || (conCategoria.has(r.host_id) && !haEvidenzaDiAnnuncio(d, r.host_id))) {
+    if (riempite.length > 0 || (conCategoria.has(r.host_id) && !haEvidenzaDiAnnuncio(d, r.host_id, conModello.has(r.host_id)))) {
       recomputeAttributionForDb(d, r.host_id, "scan");
     }
   }

@@ -485,7 +485,10 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   }
 
   // L'apparato dice di sé: più forte del nome del vicino (0.7) ma non autoritativo, vedi AUTHORITATIVE_SOURCES.
-  for (const a of signals.annunci ?? []) {
+  // Prima chi dice il modello (MNDP, Ubiquiti): un MikroTik in CDP dichiara «router» anche quando è
+  // uno switch CRS (hub, 10/11/2026: `CRS504-4XQ` annunciato in CDP come «MikroTik», capacità router).
+  const dalModello = (a: { protocollo: string }) => (a.protocollo === "mndp" || a.protocollo === "ubnt" ? 0 : 1);
+  for (const a of [...(signals.annunci ?? [])].sort((x, y) => dalModello(x) - dalModello(y))) {
     const cat = categoriaDaAnnuncio(a);
     if (!cat) continue;
     const source = a.protocollo === "cdp" || a.protocollo === "mndp" || a.protocollo === "ubnt" ? a.protocollo : "lldp";

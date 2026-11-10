@@ -23,8 +23,10 @@ const SEZIONI_EVENTI = [
   "Allarmi nel tempo", "\"Domain controller\"", "\"Eventi\"",
 ];
 const SEZIONI_HEALTH = [
-  "AD Health Domarc (LDAP) — non è PingCastle.", "/api/ad/healthcheck/export", "healthVulcan",
-  "Findings — cosa fare", "Matrice privilegi", "Topologia, ADCS e probe DC", "scoreTone",
+  // Dal 10/11/2026 la Health è rifatta in quattro sezioni (Rilievi, Privilegi, Permessi, Copertura):
+  // topologia, ADCS e probe dei DC stanno in «Cosa è stato letto».
+  "non è PingCastle", "/api/ad/healthcheck/export", "testoVulcan",
+  "titolo=\"Rilievi\"", "Matrice dei privilegi", "Chi può fare cosa", "Cosa è stato letto", "BarraRischio",
 ];
 
 test("la pagina unita porta tutte le sezioni di «Sicurezza del dominio» e della Health AD", () => {

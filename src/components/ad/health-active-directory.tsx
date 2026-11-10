@@ -1,24 +1,43 @@
 "use client";
 
 /**
- * Health di Active Directory (punteggio, findings, matrice dei privilegi, ACL, topologia, ADCS e
- * probe dei DC, esportazione, invio a Vulcan). Era la scheda «Health» della pagina Active Directory;
- * dall'08/11/2026 è la scheda «Health AD» di «Sicurezza del dominio» (Riccardo: le due voci del menu
- * in una, senza perdere niente). Contenuto spostato tale e quale; il dominio lo sceglie chi la ospita.
+ * Health di Active Directory: scheda «Health AD» di «Sicurezza del dominio».
+ *
+ * Rifatta il 10/11/2026 (Riccardo: «ricostruire la dashboard per ospitare tutto in modo
+ * leggibile») sui mattoni di docs/STILE-UI.md. Prima era una colonna sola lunga decine di
+ * schermate; ora: barra di stato, quattro numeri, e quattro sezioni in vista.
+ *  - Rilievi: l'elenco è il centro; a sinistra le aree, che lo filtrano. I rilievi «da
+ *    verificare» (fuori dal punteggio) si distinguono dai confermati col segno, non col colore.
+ *  - Privilegi: la matrice utenti × gruppi amministrativi.
+ *  - Permessi: le ACE pericolose, per tipo di rischio → chi, su cosa.
+ *  - Copertura: cosa è stato letto davvero. Una regola muta non dice se il dato era a posto
+ *    o non è stato letto: qui si vede.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Activity, AlertTriangle, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
+import {
+  BadgeGravita,
+  BarraStato,
+  Etichetta,
+  InCorso,
+  Legenda,
+  LegendaGravita,
+  Pannello,
+  SchedePagina,
+  TesseraNumero,
+  VoceSelezionabile,
+  Vuoto,
+} from "@/components/shared/console";
+import { cn } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
 import type { StatoInvioAd } from "@/lib/vulcan/quadro";
-import { SEVERITY_STYLE } from "@/lib/severity-style";
-import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
+import type { AclExtras, InterestingAce } from "@/lib/ad/health/acl/types";
 import {
   formatRightsIt,
   OBJECT_KIND_LABEL_IT,
@@ -26,62 +45,15 @@ import {
   shortSid,
   summarizeAclRisk,
   type AclRiskBucketId,
-  type AclRiskSeverity,
 } from "@/lib/ad/health/acl/risk-summary";
-import {
-  actionableFindings,
-  countBySeverity,
-  getRuleGuide,
-  groupFindingsForUi,
-} from "@/lib/ad/health/rule-catalog";
+import { actionableFindings, AXIS_LABEL_IT, getRuleGuide } from "@/lib/ad/health/rule-catalog";
 import type {
+  HealthAxis,
   HealthFinding,
   HealthScore,
-  HealthSeverity,
   PrivilegeMatrix,
   PrivilegeMembershipKind,
 } from "@/lib/ad/health/types";
-
-const ACL_KIND_ORDER: AclObjectKind[] = [
-  "domain",
-  "adminsdholder",
-  "ou",
-  "group",
-  "user",
-  "computer",
-];
-
-function aclRiskSeverityClass(sev: AclRiskSeverity): string {
-  if (sev === "critical") {
-    return "border-red-500/40 bg-red-500/5";
-  }
-  if (sev === "high") {
-    return "border-amber-500/40 bg-amber-500/5";
-  }
-  return "border-border bg-muted/30";
-}
-
-function aclRiskSeverityBadge(sev: AclRiskSeverity): string {
-  if (sev === "critical") return "Critico";
-  if (sev === "high") return "Alto";
-  return "Medio";
-}
-
-function sortAclAces(aces: InterestingAce[]): InterestingAce[] {
-  const kindRank = (k: AclObjectKind) => ACL_KIND_ORDER.indexOf(k);
-  const severity = (a: InterestingAce) => {
-    if (a.rights.some((r) => r.startsWith("DCSync") || r === "GenericAll")) return 0;
-    if (a.rights.some((r) => r === "WriteDacl" || r === "WriteOwner")) return 1;
-    return 2;
-  };
-  return [...aces].sort((a, b) => {
-    const k = kindRank(a.objectKind) - kindRank(b.objectKind);
-    if (k !== 0) return k;
-    const s = severity(a) - severity(b);
-    if (s !== 0) return s;
-    return shortDnName(a.objectDn).localeCompare(shortDnName(b.objectDn));
-  });
-}
 
 interface AdHealthRun {
   id: number;
@@ -94,907 +66,813 @@ interface AdHealthRun {
   engineVersion: string;
 }
 
+interface ProbeWinrm {
+  configured?: boolean;
+  status?: string;
+  lastHotfixAt?: string | null;
+  cpasswordPaths?: string[];
+  errorMessage?: string;
+  durationMs?: number;
+  hardening?: {
+    ldapServerIntegrity?: number | null;
+    ldapEnforceChannelBinding?: number | null;
+    smbRequireSecuritySignature?: number | null;
+    lmCompatibilityLevel?: number | null;
+    wdigestUseLogonCredential?: number | null;
+    spoolerRunning?: boolean | null;
+  } | null;
+}
+
+interface Fase5 {
+  gpoCount?: number;
+  siteCount?: number | null;
+  subnetCount?: number | null;
+  gmsaCount?: number | null;
+}
+
+interface Fase6 {
+  psoCount?: number | null;
+  shadowCredentialCount?: number;
+  adcsStatus?: string;
+  templateCount?: number;
+  esc1Count?: number;
+  esc2Count?: number;
+}
+
+/** Cosa ha letto la raccolta LDAP; `null` in un campo = non letto. */
+interface Copertura {
+  infra: {
+    dnsZones: number | null;
+    dnsZonesAllowUpdateRead: number | null;
+    dnsZonesAclRead: number | null;
+    dnsWildcards: number | null;
+    dsHeuristics: string | null;
+    sysvolReplication: string | null;
+    rodcs: number | null;
+    dmsas: number | null;
+    entraSyncedPrivileged: number | null;
+  } | null;
+  ldapCollectErrors: string[] | null;
+  laps: {
+    schemaPresent: boolean | null;
+    validi: number;
+    scaduti: number;
+    nonImpostati: number;
+    nonVerificabili: number;
+  } | null;
+}
+
+interface DatiHealth {
+  run: AdHealthRun | null;
+  vulcan: StatoInvioAd | { stato: "illeggibile" } | null;
+  score: HealthScore | null;
+  findings: HealthFinding[];
+  privilegeMatrix: PrivilegeMatrix | null;
+  acl: AclExtras | null;
+  winrm: ProbeWinrm | null;
+  phase5: Fase5 | null;
+  phase6: Fase6 | null;
+  copertura: Copertura | null;
+}
+
+const VUOTO: DatiHealth = {
+  run: null,
+  vulcan: null,
+  score: null,
+  findings: [],
+  privilegeMatrix: null,
+  acl: null,
+  winrm: null,
+  phase5: null,
+  phase6: null,
+  copertura: null,
+};
+
 /** Il dominio di cui mostrare la Health: id e se l'integrazione è accesa. */
 export interface IntegrazioneHealth {
   id: number;
   enabled: number;
 }
 
-export function HealthActiveDirectory({ integrazione }: { integrazione: IntegrazioneHealth | null }) {
-  const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
-  const [healthVulcan, setHealthVulcan] = useState<StatoInvioAd | { stato: "illeggibile" } | null>(null);
-  const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
-  const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
-  const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
-  const [aclExtras, setAclExtras] = useState<AclExtras | null>(null);
-  const [aclFocusBucket, setAclFocusBucket] = useState<AclRiskBucketId | "all">("all");
-  const [aclShowRaw, setAclShowRaw] = useState(false);
-  const [winrmProbe, setWinrmProbe] = useState<{
-    configured?: boolean;
-    status?: string;
-    lastHotfixAt?: string | null;
-    cpasswordPaths?: string[];
-    errorMessage?: string;
-    durationMs?: number;
-    hardening?: {
-      ldapServerIntegrity?: number | null;
-      ldapEnforceChannelBinding?: number | null;
-      smbRequireSecuritySignature?: number | null;
-      lmCompatibilityLevel?: number | null;
-      wdigestUseLogonCredential?: number | null;
-      spoolerRunning?: boolean | null;
-    } | null;
-  } | null>(null);
-  const [phase5Meta, setPhase5Meta] = useState<{
-    gpoCount?: number;
-    siteCount?: number | null;
-    subnetCount?: number | null;
-    gmsaCount?: number | null;
-  } | null>(null);
-  const [phase6Meta, setPhase6Meta] = useState<{
-    psoCount?: number | null;
-    shadowCredentialCount?: number;
-    adcsStatus?: string;
-    templateCount?: number;
-    esc1Count?: number;
-    esc2Count?: number;
-    esc1Names?: string[];
-    esc2Names?: string[];
-  } | null>(null);
-  const [matrixEnabledOnly, setMatrixEnabledOnly] = useState(true);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [healthRunning, setHealthRunning] = useState(false);
-  const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
+type Sezione = "rilievi" | "privilegi" | "permessi" | "copertura";
+type FiltroStato = "tutti" | "confermati" | "verificare";
+type TipoSegno = "ok" | "attenzione" | "ignoto" | "assente";
 
-  const fetchHealth = useCallback(async () => {
+const AREE: HealthAxis[] = ["privileged", "anomaly", "stale", "trust"];
+const ORDINE_GRAVITA: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+
+const SEGNO: Record<TipoSegno, { segno: string; classe: string }> = {
+  ok: { segno: "✓", classe: "border-[#1F7A4D] bg-[#1F7A4D] text-white" },
+  attenzione: { segno: "▲", classe: "border-[#C9A800] bg-[#FFD400] text-[#0D2537]" },
+  ignoto: { segno: "●", classe: "border-border bg-muted text-foreground" },
+  assente: { segno: "–", classe: "border-dashed border-muted-foreground/60 bg-transparent text-muted-foreground" },
+};
+
+/** Stato = segno + fondo pieno + parola, mai la sola tinta (Riccardo è daltonico). */
+function Segno({ tipo, children }: { tipo: TipoSegno; children: ReactNode }) {
+  const s = SEGNO[tipo];
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[13px] leading-none font-semibold whitespace-nowrap", s.classe)}>
+      <span aria-hidden>{s.segno}</span>
+      {children}
+    </span>
+  );
+}
+
+/** Un rilievo «da verificare» descrive un indizio o la raccolta: sta fuori dal punteggio (0 punti). */
+function daVerificare(f: HealthFinding): boolean {
+  return f.diagnostic === true || f.points === 0;
+}
+
+function quando(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return parseDbDate(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+function testoVulcan(v: DatiHealth["vulcan"]): string {
+  if (v === null) return "Vulcan: mai accodato";
+  switch (v.stato) {
+    case "spento": return "Vulcan: invio spento";
+    case "altro_cliente": return "Vulcan: non è il cliente dell'invio";
+    case "in_coda": return `Vulcan: in coda${v.motivo ? ` (${v.motivo})` : ""}`;
+    case "inviato": return `Vulcan: inviato ${quando(v.il)}`;
+    case "scartato": return `Vulcan: scartato (${v.motivo ?? "motivo non registrato"})`;
+    case "fallito": return `Vulcan: fallito (${v.motivo ?? "motivo non registrato"})`;
+    default: return "Vulcan: stato non leggibile";
+  }
+}
+
+/** Barra del rischio 0-100: la lunghezza dice quanto, il numero è scritto accanto. */
+function BarraRischio({ valore }: { valore: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+        <div className="h-full bg-foreground" style={{ width: `${Math.min(100, Math.max(0, valore))}%` }} />
+      </div>
+      <span className="w-9 text-right font-mono text-[13px] font-bold tabular-nums">{valore}</span>
+    </div>
+  );
+}
+
+const CELLA_MATRICE: Record<PrivilegeMembershipKind, { lettera: string; classe: string; testo: string }> = {
+  direct: { lettera: "D", classe: "bg-foreground text-background", testo: "D = membro diretto" },
+  nested: { lettera: "N", classe: "bg-primary/30 text-foreground", testo: "N = tramite un gruppo annidato" },
+  primary: { lettera: "P", classe: "bg-[#FFD400] text-[#0D2537]", testo: "P = gruppo primario" },
+};
+
+interface RigaCopertura {
+  gruppo: string;
+  voce: string;
+  tipo: TipoSegno;
+  esito: string;
+  valore: string;
+}
+
+function numero(n: number | null | undefined): string {
+  return n == null ? "—" : n.toLocaleString("it-IT");
+}
+
+function righeCopertura(d: DatiHealth): RigaCopertura[] {
+  const righe: RigaCopertura[] = [];
+  const letto = (gruppo: string, voce: string, valore: string | null, nota?: string) =>
+    righe.push(
+      valore == null
+        ? { gruppo, voce, tipo: "ignoto", esito: "non letto", valore: nota ?? "—" }
+        : { gruppo, voce, tipo: "ok", esito: "letto", valore },
+    );
+  const conta = (gruppo: string, voce: string, n: number | null | undefined) =>
+    letto(gruppo, voce, n == null ? null : numero(n));
+
+  const infra = d.copertura?.infra ?? null;
+  if (!infra) {
+    righe.push({
+      gruppo: "DNS, infrastruttura, Entra",
+      voce: "Zone DNS, dSHeuristics, SYSVOL, RODC, dMSA, Entra",
+      tipo: "assente",
+      esito: "non registrato",
+      valore: "Esecuzione precedente alla 0.9.1086: rilancia l'healthcheck",
+    });
+  } else {
+    const z = infra.dnsZones;
+    conta("DNS", "Zone DNS integrate in AD", z);
+    letto("DNS", "Modo degli aggiornamenti dinamici", z == null || infra.dnsZonesAllowUpdateRead == null ? null : `${infra.dnsZonesAllowUpdateRead} zone su ${z}`);
+    letto("DNS", "Delega (ACL) delle zone", z == null || infra.dnsZonesAclRead == null ? null : `${infra.dnsZonesAclRead} zone su ${z}`);
+    conta("DNS", "Record jolly (*)", infra.dnsWildcards);
+    letto("Infrastruttura", "dSHeuristics", infra.dsHeuristics == null ? null : infra.dsHeuristics === "" ? "vuoto (valori di serie)" : infra.dsHeuristics);
+    letto(
+      "Infrastruttura",
+      "Replica di SYSVOL",
+      infra.sysvolReplication == null
+        ? null
+        : infra.sysvolReplication === "dfsr"
+          ? "DFSR"
+          : infra.sysvolReplication === "frs"
+            ? "FRS (da migrare)"
+            : "migrazione a DFSR non conclusa",
+    );
+    conta("Infrastruttura", "Domain controller di sola lettura (RODC)", infra.rodcs);
+    conta("Infrastruttura", "Account di servizio delegati (dMSA)", infra.dmsas);
+    conta("Entra", "Account privilegiati con l'ancora di Entra Connect", infra.entraSyncedPrivileged);
+  }
+
+  if (d.phase5) {
+    conta("Criteri e siti", "GPO", d.phase5.gpoCount);
+    conta("Criteri e siti", "Siti", d.phase5.siteCount);
+    conta("Criteri e siti", "Subnet dei siti", d.phase5.subnetCount);
+    conta("Criteri e siti", "Account di servizio gestiti (gMSA)", d.phase5.gmsaCount);
+  }
+  if (d.phase6) {
+    letto("Certificati e password", "Template di AD CS", d.phase6.adcsStatus === "ok" ? numero(d.phase6.templateCount ?? 0) : null, d.phase6.adcsStatus ?? "—");
+    conta("Certificati e password", "Template da verificare per ESC1", d.phase6.esc1Count ?? 0);
+    conta("Certificati e password", "Template da verificare per ESC2", d.phase6.esc2Count ?? 0);
+    conta("Certificati e password", "Criteri password granulari (PSO)", d.phase6.psoCount);
+    conta("Certificati e password", "Oggetti con shadow credentials", d.phase6.shadowCredentialCount ?? 0);
+  }
+  const laps = d.copertura?.laps ?? null;
+  if (laps) {
+    letto("Certificati e password", "Schema LAPS", laps.schemaPresent == null ? null : laps.schemaPresent ? "presente" : "assente", "non verificabile con questa utenza");
+    righe.push({
+      gruppo: "Certificati e password",
+      voce: "Password LAPS dei computer",
+      tipo: laps.nonVerificabili > 0 ? "ignoto" : "ok",
+      esito: laps.nonVerificabili > 0 ? "in parte non letto" : "letto",
+      valore: `${laps.validi} valide · ${laps.scaduti} scadute · ${laps.nonImpostati} non impostate · ${laps.nonVerificabili} non verificabili`,
+    });
+  }
+
+  if (d.acl) {
+    const m = d.acl.meta;
+    righe.push({
+      gruppo: "Permessi (ACL)",
+      voce: "Descrittori di sicurezza",
+      tipo: m.status === "ok" ? "ok" : m.status === "partial" ? "attenzione" : "ignoto",
+      esito: m.status === "ok" ? "letto" : m.status === "partial" ? "parziale" : "non letto",
+      valore:
+        m.errorMessage ??
+        `${numero(m.objectsScanned)} oggetti · ${numero(m.interestingAceCount)} ACE da guardare${m.truncated ? " · elenco troncato" : ""}${m.timedOut ? " · tempo scaduto" : ""}`,
+    });
+  }
+
+  const w = d.winrm;
+  if (w) {
+    const g = "Domain controller (WinRM)";
+    if (!w.configured || w.status === "skipped") {
+      righe.push({ gruppo: g, voce: "Lettura del DC via WinRM", tipo: "assente", esito: "non configurato", valore: "Manca la credenziale WinRM del DC" });
+    } else if (w.status !== "ok") {
+      righe.push({ gruppo: g, voce: "Lettura del DC via WinRM", tipo: "ignoto", esito: "non letto", valore: w.errorMessage ?? "non disponibile" });
+    } else {
+      const h = w.hardening ?? {};
+      letto(g, "Ultimo aggiornamento installato", w.lastHotfixAt ? quando(w.lastHotfixAt) : null);
+      letto(g, "Firma LDAP", h.ldapServerIntegrity == null ? null : h.ldapServerIntegrity >= 2 ? "obbligatoria" : `non obbligatoria (${h.ldapServerIntegrity})`);
+      letto(g, "Channel binding LDAP", h.ldapEnforceChannelBinding == null ? null : h.ldapEnforceChannelBinding === 0 ? "disattivato" : `attivo (${h.ldapEnforceChannelBinding})`);
+      letto(g, "Firma SMB richiesta", h.smbRequireSecuritySignature == null ? null : h.smbRequireSecuritySignature === 0 ? "no" : "sì");
+      letto(g, "Compatibilità NTLM (LmCompatibilityLevel)", h.lmCompatibilityLevel == null ? null : `${h.lmCompatibilityLevel}${h.lmCompatibilityLevel < 3 ? " (consente NTLMv1)" : ""}`);
+      letto(g, "WDigest in memoria", h.wdigestUseLogonCredential == null ? null : h.wdigestUseLogonCredential === 1 ? "abilitato" : "disabilitato");
+      letto(g, "Print Spooler", h.spoolerRunning == null ? null : h.spoolerRunning ? "in esecuzione" : "fermo");
+      conta(g, "Password nelle GPO (cpassword in SYSVOL)", w.cpasswordPaths?.length ?? 0);
+    }
+  }
+  return righe;
+}
+
+interface RigaAce {
+  chiave: string;
+  chi: string;
+  chiSid: string;
+  cosa: string;
+  cosaDn: string;
+  tipo: string;
+  permesso: string;
+  ereditato: boolean | null;
+}
+
+function righeGrezze(aces: InterestingAce[]): RigaAce[] {
+  return aces.map((a, i) => ({
+    chiave: `g-${i}`,
+    chi: a.trusteeSam ?? shortSid(a.trusteeSid),
+    chiSid: a.trusteeSid,
+    cosa: shortDnName(a.objectDn),
+    cosaDn: a.objectDn,
+    tipo: OBJECT_KIND_LABEL_IT[a.objectKind],
+    permesso: formatRightsIt(a.rights),
+    ereditato: null,
+  }));
+}
+
+const TH = "px-3 py-2 text-left text-[13px] font-semibold text-muted-foreground";
+const TD = "px-3 py-2 align-top";
+
+export function HealthActiveDirectory({ integrazione }: { integrazione: IntegrazioneHealth | null }) {
+  const [dati, setDati] = useState<DatiHealth>(VUOTO);
+  const [caricamento, setCaricamento] = useState(false);
+  const [inEsecuzione, setInEsecuzione] = useState(false);
+  const [sezione, setSezione] = useState<Sezione>("rilievi");
+  const [area, setArea] = useState<HealthAxis | "tutte">("tutte");
+  const [filtroStato, setFiltroStato] = useState<FiltroStato>("tutti");
+  const [cerca, setCerca] = useState("");
+  const [aperto, setAperto] = useState<string | null>(null);
+  const [soloAbilitati, setSoloAbilitati] = useState(true);
+  const [rischioAcl, setRischioAcl] = useState<AclRiskBucketId | "grezzo" | null>(null);
+  const [cercaAcl, setCercaAcl] = useState("");
+
+  const carica = useCallback(async () => {
     if (!integrazione) {
-      setHealthRun(null);
-      setHealthVulcan(null);
-      setHealthScore(null);
-      setHealthFindings([]);
-      setPrivilegeMatrix(null);
-      setAclExtras(null);
-      setWinrmProbe(null);
-      setPhase5Meta(null);
-      setPhase6Meta(null);
+      setDati(VUOTO);
       return;
     }
-    setHealthLoading(true);
-    setExpandedFinding(null);
+    setCaricamento(true);
+    setAperto(null);
     try {
       const res = await fetch(`/api/ad/healthcheck?integrationId=${integrazione.id}`);
-      if (!res.ok) throw new Error("Errore caricamento AD Health");
-      const data = await res.json();
-      setHealthRun(data.run ?? null);
-      setHealthVulcan(data.vulcan ?? null);
-      setHealthScore(data.score ?? null);
-      setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
-      setPrivilegeMatrix(data.privilegeMatrix ?? null);
-      setAclExtras(data.acl ?? null);
-      setWinrmProbe(data.winrm ?? null);
-      setPhase5Meta(data.phase5 ?? null);
-      setPhase6Meta(data.phase6 ?? null);
+      if (!res.ok) throw new Error("La Health del dominio non si è caricata");
+      const d = (await res.json()) as Partial<DatiHealth>;
+      setDati({ ...VUOTO, ...d, findings: Array.isArray(d.findings) ? d.findings : [] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
-      setHealthRun(null);
-      setHealthVulcan(null);
-      setHealthScore(null);
-      setHealthFindings([]);
-      setPrivilegeMatrix(null);
-      setAclExtras(null);
-      setWinrmProbe(null);
-      setPhase5Meta(null);
-      setPhase6Meta(null);
+      setDati(VUOTO);
     } finally {
-      setHealthLoading(false);
+      setCaricamento(false);
     }
   }, [integrazione]);
 
-  useEffect(() => { fetchHealth(); }, [fetchHealth]);
+  useEffect(() => { carica(); }, [carica]);
 
-  const handleHealthcheck = async () => {
+  const esegui = async () => {
     if (!integrazione) return;
-    setHealthRunning(true);
+    setInEsecuzione(true);
     try {
       const res = await fetch("/api/ad/healthcheck", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ integrationId: integrazione.id }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Errore healthcheck");
-      setHealthScore(data.score ?? null);
-      setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
-      setPrivilegeMatrix(data.privilegeMatrix ?? null);
-      setAclExtras(data.acl ?? null);
-      setWinrmProbe(data.winrm ?? null);
-      setPhase5Meta(data.phase5 ?? null);
-      setPhase6Meta(data.phase6 ?? null);
-      setExpandedFinding(null);
-      toast.success(`Healthcheck completato (score ${data.score?.global ?? "—"})`);
-      await fetchHealth();
+      const data = (await res.json()) as { error?: string; score?: HealthScore };
+      if (!res.ok) throw new Error(data.error ?? "Healthcheck non riuscito");
+      toast.success(`Healthcheck completato: rischio ${data.score?.global ?? "—"} su 100`);
+      await carica();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
     } finally {
-      setHealthRunning(false);
+      setInEsecuzione(false);
     }
   };
 
-  const handleExportHealth = () => {
-    if (!healthRun?.id) return;
-    window.open(`/api/ad/healthcheck/export?runId=${healthRun.id}`, "_blank");
-  };
+  const { run, score, privilegeMatrix, acl } = dati;
+  const rilievi = useMemo(() => actionableFindings(dati.findings), [dati.findings]);
+  const confermati = useMemo(() => rilievi.filter((f) => !daVerificare(f)), [rilievi]);
+  const indizi = rilievi.length - confermati.length;
+  const perGravita = (sev: string) => confermati.filter((f) => f.severity === sev).length;
 
-  const formatDate = (iso: string | null) => {
-    if (!iso) return "—";
-    try {
-      return parseDbDate(iso).toLocaleString("it-IT");
-    } catch {
-      return iso;
-    }
-  };
+  const rilieviVisti = useMemo(() => {
+    const q = cerca.trim().toLowerCase();
+    return rilievi
+      .filter((f) => area === "tutte" || f.axis === area)
+      .filter((f) => filtroStato === "tutti" || (filtroStato === "verificare") === daVerificare(f))
+      .filter((f) => {
+        if (!q) return true;
+        const g = getRuleGuide(f.ruleId);
+        return `${g.titleIt} ${f.ruleId} ${g.why}`.toLowerCase().includes(q);
+      })
+      .sort((a, b) => (ORDINE_GRAVITA[a.severity] ?? 9) - (ORDINE_GRAVITA[b.severity] ?? 9) || b.points - a.points);
+  }, [rilievi, area, filtroStato, cerca]);
 
-  const scoreTone = (n: number) => {
-    if (n >= 70) return "text-red-600";
-    if (n >= 40) return "text-orange-500";
-    if (n >= 20) return "text-amber-600";
-    return "text-green-600";
-  };
+  const righeMatrice = privilegeMatrix ? privilegeMatrix.users.filter((u) => (soloAbilitati ? u.enabled : true)) : [];
+  const privilegiati = privilegeMatrix ? privilegeMatrix.users.filter((u) => u.enabled).length : null;
 
-  const matrixCellLabel = (kind: PrivilegeMembershipKind | null | undefined) => {
-    if (!kind) return "·";
-    if (kind === "direct") return "D";
-    if (kind === "nested") return "N";
-    return "P";
-  };
+  const sintesiAcl = useMemo(() => (acl ? summarizeAclRisk(acl.interestingAces) : null), [acl]);
+  const rischioScelto = rischioAcl ?? sintesiAcl?.buckets[0]?.id ?? "grezzo";
+  const righeAcl = useMemo<RigaAce[]>(() => {
+    if (!acl || !sintesiAcl) return [];
+    const tutte =
+      rischioScelto === "grezzo"
+        ? righeGrezze(acl.interestingAces)
+        : (sintesiAcl.buckets.find((b) => b.id === rischioScelto)?.entries ?? []).flatMap((e) =>
+            e.targets.map((t, i) => ({
+              chiave: `${e.trusteeSid}-${t.objectDn}-${i}`,
+              chi: e.trusteeLabel,
+              chiSid: e.trusteeSid,
+              cosa: t.objectLabel,
+              cosaDn: t.objectDn,
+              tipo: OBJECT_KIND_LABEL_IT[t.objectKind],
+              permesso: formatRightsIt(t.rights),
+              ereditato: t.inherited,
+            })),
+          );
+    const q = cercaAcl.trim().toLowerCase();
+    return q ? tutte.filter((r) => `${r.chi} ${r.cosa} ${r.permesso}`.toLowerCase().includes(q)) : tutte;
+  }, [acl, sintesiAcl, rischioScelto, cercaAcl]);
 
-  const matrixCellClass = (kind: PrivilegeMembershipKind | null | undefined) => {
-    if (!kind) return "text-muted-foreground/40";
-    if (kind === "direct") return "bg-red-500/15 text-red-700 dark:text-red-300 font-semibold";
-    if (kind === "nested") return "bg-amber-500/15 text-amber-800 dark:text-amber-200 font-semibold";
-    return "bg-orange-500/15 text-orange-800 dark:text-orange-200 font-semibold";
-  };
+  const copertura = useMemo(() => righeCopertura(dati), [dati]);
+  const erroriRaccolta = dati.copertura?.ldapCollectErrors ?? null;
+  const nonLetti = copertura.filter((r) => r.tipo !== "ok").length;
 
-  const matrixRows = privilegeMatrix
-    ? privilegeMatrix.users.filter((u) => (matrixEnabledOnly ? u.enabled : true))
-    : [];
-
-  const aclRisk = useMemo(
-    () => (aclExtras ? summarizeAclRisk(aclExtras.interestingAces) : null),
-    [aclExtras],
-  );
-
-  const aclRows = aclExtras ? sortAclAces(aclExtras.interestingAces) : [];
-
-  const aclBucketsVisible = aclRisk
-    ? aclFocusBucket === "all"
-      ? aclRisk.buckets
-      : aclRisk.buckets.filter((b) => b.id === aclFocusBucket)
-    : [];
-
-  const findingGroups = useMemo(
-    () => groupFindingsForUi(actionableFindings(healthFindings)),
-    [healthFindings],
-  );
-  const findingSeverityCounts = useMemo(
-    () => countBySeverity(healthFindings),
-    [healthFindings],
-  );
-
-  const severityBadgeClass = (sev: HealthSeverity | string) =>
-    SEVERITY_STYLE[sev] ?? "bg-muted text-foreground";
-
-  const severityLabelIt = (sev: string) => {
-    if (sev === "Critical") return "Critico";
-    if (sev === "High") return "Alto";
-    if (sev === "Medium") return "Medio";
-    if (sev === "Low") return "Basso";
-    return sev;
-  };
+  const dettagliBarra = run
+    ? [
+        `ultima: ${quando(run.finishedAt ?? run.startedAt)}`,
+        `esito: ${run.status === "ok" ? "riuscita" : run.status === "error" ? "in errore" : "in corso"}`,
+        `motore ${run.engineVersion}`,
+        testoVulcan(dati.vulcan),
+      ]
+    : ["mai eseguito"];
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm flex gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-        <p>
-          <span className="font-medium">AD Health Domarc (LDAP) — non è PingCastle.</span>{" "}
-          Assessment basato su sync LDAP e regole Domarc; non esegue né sostituisce PingCastle.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          onClick={handleHealthcheck}
-          disabled={healthRunning || !integrazione?.enabled}
-        >
-          {healthRunning ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Activity className="w-4 h-4 mr-2" />
-          )}
-          Esegui healthcheck
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleExportHealth}
-          disabled={!healthRun?.id || healthRun.status !== "ok" || healthScore == null}
-        >
-          <Download className="w-4 h-4 mr-2" />
-          Esporta JSON
-        </Button>
-        {healthRun && (
-          <span className="text-xs text-muted-foreground ml-auto">
-            Ultimo run: {formatDate(healthRun.finishedAt ?? healthRun.startedAt)}
-            {" · "}
-            <Badge
-              variant={
-                healthRun.status === "ok"
-                  ? "default"
-                  : healthRun.status === "error"
-                    ? "destructive"
-                    : "secondary"
-              }
-              className="align-middle"
+      <BarraStato
+        acceso={Boolean(integrazione?.enabled)}
+        titolo="Lettura del dominio via LDAP"
+        dettagli={dettagliBarra}
+        azioni={
+          <>
+            <Button onClick={esegui} disabled={inEsecuzione || !integrazione?.enabled} title={integrazione?.enabled ? undefined : "L'integrazione con il dominio è spenta"}>
+              {inEsecuzione ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
+              Esegui healthcheck
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => run?.id && window.open(`/api/ad/healthcheck/export?runId=${run.id}`, "_blank")}
+              disabled={!run?.id || run.status !== "ok" || score == null}
+              title={run?.status === "ok" ? undefined : "Serve un'esecuzione riuscita"}
             >
-              {healthRun.status}
-            </Badge>
-            {healthRun.engineVersion && (
-              <span className="ml-2">v{healthRun.engineVersion}</span>
-            )}
-          </span>
-        )}
-      </div>
+              <Download className="mr-2 h-4 w-4" />
+              Esporta JSON
+            </Button>
+          </>
+        }
+      />
 
-      {healthRun && (
-        <p className="text-[13px] text-muted-foreground">
-          Invio a DA-Vul-can dell&apos;ultimo run ok:{" "}
-          {healthVulcan === null && "mai accodato"}
-          {healthVulcan?.stato === "spento" && "spento (nessun gettone dell'hub su questa istanza)"}
-          {healthVulcan?.stato === "altro_cliente" && "non parte: questo non è il cliente dell'invio su questa istanza"}
-          {healthVulcan?.stato === "in_coda" &&
-            `in coda${healthVulcan.motivo ? ` — ultimo tentativo: ${healthVulcan.motivo}` : ""}`}
-          {healthVulcan?.stato === "inviato" && `inviato il ${formatDate(healthVulcan.il)}`}
-          {healthVulcan?.stato === "scartato" && `scartato: ${healthVulcan.motivo ?? "motivo non registrato"}`}
-          {healthVulcan?.stato === "fallito" &&
-            `fallito dopo i tentativi: ${healthVulcan.motivo ?? "motivo non registrato"} («Invia ora» in Cosa esce lo ritenta)`}
-          {healthVulcan?.stato === "illeggibile" && "stato non leggibile (errore nel database)"}
-        </p>
+      {(inEsecuzione || run?.status === "running") && (
+        <InCorso titolo="Healthcheck in corso" dettaglio="Dura circa due minuti. Sotto restano i dati dell'ultima esecuzione riuscita." />
       )}
-      {healthRun?.status === "running" && (
-        <p className="text-sm text-amber-700 dark:text-amber-300">
-          Healthcheck in corso… i dati sotto restano dell&apos;ultimo run completato, se disponibile.
-        </p>
-      )}
-      {healthRun?.status === "error" && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm space-y-1">
-          <p className="font-medium text-destructive">Ultimo run in errore</p>
-          {healthRun.errorMessage && (
-            <p className="text-destructive/90">{healthRun.errorMessage}</p>
-          )}
-          <p className="text-muted-foreground">
-            Riesegui l&apos;healthcheck. Se vedi ancora findings/ACL sotto, sono dell&apos;ultimo run ok.
-          </p>
+      {run?.status === "error" && !inEsecuzione && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-2.5 text-sm">
+          <Segno tipo="attenzione">ultima esecuzione in errore</Segno>
+          <span>{run.errorMessage ?? "Motivo non registrato."}</span>
+          <span className="text-muted-foreground">Sotto restano i dati dell&apos;ultima esecuzione riuscita.</span>
         </div>
       )}
 
-      {healthLoading ? (
-        <SkeletonTable rows={3} columns={4} />
-      ) : healthScore ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {(
-            [
-              ["Global", healthScore.global],
-              ["Stale", healthScore.stale],
-              ["Privileged", healthScore.privileged],
-              ["Trust", healthScore.trust],
-              ["Anomaly", healthScore.anomaly],
-            ] as const
-          ).map(([label, value]) => (
-            <Card key={label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${scoreTone(value)}`}>{value}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+      {caricamento ? (
+        <SkeletonTable rows={4} columns={4} />
+      ) : !score ? (
+        <Vuoto
+          titolo="Nessun healthcheck eseguito su questo dominio"
+          testo="«Esegui healthcheck» legge il dominio in sola lettura via LDAP e impiega circa due minuti."
+        />
       ) : (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            <Activity className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p>Nessun healthcheck eseguito per questa integrazione.</p>
-            <p className="text-sm mt-1">Clicca &quot;Esegui healthcheck&quot; per avviare l&apos;assessment.</p>
-          </CardContent>
-        </Card>
-      )}
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <TesseraNumero titolo="Rischio del dominio" valore={score.global} qualifica="su 100" nota="più alto è peggio; solo i rilievi confermati" />
+            <TesseraNumero
+              titolo="Da sistemare"
+              valore={confermati.length}
+              qualifica={`${perGravita("Critical")} critici · ${perGravita("High")} alti`}
+              nota="rilievi confermati, nel punteggio"
+            />
+            <TesseraNumero titolo="Da verificare" valore={indizi} nota="indizi e raccolte incomplete, fuori dal punteggio" />
+            <TesseraNumero titolo="Account privilegiati" valore={privilegiati} qualifica="abilitati" nota="in almeno un gruppo amministrativo" />
+          </div>
 
-      {!healthLoading && findingGroups.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Findings — cosa fare</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Problemi raggruppati per area, con spiegazione e azione consigliata.
-                  Espandi una riga per vedere gli oggetti coinvolti.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(["Critical", "High", "Medium", "Low"] as const).map((sev) => {
-                  const n = findingSeverityCounts[sev] ?? 0;
-                  if (n === 0) return null;
-                  return (
-                    <Badge key={sev} className={severityBadgeClass(sev)}>
-                      {severityLabelIt(sev)}: {n}
-                    </Badge>
-                  );
-                })}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {findingGroups.map((group) => (
-              <div key={group.axis} className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">{group.label}</h3>
-                  <Badge variant="outline" className="text-[10px]">
-                    {group.findings.length}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {group.findings.map((f) => {
-                    const open = expandedFinding === f.ruleId;
-                    const guide = getRuleGuide(f.ruleId);
-                    return (
-                      <div
-                        key={f.ruleId}
-                        className="rounded-lg border bg-card overflow-hidden"
-                      >
-                        <button
-                          type="button"
-                          className="w-full text-left px-3 py-2.5 hover:bg-muted/40 transition-colors"
-                          onClick={() =>
-                            setExpandedFinding(open ? null : f.ruleId)
-                          }
-                        >
-                          <div className="flex items-start gap-2">
-                            <span className="text-muted-foreground mt-0.5 shrink-0">
-                              {open ? (
-                                <ChevronDown className="w-4 h-4" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4" />
-                              )}
-                            </span>
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium text-sm">
-                                  {guide.titleIt}
-                                </span>
-                                <Badge className={severityBadgeClass(f.severity)}>
-                                  {severityLabelIt(f.severity)}
-                                </Badge>
-                                {f.objectCount > 0 && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {f.objectCount} oggett{f.objectCount === 1 ? "o" : "i"}
-                                  </span>
-                                )}
-                                <span className="text-[10px] font-mono text-muted-foreground">
-                                  {f.ruleId}
-                                </span>
-                              </div>
-                              <p className="text-xs text-muted-foreground leading-snug">
-                                <span className="font-medium text-foreground/80">Perché: </span>
-                                {guide.why}
-                              </p>
-                              <p className="text-xs leading-snug">
-                                <span className="font-medium text-foreground/80">Cosa fare: </span>
-                                {guide.fix}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                        {open && (
-                          <div className="border-t bg-muted/20 px-3 py-2.5 space-y-2">
-                            {f.description && (
-                              <p className="text-xs text-muted-foreground">
-                                <span className="font-medium text-foreground/80">Dettaglio engine: </span>
-                                {f.description}
-                              </p>
-                            )}
-                            {f.sampleDns.length > 0 ? (
-                              <div>
-                                <p className="text-xs font-medium mb-1">
-                                  Oggetti coinvolti ({f.sampleDns.length}
-                                  {f.objectCount > f.sampleDns.length
-                                    ? ` di ${f.objectCount}`
-                                    : ""}
-                                  )
-                                </p>
-                                <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
-                                  {f.sampleDns.map((dn) => (
-                                    <li
-                                      key={dn}
-                                      className="truncate"
-                                      title={dn}
-                                    >
-                                      <span className="font-medium">{shortDnName(dn)}</span>
-                                      <span className="ml-2 font-mono text-muted-foreground">
-                                        {dn}
-                                      </span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                Nessun oggetto in sample (finding a livello dominio/config).
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+          <SchedePagina<Sezione>
+            etichetta="Sezioni della Health AD"
+            scelta={sezione}
+            onScegli={setSezione}
+            voci={[
+              { valore: "rilievi", titolo: "Rilievi", descrizione: `${rilievi.length} cose da sistemare o verificare` },
+              { valore: "privilegi", titolo: "Privilegi", descrizione: "Chi sta nei gruppi amministrativi" },
+              { valore: "permessi", titolo: "Permessi", descrizione: `${numero(acl?.meta.interestingAceCount)} ACE pericolose, per tipo di rischio` },
+              { valore: "copertura", titolo: "Copertura", descrizione: nonLetti > 0 ? `${nonLetti} voci non lette su ${copertura.length}` : "Cosa è stato letto dal dominio" },
+            ]}
+          />
 
-      {!healthLoading && healthScore && actionableFindings(healthFindings).length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-4">
-          Nessun finding operativo per questo run.
-        </p>
-      )}
+          {sezione === "rilievi" && (
+            <div className="grid gap-4 lg:grid-cols-12">
+              <Pannello numero={1} titolo="Aree" sottotitolo="Scegli un'area per filtrare i rilievi" className="lg:col-span-3" corpoClassName="space-y-2 p-3">
+                <VoceSelezionabile scelta={area === "tutte"} onScegli={() => setArea("tutte")}>
+                  <div className="flex items-center justify-between gap-2 font-semibold">
+                    Tutte le aree
+                    <span className="font-mono text-[13px] text-muted-foreground">{rilievi.length}</span>
+                  </div>
+                  <div className="mt-2"><BarraRischio valore={score.global} /></div>
+                </VoceSelezionabile>
+                {AREE.map((a) => (
+                  <VoceSelezionabile key={a} scelta={area === a} onScegli={() => setArea(a)}>
+                    <div className="flex items-center justify-between gap-2 font-semibold">
+                      {AXIS_LABEL_IT[a]}
+                      <span className="font-mono text-[13px] text-muted-foreground">{rilievi.filter((f) => f.axis === a).length}</span>
+                    </div>
+                    <div className="mt-2"><BarraRischio valore={score[a as keyof HealthScore]} /></div>
+                  </VoceSelezionabile>
+                ))}
+                <p className="pt-1 text-[13px] text-muted-foreground">La barra è il rischio dell&apos;area da 0 a 100.</p>
+              </Pannello>
 
-      {!healthLoading && privilegeMatrix && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center gap-3 justify-between">
-              <div>
-                <CardTitle className="text-base">Matrice privilegi</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Utenti con path verso gruppi amministrativi / elevati
-                  (D=diretto, N=nested, P=primaryGroupID). Nested max depth 5.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <Checkbox
-                  checked={matrixEnabledOnly}
-                  onCheckedChange={(v) => setMatrixEnabledOnly(v === true)}
-                />
-                Solo account abilitati
-              </label>
-            </div>
-            {privilegeMatrix.truncated && (
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
-                Matrice troncata ai primi 500 utenti con privilegi.
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="p-0">
-            {matrixRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-6 pb-6">
-                Nessun utente nelle colonne privilegiate (con il filtro attuale).
-              </p>
-            ) : (
-              <div className="overflow-x-auto border-t">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50 sticky top-0">
-                    <tr>
-                      <th className="p-2 text-left font-medium sticky left-0 bg-muted/50 z-10 min-w-[140px]">
-                        Utente
-                      </th>
-                      {privilegeMatrix.groups.map((g) => (
-                        <th
-                          key={g.key}
-                          className="p-2 text-center font-medium whitespace-nowrap"
-                          title={`${g.displayName}${g.found ? "" : " (gruppo non trovato)"} — ${g.memberCount} enabled`}
-                        >
-                          <div className={g.found ? "" : "opacity-40"}>
-                            {g.displayName.replace("Group Policy Creator Owners", "GPO Creators")}
-                          </div>
-                          <div className="text-[10px] font-normal text-muted-foreground">
-                            {g.memberCount}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matrixRows.map((u) => (
-                      <tr key={u.dn} className="border-t hover:bg-muted/20">
-                        <td
-                          className="p-2 font-mono sticky left-0 bg-background z-10"
-                          title={u.dn}
-                        >
-                          <span className={u.enabled ? "" : "text-muted-foreground line-through"}>
-                            {u.sam}
-                          </span>
-                        </td>
-                        {privilegeMatrix.groups.map((g) => {
-                          const kind = u.cells[g.key] ?? null;
-                          const catena = u.paths?.[g.key];
-                          const tip = kind
-                            ? `${g.displayName}: ${kind}${catena?.length ? ` via ${catena.join(" → ")}` : ""}`
-                            : undefined;
-                          return (
-                            <td
-                              key={g.key}
-                              className={`p-1 text-center ${matrixCellClass(kind)}`}
-                              title={tip}
-                            >
-                              {matrixCellLabel(kind)}
-                            </td>
-                          );
-                        })}
-                      </tr>
+              <Pannello
+                numero={2}
+                titolo="Rilievi"
+                conteggio={rilieviVisti.length}
+                sottotitolo={area === "tutte" ? "Clic su una riga: perché conta, cosa fare, oggetti coinvolti" : AXIS_LABEL_IT[area]}
+                className="lg:col-span-9"
+                corpoClassName="p-0"
+                azioni={
+                  <>
+                    {(
+                      [
+                        ["tutti", "Tutti"],
+                        ["confermati", "Confermati"],
+                        ["verificare", "Da verificare"],
+                      ] as const
+                    ).map(([v, t]) => (
+                      <Button key={v} size="sm" variant={filtroStato === v ? "default" : "outline"} onClick={() => setFiltroStato(v)}>
+                        {t}
+                      </Button>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {!healthLoading && (phase5Meta || phase6Meta || winrmProbe) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Topologia, ADCS e probe DC</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Inventario LDAP (GPO/Sites/ADCS), hardening WinRM sul DC se configurato.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {phase5Meta && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">GPO</div>
-                  <div className="font-semibold">{phase5Meta.gpoCount ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Sites</div>
-                  <div className="font-semibold">{phase5Meta.siteCount ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Subnets</div>
-                  <div className="font-semibold">{phase5Meta.subnetCount ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">gMSA</div>
-                  <div className="font-semibold">{phase5Meta.gmsaCount ?? "—"}</div>
-                </div>
-              </div>
-            )}
-            {phase6Meta && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Template ADCS</div>
-                  <div className="font-semibold">{phase6Meta.templateCount ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">ESC1</div>
-                  <div className="font-semibold text-destructive">
-                    {phase6Meta.esc1Count ?? 0}
+                    <Input value={cerca} onChange={(e) => setCerca(e.target.value)} placeholder="Cerca titolo o sigla della regola" className="h-8 w-56 sm:w-64" />
+                  </>
+                }
+                piede={
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <LegendaGravita />
+                    <span className="flex items-center gap-2"><Segno tipo="ok">confermato</Segno> conta nel punteggio</span>
+                    <span className="flex items-center gap-2"><Segno tipo="ignoto">da verificare</Segno> indizio o raccolta incompleta</span>
                   </div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">ESC2</div>
-                  <div className="font-semibold">
-                    {phase6Meta.esc2Count ?? 0}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">PSO / Shadow</div>
-                  <div className="font-semibold">
-                    {phase6Meta.psoCount ?? "—"} / {phase6Meta.shadowCredentialCount ?? 0}
-                  </div>
-                </div>
-              </div>
-            )}
-            {winrmProbe && (
-              <div className="rounded-md border px-3 py-2 text-sm space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">WinRM</span>
-                  <Badge
-                    variant={
-                      winrmProbe.status === "ok"
-                        ? "default"
-                        : winrmProbe.status === "skipped"
-                          ? "secondary"
-                          : "destructive"
-                    }
-                  >
-                    {!winrmProbe.configured || winrmProbe.status === "skipped"
-                      ? "Non configurato"
-                      : winrmProbe.status === "ok"
-                        ? "OK"
-                        : "Non disponibile"}
-                  </Badge>
-                  {winrmProbe.durationMs != null && winrmProbe.status === "ok" && (
-                    <span className="text-xs text-muted-foreground">
-                      {(winrmProbe.durationMs / 1000).toFixed(1)} s
-                    </span>
-                  )}
-                </div>
-                {winrmProbe.lastHotfixAt && (
-                  <p className="text-xs text-muted-foreground">
-                    Ultimo hotfix DC:{" "}
-                    {formatDate(winrmProbe.lastHotfixAt)}
-                  </p>
-                )}
-                {winrmProbe.hardening && winrmProbe.status === "ok" && (
-                  <ul className="text-xs text-muted-foreground pt-1 space-y-0.5">
-                    <li>
-                      LDAP signing:{" "}
-                      {winrmProbe.hardening.ldapServerIntegrity == null
-                        ? "—"
-                        : winrmProbe.hardening.ldapServerIntegrity >= 2
-                          ? `obbligatorio (${winrmProbe.hardening.ldapServerIntegrity})`
-                          : `non obbligatorio (${winrmProbe.hardening.ldapServerIntegrity})`}
-                    </li>
-                    <li>
-                      Channel binding:{" "}
-                      {winrmProbe.hardening.ldapEnforceChannelBinding == null
-                        ? "—"
-                        : winrmProbe.hardening.ldapEnforceChannelBinding === 0
-                          ? "disattivato (0)"
-                          : `attivo (${winrmProbe.hardening.ldapEnforceChannelBinding})`}
-                    </li>
-                    <li>
-                      SMB signing richiesto:{" "}
-                      {winrmProbe.hardening.smbRequireSecuritySignature == null
-                        ? "—"
-                        : winrmProbe.hardening.smbRequireSecuritySignature === 0
-                          ? "no"
-                          : "sì"}
-                    </li>
-                    <li>
-                      Compatibilità NTLM (LmCompat):{" "}
-                      {winrmProbe.hardening.lmCompatibilityLevel ?? "—"}
-                      {winrmProbe.hardening.lmCompatibilityLevel != null &&
-                      winrmProbe.hardening.lmCompatibilityLevel < 3
-                        ? " — consente NTLMv1"
-                        : ""}
-                    </li>
-                    <li>
-                      WDigest in memoria:{" "}
-                      {winrmProbe.hardening.wdigestUseLogonCredential == null
-                        ? "—"
-                        : winrmProbe.hardening.wdigestUseLogonCredential === 1
-                          ? "abilitato (rischio)"
-                          : "disabilitato"}
-                    </li>
-                    <li>
-                      Print Spooler:{" "}
-                      {winrmProbe.hardening.spoolerRunning == null
-                        ? "—"
-                        : winrmProbe.hardening.spoolerRunning
-                          ? "in esecuzione"
-                          : "fermo"}
-                    </li>
-                  </ul>
-                )}
-                {winrmProbe.cpasswordPaths && winrmProbe.cpasswordPaths.length > 0 && (
-                  <p className="text-xs text-destructive font-medium">
-                    cpassword in SYSVOL: {winrmProbe.cpasswordPaths.length} path
-                  </p>
-                )}
-                {winrmProbe.errorMessage && winrmProbe.status === "unavailable" && (
-                  <p className="text-xs text-destructive">{winrmProbe.errorMessage}</p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {!healthLoading && aclExtras && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center gap-3 justify-between">
-              <div>
-                <CardTitle className="text-base">Analisi permessi ACL</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Sintesi per tipo di rischio: cosa è pericoloso, perché, e chi lo può fare.
-                </p>
-              </div>
-              <Badge
-                variant={
-                  aclExtras.meta.status === "ok"
-                    ? "default"
-                    : aclExtras.meta.status === "partial"
-                      ? "secondary"
-                      : "destructive"
                 }
               >
-                {aclExtras.meta.status === "ok"
-                  ? "Completo"
-                  : aclExtras.meta.status === "partial"
-                    ? "Parziale"
-                    : "Non disponibile"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <div className="text-muted-foreground text-xs">Oggetti letti</div>
-                <div className="font-semibold">{aclExtras.meta.objectsScanned}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground text-xs">ACE critiche</div>
-                <div className="font-semibold">{aclExtras.meta.interestingAceCount}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground text-xs">Categorie rischio</div>
-                <div className="font-semibold">{aclRisk?.buckets.length ?? 0}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground text-xs">Tempo collect</div>
-                <div className="font-semibold">
-                  {(aclExtras.meta.durationMs / 1000).toFixed(1)} s
-                </div>
-              </div>
-            </div>
-            {aclExtras.meta.errorMessage && (
-              <p className="text-sm text-destructive">{aclExtras.meta.errorMessage}</p>
-            )}
-
-            {aclRisk && aclRisk.buckets.length > 0 ? (
-              <>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {aclRisk.buckets.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() =>
-                        setAclFocusBucket((cur) => (cur === b.id ? "all" : b.id))
-                      }
-                      className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${aclRiskSeverityClass(b.severity)} ${
-                        aclFocusBucket === b.id ? "ring-2 ring-primary/40" : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="font-medium text-sm">{b.title}</div>
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {aclRiskSeverityBadge(b.severity)}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1 leading-snug">{b.why}</p>
-                      <p className="text-xs mt-2">
-                        <span className="font-semibold">{b.uniqueTrustees}</span> attori ·{" "}
-                        <span className="font-semibold">{b.uniqueTargets}</span> oggetti ·{" "}
-                        <span className="font-semibold">{b.aceCount}</span> ACE
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">
-                      {aclFocusBucket === "all"
-                        ? "Dettaglio per categoria"
-                        : `Dettaglio: ${aclBucketsVisible[0]?.title ?? ""}`}
-                    </p>
-                    {aclFocusBucket !== "all" && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => setAclFocusBucket("all")}
-                      >
-                        Mostra tutte
-                      </Button>
-                    )}
+                {rilieviVisti.length === 0 ? (
+                  <div className="p-3">
+                    <Vuoto titolo="Nessun rilievo con questi filtri" testo="Togli il filtro dell'area, dello stato o la ricerca." />
                   </div>
-
-                  {aclBucketsVisible.map((b) => (
-                    <div key={b.id} className={`rounded-lg border p-3 space-y-2 ${aclRiskSeverityClass(b.severity)}`}>
-                      <div>
-                        <div className="font-medium text-sm">{b.title}</div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{b.why}</p>
-                      </div>
-                      <div className="space-y-2">
-                        {b.entries.map((e) => (
-                          <div
-                            key={`${b.id}-${e.trusteeSid}`}
-                            className="rounded-md bg-background/70 border px-2.5 py-2"
-                          >
-                            <div className="text-sm font-medium" title={e.trusteeSid}>
-                              {e.trusteeLabel}
-                              {e.trusteeSam && (
-                                <span className="ml-2 text-[11px] font-mono text-muted-foreground font-normal">
-                                  {shortSid(e.trusteeSid)}
-                                </span>
-                              )}
-                            </div>
-                            <ul className="mt-1.5 space-y-1">
-                              {e.targets.map((t) => (
-                                <li
-                                  key={`${t.objectDn}-${t.rights.join(",")}`}
-                                  className="text-xs text-muted-foreground flex flex-wrap gap-x-1.5"
-                                >
-                                  <span className="text-foreground font-medium" title={t.objectDn}>
-                                    {t.objectLabel}
-                                  </span>
-                                  <span>({OBJECT_KIND_LABEL_IT[t.objectKind]})</span>
-                                  <span>—</span>
-                                  <span className="text-foreground">{formatRightsIt(t.rights)}</span>
-                                  {t.inherited && (
-                                    <span className="text-muted-foreground/80">· ereditato</span>
+                ) : (
+                  <div className="max-h-[640px] overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-10 border-b bg-muted">
+                        <tr>
+                          <th className={cn(TH, "w-8")} />
+                          <th className={TH}>Rilievo</th>
+                          <th className={TH}>Gravità</th>
+                          <th className={TH}>Stato</th>
+                          <th className={cn(TH, "text-right")}>Oggetti</th>
+                          <th className={cn(TH, "text-right")}>Punti</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rilieviVisti.map((f) => {
+                          const guida = getRuleGuide(f.ruleId);
+                          const aperta = aperto === f.ruleId;
+                          return [
+                            <tr
+                              key={f.ruleId}
+                              className={cn("cursor-pointer border-b hover:bg-muted/40", aperta && "bg-selezione")}
+                              onClick={() => setAperto(aperta ? null : f.ruleId)}
+                            >
+                              <td className={cn(TD, "text-muted-foreground")}>
+                                {aperta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </td>
+                              <td className={TD}>
+                                <div className="font-semibold">{guida.titleIt}</div>
+                                <div className="font-mono text-[13px] text-muted-foreground">
+                                  {f.ruleId}
+                                  {area === "tutte" && ` · ${AXIS_LABEL_IT[f.axis] ?? f.axis}`}
+                                </div>
+                              </td>
+                              <td className={TD}><BadgeGravita gravita={f.severity} /></td>
+                              <td className={TD}>
+                                {daVerificare(f) ? <Segno tipo="ignoto">da verificare</Segno> : <Segno tipo="ok">confermato</Segno>}
+                              </td>
+                              <td className={cn(TD, "text-right font-mono tabular-nums")}>{f.objectCount > 0 ? f.objectCount : "—"}</td>
+                              <td className={cn(TD, "text-right font-mono tabular-nums")}>{f.points > 0 ? f.points : "—"}</td>
+                            </tr>,
+                            aperta && (
+                              <tr key={`${f.ruleId}-dettaglio`} className="border-b bg-muted/30">
+                                <td />
+                                <td colSpan={5} className="space-y-2 px-3 py-3">
+                                  <p><span className="font-semibold">Perché conta: </span>{guida.why}</p>
+                                  <p><span className="font-semibold">Cosa fare: </span>{guida.fix}</p>
+                                  {f.description && <p className="text-[13px] text-muted-foreground"><span className="font-semibold">Dal motore: </span>{f.description}</p>}
+                                  {f.sampleDns.length > 0 ? (
+                                    <div>
+                                      <p className="text-[13px] font-semibold">
+                                        Oggetti coinvolti: {f.sampleDns.length}
+                                        {f.objectCount > f.sampleDns.length ? ` mostrati su ${f.objectCount}` : ""}
+                                      </p>
+                                      <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto text-[13px]">
+                                        {f.sampleDns.map((dn) => (
+                                          <li key={dn} className="truncate" title={dn}>
+                                            <span className="font-semibold">{shortDnName(dn)}</span>
+                                            <span className="ml-2 font-mono text-muted-foreground">{dn}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[13px] text-muted-foreground">Riguarda il dominio o la sua configurazione, non singoli oggetti.</p>
                                   )}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                        {b.uniqueTrustees > b.entries.length && (
-                          <p className="text-xs text-muted-foreground">
-                            … e altri {b.uniqueTrustees - b.entries.length} attori in questa categoria
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                                </td>
+                              </tr>
+                            ),
+                          ];
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Pannello>
+            </div>
+          )}
 
-                <div className="pt-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => setAclShowRaw((v) => !v)}
-                  >
-                    {aclShowRaw ? "Nascondi elenco grezzo" : `Mostra elenco grezzo (${aclRows.length})`}
-                  </Button>
-                  {aclShowRaw && (
-                    <div className="mt-2 border rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+          {sezione === "privilegi" &&
+            (privilegeMatrix ? (
+              <Pannello
+                titolo="Matrice dei privilegi"
+                conteggio={righeMatrice.length}
+                sottotitolo="Una riga per utente, una colonna per gruppo amministrativo; sotto il nome del gruppo, i suoi membri abilitati"
+                corpoClassName="p-0"
+                azioni={
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox checked={soloAbilitati} onCheckedChange={(v) => setSoloAbilitati(v === true)} />
+                    Solo account abilitati
+                  </label>
+                }
+                piede={
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <Legenda voci={Object.values(CELLA_MATRICE).map((c) => ({ classe: c.classe, testo: c.testo }))} />
+                    <span>· = non è membro. Passa il mouse su una cella per la catena dei gruppi.</span>
+                    {privilegeMatrix.truncated && <Segno tipo="attenzione">matrice troncata ai primi 500 utenti</Segno>}
+                  </div>
+                }
+              >
+                {righeMatrice.length === 0 ? (
+                  <div className="p-3">
+                    <Vuoto titolo="Nessun utente nei gruppi amministrativi" testo="Con «Solo account abilitati» spento si vedono anche i disabilitati." />
+                  </div>
+                ) : (
+                  <div className="max-h-[640px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-20 border-b bg-muted">
+                        <tr>
+                          <th className={cn(TH, "sticky left-0 z-10 min-w-[160px] bg-muted")}>Utente</th>
+                          {privilegeMatrix.groups.map((g) => (
+                            <th key={g.key} className={cn(TH, "text-center", !g.found && "opacity-50")} title={g.found ? g.displayName : `${g.displayName}: gruppo non trovato`}>
+                              <div className="whitespace-nowrap text-foreground">{g.displayName.replace("Group Policy Creator Owners", "GPO Creators")}</div>
+                              <div className="font-mono font-normal">{g.memberCount}</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {righeMatrice.map((u) => (
+                          <tr key={u.dn} className="border-b">
+                            <td className="sticky left-0 z-10 bg-card px-3 py-1.5 font-mono font-semibold" title={u.dn}>
+                              <span className={u.enabled ? "" : "text-muted-foreground line-through"}>{u.sam}</span>
+                            </td>
+                            {privilegeMatrix.groups.map((g) => {
+                              const tipo = u.cells[g.key] ?? null;
+                              const catena = u.paths?.[g.key];
+                              const cella = tipo ? CELLA_MATRICE[tipo] : null;
+                              return (
+                                <td key={g.key} className="px-1 py-1 text-center" title={cella ? `${g.displayName}: ${cella.testo.slice(4)}${catena?.length ? ` via ${catena.join(" → ")}` : ""}` : undefined}>
+                                  {cella ? (
+                                    <span className={cn("inline-flex h-6 w-7 items-center justify-center rounded-md font-mono text-[13px] font-bold", cella.classe)}>{cella.lettera}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground/50">·</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Pannello>
+            ) : (
+              <Vuoto titolo="Matrice dei privilegi non disponibile" testo="L'ultima esecuzione riuscita non l'ha registrata: rilancia l'healthcheck." />
+            ))}
+
+          {sezione === "permessi" &&
+            (acl && sintesiAcl ? (
+              <div className="grid gap-4 lg:grid-cols-12">
+                <Pannello
+                  numero={1}
+                  titolo="Tipi di rischio"
+                  conteggio={sintesiAcl.buckets.length}
+                  sottotitolo="Scegli un tipo per vedere chi e su cosa"
+                  className="lg:col-span-4"
+                  corpoClassName="space-y-2 p-3"
+                  piede={
+                    <span className="flex flex-wrap items-center gap-2">
+                      Raccolta:
+                      {acl.meta.status === "ok" ? <Segno tipo="ok">completa</Segno> : acl.meta.status === "partial" ? <Segno tipo="attenzione">parziale</Segno> : <Segno tipo="ignoto">non disponibile</Segno>}
+                      <span className="font-mono">{numero(acl.meta.objectsScanned)} oggetti letti</span>
+                    </span>
+                  }
+                >
+                  {sintesiAcl.buckets.map((b) => (
+                    <VoceSelezionabile key={b.id} scelta={rischioScelto === b.id} onScegli={() => setRischioAcl(b.id)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold">{b.title}</span>
+                        <BadgeGravita gravita={b.severity === "critical" ? "Critical" : b.severity === "high" ? "High" : "Medium"} />
+                      </div>
+                      <p className="mt-1 text-[13px] text-muted-foreground">{b.why}</p>
+                      <p className="mt-1.5 font-mono text-[13px]">
+                        {b.uniqueTrustees} attori · {b.uniqueTargets} oggetti · {b.aceCount} ACE
+                      </p>
+                    </VoceSelezionabile>
+                  ))}
+                  <VoceSelezionabile scelta={rischioScelto === "grezzo"} onScegli={() => setRischioAcl("grezzo")}>
+                    <div className="flex items-center justify-between gap-2 font-semibold">
+                      Elenco grezzo
+                      <span className="font-mono text-[13px] text-muted-foreground">{acl.interestingAces.length}</span>
+                    </div>
+                    <p className="mt-1 text-[13px] text-muted-foreground">Tutte le ACE raccolte, senza raggruppare.</p>
+                  </VoceSelezionabile>
+                </Pannello>
+
+                <Pannello
+                  numero={2}
+                  titolo="Chi può fare cosa"
+                  conteggio={righeAcl.length}
+                  sottotitolo={rischioScelto === "grezzo" ? "Elenco grezzo" : sintesiAcl.buckets.find((b) => b.id === rischioScelto)?.title}
+                  className="lg:col-span-8"
+                  corpoClassName="p-0"
+                  azioni={<Input value={cercaAcl} onChange={(e) => setCercaAcl(e.target.value)} placeholder="Cerca attore, oggetto o permesso" className="h-8 w-56 sm:w-64" />}
+                >
+                  {righeAcl.length === 0 ? (
+                    <div className="p-3"><Vuoto titolo="Nessuna ACE con questi filtri" testo="Cambia il tipo di rischio o togli la ricerca." /></div>
+                  ) : (
+                    <div className="max-h-[640px] overflow-y-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-muted/50 sticky top-0">
+                        <thead className="sticky top-0 z-10 border-b bg-muted">
                           <tr>
-                            <th className="p-2 text-left font-medium">Su cosa</th>
-                            <th className="p-2 text-left font-medium">Chi</th>
-                            <th className="p-2 text-left font-medium">Permesso</th>
+                            <th className={TH}>Chi</th>
+                            <th className={TH}>Su cosa</th>
+                            <th className={TH}>Permesso</th>
+                            <th className={TH}>Origine</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {aclRows.slice(0, 120).map((a, i) => (
-                            <tr key={`${a.objectDn}-${a.trusteeSid}-${i}`} className="border-t align-top">
-                              <td className="p-2" title={a.objectDn}>
-                                {shortDnName(a.objectDn)}
-                                <div className="text-[11px] text-muted-foreground">
-                                  {OBJECT_KIND_LABEL_IT[a.objectKind]}
-                                </div>
+                          {righeAcl.slice(0, 500).map((r) => (
+                            <tr key={r.chiave} className="border-b">
+                              <td className={cn(TD, "font-semibold")} title={r.chiSid}>{r.chi}</td>
+                              <td className={TD} title={r.cosaDn}>
+                                {r.cosa} <Etichetta mono={false} className="ml-1">{r.tipo}</Etichetta>
                               </td>
-                              <td className="p-2" title={a.trusteeSid}>
-                                {a.trusteeSam ?? shortSid(a.trusteeSid)}
-                              </td>
-                              <td className="p-2 text-xs">{formatRightsIt(a.rights)}</td>
+                              <td className={TD}>{r.permesso}</td>
+                              <td className={cn(TD, "text-[13px] text-muted-foreground")}>{r.ereditato == null ? "—" : r.ereditato ? "ereditato" : "diretto"}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      {righeAcl.length > 500 && <p className="px-3 py-2 text-[13px] text-muted-foreground">Mostrate le prime 500 righe su {righeAcl.length}: restringi con la ricerca.</p>}
                     </div>
                   )}
-                </div>
-              </>
+                </Pannello>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Nessuna ACE critica da analizzare (o collect non disponibile).
-              </p>
-            )}
-          </CardContent>
-        </Card>
+              <Vuoto titolo="Permessi non letti" testo="L'ultima esecuzione riuscita non ha raccolto i descrittori di sicurezza: rilancia l'healthcheck." />
+            ))}
+
+          {sezione === "copertura" && (
+            <Pannello
+              titolo="Cosa è stato letto"
+              conteggio={copertura.length}
+              sottotitolo="Una regola che non scatta vale solo se il suo dato è «letto»"
+              corpoClassName="p-0"
+              piede="Regole Domarc su dati LDAP in sola lettura: non è PingCastle e non lo sostituisce."
+            >
+              {erroriRaccolta && erroriRaccolta.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2.5 text-sm">
+                  <Segno tipo="attenzione">{erroriRaccolta.length} ricerche LDAP fallite</Segno>
+                  <span className="font-mono text-[13px]">{erroriRaccolta.join(" · ")}</span>
+                </div>
+              )}
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted">
+                  <tr>
+                    <th className={TH}>Fonte</th>
+                    <th className={TH}>Dato</th>
+                    <th className={TH}>Esito</th>
+                    <th className={TH}>Valore</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {copertura.map((r, i) => (
+                    <tr key={`${r.gruppo}-${r.voce}`} className="border-b">
+                      <td className={cn(TD, "text-[13px] font-semibold text-cian-testo")}>{copertura[i - 1]?.gruppo === r.gruppo ? "" : r.gruppo}</td>
+                      <td className={TD}>{r.voce}</td>
+                      <td className={TD}><Segno tipo={r.tipo}>{r.esito}</Segno></td>
+                      <td className={cn(TD, "font-mono")}>{r.valore}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Pannello>
+          )}
+        </>
       )}
     </div>
   );

@@ -74,6 +74,7 @@ export async function GET(request: Request) {
         winrm: null,
         phase5: null,
         phase6: null,
+        copertura: null,
         displayRunId: null,
         vulcan: null,
       });
@@ -89,12 +90,22 @@ export async function GET(request: Request) {
     let winrm = null;
     let phase5 = null;
     let phase6 = null;
+    // Copertura della raccolta (dalla 0.9.1086): null = l'esecuzione non l'ha registrata.
+    let copertura: { infra: unknown; ldapCollectErrors: unknown; laps: unknown } | null = null;
     if (display.statsJson) {
       try {
         const parsed = JSON.parse(display.statsJson) as {
           winrm?: unknown;
           phase5?: unknown;
           phase6?: unknown;
+          infra?: unknown;
+          ldapCollectErrors?: unknown;
+          laps?: unknown;
+        };
+        copertura = {
+          infra: parsed.infra ?? null,
+          ldapCollectErrors: parsed.ldapCollectErrors ?? null,
+          laps: parsed.laps ?? null,
         };
         winrm = parsed.winrm ?? null;
         phase5 = parsed.phase5 ?? null;
@@ -123,6 +134,7 @@ export async function GET(request: Request) {
       winrm,
       phase5,
       phase6,
+      copertura,
     });
   });
 }

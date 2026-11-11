@@ -1,5 +1,15 @@
 # TASKS — DA-IPAM
 
+## 2026-11-11 — Vista per operatori non amministratori (Riccardo, in discussione)
+
+Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i comandi di configurazione, ovviamente in read only… qualcosa che possa essere l'estensione della dashboard attuale, casomai modulare». Nulla di scritto nel codice: si sta ragionando.
+
+- [ ] Decidere chi è l'operatore (tecnico Domarc o persona del cliente) e se può fare qualcosa oltre a leggere.
+- [ ] Proposta in discussione: la Dashboard diventa la casa dell'operatore, a schede (Panoramica · Reti · Apparati · Da sistemare · Dominio e accessi · Alert), ogni scheda un modulo che compare solo se il modulo è attivo sul cliente; il ruolo «Solo lettura» (`viewer`, esiste già) vede solo quella, senza il menu laterale completo.
+- [ ] Misurato l'11/11: i riquadri della Dashboard portano tutti alle pagine complete (`/networks`, `/discovery`, `/vulnerabilities`, `/security-alerts`, `/sicurezza-dominio`, anche `/settings/...`); 287 file di rotte usano `requireAdmin`. Da misurare prima di consegnare: quali rotte di scrittura passano solo da `requireAuth`.
+- [ ] La scheda Apparati è il punto E del 10/11 (riepilogo per macro categoria): si fa una volta sola, qui.
+- [ ] Interfaccia: da proporre oggetto per oggetto con una tavola grafica prima di scriverla.
+
 ## 2026-11-10 — Confronto tra giri di rete
 
 Riccardo: iniziare lo sviluppo senza sovrapporsi agli altri lavori. Piano in DA-IPAM, commit `510eca57`.

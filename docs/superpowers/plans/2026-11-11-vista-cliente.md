@@ -719,11 +719,10 @@ export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invaria
 - Sull'hub (VM 533, `192.168.4.8`), dopo che il servizio ha preso il commit: utente «Cliente» di prova sul cliente 70791. Entra, vede la casa, apre ogni scheda attiva; `/settings` lo riporta a `/cliente`; `GET /api/hosts` risponde 403.
 - Niente su `main`: il passaggio lo decide Riccardo.
 
-**Verifica:** `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. `npm run build` → compilato, 335 pagine (11/11/2026, prima del fast-forward che ha portato il Task 7 bis). `bash scripts/controlla.sh` → il file non c'è nel repo: non l'ho creato. Anteprima di stampa della casa e di una pagina interna: non guardata, la pagina autenticata non è stata aperta. Prova sull'hub, 11/11/2026 11:27, non eseguita (il servizio non ha questo commit e non ho creato un utente sul database dell'hub):
-- entra e vede la casa: non provato
-- apre ogni scheda attiva: non provato
-- `/settings` lo riporta a `/cliente`: non provato
-- `GET /api/hosts` risponde 403: non provato
+**Verifica:** `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. `npm run build` → compilato, 335 pagine (11/11/2026, prima del fast-forward che ha portato il Task 7 bis). `bash scripts/controlla.sh` → il file non c'è nel repo: non l'ho creato. Anteprima di stampa: non guardata. Prova sull'hub, 11/11/2026 11:38, servizio alla 0.9.1160 (`305011a1`), letto l'HTML delle pagine dopo l'accesso come amministratore sul cliente 70791 (la password di `demo` non è nel vault, quindi il recinto non è stato provato con un utente Cliente):
+- casa e schede: `/cliente`, Reti, Apparati, Da sistemare, Dominio, Log di sicurezza rispondono 200. Da sistemare mostra «Cosa aggiornare», «120 programmi», «Da correggere» e la riga dei problemi tecnici; nella pagina non compare nessuna sigla CVE
+- `/settings` lo riporta a `/cliente`: non provato (la sessione era di un amministratore, la pagina resta su `/settings`)
+- `GET /api/hosts` risponde 403: non provato (per l'amministratore risponde 200)
 
 **Commit:** «Vista cliente: stampa e documenti».
 
@@ -805,6 +804,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 7 bis [x]: Da sistemare per programma da aggiornare. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le prove su `perApparato` sono tolte con la funzione. La pagina autenticata non è stata aperta.
 
 - 2026-11-11 Controllo dei Task 7 bis (`305011a1`) e 8 (`17626f82`): passati sul codice, 36 prove verdi rilanciate. La casa è stata composta sull'hub coi dati veri del 70791 con uno script di sola lettura (cinque schede attive, 16 voci di attenzione, nessun errore). Consuntivo scritto.
+
+- 2026-11-11 Prova sull'hub della vista cliente, dopo il Task 7 bis. Il timer aveva rimandato l'aggiornamento perché c'era un giro in corso; a giro finito il servizio è stato allineato a `305011a1` (0.9.1160) con `scripts/update.sh`. Le pagine, lette come amministratore sul cliente 70791, rispondono 200: la casa elenca i programmi da aggiornare e Da sistemare mostra 120 programmi, le cose da correggere e i problemi tecnici, senza sigle. Il recinto (`/settings` e `GET /api/hosts`) non è stato provato: la password dell'utente `demo` non è nel vault. L'ultima istanza dell'amministratore, che la prova aveva impostato su 70791, è stata rimessa vuota.
 
 ## Consuntivo
 

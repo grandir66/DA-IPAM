@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: prova sull'hub
+
+L'hub è stato allineato alla 0.9.1160. Le pagine della vista, lette sul cliente 70791, mostrano i programmi da aggiornare e non le sigle. Il recinto con l'utente Cliente resta da provare: la sua password non è nel vault.
+
+### Corretto
+- **Prova sull'hub**: casa, Reti, Apparati, Da sistemare, Dominio e Log di sicurezza rispondono. Da sistemare elenca 120 programmi, le cose da correggere e i problemi tecnici.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: Da sistemare per programma
 
 Per apparato la scheda contava le CVE: su un server uscivano centinaia di gravi, e la cosa più grave era una sigla. Ora dice quale programma aggiornare, su quanti apparati, e se è già stato usato negli attacchi. Le cose che si sistemano cambiando un'impostazione stanno a parte.

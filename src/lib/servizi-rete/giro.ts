@@ -33,7 +33,7 @@ import { runSshCommand } from "@/lib/devices/ssh-run";
 import { COMANDO_SSH, eRifiutoSsh, eShellPosix, leggiUscitaSsh } from "@/lib/rilievi/autenticati";
 import { portaAperta, sondaPorta, type EsitoSonda } from "./sonde";
 import { portePerGiro } from "./porte";
-import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO } from "@/lib/scanner/profili/sconosciuti";
+import { PORTE_DA_NON_TOCCARE, PRODUTTORE_DI_CAMPO, PRODUTTORE_DI_STAMPANTI } from "@/lib/scanner/profili/sconosciuti";
 import { eImpianto as eImpiantoPuro } from "@/lib/vuln/impianti-in-rete";
 import { leggiEsclusi } from "@/lib/vuln/proposta/store";
 import { protocolloControllo, TETTO_FABBRICA_PER_HOST } from "@/lib/rilievi/controlli";
@@ -45,6 +45,25 @@ import { PORTE_CONTROLLO, sondaControllo, type EsitoSondaControllo } from "@/lib
  */
 export function daSaltare(porta: number, vendor: string | null): boolean {
   return PORTE_DA_NON_TOCCARE.has(porta) || (vendor !== null && PRODUTTORE_DI_CAMPO.test(vendor));
+}
+
+/** Porte su cui si sa cosa risponde anche una stampante: quelle basse e i pannelli web. */
+const WEB_ALTE_DI_STAMPANTE: ReadonlySet<number> = new Set([8000, 8080, 8081, 8443, 8888, 9080, 9081, 9090, 9091, 9443]);
+
+/**
+ * Su una stampante ogni porta alta sconosciuta può essere una coda di stampa (le porte raw si
+ * configurano): lì si sondano solo le porte basse e i pannelli web. 11/11/2026: due Kyocera
+ * dell'ufficio hanno stampato la sonda arrivata sulla 9103.
+ */
+export function portaRischiosaSuStampante(
+  porta: number,
+  h: { vendor?: string | null; device_manufacturer?: string | null; inferred_vendor?: string | null; attr_vendor_name?: string | null; classification?: string | null; attr_category?: string | null; open_ports?: string | null },
+): boolean {
+  if (porta < 1024 || WEB_ALTE_DI_STAMPANTE.has(porta)) return false;
+  const tipo = `${h.classification ?? ""} ${h.attr_category ?? ""}`;
+  const nome = `${h.vendor ?? ""} ${h.device_manufacturer ?? ""} ${h.inferred_vendor ?? ""} ${h.attr_vendor_name ?? ""}`;
+  if (/stamp|print|multifunz|mfp/i.test(tipo) || PRODUTTORE_DI_STAMPANTI.test(nome)) return true;
+  return /"port"\s*:\s*(515|631|91\d\d)\b/.test(h.open_ports ?? "");
 }
 
 export interface StatoGiro {
@@ -247,7 +266,7 @@ export function avviaGiro(
         }
       }
       for (const rete of reti) allineaServiziRete(rete);
-      const coda = reti.flatMap((rete) => getPorteServiziDaSondare(rete)).filter((p) => !daSaltare(p.porta, null) && !eImpianto(p));
+      const coda = reti.flatMap((rete) => getPorteServiziDaSondare(rete)).filter((p) => !daSaltare(p.porta, null) && !eImpianto(p) && !portaRischiosaSuStampante(p.porta, p));
       stato.fase = "sonde";
       riepilogo.host = new Set(coda.map((p) => p.host_id)).size;
       riepilogo.sondati = coda.length;

@@ -169,9 +169,11 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
 // e la stampante stampa "fogli con caratteri strani". Le porte di stampa raw non si sondano mai.
 export const ALWAYS_USEFUL_TCP_PORTS = [22, 80, 443, 445, 161, 3389, 554, 623] as const;
 
-/** Porte di stampa raw: dati grezzi qui fanno stampare (jetdirect/AppSocket 9100-9102, LPD 515).
- *  Mai sondate con nmap -sV né da sonde: si escludono da ogni comando. Incidente 10/11. */
-export const PORTE_STAMPA_RAW = [515, 9100, 9101, 9102] as const;
+/** Porte di stampa raw: dati grezzi qui fanno stampare (jetdirect/AppSocket 9100-9109, LPD 515).
+ *  Mai sondate con nmap -sV né da sonde: si escludono da ogni comando. Incidente 10/11.
+ *  Dall'11/11 tutta la fascia 9100-9109: le Kyocera hanno le «stampanti logiche» su 9100-9103 e
+ *  la sonda del giro ha scritto sulla 9103 di due Kyocera dell'ufficio, che hanno stampato. */
+export const PORTE_STAMPA_RAW = [515, 9100, 9101, 9102, 9103, 9104, 9105, 9106, 9107, 9108, 9109] as const;
 const ESCLUDI_STAMPA = PORTE_STAMPA_RAW.join(",");
 
 /** Unione ordinata di elenchi porte (dedupe, solo > 0). */

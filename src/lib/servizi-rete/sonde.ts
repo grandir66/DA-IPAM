@@ -19,6 +19,7 @@ import {
   type NtlmChallengeInfo,
   type Smb2Finding,
 } from "@/lib/scanner/probes/smb2";
+import { PORTE_STAMPA_RAW } from "@/lib/scanner/ports";
 import { probeRdpNtlm } from "@/lib/scanner/probes/rdp-ntlm";
 import { ntlmDaGssORaw, wrapNtlmInSpnego } from "./ntlm-spnego";
 
@@ -538,6 +539,8 @@ function testaDi(grezzo: Buffer): string {
  * HTTP in chiaro, poi TLS (e HTTP dentro TLS). Al massimo tre connessioni per porta.
  */
 export async function sondaPorta(ip: string, porta: number, opz: OpzioniSonda = {}): Promise<EsitoSonda | null> {
+  // Ultimo freno: sulle porte di stampa raw ogni byte finisce su carta (Kyocera, 11/11/2026).
+  if ((PORTE_STAMPA_RAW as readonly number[]).includes(porta)) return null;
   const ms = opz.timeoutMs ?? 4000;
   const attesa = opz.attesaBannerMs ?? 1500;
   const esito: EsitoSonda = { metodo: "silenzio", banner: null, tls: null, http: null, ssh: null, ntlm: null, prodotto: null, versione: null };

@@ -91,6 +91,9 @@ Riccardo (11/11): «Sì, spento di serie». Sull'appliance 70151 l'automatismo, 
 
 ## [Non rilasciato] — 2026-11-10 · Comparatore dei giri IPv4
 
+### Corretto
+- **Le stampanti non stampano più durante le scansioni interne.** L'11/11 due Kyocera dell'ufficio hanno stampato fogli: il freno copriva solo 9100-9102 e 515, ma le Kyocera hanno le stampanti logiche fino alla 9103, e la sonda del giro ci ha scritto la sua richiesta. Ora tutta la fascia 9100-9109 è esclusa da nmap, dalle sonde e dai controlli (con un ultimo freno dentro `sondaPorta`), e su una stampante le porte alte sconosciute non si sondano affatto: restano le porte basse e i pannelli web.
+
 - Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Pagina unica «Network Changes» disponibile sotto Network e dal dettaglio subnet. Raccolta delle differenze da Discovery ancora da collegare.
 
 ## [Non rilasciato] — 2026-11-10 · Cancello: tre prove rosse sistemate prima della promozione su main

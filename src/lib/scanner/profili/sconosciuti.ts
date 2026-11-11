@@ -10,6 +10,7 @@
  */
 import type Database from "better-sqlite3";
 import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
+import { PORTE_STAMPA_RAW } from "@/lib/scanner/ports";
 import { isScanInCorso, prendiRete } from "@/lib/scanner/network-scan-lock";
 import { eseguiProfilo, type EsitoProfilo } from "./motore";
 import { PROFILO_APPROFONDITO } from "./profili";
@@ -26,7 +27,7 @@ export const HOST_PER_GIRO = 10;
 export const PORTE_DI_CAMPO: readonly number[] = [102, 502, 1883, 2404, 4840, 8883, 9600, 18245, 18246, 19999, 20000, 44818];
 
 /** Porte di campo e di stampa (raw, IPP, LPD): chi le ha aperte non riceve `-O`. */
-export const PORTE_DA_NON_TOCCARE: ReadonlySet<number> = new Set([...PORTE_DI_CAMPO, 515, 631, 9100]);
+export const PORTE_DA_NON_TOCCARE: ReadonlySet<number> = new Set([...PORTE_DI_CAMPO, ...PORTE_STAMPA_RAW, 631]);
 
 /**
  * Produttori di apparati di campo. Microchip c'è per i moduli Ethernet dentro gli apparati (19 `unknown` al 72729):
@@ -37,7 +38,7 @@ export const PRODUTTORE_DI_CAMPO =
   /schneider|siemens|rockwell|allen[- ]?bradley|phoenix contact|wago|beckhoff|omron|mitsubishi|moxa|\bhms\b|sollae|advantech|weidm|turck|festo|yokogawa|honeywell|emerson|lantronix|microchip|\babb\b|crevis|weintek|vacon|danfoss|carel|dixell|eliwell|anybus|ewon|kronotech/i;
 
 /** Produttori di stampanti: la 9100 può non essere fra le porte note. HP resta qui anche se fa PC e switch: nel dubbio si salta. */
-const PRODUTTORE_DI_STAMPANTI =
+export const PRODUTTORE_DI_STAMPANTI =
   /\bhp\b|hewlett|canon|brother|ricoh|kyocera|xerox|epson|lexmark|konica|sharp|oki data|zebra|toshiba tec/i;
 
 export const PROFILO_RICONOSCIMENTO: ProfiloScansione = {

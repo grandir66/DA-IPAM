@@ -275,6 +275,14 @@ Riccardo (11/11): «Sì, spento di serie». Sull'appliance 70151 l'automatismo, 
 - `scanner/rilancia-giri` dichiarato fuori da Schedulazioni col perché (gira una volta all'avvio).
 - La prova del profilo «sconosciuti» guarda le porte da provare, non la riga intera: la 9100 ora compare in `--exclude-ports` proprio per non toccarla.
 
+## [Non rilasciato] — 2026-11-11 · Gli apparati creati da soli vengono letti
+
+Riccardo (11/11): «Sì, tutti». Sull'hub 533, il giorno dopo la prima creazione, risultava letto 1 apparato su 19: un apparato si legge solo a mano o se sta in un job «Lettura apparati», e quelli nati da soli non li metteva nessuno.
+
+### Aggiunto
+- Ogni apparato creato da solo entra nel job **«Apparati creati da soli»** (Lettura apparati, ogni giorno alle 06:30, sole informazioni), che nasce da sé e si vede, si sospende e si modifica come gli altri job. La prima lettura parte subito dopo la creazione. Un apparato già in un job di una persona non si aggiunge.
+- `scripts/apparati-automatici-cli.ts`: `--in-lettura-dal AAAA-MM-GG` per recuperare gli apparati già creati, `--leggi` per il primo giro.
+
 ## [Non rilasciato] — 2026-11-10 · Una VM con un ruolo prende il ruolo
 
 Riccardo (10/11): «99.13 è un proxmox pbs» — sul 79993 restava «vm».

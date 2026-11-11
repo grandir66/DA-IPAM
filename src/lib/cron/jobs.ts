@@ -43,6 +43,7 @@ import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
 import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
 import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { apparatiAutomaticiDopoScansione } from "@/lib/devices/apparato-automatico";
+import { reloadTenantScheduler } from "./scheduler";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
@@ -295,6 +296,23 @@ export async function runHypervisorSync(
   return esito;
 }
 
+/**
+ * Apparati creati da soli e subito letti (11/11/2026): dopo la creazione il job delle letture automatiche è nuovo o
+ * cambiato, quindi lo scheduler del cliente si ricarica e il giro parte subito in sottofondo, senza aspettare le 06:30.
+ * Non lancia: un difetto qui non deve far fallire la scansione.
+ */
+function apparatiCreatiESubitoLetti(): void {
+  try {
+    const job = apparatiAutomaticiDopoScansione();
+    if (job.length === 0) return;
+    const tenant = getCurrentTenantCode();
+    if (tenant) reloadTenantScheduler(tenant);
+    for (const id of job) void eseguiJobOra(id).catch((e) => console.error(`[apparato-automatico] prima lettura, job #${id}:`, e instanceof Error ? e.message : e));
+  } catch (e) {
+    console.error("[apparato-automatico] prima lettura non avviata:", e);
+  }
+}
+
 export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
@@ -313,12 +331,12 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
     // Apparati creati da soli (10/11/2026): a fine giro, solo con l'interruttore acceso; non lancia.
     case "snmp_scan": {
       const r = await runSnmpScan(job.network_id, opzioni);
-      apparatiAutomaticiDopoScansione();
+      apparatiCreatiESubitoLetti();
       return r;
     }
     case "nmap_scan": {
       const r = await runNmapScan(job.network_id, opzioni);
-      apparatiAutomaticiDopoScansione();
+      apparatiCreatiESubitoLetti();
       return r;
     }
     case "arp_poll":

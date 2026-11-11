@@ -19,6 +19,7 @@ import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type HostPerProposta, type ProtocolloApparato } from "./proposta-apparato";
 import { corpoCreazione } from "./rendi-apparato";
 import { creaApparato } from "./crea-apparato";
+import { aggiungiAlleLettureAutomatiche } from "./letture-automatiche";
 
 export const CHIAVE_APPARATI_AUTOMATICI = "apparati.automatici";
 export const CONFIDENZA_MINIMA = 80;
@@ -102,7 +103,7 @@ export function pianoApparatoAutomatico(host: HostAutomatico, archivio: Credenzi
 export interface RigaAutomatica {
   hostId: number; ip: string; classe: string | null;
   esito: "creato" | "da_creare" | "saltato";
-  nome?: string; protocollo?: string; legami?: number; motivo?: string;
+  nome?: string; protocollo?: string; legami?: number; motivo?: string; deviceId?: number;
 }
 
 /**
@@ -152,7 +153,7 @@ export function creaApparatiAutomatici(opz: { applica: boolean }): RigaAutomatic
           console.error(`[apparato-automatico] host ${h.id}: legame ${l.protocol_type} non scritto:`, e instanceof Error ? e.message : e);
         }
       }
-      righe.push({ ...base, esito: "creato", ...descr, nome: esito.device.name });
+      righe.push({ ...base, esito: "creato", ...descr, nome: esito.device.name, deviceId: esito.device.id });
     } catch (e) {
       console.error(`[apparato-automatico] host ${h.id}: creazione fallita:`, e);
       righe.push({ ...base, esito: "saltato", motivo: e instanceof Error ? e.message : String(e) });
@@ -161,13 +162,26 @@ export function creaApparatiAutomatici(opz: { applica: boolean }): RigaAutomatic
   return righe;
 }
 
-/** Aggancio dei giri di scansione: con l'interruttore spento non fa niente. Non lancia. */
-export function apparatiAutomaticiDopoScansione(): void {
+/** Gli apparati appena creati entrano nel job delle letture automatiche (`letture-automatiche.ts`). Id dei job toccati. */
+export function mettiInLettura(righe: readonly RigaAutomatica[]): number[] {
+  const ids = righe.filter((r) => r.esito === "creato" && r.deviceId != null).map((r) => r.deviceId as number);
+  return aggiungiAlleLettureAutomatiche(getDb(), ids);
+}
+
+/**
+ * Aggancio dei giri di scansione: con l'interruttore spento non fa niente. Non lancia. Restituisce i job «Lettura
+ * apparati» toccati: chi chiama (nel server) ricarica lo scheduler e lancia il primo giro.
+ */
+export function apparatiAutomaticiDopoScansione(): number[] {
   try {
-    if (!apparatiAutomaticiAccesi(getDb())) return;
-    const creati = creaApparatiAutomatici({ applica: true }).filter((r) => r.esito === "creato");
-    if (creati.length > 0) console.warn(`[apparato-automatico] creati ${creati.length} apparati: ${creati.map((r) => `${r.nome} (${r.ip})`).join(", ")}`);
+    if (!apparatiAutomaticiAccesi(getDb())) return [];
+    const righe = creaApparatiAutomatici({ applica: true });
+    const creati = righe.filter((r) => r.esito === "creato");
+    if (creati.length === 0) return [];
+    console.warn(`[apparato-automatico] creati ${creati.length} apparati: ${creati.map((r) => `${r.nome} (${r.ip})`).join(", ")}`);
+    return mettiInLettura(righe);
   } catch (e) {
     console.error("[apparato-automatico] giro non riuscito:", e);
+    return [];
   }
 }

@@ -7,6 +7,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-11 · Categorie: Videosorveglianza e Multimedia
 
 ### Cambiato
+- **Topologia: il firewall censito è sempre un apparato di rete.** Alla 72729 il FortiGate, che non leggiamo ma che uno switch vede sulla sua porta 1, finiva fra i «+ altri» come un PC perché non aveva «prove di ruolo». Un apparato censito di tipo firewall ora ha la sua prova (`firewall_censito`) e sta nella mappa come riquadro, sotto lo switch a cui è collegato. Vale solo per l'apparato censito: un host che il fingerprint chiama firewall resta com'era.
+- **Topologia: «Hypervisor come riquadri».** Un hypervisor di cui non abbiamo letto le VM era una riga fra gli attaccati. Ora un interruttore nella barra, acceso di serie e ricordato nel browser, lo tiene come riquadro; spento, torna la riga. Chi ha VM lette era già un riquadro.
+
+### Cambiato
 - «Video» si divide in due categorie (Riccardo, 11/11: «una categoria Multimedia e una Videosorveglianza sono più corrette»): **Videosorveglianza** (Telecamera, Videoregistratore) e **Multimedia** (Smart TV, Decoder, Media player, Console). Le categorie sono undici.
 
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: «Porte di rete» nella striscia in testa

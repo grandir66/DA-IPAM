@@ -44,6 +44,9 @@ interface Props {
   /** «Mostra tutti gli attaccati»: l'elenco intero sotto ogni riquadro, senza «+ altri N». */
   showAllAttached: boolean;
   onShowAllAttached: (v: boolean) => void;
+  /** «Hypervisor come riquadri»: spento, un hypervisor senza VM lette è una riga fra gli attaccati. */
+  hyperBox: boolean;
+  onHyperBox: (v: boolean) => void;
   /** L'orientamento della mappa a schermo; null finché la vista non è caricata. */
   orientation: MapOrientation | null;
   /** Solo admin, a vista caricata: cambia l'orientamento salvato della mappa. */
@@ -180,6 +183,10 @@ export function MapToolbar(p: Props) {
       <label className="flex cursor-pointer items-center gap-1.5" title="Sotto ogni apparato l'elenco intero degli oggetti in archivio collegati, invece dei primi quattro e «+ altri N»">
         <input type="checkbox" checked={p.showAllAttached} onChange={(e) => p.onShowAllAttached(e.target.checked)} className="size-4" />
         Mostra tutti gli attaccati
+      </label>
+      <label className="flex cursor-pointer items-center gap-1.5" title="Ogni hypervisor è un riquadro della mappa, anche se le sue VM non sono state lette; spento, quelli senza VM lette stanno nell'elenco degli attaccati">
+        <input type="checkbox" checked={p.hyperBox} onChange={(e) => p.onHyperBox(e.target.checked)} className="size-4" />
+        Hypervisor come riquadri
       </label>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>

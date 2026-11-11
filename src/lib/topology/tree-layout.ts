@@ -61,6 +61,8 @@ export function layoutTree(
   orientation: MapOrientation = "lr",
   /** Quanti attaccati elencare sotto un riquadro prima di «+ altri N»; `Infinity` = tutti (Riccardo, 11/11/2026). */
   attMax: number = ATT_MAX,
+  /** Un hypervisor senza prove (niente VM lette) resta un riquadro invece di una riga fra gli attaccati (Riccardo, 11/11/2026). */
+  hyperBox = false,
 ): LayoutResult {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const name = (id: string) => byId.get(id)?.name ?? id;
@@ -71,6 +73,7 @@ export function layoutTree(
     const n = byId.get(id);
     if (!n) return "client";
     const k = model.classiMappa?.[id];
+    if (hyperBox && k === "att" && nodeClass(n) === "hyper") return "hyper";
     return k === undefined || k === "da_sistemare" ? nodeClass(n) : k;
   };
   const vmsOf = new Map<string, TopologyModel["vms"]>();

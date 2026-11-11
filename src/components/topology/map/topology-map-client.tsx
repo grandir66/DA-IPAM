@@ -100,6 +100,25 @@ function writeShowAllAttached(show: boolean): void {
   }
 }
 
+/** «Hypervisor come riquadri»: acceso di base (Riccardo, 11/11/2026), ricordato in questo browser. */
+const HYPER_BOX_KEY = "da-ipam.topologia.hypervisor-riquadri";
+
+function readHyperBox(): boolean {
+  try {
+    return window.localStorage.getItem(HYPER_BOX_KEY) !== "righe";
+  } catch {
+    return true;
+  }
+}
+
+function writeHyperBox(box: boolean): void {
+  try {
+    window.localStorage.setItem(HYPER_BOX_KEY, box ? "riquadri" : "righe");
+  } catch {
+    // storage non disponibile: la scelta vale solo per questa visita
+  }
+}
+
 function writeShowRedundant(show: boolean): void {
   try {
     window.localStorage.setItem(REDUNDANT_KEY, show ? "mostra" : "nascondi");
@@ -125,6 +144,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   // Le ridondanze (spec §12.5) sono a richiesta: con due switch centrali erano un groviglio di linee.
   const [showExtra, setShowExtra] = useState(false);
   const [showAllAttached, setShowAllAttached] = useState(false);
+  const [hyperBox, setHyperBox] = useState(true);
   const [centerKey, setCenterKey] = useState(1);
   /** Ritocchi appena fatti a schermo (il nodo trascinato e il suo ramo), finché il server non li restituisce. */
   const [pending, setPending] = useState<{ view: string; tweaks: SavedTweak[] } | null>(null);
@@ -171,6 +191,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     setDetailsOpen(readDetailsOpen());
     setShowExtra(readShowRedundant());
     setShowAllAttached(readShowAllAttached());
+    setHyperBox(readHyperBox());
     setListOpen(elencoAperto(() => window.localStorage.getItem(ELENCO_KEY)));
   }, []);
   const changeDetails = (open: boolean) => { setDetailsOpen(open); writeDetailsOpen(open); };
@@ -206,6 +227,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       expanded,
       orientation,
       tuttiGliAttaccati: showAllAttached,
+      hypervisorRiquadri: hyperBox,
     });
     const { model, visible, roots, missing, head, tree, layout } = c;
     const headOrigin = mode === "auto" ? (c.headChosen ? `scelta da ${auto?.created_by ?? "un amministratore"}` : "proposta dal sistema") : "";
@@ -229,7 +251,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
       savedRoots: c.savedRoots, renames: c.renames, tweaks: c.tweaks, erroreVista,
     };
-  }, [data, mode, view, pending, viewKey, expanded, orientation, showAllAttached]);
+  }, [data, mode, view, pending, viewKey, expanded, orientation, showAllAttached, hyperBox]);
 
   // Esc annulla «scegli l'oggetto di arrivo».
   useEffect(() => {
@@ -586,6 +608,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onShowExtra={changeShowExtra}
         showAllAttached={showAllAttached}
         onShowAllAttached={(v) => { setShowAllAttached(v); writeShowAllAttached(v); }}
+        hyperBox={hyperBox}
+        onHyperBox={(v) => { setHyperBox(v); writeHyperBox(v); }}
         orientation={viewLoading || (mode === "passo" && chosenMap === null) ? null : orientation}
         onOrientation={isAdmin ? (o) => void changeOrientation(o) : null}
         layoutWidth={flowShown ? d.layout.width : null}

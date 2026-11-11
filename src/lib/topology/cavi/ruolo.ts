@@ -17,7 +17,7 @@ import type { IndiceFatti, IngressoCavi, Prova } from "./prove";
 /** Il ruolo a mano come lo legge T1b: sta in identity.ts perché serve anche al nodo (node-index.ts). */
 export { ruoloLetto };
 
-export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano";
+export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano" | "firewall_censito";
 
 /** Gli stati dello spanning tree che dicono che l'apparato lo parla (spec §13.8.2, I65): non `disabled`, non `broken`. */
 const STP_ATTIVO: ReadonlySet<string> = new Set(["forwarding", "learning", "listening", "blocking", "discarding"]);
@@ -87,6 +87,10 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
     if (d.controller_mac) metti(`dev:${d.id}`, "controller");
     if (d.uplink_mac) metti(chiDi(idx, { mac: d.uplink_mac }), "padre_di");
     if (ruoloLetto(d.topology_role) === "rete") metti(`dev:${d.id}`, "a_mano");
+    // Un firewall censito fra gli apparati è un apparato di rete anche se non lo leggiamo (Riccardo, 11/11/2026: alla
+    // 72729 il FortiGate, visto sulla porta 1 di uno switch, finiva fra i «+ altri» come un PC). Solo il firewall, e solo
+    // l'apparato censito: un host che il fingerprint chiama «firewall» resta senza prova.
+    if ((d.device_type ?? "").trim().toLowerCase() === "firewall") metti(`dev:${d.id}`, "firewall_censito");
   }
   // Si annuncia come apparato, contando solo le righe che passano R-superata: gli annunci di rete (non LLDP).
   for (const n of righeUltimoGiro(input)) {

@@ -32,6 +32,8 @@ export interface MapComputeInput {
   orientation: MapOrientation;
   /** «Mostra tutti gli attaccati»: niente «+ altri N». */
   tuttiGliAttaccati?: boolean;
+  /** «Hypervisor come riquadri»: anche quelli senza VM lette. */
+  hypervisorRiquadri?: boolean;
 }
 
 export interface MapComputed<M extends TopologyModel> {
@@ -93,7 +95,7 @@ export function computeMapView<M extends TopologyModel>(base: M, inp: MapCompute
   } else {
     expanded = inp.expanded;
   }
-  const layout = layoutTree(model, tree, tweaks, expanded, inp.orientation, inp.tuttiGliAttaccati ? Infinity : undefined);
+  const layout = layoutTree(model, tree, tweaks, expanded, inp.orientation, inp.tuttiGliAttaccati ? Infinity : undefined, inp.hypervisorRiquadri === true);
   return {
     model, visible, roots, missing: inp.auto ? [] : saved.missing, head, headChosen: inp.auto && saved.head !== null,
     savedRoots: saved.roots, renames: saved.renames, tweaks, expanded, tree, layout,

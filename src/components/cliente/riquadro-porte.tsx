@@ -56,7 +56,8 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
-          <ul className="space-y-1">
+          {/* Scorre solo l'elenco: il pannello delle porte resta in vista anche scegliendo un apparato in fondo. */}
+          <ul className="max-h-[66vh] space-y-1 overflow-y-auto pr-1">
             {apparati.map((a) => {
               const attivo = a.ip === ip;
               const piene = a.porte.length - a.libere - a.senzaStato;

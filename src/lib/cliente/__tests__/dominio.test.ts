@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { problemiDiAccesso, statoDominio, vociRilieviGravi } from "../schede/dominio";
+import { problemiDiAccesso, statoDominio, vociRilieviGravi, accessi24Ore } from "../schede/dominio";
 
 function dbDiProva(): Database.Database {
   const db = new Database(":memory:");
@@ -161,4 +161,44 @@ test("i gravi si contano tutti, e in casa al più tre voci", () => {
   assert.equal(voci[2]?.testo, "Altri 10 rilievi gravi nel dominio");
   assert.equal(vociRilieviGravi([{ testo: "Uno", quanti: 1 }], 1)[0]?.testo, "1 · Uno");
   db.close();
+});
+
+test("accessi24Ore: ora per ora, chi e da dove, senza gli account dei computer", () => {
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE dc_evento (id INTEGER PRIMARY KEY, quando TEXT, event_id INTEGER, account TEXT, postazione TEXT, ip TEXT, motivo TEXT);
+    CREATE TABLE hosts (id INTEGER PRIMARY KEY, ip TEXT, custom_name TEXT, hostname TEXT);
+    INSERT INTO hosts VALUES (1, '192.168.4.4', NULL, 'SRV-FILE01');
+  `);
+  const ora = new Date("2026-11-11T10:30:00.000Z");
+  const metti = db.prepare("INSERT INTO dc_evento (quando, event_id, account, postazione, ip) VALUES (?, ?, ?, ?, ?)");
+  metti.run("2026-11-11T10:10:00.000Z", 4625, "mario", null, "192.168.4.4");
+  metti.run("2026-11-11T10:20:00.000Z", 4771, "mario", null, "192.168.4.4");
+  metti.run("2026-11-11T10:25:00.000Z", 4740, "mario", null, null);
+  metti.run("2026-11-11T08:05:00.000Z", 4776, "anna", "PC-ANNA", null);
+  metti.run("2026-11-11T08:06:00.000Z", 4625, "anna", null, null);
+  metti.run("2026-11-11T09:00:00.000Z", 4625, "PC-01$", null, "192.168.4.9");
+  metti.run("2026-11-10T09:00:00.000Z", 4625, "vecchio", null, null);
+  const a = accessi24Ore(db, ora);
+  assert.ok(a);
+  assert.equal(a.ore.length, 24);
+  assert.equal(a.falliti, 4);
+  assert.equal(a.blocchi, 1);
+  assert.deepEqual(a.ore[23], { ora: a.ore[23]?.ora, falliti: 2, blocchi: 1 });
+  assert.equal(a.ore[21]?.falliti, 2);
+  assert.deepEqual(a.chi, [
+    { utente: "mario", falliti: 2, blocchi: 1 },
+    { utente: "anna", falliti: 2, blocchi: 0 },
+  ]);
+  assert.deepEqual(a.daDove, [
+    { origine: "SRV-FILE01 (192.168.4.4)", falliti: 2 },
+    { origine: "PC-ANNA", falliti: 1 },
+  ]);
+  assert.equal(a.senzaOrigine, 1);
+});
+
+test("accessi24Ore: senza eventi nelle 24 ore non c'è grafico", () => {
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE dc_evento (id INTEGER PRIMARY KEY, quando TEXT, event_id INTEGER, account TEXT, postazione TEXT, ip TEXT, motivo TEXT);");
+  assert.equal(accessi24Ore(db, new Date("2026-11-11T10:30:00.000Z")), null);
 });

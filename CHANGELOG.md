@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: accessi falliti nelle ultime 24 ore, con chi e da dove
+
+In casa gli accessi falliti erano sette barre, una al giorno, quasi tutte uguali. Riccardo, 11/11: «su 7 giorni dicono poco: finestra temporale inferiore e dettaglio migliore».
+
+### Corretto
+- **Casa**: «Accessi falliti · ultime 24 ore» ha una barra per ora (l'ora peggiore è scura, un pallino segna le ore con un account bloccato), il totale col picco, e accanto chi sbaglia di più e da quali postazioni; un indirizzo noto all'inventario si legge col nome dell'apparato. Occupa una riga intera sotto il grafico grande.
+- **Una fonte sola**: i numeri vengono dagli eventi dei server di dominio, come la pagina «Dominio e accessi», e il riquadro in testa usa lo stesso totale (prima la casa mostrava 1414 dai log e 643 dal dominio). Senza gli eventi dei server di dominio restano le barre orarie dei log, senza dettaglio.
+
 ## [Non rilasciato] — 2026-11-11 · Riconoscimento: la bonifica tiene il nome, firma dei Samsung S
 
 ### Corretto

@@ -227,6 +227,105 @@ export function problemiDiAccesso(db: Database.Database): ProblemaAccesso[] {
     .slice(0, MASSIMO_PROBLEMI);
 }
 
+export interface Accessi24Ore {
+  /** 24 elementi, dalla più vecchia all'ora in corso; `ora` è l'ora italiana, «09». */
+  ore: Array<{ ora: string; falliti: number; blocchi: number }>;
+  falliti: number;
+  blocchi: number;
+  /** Gli account con più accessi falliti (al più 5). */
+  chi: Array<{ utente: string; falliti: number; blocchi: number }>;
+  /** Le postazioni da cui partono (al più 5); il nome dell'apparato se l'indirizzo è noto. */
+  daDove: Array<{ origine: string; falliti: number }>;
+  /** Falliti di cui il server di dominio non dice la provenienza. */
+  senzaOrigine: number;
+}
+
+const ORA_MS = 60 * 60 * 1000;
+
+/**
+ * Gli accessi falliti delle ultime 24 ore, ora per ora, con chi e da dove (Riccardo, 11/11/2026:
+ * «su 7 giorni dicono poco: finestra inferiore e dettaglio migliore»). Fonte: gli eventi dei server
+ * di dominio. Stesse esclusioni di `problemiDiAccesso`: account vuoti e account dei computer («…$»).
+ * `null` se la tabella non c'è o nelle 24 ore non c'è nessun evento.
+ */
+export function accessi24Ore(db: Database.Database, ora: Date = new Date()): Accessi24Ore | null {
+  if (!tabella(db, "dc_evento")) return null;
+  const adesso = ora.getTime();
+  const inizioOraCorrente = Math.floor(adesso / ORA_MS) * ORA_MS;
+  const inizio = inizioOraCorrente - 23 * ORA_MS;
+  const righe = db.prepare(`
+    SELECT account, event_id, postazione, ip, motivo, quando
+    FROM dc_evento
+    WHERE quando >= ? AND event_id IN (4740, 4625, 4771, 4776)
+  `).all(new Date(inizio).toISOString()) as RigaEvento[];
+
+  const formatoOra = new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" });
+  const ore: Accessi24Ore["ore"] = Array.from({ length: 24 }, (_, i) => ({
+    ora: formatoOra.format(inizio + i * ORA_MS),
+    falliti: 0,
+    blocchi: 0,
+  }));
+  const perUtente = new Map<string, { falliti: number; blocchi: number }>();
+  const perOrigine = new Map<string, number>();
+  let falliti = 0;
+  let blocchi = 0;
+  let senzaOrigine = 0;
+
+  for (const riga of righe) {
+    const utente = testo(riga.account);
+    if (!utente || utente.endsWith("$")) continue;
+    const istante = Date.parse(riga.quando);
+    if (Number.isNaN(istante) || istante > adesso) continue;
+    const indice = Math.floor((istante - inizio) / ORA_MS);
+    const casella = ore[indice];
+    if (!casella) continue;
+    const suo = perUtente.get(utente) ?? { falliti: 0, blocchi: 0 };
+    if (riga.event_id === 4740) {
+      casella.blocchi += 1;
+      blocchi += 1;
+      suo.blocchi += 1;
+    } else if (EVENTI_FALLITI.has(riga.event_id)) {
+      casella.falliti += 1;
+      falliti += 1;
+      suo.falliti += 1;
+      const origine = daDi(riga);
+      if (origine) perOrigine.set(origine, (perOrigine.get(origine) ?? 0) + 1);
+      else senzaOrigine += 1;
+    }
+    perUtente.set(utente, suo);
+  }
+  if (falliti === 0 && blocchi === 0) return null;
+
+  const origini = [...perOrigine.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "it")).slice(0, 5);
+  const nomi = nomiDegliIndirizzi(db, origini.map(([o]) => o));
+  return {
+    ore,
+    falliti,
+    blocchi,
+    chi: [...perUtente.entries()]
+      .map(([utente, n]) => ({ utente, ...n }))
+      .sort((a, b) => b.falliti - a.falliti || b.blocchi - a.blocchi || a.utente.localeCompare(b.utente, "it"))
+      .slice(0, 5),
+    daDove: origini.map(([origine, n]) => ({ origine: nomi.get(origine) ?? origine, falliti: n })),
+    senzaOrigine,
+  };
+}
+
+/** Indirizzo → «nome (indirizzo)» per gli apparati che l'inventario conosce. */
+function nomiDegliIndirizzi(db: Database.Database, origini: string[]): Map<string, string> {
+  const mappa = new Map<string, string>();
+  const ip = origini.filter((o) => /^\d{1,3}(\.\d{1,3}){3}$/.test(o));
+  if (ip.length === 0 || !tabella(db, "hosts")) return mappa;
+  const righe = db.prepare(
+    `SELECT ip, custom_name, hostname FROM hosts WHERE ip IN (${ip.map(() => "?").join(",")})`,
+  ).all(...ip) as Array<{ ip: string; custom_name: string | null; hostname: string | null }>;
+  for (const r of righe) {
+    const nome = testo(r.custom_name) ?? testo(r.hostname);
+    if (nome) mappa.set(r.ip, `${nome} (${r.ip})`);
+  }
+  return mappa;
+}
+
 function contestoDominio(falliti: number): string {
   const n = falliti === 1 ? "1 accesso fallito" : `${falliti} accessi falliti`;
   return `più alto è peggio · ${n}`;
@@ -237,7 +336,8 @@ function riquadroDominio(c: ContestoCliente): RiquadroCliente {
     const stato = statoDominio(db);
     const problemi = problemiDiAccesso(db);
     const bloccati = problemi.filter((p) => p.tipo === "bloccato");
-    const falliti = problemi.filter((p) => p.tipo === "falliti").reduce((n, p) => n + p.quanti, 0);
+    // Lo stesso numero del grafico della casa: tutti i falliti delle 24 ore, non solo quelli di chi ne ha almeno 5.
+    const falliti = accessi24Ore(db)?.falliti ?? 0;
     const gravi = stato?.graviTotali ?? 0;
     const aperti = bloccati.length + gravi;
     return {

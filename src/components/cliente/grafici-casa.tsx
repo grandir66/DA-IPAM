@@ -101,30 +101,90 @@ export function AnelloRischio({ dati }: { dati: NonNullable<GraficiCasa["rischio
   );
 }
 
-function giornoBreve(giorno: string): string {
-  const d = new Date(`${giorno}T12:00:00Z`);
-  return Number.isNaN(d.getTime()) ? giorno : d.toLocaleDateString("it-IT", { timeZone: FUSO_UTENTI, weekday: "short" });
+function quantiAccessi(n: number): string {
+  return n === 1 ? "1 accesso fallito" : `${n} accessi falliti`;
 }
 
-/** Barre dei giorni: la più alta è scura, le altre medie; sopra ogni barra il numero. */
-export function BarreAccessi({ dati }: { dati: NonNullable<GraficiCasa["accessi"]> }) {
-  const max = Math.max(1, ...dati.giorni.map((g) => g.falliti));
+function RigaConBarra({ nome, valore, massimo, nota }: { nome: string; valore: number; massimo: number; nota?: string }) {
   return (
-    <div>
-      <div className="flex h-28 items-end gap-2">
-        {dati.giorni.map((g) => (
-          <div key={g.giorno} className="flex h-full min-w-0 flex-1 flex-col justify-end text-center">
-            <span className="font-mono text-[13px] tabular-nums">{g.falliti}</span>
-            <span
-              aria-hidden
-              className={`mt-1 block rounded-sm ${g.falliti === max ? "bg-[var(--vc-acceso)]" : "bg-[var(--vc-cian)]"}`}
-              style={{ height: `${Math.max(3, (g.falliti / max) * 70)}%` }}
-            />
-            <span className="mt-1 text-[13px] text-muted-foreground">{giornoBreve(g.giorno)}</span>
-          </div>
-        ))}
+    <div className="grid grid-cols-[minmax(0,1fr)_5rem_3rem] items-center gap-2 text-[13px]">
+      <span className="truncate" title={nome}>
+        {nome}
+        {nota && <span className="ml-2 text-muted-foreground">{nota}</span>}
+      </span>
+      <span className="h-2 overflow-hidden rounded-sm bg-[var(--vc-barra-fondo)]" aria-hidden>
+        <span className="block h-full bg-[var(--vc-cian)]" style={{ width: `${(valore / Math.max(1, massimo)) * 100}%` }} />
+      </span>
+      <span className="text-right font-mono tabular-nums">{valore}</span>
+    </div>
+  );
+}
+
+/**
+ * Accessi falliti nelle ultime 24 ore: una barra per ora (l'ora peggiore è scura, un pallino segna
+ * le ore in cui un account è stato bloccato) e, accanto, chi sbaglia e da dove. Su 7 giorni il
+ * grafico diceva poco (Riccardo, 11/11/2026).
+ */
+export function AccessiUltime24Ore({ dati }: { dati: NonNullable<GraficiCasa["accessi"]> }) {
+  const max = Math.max(1, ...dati.ore.map((o) => o.falliti));
+  const picco = dati.ore.reduce((migliore, o) => (o.falliti > migliore.falliti ? o : migliore), dati.ore[0] ?? { ora: "", falliti: 0, blocchi: 0 });
+  const maxChi = Math.max(1, ...dati.chi.map((c) => c.falliti));
+  const maxDove = Math.max(1, ...dati.daDove.map((d) => d.falliti));
+  return (
+    <div className={dati.dettaglio ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""}>
+      <div>
+        <p className="text-sm">
+          <span className="font-mono text-2xl font-bold tabular-nums">{dati.falliti}</span>
+          <span className="ml-2 text-muted-foreground">
+            {dati.falliti === 1 ? "accesso fallito" : "accessi falliti"}
+            {dati.blocchi > 0 && ` · ${dati.blocchi === 1 ? "1 blocco" : `${dati.blocchi} blocchi`} di account`}
+            {picco.falliti > 0 && ` · il picco alle ${picco.ora}`}
+          </span>
+        </p>
+        <div className="mt-3 flex h-32 items-end gap-[3px]" role="img" aria-label={`Accessi falliti ora per ora, ${dati.falliti} in 24 ore`}>
+          {dati.ore.map((o, i) => (
+            <div key={i} className="flex h-full min-w-0 flex-1 flex-col justify-end" title={`ore ${o.ora}: ${quantiAccessi(o.falliti)}${o.blocchi > 0 ? `, ${o.blocchi} blocchi` : ""}`}>
+              {o.blocchi > 0 && <span aria-hidden className="mx-auto mb-1 block size-1.5 rounded-full bg-[var(--vc-grave)]" />}
+              <span
+                aria-hidden
+                className={`block rounded-sm ${o.falliti === max && o.falliti > 0 ? "bg-[var(--vc-acceso)]" : "bg-[var(--vc-cian)]"}`}
+                style={{ height: o.falliti > 0 ? `${Math.max(3, (o.falliti / max) * 82)}%` : "2px" }}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="mt-1 flex gap-[3px] text-[13px] text-muted-foreground" aria-hidden>
+          {dati.ore.map((o, i) => (
+            <span key={i} className="min-w-0 flex-1 text-center">{i % 3 === 2 ? o.ora : ""}</span>
+          ))}
+        </div>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[13px] text-muted-foreground">
+          <span>una barra per ora</span>
+          <span className="inline-flex items-center gap-1"><Campione classe="bg-[var(--vc-acceso)]" /> l&apos;ora peggiore</span>
+          <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block size-1.5 rounded-full bg-[var(--vc-grave)]" /> un account bloccato</span>
+        </p>
       </div>
-      <p className="pt-2 text-[13px] text-muted-foreground">{dati.ultime24} nelle ultime 24 ore</p>
+      {dati.dettaglio && (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <p className="text-[13px] font-semibold">Chi</p>
+            {dati.chi.map((c) => (
+              <RigaConBarra key={c.utente} nome={c.utente} valore={c.falliti} massimo={maxChi} nota={c.blocchi > 0 ? (c.blocchi === 1 ? "bloccato 1 volta" : `bloccato ${c.blocchi} volte`) : undefined} />
+            ))}
+          </div>
+          {(dati.daDove.length > 0 || dati.senzaOrigine > 0) && (
+            <div className="space-y-1.5">
+              <p className="text-[13px] font-semibold">Da dove</p>
+              {dati.daDove.map((d) => (
+                <RigaConBarra key={d.origine} nome={d.origine} valore={d.falliti} massimo={maxDove} />
+              ))}
+              {dati.senzaOrigine > 0 && (
+                <p className="text-[13px] text-muted-foreground">{dati.senzaOrigine} senza una provenienza indicata</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

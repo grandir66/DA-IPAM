@@ -1,6 +1,6 @@
 import { Pannello } from "@/components/shared/console";
 import { ElencoAttenzione } from "@/components/cliente/elenco-attenzione";
-import { AnelloRischio, BarreAccessi, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
+import { AccessiUltime24Ore, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
 import { RiquadroPiccolo } from "@/components/cliente/riquadro-piccolo";
 import Link from "next/link";
 import { contestoCliente } from "@/lib/cliente/contesto";
@@ -63,6 +63,14 @@ export default async function CasaCliente() {
             <GraficoAccesi dati={g.accesi} />
           </Pannello>
         )}
+        {g.accessi && (
+          <Pannello
+            titolo="Accessi falliti · ultime 24 ore"
+            azioni={<Apri href={g.accessi.dettaglio ? "/cliente/dominio" : "/cliente/log-sicurezza"} testo={g.accessi.dettaglio ? "Dominio e accessi" : "Log di sicurezza"} />}
+          >
+            <AccessiUltime24Ore dati={g.accessi} />
+          </Pannello>
+        )}
         <div className="grid items-start gap-4 lg:grid-cols-2">
           {g.reti.length > 0 && (
             <Pannello titolo="Le tue reti" azioni={<Apri href="/cliente/reti" testo="Reti" />}>
@@ -72,11 +80,6 @@ export default async function CasaCliente() {
           {g.rischio && (
             <Pannello titolo="Rischio del dominio" azioni={<Apri href="/cliente/dominio" testo="Dominio e accessi" />}>
               <AnelloRischio dati={g.rischio} />
-            </Pannello>
-          )}
-          {g.accessi && (
-            <Pannello titolo="Accessi falliti · 7 giorni" azioni={<Apri href="/cliente/log-sicurezza" testo="Log di sicurezza" />}>
-              <BarreAccessi dati={g.accessi} />
             </Pannello>
           )}
           {g.perRete.length > 0 && (

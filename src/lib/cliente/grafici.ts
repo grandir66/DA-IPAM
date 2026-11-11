@@ -14,10 +14,9 @@ import { kpiSicurezza } from "@/lib/security/kpi-dashboard";
 import type { StatusPoint } from "@/lib/status-over-time";
 import { moduloAttivo, nelCliente, type ContestoCliente } from "./contesto";
 import { daSistemare } from "./schede/da-sistemare";
-import { statoDominio } from "./schede/dominio";
+import { accessi24Ore, statoDominio, type Accessi24Ore } from "./schede/dominio";
 
 export const ORE_GRAFICO_ACCESI = 48;
-const GIORNI_ACCESSI = 7;
 const MASSIMO_RETI = 8;
 
 export interface PuntoAccesi { t: string; accesi: number }
@@ -27,7 +26,8 @@ export interface GraficiCasa {
   accesi: { punti: PuntoAccesi[]; adesso: number; minimo: number; massimo: number } | null;
   reti: ReteGrafico[];
   rischio: { punteggio: number; gravi: number } | null;
-  accessi: { giorni: Array<{ giorno: string; falliti: number }>; ultime24: number } | null;
+  /** Ultime 24 ore, ora per ora. `dettaglio` (chi e da dove) c'è solo con gli eventi dei server di dominio. */
+  accessi: (Accessi24Ore & { dettaglio: boolean }) | null;
   perRete: Array<{ nome: string; gravi: number; alte: number }>;
 }
 
@@ -78,13 +78,25 @@ export function graficiCasa(c: ContestoCliente, attive: ReadonlySet<string>): Gr
         return stato?.punteggio == null ? null : { punteggio: stato.punteggio, gravi: stato.graviTotali };
       }, null)
     : null;
-  const accessi = moduloAttivo(c, "siem")
-    ? prova("accessi", () => {
-        const a = nelCliente(c, (db) => kpiSicurezza(db)).accessi;
-        if (!a) return null;
-        return { giorni: a.serie.slice(-GIORNI_ACCESSI).map((g) => ({ giorno: g.giorno, falliti: g.falliti })), ultime24: a.falliti24h };
-      }, null)
-    : null;
+  // Prima gli eventi dei server di dominio, che dicono chi e da dove; senza, la serie oraria dei log.
+  const dalDominio = attive.has("dominio") ? prova("accessi", () => nelCliente(c, (db) => accessi24Ore(db, c.ora)), null) : null;
+  const accessi: GraficiCasa["accessi"] = dalDominio
+    ? { ...dalDominio, dettaglio: true }
+    : moduloAttivo(c, "siem")
+      ? prova("accessi dai log", () => {
+          const a = nelCliente(c, (db) => kpiSicurezza(db)).accessi;
+          if (!a || a.falliti24h === 0) return null;
+          return {
+            ore: a.serie24h.map((o) => ({ ora: o.ora, falliti: o.falliti, blocchi: o.bloccati })),
+            falliti: a.falliti24h,
+            blocchi: a.serie24h.reduce((n, o) => n + o.bloccati, 0),
+            chi: [],
+            daDove: [],
+            senzaOrigine: 0,
+            dettaglio: false,
+          };
+        }, null)
+      : null;
   const perRete = attive.has("da-sistemare") ? prova("per rete", () => daSistemare(c).perRete.slice(0, MASSIMO_RETI), []) : [];
   return { accesi, reti, rischio, accessi, perRete };
 }

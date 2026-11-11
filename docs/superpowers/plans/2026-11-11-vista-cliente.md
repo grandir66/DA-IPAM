@@ -526,44 +526,56 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 
 ---
 
-### [!] Task 7 — Scheda Da sistemare
+### [ ] Task 7 — Scheda Da sistemare
 
-**Fermo prima del codice (11/11/2026).** Due dati che il task dà per esistenti non tornano da `elencoRilievi` (`src/lib/rilievi/unione.ts`). Nessun file di codice toccato.
-
-1. `ospiti` non è nell'elenco. Alla riga 399 ogni riga di `data` è restituita senza `ospiti` («Gli host di ogni rilievo servono solo qui: nell'elenco non viaggiano»). Senza gli ospiti un rilievo non si può applicare a ogni host, e non si legge `ospite.gravita`.
-2. `pageSize` è tagliato a 200 (riga 392: `Math.min(Math.max(filtro.pageSize ?? 50, 1), 200)`). Non esiste un valore che renda tutte le righe.
-
-Ci sono, e non sono il blocco: `Severity` è `"Critical" | "High" | "Medium" | "Low"` (`src/lib/severity-style.ts`); `FiltroRilievi.gravita` c'è; `BarraRete` ha `critical` e `high`; `barreReteDiSerie()` è la fonte di «Critiche da sistemare» e «Alte da sistemare» sulla Dashboard.
+**Corretto l'11/11 dopo lo stop (aveva ragione chi esegue):** l'elenco dei rilievi non porta gli host e si ferma a 200 righe. Non serve: `elencoRilievi` sa già raggruppare **per host su tutte le pagine**, con la gravità che il rilievo ha su quell'host. La scheda legge i gruppi, non le righe. Fonti, interfacce e regole qui sotto sono riscritte; il task riparte da capo.
 
 **File**
 - crea `src/lib/cliente/schede/da-sistemare.ts`, `src/lib/cliente/__tests__/da-sistemare.test.ts`, `src/app/(cliente)/cliente/da-sistemare/page.tsx`
 - modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
+- **non** si modifica niente in `src/lib/rilievi/`
 
-**Fonti**
-- `elencoRilievi(filtro)` di `@/lib/rilievi/unione` (rende `ElencoRilievi`, con `data: RilievoUnito[]`; tipi in `src/lib/rilievi/tipi.ts`): è la stessa fonte della pagina Findings e della Dashboard. Va chiamata dentro il contesto del cliente, con gli stessi argomenti di `barreReteDiSerie()` in `src/lib/rilievi/barre-di-serie.ts`: `{ conIndicatori: true, exploitDi: exploitPerRotte().exploitDi, cvssDi: cvssPerRotte(), pageSize: <tutte> }`.
-- `barreReteDiSerie()` rende `BarraRete[]` (tipo in `src/lib/rilievi/gruppi.ts` riga 251): i totali di critiche e alte della Dashboard vengono da lì.
-- Di ogni `RilievoUnito` servono: `gravita`, `titolo`, `rimedio`, `ip`, `host_id`, `ospiti` (tutti gli host del rilievo), `visto`.
-- **Da leggere prima di scrivere:** i valori del tipo `Severity` usato da `RilievoUnito.gravita`, i campi di `FiltroRilievi` (se c'è un filtro per gravità lo si usa, altrimenti si filtra in memoria) e i campi di `BarraRete`.
+**Fonti (verificate nel codice l'11/11)**
+- `elencoRilievi(filtro)` di `@/lib/rilievi/unione`, chiamata **una volta sola**, dentro il contesto del cliente, così:
+```ts
+elencoRilievi({
+  gravita: ["Critical", "High"],
+  raggruppa: "host",
+  conIndicatori: true,
+  pageSize: 200,
+  exploitDi: exploitPerRotte().exploitDi,   // come in src/lib/rilievi/barre-di-serie.ts
+  cvssDi: cvssPerRotte(),                   // idem
+})
+```
+- Dal risultato servono:
+  - `gruppi: GruppoRilievi[]` (tipo in `src/lib/rilievi/gruppi.ts` riga 20): un gruppo per host, calcolato su **tutti** i rilievi filtrati, non sulla pagina. Di ogni gruppo: `tipo` (si tengono solo quelli con `tipo === "host"`: il gruppo «Senza un host preciso» ha `tipo === "senza"` e si scarta), `chiave`, `nome`, `dettaglio` (indirizzo e rete, già composto, o `null`), `gravita.Critical`, `gravita.High` (contati con la gravità che il rilievo ha su quell'host), `anteprima` (i titoli dei suoi rilievi, i più gravi in testa).
+  - `data: RilievoUnito[]` (al più 200 righe, le più gravi prima): serve **solo** per ricavare il rimedio dal titolo (`titolo`, `rimedio`) e la data dell'ultimo controllo (`visto`).
+  - `perRete: BarraRete[]` (c'è perché `conIndicatori` è vero; campi `critical` e `high`): **non** si usa per i totali, perché qui il filtro per gravità cambia il conto. I totali si prendono da `barreReteDiSerie()` di `@/lib/rilievi/barre-di-serie`, che è la fonte della Dashboard.
+- `Severity` è `"Critical" | "High" | "Medium" | "Low"` (`src/lib/severity-style.ts`).
 
 **Interfacce prodotte**
 ```ts
-export interface DaSistemareApparato { nome: string; ip: string; gravi: number; alte: number; cosa: string; rimedio: string | null }
+export interface DaSistemareApparato { chiave: string; nome: string; dettaglio: string | null; gravi: number; alte: number; cosa: string; rimedio: string | null }
 export interface DaSistemare { ultimoControllo: string | null; gravi: number; alte: number; apparati: DaSistemareApparato[] }
-/** Pura: raggruppa per apparato i rilievi già letti. Provata con rilievi finti. */
-export function perApparato(rilievi: readonly RilievoUnito[]): DaSistemareApparato[];
+/** Pura: dai gruppi per host e dalle righe (per i rimedi) alle righe della scheda. Provata con dati finti. */
+export function perApparato(
+  gruppi: readonly Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "dettaglio" | "gravita" | "anteprima">[],
+  righe: readonly Pick<RilievoUnito, "titolo" | "rimedio">[],
+): DaSistemareApparato[];
 export function daSistemare(c: ContestoCliente): DaSistemare;
 export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da sistemare", ordine 30, icona "Wrench"
 ```
 
 **Regole di calcolo**
-- Si tengono solo i rilievi di gravità critica e alta. Media, bassa e informativa non si mostrano.
-- `perApparato`: ogni rilievo vale per ognuno dei suoi `ospiti` (se `ospiti` manca, per `ip`); la gravità su quell'apparato è `ospite.gravita` se c'è, altrimenti quella del rilievo. Per apparato: `gravi` = quanti critici, `alte` = quanti alti, `cosa` = il `titolo` del rilievo più grave (a parità il primo), `rimedio` = il suo `rimedio` (stringa vuota → `null`), `nome` = `ospite.nome` oppure l'IP. Ordine: `gravi` decrescente, poi `alte` decrescente. Al più 100 apparati.
-- `gravi` e `alte` totali della scheda = somma di critiche e alte su `barreReteDiSerie()`, così coincidono con la Dashboard.
-- `ultimoControllo` = il `visto` più recente fra i rilievi.
+- Solo gravità critica e alta: lo fa il filtro `gravita` della chiamata. Media e bassa non si mostrano.
+- `perApparato`: si tengono i gruppi con `tipo === "host"` e con `gravita.Critical + gravita.High > 0`. Per ognuno: `gravi` = `gravita.Critical`; `alte` = `gravita.High`; `cosa` = `anteprima[0]` (se manca, «Rilievo senza titolo»); `rimedio` = il `rimedio` della prima riga di `righe` con lo stesso `titolo` di `cosa`, senza spazi ai lati (stringa vuota o titolo non trovato → `null`). Ordine: `gravi` decrescente, poi `alte` decrescente, poi `nome`. Al più 100 apparati.
+- `gravi` e `alte` totali della scheda = somma di `critical` e di `high` su `barreReteDiSerie()`, così coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
+- `ultimoControllo` = il `visto` più recente fra le righe di `data` (`null` se non ce n'è).
+- Se `elencoRilievi` lancia, la scheda mostra «Dato non disponibile» e l'errore va in `console.error("[cliente] da sistemare: …")`.
 
 **Pagina** (`/cliente/da-sistemare`, una colonna)
 - `PaginaModulo` con `contesto` «ultimo controllo: <data italiana>».
-- `Pannello` «Per apparato, dal più grave»: una riga per apparato: icona (triangolo se `gravi > 0`, cerchio con esclamativo altrimenti), nome in evidenza, «<gravi> gravi · <alte> alte» (le parti a zero si saltano), `cosa`, e a destra «rimedio: <rimedio>» se c'è. Senza apparati: «Niente da sistemare».
+- `Pannello` «Per apparato, dal più grave»: una riga per apparato: icona (triangolo se `gravi > 0`, cerchio con esclamativo altrimenti), nome in evidenza con `dettaglio` accanto in piccolo, «<gravi> gravi · <alte> alte» (le parti a zero si saltano), `cosa`, e a destra «rimedio: <rimedio>» se c'è. Senza apparati: «Niente da sistemare».
 - Nessuna sigla CVE, nessun punteggio, nessun dettaglio dell'attacco, nessun link alla pagina Findings.
 
 **Scheda nel registro**
@@ -571,7 +583,7 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 - `riquadro`: `numero` = `gravi + alte`; `contesto` = «<gravi> gravi · <alte> alte»; `aperti` = `gravi + alte`; `stato` = `grave` se `gravi > 0`, `attenzione` se `alte > 0`, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni apparato con `gravi > 0` (al più 5), gravità `grave`, testo «<gravi> problemi gravi su <nome>» (singolare se 1), `href` «/cliente/da-sistemare».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`perApparato`: un rilievo con tre ospiti, un ospite con gravità propria, rimedio vuoto). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`perApparato`: il gruppo `tipo: "senza"` scartato; un gruppo senza critici né alti scartato; rimedio trovato dal titolo; rimedio vuoto → `null`; ordine per gravi, alte, nome). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
 
 **Commit:** «Vista cliente: scheda Da sistemare».
 
@@ -651,6 +663,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 6 [x]: scheda Log di sicurezza. Prima i tre ritocchi a Dominio. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 32 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. La tabella delle frasi nasce dalla misura sul 70791 (210 avvisi veri, 20 titoli).
 
 - 2026-11-11 Task 7 [!]: fermo prima del codice. `elencoRilievi` non restituisce `ospiti` (unione.ts riga 399) e taglia `pageSize` a 200 (riga 392): non si può raggruppare per apparato né leggere tutte le righe. Nessun ripiego.
+
+- 2026-11-11 Piano corretto dopo lo stop del Task 7: la scheda legge i gruppi per host di `elencoRilievi` (`raggruppa: "host"`), non le righe; rimedio dal titolo. Task 7 torna `[ ]`.
 
 ## Consuntivo
 ### Fatto

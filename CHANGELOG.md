@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: catalogo e riconoscimento (ancora senza pagina)
+
+Riccardo (11/11): «classificare le funzioni… DNS, DHCP, AD, DB, web… molte si potrebbero determinare direttamente dalle scansioni e servizi». La categoria dice che cosa è l'apparato, la funzione che cosa fa: un server virtuale può fare da firewall, da router o da storage.
+
+### Aggiunto
+- **Catalogo delle funzioni** (`src/lib/classification/funzioni.ts`): 32 funzioni in nove gruppi, in un punto solo; aggiungerne una è una riga.
+- **Riconoscimento** dalle letture già fatte: servizi in esecuzione letti dagli agenti, porte aperte, elenco dei server di dominio, categoria, ruoli della scheda. Ogni funzione porta scritto da dove viene. Fuori di proposito ciò che c'è su ogni macchina: il client DNS e lo spooler di ogni Windows, le porte 80 e 443, i client VPN, gli agenti.
+- Tabella `host_funzioni` e `scripts/funzioni-cli.ts <cliente> [--applica]` (senza `--applica` non scrive). Non è ancora agganciato alle scansioni né mostrato nelle pagine.
+
 ## [Non rilasciato] — 2026-11-11 · Filtro «Fisico o virtuale»
 
 Riccardo (11/11): «VM server Windows, VM server Linux… potrebbero essere VM client o VDI». Una macchina virtuale può essere un server o una postazione: «virtuale» è un attributo a sé e non decide la categoria. Sul cliente 70791, 26 server su 28 sono virtuali e non si vedeva.

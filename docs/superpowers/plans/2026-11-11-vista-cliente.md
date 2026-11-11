@@ -14,7 +14,7 @@
 
 **Livello di controllo:** leggero (deciso da Riccardo l'11/11/2026). Il Task 1 tocca l'accesso e lo schema del database hub, che sono zona rossa: lì la prova si scrive e si vede fallire prima del codice.
 
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-11
+**Stato:** completato sul codice, non verificato a schermo · **Ultimo aggiornamento:** 2026-11-11
 
 ## Regole per chi esegue
 
@@ -804,8 +804,38 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 
 - 2026-11-11 Task 7 bis [x]: Da sistemare per programma da aggiornare. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le prove su `perApparato` sono tolte con la funzione. La pagina autenticata non è stata aperta.
 
+- 2026-11-11 Controllo dei Task 7 bis (`305011a1`) e 8 (`17626f82`): passati sul codice, 36 prove verdi rilanciate. La casa è stata composta sull'hub coi dati veri del 70791 con uno script di sola lettura (cinque schede attive, 16 voci di attenzione, nessun errore). Consuntivo scritto.
+
 ## Consuntivo
+
+Scritto l'11/11/2026 da chi ha tenuto il piano. Eseguito da Cursor, versioni dalla 0.9.1140 alla 0.9.1160 su `dev`.
+
 ### Fatto
+- Utente «Cliente (vista semplice)»: ruolo «Solo lettura» più il segno `users.vista_cliente`, chiuso in `/cliente`; ogni altra pagina lo riporta lì, ogni rotta `/api` (tranne l'accesso) risponde 403; il cambio del segno chiude le sessioni aperte.
+- Area `/cliente` con template suo, registro delle schede (`src/lib/cliente/registro.ts`) e casa a riquadri con «Cosa richiede attenzione».
+- Cinque schede: Reti (VLAN, griglia a quattro stati, reti viste sul cavo, scheda dell'apparato con porte aperte e porta dello switch), Apparati (per tipo, pannello porte), Da sistemare (per programma da aggiornare), Dominio e accessi (rischio, rilievi, problemi di accesso), Log di sicurezza (ultimi 7 giorni per tipo).
+- Colori del marchio Domarc, tema che segue la preferenza, regole di stampa, documenti (`CONTEXT.md`, manuale, scheda-mappa).
+- Verifiche: 36 prove verdi in `src/lib/cliente/__tests__/`; lint e typecheck a zero errori; build compilato. Casa composta sull'hub coi dati veri del cliente 70791 (script di sola lettura, 11/11): Reti 7 · Apparati 350, 172 accesi · Da sistemare 124 gravi e 385 alte, 120 programmi · Dominio 100 di rischio su 100 · Log 93 avvisi in 7 giorni, 29 tipi; 16 voci di attenzione, nessuna scheda in errore.
+
 ### Mancante
+- **Nessuno ha guardato a schermo** le pagine dopo il Task 4 bis: colori del marchio (sul tema scuro sono una proposta mai vista), Dominio e accessi, Log di sicurezza, Da sistemare, anteprima di stampa.
+- **Recinto dal vivo**: `demo` è Cliente sull'hub dall'11/11, ma nessuno ha confermato cosa vede né provato `/settings` e una rotta `/api` con la sua sessione.
+- `scripts/controlla.sh` non esiste nel repo: il «cancello completo» del Task 8 si è ridotto a lint, typecheck e build.
+- Niente su `main`: lo decide Riccardo.
+
 ### Scostamenti dal piano
+- Niente ruolo nuovo: il ruolo ha un `CHECK` nel database hub; si è usata una colonna (Task 1).
+- Prove con `node:test`, non Vitest, che nel repo non c'è.
+- Gli host assenti da più di 7 giorni sono un quarto stato (Riccardo).
+- Il tema segue la preferenza, non è forzato in chiaro (Riccardo).
+- I log non mostrano «aperti/chiusi» ma gli ultimi 7 giorni per tipo (Riccardo): nessuno prende in carico gli avvisi.
+- «Da sistemare» è per programma, non per apparato (Riccardo): per apparato uscivano conti di CVE e sigle.
+- Tre task aggiunti dai controlli (1 bis, 4 bis, 4 ter) e due dalle decisioni (6 bis, 7 bis). Il 4 bis l'ha scritto un'altra sessione che ha guardato a schermo; da allora il piano lo tiene una sessione sola.
+
 ### Consigli di sviluppo
+- **I rilievi del dominio sono in inglese** («Shadow credentials (KeyCredentialLink) present», «Unexpected DCSync rights on domain») e finiscono in casa: serve una tabella di frasi semplici per `rule_id`, come quella degli avvisi.
+- **La casa impiega circa 3,5 secondi** sul 70791, quasi tutti per «Da sistemare» (lettura dei rilievi più barre per rete): da guardare se pesa.
+- **64 apparati non riconosciuti** sono visibili al cliente: decidere se tenerli o toglierli dalla vista.
+- **«100 di rischio su 100»** con 644 accessi falliti è il primo numero che il cliente vede: vale una frase che dica cosa fare.
+- Il riconoscimento dà `PC-LasagniF` (Windows 11) come «Router»: è un dato, non interfaccia.
+- Una voce «Vista cliente» nel menu laterale, se il link accanto al titolo della Dashboard è poco visibile.

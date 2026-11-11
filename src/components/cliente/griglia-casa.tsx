@@ -80,7 +80,7 @@ export function GrigliaCasa({
         <div className="nascosto-stampa flex flex-wrap items-center gap-2 rounded-xl border border-primary bg-selezione px-3.5 py-2.5">
           <p className="min-w-0 flex-1 text-sm">
             <span className="font-semibold">Stai componendo la casa di questo cliente.</span>{" "}
-            Trascina un riquadro sopra un altro per cambiargli posto. Sopra ogni riquadro: le frecce lo spostano, ↔ ne cambia la larghezza, ↕ l'altezza, l'occhio barrato lo nasconde.
+            Trascina un riquadro sopra un altro per cambiargli posto. Sopra ogni riquadro: le frecce lo spostano, ↔ ne cambia la larghezza, ↕ l&apos;altezza, l&apos;occhio barrato lo nasconde.
           </p>
           <Button type="button" disabled={salvo} onClick={() => void salva()}>
             {salvo ? "Salvo…" : "Salva la disposizione"}

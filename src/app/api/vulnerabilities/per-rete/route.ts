@@ -7,14 +7,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getRilieviPerRete } from "@/lib/db-tenant";
+import { barreReteDiSerie } from "@/lib/rilievi/barre-di-serie";
 
 export async function GET() {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
   return withTenantFromSession(() => {
     try {
-      return NextResponse.json({ reti: getRilieviPerRete() });
+      return NextResponse.json({ reti: barreReteDiSerie() });
     } catch (e) {
       console.error("[vulnerabilita] rilievi per rete:", e);
       return NextResponse.json({ error: "Errore nel conteggio dei rilievi per rete" }, { status: 500 });

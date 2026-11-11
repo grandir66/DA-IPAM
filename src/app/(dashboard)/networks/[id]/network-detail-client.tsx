@@ -398,6 +398,33 @@ export function NetworkDetailClient({
     };
   });
 
+  /**
+   * La categoria scelta dal menu di una riga vale per tutte le righe spuntate, se quella riga è fra le spuntate
+   * (Riccardo, 11/11/2026: la scelta deve essere «l'applicazione per il gruppo scelto di una categoria comune»).
+   * Stessa rotta della finestra «Assegna categoria…».
+   */
+  async function categoriaAiSelezionati(ids: number[], slug: string) {
+    try {
+      const res = await fetch("/api/hosts/bulk-update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_ids: ids, classification: slug }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(data.error ?? "Salvataggio non riuscito");
+        return;
+      }
+      await refreshHosts();
+      toast.success(`${getClassificationLabel(slug)} su ${ids.length} host`);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setEditingHostId(null);
+      setEditingField(null);
+    }
+  }
+
   /** «Torna automatica» dal menu della riga: toglie la scelta a mano, poi rilegge gli host. */
   async function tornaAutomaticaRiga(hostId: number) {
     try {
@@ -1488,7 +1515,7 @@ export function NetworkDetailClient({
                   </p>
                   {/* Aggiunge alla selezione, non filtra: sta col gruppo della selezione (revisione 20/10). */}
                   <div className="flex items-center gap-1">
-                    <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
+                    <Label className="text-xs text-muted-foreground" title="Spunta le righe di quel tipo: non cambia la loro categoria. Per assegnarla c'è «Assegna categoria…»">Spunta le righe di tipo:</Label>
                     <select
                       className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
                       value=""
@@ -1528,14 +1555,16 @@ export function NetworkDetailClient({
                       Rendi apparato
                     </Button>
                     <Button
-                      variant="secondary"
+                      variant={selectedHostIds.size > 0 ? "default" : "secondary"}
                       size="sm"
                       onClick={() => setCategoriaOpen(true)}
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
-                      title="Assegna la stessa categoria a tutti gli host selezionati (anche dal tasto destro)"
+                      title={selectedHostIds.size === 0
+                        ? "Spunta una o più righe: poi qui assegni a tutte la stessa categoria"
+                        : "Assegna la stessa categoria a tutti gli host spuntati (anche dal tasto destro, o dalla cella Categoria di una riga spuntata)"}
                     >
                       <Tag className="h-3.5 w-3.5 mr-1" />
-                      Categoria…
+                      {selectedHostIds.size > 0 ? `Assegna categoria a ${selectedHostIds.size}…` : "Assegna categoria…"}
                     </Button>
                     <Button
                       variant="secondary"
@@ -1853,10 +1882,19 @@ export function NetworkDetailClient({
                             {host.classification ? getClassificationLabel(host.classification) : "Senza categoria"}
                           </PopoverTrigger>
                           <PopoverContent onClick={(e) => e.stopPropagation()}>
+                            {hostDelMenu(selectedHostIds, host.id).length > 1 && (
+                              <p className="mb-1 rounded-md border border-[#C9A800] bg-[#FFD400] px-2 py-1 text-[13px] font-medium text-[#0D2537]">
+                                Vale per i {hostDelMenu(selectedHostIds, host.id).length} host spuntati
+                              </p>
+                            )}
                             <ScegliCategoria
                               attuale={host.classification}
                               proposta={(host as HostWithDevice).classification_manual === 1 ? null : host.classification}
-                              onScegli={(v) => { void saveHostField(host.id, "classification", v, (host as HostWithDevice).device_id); }}
+                              onScegli={(v) => {
+                                const ids = hostDelMenu(selectedHostIds, host.id);
+                                if (ids.length > 1) void categoriaAiSelezionati(ids, v);
+                                else void saveHostField(host.id, "classification", v, (host as HostWithDevice).device_id);
+                              }}
                               onAutomatica={(host as HostWithDevice).classification_manual === 1 ? () => void tornaAutomaticaRiga(host.id) : undefined}
                             />
                           </PopoverContent>

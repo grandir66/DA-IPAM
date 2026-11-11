@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Subnet: la categoria a più righe si capisce
+
+Riccardo (11/11): «la casella categoria abilita una selezione del gruppo, non l'applicazione per il gruppo scelto di una categoria comune». La tendina «Seleziona per tipo» spunta le righe e non assegna niente; il pulsante che assegna era «Categoria…», grigio e poco visibile.
+
+### Cambiato
+- Il pulsante diventa **«Assegna categoria a N…»**, in evidenza quando ci sono righe spuntate.
+- **La scelta dalla cella «Categoria» di una riga spuntata vale per tutte le righe spuntate**, con l'avviso «Vale per i N host spuntati» in cima al menu.
+- «Seleziona per tipo» si chiama **«Spunta le righe di tipo»**, con il suggerimento che dice che non cambia la categoria.
+
 ## [Non rilasciato] — 2026-11-11 · Categorie e sottocategorie
 
 ### Aggiunto

@@ -2444,4 +2444,5 @@ Riccardo: «la multifunzione kyocera ha stampato fogli, non so se rimane qualcos
 
 Riccardo: «tutti gli oggetti dopo i primi vengono mostrati con + n altri… un'opzione per mostrare tutti quelli in archivio collegati a quell'apparato»; «nella rete 72729 c'è il firewall 192.168.0.50 e non capisco a che porta è collegato».
 - [x] Interruttore «Mostra tutti gli attaccati» nella barra della mappa (`attMax` in `layoutTree`, `tuttiGliAttaccati` in `map-compute`). Non visto a schermo. La stampa resta ai primi quattro.
-- [ ] Firewall 192.168.0.50 della 72729: non guardato, dal Mac l'appliance non si raggiunge con la chiave di Claude. Da vedere con Riccardo sulla sua interfaccia (Mappa porte, cerca l'IP o il MAC).
+- [x] Firewall 192.168.0.50 della 72729: letto l'11/11 nel DB della sonda (sola lettura, dal Proxmox `72729-pve` via NetBird con `qm guest exec 100`; la sonda rifiuta la chiave in ssh diretto). Mappa porte: switch J9660A (192.168.0.51), porta 1, confidenza «certa», vicino LLDP il FortiGate. Ultima lettura SNMP degli switch: 09/11 (GS1900: 06/11).
+- [ ] 72729: gli switch non vengono riletti dal 09/11 (il GS1900 dal 06/11): da capire se il giro SNMP è fermo.

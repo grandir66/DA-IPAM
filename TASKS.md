@@ -4,7 +4,8 @@
 
 Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i comandi di configurazione, ovviamente in read only… qualcosa che possa essere l'estensione della dashboard attuale, casomai modulare». Nulla di scritto nel codice: si sta ragionando.
 
-- [ ] Decidere chi è l'operatore (tecnico Domarc o persona del cliente) e se può fare qualcosa oltre a leggere.
+- [x] Riccardo, 11/11: l'operatore è **una persona del cliente**. Ne segue: un cliente solo, parole semplici (niente Wazuh, Scanner-Edge, hub, evidenze, confidenza), un modulo spento non si vede (mai «non configurato → impostazioni»), nessun dato interno di Domarc (credenziali, scansioni, aggiornamenti).
+- [ ] Da decidere: se può fare qualcosa oltre a leggere (consiglio: no); quanto dettaglio dare sulle vulnerabilità (consiglio: macchina, gravità, rimedio, niente dettaglio tecnico dell'attacco).
 - [ ] Proposta in discussione: la Dashboard diventa la casa dell'operatore, a schede (Panoramica · Reti · Apparati · Da sistemare · Dominio e accessi · Alert), ogni scheda un modulo che compare solo se il modulo è attivo sul cliente; il ruolo «Solo lettura» (`viewer`, esiste già) vede solo quella, senza il menu laterale completo.
 - [ ] Misurato l'11/11: i riquadri della Dashboard portano tutti alle pagine complete (`/networks`, `/discovery`, `/vulnerabilities`, `/security-alerts`, `/sicurezza-dominio`, anche `/settings/...`); 287 file di rotte usano `requireAdmin`. Da misurare prima di consegnare: quali rotte di scrittura passano solo da `requireAuth`.
 - [ ] La scheda Apparati è il punto E del 10/11 (riepilogo per macro categoria): si fa una volta sola, qui.

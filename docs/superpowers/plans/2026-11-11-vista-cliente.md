@@ -100,7 +100,7 @@ if (esito === "vietato") return Response.json({ error: "Non consentito" }, { sta
 
 ---
 
-### [ ] Task 1 bis — Il cambio a «Cliente» vale subito (dal controllo del Task 1)
+### [x] Task 1 bis — Il cambio a «Cliente» vale subito (dal controllo del Task 1)
 
 **Controllo del Task 1 (11/11, commit `3a0da573`):** passato. File toccati solo quelli elencati; firme come da piano; 62 prove verdi rilanciate; il terminale SSH (`/ws/ssh`, fuori dal recinto) chiede un gettone che nasce da una rotta `/api`, vietata al Cliente. Un difetto trovato, non previsto dal piano: il segno viaggia nel gettone di sessione, quindi un utente già dentro che l'amministratore passa a «Cliente» continua a vedere l'interfaccia completa finché non rientra.
 
@@ -111,7 +111,7 @@ if (esito === "vietato") return Response.json({ error: "Non consentito" }, { sta
 - In `updateUserAs`, dentro la transazione già esistente, dopo `updateUserRole(userId, role, vistaCliente)`: se il valore di `vista_cliente` dell'utente **prima** della modifica è diverso da quello nuovo, chiamare `segnaUscita(userId)` di `@/lib/accesso/sessione` (import statico). È la stessa funzione di «Esci»: il gettone vecchio non vale più e l'utente deve rientrare.
 - Prova: un utente `viewer` passato a Cliente ha `sessioni_valide_da` valorizzato dopo la modifica; una modifica che non cambia il segno lo lascia com'era.
 
-**Verifica:** `node --import tsx --test src/lib/users/__tests__/*.test.ts` verde.
+**Verifica:** `node --import tsx --test src/lib/users/__tests__/*.test.ts` → 61 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori. `npx tsc --noEmit` → 0 errori.
 
 **Commit:** «Vista cliente: il passaggio a Cliente chiude le sessioni aperte». Si può consegnare insieme al Task 2.
 
@@ -490,6 +490,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 1 [x]: utente Cliente e recinto. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts src/lib/users/__tests__/*.test.ts` → 62 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 - 2026-11-11 Controllo del Task 1: passato (commit `3a0da573`, 62 prove verdi rilanciate). Aggiunto il Task 1 bis: il cambio del segno chiude le sessioni aperte.
+
+- 2026-11-11 Task 1 bis [x]: il cambio del segno chiude le sessioni. Verifica: `node --import tsx --test src/lib/users/__tests__/*.test.ts` → 61 prove, 0 fallite.
 
 ## Consuntivo
 ### Fatto

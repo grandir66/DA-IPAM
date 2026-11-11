@@ -511,3 +511,28 @@ test("PUT: si accende e si spegne il segno, e si rifiuta se i clienti non sono u
   assert.equal(spento.status, 200, JSON.stringify(spento.body));
   assert.equal(getUserById(w.id["viewer-a"])?.vista_cliente, 0);
 });
+
+test("il passaggio a Cliente chiude le sessioni; un segno invariato le lascia", async () => {
+  assert.equal(getUserById(w.id["viewer-a"])?.sessioni_valide_da ?? null, null);
+  const acceso = await updateUserAs(asSuper(), String(w.id["viewer-a"]), req({
+    role: "viewer",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(acceso.status, 200, JSON.stringify(acceso.body));
+  const chiusura = getUserById(w.id["viewer-a"])?.sessioni_valide_da;
+  assert.equal(typeof chiusura, "number");
+
+  const diNuovo = await updateUserAs(asSuper(), String(w.id["viewer-a"]), req({
+    role: "viewer",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(diNuovo.status, 200, JSON.stringify(diNuovo.body));
+  assert.equal(getUserById(w.id["viewer-a"])?.sessioni_valide_da, chiusura);
+
+  getHubDb().prepare("UPDATE users SET sessioni_valide_da = ? WHERE id = ?").run(111, w.id["admin-a2"]);
+  const invariato = await updateUserAs(asAdminA(), String(w.id["admin-a2"]), req({ role: "admin" }));
+  assert.equal(invariato.status, 200, JSON.stringify(invariato.body));
+  assert.equal(getUserById(w.id["admin-a2"])?.sessioni_valide_da, 111);
+});

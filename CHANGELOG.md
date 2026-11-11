@@ -11,6 +11,11 @@ Riccardo (11/11): «Sì, spento di serie». Sull'appliance 70151 l'automatismo, 
 ### Cambiato
 - **«Chocolatey automatico» è spento finché non lo si accende**, cliente per cliente (Opzioni, o la pagina di Patch Management). Dove era acceso solo perché nessuno l'aveva mai toccato, con questa versione si spegne: chi lo vuole lo riaccende. Dove era stato acceso o spento a mano resta com'era.
 
+## [Non rilasciato] — 2026-11-11 · Il passaggio a Cliente chiude le sessioni
+
+### Cambiato
+- **Il segno vale subito**: se un amministratore accende o spegne «Cliente» su un utente già dentro, le sessioni aperte si chiudono come con «Esci». Il gettone vecchio non tiene più l'interfaccia completa.
+
 ## [Non rilasciato] — 2026-11-11 · Utente Cliente chiuso nella sua area
 
 ### Aggiunto

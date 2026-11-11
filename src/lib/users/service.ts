@@ -45,6 +45,7 @@ import {
   type UserRole,
 } from "./permissions";
 import { scriviRegistroAccessi } from "@/lib/accesso/registro-accessi";
+import { segnaUscita } from "@/lib/accesso/sessione";
 
 /** Quel che serve della sessione di NextAuth (`requireAdmin()` la restituisce così). */
 export interface SessionLike {
@@ -319,6 +320,8 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
 
   hub.transaction(() => {
     updateUserRole(userId, role, vistaCliente);
+    // Il segno sta nel gettone: se cambia, il gettone vecchio non vale più (come «Esci»).
+    if ((user.vista_cliente === 1) !== vistaCliente) segnaUscita(userId);
     const currentAccess = getUserTenantAccess(userId);
     const wanted = new Set(newTenantIds);
     for (const a of currentAccess) {

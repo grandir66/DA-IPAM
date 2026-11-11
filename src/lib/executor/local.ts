@@ -61,6 +61,7 @@ export class LocalExecutor implements Executor {
     return nmapPortScan(ip, options?.customArgs, options?.timeoutMs, {
       skipUdp: options?.skipUdp,
       udpPorts: options?.udpPorts,
+      osservaTcp: options?.osservaTcp,
       onLog: cb?.onLog,
     });
   }

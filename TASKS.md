@@ -22,8 +22,12 @@ Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i 
 Riccardo: iniziare lo sviluppo senza sovrapporsi agli altri lavori. Piano in DA-IPAM, commit `510eca57`.
 - [x] Comparatore IPv4 e prove locali in `src/lib/scanner/confronto-giri.ts`. Distingue cambi certi e porte appena osservate. Rifiuta giri incompleti e perimetri diversi. Nessuna modifica a Discovery, Subnet o Edge.
 - [x] Riccardo: «Network Changes» è una pagina unica per tutte le subnet, sotto Network. Il collegamento nel dettaglio subnet apre la stessa pagina.
-- [ ] Collegare le osservazioni al completamento del giro. `hosts.open_ports` unisce dati di sessione e archivio e non è la fonte del delta. Raccogliere esiti espliciti per IP e porta/protocollo.
-- [ ] Definire persistenza idempotente, retention e collegamento dei dati alla vista Subnet, con verifica su copia prima della migrazione.
+- [x] Riccardo, 11/11: procedere con il collegamento a Discovery. Prima tappa su ramo isolato, con dati del singolo giro e pagina unica.
+- [x] Collegato il completamento di Discovery al confronto IPv4. La copertura viene da ICMP, le porte TCP e i MAC da Nmap del singolo giro. Gli esiti ambigui e le porte senza stato individuale restano ignoti.
+- [x] Salvate baseline ed eventi nella stessa transazione SQLite, separati per tenant, rete e perimetro. Pagina globale con filtro subnet e cronologia di 90 giorni. Verificate 18 prove mirate, TypeScript, lint sui file toccati e resa a 1920 con dati sintetici.
+- [x] Riccardo, 11/11: «metti in dev, le appliance in dev sono OK». Build di produzione, test mirati e lint dei file modificati verdi. Snapshot `pre-nc-discovery-20261111` della VM 533 su DA-PX-03.
+- [ ] Collaudare due giri Discovery con lo stesso profilo su una subnet di prova. Misurare quanti host hanno un MAC osservato direttamente da Nmap, soprattutto sulle subnet instradate.
+- [ ] Tappe successive del piano: copertura UDP e passiva, variazioni di sistema operativo, firmware e confidenza.
 
 ## 2026-11-10 — Riconoscimento: un motore solo, firme, apparati creati da soli (Riccardo)
 

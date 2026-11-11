@@ -1,13 +1,17 @@
+import { createHash } from "node:crypto";
 import { getAllHostIps } from "@/lib/utils";
 import { avviaSondeDopoDiscovery } from "@/lib/servizi-rete/giro";
 import {
   getCurrentTenantCode,
+  getTenantDb,
   getTenantSetting,
   oraDelDatabase,
   withTenant,
 } from "@/lib/db-tenant";
 import { CHIAVE_SOGLIA_ALLARME, prendiRete, sogliaAllarmeDa } from "./network-scan-lock";
 import { passaggioOfflineConSoglia } from "./offline-guard";
+import { registraGiroRete } from "./confronto-giri-db";
+import type { HostOsservatoNelGiro } from "./confronto-giri";
 import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable, portaDaSalvare, type PortaScansione } from "./nmap";
 import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
@@ -1031,11 +1035,11 @@ async function runDiscovery(
         ip: string,
         customArgs?: string,
         timeoutMs?: number,
-        opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null },
+        opts?: Parameters<typeof _localNmapPortScan>[3],
       ) =>
         _exec!.nmapPortScan(
           ip,
-          { customArgs, timeoutMs, skipUdp: opts?.skipUdp, udpPorts: opts?.udpPorts },
+          { customArgs, timeoutMs, skipUdp: opts?.skipUdp, udpPorts: opts?.udpPorts, osservaTcp: opts?.osservaTcp },
           opts?.onLog ? { onLog: opts.onLog } : undefined,
         )
     : _localNmapPortScan;
@@ -1100,6 +1104,11 @@ async function runDiscovery(
 
   let onlineIps: string[] = [];
   const nmapResults: Map<string, HostScanData> = new Map();
+  let confrontoRete: {
+    perimetro: string;
+    ipVerificati: Set<string>;
+    osservati: Map<string, HostOsservatoNelGiro>;
+  } | undefined;
 
   /**
    * Pre-pass Naabu.
@@ -1791,6 +1800,21 @@ async function runDiscovery(
     const quickExecMs = timeoutMsGiro != null ? timeoutMsGiro + 2000 : getNetworkDiscoveryQuickExecMs();
     const quickBatch = discoverOpts?.concorrenza ?? getNetworkDiscoveryQuickConcurrency();
     const skipUdpNd = !discoverOpts?.udpDalLancio;
+    const targetConfronto = ips.filter((ip) => !eIpImpianto(ip)).sort();
+    const ipVerificati = new Set(results.filter((r) => r.alive || !r.error).map((r) => r.ip));
+    if (tenantInBackground && nmapAvailable && targetConfronto.length > 0 &&
+        targetConfronto.every((ip) => ipVerificati.has(ip))) {
+      confrontoRete = {
+        perimetro: createHash("sha256").update(JSON.stringify([
+          cidr, targetConfronto, _exec?.mode ?? "local", quickArgs, quickExecMs, timeoutMsGiro ?? 2000,
+          naabuPrepNd.enabled, naabuPrepNd.basePorts,
+        ])).digest("hex"),
+        ipVerificati: new Set(targetConfronto),
+        osservati: new Map(),
+      };
+    } else {
+      log("Network Changes: perimetro senza copertura ICMP e TCP confrontabile");
+    }
 
     if (nmapAvailable && onlineIps.length > 0) {
       progress.phase = `${nmapTcp} — 0/${onlineIps.length}`;
@@ -1810,13 +1834,22 @@ async function runDiscovery(
               ip,
               tcpArgsForHost(ip, quickArgs, naabuPrepNd.enabled, naabuPrepNd.byIp, naabuPrepNd.basePorts),
               quickExecMs,
-              { skipUdp: skipUdpNd, udpPorts: skipUdpNd ? null : discoverOpts?.udpPorts }
+              { skipUdp: skipUdpNd, udpPorts: skipUdpNd ? null : discoverOpts?.udpPorts, osservaTcp: confrontoRete?.ipVerificati.has(ip) }
             )
           )
         );
         for (let j = 0; j < batch.length; j++) {
           const ip = batch[j];
           const result = batchResults[j];
+          if (confrontoRete?.ipVerificati.has(ip)) {
+            if (result?.osservazioneTcp) {
+              const { mac, porte } = result.osservazioneTcp;
+              confrontoRete.osservati.set(ip, { ip, mac, porte });
+            } else {
+              log(`Network Changes: esito TCP incompleto per ${ip}, baseline conservata`);
+              confrontoRete = undefined;
+            }
+          }
           if (result) {
             nmapResults.set(ip, {
               ports: result.ports.map(portaDaSalvare),
@@ -3904,6 +3937,7 @@ async function runDiscovery(
   }
 
   const totalPorts = Array.from(nmapResults.values()).reduce((sum, r) => sum + r.ports.length, 0);
+  if (confrontoRete) controllaFermo();
   addScanHistory({
     host_id: null,
     network_id: networkId,
@@ -3913,6 +3947,28 @@ async function runDiscovery(
     raw_output: null,
     duration_ms: Date.now() - startTime,
   });
+
+  if (tenantInBackground && confrontoRete?.osservati.size) {
+    const { perimetro, ipVerificati, osservati } = confrontoRete;
+    if (![...osservati.values()].some((host) => host.mac)) {
+      log("Network Changes: Nmap non ha osservato MAC direttamente in questo giro");
+    }
+    try {
+      registraGiroRete(getTenantDb(tenantInBackground), {
+        id: scanId,
+        tenant: tenantInBackground,
+        reteId: networkId,
+        perimetro,
+        fineMs: Date.now(),
+        esito: "riuscito",
+        ipVerificati: [...ipVerificati],
+        // Include gli host confermati da SNMP dopo la fase TCP, senza attribuire loro un MAC.
+        host: [...new Set(onlineIps)].filter((ip) => ipVerificati.has(ip)).map((ip) => osservati.get(ip) ?? { ip }),
+      });
+    } catch (errore) {
+      log(`Network Changes: salvataggio fallito (${errore instanceof Error ? errore.message : "errore sconosciuto"})`);
+    }
+  }
 
   progress.status = "completed";
   progress.phase = "Completata";

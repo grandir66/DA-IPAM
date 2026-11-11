@@ -27,6 +27,7 @@ export interface NmapPortScanOptions {
   timeoutMs?: number;
   skipUdp?: boolean;
   udpPorts?: string | null;
+  osservaTcp?: boolean;
 }
 
 export interface NmapPortScanCallbacks {

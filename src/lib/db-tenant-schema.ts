@@ -1311,6 +1311,32 @@ export function assicuraTabelleAcquisizioneModulare(db: Database.Database): void
   for (const [, ddl] of DDL_ACQUISIZIONE_MODULARE) db.exec(ddl);
 }
 
+/** Create al primo confronto da Discovery. */
+export const DDL_NETWORK_CHANGES = `
+CREATE TABLE IF NOT EXISTS network_change_baselines (
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  scan_id TEXT NOT NULL,
+  finished_ms INTEGER NOT NULL,
+  compared INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  PRIMARY KEY (network_id, scope)
+);
+CREATE TABLE IF NOT EXISTS network_changes (
+  id INTEGER PRIMARY KEY,
+  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
+  scan_id TEXT NOT NULL,
+  previous_scan_id TEXT NOT NULL,
+  finished_ms INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  before_value TEXT,
+  after_value TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_network_changes_time ON network_changes(finished_ms DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_network_changes_network_time ON network_changes(network_id, finished_ms DESC, id DESC);
+`;
+
 /** Lo toglie solo il reset per nuovo cliente, che poi lo rimette: i dati del cliente di prima non restano. */
 export const TRIGGER_REGISTRO_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS va_registro_impianti_no_delete BEFORE DELETE ON va_registro_impianti
 BEGIN SELECT RAISE(ABORT, 'il registro degli impianti non si cancella'); END;`;

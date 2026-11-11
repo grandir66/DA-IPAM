@@ -943,6 +943,11 @@ export interface NmapResult {
   ip: string;
   alive: boolean;
   ports: NmapPort[];
+  /** Solo gli stati TCP espliciti del singolo giro, su richiesta di Discovery. */
+  osservazioneTcp?: {
+    mac: string | null;
+    porte: { protocollo: "tcp"; porta: number; esito: "aperta" | "chiusa" }[];
+  };
   os: string | null;
   /** Precisione dichiarata da `-O` per `os` (0-100). Sotto il 100 è un'ipotesi. */
   osPrecisione?: number | null;

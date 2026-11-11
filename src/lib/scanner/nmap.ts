@@ -63,7 +63,7 @@ export async function nmapPortScan(
   customArgs?: string,
   /** Timeout exec per singola fase (TCP o UDP); con entrambe le fasi servono ~2× questo tempo. Default 280s. */
   timeout: number = 280_000,
-  opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null }
+  opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null; osservaTcp?: boolean }
 ): Promise<NmapResult | null> {
   const tcpArgs = ensureTcpOnly(tcpProfileArgs(customArgs));
   const skipUdp = opts?.skipUdp === true;
@@ -80,7 +80,7 @@ export async function nmapPortScan(
       timeout,
       maxBuffer: 10 * 1024 * 1024,
     });
-    const results = parseNmapXml(stdout);
+    const results = parseNmapXml(stdout, { osservaTcp: opts?.osservaTcp });
     tcpResult = results.length > 0 ? results[0] : null;
     const portList = tcpResult?.ports.map((p) => `${p.port}/${p.protocol}`).join(", ") || "—";
     emitLog(`TCP ${ip}: ${tcpResult?.ports.length ?? 0} porte → ${portList}`);
@@ -98,6 +98,7 @@ export async function nmapPortScan(
           ports: tcpResult.ports.sort((a, b) => a.port - b.port),
           os: tcpResult.os,
           mac: tcpResult.mac,
+          ...(tcpResult.osservazioneTcp && { osservazioneTcp: tcpResult.osservazioneTcp }),
         }
       : null;
   }
@@ -150,6 +151,7 @@ export async function nmapPortScan(
     ports: mergedPorts.sort((a, b) => a.port - b.port),
     os: tcpResult?.os ?? udpResult?.os ?? null,
     mac: tcpResult?.mac ?? udpResult?.mac ?? null,
+    ...(tcpResult?.osservazioneTcp && { osservazioneTcp: tcpResult.osservazioneTcp }),
   };
 }
 
@@ -265,7 +267,7 @@ function leggiScript(
 }
 
 /** Esportata per i test: e' il punto dove i CPE si perdevano in silenzio. */
-export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): NmapResult[] {
+export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number; osservaTcp?: boolean }): NmapResult[] {
   const tettoByte = opts?.tettoByteOutput ?? TETTO_OUTPUT_SCRIPT_BYTE;
   const parser = new XMLParser({
     ignoreAttributes: false,
@@ -301,6 +303,8 @@ export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): 
     const ip = ipAddr["@_addr"];
     const mac = macAddr ? macAddr["@_addr"] : null;
     const alive = host.status?.["@_state"] === "up";
+    const osservazioneTcp: NmapResult["osservazioneTcp"] =
+      opts?.osservaTcp && alive && host.ports ? { mac, porte: [] } : undefined;
 
     const ports: NmapPort[] = [];
     let snmpHostname: string | null = null;
@@ -337,6 +341,13 @@ export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): 
       for (const port of portList) {
         const portState = port.state?.["@_state"] as string | undefined;
         const protocol = (port["@_protocol"] as string | undefined) || "tcp";
+        if (osservazioneTcp && protocol === "tcp" && (portState === "open" || portState === "closed")) {
+          osservazioneTcp.porte.push({
+            protocollo: "tcp",
+            porta: Number(port["@_portid"]),
+            esito: portState === "open" ? "aperta" : "chiusa",
+          });
+        }
         /** TCP: open + open|filtered. UDP: solo `open` — `open|filtered` su UDP è quasi sempre ambiguo (falsi positivi massicci). */
         const isResponding =
           protocol === "udp"
@@ -399,6 +410,7 @@ export function parseNmapXml(xml: string, opts?: { tettoByteOutput?: number }): 
 
     results.push({
       ip, alive, ports, os, ...(osPrecisione !== null ? { osPrecisione } : {}), mac,
+      ...(osservazioneTcp && { osservazioneTcp }),
       ...(hostScripts.length > 0 ? { hostScripts } : {}),
       snmpHostname: snmpHostname || undefined,
       snmpSysDescr: snmpSysDescr || undefined,

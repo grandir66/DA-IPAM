@@ -4,6 +4,10 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Discovery alimenta Network Changes
+
+- La pagina unica sotto Network mostra gli eventi registrati confrontando giri Discovery con la stessa copertura IPv4 e le stesse opzioni TCP. Filtro per subnet e storico di 90 giorni.
+
 ## [Non rilasciato] — 2026-11-10 · Comparatore dei giri IPv4
 
 - Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Pagina unica «Network Changes» disponibile sotto Network e dal dettaglio subnet. Raccolta delle differenze da Discovery ancora da collegare.

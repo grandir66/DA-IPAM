@@ -30,6 +30,8 @@ export interface MapComputeInput {
   /** Hypervisor con le VM aperte; «tutti» = ogni hypervisor visibile (la stampa «con le VM»). */
   expanded: ReadonlySet<string> | "tutti";
   orientation: MapOrientation;
+  /** «Mostra tutti gli attaccati»: niente «+ altri N». */
+  tuttiGliAttaccati?: boolean;
 }
 
 export interface MapComputed<M extends TopologyModel> {
@@ -91,7 +93,7 @@ export function computeMapView<M extends TopologyModel>(base: M, inp: MapCompute
   } else {
     expanded = inp.expanded;
   }
-  const layout = layoutTree(model, tree, tweaks, expanded, inp.orientation);
+  const layout = layoutTree(model, tree, tweaks, expanded, inp.orientation, inp.tuttiGliAttaccati ? Infinity : undefined);
   return {
     model, visible, roots, missing: inp.auto ? [] : saved.missing, head, headChosen: inp.auto && saved.head !== null,
     savedRoots: saved.roots, renames: saved.renames, tweaks, expanded, tree, layout,

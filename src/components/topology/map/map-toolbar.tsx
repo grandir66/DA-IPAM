@@ -41,6 +41,9 @@ interface Props {
   onCreateFromAuto: (name: string) => Promise<boolean>;
   showExtra: boolean;
   onShowExtra: (v: boolean) => void;
+  /** «Mostra tutti gli attaccati»: l'elenco intero sotto ogni riquadro, senza «+ altri N». */
+  showAllAttached: boolean;
+  onShowAllAttached: (v: boolean) => void;
   /** L'orientamento della mappa a schermo; null finché la vista non è caricata. */
   orientation: MapOrientation | null;
   /** Solo admin, a vista caricata: cambia l'orientamento salvato della mappa. */
@@ -173,6 +176,10 @@ export function MapToolbar(p: Props) {
       <label className="flex cursor-pointer items-center gap-1.5" title="Le linee dei secondi cavi: spente, si vedono quelle del riquadro su cui fai clic">
         <input type="checkbox" checked={p.showExtra} onChange={(e) => p.onShowExtra(e.target.checked)} className="size-4" />
         Mostra ridondanze
+      </label>
+      <label className="flex cursor-pointer items-center gap-1.5" title="Sotto ogni apparato l'elenco intero degli oggetti in archivio collegati, invece dei primi quattro e «+ altri N»">
+        <input type="checkbox" checked={p.showAllAttached} onChange={(e) => p.onShowAllAttached(e.target.checked)} className="size-4" />
+        Mostra tutti gli attaccati
       </label>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomOut()} aria-label="Rimpicciolisci">−</Button>
       <Button size="sm" className="text-[13px]" variant="outline" onClick={() => void rf.zoomIn()} aria-label="Ingrandisci">+</Button>

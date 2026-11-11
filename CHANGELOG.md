@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Categorie e sottocategorie
 
+### Aggiunto
+- **Topologia: «Mostra tutti gli attaccati».** Sotto ogni apparato la mappa elencava i primi quattro oggetti collegati e poi «+ altri N»: per sapere chi fossero gli altri bisognava aprire il riquadro. Ora un interruttore nella barra li elenca tutti; è spento di serie e ricordato nel browser.
+
 Riccardo (11/11): «le categorie dovrebbero essere raggruppate tipo OT → PLC, HMI… POSTAZIONI → PC, Notebook… manca anche il gruppo Telefonia, con Telefoni, Smartphone, Centralino, Convertitori VoIP»; «teniamo separato IoT da OT». Prima i gruppi erano sei, e «Periferiche e servizi» teneva insieme NAS, stampanti, VoIP, telecamere e UPS.
 
 ### Cambiato

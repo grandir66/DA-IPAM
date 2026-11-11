@@ -27,6 +27,8 @@ export interface LrContext {
   vmsOf: Map<string, TopologyModel["vms"]>;
   /** Lo spazio da tenere libero sotto il riquadro, prima degli attaccati e dei fratelli («+N apparati non gestiti» di un segmento). */
   sotto?: (id: string) => number;
+  /** Attaccati elencati prima di «+ altri N» (di base ATT_MAX). */
+  attMax?: number;
 }
 
 const AP_PAD = 4;
@@ -37,8 +39,9 @@ export function layoutLr(c: LrContext, tree: TreeResult): Pick<LayoutResult, "no
   const colW: number[] = [];
   const height = new Map<string, number>();
   const sotto = (id: string) => c.sotto?.(id) ?? 0;
+  const attMax = c.attMax ?? ATT_MAX;
   const blockH = (id: string, nAtt: number) => {
-    const shown = Math.min(nAtt, ATT_MAX) + (nAtt > ATT_MAX ? 1 : 0);
+    const shown = Math.min(nAtt, attMax) + (nAtt > attMax ? 1 : 0);
     return c.boxH(id) + sotto(id) + (shown > 0 ? 4 + shown * ATT_ROW : 0);
   };
   const kidsH = (p: ReturnType<LrContext["parts"]>) => {
@@ -97,9 +100,9 @@ export function layoutLr(c: LrContext, tree: TreeResult): Pick<LayoutResult, "no
         w: VM_W, h: VM_H, label: fitLabel(v.name, VM_W),
       }));
     }
-    p.att.slice(0, ATT_MAX).forEach((a, i) =>
+    p.att.slice(0, attMax).forEach((a, i) =>
       nodes.set(a, { id: a, x: x + ATT_INDENT, y: y + bh + sotto(id) + 4 + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
-    if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
+    if (p.att.length > attMax) moreAttached.set(id, p.att.length - attMax);
   };
   let top = MARGIN;
   for (const r of tree.roots) { place(r, top, 0, null); top += height.get(r)! + ROOT_GAP; }

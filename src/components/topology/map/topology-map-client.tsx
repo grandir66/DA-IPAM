@@ -81,6 +81,25 @@ function readShowRedundant(): boolean {
   }
 }
 
+/** «Mostra tutti gli attaccati»: spento di base, ricordato in questo browser. */
+const ALL_ATTACHED_KEY = "da-ipam.topologia.tutti-attaccati";
+
+function readShowAllAttached(): boolean {
+  try {
+    return window.localStorage.getItem(ALL_ATTACHED_KEY) === "tutti";
+  } catch {
+    return false;
+  }
+}
+
+function writeShowAllAttached(show: boolean): void {
+  try {
+    window.localStorage.setItem(ALL_ATTACHED_KEY, show ? "tutti" : "primi");
+  } catch {
+    // storage non disponibile: la scelta vale solo per questa visita
+  }
+}
+
 function writeShowRedundant(show: boolean): void {
   try {
     window.localStorage.setItem(REDUNDANT_KEY, show ? "mostra" : "nascondi");
@@ -105,6 +124,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [selected, setSelected] = useState<string | null>(null);
   // Le ridondanze (spec §12.5) sono a richiesta: con due switch centrali erano un groviglio di linee.
   const [showExtra, setShowExtra] = useState(false);
+  const [showAllAttached, setShowAllAttached] = useState(false);
   const [centerKey, setCenterKey] = useState(1);
   /** Ritocchi appena fatti a schermo (il nodo trascinato e il suo ramo), finché il server non li restituisce. */
   const [pending, setPending] = useState<{ view: string; tweaks: SavedTweak[] } | null>(null);
@@ -150,6 +170,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     setDetailsOpen(readDetailsOpen());
     setShowExtra(readShowRedundant());
+    setShowAllAttached(readShowAllAttached());
     setListOpen(elencoAperto(() => window.localStorage.getItem(ELENCO_KEY)));
   }, []);
   const changeDetails = (open: boolean) => { setDetailsOpen(open); writeDetailsOpen(open); };
@@ -184,6 +205,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       ownTweaks: own,
       expanded,
       orientation,
+      tuttiGliAttaccati: showAllAttached,
     });
     const { model, visible, roots, missing, head, tree, layout } = c;
     const headOrigin = mode === "auto" ? (c.headChosen ? `scelta da ${auto?.created_by ?? "un amministratore"}` : "proposta dal sistema") : "";
@@ -207,7 +229,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
       savedRoots: c.savedRoots, renames: c.renames, tweaks: c.tweaks, erroreVista,
     };
-  }, [data, mode, view, pending, viewKey, expanded, orientation]);
+  }, [data, mode, view, pending, viewKey, expanded, orientation, showAllAttached]);
 
   // Esc annulla «scegli l'oggetto di arrivo».
   useEffect(() => {
@@ -562,6 +584,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onCreateFromAuto={(n) => createMap(n, { roots: d.head ? [d.head] : [], nodes: [...d.visible] })}
         showExtra={showExtra}
         onShowExtra={changeShowExtra}
+        showAllAttached={showAllAttached}
+        onShowAllAttached={(v) => { setShowAllAttached(v); writeShowAllAttached(v); }}
         orientation={viewLoading || (mode === "passo" && chosenMap === null) ? null : orientation}
         onOrientation={isAdmin ? (o) => void changeOrientation(o) : null}
         layoutWidth={flowShown ? d.layout.width : null}

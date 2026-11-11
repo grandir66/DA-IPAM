@@ -59,6 +59,8 @@ export interface LayoutResult {
 export function layoutTree(
   model: TopologyModel, tree: TreeResult, tweaks: SavedTweak[], expanded: ReadonlySet<string> = new Set(),
   orientation: MapOrientation = "lr",
+  /** Quanti attaccati elencare sotto un riquadro prima di «+ altri N»; `Infinity` = tutti (Riccardo, 11/11/2026). */
+  attMax: number = ATT_MAX,
 ): LayoutResult {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const name = (id: string) => byId.get(id)?.name ?? id;
@@ -96,7 +98,7 @@ export function layoutTree(
     // Solo con la mappa nuova (`cavi`): la riga «+N apparati non gestiti» sotto un segmento (M10). Senza, nessuno spazio in più.
     const altri = new Map((model.cavi?.segmenti ?? []).map((x) => [x.id, x.altriApparati]));
     const sotto = (id: string) => (byId.get(id)?.kind === "segmento" && (altri.get(id) ?? 0) > 0 ? SEGMENTO_SOTTO : 0);
-    const ctx: LrContext = { parts, boxW, boxH, headH, isOpen, vmsOf, sotto };
+    const ctx: LrContext = { parts, boxW, boxH, headH, isOpen, vmsOf, sotto, attMax };
     base = layoutLr(ctx, tree);
   } else {
     base = layoutTb();
@@ -112,7 +114,7 @@ export function layoutTree(
   };
   const measure = (id: string, lvl: number): void => {
     const p = parts(id);
-    const shown = Math.min(p.att.length, ATT_MAX) + (p.att.length > ATT_MAX ? 1 : 0);
+    const shown = Math.min(p.att.length, attMax) + (p.att.length > attMax ? 1 : 0);
     levelH[lvl] = Math.max(levelH[lvl] ?? 0, boxH(id), shown * ATT_ROW);
     for (const k of p.inf) measure(k, lvl + 1);
     if (p.ap.length) levelH[lvl + 1] = Math.max(levelH[lvl + 1] ?? 0, AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6));
@@ -166,9 +168,9 @@ export function layoutTree(
         w: VM_W, h: VM_H, label: fitLabel(v.name, VM_W),
       }));
     }
-    p.att.slice(0, ATT_MAX).forEach((a, i) =>
+    p.att.slice(0, attMax).forEach((a, i) =>
       nodes.set(a, { id: a, x: cx + box / 2 + 10, y: y[lvl] + i * ATT_ROW, w: ATT_W, h: ATT_ROW - 2, role: "attached", parent: id }));
-    if (p.att.length > ATT_MAX) moreAttached.set(id, p.att.length - ATT_MAX);
+    if (p.att.length > attMax) moreAttached.set(id, p.att.length - attMax);
   };
   let x = MARGIN;
   for (const r of tree.roots) { place(r, x, 0, null); x += width.get(r)! + ROOT_GAP; }

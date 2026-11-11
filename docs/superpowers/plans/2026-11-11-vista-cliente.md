@@ -666,6 +666,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 
 - 2026-11-11 Piano corretto dopo lo stop del Task 7: la scheda legge i gruppi per host di `elencoRilievi` (`raggruppa: "host"`), non le righe; rimedio dal titolo. Task 7 torna `[ ]`.
 
+- 2026-11-11 Controllo dei Task 4 ter e 6 (consegnati senza passare dal controllo, fino alla v0.9.1154): passati sul codice, 32 prove verdi rilanciate; ritocchi dei controlli precedenti tutti fatti; nessun colore scritto nei componenti; formati delle date degli avvisi verificati sull'hub. Non guardati a schermo. Aperta una decisione per Riccardo sugli avvisi «aperti» (209 sul 70791, ultimo «preso in carico» a luglio).
+
 ## Consuntivo
 ### Fatto
 ### Mancante

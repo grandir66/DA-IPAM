@@ -8,7 +8,11 @@ import {
   type SegretiLibreNMS,
 } from "./segreti-installazione";
 
-const LIBRENMS_IMAGE = "librenms/librenms:latest";
+/**
+ * Versione fissata (11/11/2026): con `latest` la 26.10 è arrivata da sola e ha cambiato la tabella dei gettoni,
+ * rompendo l'installazione sull'appliance 70151. Si alza a mano, dopo aver provato un'installazione.
+ */
+const LIBRENMS_IMAGE = "librenms/librenms:26.10.2";
 const MARIADB_IMAGE = "mariadb:10.11";
 const REDIS_IMAGE = "redis:7-alpine";
 const NETWORK = "da-librenms-net";
@@ -361,6 +365,7 @@ async function generateLibreNMSToken(
   log("[token] Attesa completamento migrazioni DB (max 3 min)...");
   const migrateDeadline = d.ora() + 180_000;
   let migrationsDone = false;
+  let gettoniSanctum = false;
   while (d.ora() < migrateDeadline) {
     const check = await sql(
       "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='librenms' AND table_name='api_tokens';",
@@ -368,6 +373,18 @@ async function generateLibreNMSToken(
     if (check.stdout.trim() === "1") {
       log("[token] Schema DB pronto.");
       migrationsDone = true;
+      break;
+    }
+    // LibreNMS 26.10 (11/11/2026, appliance 70151): `api_tokens` non esiste più, i gettoni stanno in
+    // `personal_access_tokens` (Sanctum). Aspettando solo la tabella vecchia l'installazione finiva senza
+    // utente admin e senza gettone, e ogni aggiunta di device rispondeva «LibreNMS non configurato».
+    const nuova = await sql(
+      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='librenms' AND table_name='personal_access_tokens';",
+    );
+    if (nuova.stdout.trim() === "1") {
+      log("[token] Schema DB pronto (gettoni in personal_access_tokens).");
+      migrationsDone = true;
+      gettoniSanctum = true;
       break;
     }
     log("[token] Schema non ancora pronto, attesa 10s...");
@@ -416,7 +433,26 @@ async function generateLibreNMSToken(
   }
   log(`[token] Utente admin pronto (user_id=${userId}).`);
 
-  // ── Inserisce token in api_tokens ─────────────────────────────────────────
+  // ── LibreNMS ≥ 26.10: il gettone lo crea LibreNMS (`lnms api:token-create`) ──
+  if (gettoniSanctum) {
+    const crea = await dockerExecSafe(
+      d,
+      containerName,
+      ["sh", "-c", "exec lnms api:token-create --no-interaction --name=DA-IPAM admin"],
+      { asUser: "librenms", timeout: 60_000 },
+    );
+    // L'uscita è una riga di conferma e poi il gettone da solo su una riga: non si scrive nel registro.
+    const token = crea.stdout.split("\n").map((r) => r.trim()).filter(Boolean).at(-1) ?? "";
+    if (!crea.ok || !/^[A-Za-z0-9|]{20,}$/.test(token)) {
+      log(`[token] lnms api:token-create non ha dato un gettone: ${crea.stderr.trim().substring(0, 300) || "uscita non riconosciuta"}`);
+      return null;
+    }
+    annunciaToken(token);
+    log("[token] Token creato da LibreNMS e salvato cifrato.");
+    return token;
+  }
+
+  // ── Inserisce token in api_tokens (LibreNMS fino alla 26.9) ───────────────
   try {
     const crypto = await import("crypto");
     const token = crypto.randomBytes(20).toString("hex"); // 40 char hex

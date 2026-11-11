@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · LibreNMS 26.10: l'installazione crea di nuovo il gettone
+
+Riccardo (11/11), appliance 70151: «ho installato LibreNMS ma non riesco ad aggiungere device». L'installazione prendeva sempre l'ultima versione di LibreNMS; la 26.10 non ha più la tabella `api_tokens` (i gettoni stanno in `personal_access_tokens`), e il passo del gettone la aspettava per tre minuti e poi rinunciava: niente utente admin, niente gettone, e ogni aggiunta rispondeva «LibreNMS non configurato o disabilitato».
+
+### Corretto
+- Con la tabella nuova il gettone lo crea LibreNMS stesso (`lnms api:token-create`); con la vecchia resta la scrittura diretta.
+
+### Cambiato
+- **La versione di LibreNMS è fissata (26.10.2)** invece di `latest`: una versione nuova non arriva più da sola a rompere l'installazione.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Apparati
 
 ### Aggiunto

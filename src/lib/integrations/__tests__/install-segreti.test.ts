@@ -203,6 +203,30 @@ test("LibreNMS: installazione riuscita, nessun segreto nel registro né negli ar
   assert.equal(ins?.args[1], "-i");
 });
 
+test("LibreNMS 26.10: senza api_tokens il gettone lo crea lnms api:token-create (11/11/2026, appliance 70151)", async () => {
+  // Incidente: la 26.10 tiene i gettoni in personal_access_tokens; l'installazione aspettava api_tokens,
+  // finiva senza utente e senza gettone, e ogni aggiunta di device rispondeva «LibreNMS non configurato».
+  const r = nuovaRaccolta();
+  const GETTONE = "7|" + "aB3".repeat(16);
+  const { docker, chiamate } = dockerFinto((args) => {
+    const sql = args[args.length - 1] ?? "";
+    if (args.includes("mysql") && sql.includes("information_schema")) {
+      return { stdout: sql.includes("personal_access_tokens") ? "1\n" : "0\n" };
+    }
+    if (args.some((a) => a.includes("lnms api:token-create"))) return { stdout: `API token created\n${GETTONE}\n` };
+    return rispostaLibreNMS(args);
+  });
+  const admin = parametriInstallazione({}).adminPassword;
+
+  await installLibreNMS("job-2610", "da-librenms", admin, "http://10.0.0.5:8090", dipLibre(r, docker));
+
+  assert.equal(r.fasi.at(-1), "done");
+  assert.equal(r.config.at(-1)?.apiToken, GETTONE);
+  assert.equal(chiamate.some((c) => c.input?.includes("INSERT INTO api_tokens")), false, "niente scrittura nella tabella che non c'è");
+  nessunSegretoIn(r.righe, [GETTONE], "una riga del registro");
+  nessunSegretoIn(chiamate.flatMap((c) => c.args), [GETTONE], "un argomento di docker");
+});
+
 test("LibreNMS: un errore che riporta un segreto arriva al registro mascherato", async () => {
   const r = nuovaRaccolta();
   const admin = parametriInstallazione({}).adminPassword;

@@ -1,146 +1,230 @@
 # Vista cliente — piano di esecuzione
 
-> Si esegue in linea (una sessione che esegue i task in ordine) oppure con la skill
-> `subagent-driven-development`. Le caselle `- [ ]` tengono il conto.
+> Lo esegue un altro agente (Cursor), un task alla volta, in ordine. Chi ha scritto il piano controlla
+> ogni task consegnato. Le caselle nel titolo dei task tengono il conto: `[ ]` da fare, `[~]` in corso,
+> `[x]` fatto (solo con la riga `Verifica:` scritta sotto), `[!]` bloccato (motivo).
 
 **Obiettivo:** dare a una persona del cliente un'area di sola lettura, semplice, con i dati che le servono (reti, apparati, cose da sistemare, dominio e accessi, log di sicurezza), senza comandi né configurazione.
 
-**Architettura:** un'area a parte dentro DA-IPAM, sotto `/cliente`, con il suo layout (niente menu laterale) e pagine server che leggono il database con funzioni di sola lettura in `src/lib/cliente/`. I moduli sono un registro di schede: ogni scheda dichiara quando compare, il suo riquadro in casa e le voci che porta in «Cosa richiede attenzione». Un ruolo nuovo, `cliente`, è chiuso dentro quell'area.
+**Architettura:** un'area a parte dentro DA-IPAM, sotto `/cliente`, in un gruppo di rotte suo `src/app/(cliente)/` con il suo layout (niente menu laterale). Le pagine sono Server Component che leggono il database del cliente con funzioni di sola lettura in `src/lib/cliente/`: nessuna rotta `/api` nuova. I moduli sono un registro di schede: ogni scheda dichiara quando compare, il suo riquadro in casa e le voci che porta in «Cosa richiede attenzione». Un utente «Solo lettura» con il segno `vista_cliente` è chiuso dentro quell'area.
 
-**Spec:** nessun file a parte. Le decisioni di Riccardo dell'11/11/2026 stanno in `TASKS.md`, sezione «2026-11-11 — Vista per operatori non amministratori»; le sei tavole grafiche approvate o proposte stanno nella conversazione di quel giorno e sono descritte qui task per task.
+**Spec:** nessun file a parte. Le decisioni di Riccardo dell'11/11/2026 stanno in `TASKS.md`, sezione «2026-11-11 — Vista per operatori non amministratori». Le tavole approvate sono descritte qui, task per task.
 
-**Livello di controllo:** leggero (proposto, da confermare da Riccardo). Il Task 1 tocca l'accesso, che è zona rossa: lì la prova si vede fallire prima.
+**Livello di controllo:** leggero (da confermare da Riccardo). Il Task 1 tocca l'accesso e lo schema del database hub, che sono zona rossa: lì la prova si scrive e si vede fallire prima del codice.
 
 **Stato:** bozza · **Ultimo aggiornamento:** 2026-11-11
 
+## Regole per chi esegue
+
+1. Ramo `dev`. **Mai `main`.** Si lavora in un worktree di `origin/dev`, mai nel clone principale.
+2. Dopo ogni task: `npm run lint && npx tsc --noEmit`, le prove del task, poi `git add <solo i file del task>`, `npm run version:release -- --staged-only`, `git push origin HEAD:dev`. **Mai `git add -A`**, mai `git reset --hard`.
+3. Una riga in `CHANGELOG.md` per task (cosa e perché), nello stesso commit.
+4. Le prove esistenti non si modificano per farle passare. Se una prova esistente fallisce, ci si ferma e lo si scrive nel task come `[!]`.
+5. TypeScript strict, niente `any`. Testi a schermo in italiano. `db-tenant` si importa solo in modo statico (regola 14 di `CLAUDE.md`). `JSON.parse` sempre in `try/catch`.
+6. Stile: `docs/STILE-UI.md` e i mattoni di `src/components/shared/console.tsx` (`Pannello`, `TesseraNumero`, `VoceSelezionabile`, `Etichetta`, `SchedaDettaglio`, `DatoDettaglio`, `Vuoto`, `BadgeGravita`, `TempoRelativo`). Testo ≥ 13 px. shadcn v4: niente `asChild`, si usa `render={<Componente />}`.
+7. Riccardo è daltonico: ogni stato si distingue per **forma** (icona) e **luminosità**, mai solo per tinta.
+8. Fuori dal perimetro del task non si tocca niente. Le pagine dell'amministratore restano come sono, salvo dove il piano lo dice.
+9. Se un dato che il piano dà per esistente non c'è (tabella, colonna, funzione), ci si ferma e lo si scrive: non si inventa un ripiego.
+10. Niente build completo, niente cancello (`scripts/controlla.sh`) dopo ogni task: gira una volta sola alla fine (Task 8).
+
 ## Vincoli globali
 
-- Sola lettura stretta: nell'area nessun pulsante che scrive, nessuna rotta di scrittura, nessun «visto», nessuna nota.
+- Sola lettura stretta: nell'area nessun pulsante che scrive, nessuna chiamata `fetch` con metodo diverso da GET, nessun «visto», nessuna nota.
 - Solo scrivania: si ragiona e si guarda a 1920 px. Niente telefono.
-- Un cliente solo: niente cambio cliente, niente nomi interni (hub, appliance, sonda, evidenze, confidenza, credenziali, scansioni).
-- Parole semplici: «Log di sicurezza» (mai «SIEM» o «Wazuh» nei titoli; la fonte si scrive piccola sotto il titolo), «Da sistemare», «Dominio e accessi», «Cosa richiede attenzione».
-- Un modulo spento non si vede: mai «non configurato» né link alle impostazioni.
-- La scheda si lega alla **categoria** del modulo (`ModuleCategory` in `src/lib/modules/registry.ts`: `siem`, `va`, …), non al prodotto.
-- Riccardo è daltonico: ogni stato si distingue per forma (icona) e luminosità, mai solo per tinta. Griglia degli indirizzi: pieno = acceso, grigio = spento, vuoto = libero.
-- Marchio Domarc: palette e carattere dalla skill `design-domarc`.
-- Le pagine esistenti dell'amministratore non si toccano, salvo il pulsante «Vista cliente» in Dashboard (Task 2).
-- Ogni lettura passa dal database del cliente della sessione (`getServerTenantCode`, `getTenantDb`, `withTenant`): mai `DEFAULT.db` per sbaglio.
-- Ramo `dev`. Mai `main`. Rilascio con `npm run version:release -- --staged-only` da un worktree di `origin/dev`; mai `git add -A`.
+- Un cliente solo: niente cambio cliente, niente parole interne a schermo (hub, appliance, sonda, evidenze, confidenza, credenziali, scansione, Wazuh, Scanner-Edge, SIEM, CVE).
+- Titoli fissi: «La tua rete», «Cosa richiede attenzione», «I moduli attivi», «Reti», «Apparati», «Da sistemare», «Dominio e accessi», «Log di sicurezza».
+- Un modulo spento non si vede: mai «non configurato», mai un link a `/settings`.
+- Nell'area nessun link porta fuori da `/cliente`, tranne «Torna alla Dashboard» per l'amministratore ed «Esci».
+- Le letture passano dal database del cliente della sessione: `getServerTenantCode()` di `@/lib/api-tenant`, poi `withTenant(tenantCode, …)` e `getTenantDb(tenantCode)` di `@/lib/db-tenant`, come fa `src/app/(dashboard)/page.tsx`.
+- Date e ore a schermo in ora italiana, con gli strumenti di `@/lib/db-date` (`parseDbDate`, `FUSO_UTENTI`).
+- Se una lettura fallisce, il pezzo mostra «Dato non disponibile» e il resto della pagina resta in piedi; l'errore va in `console.error("[cliente] …")`, mai a schermo.
 
 ## Casi da non dimenticare
 
-1. Un utente `cliente` che scrive a mano `/settings` o chiama `POST /api/hosts`: deve tornare a `/cliente` o ricevere 403 (Task 1).
+1. Un utente con `vista_cliente` che apre `/settings` o chiama `POST /api/hosts`: torna a `/cliente` oppure riceve 403 (Task 1).
 2. Cliente senza nessun modulo opzionale attivo: la casa mostra solo Reti e Apparati, senza buchi né errori (Task 2).
-3. Switch senza lettura SNMP: nessun pannello porte e nessuna riga «Collegato a», senza messaggi d'errore (Task 3 e 4).
-4. Health AD mai eseguita o con un solo giro: niente «un mese fa», niente punteggio inventato (Task 5).
-5. Avviso o vulnerabilità senza frase semplice in tabella: si mostra il titolo originale, mai una riga vuota (Task 6 e 7).
+3. Switch senza porte lette: nessun pannello porte e nessuna riga «Collegato a», senza messaggi d'errore (Task 3 e 4).
+4. Health AD mai riuscita, o con un solo giro: niente punteggio inventato, niente «un mese fa» (Task 5).
+5. `hosts.open_ports` vuoto o non JSON: la riga «Porte aperte» non si disegna (Task 3).
 
 ---
 
-### [ ] Task 1 — Ruolo `cliente` e recinto
+### [ ] Task 1 — Utente «Cliente» e recinto
 
-**Perché un ruolo nuovo e non «Solo lettura»:** `viewer` esiste già ed è usato (utenze di prova sull'hub, `prova-claude`): chiuderlo dentro `/cliente` toglierebbe a quelle utenze l'interfaccia che usano oggi. Scostamento dalla proposta iniziale, da confermare a Riccardo.
+**Perché un segno e non un ruolo nuovo.** Nel database hub il ruolo ha un vincolo `CHECK(role IN ('superadmin','admin','viewer'))` su `users` e `CHECK(role IN ('admin','viewer'))` su `user_tenant_access` (`src/lib/db-hub-schema.ts` righe 33 e 53): un ruolo nuovo vorrebbe dire ricostruire due tabelle con chiavi esterne. Si aggiunge invece una colonna. Gli utenti «Solo lettura» di oggi restano come sono.
 
 **File**
-- crea `src/lib/cliente/recinto.ts` e `src/lib/cliente/__tests__/recinto.test.ts`
-- modifica `src/lib/users/permissions.ts` (`UserRole`, `USER_ROLES`), `src/types/index.ts` riga 12 (unione dei ruoli), `src/lib/auth.config.ts` (callback `authorized`, riga 138), `src/components/shared/user-menu.tsx` riga 89 (etichetta «Cliente»), il modulo di creazione utente dove si sceglie il ruolo.
+- crea `src/lib/cliente/recinto.ts`, `src/lib/cliente/__tests__/recinto.test.ts`
+- modifica `src/lib/db-hub-schema.ts`: colonna `vista_cliente INTEGER NOT NULL DEFAULT 0` su `users`, con `ALTER TABLE … ADD COLUMN` idempotente, seguendo il modo già usato in quel file per le colonne aggiunte
+- modifica `src/lib/auth.ts`: l'oggetto utente restituito da `authorize` porta `vistaCliente: boolean` letto dalla colonna
+- modifica `src/lib/auth.config.ts`: nel callback `jwt` `token.vistaCliente = user.vistaCliente === true` (accanto a `token.role`, riga 66); nel callback `session` `u.vistaCliente = token.vistaCliente === true` (accanto a `u.role`, riga 132); nel callback `authorized` (riga 138) il recinto, vedi sotto
+- modifica `src/types/index.ts` (tipo dell'utente, riga 12): campo `vista_cliente?: boolean`
+- modifica `src/lib/users/service.ts`: creazione e modifica accettano `vista_cliente` (booleano, assente = `false`)
+- modifica `src/app/(dashboard)/settings/page.tsx` (righe 311, 316, 867-872, 898-903): quarta voce nei due menu del ruolo
+- modifica `src/components/shared/user-menu.tsx` riga 89: etichetta «Cliente» se `vistaCliente`
 
-**Interfacce (prodotte)**
+**Interfaccia prodotta**
 ```ts
-// src/lib/cliente/recinto.ts — pura, senza Next
+// src/lib/cliente/recinto.ts — pura, senza Next, senza database
 export type EsitoRecinto = "passa" | "vai_a_cliente" | "vietato";
-/** Per il ruolo `cliente`: pagine sotto /cliente passano; /api/auth/* e il logout passano;
- *  ogni altra pagina → "vai_a_cliente"; ogni altra rotta /api → "vietato". Gli altri ruoli: sempre "passa". */
-export function recinto(ruolo: string | undefined, percorso: string): EsitoRecinto;
+/**
+ * vistaCliente === false → sempre "passa".
+ * vistaCliente === true:
+ *   - percorso === "/cliente" o comincia con "/cliente/"  → "passa"
+ *   - comincia con "/api/auth"                             → "passa"
+ *   - comincia con "/api/"                                 → "vietato"
+ *   - ogni altro percorso                                  → "vai_a_cliente"
+ */
+export function recinto(vistaCliente: boolean, percorso: string): EsitoRecinto;
 ```
 
 **Cosa fare**
-- Scrivere prima la prova con le combinazioni: `cliente` su `/cliente`, `/cliente/reti`, `/`, `/settings`, `/api/hosts`, `/api/auth/session`, `/login`; `viewer` e `admin` sugli stessi percorsi. Vederla fallire, poi scrivere `recinto`.
-- In `authorized` di `auth.config.ts`: dopo il controllo di sessione, `recinto(ruolo, nextUrl.pathname)`; `vai_a_cliente` → `Response.redirect(new URL("/cliente", nextUrl))`; `vietato` → risposta 403 JSON `{ error: "Non consentito" }`.
-- `permissions.ts`: `cliente` non gestisce utenti (come `viewer`); un `admin` può creare utenti `cliente` nei suoi clienti; un utente `cliente` deve avere esattamente un cliente (rifiuto 400 «Un utente cliente appartiene a un solo cliente»). Aggiungere i casi a `__tests__/permissions.test.ts` senza cambiare quelli esistenti.
-- Dopo l'accesso un utente `cliente` atterra su `/cliente` (lo fa già il recinto, partendo da `/`).
+1. Scrivere `recinto.test.ts` con questi casi e vederlo fallire: con `true` → `/cliente` passa, `/cliente/reti` passa, `/clienteX` vai_a_cliente, `/` vai_a_cliente, `/settings` vai_a_cliente, `/discovery` vai_a_cliente, `/api/hosts` vietato, `/api/auth/session` passa, `/api/version` vietato; con `false` → tutti passano.
+2. Scrivere `recinto`.
+3. In `authorized`, subito prima del `return true` finale (dopo il controllo `if (!isLoggedIn)`):
+```ts
+const esito = recinto((auth?.user as { vistaCliente?: boolean } | undefined)?.vistaCliente === true, pathname);
+if (esito === "vai_a_cliente") return Response.redirect(new URL("/cliente", nextUrl));
+if (esito === "vietato") return Response.json({ error: "Non consentito" }, { status: 403 });
+```
+   Nel ramo `/login` già autenticato il redirect resta verso `/`: il recinto lo porta poi a `/cliente`.
+4. `service.ts`: `vista_cliente: true` è ammesso solo se il ruolo è `viewer` e i clienti assegnati sono esattamente uno; altrimenti 400 «Un utente cliente è in sola lettura e appartiene a un solo cliente». Aggiungere i casi a `src/lib/users/__tests__/service.test.ts` senza cambiare quelli che ci sono.
+5. Impostazioni → Utenti: nei due menu del ruolo una voce in più, `value="cliente"`, testo «Cliente (vista semplice)». È solo dell'interfaccia: al salvataggio manda `role: "viewer"` e `vista_cliente: true`; le altre voci mandano `vista_cliente: false`. In modifica, un utente con `vista_cliente` si apre con quella voce scelta.
 
-**Verifica:** `npx vitest run src/lib/cliente src/lib/users` → tutte verdi. A mano sul dev: utente `cliente` di prova, `/settings` riporta a `/cliente`, `curl` di una rotta `/api/hosts` con la sua sessione dà 403.
+**Verifica:** `npx vitest run src/lib/cliente src/lib/users` → tutte verdi. Sul dev: creato un utente «Cliente» di prova, dopo l'accesso atterra su `/cliente`; `/settings` lo riporta a `/cliente`; `GET /api/hosts` con la sua sessione risponde 403; un utente «Solo lettura» normale vede l'interfaccia di sempre.
 
-**Commit:** «Vista cliente: ruolo cliente chiuso nella sua area».
+**Commit:** «Vista cliente: utente Cliente chiuso nella sua area».
 
 ---
 
 ### [ ] Task 2 — Template, registro delle schede e casa
 
 **File**
+- crea `src/lib/cliente/contesto.ts`, `src/lib/cliente/registro.ts`, `src/lib/cliente/__tests__/registro.test.ts`
 - crea `src/app/(cliente)/cliente/layout.tsx`, `src/app/(cliente)/cliente/page.tsx`
-- crea `src/lib/cliente/registro.ts`, `src/lib/cliente/contesto.ts`, `src/lib/cliente/__tests__/registro.test.ts`
-- crea `src/components/cliente/` con `intestazione.tsx`, `riquadro-modulo.tsx`, `elenco-attenzione.tsx`, `pagina-modulo.tsx` (cornice delle pagine interne: freccia «Torna alla casa», titolo, riga piccola di contesto)
-- modifica `src/app/(dashboard)/page.tsx`: accanto al titolo «Dashboard», per `admin` e `superadmin`, un link «Vista cliente» verso `/cliente`.
+- crea `src/components/cliente/intestazione.tsx`, `riquadro-modulo.tsx`, `elenco-attenzione.tsx`, `pagina-modulo.tsx`, `segno-stato.tsx`
+- modifica `src/app/(dashboard)/page.tsx` riga 186: accanto al titolo «Dashboard», se il ruolo è `admin` o `superadmin`, un `Link` «Vista cliente» verso `/cliente`
 
-**Interfacce (prodotte, usate da tutti i task dopo)**
+**Interfacce prodotte (le usano tutti i task dopo: nomi e firme non cambiano)**
 ```ts
 // src/lib/cliente/contesto.ts
 import type Database from "better-sqlite3";
 import type { ModuleState } from "@/lib/modules/registry";
-export interface ContestoCliente { db: Database.Database; tenantCode: string; nomeCliente: string; moduli: ModuleState[]; ora: Date }
-export async function contestoCliente(): Promise<ContestoCliente>; // sessione → cliente → db, come fa la Dashboard
+
+export interface ContestoCliente {
+  tenantCode: string;
+  nomeCliente: string;      // session.user.tenants.find(t => t.code === tenantCode)?.name ?? tenantCode
+  moduli: ModuleState[];    // resolveModules(tenantCode, ruolo) dentro withTenant; [] se fallisce
+  ora: Date;
+  amministratore: boolean;  // ruolo admin o superadmin: vede «Torna alla Dashboard»
+}
+/** Sessione → cliente → moduli. Senza sessione: redirect("/login"). */
+export async function contestoCliente(): Promise<ContestoCliente>;
+/** Esegue una lettura dentro il contesto del cliente: withTenant(c.tenantCode, () => fn(getTenantDb(c.tenantCode))). */
+export function nelCliente<T>(c: ContestoCliente, fn: (db: Database.Database) => T): T;
+/** true se esiste un modulo di quella categoria con enabled && configured. */
+export function moduloAttivo(c: ContestoCliente, categoria: ModuleState["category"]): boolean;
 
 // src/lib/cliente/registro.ts
 export type Gravita = "grave" | "attenzione" | "nota";
 export type StatoRiquadro = "a_posto" | "attenzione" | "grave";
-export interface VoceAttenzione { gravita: Gravita; testo: string; href: string; scheda: string }
+export interface VoceAttenzione { gravita: Gravita; testo: string; href: string; scheda: string /* titolo della scheda */ }
 export interface RiquadroCliente { numero: string; unita?: string; contesto: string; stato: StatoRiquadro; aperti: number }
 export interface SchedaCliente {
-  id: string;            // anche segmento di URL: /cliente/<id>
+  id: string;        // segmento di URL: /cliente/<id>
   titolo: string;
   ordine: number;
-  icona: string;         // nome dell'icona lucide
-  attiva(c: ContestoCliente): boolean;
+  icona: string;     // nome di un'icona lucide-react
+  attiva(c: ContestoCliente): boolean | Promise<boolean>;
   riquadro(c: ContestoCliente): RiquadroCliente | Promise<RiquadroCliente>;
   attenzione(c: ContestoCliente): VoceAttenzione[] | Promise<VoceAttenzione[]>;
 }
-export const SCHEDE_CLIENTE: readonly SchedaCliente[];           // i task 3-7 aggiungono una riga ciascuno
-export function schedeAttive(c: ContestoCliente): SchedaCliente[]; // filtrate e ordinate
-export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grave, attenzione, nota; a parità l'ordine d'arrivo
+export const SCHEDE_CLIENTE: readonly SchedaCliente[];   // vuoto in questo task; i task 3-7 aggiungono una riga ciascuno
+export async function schedeAttive(c: ContestoCliente, schede?: readonly SchedaCliente[]): Promise<SchedaCliente[]>; // attive, per `ordine`; una scheda che lancia è scartata e l'errore va in console.error
+export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grave, attenzione, nota; a parità resta l'ordine d'arrivo
 ```
 
 **Cosa fare**
-- Layout: intestazione sola (marchio Domarc, «La tua rete · <nome cliente>», ora dei dati, «Stampa» che chiama `window.print()`, nome utente con «Esci»). Nessun menu laterale. Un admin che guarda vede in più «Torna alla Dashboard».
-- Casa: in alto il riquadro «Cosa richiede attenzione» (somma di `attenzione()` delle schede attive, ordinata; ogni riga porta l'icona della gravità, il testo, il nome della scheda e il link); sotto «I moduli attivi», una griglia di `riquadro-modulo` (titolo con icona, segno di stato a destra, numero grande, riga di contesto). Se una scheda lancia un errore, il suo riquadro mostra «Dato non disponibile» e la casa resta in piedi (l'errore va nel log, non a schermo).
-- Segni di stato: `a_posto` = cerchio con spunta, `attenzione` = cerchio con punto esclamativo e numero, `grave` = triangolo e numero.
-- La prova del registro copre `schedeAttive` e `ordinaAttenzione` con due schede finte.
+- **Layout** (`layout.tsx`): solo `Intestazione` e il contenuto, larghezza massima 1600 px centrata. Nessun menu laterale. Intestazione, da sinistra: marchio Domarc (`/logo-color.png`), «La tua rete · <nomeCliente>», a destra «dati delle HH:MM» (ora italiana di `c.ora`), «Stampa» (componente client minimo che chiama `window.print()`), nome utente, «Esci» (stessa azione del menu utente esistente). Se `c.amministratore`, in più «Torna alla Dashboard» verso `/`.
+- **Casa** (`page.tsx`): in cima un `Pannello` «Cosa richiede attenzione» con a destra «N voci»: una riga per voce (icona della gravità, testo, a destra il titolo della scheda), tutta la riga è un link a `href`; se non ci sono voci, una riga sola «Niente da segnalare». Sotto, il titolo piccolo «I moduli attivi» e una griglia `grid-cols-3` di `RiquadroModulo`: in alto icona e titolo, a destra `SegnoStato`, sotto il numero grande con `unita` piccola accanto, sotto ancora `contesto`; tutto il riquadro è un link a `/cliente/<id>`.
+- **`SegnoStato`**: `a_posto` → icona `CircleCheck` e testo «a posto»; `attenzione` → `CircleAlert` e il numero `aperti`; `grave` → `TriangleAlert` e il numero `aperti`. Tre forme diverse; il colore è solo un rinforzo.
+- **`PaginaModulo`**: cornice delle pagine interne. Props `{ titolo: string; contesto?: string; children }`. In alto un link «← La tua rete» verso `/cliente`, il titolo, e accanto in piccolo `contesto`.
+- **Scheda inesistente o spenta**: le pagine dei task 3-7 cominciano con `if (!(await scheda.attiva(c))) redirect("/cliente")`.
+- **Prova** (`registro.test.ts`): `schedeAttive` con tre schede finte (una spenta, una che lancia, due in ordine inverso) e `ordinaAttenzione`.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde; pagina `/cliente` sul dev guardata una volta a 1920 con un cliente vero.
+**Verifica:** `npx vitest run src/lib/cliente` verde. Sul dev `/cliente` si apre con l'intestazione, «Niente da segnalare» e nessun riquadro (il registro è ancora vuoto).
 
-**Commit:** «Vista cliente: template dedicato, registro delle schede e casa a riquadri».
+**Commit:** «Vista cliente: template dedicato, registro delle schede e casa».
 
 ---
 
 ### [ ] Task 3 — Scheda Reti
 
 **File**
-- crea `src/lib/cliente/schede/reti.ts` (scheda + letture), `src/lib/cliente/__tests__/reti.test.ts`
-- crea `src/app/(cliente)/cliente/reti/page.tsx`
-- crea `src/components/cliente/griglia-indirizzi.tsx`, `src/components/cliente/scheda-apparato.tsx`, `src/lib/cliente/porte-note.ts`
+- crea `src/lib/cliente/categorie.ts`, `src/lib/cliente/porte-note.ts`, `src/lib/cliente/schede/reti.ts`, `src/lib/cliente/__tests__/reti.test.ts`
+- crea `src/app/(cliente)/cliente/reti/page.tsx`, `src/components/cliente/griglia-indirizzi.tsx`, `src/components/cliente/scheda-apparato.tsx`
+- modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
 
-**Interfacce**
-- usa: `getNetworks` di `@/lib/db`, la tabella `hosts`, `retiProposte(retiIpam)` di `src/lib/trunk/reti-proposte.ts` per le reti viste e non censite (solo se il modulo «Sensore trunk» è attivo), le porte aperte dell'host dalla stessa fonte che usa la scheda host dell'amministratore.
-- produce:
+**Fonti (verificate nel codice l'11/11)**
+- `networks`: `id`, `cidr`, `name`, `vlan_id`.
+- `hosts`: `network_id`, `ip`, `status` (`online` | `offline` | `unknown`), `custom_name`, `hostname`, `last_seen`, `open_ports` (JSON, array di oggetti con `port: number`), `attr_category`, `attr_vendor_name`, `attr_os_name`, `device_manufacturer`, `vendor`, `os_info`, `model`.
+- `switch_ports`: `host_id`, `device_id`, `port_name`, `vlan`, `speed`, `is_trunk`; `network_devices`: `id`, `name` (schema in `src/lib/db-schema.ts` riga 84).
+- Reti viste sul cavo: `trunkLetturaAttiva()` di `@/lib/trunk/sensore-trunk` e `retiProposte(retiIpam: string[])` di `@/lib/trunk/reti-proposte`, che rende `ReteProposta[]` (`vid`, `cidr`, `ip` = indirizzi visti, `ultimoGiorno`). Vanno chiamate dentro il contesto del cliente.
+
+**Interfacce prodotte**
 ```ts
+// src/lib/cliente/categorie.ts  (lo riusa il Task 4)
+/** attr_category ("network.switch", "compute.workstation", …) → parola semplice. Sconosciuta o null → null. */
+export function nomeCategoria(categoria: string | null): string | null;
+// tabella: network.router «router», network.switch «switch», network.access_point «punto Wi-Fi», network.firewall «firewall»,
+// network.controller «controllo Wi-Fi», network.modem «modem», compute.server «server», compute.workstation «computer fisso»,
+// compute.laptop «portatile», compute.hypervisor «server di virtualizzazione», compute.vm «macchina virtuale»,
+// storage.nas «archivio di rete», storage.san «archivio di rete», storage.tape «unità a nastro», peripheral.printer «stampante»,
+// peripheral.scanner «scanner», peripheral.mfp «multifunzione», av.camera «telecamera», av.nvr «videoregistratore»,
+// av.display «schermo», av.speaker «altoparlante», voip.phone «telefono», voip.pbx «centralino», voip.gateway «adattatore telefonico»,
+// power.ups «gruppo di continuità», power.pdu «presa comandata», mobile.phone «cellulare», mobile.tablet «tablet»;
+// per le altre foglie di CATEGORY_TAXONOMY (iot.*, ot.*): «dispositivo».
+
+// src/lib/cliente/porte-note.ts
+/** 22 «accesso remoto», 23 «accesso remoto non protetto», 25/587 «posta», 53 «nomi di rete», 80/443/8080/8443 «pagina web»,
+ *  135 «servizi Windows», 139/445 «condivisione file», 161 «gestione di rete», 389/636 «elenco utenti», 3389 «desktop remoto»,
+ *  5900 «controllo remoto», 9100 «stampa», 631 «stampa», 5060 «telefonia», 1433/3306/5432 «archivio dati». Altrimenti null. */
+export function nomeDellaPorta(numero: number): string | null;
+
+// src/lib/cliente/schede/reti.ts — le funzioni con `db` sono pure letture SQL, provate su un database in memoria
 export interface ReteCliente { id: number; nome: string; cidr: string; vlan: number | null; inUso: number; totale: number }
-export interface ApparatoCliente { ip: string; nome: string; cosa: string /* «Computer fisso · Dell · Windows 11» */; acceso: boolean; vistoIl: string | null;
-  collegatoA: { switch: string; porta: string; vlan: number | null; velocita: string | null } | null; porteAperte: Array<{ numero: number; nome: string | null }> }
-export function retiCliente(c: ContestoCliente): ReteCliente[];
-export function indirizziDellaRete(c: ContestoCliente, reteId: number): Array<{ ip: string; stato: "acceso" | "spento" | "libero" }>;
-export function apparatoCliente(c: ContestoCliente, ip: string): ApparatoCliente | null;
-export function nomeDellaPorta(numero: number): string | null; // porte-note.ts: 22 «accesso remoto SSH», 80/443 «pagina web», 135, 139/445 «condivisione file», 3389 «desktop remoto», 9100 «stampa», 161 «gestione di rete», 53 «nomi di rete», 25/587 «posta»
+export interface ReteVista { cidr: string; vlan: number | null; indirizzi: number }
+export interface IndirizzoCliente { ip: string; stato: "acceso" | "spento" | "libero" }
+export interface ApparatoCliente {
+  ip: string; nome: string; cosa: string; acceso: boolean; vistoIl: string | null;
+  collegatoA: { switch: string; porta: string; vlan: number | null; velocita: string | null } | null;
+  porteAperte: Array<{ numero: number; nome: string | null }>;
+}
+export function retiCliente(db: Database.Database): ReteCliente[];                         // ordinate per nome
+export function indirizziDellaRete(db: Database.Database, reteId: number): IndirizzoCliente[]; // vedi regole sotto
+export function apparatoCliente(db: Database.Database, ip: string): ApparatoCliente | null;
+export function retiViste(c: ContestoCliente): ReteVista[];                                 // [] se trunkLetturaAttiva() è falso
+export const schedaReti: SchedaCliente;                                                     // id "reti", titolo "Reti", ordine 10, icona "Network"
 ```
 
-**Cosa fare**
-- Pagina in due colonne: a sinistra «Le reti» (riga per rete: nome, VLAN, «N su M»; interruttore elenco/griglia nel titolo) e sotto «Viste sul cavo, non censite» (rete, VLAN, indirizzi visti, frase «La sonda le sente passare ma nessuno le ha dichiarate.»); a destra la griglia della rete scelta e, al clic su un quadretto, la scheda dell'apparato.
-- La scelta sta nell'indirizzo: `/cliente/reti?rete=<id>&ip=<ip>`. Niente stato lato browser oltre a questo.
-- `cosa` si compone dalla categoria del motore (`attr_category` → etichetta in italiano semplice, tabella in `src/lib/cliente/categorie.ts` che il Task 4 riusa), dal produttore e dal sistema operativo; i campi che mancano si saltano.
-- `collegatoA` è `null` se non c'è una porta di switch nota: la riga non si disegna.
-- Riquadro in casa: numero di reti, contesto «N VLAN · N indirizzi in uso», `attenzione` se ci sono reti non censite. Voci di attenzione: una per rete non censita («Rete <cidr> vista e non censita»).
+**Regole di calcolo**
+- `inUso` = host della rete con `status = 'online'`. `totale` = indirizzi utilizzabili del `cidr` (2^(32−prefisso) − 2; per /31 e /32 il numero pieno).
+- `indirizziDellaRete`: per reti fino a /22 un elemento per indirizzo utilizzabile (`acceso` se c'è un host `online`, `spento` se c'è un host non `online`, `libero` se non c'è riga); per reti più grandi di /22 solo gli indirizzi che hanno una riga in `hosts`.
+- `nome` dell'apparato = `custom_name`, poi `hostname`, poi l'IP.
+- `cosa` = i pezzi presenti, uniti da « · »: `nomeCategoria(attr_category)` con l'iniziale maiuscola; produttore = `attr_vendor_name`, poi `device_manufacturer`, poi `vendor`; sistema = `attr_os_name`, poi `os_info`. Tutti assenti → «Non riconosciuto».
+- `collegatoA`: la riga di `switch_ports` con `host_id` = id dell'host e `is_trunk = 0`, unita a `network_devices` per il nome; velocità con `etichettaVelocita` di `@/lib/scheda/porte-da-guardare`. Nessuna riga → `null`.
+- `porteAperte`: `JSON.parse(open_ports)` in `try/catch`; si tengono i numeri di porta distinti in ordine crescente, al più 12.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (letture su un database di prova con due reti, un host acceso, uno spento, uno senza switch); pagina guardata una volta a 1920 sul dev.
+**Pagina** (`/cliente/reti?rete=<id>&ip=<ip>`, due colonne 1 : 1,15)
+- Sinistra, `Pannello` «Le reti»: una riga per rete (nome, `Etichetta` «VLAN n» se c'è, «inUso su totale»); la riga è un link che imposta `rete`. Senza `rete` nell'indirizzo è scelta la prima. Sotto, solo se `retiViste` non è vuoto, `Pannello` «Viste sul cavo, non censite»: rete, «VLAN n» o «senza VLAN», «n indirizzi», e la frase «La sonda le sente passare ma nessuno le ha dichiarate.»
+- Destra: titolo «<nome> · <cidr>» con la legenda «pieno = acceso · grigio = spento · vuoto = libero», poi `GrigliaIndirizzi`: 32 quadretti per riga, ognuno un link che imposta `ip` (i liberi non sono link) con l'indirizzo in `title`. Pieno = sfondo `text-foreground`; grigio = sfondo `text-muted-foreground`; vuoto = solo bordo. Sotto la griglia, se c'è `ip`, `SchedaApparato`: nome, IP, «acceso»/«spento» con icona, poi le righe «Cos'è», «Visto l'ultima volta», «Collegato a» («<switch>, porta <porta> · VLAN <n> · <velocità>»), «Porte aperte» (numero e, se noto, nome). Le righe senza dato non si disegnano.
+
+**Scheda nel registro**
+- `attiva`: sempre `true`.
+- `riquadro`: `numero` = numero di reti; `contesto` = «N VLAN · N indirizzi in uso»; `aperti` = numero di reti viste e non censite; `stato` = `attenzione` se `aperti > 0`, altrimenti `a_posto`.
+- `attenzione`: una voce per rete vista, gravità `attenzione`, testo «Rete <cidr> vista e non censita», `href` «/cliente/reti».
+
+**Verifica:** `npx vitest run src/lib/cliente` verde. La prova crea in memoria `networks`, `hosts`, `switch_ports`, `network_devices` con le sole colonne usate e copre: due reti, un host acceso, uno spento, uno senza switch, `open_ports` non JSON, una rete /16. Pagina guardata una volta a 1920 sul dev.
 
 **Commit:** «Vista cliente: scheda Reti con VLAN, reti viste sul cavo e scheda dell'apparato».
 
@@ -149,28 +233,53 @@ export function nomeDellaPorta(numero: number): string | null; // porte-note.ts:
 ### [ ] Task 4 — Scheda Apparati
 
 **File**
-- crea `src/lib/cliente/schede/apparati.ts`, `src/lib/cliente/categorie.ts` (se non nato nel Task 3), `src/lib/cliente/__tests__/apparati.test.ts`
+- crea `src/lib/cliente/schede/apparati.ts`, `src/lib/cliente/__tests__/apparati.test.ts`
 - crea `src/app/(cliente)/cliente/apparati/page.tsx`, `src/components/cliente/pannello-porte.tsx`
+- modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
 
-**Interfacce**
-- usa: `CATEGORY_TAXONOMY` di `src/lib/attribution/taxonomy.ts`, le funzioni pure di `src/lib/scheda/porte-da-guardare.ts` (`numeroPorta`, `ePortaFisica`, `etichettaVelocita`, `vlanDistinte`), la tabella `switch_ports`, `scheda-apparato.tsx` del Task 3.
-- produce:
+**Fonti**
+- `hosts` (colonne del Task 3), `switch_ports`: `device_id`, `port_index`, `port_name`, `status` (`up` | `down` | `disabled`), `speed`, `vlan`, `is_trunk`, `is_uplink`, `host_id`, `single_mac_hostname`, `single_mac_ip`, `trunk_neighbor_name`, `trunk_primary_name`. `network_devices`: `id`, `name`, `host` (l'indirizzo), `device_type`.
+- Funzioni pure di `@/lib/scheda/porte-da-guardare`: `numeroPorta`, `ePortaFisica`, `etichettaVelocita`.
+- `CATEGORY_TAXONOMY` di `@/lib/attribution/taxonomy`.
+
+**Interfacce prodotte**
 ```ts
 export type TipoCliente = "computer" | "server" | "rete" | "stampanti" | "telefoni" | "mobili" | "altro" | "non_riconosciuti";
-export function tipoCliente(categoria: string | null): TipoCliente; // dalle radici della tassonomia: compute.workstation/laptop → computer; compute.* → server; network → rete; peripheral → stampanti; voip → telefoni; mobile → mobili; av/iot/ot/power/storage → altro (storage → server); null → non_riconosciuti
-export function conteggiPerTipo(c: ContestoCliente): Record<TipoCliente, number>;
-export function apparatiDelTipo(c: ContestoCliente, tipo: TipoCliente): Array<{ ip: string; nome: string; cosa: string; acceso: boolean; spentoDa: string | null; haPorte: boolean }>;
-export interface PortaCliente { numero: number; stato: "collegata" | "libera"; dorsale: boolean; velocita: string | null; vlan: number[]; attaccato: { nome: string; ip: string | null } | null; verso: string | null }
-export function porteDelloSwitch(c: ContestoCliente, ip: string): PortaCliente[] | null; // null se lo switch non è letto
+export const TIPI_CLIENTE: ReadonlyArray<{ tipo: TipoCliente; titolo: string; icona: string }>;
+// in quest'ordine: computer «Computer» Monitor · server «Server» Server · rete «Rete» Network · stampanti «Stampanti» Printer ·
+// telefoni «Telefoni» Phone · mobili «Cellulari e tablet» Smartphone · altro «Telecamere e altro» Camera · non_riconosciuti «Non riconosciuti» CircleHelp
+export function tipoCliente(categoria: string | null): TipoCliente;
+// compute.workstation, compute.laptop → computer; il resto di compute.* e storage.* → server; network.* → rete;
+// peripheral.* → stampanti; voip.* → telefoni; mobile.* → mobili; av.*, iot.*, ot.*, power.* → altro; null o sconosciuta → non_riconosciuti
+export function conteggiPerTipo(db: Database.Database): Record<TipoCliente, number>;
+export interface RigaApparato { ip: string; nome: string; cosa: string; acceso: boolean; vistoIl: string | null; haPorte: boolean }
+export function apparatiDelTipo(db: Database.Database, tipo: TipoCliente): RigaApparato[]; // accesi prima, poi per nome; al più 500
+export interface PortaCliente {
+  numero: number; nome: string; stato: "collegata" | "libera"; dorsale: boolean;
+  velocita: string | null; vlan: number | null;
+  attaccato: { nome: string; ip: string | null } | null; verso: string | null;
+}
+export function porteDelloSwitch(db: Database.Database, ip: string): PortaCliente[] | null; // null se nessuna porta letta
+export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati", ordine 20, icona "MonitorSmartphone"
 ```
 
-**Cosa fare**
-- Pagina in due colonne: a sinistra «Per tipo» con icona e conteggio; a destra l'elenco del tipo scelto e, per uno switch scelto, il pannello: una casella per porta (piena = collegata, vuota = libera, bordo spesso = dorsale), la riga di riepilogo («N collegate · N libere · N dorsali · VLAN …») e il dettaglio della porta scelta («Chi c'è attaccato», per una dorsale «verso <switch>» solo se il vicino è noto).
-- Indirizzo: `/cliente/apparati?tipo=<tipo>&ip=<ip>&porta=<n>`.
-- «Non riconosciuti» resta visibile, in grigio, in fondo. Nessuna confidenza, nessuna evidenza.
-- Riquadro in casa: totale apparati, contesto «N accesi · N switch, N porte». Voci di attenzione: apparati di rete e server spenti da più di un giorno («<nome> spento da <quando>»), gravità `nota`.
+**Regole di calcolo**
+- Si contano e si elencano tutti gli host; un host con `physical_device_id` uguale a quello di un altro host già contato vale una volta sola (si tiene quello con l'IP più basso).
+- `haPorte` = esiste una riga in `network_devices` con `host` = IP dell'host e almeno una riga in `switch_ports`.
+- `porteDelloSwitch`: `network_devices` per `host = ip`, poi le sue `switch_ports` tenendo solo quelle per cui `ePortaFisica` è vero, ordinate per `numeroPorta`. `stato` = `collegata` se `status = 'up'`, altrimenti `libera`. `dorsale` = `is_trunk = 1` oppure `is_uplink = 1`. `attaccato` = l'host di `host_id` (nome come nel Task 3) oppure `single_mac_hostname` / `single_mac_ip`; `null` per le dorsali. `verso` = `trunk_neighbor_name`, poi `trunk_primary_name`, solo per le dorsali.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (`tipoCliente` su ogni radice della tassonomia; `porteDelloSwitch` con e senza lettura); pagina guardata una volta a 1920.
+**Pagina** (`/cliente/apparati?tipo=<tipo>&ip=<ip>&porta=<n>`, due colonne 0,8 : 1,6)
+- Sinistra, `Pannello` «Per tipo»: una `VoceSelezionabile` per tipo con icona e conteggio; i tipi a zero non si mostrano; «Non riconosciuti» in fondo, in grigio. Senza `tipo` nell'indirizzo è scelto il primo con conteggio maggiore di zero.
+- Destra: «<titolo del tipo> · N apparati», una riga per apparato (icona acceso/spento, nome, `cosa`, a destra l'IP oppure «spento da <tempo>» con `TempoRelativo`); la riga è un link che imposta `ip`. Sotto, se c'è `ip`: se `haPorte`, `PannelloPorte`; altrimenti `SchedaApparato` del Task 3.
+- `PannelloPorte`: titolo «Porte di <nome>» con la legenda «pieno = collegata · vuoto = libera · bordo spesso = dorsale»; una casella per porta col numero dentro, 12 per riga (pieno = sfondo `text-foreground` e numero chiaro; vuoto = solo bordo sottile; dorsale = bordo di 2 px, sfondo chiaro); ogni casella è un link che imposta `porta`. Sotto: «N collegate · N libere · N dorsali». Sotto ancora, se c'è `porta`: «Porta <n>» con «collegata · <velocità> · VLAN <n>» e «Chi c'è attaccato: <nome> · <ip>»; per una dorsale «verso <nome>», solo se `verso` c'è.
+
+**Scheda nel registro**
+- `attiva`: sempre `true`.
+- `riquadro`: `numero` = totale apparati; `contesto` = «N accesi · N switch, N porte»; `aperti` = apparati di tipo `rete` o `server` con `status = 'offline'` e `last_seen` più vecchio di 24 ore; `stato` = `attenzione` se `aperti > 0`.
+- `attenzione`: una voce per ognuno di quegli apparati (al più 5), gravità `nota`, testo «<nome> spento da <tempo>», `href` «/cliente/apparati?tipo=<tipo>&ip=<ip>».
+- Attenzione al confronto di date in SQLite: `last_seen` è scritto come `AAAA-MM-GG HH:MM:SS`; si confronta con `datetime('now','-1 day')`, mai con una stringa ISO con la `T`.
+
+**Verifica:** `npx vitest run src/lib/cliente` verde (`tipoCliente` su ogni foglia di `CATEGORY_TAXONOMY`, nessuna esclusa; `porteDelloSwitch` con e senza righe; due host con lo stesso `physical_device_id` contati una volta). Pagina guardata una volta a 1920.
 
 **Commit:** «Vista cliente: scheda Apparati per tipo, con il pannello delle porte degli switch».
 
@@ -180,24 +289,44 @@ export function porteDelloSwitch(c: ContestoCliente, ip: string): PortaCliente[]
 
 **File**
 - crea `src/lib/cliente/schede/dominio.ts`, `src/lib/cliente/__tests__/dominio.test.ts`, `src/app/(cliente)/cliente/dominio/page.tsx`
+- modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
 
-**Interfacce**
-- usa: `ad_health_runs` e `ad_health_findings` (ultimo giro riuscito e, se esiste, quello più vicino a 30 giorni prima), `kpiSicurezza(db)` di `src/lib/security/kpi-dashboard.ts`, `leggiAccessiIndexer(tenantCode)` di `src/lib/security/accessi-indexer.ts`, gli eventi dei server di dominio in `src/lib/security/eventi-dc/`.
-- produce:
+**Fonti**
+- `ad_integrations` (il dominio collegato).
+- `ad_health_runs`: `id`, `integration_id`, `started_at`, `status` (`running` | `ok` | `error`), `score_global`, `score_stale`, `score_privileged`, `score_trust`, `score_anomaly`. `ad_health_findings`: `run_id`, `severity`, `title`, `description`, `object_count`, `sample_dns_json`. Schema in `src/lib/ad/health/persist.ts`.
+- `dc_evento` (schema in `src/lib/security/eventi-dc/db.ts`): `quando`, `event_id`, `account`, `postazione`, `ip`, `motivo`. Eventi: 4740 = account bloccato; 4625, 4771, 4776 = accesso non riuscito (`src/lib/security/eventi-dc/eventi.ts`).
+- **Da leggere prima di scrivere:** in `src/lib/ad/health/` il verso del punteggio (se più alto è meglio) e i valori di `severity`; in `src/lib/security/eventi-dc/db.ts` il formato di `quando`. La pagina dell'amministratore `src/app/(dashboard)/sicurezza-dominio/` mostra già questi dati: verso, etichette e soglie si prendono da lì, non si reinventano.
+
+**Interfacce prodotte**
 ```ts
-export interface StatoDominio { dominio: string; punteggio: number | null; unMeseFa: number | null; controllatoIl: string | null; aree: Array<{ nome: string; punteggio: number }>; rilievi: Array<{ gravita: Gravita; testo: string; nomi: string[] }> }
-export interface ProblemaAccesso { utente: string; tipo: "bloccato" | "falliti"; quanti: number; da: string | null; ultima: string | null; motivo: string | null }
-export function statoDominio(c: ContestoCliente): StatoDominio | null;       // null se la Health AD non è mai riuscita
-export function problemiDiAccesso(c: ContestoCliente): Promise<ProblemaAccesso[]>; // ultime 24 ore, bloccati prima
+export interface StatoDominio {
+  punteggio: number | null; unMeseFa: number | null; controllatoIl: string | null;
+  aree: Array<{ nome: string; punteggio: number }>;   // «Account fermi» score_stale · «Account con privilegi» score_privileged · «Fiducie tra domini» score_trust · «Anomalie» score_anomaly; le aree a NULL si saltano
+  rilievi: Array<{ gravita: Gravita; testo: string; quanti: number; nomi: string[] }>;
+}
+export interface ProblemaAccesso { utente: string; tipo: "bloccato" | "falliti"; quanti: number; da: string | null; ultima: string; motivo: string | null }
+export function statoDominio(db: Database.Database): StatoDominio | null;      // null se nessun giro con status 'ok'
+export function problemiDiAccesso(db: Database.Database): ProblemaAccesso[];    // ultime 24 ore; [] se dc_evento non esiste
+export const schedaDominio: SchedaCliente; // id "dominio", titolo "Dominio e accessi", ordine 40, icona "Users"
 ```
 
-**Cosa fare**
-- La scheda è attiva se c'è un dominio collegato (`ad_integrations` con almeno una riga attiva).
-- Pagina: a sinistra «Stato del dominio» (punteggio, «un mese fa N» solo se c'è, barre delle aree); a destra «Cosa abbassa il punteggio» (rilievi come frasi; «vedi i nomi» apre l'elenco nella stessa pagina con `?rilievo=<n>`) e «Problemi di accesso · ultime 24 ore».
-- I nomi delle aree e dei rilievi si prendono dai testi italiani che la pagina Sicurezza dominio mostra già; dove sono tecnici si aggiunge una frase semplice in `src/lib/cliente/frasi-dominio.ts`, con il titolo originale come ripiego.
-- Riquadro in casa: punteggio «N su 100», contesto «stato del dominio · N accessi falliti». Voci di attenzione: account bloccati oggi (`attenzione`), rilievi gravi (`grave`).
+**Regole di calcolo**
+- `statoDominio`: l'ultimo giro con `status = 'ok'`. `unMeseFa` = `score_global` del giro `ok` più recente fra quelli con `started_at` più vecchio di 25 giorni; se non c'è, `null`.
+- `rilievi`: i rilievi di quel giro, i più gravi prima, al più 10. `testo` = `title`; `quanti` = `object_count`; `nomi` = da `sample_dns_json` (`JSON.parse` in `try/catch`), tenendo per ogni voce solo il primo pezzo del nome distinto (il valore dopo `CN=` fino alla prima virgola). `gravita`: i due livelli più alti di `severity` → `grave`, quello medio → `attenzione`, gli altri → `nota`.
+- `problemiDiAccesso`: da `dc_evento` nelle ultime 24 ore, raggruppando per `account` (i vuoti e quelli che finiscono con `$` si scartano). `tipo` = `bloccato` se c'è almeno un 4740 (e `quanti` conta i 4740), altrimenti `falliti` (e `quanti` conta 4625 + 4771 + 4776, solo se almeno 5). `da` = `postazione`, poi `ip`, dell'evento più recente; `ultima` = `quando` più recente; `motivo` = `motivo` dell'evento più recente. Ordine: bloccati prima, poi per `quanti` decrescente. Al più 20.
+- Se `dc_evento` non esiste (`SELECT 1 FROM sqlite_master WHERE name = 'dc_evento'`), l'elenco è vuoto.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (Health mai eseguita → `null`; un solo giro → `unMeseFa` nullo); pagina guardata una volta a 1920 sul cliente 70791 dell'hub, che ha un dominio.
+**Pagina** (`/cliente/dominio?rilievo=<indice>`, due colonne 1 : 1,2)
+- `PaginaModulo` con `contesto` «controllo del <data e ora italiana di controllatoIl>».
+- Sinistra, «Stato del dominio»: punteggio grande con « su 100» e, se `unMeseFa` c'è, « · un mese fa <n>»; sotto una barra per area (nome, barra, numero). Se `statoDominio` è `null`: `Vuoto` «Il controllo del dominio non è ancora stato eseguito».
+- Destra, «Cosa abbassa il punteggio»: una riga per rilievo (icona della gravità, «<quanti> · <testo>», a destra il link «vedi i nomi» che imposta `rilievo`); il rilievo scelto mostra sotto di sé i `nomi`, uno per riga. Poi «Problemi di accesso · ultime 24 ore»: una riga per problema («<utente> · bloccato <n> volte» oppure «<utente> · <n> tentativi falliti», a destra «da <da> · ultima <ora>» e il `motivo` se c'è). Senza problemi: «Nessun problema di accesso nelle ultime 24 ore».
+
+**Scheda nel registro**
+- `attiva`: esiste almeno una riga in `ad_integrations`.
+- `riquadro`: `numero` = punteggio (o «—» se `null`), `unita` «su 100»; `contesto` = «stato del dominio · N accessi falliti» (somma dei `falliti`); `aperti` = numero di utenti bloccati più rilievi `grave`; `stato` = `grave` se c'è un rilievo `grave`, `attenzione` se c'è un bloccato, altrimenti `a_posto`.
+- `attenzione`: una voce per utente bloccato (gravità `attenzione`, «<utente> bloccato <n> volte oggi») e una per rilievo `grave` (gravità `grave`, «<quanti> · <testo>»), `href` «/cliente/dominio».
+
+**Verifica:** `npx vitest run src/lib/cliente` verde (nessun giro `ok` → `null`; un solo giro → `unMeseFa` nullo; account con `$` scartati; 4 fallimenti non compaiono, 5 sì). Pagina guardata una volta a 1920 sull'hub, cliente 70791, che ha un dominio.
 
 **Commit:** «Vista cliente: scheda Dominio e accessi».
 
@@ -206,24 +335,52 @@ export function problemiDiAccesso(c: ContestoCliente): Promise<ProblemaAccesso[]
 ### [ ] Task 6 — Scheda Log di sicurezza
 
 **File**
-- crea `src/lib/cliente/schede/log-sicurezza.ts`, `src/lib/cliente/frasi-avvisi.ts`, `src/lib/cliente/__tests__/log-sicurezza.test.ts`, `src/app/(cliente)/cliente/log-sicurezza/page.tsx`
+- crea `src/lib/cliente/frasi-avvisi.ts`, `src/lib/cliente/schede/log-sicurezza.ts`, `src/lib/cliente/__tests__/log-sicurezza.test.ts`, `src/app/(cliente)/cliente/log-sicurezza/page.tsx`
+- modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
 
-**Interfacce**
-- usa: lo stato dei moduli (`c.moduli`, una voce con `category === "siem"` attiva), le letture che oggi alimentano `/security-alerts` (`src/app/(dashboard)/security-alerts/`), la tabella `wazuh_agent` per i computer sotto controllo.
-- produce:
+**Fonti**
+- `wazuh_alert_event` (schema in `src/lib/integrations/wazuh-alerts-db.ts`): `category`, `diagnostic`, `rule_level`, `rule_description`, `agent_name`, `target_user`, `occurrence_count`, `first_seen_at`, `last_seen_at`, `acknowledged`, `acknowledged_at`.
+- `wazuh_agent`: `status` (`active` | `disconnected` | `pending` | `never_connected`).
+- Il nome della fonte: `label` del modulo di categoria `siem` in `c.moduli`.
+
+**Interfacce prodotte**
 ```ts
-export interface AvvisoCliente { gravita: Gravita; testo: string; dove: string | null; quando: string }
-export function fraseAvviso(titoloOriginale: string): string; // tabella dei casi frequenti; se non c'è, restituisce il titolo originale
-export function logSicurezza(c: ContestoCliente): Promise<{ fonte: string; sottoControllo: number; totaleComputer: number; perGiorno: number[] /* 7 valori */; aperti: AvvisoCliente[]; chiusiNelMese: number }>;
+// src/lib/cliente/frasi-avvisi.ts
+/** Frase semplice per i titoli più frequenti; se il titolo non è in tabella restituisce il titolo così com'è. */
+export function fraseAvviso(titoloOriginale: string): string;
+
+// src/lib/cliente/schede/log-sicurezza.ts
+export interface AvvisoCliente { gravita: Gravita; testo: string; dove: string | null; chi: string | null; quando: string; volte: number }
+export interface LogSicurezza {
+  sottoControllo: number; totaleComputer: number;
+  perGiorno: Array<{ giorno: string; avvisi: number }>;   // 7 elementi, dal più vecchio a oggi, giorni senza avvisi a 0
+  aperti: AvvisoCliente[];                                 // i più gravi prima, poi i più recenti; al più 30
+  totaleAperti: number; chiusiNelMese: number;
+}
+export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza;
+export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "Log di sicurezza", ordine 50, icona "FileText"
 ```
 
-**Cosa fare**
-- Scheda attiva solo con un modulo di categoria `siem` attivo. Titolo «Log di sicurezza», sotto in piccolo «fonte: <nome del modulo> · N computer sotto controllo su M».
-- Pagina: a sinistra le barre dei 7 giorni (il giorno più alto più scuro) e la riga «N aperti · N chiusi nel mese · N computer senza controllo»; a destra «Avvisi aperti» come frasi, con dove e quando. Nessun numero di regola, nessun livello.
-- `frasi-avvisi.ts` nasce con i venti avvisi più frequenti misurati sul cliente 70791 (`GROUP BY` sul titolo, prima di scrivere la tabella).
-- Riquadro in casa: avvisi aperti, contesto «avvisi aperti · N chiusi nel mese»; `a_posto` se zero. Voci di attenzione: gli avvisi aperti gravi.
+**Regole di calcolo**
+- Si contano solo le righe con `diagnostic = 0`.
+- `aperti` = `acknowledged = 0`. `testo` = `fraseAvviso(rule_description)`; `dove` = `agent_name`; `chi` = `target_user`; `quando` = `last_seen_at`; `volte` = `occurrence_count`. `gravita`: `rule_level >= 12` → `grave`; `>= 7` → `attenzione`; altrimenti `nota`.
+- `chiusiNelMese` = `acknowledged = 1` con `acknowledged_at` negli ultimi 30 giorni.
+- `perGiorno`: righe con `last_seen_at` negli ultimi 7 giorni, contate per giorno italiano (come `giornoItaliano` in `src/lib/security/kpi-dashboard.ts`).
+- `sottoControllo` = `wazuh_agent` con `status = 'active'`; `totaleComputer` = tutte le righe di `wazuh_agent`.
+- **Prima di scrivere `frasi-avvisi.ts`:** sull'hub (cliente 70791) si misurano i 20 `rule_description` più frequenti con un `GROUP BY`, e la tabella nasce da quelli. La misura si scrive nel task come riga di verifica.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (`fraseAvviso` con titolo noto e ignoto; scheda non attiva senza modulo); pagina guardata una volta a 1920.
+**Pagina** (`/cliente/log-sicurezza`, due colonne 1 : 1,2)
+- `PaginaModulo` con `contesto` «fonte: <label del modulo> · <sottoControllo> computer sotto controllo su <totaleComputer>».
+- Sinistra, «Avvisi negli ultimi 7 giorni»: sette barre verticali, la più alta con sfondo `text-foreground`, le altre `text-muted-foreground`, sotto ogni barra il giorno («lun», «mar», …) e sopra il numero. Sotto: «<totaleAperti> aperti · <chiusiNelMese> chiusi nel mese · <totaleComputer − sottoControllo> computer senza controllo».
+- Destra, «Avvisi aperti»: una riga per avviso (icona della gravità, `testo`, «× <volte>» se maggiore di 1, a destra «<dove> · <tempo>» con `TempoRelativo`). Senza avvisi: «Nessun avviso aperto».
+- Nessun numero di regola, nessun livello, nessun pulsante per prendere in carico.
+
+**Scheda nel registro**
+- `attiva`: `moduloAttivo(c, "siem")`.
+- `riquadro`: `numero` = `totaleAperti`; `contesto` = «avvisi aperti · <chiusiNelMese> chiusi nel mese»; `aperti` = `totaleAperti`; `stato` = `grave` se c'è un aperto `grave`, `attenzione` se ce n'è almeno uno, altrimenti `a_posto`.
+- `attenzione`: una voce per ogni aperto `grave` (al più 5), testo «<testo> su <dove>», `href` «/cliente/log-sicurezza».
+
+**Verifica:** `npx vitest run src/lib/cliente` verde (`fraseAvviso` con titolo in tabella e fuori; righe `diagnostic = 1` escluse; sette giorni sempre presenti). Pagina guardata una volta a 1920.
 
 **Commit:** «Vista cliente: scheda Log di sicurezza».
 
@@ -233,41 +390,61 @@ export function logSicurezza(c: ContestoCliente): Promise<{ fonte: string; sotto
 
 **File**
 - crea `src/lib/cliente/schede/da-sistemare.ts`, `src/lib/cliente/__tests__/da-sistemare.test.ts`, `src/app/(cliente)/cliente/da-sistemare/page.tsx`
+- modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
 
-**Interfacce**
-- usa: `barreReteDiSerie` di `src/lib/rilievi/barre-di-serie.ts` e i gruppi di `src/lib/rilievi/gruppi.ts` (lo stesso conto «un software o un rilievo per host» della Dashboard e della pagina Findings: i numeri devono coincidere), `vuln_findings`, `vuln_scan_runs` per la data dell'ultimo controllo.
-- produce:
+**Fonti**
+- `elencoRilievi(filtro)` di `@/lib/rilievi/unione` (rende `ElencoRilievi`, con `data: RilievoUnito[]`; tipi in `src/lib/rilievi/tipi.ts`): è la stessa fonte della pagina Findings e della Dashboard. Va chiamata dentro il contesto del cliente, con gli stessi argomenti di `barreReteDiSerie()` in `src/lib/rilievi/barre-di-serie.ts`: `{ conIndicatori: true, exploitDi: exploitPerRotte().exploitDi, cvssDi: cvssPerRotte(), pageSize: <tutte> }`.
+- `barreReteDiSerie()` rende `BarraRete[]` (tipo in `src/lib/rilievi/gruppi.ts` riga 251): i totali di critiche e alte della Dashboard vengono da lì.
+- Di ogni `RilievoUnito` servono: `gravita`, `titolo`, `rimedio`, `ip`, `host_id`, `ospiti` (tutti gli host del rilievo), `visto`.
+- **Da leggere prima di scrivere:** i valori del tipo `Severity` usato da `RilievoUnito.gravita`, i campi di `FiltroRilievi` (se c'è un filtro per gravità lo si usa, altrimenti si filtra in memoria) e i campi di `BarraRete`.
+
+**Interfacce prodotte**
 ```ts
 export interface DaSistemareApparato { nome: string; ip: string; gravi: number; alte: number; cosa: string; rimedio: string | null }
-export function daSistemare(c: ContestoCliente): { ultimoControllo: string | null; gravi: number; alte: number; apparati: DaSistemareApparato[] }; // ordinati: più gravi prima
+export interface DaSistemare { ultimoControllo: string | null; gravi: number; alte: number; apparati: DaSistemareApparato[] }
+/** Pura: raggruppa per apparato i rilievi già letti. Provata con rilievi finti. */
+export function perApparato(rilievi: readonly RilievoUnito[]): DaSistemareApparato[];
+export function daSistemare(c: ContestoCliente): DaSistemare;
+export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da sistemare", ordine 30, icona "Wrench"
 ```
 
-**Cosa fare**
-- Scheda attiva solo con un modulo di categoria `va` attivo e almeno un controllo riuscito.
-- Pagina: un elenco «Per apparato, dal più grave»: nome, «N gravi · N alte», una frase su cosa non va (il titolo del rilievo più grave dell'apparato), il rimedio se la fonte lo dà. Nessuna sigla CVE, nessun dettaglio dell'attacco, nessun punteggio.
-- Solo gravità critica e alta. Media e bassa non si mostrano.
-- Riquadro in casa: totale, contesto «N gravi · N alte», stato `grave` se ci sono critiche. Voci di attenzione: una per apparato con critiche («N problemi gravi su <nome>»).
+**Regole di calcolo**
+- Si tengono solo i rilievi di gravità critica e alta. Media, bassa e informativa non si mostrano.
+- `perApparato`: ogni rilievo vale per ognuno dei suoi `ospiti` (se `ospiti` manca, per `ip`); la gravità su quell'apparato è `ospite.gravita` se c'è, altrimenti quella del rilievo. Per apparato: `gravi` = quanti critici, `alte` = quanti alti, `cosa` = il `titolo` del rilievo più grave (a parità il primo), `rimedio` = il suo `rimedio` (stringa vuota → `null`), `nome` = `ospite.nome` oppure l'IP. Ordine: `gravi` decrescente, poi `alte` decrescente. Al più 100 apparati.
+- `gravi` e `alte` totali della scheda = somma di critiche e alte su `barreReteDiSerie()`, così coincidono con la Dashboard.
+- `ultimoControllo` = il `visto` più recente fra i rilievi.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde; sul dev i totali della scheda coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard dello stesso cliente.
+**Pagina** (`/cliente/da-sistemare`, una colonna)
+- `PaginaModulo` con `contesto` «ultimo controllo: <data italiana>».
+- `Pannello` «Per apparato, dal più grave»: una riga per apparato: icona (triangolo se `gravi > 0`, cerchio con esclamativo altrimenti), nome in evidenza, «<gravi> gravi · <alte> alte» (le parti a zero si saltano), `cosa`, e a destra «rimedio: <rimedio>» se c'è. Senza apparati: «Niente da sistemare».
+- Nessuna sigla CVE, nessun punteggio, nessun dettaglio dell'attacco, nessun link alla pagina Findings.
+
+**Scheda nel registro**
+- `attiva`: `moduloAttivo(c, "va") || moduloAttivo(c, "siem")`.
+- `riquadro`: `numero` = `gravi + alte`; `contesto` = «<gravi> gravi · <alte> alte»; `aperti` = `gravi + alte`; `stato` = `grave` se `gravi > 0`, `attenzione` se `alte > 0`, altrimenti `a_posto`.
+- `attenzione`: una voce per ogni apparato con `gravi > 0` (al più 5), gravità `grave`, testo «<gravi> problemi gravi su <nome>» (singolare se 1), `href` «/cliente/da-sistemare».
+
+**Verifica:** `npx vitest run src/lib/cliente` verde (`perApparato`: un rilievo con tre ospiti, un ospite con gravità propria, rimedio vuoto). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
 
 **Commit:** «Vista cliente: scheda Da sistemare».
 
 ---
 
-### [ ] Task 8 — Stampa, documenti, rilascio su dev
+### [ ] Task 8 — Stampa, documenti, prova sull'hub
 
 **File**
-- modifica `src/app/globals.css` (regole `@media print` per l'area cliente: niente intestazione di navigazione, riquadri non spezzati) oppure un foglio dedicato importato dal layout del Task 2
-- modifica `CHANGELOG.md`, `CONTEXT.md` (sezione «Vista cliente»: cos'è, ruolo, come si aggiunge una scheda), `docs/scheda-mappa.md` se cambia cosa fa il progetto, `TASKS.md`
-- crea una pagina del manuale in `docs/` su come creare un utente cliente (pagina, clic, cosa vede)
+- modifica `src/app/globals.css`: un blocco `@media print` limitato all'area (classe `vista-cliente` sul contenitore del layout del Task 2): si nascondono «Stampa», «Esci», «Torna alla Dashboard» e i link «← La tua rete»; i riquadri non si spezzano fra due pagine (`break-inside: avoid`); sfondo bianco
+- modifica `CONTEXT.md`: sezione «Vista cliente — 11/11/2026»: cos'è, l'utente «Cliente» e il recinto, e la ricetta per un modulo nuovo (un file in `src/lib/cliente/schede/`, una riga in `SCHEDE_CLIENTE`, una cartella in `src/app/(cliente)/cliente/<id>/`)
+- modifica `docs/MANUALE-UTENTE.md`: come creare un utente «Cliente» (Impostazioni → Utenti → Nuovo utente → Ruolo «Cliente (vista semplice)» → un solo cliente) e cosa vede
+- modifica `CHANGELOG.md`, `TASKS.md`, e `docs/scheda-mappa.md` (una riga: esiste la vista cliente)
 
 **Cosa fare**
-- Stampa della casa e di ogni pagina interna: una prova a schermo dell'anteprima, a 1920.
-- In `CONTEXT.md` la ricetta per un modulo nuovo: un file in `src/lib/cliente/schede/`, una riga in `SCHEDE_CLIENTE`, una cartella in `src/app/(cliente)/cliente/`.
-- Rilascio su `dev` e prova sull'hub (VM 533) con un utente `cliente` di prova sul cliente 70791; snapshot della VM prima, come da regola.
-- Il cancello completo (`scripts/controlla.sh`) gira **una volta sola**, in sottofondo, prima di un eventuale passaggio a `main`, che resta da confermare con Riccardo.
+- Anteprima di stampa della casa e di una pagina interna, guardata una volta.
+- `npm run lint && npx tsc --noEmit && npm run build`, poi `bash scripts/controlla.sh` **una volta sola**, in sottofondo; l'esito si legge dal codice di uscita.
+- Sull'hub (VM 533, `192.168.4.8`), dopo che il servizio ha preso il commit: utente «Cliente» di prova sul cliente 70791. Entra, vede la casa, apre ogni scheda attiva; `/settings` lo riporta a `/cliente`; `GET /api/hosts` risponde 403.
+- Niente su `main`: il passaggio lo decide Riccardo.
 
-**Verifica:** utente `cliente` di prova sull'hub: entra, vede la casa, apre le schede attive, `/settings` lo riporta a `/cliente`.
+**Verifica:** le quattro righe della prova sull'hub, scritte qui sotto il task con data e ora.
 
 **Commit:** «Vista cliente: stampa e documenti».
 
@@ -278,6 +455,11 @@ export function daSistemare(c: ContestoCliente): { ultimoControllo: string | nul
 - «Lo segue Domarc» accanto a un problema: il dato non esiste. Si aggiunge quando c'è una fonte.
 - Telefono, rapporto periodico per posta, marchio del cliente.
 - Moduli futuri (patch, backup, Wi-Fi): nascono dopo, come file in più.
+- Il riepilogo per macro categoria nelle pagine Reti e Discovery dell'amministratore (punto E del 10/11): qui si fa solo quello della vista cliente.
+
+## Come si controlla ogni task
+
+Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica che i file toccati siano solo quelli elencati; rilancia le prove del task; confronta nomi e firme con le «Interfacce prodotte»; cerca nell'area `fetch(` con metodo diverso da GET e link fuori da `/cliente`; guarda la pagina una volta a 1920 sul dev. Un task passa solo se ha la riga `Verifica:` con comando ed esito.
 
 ## Registro
 

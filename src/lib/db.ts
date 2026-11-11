@@ -18,6 +18,7 @@
  */
 import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
+import { nomeGenerico } from "@/lib/hosts/nomi-generici";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
@@ -6701,13 +6702,13 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     if (!sysName && h.snmp_data) {
       try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ }
     }
-    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase())) {
+    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase()) && !nomeGenerico(sysName)) {
       addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
     }
 
     // 3. Hostname
     const hn = (h.hostname ?? "").trim().toLowerCase();
-    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn)) {
+    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn) && !nomeGenerico(hn)) {
       // Usa short hostname (prima del primo punto) per matchare FQDN con short
       const shortHn = hn.split(".")[0];
       if (shortHn.length >= 3) {

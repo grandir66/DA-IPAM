@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Riconoscimento: nomi di serie e indirizzi passati di un telefono
+
+Riccardo (11/11): il suo S25 «è rilevato due volte nella subnet». Sull'hub aveva 6 righe: il motore dei gruppi le riuniva già, ma la pulizia non archivia mai una riga di un gruppo, quindi restavano per sempre. E otto iPhone diversi erano un gruppo solo, perché si chiamano tutti «iPhone».
+
+### Corretto
+- **Un nome di serie non fa gruppo** (`src/lib/hosts/nomi-generici.ts`: iPhone, iPad, Watch, Mac, MikroTik, Meross…): non riunisce più apparati diversi.
+- **Gli indirizzi passati di un apparato personale tornano archiviabili** (`indirizziPassati` in `pulizia-candidati.ts`): MAC privato, nome non di serie e un'altra riga del gruppo vista dopo. Cadono solo le protezioni «gruppo» e «classificazione a mano»; le altre restano. La soglia di assenza è quella di sempre.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: accessi falliti nelle ultime 24 ore, con chi e da dove
 
 In casa gli accessi falliti erano sette barre, una al giorno, quasi tutte uguali. Riccardo, 11/11: «su 7 giorni dicono poco: finestra temporale inferiore e dettaglio migliore».

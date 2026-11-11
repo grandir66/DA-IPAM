@@ -11,6 +11,7 @@
 
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
+import { nomeGenerico } from "@/lib/hosts/nomi-generici";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -9123,9 +9124,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     if (serial && serial.length >= 4) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
     let sysName = h.dev_sysname ?? null;
     if (!sysName && h.snmp_data) { try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ } }
-    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase())) addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
+    if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase()) && !nomeGenerico(sysName)) addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
     const hn = (h.hostname ?? "").trim().toLowerCase();
-    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn)) { const shortHn = hn.split(".")[0]; if (shortHn.length >= 3) addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim()); }
+    if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn) && !nomeGenerico(hn)) { const shortHn = hn.split(".")[0]; if (shortHn.length >= 3) addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim()); }
     const adDns = (h.ad_dns ?? "").trim().toLowerCase();
     if (adDns && adDns.length >= 3) { const shortAd = adDns.split(".")[0]; if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim()); }
   }

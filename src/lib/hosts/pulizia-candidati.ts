@@ -29,6 +29,8 @@ import type Database from "better-sqlite3";
 import { dbCorrente } from "@/lib/hosts/db-corrente";
 import { GIORNI_ASSENZA_ARCHIVIO, selezionaCandidati, type EsitoSelezione, type HostPerPulizia } from "@/lib/hosts/pulizia";
 import { CHIAVI_SOGLIE_PULIZIA, sogliaPulizia } from "@/lib/hosts/soglie-pulizia";
+import { macPrivato } from "@/lib/hosts/cambio-inquilino";
+import { nomeGenerico } from "@/lib/hosts/nomi-generici";
 
 /** Le tabelle che servono alle esclusioni (oltre a `hosts`). */
 const TABELLE_DI_LEGAME = [
@@ -48,7 +50,7 @@ function controllaTabelle(d: Database.Database): void {
   }
 }
 
-interface RigaHost {
+export interface RigaHost {
   id: number;
   network_id: number;
   ip: string;
@@ -59,6 +61,40 @@ interface RigaHost {
   first_seen: string | null;
   created_at: string | null;
   escluso: string | null;
+  hostname: string | null;
+  gruppo: string | null;
+  recuperato: number;
+  sessioni: number;
+}
+
+/** Le due protezioni che NON valgono per l'indirizzo passato di un apparato personale (vedi sotto). */
+const PROTEZIONI_DEBOLI = new Set(["gruppo multihomed", "classificazione a mano"]);
+
+/**
+ * Indirizzi passati di un apparato personale (Riccardo, 11/11/2026, rimedio C3). Un telefono che gira prende un
+ * indirizzo dopo l'altro, con un MAC casuale per rete: le sue righe stanno in un gruppo (stesso nome) e la pulizia,
+ * che non archivia mai una riga di un gruppo, le teneva per sempre: sull'hub 533 l'S25 aveva 6 righe, e 15 righe
+ * assenti da più di 30 giorni erano tenute così. Una riga torna archiviabile, con la soglia di sempre, se:
+ * MAC privato, nome non di serie, e un'altra riga dello stesso gruppo è stata vista DOPO. Cadono solo le protezioni
+ * «gruppo» e «classificazione a mano» (la scelta è sull'apparato, non su quell'indirizzo); apparato, monitorato,
+ * nome scritto a mano, asset, credenziali, unione a mano, recupero a mano e sessioni remote proteggono come prima.
+ */
+export function indirizziPassati(righe: readonly Pick<RigaHost, "id" | "mac" | "hostname" | "gruppo" | "last_seen" | "escluso" | "recuperato" | "sessioni">[]): Set<number> {
+  const ultimaDelGruppo = new Map<string, string>();
+  for (const r of righe) {
+    if (!r.gruppo || !r.last_seen) continue;
+    const u = ultimaDelGruppo.get(r.gruppo);
+    if (!u || r.last_seen > u) ultimaDelGruppo.set(r.gruppo, r.last_seen);
+  }
+  const passati = new Set<number>();
+  for (const r of righe) {
+    if (!r.gruppo || !r.escluso || !PROTEZIONI_DEBOLI.has(r.escluso)) continue;
+    if (r.recuperato !== 0 || r.sessioni !== 0) continue;
+    if (!macPrivato(r.mac) || !r.hostname?.trim() || nomeGenerico(r.hostname)) continue;
+    const ultima = ultimaDelGruppo.get(r.gruppo);
+    if (ultima && (r.last_seen ?? "") < ultima) passati.add(r.id);
+  }
+  return passati;
 }
 
 export function caricaHostPerPulizia(): HostPerPulizia[] {
@@ -82,12 +118,18 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
         WHEN EXISTS (SELECT 1 FROM mc_remote_session rs WHERE rs.host_id = h.id)
           OR EXISTS (SELECT 1 FROM mc_command_log cl WHERE cl.host_id = h.id) THEN 'sessioni remote registrate'
         ELSE NULL
-      END AS escluso
+      END AS escluso,
+      h.hostname,
+      (SELECT ml.group_id FROM multihomed_links ml WHERE ml.host_id = h.id LIMIT 1) AS gruppo,
+      EXISTS (SELECT 1 FROM hosts_archivio a WHERE a.nuovo_host_id = h.id) AS recuperato,
+      (EXISTS (SELECT 1 FROM mc_remote_session rs WHERE rs.host_id = h.id)
+        OR EXISTS (SELECT 1 FROM mc_command_log cl WHERE cl.host_id = h.id)) AS sessioni
     FROM hosts h
   `).all() as RigaHost[];
+  const passati = indirizziPassati(righe);
   return righe.map((r) => ({
     id: r.id, networkId: r.network_id, ip: r.ip, mac: r.mac, nome: r.nome_vero ?? r.ip, nomeVero: r.nome_vero, status: r.status,
-    lastSeen: r.last_seen, firstSeen: r.first_seen, createdAt: r.created_at, escluso: r.escluso,
+    lastSeen: r.last_seen, firstSeen: r.first_seen, createdAt: r.created_at, escluso: passati.has(r.id) ? null : r.escluso,
   }));
 }
 

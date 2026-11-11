@@ -321,6 +321,11 @@ export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati",
 
 ### [ ] Task 5 — Scheda Dominio e accessi
 
+**Dal controllo del Task 4 (11/11, commit `288cdde7`): passato**, 14 prove verdi rilanciate, firme come da piano, quarto stato «assente» fatto come deciso; non guardato a schermo. Tre ritocchi da fare in questo task, prima del resto (misure sul cliente 70791 dell'hub):
+1. **Frase sbagliata.** `tempoSpento` in `src/lib/cliente/schede/apparati.ts` usa `testoRelativo`, che rende «2 giorni fa»: la voce diventa «X spento da 2 giorni fa». Si scrive una funzione propria, senza importare da `@/components`: meno di 48 ore → «da ieri»; altrimenti «da N giorni» (N = giorni interi). La voce resta «<nome> spento <quanto>» → «SW-PIANO1 spento da 3 giorni». Una prova nuova sulla funzione.
+2. **Il pannello porte si apre anche per NAS.** Sul 70791 hanno righe in `switch_ports` 9 apparati: 5 switch, 2 router e 2 NAS (`DA-FILES`, `DA-ADRA`). `ipConPorte`, `porteDelloSwitch` e `porteLette` devono filtrare `nd.device_type IN ('switch', 'router')`. Nel riquadro il contesto diventa «N accesi · N porte di rete lette» (niente conteggio degli switch). Una prova nuova: un `network_devices` di tipo `nas` con porte non dà pannello.
+3. **Categorie senza foglia.** Sul 70791 ci sono 19 host con `attr_category = 'compute'` e 3 con `'storage'` (solo la radice): `nomeCategoria` rende `null` e la riga perde il «cos'è». In `src/lib/cliente/categorie.ts` si aggiungono i nomi delle radici: `compute` «computer o server», `storage` «archivio di rete», `network` «apparato di rete», `peripheral` «periferica», `av` «audio e video», `voip` «telefonia», `power` «alimentazione», `iot` e `ot` «dispositivo», `mobile` «dispositivo mobile». `tipoCliente` non cambia. Una prova nuova.
+
 **File**
 - crea `src/lib/cliente/schede/dominio.ts`, `src/lib/cliente/__tests__/dominio.test.ts`, `src/app/(cliente)/cliente/dominio/page.tsx`
 - modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
@@ -518,6 +523,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Riccardo: gli host assenti (spenti da più di 7 giorni) sono un quarto stato, più chiaro. Scritto in testa al Task 4, punti 3-8.
 
 - 2026-11-11 Task 4 [x]: scheda Apparati. Prima i due ritocchi alle reti e il quarto stato assente. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 14 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
+
+- 2026-11-11 Controllo del Task 4 (`288cdde7`): passato, 14 prove verdi rilanciate. Tre ritocchi messi in testa al Task 5 (frase «spento da», pannello porte solo per switch e router, nomi delle categorie senza foglia).
 
 ## Consuntivo
 ### Fatto

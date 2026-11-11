@@ -227,3 +227,24 @@
   --alert-cat-3: #56B4E9;
   --alert-cat-altre: #4A6070;
 }
+
+/* Vista cliente: i colori del marchio, una volta sola. I componenti usano var(--vc-*). */
+.vista-cliente {
+  --vc-navy: #0D2537;
+  --vc-cian: #00A7E7;
+  --vc-giallo: #FFD400;
+  --vc-acceso: #0D2537;
+  --vc-su-acceso: #FFFFFF;
+  --vc-spento: #00A7E7;
+  --vc-assente: #BFE6F7;
+  --vc-bordo: #9AA6AE;
+  --vc-barra-fondo: #DDF1FA;
+}
+.dark .vista-cliente {
+  --vc-acceso: #FFFFFF;
+  --vc-su-acceso: #0D2537;
+  --vc-spento: #00A7E7;
+  --vc-assente: #1F4E6B;
+  --vc-bordo: #5B6770;
+  --vc-barra-fondo: #123A55;
+}

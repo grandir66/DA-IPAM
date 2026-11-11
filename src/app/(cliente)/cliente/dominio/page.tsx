@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CircleAlert, Info, TriangleAlert } from "lucide-react";
+import { Barra } from "@/components/cliente/barra";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
 import { Pannello, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
@@ -57,11 +58,10 @@ function Segno({ gravita }: { gravita: Gravita }) {
 }
 
 function BarraRischio({ valore }: { valore: number }) {
-  const largo = Math.min(100, Math.max(0, valore));
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-foreground" style={{ width: `${largo}%` }} />
+      <div className="min-w-0 flex-1">
+        <Barra valore={valore} massimo={100} />
       </div>
       <span className="w-9 text-right font-mono text-[13px] font-bold">{valore}</span>
     </div>

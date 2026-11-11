@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: colori del marchio Domarc
+
+La vista usava i grigi dell'interfaccia. Riccardo ha chiesto i colori del marchio: navy, ciano e giallo solo per «questo è quello scelto». La tavola chiara è approvata; quella scura è una proposta da guardare a schermo.
+
+### Aggiunto
+- Fascia navy a tutta larghezza, marchio bianco in tutti e due i temi, filo ciano sotto. I riquadri dei moduli hanno lo stesso filo in alto.
+- Barra ciano per le aree del dominio. La griglia e le porte si distinguono per luminosità: scuro, medio, chiaro, vuoto tratteggiato sul chiaro; bianco, medio, scuro, vuoto tratteggiato sullo scuro.
+
+### Corretto
+- Senza un apparato scelto, da 1280 px in su compare «Scegli un apparato per vedere i dettagli». Prima restava nascosto.
+- Tolta la frase «da ieri», che non usava più nessuno: il tempo lo dice già «da 5 giorni» o «dal 26/10/2026».
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: correzioni di resa su casa, Reti e Apparati
 
 A schermo, sul tema scuro, il marchio spariva, «spento da» diceva «giorni fa», le reti pubbliche riempivano l'elenco e 99 macchine virtuali risultavano server. Il dettaglio di un apparato finiva sotto l'elenco.

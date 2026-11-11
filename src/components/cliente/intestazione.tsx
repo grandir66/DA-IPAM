@@ -6,6 +6,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useTema } from "@/components/shared/theme-toggle";
 
+const COMANDO =
+  "nascosto-stampa border-white/50 bg-transparent text-white hover:bg-white/10 hover:text-white dark:border-white/50 dark:bg-transparent dark:text-white dark:hover:bg-white/10";
+
 /**
  * Intestazione della vista cliente. Niente menu laterale.
  * «Stampa» ed «Esci» sono azioni; «Torna alla Dashboard» solo per l'amministratore.
@@ -30,24 +33,23 @@ export function Intestazione({
   }
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3">
+    <header className="flex flex-wrap items-center justify-between gap-3 text-white">
       <div className="flex min-w-0 items-center gap-3">
-        <img src="/logo-color.png" alt="Domarc" className="h-8 w-auto dark:hidden" />
-        <img src="/logo-white.png" alt="Domarc" className="hidden h-8 w-auto dark:block" />
+        <img src="/logo-white.png" alt="Domarc" className="h-8 w-auto" />
         <p className="truncate text-base font-semibold">
-          La tua rete · {nomeCliente}
+          La tua rete · <span className="text-[var(--vc-cian)]">{nomeCliente}</span>
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-mono text-[13px] text-muted-foreground">dati delle {ora}</p>
-        <Button type="button" variant="outline" className="nascosto-stampa" onClick={() => window.print()}>
+        <p className="font-mono text-[13px] text-white/75">dati delle {ora}</p>
+        <Button type="button" variant="outline" className={COMANDO} onClick={() => window.print()}>
           <Printer aria-hidden />
           Stampa
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="nascosto-stampa"
+          className={COMANDO}
           onClick={tema.toggle}
           disabled={!tema.mounted}
         >
@@ -56,11 +58,14 @@ export function Intestazione({
         </Button>
         <span className="max-w-40 truncate text-sm">{nomeUtente}</span>
         {amministratore && (
-          <Link href="/" className="nascosto-stampa text-sm font-medium text-cian-testo hover:underline">
+          <Link
+            href="/"
+            className="nascosto-stampa inline-flex h-8 items-center rounded-lg border border-white/50 bg-transparent px-2.5 text-sm font-medium text-white hover:bg-white/10"
+          >
             Torna alla Dashboard
           </Link>
         )}
-        <Button type="button" variant="outline" className="nascosto-stampa" onClick={() => void esci()}>
+        <Button type="button" variant="outline" className={COMANDO} onClick={() => void esci()}>
           <LogOut aria-hidden />
           Esci
         </Button>

@@ -29,11 +29,11 @@ export function RiquadroModulo({
   return (
     <Link
       href={`/cliente/${id}`}
-      className="flex flex-col rounded-xl border bg-card p-3.5 hover:border-foreground/25"
+      className="flex flex-col rounded-xl border border-t-[3px] border-t-[var(--vc-cian)] bg-card p-3.5 hover:border-primary hover:border-t-primary"
     >
       <span className="flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-          <Icona className="size-4 shrink-0" aria-hidden />
+          <Icona className="size-4 shrink-0 text-cian-testo" aria-hidden />
           {titolo}
         </span>
         <SegnoStato stato={riquadro.stato} aperti={riquadro.aperti} />

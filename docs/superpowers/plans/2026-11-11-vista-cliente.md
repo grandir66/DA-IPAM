@@ -361,7 +361,7 @@ export function daQuanto(data: Date, adesso: Date): string;
 
 ---
 
-### [ ] Task 4 ter — Colori del marchio Domarc
+### [x] Task 4 ter — Colori del marchio Domarc
 
 **Perché.** Riccardo, 11/11: «dovresti anche usare i colori del brandmark di Domarc, non i colori attuali». Tavola approvata da Riccardo l'11/11 **sul tema chiaro**; la resa sul tema scuro qui sotto è una proposta di chi ha scritto il task e va guardata a schermo. Si fa **dopo il Task 4 bis** (che tocca gli stessi file) e **prima del Task 6**, in un commit suo. Il tema segue la preferenza (deciso da Riccardo, Task 4 bis punto 13): niente area forzata in chiaro.
 
@@ -409,7 +409,7 @@ Nei componenti: `bg-[var(--vc-acceso)]`, `border-[var(--vc-cian)]`, ecc. Nessun 
 
 **Regola che resta.** Riccardo è daltonico: gli stati della griglia si distinguono per **luminosità** (sul chiaro: scuro, medio, chiaro, vuoto tratteggiato; sullo scuro: bianco, medio, scuro, vuoto tratteggiato) e la legenda mostra i quadretti veri. Il giallo non è mai uno stato: vuol dire solo «scelto» (e «attenzione» dentro `STILE_STATO`).
 
-**Verifica:** `npm run lint` e `npx tsc --noEmit` a 0 errori; `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Le pagine `/cliente`, `/cliente/reti`, `/cliente/apparati` e `/cliente/dominio` guardate una volta a 1920 in tutti e due i temi.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 27 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti: il secondo marchio non c'è più, resta quello bianco). `npx tsc --noEmit` → 0 errori. Prima i due ritocchi: il segnaposto della terza colonna ha `xl:block`, `quantoSpento` e la sua prova sono tolti. Le pagine autenticate non sono state aperte, né in chiaro né in scuro.
 
 **Commit:** «Vista cliente: colori del marchio Domarc».
 
@@ -638,6 +638,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 4 bis [x]: correzioni di resa su casa, Reti e Apparati (scritto prima del Task 5, eseguito dopo, il Task 5 resta). Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 28 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 - 2026-11-11 Controllo del Task 4 bis (`bf5c3673`): passato sul codice, 28 prove verdi rilanciate. Due ritocchi in testa al Task 4 ter (segnaposto della terza colonna mai visibile, funzione `quantoSpento` rimasta senza uso).
+
+- 2026-11-11 Task 4 ter [x]: colori del marchio Domarc. Prima i due ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 27 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le pagine autenticate non sono state aperte.
 
 ## Consuntivo
 ### Fatto

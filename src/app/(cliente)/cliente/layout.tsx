@@ -16,13 +16,17 @@ export default async function LayoutCliente({ children }: { children: React.Reac
   });
   return (
     <div className="vista-cliente min-h-screen bg-background text-foreground">
+      <div className="border-b border-[var(--vc-cian)] bg-[var(--vc-navy)]">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-4">
+          <Intestazione
+            nomeCliente={c.nomeCliente}
+            ora={ora}
+            nomeUtente={nomeUtente}
+            amministratore={c.amministratore}
+          />
+        </div>
+      </div>
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 py-4">
-        <Intestazione
-          nomeCliente={c.nomeCliente}
-          ora={ora}
-          nomeUtente={nomeUtente}
-          amministratore={c.amministratore}
-        />
         {children}
       </div>
     </div>

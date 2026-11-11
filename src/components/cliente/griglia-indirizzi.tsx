@@ -7,10 +7,10 @@ import { ASSENTE_DOPO_GIORNI } from "@/lib/hosts/assenti";
 import type { IndirizzoCliente, ReteCliente } from "@/lib/cliente/schede/reti";
 
 const FONDO: Record<IndirizzoCliente["stato"], string> = {
-  acceso: "bg-foreground",
-  spento: "bg-muted-foreground",
-  assente: "bg-muted-foreground/50",
-  libero: "border border-dashed border-foreground/20",
+  acceso: "bg-[var(--vc-acceso)]",
+  spento: "bg-[var(--vc-spento)]",
+  assente: "bg-[var(--vc-assente)]",
+  libero: "border border-dashed border-[var(--vc-bordo)]",
 };
 
 /** Quattro quadretti veri, le stesse classi della griglia. */
@@ -71,7 +71,7 @@ export function GrigliaIndirizzi({
     <div className="grid gap-px" style={{ gridTemplateColumns: "repeat(32, minmax(0, 1fr))" }}>
       {indirizzi.map((indirizzo) => {
         const scelto = ipScelto === indirizzo.ip;
-        const classe = `block aspect-square rounded-sm ${FONDO[indirizzo.stato]} ${scelto ? "outline outline-2 outline-offset-1 outline-foreground" : ""}`;
+        const classe = `block aspect-square rounded-sm ${FONDO[indirizzo.stato]} ${scelto ? "shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--vc-giallo)]" : ""}`;
         if (indirizzo.stato === "libero") {
           return <span key={indirizzo.ip} title={indirizzo.ip} className={classe} />;
         }

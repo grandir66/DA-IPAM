@@ -324,8 +324,6 @@ export function nomiDaSegnalare(db: Database.Database): string[] {
   return spentiDaSegnalare(db).map((h) => h.nome);
 }
 
-const MS_ORA = 3_600_000;
-
 /** Se il nome è l'indirizzo, la voce comincia con la categoria. */
 export function fraseApparatoSpento(
   nome: string,
@@ -336,14 +334,6 @@ export function fraseApparatoSpento(
 ): string {
   const testa = nome !== ip ? nome : categoria ? `${inizialeMaiuscola(categoria)} ${ip}` : ip;
   return `${testa} spento ${daQuanto(parseDbDate(lastSeen), adesso)}`;
-}
-
-/** «da ieri» sotto le 48 ore, altrimenti «da N giorni» con N giorni interi. */
-export function quantoSpento(lastSeen: string, adesso: Date = new Date()): string {
-  const ms = adesso.getTime() - parseDbDate(lastSeen).getTime();
-  if (!Number.isFinite(ms) || ms < 48 * MS_ORA) return "da ieri";
-  const giorni = Math.floor(ms / (24 * MS_ORA));
-  return `da ${giorni} giorni`;
 }
 
 function contestoApparati(accesi: number, porte: number): string {

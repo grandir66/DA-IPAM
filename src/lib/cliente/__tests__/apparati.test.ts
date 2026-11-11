@@ -13,7 +13,6 @@ import {
   fraseApparatoSpento,
   nomiDaSegnalare,
   porteDelloSwitch,
-  quantoSpento,
   schedaApparati,
   tipoCliente,
   TIPI_CLIENTE,
@@ -200,14 +199,6 @@ test("porteDelloSwitch: senza righe è null; con righe tiene le fisiche, ordinat
   assert.equal(porte.find((p) => p.numero === 8)?.verso, "Piano 2");
   assert.equal(porte.find((p) => p.numero === 8)?.dorsale, true);
   db.close();
-});
-
-test("quantoSpento: sotto le 48 ore è «da ieri», poi i giorni interi", () => {
-  const adesso = new Date("2026-11-11T12:00:00.000Z");
-  assert.equal(quantoSpento("2026-11-10 12:00:00", adesso), "da ieri");
-  assert.equal(quantoSpento("2026-11-09 12:00:01", adesso), "da ieri");
-  assert.equal(quantoSpento("2026-11-09 12:00:00", adesso), "da 2 giorni");
-  assert.equal(quantoSpento("2026-11-08 12:00:00", adesso), "da 3 giorni");
 });
 
 test("un NAS con porte non apre il pannello", () => {

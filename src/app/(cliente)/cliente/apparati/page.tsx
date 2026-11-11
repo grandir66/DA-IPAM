@@ -64,7 +64,7 @@ export default async function PaginaApparati({
               apparati={dati.apparati}
               ipScelto={dati.riga?.ip ?? null}
             />
-            <div className={dati.riga ? "xl:sticky xl:top-4" : "hidden xl:sticky xl:top-4"}>
+            <div className={dati.riga ? "xl:sticky xl:top-4" : "hidden xl:block xl:sticky xl:top-4"}>
               <Dettaglio
                 tipo={dati.scelto.tipo}
                 ipScelto={dati.riga?.ip ?? null}

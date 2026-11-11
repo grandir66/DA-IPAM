@@ -17,7 +17,7 @@ import {
   Smartphone,
   type LucideIcon,
 } from "lucide-react";
-import { Pannello, VoceSelezionabile } from "@/components/shared/console";
+import { Legenda, Pannello, VoceSelezionabile } from "@/components/shared/console";
 import { parseDbDate } from "@/lib/db-date";
 import { daQuanto } from "@/lib/cliente/testi";
 import type { PortaCliente, RigaApparato, TipoCliente } from "@/lib/cliente/schede/apparati";
@@ -133,14 +133,15 @@ export function ElencoApparati({
 }
 
 function classePorta(porta: PortaCliente, scelta: boolean): string {
-  const bordo = porta.dorsale ? "border-2 border-foreground" : "border border-foreground/30";
-  const fondo = porta.dorsale
-    ? "bg-muted text-foreground"
-    : porta.stato === "collegata"
-      ? "bg-foreground text-background"
-      : "bg-transparent text-foreground";
-  const anello = scelta ? "outline outline-2 outline-offset-1 outline-foreground" : "";
-  return `flex h-7 items-center justify-center rounded-sm font-mono text-[13px] ${bordo} ${fondo} ${anello}`;
+  const fondo = porta.stato === "collegata"
+    ? "bg-[var(--vc-acceso)] text-[var(--vc-su-acceso)]"
+    : "border border-[var(--vc-bordo)] text-muted-foreground";
+  const anello = scelta
+    ? "shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--vc-giallo)]"
+    : porta.dorsale
+      ? "shadow-[0_0_0_2px_var(--vc-cian)]"
+      : "";
+  return `flex h-7 items-center justify-center rounded-sm font-mono text-[13px] ${fondo} ${anello}`;
 }
 
 function conto(n: number, uno: string, tanti: string): string {
@@ -166,11 +167,15 @@ export function PannelloPorte({
   const libere = porte.length - collegate;
   const scelta = porte.find((p) => p.numero === portaScelta) ?? null;
   return (
-    <Pannello
-      titolo={`Porte di ${nome}`}
-      sottotitolo="pieno = collegata · vuoto = libera · bordo spesso = dorsale"
-    >
+    <Pannello titolo={`Porte di ${nome}`}>
       <div className="space-y-3">
+        <Legenda
+          voci={[
+            { classe: "bg-[var(--vc-acceso)]", testo: "collegata" },
+            { classe: "border-[var(--vc-bordo)]", testo: "libera" },
+            { classe: "shadow-[0_0_0_2px_var(--vc-cian)]", testo: "dorsale" },
+          ]}
+        />
         <div className="grid grid-cols-12 gap-1">
           {porte.map((porta) => (
             <Link

@@ -10,9 +10,9 @@
 
 **Spec:** nessun file a parte. Le decisioni di Riccardo dell'11/11/2026 stanno in `TASKS.md`, sezione «2026-11-11 — Vista per operatori non amministratori». Le tavole approvate sono descritte qui, task per task.
 
-**Livello di controllo:** leggero (da confermare da Riccardo). Il Task 1 tocca l'accesso e lo schema del database hub, che sono zona rossa: lì la prova si scrive e si vede fallire prima del codice.
+**Livello di controllo:** leggero (deciso da Riccardo l'11/11/2026). Il Task 1 tocca l'accesso e lo schema del database hub, che sono zona rossa: lì la prova si scrive e si vede fallire prima del codice.
 
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-11
+**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-11
 
 ## Regole per chi esegue
 

@@ -128,7 +128,7 @@ export function PrintPageClient({ initial }: { initial: PrintParams }) {
       <div className="stampa-barra sticky top-0 z-20 flex w-full max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-card px-4 py-2 text-foreground shadow-sm">
         <strong className="text-base">Stampa della mappa</strong>
         <Segmented<Paper> label="Foglio" value={params.paper} onChange={(v) => change({ paper: v })} options={[{ value: "A4", text: "A4" }, { value: "A3", text: "A3" }]} />
-        <Segmented<PrintScale> label="Scala" value={params.scale} onChange={(v) => change({ scale: v })} options={[{ value: 1, text: "100 %" }, { value: 0.8, text: "80 %" }]} />
+        <Segmented<PrintScale> label="Scala" value={params.scale} onChange={(v) => change({ scale: v })} options={[{ value: 0, text: "Un foglio" }, { value: 1, text: "100 %" }, { value: 0.8, text: "80 %" }]} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="size-4" checked={params.withVms} onChange={(e) => change({ withVms: e.target.checked })} />
           con le VM

@@ -6,9 +6,16 @@
  * l'XML `mxfile`. Ogni riquadro è una forma vera e ogni collegamento una linea agganciata ai suoi
  * due estremi: in draw.io si spostano i riquadri e le linee seguono. Le parole sulle linee sono
  * quelle di `edgeLook`, le stesse dello schermo.
+ *
+ * Le linee dell'albero hanno il percorso dello schermo e della stampa (`stepPoints`: uscita, tronco, braccio verso il
+ * figlio) scritto come punti fissi, e la scritta a metà del braccio: lasciate al tracciato automatico di draw.io
+ * partivano tutte dal centro del lato e si sovrapponevano con le parole una sull'altra (Riccardo, 11/11/2026: «quasi
+ * illeggibile, le righe non rimangono separate»). Gli attaccati non hanno linee: sono figli del loro riquadro, che li
+ * porta con sé quando lo si sposta. Le ridondanze sono curve tratteggiate, così non si confondono coi tronchi.
  */
 import { edgeLook } from "./edge-look";
 import { drawableLinks, moreAttachedAt } from "./map-screen";
+import { stepPoints } from "./print-draw";
 import type { MapLink } from "./model-types";
 import type { LayoutResult } from "./tree-layout";
 
@@ -38,12 +45,28 @@ function etichetta(righe: Array<string | null>): string {
   return attr(html);
 }
 
-function forma(id: string, valore: string, stile: string, b: { x: number; y: number; w: number; h: number }): string {
-  return `<mxCell id="${attr(id)}" value="${valore}" style="${stile}" vertex="1" parent="1"><mxGeometry x="${Math.round(b.x)}" y="${Math.round(b.y)}" width="${Math.round(b.w)}" height="${Math.round(b.h)}" as="geometry"/></mxCell>`;
+function forma(id: string, valore: string, stile: string, b: { x: number; y: number; w: number; h: number }, padre = "1"): string {
+  return `<mxCell id="${attr(id)}" value="${valore}" style="${stile}" vertex="1" parent="${attr(padre)}"><mxGeometry x="${Math.round(b.x)}" y="${Math.round(b.y)}" width="${Math.round(b.w)}" height="${Math.round(b.h)}" as="geometry"/></mxCell>`;
 }
 
-function linea(id: string, da: string, a: string, valore: string, stile: string): string {
-  return `<mxCell id="${attr(id)}" value="${valore}" style="${stile}" edge="1" parent="1" source="${attr(da)}" target="${attr(a)}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
+interface Pt { x: number; y: number }
+
+/**
+ * Una linea coi punti intermedi fissi (`punti` comprende i due estremi, che draw.io aggancia alle forme) e la scritta
+ * a metà dell'ultimo tratto, sopra la linea: è il braccio che arriva al figlio, l'unico che non divide con i fratelli.
+ */
+function linea(id: string, da: string, a: string, valore: string, stile: string, punti: readonly Pt[] = []): string {
+  const interni = punti.slice(1, -1);
+  const lung = (i: number) => Math.abs(punti[i + 1].x - punti[i].x) + Math.abs(punti[i + 1].y - punti[i].y);
+  let dove = "";
+  if (valore && punti.length >= 2) {
+    const tratti = punti.slice(0, -1).map((_, i) => lung(i));
+    const tot = tratti.reduce((x, y) => x + y, 0);
+    const fino = tot - tratti[tratti.length - 1] / 2;
+    dove = tot > 0 ? ` x="${Math.round(((2 * fino) / tot - 1) * 100) / 100}" y="-9"` : "";
+  }
+  const pts = interni.length ? `<Array as="points">${interni.map((q) => `<mxPoint x="${Math.round(q.x)}" y="${Math.round(q.y)}"/>`).join("")}</Array>` : "";
+  return `<mxCell id="${attr(id)}" value="${valore}" style="${stile}" edge="1" parent="1" source="${attr(da)}" target="${attr(a)}"><mxGeometry${dove} relative="1" as="geometry">${pts}</mxGeometry></mxCell>`;
 }
 
 function stileLinea(l: MapLink, inTree: boolean, nomeDi: (id: string) => string): { valore: string; stile: string } {
@@ -52,7 +75,7 @@ function stileLinea(l: MapLink, inTree: boolean, nomeDi: (id: string) => string)
   const tratto = look.dash ? `dashed=1;dashPattern=${look.dash};` : "";
   return {
     valore: etichetta([look.tokens.join(" · ")]),
-    stile: `edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeColor=${colore};strokeWidth=${Math.max(1, Math.round(look.width))};${tratto}fontSize=11;labelBackgroundColor=#ffffff;`,
+    stile: `${inTree ? "edgeStyle=orthogonalEdgeStyle;rounded=0;" : "edgeStyle=none;curved=1;dashed=1;"}html=1;endArrow=none;strokeColor=${colore};strokeWidth=${Math.max(1, Math.round(look.width))};${tratto}fontSize=10;labelBackgroundColor=#ffffff;`,
   };
 }
 
@@ -60,16 +83,25 @@ export function mappaDrawio(m: MappaDrawio): string {
   const { layout } = m;
   const nomeDi = (id: string): string => m.nodi.get(id)?.name ?? id;
   const celle: string[] = [];
+  // Un attaccato è figlio del suo riquadro: le coordinate di un figlio sono relative al genitore.
+  const relativo = (b: { x: number; y: number; w: number; h: number }, padre: string | null) => {
+    const p = padre ? layout.nodes.get(padre) : undefined;
+    return p ? { x: b.x - p.x, y: b.y - p.y, w: b.w, h: b.h } : b;
+  };
+  // Da dove esce e dove entra una linea dell'albero: come a schermo, dal lato verso i figli.
+  const agganci = layout.orientation === "lr" ? "exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" : "exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;";
 
   // Sotto a tutto: il riquadro tratteggiato che raccoglie gli access point di un apparato.
   for (const g of layout.apGroups) {
     celle.push(forma(`apg:${g.parent}`, etichetta([`${g.count} AP`]), `rounded=1;html=1;dashed=1;fillColor=#F5F5F5;strokeColor=${GRIGIO};verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fontColor=${GRIGIO};`, g));
   }
-  for (const ln of layout.nodes.values()) {
+  // Prima i riquadri, poi gli attaccati: un figlio va scritto dopo il suo genitore.
+  const inOrdine = [...layout.nodes.values()].sort((a, b) => Number(a.role === "attached") - Number(b.role === "attached"));
+  for (const ln of inOrdine) {
     const n = m.nodi.get(ln.id);
     const nome = n?.name ?? ln.id;
     if (ln.role === "attached") {
-      celle.push(forma(ln.id, etichetta([n?.mgmtIp && n.mgmtIp !== nome ? `${nome} · ${n.mgmtIp}` : nome]), `text;html=1;align=left;verticalAlign=middle;spacingLeft=4;fontSize=11;fontColor=${NAVY};strokeColor=none;fillColor=none;`, ln));
+      celle.push(forma(ln.id, etichetta([n?.mgmtIp && n.mgmtIp !== nome ? `${nome} · ${n.mgmtIp}` : nome]), `text;html=1;align=left;verticalAlign=middle;spacingLeft=4;fontSize=11;fontColor=${NAVY};strokeColor=none;fillColor=none;`, relativo(ln, ln.parent), ln.parent && layout.nodes.has(ln.parent) ? ln.parent : "1"));
       continue;
     }
     const pieno = ln.role === "box";
@@ -83,23 +115,24 @@ export function mappaDrawio(m: MappaDrawio): string {
     const b = layout.nodes.get(parent);
     if (!b) continue;
     const at = moreAttachedAt(layout.orientation, b);
-    celle.push(forma(`more:${parent}`, etichetta([`+ altri ${quanti}`]), `text;html=1;align=left;fontSize=11;fontColor=${GRIGIO};strokeColor=none;fillColor=none;`, { x: at.x, y: at.y, w: 120, h: 18 }));
+    celle.push(forma(`more:${parent}`, etichetta([`+ altri ${quanti}`]), `text;html=1;align=left;fontSize=11;fontColor=${GRIGIO};strokeColor=none;fillColor=none;`, { x: at.x - b.x, y: at.y - b.y, w: 120, h: 18 }, parent));
   }
 
+  // I riquadri vanno scritti prima dei loro figli: draw.io legge i genitori in ordine.
   const apFatti = new Set<string>();
-  const base = `edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeColor=${NAVY};`;
+  const base = `edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeColor=${NAVY};${agganci}`;
   for (const [figlio, link] of m.via) {
     const ln = layout.nodes.get(figlio);
-    if (!ln || !ln.parent) continue;
-    if (ln.role === "attached") {
-      celle.push(linea(`a:${figlio}`, ln.parent, figlio, "", `${base}strokeWidth=1;strokeColor=${GRIGIO};`));
-    } else if (ln.role === "ap") {
-      if (apFatti.has(ln.parent)) continue;
+    const padre = ln?.parent ? layout.nodes.get(ln.parent) : undefined;
+    if (!ln || !ln.parent || !padre || ln.role === "attached") continue;
+    if (ln.role === "ap") {
+      const g = layout.apGroups.find((x) => x.parent === ln.parent);
+      if (!g || apFatti.has(ln.parent)) continue;
       apFatti.add(ln.parent);
-      celle.push(linea(`t:apg:${ln.parent}`, ln.parent, `apg:${ln.parent}`, "", `${base}strokeWidth=1;`));
+      celle.push(linea(`t:apg:${ln.parent}`, ln.parent, `apg:${ln.parent}`, "", `${base}strokeWidth=1;`, stepPoints(layout.orientation, padre, g)));
     } else {
       const s = stileLinea(link, true, nomeDi);
-      celle.push(linea(`t:${figlio}`, ln.parent, figlio, s.valore, s.stile));
+      celle.push(linea(`t:${figlio}`, ln.parent, figlio, s.valore, `${s.stile}${agganci}`, stepPoints(layout.orientation, padre, ln)));
     }
   }
   for (const l of drawableLinks(m.links, layout.nodes)) {

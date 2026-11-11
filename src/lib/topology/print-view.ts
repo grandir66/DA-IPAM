@@ -34,17 +34,17 @@ export interface PrintParams {
   withVms: boolean;
 }
 
-/** I parametri della pagina di stampa: `mappa` (id|auto), `foglio` (A4|A3, predefinito A3), `scala` (100|80, predefinita 100), `vm` (0|1). */
+/** I parametri della pagina di stampa: `mappa` (id|auto), `foglio` (A4|A3, predefinito A3), `scala` (100|80|foglio, predefinita 100; «foglio» = tutta la mappa su un foglio), `vm` (0|1). */
 export function parsePrintParams(sp: Readonly<Record<string, string | string[] | undefined>>): PrintParams {
   const one = (k: string) => { const v = sp[k]; return Array.isArray(v) ? v[0] : v; };
   const m = one("mappa");
   const key = m === "auto" ? "auto" : m && /^\d{1,9}$/.test(m) && Number(m) > 0 ? Number(m) : null;
-  return { key, paper: one("foglio") === "A4" ? "A4" : "A3", scale: one("scala") === "80" ? 0.8 : 1, withVms: one("vm") === "1" };
+  return { key, paper: one("foglio") === "A4" ? "A4" : "A3", scale: one("scala") === "80" ? 0.8 : one("scala") === "foglio" ? 0 : 1, withVms: one("vm") === "1" };
 }
 
 /** La query della pagina per quei parametri (per ricordarli nell'indirizzo). */
 export function printQuery(p: PrintParams): string {
-  const q = new URLSearchParams({ mappa: String(p.key ?? ""), foglio: p.paper, scala: p.scale === 1 ? "100" : "80" });
+  const q = new URLSearchParams({ mappa: String(p.key ?? ""), foglio: p.paper, scala: p.scale === 1 ? "100" : p.scale === 0 ? "foglio" : "80" });
   if (p.withVms) q.set("vm", "1");
   return `?${q.toString()}`;
 }

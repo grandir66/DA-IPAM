@@ -15,7 +15,8 @@
  */
 
 export type Paper = "A4" | "A3";
-export type PrintScale = 1 | 0.8;
+/** 1 e 0,8: la scala scelta, su quanti fogli serve. 0 = «Un foglio»: la scala che fa stare tutta la mappa su un foglio solo. */
+export type PrintScale = 1 | 0.8 | 0;
 
 /** Area stampabile del foglio in verticale, mm. */
 export const PAPER_MM: Readonly<Record<Paper, { w: number; h: number }>> = { A4: { w: 190, h: 277 }, A3: { w: 277, h: 400 } };
@@ -35,7 +36,8 @@ export interface SheetPlan {
   paper: Paper;
   /** true = foglio orizzontale. */
   landscape: boolean;
-  scale: PrintScale;
+  /** La scala effettiva del disegno: con «Un foglio» è quella calcolata. */
+  scale: number;
   rows: number;
   cols: number;
   /** Numerati da 1, riga per riga; coordinate nel sistema del disegno (px a scala 1). */
@@ -87,14 +89,20 @@ export function planSheets(
   opts: { paper: Paper; scale: PrintScale; overlapMm: number },
 ): SheetPlan {
   const area = PAPER_MM[opts.paper];
-  const overlap = (opts.overlapMm * PX_PER_MM) / opts.scale;
   const plan = (landscape: boolean): SheetPlan => {
     const pageMm = landscape ? { w: area.h, h: area.w } : { w: area.w, h: area.h };
     const tileMm = { w: pageMm.w, h: pageMm.h - TILE_HEADER_MM };
-    const g = grid(drawing, (tileMm.w * PX_PER_MM) / opts.scale, (tileMm.h * PX_PER_MM) / opts.scale, overlap);
-    return { paper: opts.paper, landscape, scale: opts.scale, ...g, pageMm, tileMm };
+    // «Un foglio» (Riccardo, 11/11/2026: preparare la stampa a tasselli era «quasi impossibile rispetto al video»): la
+    // scala più grande, mai sopra il 100 %, con cui tutto il disegno sta nell'area di un foglio.
+    const scale = opts.scale === 0
+      ? Math.min(1, ((tileMm.w * PX_PER_MM) / Math.max(1, drawing.width)) * 0.999, ((tileMm.h * PX_PER_MM) / Math.max(1, drawing.height)) * 0.999)
+      : opts.scale;
+    const g = grid(drawing, (tileMm.w * PX_PER_MM) / scale, (tileMm.h * PX_PER_MM) / scale, (opts.overlapMm * PX_PER_MM) / scale);
+    return { paper: opts.paper, landscape, scale, ...g, pageMm, tileMm };
   };
   const portrait = plan(false), landscape = plan(true);
+  // Con «Un foglio» il foglio si gira dove il disegno viene più grande.
+  if (opts.scale === 0) return landscape.scale > portrait.scale ? landscape : portrait;
   return landscape.printed < portrait.printed ? landscape : portrait;
 }
 

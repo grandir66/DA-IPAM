@@ -182,3 +182,15 @@ test("riga del primo foglio: singolare e plurale («1 riga», «1 vuoto non stam
   assert.equal(gridSummary({ rows: 3, cols: 1, tiles: 3, printed: 2 }), "griglia 3 righe × 1 colonna, 1 vuoto non stampato");
   assert.equal(gridSummary({ rows: 4, cols: 4, tiles: 16, printed: 13 }), "griglia 4 righe × 4 colonne, 3 vuoti non stampati");
 });
+
+// Riccardo, 11/11/2026: la stampa a tasselli era «quasi impossibile rispetto al video». «Un foglio» (scala 0) trova la
+// scala con cui tutto il disegno sta su un foglio, e gira il foglio dove viene più grande.
+test("«Un foglio»: un tassello solo, scala sotto il 100 %, foglio girato dove il disegno è più grande", () => {
+  const largo = planSheets({ width: 4000, height: 1500 }, { paper: "A3", scale: 0, overlapMm: 15 });
+  assert.equal(largo.tiles.length, 1);
+  assert.equal(largo.landscape, true);
+  assert.ok(largo.scale > 0 && largo.scale < 1);
+  assert.ok(4000 * largo.scale <= largo.tileMm.w / 0.2646 && 1500 * largo.scale <= largo.tileMm.h / 0.2646);
+  const piccolo = planSheets({ width: 300, height: 200 }, { paper: "A4", scale: 0, overlapMm: 15 });
+  assert.equal(piccolo.scale, 1, "un disegno piccolo non si ingrandisce");
+});

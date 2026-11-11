@@ -6,6 +6,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
 
+### Corretto
+- **Topologia, esportazione draw.io: le linee restano separate.** Lasciate al tracciato automatico di draw.io partivano tutte dal centro del lato e si sovrapponevano, con le parole una sull'altra. Ora ogni linea dell'albero ha il percorso dello schermo scritto come punti fissi (uscita, tronco, braccio verso il figlio) e la scritta a metà del braccio; gli attaccati non hanno più linee e sono figli del loro riquadro, che li porta con sé quando lo si sposta; le ridondanze sono curve tratteggiate.
+
+### Aggiunto
+- **Topologia, stampa: scala «Un foglio».** La stampa tagliava sempre la mappa in tasselli al 100 % o all'80 %, da ricomporre a mano. «Un foglio» calcola la scala con cui tutta la mappa sta su un foglio solo e gira il foglio dove viene più grande.
+
 ### Aggiunto
 - **Topologia: le VM riconosciute dal MAC stanno dentro l'hypervisor.** Dove non leggiamo l'hypervisor (alla 72729 non ci sono credenziali VMware) le VM comparivano sotto lo switch che ne vede il MAC. Se in archivio c'è un solo hypervisor fisico, ogni oggetto con un MAC da macchina virtuale (VMware, Hyper-V, KVM/Proxmox, Xen, VirtualBox) ora sta dentro di lui, senza collegamento verso lo switch. Con due o più hypervisor non si deduce nulla: lo dice solo la lettura dell'hypervisor. Un «hypervisor» che ha lui stesso un MAC da VM (un vCenter) non conta come fisico ed è trattato da VM.
 

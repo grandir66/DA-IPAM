@@ -54,6 +54,8 @@ export interface RigaSchedulazione {
   cambio: Cambio | null;
   /** Il job da lanciare con «Esegui ora» (`POST /api/jobs/[id]/run`); null = non è un job. */
   jobId: number | null;
+  /** Il tipo del job (`scheduled_jobs.job_type`), per le azioni della riga: «Modifica» e gli esiti di `apparati_scelti`. */
+  jobTipo?: string;
   perche?: string;
 }
 
@@ -183,7 +185,8 @@ function rigaJob(j: ScheduledJob, reti: Map<number, string>, controller: Map<num
   let su = rete ?? SU_JOB[tipo] ?? "—";
   let quando = ogni(j.interval_minutes);
   let prossimo = j.next_run;
-  let dove: RigaSchedulazione["dove"] = { href: "/settings?tab=jobs", etichetta: "Job ›" };
+  // Dall'11/11/2026 i job si gestiscono in questa pagina: nessun rimando, salvo quelli che hanno una pagina loro.
+  let dove: RigaSchedulazione["dove"] = null;
   let cambio: Cambio = { tipo: "job", id: j.id };
 
   if (TIPI_DA_OPZIONE.has(tipo)) {
@@ -237,6 +240,7 @@ function rigaJob(j: ScheduledJob, reti: Map<number, string>, controller: Map<num
     cambio,
     // La pulizia degli host non si lancia a mano (gira solo di notte, `job-riservati.ts`).
     jobId: eJobRiservato(tipo) ? null : j.id,
+    jobTipo: tipo,
   };
 }
 

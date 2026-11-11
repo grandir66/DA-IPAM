@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · I job si gestiscono in Schedulazioni, non più in due posti
+
+Riccardo (11/11): «i job schedulati a questo punto sono sia nel menù schedulazioni che in setting/schedulazioni» — in realtà in Schedulazioni e in Impostazioni → «Job schedulati»; scelta l'opzione 2 (tutto in Schedulazioni), tavola a sette oggetti approvata («Sì, scrivila»).
+
+### Cambiato
+- **Schedulazioni** ora fa tutto sui job: «Nuovo job» in alto a destra (la finestra che stava in Impostazioni), «Esegui ora», «Modifica» per i job «Lettura apparati», «Elimina» con conferma, e l'esito per apparato che si apre dall'esito della riga. La colonna «Dove» è diventata «Azioni».
+- **Impostazioni**: tolta la scheda «Job pianificati». Il vecchio indirizzo `/settings?tab=jobs#job-<id>` porta a Schedulazioni sulla riga; aggiornati i rimandi dalla scheda dell'apparato, dalla finestra di Discovery e dalla notifica sullo scheduler.
+
 ## [Non rilasciato] — 2026-11-11 · Subnet: la categoria a più righe si capisce
 
 Riccardo (11/11): «la casella categoria abilita una selezione del gruppo, non l'applicazione per il gruppo scelto di una categoria comune». La tendina «Seleziona per tipo» spunta le righe e non assegna niente; il pulsante che assegna era «Categoria…», grigio e poco visibile.

@@ -132,7 +132,7 @@ export function IntestazioneScheda({
         {/* Neutra con bordo scuro, come «offline» della tavola: fondo bianco, testo scuro. */}
         {scansioneAutomatica && (
             <Link
-              href={`/settings?tab=jobs#job-${scansioneAutomatica.jobId}`}
+              href={`/settings/schedulazioni#job.${scansioneAutomatica.jobId}`}
               title="Apri il job di scansione automatica"
               className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-white text-[#0D2537] hover:underline dark:border-[#E6EEF4] dark:bg-transparent dark:text-[#E6EEF4]")}
             >

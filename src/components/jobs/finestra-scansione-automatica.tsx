@@ -227,7 +227,7 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
     if (props.modo === "crea") {
       const n = (r.data as { inclusi: number }).inclusi;
       toast.success(`Job creato: ${n} apparat${n === 1 ? "o" : "i"}, ${etichettaFrequenza(f)}`, {
-        action: { label: "Apri i job", onClick: () => router.push("/settings?tab=jobs") },
+        action: { label: "Apri i job", onClick: () => router.push("/settings/schedulazioni") },
       });
     } else {
       toast.success("Job aggiornato");

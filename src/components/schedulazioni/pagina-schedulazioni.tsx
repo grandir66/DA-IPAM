@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Lock } from "lucide-react";
+import { Lock, Trash2 } from "lucide-react";
 import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,6 +18,9 @@ import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
 import { ESITI } from "@/components/opzioni/pagina-opzioni";
 import type { Famiglia, RigaSchedulazione } from "@/lib/schedulazioni/elenco";
+import { EsitiApparatiScelti } from "@/components/jobs/esiti-apparati-scelti";
+import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
+import { NuovoJob } from "./nuovo-job";
 
 interface Dati {
   puoCambiare: boolean;
@@ -49,7 +52,10 @@ const FAMIGLIA: Record<Famiglia, string> = { reti: "Reti", apparati: "Apparati",
  * si nasconde (resta il filtro) perché ultimo esito e «Dove» restino in vista senza scorrere; da 1536 c'è.
  */
 const COLONNE =
-  "grid grid-cols-[140px_minmax(140px,1.2fr)_minmax(100px,1fr)_minmax(100px,0.9fr)_110px_minmax(160px,1.4fr)_100px] 2xl:grid-cols-[150px_96px_minmax(180px,1.2fr)_minmax(150px,1fr)_minmax(150px,0.9fr)_130px_minmax(200px,1.4fr)_120px] gap-3 items-center";
+  "grid grid-cols-[140px_minmax(140px,1.2fr)_minmax(100px,1fr)_minmax(100px,0.9fr)_110px_minmax(160px,1.4fr)_230px] 2xl:grid-cols-[150px_96px_minmax(180px,1.2fr)_minmax(150px,1fr)_minmax(150px,0.9fr)_130px_minmax(200px,1.4fr)_250px] gap-3 items-center";
+
+const AZIONE =
+  "inline-flex min-h-8 items-center rounded-lg border border-[#D0D8DC] bg-white px-2 text-[13px] text-[#0D2537] hover:bg-[#EDEDED] disabled:opacity-60 dark:border-[#3A4A57] dark:bg-transparent dark:text-[#E6EEF4]";
 
 const BASE = "inline-flex items-center gap-2 rounded-full border-2 text-[13px] font-bold min-h-8 whitespace-nowrap";
 
@@ -142,6 +148,11 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [daSpegnere, setDaSpegnere] = useState<RigaSchedulazione | null>(null);
   const [adesso, setAdesso] = useState(() => new Date());
+  // Gestione dei job, tutta qui dall'11/11/2026 (prima in Impostazioni → «Job schedulati»).
+  const [jobInModifica, setJobInModifica] = useState<number | null>(null);
+  const [daEliminare, setDaEliminare] = useState<RigaSchedulazione | null>(null);
+  const [esitiAperti, setEsitiAperti] = useState<Set<string>>(new Set());
+  const [versioneEsiti, setVersioneEsiti] = useState(0);
 
   const carica = useCallback(async () => {
     const r = await fetchJson<Dati>("/api/schedulazioni", { cache: "no-store" });
@@ -192,6 +203,26 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
     [carica],
   );
 
+  const elimina = useCallback(
+    async (r: RigaSchedulazione) => {
+      if (r.jobId === null) return;
+      setInCorso(r.id);
+      const res = await fetchJson<unknown>(`/api/jobs?id=${r.jobId}`, { method: "DELETE" });
+      if (res.ok) toast.success(`«${r.nome}» eliminato`);
+      else toast.error(`«${r.nome}»: ${res.message}`);
+      await carica();
+      setInCorso(null);
+    },
+    [carica],
+  );
+
+  // Chi arriva da un rimando (`#job.<id>`: scheda dell'apparato, vecchio indirizzo dei job) trova la riga in vista.
+  const caricato = dati !== null;
+  useEffect(() => {
+    if (!caricato || !window.location.hash) return;
+    document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView({ block: "center" });
+  }, [caricato]);
+
   const righe = useMemo(() => {
     if (!dati) return [];
     const q = cerca.trim().toLowerCase();
@@ -241,6 +272,7 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
         {dati && !dati.puoCambiare && (
           <span className="rounded-md border-2 border-[#5B6B77] px-2 py-0.5 text-[14px] font-semibold">Solo un amministratore può cambiarle</span>
         )}
+        {dati?.puoCambiare && <div className="ml-auto"><NuovoJob onCreato={() => void carica()} /></div>}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -276,7 +308,7 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
         <p className="text-[14px] text-muted-foreground">Caricamento…</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-[#D0D8DC] bg-white dark:border-[#3A4A57] dark:bg-[#13222E]">
-          <div className="min-w-[920px] 2xl:min-w-[1180px]">
+          <div className="min-w-[1050px] 2xl:min-w-[1310px]">
             <div className={cn(COLONNE, "border-b border-[#D0D8DC] px-4 py-3 text-[13px] font-semibold uppercase text-[#4A6070] dark:border-[#3A4A57] dark:text-[#A9BECC]")}>
               <div>Stato</div>
               <div className="hidden 2xl:block">Famiglia</div>
@@ -285,7 +317,7 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
               <div>Quando</div>
               <div>Prossimo ▲</div>
               <div>Ultimo esito</div>
-              <div>Dove</div>
+              <div>Azioni</div>
             </div>
             {righe.length === 0 && <p className="px-4 py-3 text-[14px]">Nessuna schedulazione con questo filtro.</p>}
             {righe.map((r) => (
@@ -306,31 +338,62 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
                 <div className="min-w-0">{r.su}</div>
                 <div>{r.quando}</div>
                 <div className={cn(r.id === conti.prossima?.id && "font-bold")}>{r.prossimo ? quandoProssimo(r.prossimo, adesso) : "—"}</div>
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI[r.esito.tipo].classe)}>
-                    {ESITI[r.esito.tipo].segno}
-                  </span>
-                  <span className="min-w-0 text-[13px]">{r.esito.testo}</span>
-                </div>
-                <div className="flex flex-col items-start gap-1">
-                  {r.dove ? (
+                {r.jobTipo === "apparati_scelti" && r.jobId !== null ? (
+                  <button
+                    type="button"
+                    aria-expanded={esitiAperti.has(r.id)}
+                    title="Mostra l'esito per apparato"
+                    onClick={() => setEsitiAperti((p) => { const n = new Set(p); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })}
+                    className="flex min-w-0 items-center gap-2 text-left hover:underline"
+                  >
+                    <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI[r.esito.tipo].classe)}>
+                      {ESITI[r.esito.tipo].segno}
+                    </span>
+                    <span className="min-w-0 text-[13px]">{r.esito.testo} {esitiAperti.has(r.id) ? "▾" : "▸"}</span>
+                  </button>
+                ) : (
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI[r.esito.tipo].classe)}>
+                      {ESITI[r.esito.tipo].segno}
+                    </span>
+                    <span className="min-w-0 text-[13px]">{r.esito.testo}</span>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {r.dove && (
                     <Link href={r.dove.href} className="text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
                       {r.dove.etichetta}
                     </Link>
-                  ) : (
-                    "—"
                   )}
+                  {!r.dove && r.jobId === null && "—"}
                   {dati.puoCambiare && r.jobId !== null && (
-                    <button
-                      type="button"
-                      disabled={inCorso === r.id}
-                      onClick={() => void esegui(r)}
-                      className="rounded-lg border border-[#D0D8DC] bg-white px-2 py-0.5 text-[13px] text-[#0D2537] hover:bg-[#EDEDED] disabled:opacity-60 dark:border-[#3A4A57] dark:bg-transparent dark:text-[#E6EEF4]"
-                    >
-                      Esegui ora
-                    </button>
+                    <>
+                      <button type="button" disabled={inCorso === r.id} onClick={() => void esegui(r)} className={AZIONE}>
+                        Esegui ora
+                      </button>
+                      {r.jobTipo === "apparati_scelti" && (
+                        <button type="button" disabled={inCorso === r.id} onClick={() => setJobInModifica(r.jobId)} className={AZIONE}>
+                          Modifica
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={inCorso === r.id}
+                        onClick={() => setDaEliminare(r)}
+                        title="Elimina job"
+                        aria-label={`Elimina il job «${r.nome}»`}
+                        className={cn(AZIONE, "px-1.5")}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </>
                   )}
                 </div>
+                {r.jobTipo === "apparati_scelti" && r.jobId !== null && esitiAperti.has(r.id) && (
+                  <div className="col-span-full mt-2 rounded-lg border border-[#D0D8DC] bg-[#F6F8F9] dark:border-[#3A4A57] dark:bg-[#0F1C26]">
+                    <EsitiApparatiScelti key={versioneEsiti} jobId={r.jobId} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -347,7 +410,7 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
               </DialogHeader>
               <div className="space-y-1.5 text-[15px] font-light leading-relaxed">
                 <p><b className="font-semibold">Si ferma:</b> «{daSpegnere.nome}» su {daSpegnere.su}, {daSpegnere.quando}.</p>
-                <p><b className="font-semibold">Resta:</b> tutto quello già letto, che invecchia; si riaccende da qui o da «{daSpegnere.dove?.etichetta.replace(" ›", "") ?? "Opzioni"}».</p>
+                <p><b className="font-semibold">Resta:</b> tutto quello già letto, che invecchia; si riaccende da qui{daSpegnere.dove ? ` o da «${daSpegnere.dove.etichetta.replace(" ›", "")}»` : ""}.</p>
                 <p><b className="font-semibold">Dopo gli aggiornamenti:</b> resta spenta. Non si riaccende da sola.</p>
               </div>
               <p className="text-[14px] text-muted-foreground">Cliente {cliente} · si registra chi l&apos;ha spenta e quando.</p>
@@ -368,6 +431,46 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={daEliminare !== null} onOpenChange={(aperto) => { if (!aperto) setDaEliminare(null); }}>
+        <DialogContent className="sm:max-w-xl">
+          {daEliminare && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold">Eliminare «{daEliminare.nome}»?</DialogTitle>
+                <DialogDescription className="sr-only">Cosa si perde e cosa resta</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5 text-[15px] font-light leading-relaxed">
+                <p><b className="font-semibold">Si perde:</b> il job su {daEliminare.su}, {daEliminare.quando}. Per riaverlo va ricreato.</p>
+                <p><b className="font-semibold">Resta:</b> tutto quello già letto. Per fermarlo senza perderlo basta spegnerlo.</p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" className="min-h-11 text-[15px]" onClick={() => setDaEliminare(null)}>Annulla</Button>
+                <Button
+                  className="min-h-11 bg-[#0D2537] text-[15px] font-semibold text-white hover:bg-[#0D2537]/90 dark:bg-[#E6EEF4] dark:text-[#0D2537]"
+                  onClick={() => {
+                    const r = daEliminare;
+                    setDaEliminare(null);
+                    if (r) void elimina(r);
+                  }}
+                >
+                  Elimina
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {jobInModifica !== null && (
+        <FinestraScansioneAutomatica
+          modo="modifica"
+          jobId={jobInModifica}
+          open
+          onOpenChange={(o) => { if (!o) setJobInModifica(null); }}
+          onFatto={() => { setVersioneEsiti((v) => v + 1); void carica(); }}
+        />
+      )}
     </div>
   );
 }

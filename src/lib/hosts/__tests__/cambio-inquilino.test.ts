@@ -8,7 +8,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import {
-  cambioInquilinoSeServe, eCambioDiInquilino, impostaCambioInquilino, macPrivato, macVirtuale, righeEreditate, svuotaInquilino,
+  cambioInquilinoSeServe, eCambioDiInquilino, impostaCambioInquilino, macPrivato, macVirtuale, nomePersonale, righeEreditate, svuotaInquilino,
 } from "../cambio-inquilino";
 
 let db: Database.Database;
@@ -127,10 +127,20 @@ describe("cambioInquilinoSeServe", () => {
 });
 
 describe("righeEreditate", () => {
-  it("MAC casuale con un produttore o dati SNMP → riga sporca; MAC vero no; MAC casuale pulito no", () => {
-    riga(1, TELEFONO);
+  it("MAC casuale con dati altrui: sicura solo se il nome è di un apparato personale", () => {
+    riga(1, TELEFONO, { hostname: "iPhone", hostname_source: "dhcp" });
     riga(2, STAMPANTE);
     riga(3, "E6:28:E4:EB:E1:2F", { vendor: null, snmp_data: null });
-    assert.deepEqual(righeEreditate(db).map((r) => r.id), [1]);
+    riga(4, "26:5E:96:55:C9:A2", { hostname: "DA-ADRA" });
+    const trovate = righeEreditate(db);
+    assert.deepEqual(trovate.map((r) => [r.id, r.sicura, r.perche]), [[1, true, "nome_personale"], [4, false, "nome_non_personale"]]);
+  });
+  it("un MAC casuale su troppe righe non è mai sicuro, nemmeno col nome di un telefono", () => {
+    for (let i = 1; i <= 5; i++) riga(i, "82:FA:6F:7D:6D:54", { hostname: "iPhone" });
+    assert.ok(righeEreditate(db).every((r) => !r.sicura && r.perche === "mac_su_molte_righe"));
+  });
+  it("nomi personali riconosciuti, anche col dominio; gli altri no", () => {
+    for (const n of ["iPhone", "iPad", "Watch", "Mac", "S25-Ultra-di-riccardo", "Fairphone-5-5G", "Galaxy-A54", "MacBook-Pro.domarc.it"]) assert.equal(nomePersonale(n), true, n);
+    for (const n of ["DA-ADRA", "SynologyNAS", "DESKTOP-70KINTB", "NB-AGUZZOLI.domarc.it", "MikroTik", "Mac-Mini-Server", "", null]) assert.equal(nomePersonale(n), false, String(n));
   });
 });

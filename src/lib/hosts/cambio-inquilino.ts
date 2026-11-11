@@ -134,24 +134,45 @@ export function cambioInquilinoSeServe(
   return true;
 }
 
+/**
+ * Nome che un telefono, un tablet, un orologio o un Mac si dà da solo in DHCP. Serve solo alla bonifica delle righe
+ * già sporche: lì è l'unico segno sicuro che i dati rimasti sono di un altro apparato (un iPhone non è «HP Inc.»).
+ */
+const NOME_PERSONALE = /^(iphone|ipad|watch|apple-?watch|mac|macbook[\w-]*|imac|galaxy[\w-]*|s2\d[\w-]*|pixel[\w-]*|fairphone[\w-]*|android-[0-9a-f]+|redmi[\w-]*|oneplus[\w-]*|xiaomi[\w-]*|huawei[\w-]*)$/i;
+
+export function nomePersonale(nome: string | null | undefined): boolean {
+  const corto = (nome ?? "").trim().split(".")[0];
+  return NOME_PERSONALE.test(corto);
+}
+
 export interface RigaEreditata {
   id: number; ip: string; nome: string | null; mac: string; produttore: string | null; snmp: boolean;
   classe: string | null; categoria: string | null; a_mano: boolean;
+  /** true = si può svuotare senza guardarla; false = va letta da una persona (vedi `perche`). */
+  sicura: boolean;
+  perche: "nome_personale" | "mac_su_molte_righe" | "nome_non_personale";
 }
 
 /**
- * Le righe già sporche da prima: MAC privato (che non ha un produttore) ma con un produttore o dei dati SNMP,
- * che quindi sono di un apparato precedente. È l'elenco della prova a vuoto.
+ * Le righe già sporche da prima: MAC privato (che non ha un produttore) ma con un produttore o dei dati SNMP.
+ * Non basta per svuotare (prova a vuoto dell'11/11 sull'hub 533, 30 righe): hanno un MAC privato anche i NAS con le
+ * schede in coppia (DA-ADRA, SynologyNAS, con dati SNMP veri), le macchine virtuali, e un MAC condiviso da sette
+ * righe. È `sicura` solo la riga che si chiama come un apparato personale e il cui MAC non sta su troppe righe.
  */
 export function righeEreditate(db: Database.Database): RigaEreditata[] {
   const righe = db.prepare(
-    `SELECT id, ip, COALESCE(NULLIF(custom_name, ''), hostname) AS nome, mac, vendor, snmp_data, classification, attr_category, classification_manual
+    `SELECT id, ip, COALESCE(NULLIF(custom_name, ''), hostname) AS nome, hostname, mac, vendor, snmp_data, classification, attr_category, classification_manual
      FROM hosts WHERE mac IS NOT NULL
        AND ((vendor IS NOT NULL AND TRIM(vendor) != '') OR (snmp_data IS NOT NULL AND TRIM(snmp_data) != ''))
      ORDER BY network_id, ip`,
-  ).all() as Array<{ id: number; ip: string; nome: string | null; mac: string; vendor: string | null; snmp_data: string | null; classification: string | null; attr_category: string | null; classification_manual: number | null }>;
-  return righe.filter((r) => macPrivato(r.mac)).map((r) => ({
-    id: r.id, ip: r.ip, nome: r.nome, mac: r.mac, produttore: r.vendor?.trim() || null, snmp: !!r.snmp_data?.trim(),
-    classe: r.classification, categoria: r.attr_category, a_mano: r.classification_manual === 1,
-  }));
+  ).all() as Array<{ id: number; ip: string; nome: string | null; hostname: string | null; mac: string; vendor: string | null; snmp_data: string | null; classification: string | null; attr_category: string | null; classification_manual: number | null }>;
+  return righe.filter((r) => macPrivato(r.mac)).map((r) => {
+    const perche: RigaEreditata["perche"] = righeConMac(db, r.mac) > MAX_RIGHE_STESSO_MAC ? "mac_su_molte_righe"
+      : nomePersonale(r.hostname) ? "nome_personale" : "nome_non_personale";
+    return {
+      id: r.id, ip: r.ip, nome: r.nome, mac: r.mac, produttore: r.vendor?.trim() || null, snmp: !!r.snmp_data?.trim(),
+      classe: r.classification, categoria: r.attr_category, a_mano: r.classification_manual === 1,
+      sicura: perche === "nome_personale", perche,
+    };
+  });
 }

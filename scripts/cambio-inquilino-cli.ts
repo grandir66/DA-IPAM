@@ -19,10 +19,14 @@ const applica = resto.includes("--applica");
 withTenant(tenant, () => {
   const db = getTenantDb(tenant);
   const righe = righeEreditate(db);
-  for (const r of righe) {
-    console.log([r.id, r.ip, r.nome ?? "-", r.mac, r.produttore ?? "-", r.snmp ? "snmp" : "-", r.classe ?? "-", r.categoria ?? "-", r.a_mano ? "a mano" : "-"].join(" | "));
-    if (applica) svuotaInquilino(db, r.id);
+  for (const gruppo of [true, false]) {
+    console.log(gruppo ? "--- sicure: nome di un apparato personale, dati di un altro" : "--- da leggere: NON si svuotano da qui");
+    for (const r of righe.filter((x) => x.sicura === gruppo)) {
+      console.log([r.id, r.ip, r.nome ?? "-", r.mac, r.produttore ?? "-", r.snmp ? "snmp" : "-", r.classe ?? "-", r.categoria ?? "-", r.a_mano ? "a mano" : "-", r.perche].join(" | "));
+      if (applica && r.sicura) svuotaInquilino(db, r.id);
+    }
   }
-  console.log(`${righe.length} righe ${applica ? "svuotate" : "da svuotare (prova a vuoto)"}`);
+  const sicure = righe.filter((x) => x.sicura).length;
+  console.log(`${sicure} righe sicure ${applica ? "svuotate" : "da svuotare (prova a vuoto)"}, ${righe.length - sicure} lasciate com'erano`);
 });
 closeTenantDb(tenant);

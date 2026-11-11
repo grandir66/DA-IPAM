@@ -618,7 +618,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         printHref={printHref(mode, chosenMap)}
         onDrawio={flowShown ? () => {
           const nome = mode === "auto" ? "Topologia automatica" : (maps.find((m) => m.id === chosenMap)?.name ?? "Topologia");
-          const xml = mappaDrawio({ titolo: nome, nodi: d.byId, via: d.tree.via, links: d.tree.links, layout: d.layout });
+          const xml = mappaDrawio({ titolo: nome, nodi: d.byId, via: d.tree.via, links: d.tree.links, layout: d.layout, ridondanzeVisibili: showExtra });
           const url = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
           const a = document.createElement("a");
           a.href = url;

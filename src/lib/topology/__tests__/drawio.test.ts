@@ -31,5 +31,10 @@ test("draw.io: una forma per riquadro, linee agganciate a forme esistenti, testo
     const io = xml.indexOf(`<mxCell id="${ln.id}"`), padre = xml.indexOf(`<mxCell id="${ln.parent}"`);
     assert.ok(padre >= 0 && padre < io, `${ln.id} dopo ${ln.parent}`);
   }
+  // 11/11, mappa dell'hub: le ridondanze su un livello a parte, nascosto di base, e nessuna fra le linee dell'albero.
+  const rid = [...xml.matchAll(/<UserObject id="x:[^"]*"[^>]*><mxCell[^>]*parent="([^"]*)" source="([^"]*)" target="([^"]*)"/g)];
+  assert.ok(rid.length > 0 && rid.every(([, p, da, a]) => p === "ridondanze" && ids.has(da) && ids.has(a)));
+  assert.ok(xml.includes('<mxCell id="ridondanze" value="Ridondanze" parent="0" visible="0"/>'));
+  assert.ok(!mappaDrawio({ titolo: "Prova", nodi, via: c.tree.via, links: c.tree.links, layout: c.layout, ridondanzeVisibili: true }).includes('visible="0"'));
   assert.ok(xml.startsWith("<?xml") && xml.trimEnd().endsWith("</mxfile>"));
 });

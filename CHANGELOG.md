@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
 
+### Corretto
+- **Topologia, esportazione draw.io: le ridondanze non coprono più l'albero.** Sulla mappa dell'hub i collegamenti secondari, disegnati spessi e in diagonale insieme all'albero, rendevano il documento ingestibile. Ora stanno su un livello loro, «Ridondanze», che in draw.io si accende e si spegne da Visualizza › Livelli: sottili, grigio chiaro, a puntini, con le parole al passaggio del mouse invece che sulla linea. Il livello nasce nascosto, visibile se a schermo era acceso «Mostra ridondanze». Il testo dei riquadri è su due righe (nome, poi «tipo · indirizzo») e non esce più dal riquadro.
+
 - **Verso DA-Vul-can non esce il nome dell'utente di fabbrica** (Riccardo, 11/11/2026). Di un login di fabbrica riuscito parte solo «Le credenziali di fabbrica danno accesso.»: il nome dell'utente accettato resta in DA-IPAM.
 
 ### Cambiato

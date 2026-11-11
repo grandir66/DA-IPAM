@@ -29,14 +29,23 @@ export interface MappaDrawio {
   /** I collegamenti fra nodi visibili (`tree.links`): da qui le ridondanze. */
   links: readonly MapLink[];
   layout: LayoutResult;
+  /** «Mostra ridondanze» com'è a schermo: decide se il livello delle ridondanze nasce visibile (di base nascosto). */
+  ridondanzeVisibili?: boolean;
 }
 
 const NAVY = "#0D2537";
 const GRIGIO = "#8A8A8A";
+/** Le ridondanze: più chiare dell'albero, si distinguono per luminanza e per il tratto a puntini. */
+const CHIARO = "#A8A8A8";
 
 /** Testo dentro un attributo XML. */
 function attr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "&#10;");
+}
+
+/** Testo dentro un'etichetta HTML di draw.io. */
+function testo(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Un'etichetta draw.io (`html=1`): prima HTML, poi attributo; le righe diventano `<br>`. */
@@ -105,8 +114,11 @@ export function mappaDrawio(m: MappaDrawio): string {
       continue;
     }
     const pieno = ln.role === "box";
-    celle.push(forma(ln.id, etichetta([nome, n?.mgmtIp && n.mgmtIp !== nome ? n.mgmtIp : null, n?.type ?? null]),
-      `rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=${NAVY};strokeWidth=${pieno ? 2 : 1};fontColor=${NAVY};fontSize=${pieno ? 12 : 11};`, ln));
+    // Due righe come a schermo (nome in grassetto, sotto «tipo · indirizzo»): tre righe non stavano nel riquadro.
+    const sotto = [n?.type ? n.type.replace(/_/g, " ") : null, n?.mgmtIp && n.mgmtIp !== nome ? n.mgmtIp : null].filter(Boolean).join(" · ");
+    const html = `<b>${testo(nome)}</b>${sotto ? `<br><font style="font-size:9px">${testo(sotto)}</font>` : ""}`;
+    celle.push(forma(ln.id, attr(html),
+      `rounded=1;whiteSpace=nowrap;overflow=hidden;html=1;align=left;spacingLeft=8;fillColor=#ffffff;strokeColor=${NAVY};strokeWidth=${pieno ? 2 : 1};fontColor=${NAVY};fontSize=11;`, ln));
   }
   for (const c of layout.vmChips) {
     celle.push(forma(`vmchip:${c.vmId}`, etichetta([c.label]), `rounded=1;html=1;fillColor=#EDEDED;strokeColor=${GRIGIO};fontSize=10;fontColor=${NAVY};`, c));
@@ -135,11 +147,18 @@ export function mappaDrawio(m: MappaDrawio): string {
       celle.push(linea(`t:${figlio}`, ln.parent, figlio, s.valore, `${s.stile}${agganci}`, stepPoints(layout.orientation, padre, ln)));
     }
   }
+  // Le ridondanze stanno su un livello loro («Ridondanze»), che in draw.io si accende e si spegne da Visualizza › Livelli:
+  // disegnate insieme all'albero coprivano tutto (Riccardo, 11/11/2026, mappa dell'hub: «difficilmente gestibile con
+  // tutti i link che si sovrappongono; se sono link secondari cambia colore oppure troviamo un sistema»). Sono sottili,
+  // grigio chiaro e a puntini, senza scritta sulla linea: le parole si leggono passandoci sopra col mouse. Nasce nascosto
+  // come a schermo, visibile se «Mostra ridondanze» era acceso.
+  const ridondanze: string[] = [];
   for (const l of drawableLinks(m.links, layout.nodes)) {
     if (!l.redundant) continue;
-    const s = stileLinea(l, false, nomeDi);
-    celle.push(linea(`x:${l.id}`, l.a, l.b, s.valore, s.stile));
+    const parole = edgeLook(l, { inTree: false, nomeDi }).tokens.join(" · ");
+    ridondanze.push(`<UserObject id="${attr(`x:${l.id}`)}" label="" tooltip="${attr(parole)}"><mxCell style="edgeStyle=none;curved=1;html=1;endArrow=none;dashed=1;dashPattern=1 4;strokeColor=${CHIARO};strokeWidth=1;" edge="1" parent="ridondanze" source="${attr(l.a)}" target="${attr(l.b)}"><mxGeometry relative="1" as="geometry"/></mxCell></UserObject>`);
   }
+  if (ridondanze.length) celle.push(`<mxCell id="ridondanze" value="Ridondanze" parent="0"${m.ridondanzeVisibili ? "" : ' visible="0"'}/>`, ...ridondanze);
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,

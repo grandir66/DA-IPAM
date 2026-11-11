@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
+
+Riccardo (11/11): «aggiungiamo una colonna e togliamo aggiungi a LibreNMS e Wazuh, che saranno solo in Discovery; la colonna dispositivo non serve che abbia il nome, basta un badge come per DHCP o AD che indichi che è un dispositivo, con il link».
+
+### Cambiato
+- Le funzioni hanno una **colonna loro, «Funzioni»**, invece di stare sotto la categoria: le righe tornano dell'altezza di prima.
+- La colonna «Dispositivo» diventa **«App.»**: un segno «APP» che apre la scheda dell'apparato, come i segni DHCP e AD. Il nome era già nella colonna «Nome».
+- **Tolte dalla lista della subnet le colonne «LibreNMS» e «Wazuh»**: restano in Discovery. La pagina non fa più le due letture che servivano solo a riempirle.
+
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: si mettono e si tolgono a mano
 
 - **Topologia: pulsante «draw.io»** (Riccardo, 11/11/2026). Scarica la mappa che si guarda come documento draw.io: ogni riquadro è una forma e ogni linea è agganciata ai suoi estremi, con le stesse parole dello schermo, così la mappa si ritocca e si presenta fuori da DA-IPAM.

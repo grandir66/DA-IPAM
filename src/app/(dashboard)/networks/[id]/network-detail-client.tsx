@@ -61,7 +61,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -79,7 +79,6 @@ import { HostCredentialsDialog } from "@/components/shared/host-credentials-dial
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
-import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
 import { CassettoHost } from "@/components/hosts/cassetto-host";
 
 type HostWithDevice = Host & {
@@ -274,63 +273,6 @@ export function NetworkDetailClient({
   const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
   const [credDialogHost, setCredDialogHost] = useState<{ id: number; ip: string } | null>(null);
 
-  // ─── LibreNMS: mapping host_ip → device_id ───────────────
-  const [librenmsMap, setLibrenmsMap] = useState<Map<string, number>>(new Map());
-  const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
-  // ─── Wazuh: mapping host_id → agent status (batch) ───────
-  const [wazuhMap, setWazuhMap] = useState<Map<number, WazuhHostStatus | null>>(new Map());
-
-  useEffect(() => {
-    fetch(`/api/integrations/librenms/sync?network_id=${network.id}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { host_ip: string; librenms_device_id: number }[]) => {
-        const m = new Map<string, number>();
-        for (const row of rows) m.set(row.host_ip, row.librenms_device_id);
-        setLibrenmsMap(m);
-      })
-      .catch(() => {});
-  }, [network.id]);
-
-  // Batch fetch Wazuh status: single query per tutti gli host della subnet
-  useEffect(() => {
-    const ids = hosts.map((h) => h.id).filter((v): v is number => Number.isFinite(v));
-    if (ids.length === 0) return;
-    fetch("/api/integrations/wazuh/host-status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ host_ids: ids }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: { statuses?: Record<string, WazuhHostStatus | null> } | null) => {
-        if (!j?.statuses) return;
-        const m = new Map<number, WazuhHostStatus | null>();
-        for (const id of ids) m.set(id, j.statuses[id] ?? null);
-        setWazuhMap(m);
-      })
-      .catch(() => {});
-  }, [hosts]);
-
-  async function addHostToLibreNMS(host: HostWithDevice) {
-    setLibrenmsAdding((prev) => new Set(prev).add(host.id));
-    try {
-      const res = await fetch("/api/integrations/librenms/host", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host_id: host.id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(`${host.ip} aggiunto a LibreNMS (#${data.librenms_device_id})`);
-        setLibrenmsMap((prev) => new Map(prev).set(host.ip, data.librenms_device_id));
-      } else {
-        toast.error(data.error ?? "Errore aggiunta a LibreNMS");
-      }
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setLibrenmsAdding((prev) => { const next = new Set(prev); next.delete(host.id); return next; });
-    }
-  }
 
   useEffect(() => {
     setNetworkCredentialIds(initialCredentialIds);
@@ -1817,15 +1759,14 @@ export function NetworkDetailClient({
                 >
                   Categoria
                 </SortableTableHead>
-                <TableHead>Dispositivo</TableHead>
+                <TableHead title="Che cosa fa l'apparato: riconosciuto dalle letture o messo a mano">Funzioni</TableHead>
+                <TableHead title="È un apparato: il segno apre la sua scheda" className="w-12 text-center">App.</TableHead>
                 <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
                 <SortableTableHead columnId="vendor" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
                   Vendor
                 </SortableTableHead>
                 <TableHead>Note</TableHead>
                 <TableHead>Porte</TableHead>
-                <TableHead title="LibreNMS NMS">LibreNMS</TableHead>
-                <TableHead title="Wazuh SIEM/HIDS agent" className="w-12 text-center">Wazuh</TableHead>
               </TableRow>
             </TableHeader>
             <ContextMenu open={menuRiga !== null} onOpenChange={(o) => {
@@ -2040,21 +1981,24 @@ export function NetworkDetailClient({
                       ) : (
                         <span className="rounded-md border border-dashed px-2 py-0.5 text-muted-foreground">Senza categoria</span>
                       )}
+                    </TableCell>
+                    <TableCell className="min-w-[120px] text-xs" onClick={(e) => e.stopPropagation()}>
                       <FunzioniInRiga
                         funzioni={funzioniHost[host.id]}
                         quantiHost={hostDelMenu(selectedHostIds, host.id).length}
                         onCambia={(f, azione) => cambiaFunzione(host.id, f, azione)}
                       />
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                       {(host as HostWithDevice).device ? (
-                        <Link href={`/devices/${(host as HostWithDevice).device!.id}`} className="text-primary hover:underline flex items-center gap-1">
-                          <Server className="h-3.5 w-3.5" />
-                          {host.custom_name || host.hostname || (host as HostWithDevice).device!.sysname || ((host as HostWithDevice).device!.name !== host.ip ? (host as HostWithDevice).device!.name : null) || "—"}
+                        <Link
+                          href={`/devices/${(host as HostWithDevice).device!.id}`}
+                          title={`Apparato: ${(host as HostWithDevice).device!.name} · apri la scheda`}
+                          aria-label={`Apri la scheda dell'apparato ${(host as HostWithDevice).device!.name}`}
+                        >
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-semibold">APP</Badge>
                         </Link>
-                      ) : (
-                        "—"
-                      )}
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-center">
                       {(host as HostWithDevice).multihomed ? (
@@ -2119,42 +2063,6 @@ export function NetworkDetailClient({
                           );
                         } catch { return "—"; }
                       })() : "—"}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {(() => {
-                        const deviceId = librenmsMap.get(host.ip);
-                        const isAdding = librenmsAdding.has(host.id);
-                        if (deviceId != null) {
-                          return (
-                            <span className="inline-flex items-center gap-1">
-                              <Activity className="h-3 w-3 text-success shrink-0" />
-                              <Badge variant="outline" className="font-mono text-xs">#{deviceId}</Badge>
-                            </span>
-                          );
-                        }
-                        return (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 text-xs gap-1"
-                            disabled={isAdding}
-                            onClick={() => addHostToLibreNMS(host)}
-                            title={host.snmp_data ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only)"}
-                          >
-                            {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
-                            Aggiungi
-                          </Button>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                      <WazuhHostBadge
-                        hostId={host.id}
-                        hostName={host.hostname ?? host.custom_name ?? null}
-                        hostIp={host.ip}
-                        prefetched={wazuhMap.get(host.id) ?? null}
-                        mode="icon"
-                      />
                     </TableCell>
                   </TableRow>
                 ))

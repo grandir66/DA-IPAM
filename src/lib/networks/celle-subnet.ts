@@ -39,13 +39,12 @@ export const COLONNE_SUBNET: ReadonlyArray<string | null> = [
   "ad",
   "nome",
   "classificazione",
-  null, // dispositivo
+  null, // funzioni
+  null, // apparato (segno con il link)
   null, // multihomed
   "vendor",
   "note",
   null, // porte
-  null, // LibreNMS
-  null, // Wazuh
 ];
 
 const ETICHETTE: Record<string, string> = {

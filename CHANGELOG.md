@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: si mettono e si tolgono a mano
 
+- **Topologia: pulsante «draw.io»** (Riccardo, 11/11/2026). Scarica la mappa che si guarda come documento draw.io: ogni riquadro è una forma e ogni linea è agganciata ai suoi estremi, con le stesse parole dello schermo, così la mappa si ritocca e si presenta fuori da DA-IPAM.
+
 ### Aggiunto
 - Nella lista della subnet, accanto alle funzioni di ogni riga, **«Funzioni»** apre l'elenco a gruppi con la ricerca: la spunta mette o toglie la funzione, la freccia la fa tornare automatica. Una funzione messa a mano il sistema non la toglie; una tolta a mano non la rimette. Se la riga è fra quelle spuntate, la scelta vale per tutte le spuntate.
 - `POST /api/hosts/funzioni` (solo amministratori).

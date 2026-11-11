@@ -55,6 +55,8 @@ interface Props {
   layoutWidth: number | null;
   /** La pagina di stampa della mappa che si guarda; null se non c'è una mappa. */
   printHref: string | null;
+  /** Scarica la mappa che si guarda come documento draw.io; null se non c'è una mappa disegnata. */
+  onDrawio: (() => void) | null;
   canRiordina: boolean;
   onRiordina: () => void;
   /** L'ultimo aggiornamento automatico non è riuscito (ms): la mappa è quella di prima. */
@@ -218,6 +220,11 @@ export function MapToolbar(p: Props) {
       ) : (
         // Il motivo sul contenitore: un pulsante spento non mostra il suo.
         <span title="Scegli prima una mappa da stampare"><Button size="sm" className="text-[13px]" variant="outline" disabled>Stampa</Button></span>
+      )}
+      {p.onDrawio && (
+        <Button size="sm" className="text-[13px]" variant="outline" onClick={p.onDrawio} title="Scarica la mappa come documento draw.io (diagrams.net): riquadri e linee si possono spostare e ritoccare">
+          draw.io
+        </Button>
       )}
       {p.detailsAvailable && <Button
         size="sm"

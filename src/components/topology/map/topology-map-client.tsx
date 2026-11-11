@@ -29,6 +29,7 @@ import {
   addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryPerNodo, primaryTarget, refreshVmDeviceIds, vmMenuItems,
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
+import { mappaDrawio } from "@/lib/topology/drawio";
 import { computeMapViewProtetta } from "@/lib/topology/map-compute";
 import { CLASSE_PERICOLO, ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology/map-screen";
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
@@ -614,6 +615,16 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onOrientation={isAdmin ? (o) => void changeOrientation(o) : null}
         layoutWidth={flowShown ? d.layout.width : null}
         printHref={printHref(mode, chosenMap)}
+        onDrawio={flowShown ? () => {
+          const nome = mode === "auto" ? "Topologia automatica" : (maps.find((m) => m.id === chosenMap)?.name ?? "Topologia");
+          const xml = mappaDrawio({ titolo: nome, nodi: d.byId, via: d.tree.via, links: d.tree.links, layout: d.layout });
+          const url = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${nome.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "topologia"}.drawio`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } : null}
         // «Riordina» toglie solo i ritocchi dell'orientamento a schermo: quelli dell'altro restano da parte (spec §12.2).
         canRiordina={(view?.tweaks ?? []).some((t) => t.orientation === orientation)}
         onRiordina={() => void send("/api/topology/positions", "PUT", { view: positionsView, clear: true, orientation, rename: d.renames })}

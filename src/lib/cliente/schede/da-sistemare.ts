@@ -18,6 +18,8 @@ export interface ProgrammaDaAggiornare {
 }
 
 export interface DaSistemare {
+  /** Gravi e alte per rete, dalle stesse barre della Dashboard: servono al grafico della casa. */
+  perRete: Array<{ nome: string; gravi: number; alte: number }>;
   ultimoControllo: string | null;
   gravi: number;
   alte: number;
@@ -80,6 +82,10 @@ const leggi = cache((tenantCode: string): DaSistemare => {
       ultimoControllo: ultimoControllo(getTenantDb(tenantCode)),
       gravi: barre.reduce((n, b) => n + b.critical, 0),
       alte: barre.reduce((n, b) => n + b.high, 0),
+      perRete: barre
+        .filter((b) => b.critical + b.high > 0)
+        .map((b) => ({ nome: b.network_name, gravi: b.critical, alte: b.high }))
+        .sort((x, y) => y.gravi - x.gravi || y.alte - x.alte),
       ...daGruppi(elenco.gruppi ?? []),
     };
   });

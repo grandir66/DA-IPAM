@@ -239,6 +239,8 @@
   --vc-assente: #BFE6F7;
   --vc-bordo: #9AA6AE;
   --vc-barra-fondo: #DDF1FA;
+  --vc-grave: #8E1B20;        /* gravi nei grafici, filo del riquadro grave */
+  --vc-alta: #C9A800;         /* alte nei grafici */
 }
 .dark .vista-cliente {
   --vc-acceso: #FFFFFF;
@@ -247,6 +249,8 @@
   --vc-assente: #1F4E6B;
   --vc-bordo: #5B6770;
   --vc-barra-fondo: #123A55;
+  --vc-grave: #E0666B;
+  --vc-alta: #FFD400;
 }
 
 /* Stampa solo dell'area cliente. «Stampa», «Esci», «Torna alla Dashboard» e «← La tua rete» hanno la classe nascosto-stampa. */

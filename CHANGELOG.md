@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa con i grafici
+
+La casa era una griglia di riquadri con molto vuoto sotto. Riccardo, 11/11: «qualcosa di più estetico e che fa colpo, preso dalla dashboard iniziale, senza dover aprire i singoli moduli, che potrebbero diventare dei box più piccoli in testa alla pagina».
+
+### Aggiunto
+- **Casa**: i moduli sono una striscia di riquadri piccoli in testa (nome, numero, segno di stato). Sotto, cinque grafici: apparati accesi nelle ultime 48 ore, le reti con accesi e spenti da poco, il rischio del dominio, gli accessi falliti a 7 giorni, gravi e alte per rete. Ogni grafico c'è solo se il suo modulo è attivo e porta al modulo.
+- I dati vengono dalle stesse fonti della Dashboard, letti dal server (`src/lib/cliente/grafici.ts`): il grafico degli host della Dashboard chiede a una rotta `/api` che al Cliente è vietata. Le barre per rete riusano la lettura di «Da sistemare», senza una seconda passata.
+
 ## [Non rilasciato] — 2026-11-11 · Riconoscimento: l'indirizzo passato a un altro apparato
 
 Riccardo (11/11): «il mio Samsung S25 viene rilevato come stampante… un cambio di IP, che dovrebbe essere automaticamente corretto». In `hosts` la riga è l'indirizzo: quando lo prende un altro apparato, la riga cambiava MAC e nome ma teneva dati SNMP, sistema, produttore e porte di quello di prima, e il ricalcolo li riconfermava a ogni giro.

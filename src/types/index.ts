@@ -10,6 +10,8 @@ export interface User {
   username: string;
   password_hash: string;
   role: "superadmin" | "admin" | "viewer";
+  /** true = utente Cliente, chiuso nell'area di sola lettura. Sul database è 0 o 1. */
+  vista_cliente?: boolean;
   created_at: string;
   last_login: string | null;
 }

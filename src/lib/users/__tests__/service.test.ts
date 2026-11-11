@@ -415,3 +415,99 @@ test("resolveUserManager: l'admin amministra A e lavora su A; su un cliente non 
   assert.equal(altrove.ok, true);
   if (altrove.ok) assert.equal(altrove.actor.currentTenantId, null);
 });
+
+// ─── vista cliente: viewer di un solo cliente ───
+
+const MSG_CLIENTE = "Un utente cliente è in sola lettura e appartiene a un solo cliente";
+
+test("POST: un viewer di un solo cliente può essere Cliente", async () => {
+  const r = await createUserAs(asSuper(), req({
+    username: "cliente.a",
+    password: "password-lunga",
+    role: "viewer",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(getUserByUsername("cliente.a")?.role, "viewer");
+  assert.equal(getUserByUsername("cliente.a")?.vista_cliente, 1);
+  assert.deepEqual(accessOf("cliente.a"), [[w.A, "viewer"]]);
+  const lista = listUsersAs(asSuper());
+  const riga = (lista.body as Array<{ username: string; vista_cliente?: number }>).find((u) => u.username === "cliente.a");
+  assert.equal(riga?.vista_cliente, 1);
+});
+
+test("POST: senza vista_cliente il segno resta spento", async () => {
+  const r = await createUserAs(asAdminA(), req({ username: "lettura.a", password: "password-lunga", role: "viewer" }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(getUserByUsername("lettura.a")?.vista_cliente, 0);
+});
+
+test("POST: l'admin crea un Cliente nel suo unico cliente", async () => {
+  const r = await createUserAs(asAdminA(), req({
+    username: "cliente.admin",
+    password: "password-lunga",
+    role: "viewer",
+    vista_cliente: true,
+  }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(getUserByUsername("cliente.admin")?.vista_cliente, 1);
+  assert.deepEqual(accessOf("cliente.admin"), [[w.A, "viewer"]]);
+});
+
+test("POST: vista_cliente rifiutata se il ruolo non è sola lettura o i clienti non sono uno", async () => {
+  const admin = await createUserAs(asSuper(), req({
+    username: "non.cliente",
+    password: "password-lunga",
+    role: "admin",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(admin.status, 400);
+  assert.equal(errorOf(admin.body), MSG_CLIENTE);
+  assert.equal(getUserByUsername("non.cliente"), undefined);
+
+  const due = await createUserAs(asSuper(), req({
+    username: "cliente.due",
+    password: "password-lunga",
+    role: "viewer",
+    tenant_ids: [w.A, w.B],
+    vista_cliente: true,
+  }));
+  assert.equal(due.status, 400);
+  assert.equal(errorOf(due.body), MSG_CLIENTE);
+  assert.equal(getUserByUsername("cliente.due"), undefined);
+});
+
+test("PUT: si accende e si spegne il segno, e si rifiuta se i clienti non sono uno", async () => {
+  const acceso = await updateUserAs(asSuper(), String(w.id["viewer-a"]), req({
+    role: "viewer",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(acceso.status, 200, JSON.stringify(acceso.body));
+  assert.equal(getUserById(w.id["viewer-a"])?.vista_cliente, 1);
+
+  const due = await updateUserAs(asSuper(), String(w.id["viewer-ab"]), req({
+    role: "viewer",
+    tenant_ids: [w.A, w.B],
+    vista_cliente: true,
+  }));
+  assert.equal(due.status, 400);
+  assert.equal(errorOf(due.body), MSG_CLIENTE);
+  assert.equal(getUserById(w.id["viewer-ab"])?.vista_cliente, 0);
+
+  const ruolo = await updateUserAs(asSuper(), String(w.id["viewer-a"]), req({
+    role: "admin",
+    tenant_ids: [w.A],
+    vista_cliente: true,
+  }));
+  assert.equal(ruolo.status, 400);
+  assert.equal(errorOf(ruolo.body), MSG_CLIENTE);
+  assert.equal(getUserById(w.id["viewer-a"])?.role, "viewer");
+  assert.equal(getUserById(w.id["viewer-a"])?.vista_cliente, 1);
+
+  const spento = await updateUserAs(asAdminA(), String(w.id["viewer-a"]), req({ role: "viewer" }));
+  assert.equal(spento.status, 200, JSON.stringify(spento.body));
+  assert.equal(getUserById(w.id["viewer-a"])?.vista_cliente, 0);
+});

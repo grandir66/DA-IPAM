@@ -122,6 +122,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.username,
           email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
+          vistaCliente: user.vista_cliente === 1,
           tenants: tenantList,
           tenantCode: istanzaIniziale(user, tenantList),
         };
@@ -161,6 +162,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             name: esito.username,
             email: "support@domarc.it",
             role: "superadmin",
+            vistaCliente: false,
             tenants: allTenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: "superadmin" })),
             tenantCode: "__ALL__",
           };
@@ -193,6 +195,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.username,
           email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
+          vistaCliente: user.vista_cliente === 1,
           tenants: tenantList,
           // Single-tenant (es. appliance): TUTTI, superadmin incluso, defaultano
           // all'unico tenant — altrimenti il superadmin resta su __ALL__ (vista

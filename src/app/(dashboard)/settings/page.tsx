@@ -183,12 +183,22 @@ interface UserWithAccess {
   username: string;
   email: string | null;
   role: string;
+  /** 1 = utente Cliente. In modifica il menu si apre su «Cliente (vista semplice)». */
+  vista_cliente?: number;
   created_at: string;
   last_login: string | null;
   /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin; totp_attiva 1 = QR confermato. */
   totp_richiesta?: number;
   totp_attiva?: number;
   tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
+}
+
+/** Voce del menu ruolo. «cliente» non è un ruolo del database: al salvataggio diventa viewer + vista_cliente. */
+type VoceRuolo = "superadmin" | "admin" | "viewer" | "cliente";
+
+function payloadRuolo(voce: VoceRuolo): { role: "superadmin" | "admin" | "viewer"; vista_cliente: boolean } {
+  if (voce === "cliente") return { role: "viewer", vista_cliente: true };
+  return { role: voce, vista_cliente: false };
 }
 
 interface TenantEntry {
@@ -308,12 +318,12 @@ function SettingsPageInner() {
   const [newUsername, setNewUsername] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"superadmin" | "admin" | "viewer">("viewer");
+  const [newUserRole, setNewUserRole] = useState<VoceRuolo>("viewer");
   const [newUserTenantIds, setNewUserTenantIds] = useState<number[]>([]);
   const [savingUser, setSavingUser] = useState(false);
   const [editUserOpen, setEditUserOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<number | null>(null);
-  const [editUserRole, setEditUserRole] = useState<"superadmin" | "admin" | "viewer">("admin");
+  const [editUserRole, setEditUserRole] = useState<VoceRuolo>("admin");
   const [editUserTenantIds, setEditUserTenantIds] = useState<number[]>([]);
   const [savingEditUser, setSavingEditUser] = useState(false);
 
@@ -450,14 +460,16 @@ function SettingsPageInner() {
     e.preventDefault();
     setSavingUser(true);
     try {
+      const scelto = payloadRuolo(newUserRole);
       const payload: Record<string, unknown> = {
         username: newUsername,
         password: newUserPassword,
-        role: newUserRole,
+        role: scelto.role,
+        vista_cliente: scelto.vista_cliente,
         email: newUserEmail || null,
       };
       // Cliente fisso (admin di un cliente solo): lo decide il server.
-      if (isSuperAdmin) payload.tenant_ids = newUserRole !== "superadmin" ? newUserTenantIds : [];
+      if (isSuperAdmin) payload.tenant_ids = scelto.role !== "superadmin" ? newUserTenantIds : [];
       else if (!fixedTenantName) payload.tenant_ids = newUserTenantIds;
       const res = await fetch("/api/users", {
         method: "POST",
@@ -479,7 +491,7 @@ function SettingsPageInner() {
 
   function openEditUser(user: UserWithAccess) {
     setEditUserId(user.id);
-    setEditUserRole(user.role as "superadmin" | "admin" | "viewer");
+    setEditUserRole(user.vista_cliente === 1 ? "cliente" : (user.role as VoceRuolo));
     setEditUserTenantIds(user.tenant_access?.map((a) => a.tenant_id) ?? []);
     setEditUserOpen(true);
   }
@@ -489,9 +501,10 @@ function SettingsPageInner() {
     if (editUserId == null) return;
     setSavingEditUser(true);
     try {
-      const payload: Record<string, unknown> = { role: editUserRole };
+      const scelto = payloadRuolo(editUserRole);
+      const payload: Record<string, unknown> = { role: scelto.role, vista_cliente: scelto.vista_cliente };
       // Cliente fisso: senza tenant_ids il server lascia i clienti che l'utente ha già.
-      if (isSuperAdmin) payload.tenant_ids = editUserRole !== "superadmin" ? editUserTenantIds : [];
+      if (isSuperAdmin) payload.tenant_ids = scelto.role !== "superadmin" ? editUserTenantIds : [];
       else if (!fixedTenantName) payload.tenant_ids = editUserTenantIds;
       const res = await fetch(`/api/users/${editUserId}`, {
         method: "PUT",
@@ -864,12 +877,13 @@ function SettingsPageInner() {
                   </div>
                   <div className="space-y-2">
                     <Label>Ruolo</Label>
-                    <Select value={newUserRole} onValueChange={(v) => { setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setNewUserTenantIds([]); }}>
+                    <Select value={newUserRole} onValueChange={(v) => { const voce = (v ?? newUserRole) as VoceRuolo; setNewUserRole(voce); if (voce === "superadmin") setNewUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
+                        <SelectItem value="cliente">Cliente (vista semplice)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -895,12 +909,13 @@ function SettingsPageInner() {
                 <form onSubmit={handleSaveEditUser} className="space-y-4">
                   <div className="space-y-2">
                     <Label>Ruolo</Label>
-                    <Select value={editUserRole} onValueChange={(v) => { setEditUserRole((v ?? editUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setEditUserTenantIds([]); }}>
+                    <Select value={editUserRole} onValueChange={(v) => { const voce = (v ?? editUserRole) as VoceRuolo; setEditUserRole(voce); if (voce === "superadmin") setEditUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
+                        <SelectItem value="cliente">Cliente (vista semplice)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -981,8 +996,8 @@ function SettingsPageInner() {
                     <TableCell className="font-medium">{user.username}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{user.email || "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={user.role === "superadmin" ? "destructive" : user.role === "admin" ? "default" : "secondary"}>
-                        {user.role === "superadmin" ? "Super Admin" : user.role === "admin" ? "Amministratore" : "Solo lettura"}
+                      <Badge variant={user.vista_cliente === 1 ? "secondary" : user.role === "superadmin" ? "destructive" : user.role === "admin" ? "default" : "secondary"}>
+                        {user.vista_cliente === 1 ? "Cliente" : user.role === "superadmin" ? "Super Admin" : user.role === "admin" ? "Amministratore" : "Solo lettura"}
                       </Badge>
                     </TableCell>
                     <TableCell>

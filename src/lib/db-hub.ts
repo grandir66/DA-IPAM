@@ -487,6 +487,8 @@ function initializeHubDb(db: Database.Database): void {
       // ultima istanza scelta, da cui si riparte all'accesso.
       ["sessioni_valide_da", "INTEGER"],
       ["ultima_istanza", "TEXT"],
+      // Vista cliente (11/11): sola lettura chiusa in /cliente. Il ruolo resta viewer.
+      ["vista_cliente", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [nome, tipo] of nuove) {
       if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
@@ -606,6 +608,8 @@ export interface HubUser {
   password_hash: string;
   email: string | null;
   role: "superadmin" | "admin" | "viewer";
+  /** 1 = utente Cliente: sola lettura chiusa nell'area /cliente. */
+  vista_cliente: number;
   tenant_id: number | null;
   created_at: string;
   last_login: string | null;
@@ -821,12 +825,13 @@ export function createUser(
   passwordHash: string,
   role: "superadmin" | "admin" | "viewer" = "admin",
   tenantId?: number | null,
-  email?: string | null
+  email?: string | null,
+  vistaCliente?: boolean,
 ): HubUser {
   const stmt = getHubDb().prepare(
-    "INSERT INTO users (username, password_hash, email, role, tenant_id) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO users (username, password_hash, email, role, tenant_id, vista_cliente) VALUES (?, ?, ?, ?, ?, ?)"
   );
-  const result = stmt.run(username, passwordHash, email?.trim() || null, role, tenantId ?? null);
+  const result = stmt.run(username, passwordHash, email?.trim() || null, role, tenantId ?? null, vistaCliente ? 1 : 0);
   return getHubDb().prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as HubUser;
 }
 
@@ -891,7 +896,7 @@ export function updateUserPassword(userId: number, passwordHash: string): void {
 export function getUsers(): Array<Omit<HubUser, "password_hash" | "totp_segreto" | "totp_proposto" | "totp_proposto_scade" | "totp_ultimo_passo"> & { totp_attiva: number }> {
   return getHubDb()
     .prepare(
-      `SELECT id, username, email, role, tenant_id, created_at, last_login, totp_richiesta, totp_attivato_at,
+      `SELECT id, username, email, role, vista_cliente, tenant_id, created_at, last_login, totp_richiesta, totp_attivato_at,
          (totp_segreto IS NOT NULL) AS totp_attiva
        FROM users ORDER BY username`,
     )
@@ -906,8 +911,17 @@ export function getUserById(id: number): HubUser | undefined {
   return getHubDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as HubUser | undefined;
 }
 
-export function updateUserRole(userId: number, role: "superadmin" | "admin" | "viewer"): boolean {
-  return getHubDb().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, userId).changes > 0;
+export function updateUserRole(
+  userId: number,
+  role: "superadmin" | "admin" | "viewer",
+  vistaCliente?: boolean,
+): boolean {
+  if (vistaCliente === undefined) {
+    return getHubDb().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, userId).changes > 0;
+  }
+  return getHubDb()
+    .prepare("UPDATE users SET role = ?, vista_cliente = ? WHERE id = ?")
+    .run(role, vistaCliente ? 1 : 0, userId).changes > 0;
 }
 
 export function deleteUser(userId: number): boolean {

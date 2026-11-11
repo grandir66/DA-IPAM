@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { recinto } from "./cliente/recinto";
 
 /**
  * Auth config that does NOT import db.ts or bcrypt.
@@ -64,6 +65,7 @@ export const authConfig: NextAuthConfig = {
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = (user as { role?: string }).role || "viewer";
+        token.vistaCliente = (user as { vistaCliente?: boolean }).vistaCliente === true;
         token.tenants = (user as Record<string, unknown>).tenants || [];
         token.tenantCode = (user as Record<string, unknown>).tenantCode || null;
         // Persist user id in token: NextAuth lo mette in token.sub di default,
@@ -130,6 +132,7 @@ export const authConfig: NextAuthConfig = {
         // id: prima token.userId (esplicito), fallback token.sub (standard JWT).
         u.id = (token.userId as string | undefined) ?? token.sub ?? null;
         u.role = token.role as string;
+        u.vistaCliente = token.vistaCliente === true;
         u.tenantCode = token.tenantCode as string | null;
         u.tenants = token.tenants || [];
       }
@@ -170,6 +173,9 @@ export const authConfig: NextAuthConfig = {
       // interno del server (https://0.0.0.0:3001/), che compariva nella barra del browser
       // dietro nginx (prova del 29/10, 79994-ipam-4). La pagina di login non lo usa.
       if (!isLoggedIn) return Response.redirect(new URL("/login", nextUrl));
+      const esito = recinto((auth?.user as { vistaCliente?: boolean } | undefined)?.vistaCliente === true, pathname);
+      if (esito === "vai_a_cliente") return Response.redirect(new URL("/cliente", nextUrl));
+      if (esito === "vietato") return Response.json({ error: "Non consentito" }, { status: 403 });
       return true;
     },
   },

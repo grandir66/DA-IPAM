@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Utente Cliente chiuso nella sua area
+
+### Aggiunto
+- **Utente «Cliente»**: un «Solo lettura» con il segno `vista_cliente`, ammesso solo se appartiene a un solo cliente. In Impostazioni → Utenti la voce è «Cliente (vista semplice)». Le pagine fuori da `/cliente` lo riportano lì e le API diverse da `/api/auth` rispondono 403, così non vede comandi né configurazione.
+
 ## [Non rilasciato] — 2026-11-11 · Discovery alimenta Network Changes
 
 - La pagina unica sotto Network mostra gli eventi registrati confrontando giri Discovery con la stessa copertura IPv4 e le stesse opzioni TCP. Filtro per subnet e storico di 90 giorni.

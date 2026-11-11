@@ -49,7 +49,7 @@
 
 ---
 
-### [ ] Task 1 — Utente «Cliente» e recinto
+### [x] Task 1 — Utente «Cliente» e recinto
 
 **Corretto l'11/11 dopo il primo stop (aveva ragione chi esegue):** la colonna si aggiunge in due posti, vedi «File»; le prove girano con `node --import tsx --test`, non con Vitest, che nel repo non c'è. Il task riparte da capo.
 
@@ -94,7 +94,7 @@ if (esito === "vietato") return Response.json({ error: "Non consentito" }, { sta
 4. `service.ts`: `vista_cliente: true` è ammesso solo se il ruolo è `viewer` e i clienti assegnati sono esattamente uno; altrimenti 400 «Un utente cliente è in sola lettura e appartiene a un solo cliente». Aggiungere i casi a `src/lib/users/__tests__/service.test.ts` senza cambiare quelli che ci sono.
 5. Impostazioni → Utenti: nei due menu del ruolo una voce in più, `value="cliente"`, testo «Cliente (vista semplice)». È solo dell'interfaccia: al salvataggio manda `role: "viewer"` e `vista_cliente: true`; le altre voci mandano `vista_cliente: false`. In modifica, un utente con `vista_cliente` si apre con quella voce scelta.
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts src/lib/users/__tests__/*.test.ts` → tutte verdi. Sul dev: creato un utente «Cliente» di prova, dopo l'accesso atterra su `/cliente`; `/settings` lo riporta a `/cliente`; `GET /api/hosts` con la sua sessione risponde 403; un utente «Solo lettura» normale vede l'interfaccia di sempre.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts src/lib/users/__tests__/*.test.ts` → 62 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori. `npx tsc --noEmit` → 0 errori. La prova sul dev (accesso, `/settings` che riporta a `/cliente`, `GET /api/hosts` a 403) resta al controllo: la pagina `/cliente` arriva col Task 2.
 
 **Commit:** «Vista cliente: utente Cliente chiuso nella sua area».
 
@@ -469,6 +469,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 1 [!]: fermo prima del codice. L'`ALTER` idempotente non sta in `db-hub-schema.ts` (solo `CREATE TABLE`); sta in `initializeHubDb` di `src/lib/db-hub.ts` (righe 467-493), file fuori elenco. Vitest non è nel progetto: le prove usano `node:test`. Nessun ripiego.
 
 - 2026-11-11 Piano corretto dopo lo stop del Task 1: colonna `vista_cliente` in `CREATE TABLE` (`db-hub-schema.ts`) e nell'elenco `nuove` di `initializeHubDb` (`db-hub.ts`); prove con `node --import tsx --test` in tutti i task. Task 1 torna `[ ]`.
+
+- 2026-11-11 Task 1 [x]: utente Cliente e recinto. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts src/lib/users/__tests__/*.test.ts` → 62 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 ## Consuntivo
 ### Fatto

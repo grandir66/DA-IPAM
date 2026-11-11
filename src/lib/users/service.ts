@@ -67,6 +67,16 @@ const INVALID_ROLE = "Il ruolo deve essere 'superadmin', 'admin' o 'viewer'";
 
 const fail = (status: number, error: string): UsersResult => ({ status, body: { error } });
 
+/** Messaggio fisso: un Cliente è un viewer di un solo cliente. */
+const VISTA_CLIENTE_VIETATA = "Un utente cliente è in sola lettura e appartiene a un solo cliente";
+
+/** Assente o diverso da true → false. true solo se il ruolo è viewer e i clienti sono uno. */
+function rifiutaVistaCliente(vistaCliente: boolean, role: string, tenantIds: readonly number[]): UsersResult | null {
+  if (!vistaCliente) return null;
+  if (role === "viewer" && tenantIds.length === 1) return null;
+  return fail(400, VISTA_CLIENTE_VIETATA);
+}
+
 /**
  * Lo username dell'utenza di servizio Domarc (`DOMARC_USERNAME`, «domarc» se non
  * è impostato), che entra senza una riga nel database. Un utente locale con lo
@@ -215,6 +225,9 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
   if (password.length < 8) return fail(400, "La password deve avere almeno 8 caratteri");
   if (isServiceUsername(username)) return fail(409, "Username riservato all'utenza di servizio Domarc");
 
+  // Assente = false. Solo il booleano true accende la vista cliente.
+  const vistaCliente = b.vista_cliente === true;
+
   // Ruolo assente → viewer, come prima.
   const rawRole = b.role;
   const roleGiven = rawRole !== undefined && rawRole !== null && rawRole !== "";
@@ -232,13 +245,15 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
   const decision = decideCreate(who.actor, { role, tenantIds: tenantInput });
   if (!decision.ok) return fromDenial(decision);
   if (unknownTenant(decision.tenantIds)) return fail(400, "Cliente non trovato");
+  const vistaRifiutata = rifiutaVistaCliente(vistaCliente, role, decision.tenantIds);
+  if (vistaRifiutata) return vistaRifiutata;
 
   if (getUserByUsername(username)) return fail(409, "Username già in uso");
 
   const passwordHash = await bcrypt.hash(password, 12);
   // Utente e clienti insieme: niente utente creato a metà, senza clienti.
   const user = getHubDb().transaction(() => {
-    const created = createUser(username, passwordHash, role, undefined, email);
+    const created = createUser(username, passwordHash, role, undefined, email, vistaCliente);
     if (role !== "superadmin") {
       for (const tid of decision.tenantIds) setUserTenantAccess(created.id, tid, role);
     }
@@ -251,6 +266,7 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
     username: user.username,
     email: user.email,
     role: user.role,
+    vista_cliente: user.vista_cliente,
     tenant_id: user.tenant_id,
     created_at: user.created_at,
     last_login: user.last_login,
@@ -273,6 +289,7 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
 
   if (!isUserRole(b.role)) return fail(400, INVALID_ROLE);
   const role = b.role;
+  const vistaCliente = b.vista_cliente === true;
 
   const tenantInput = parseTenantIds(b.tenant_ids);
   if (tenantInput === "invalid") return fail(400, "Elenco clienti non valido");
@@ -297,9 +314,11 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
   const newTenantIds = role === "superadmin" ? [] : decision.tenantIds;
   if (role !== "superadmin" && newTenantIds.length === 0) return fail(400, NEED_TENANT);
   if (unknownTenant(newTenantIds)) return fail(400, "Cliente non trovato");
+  const vistaRifiutata = rifiutaVistaCliente(vistaCliente, role, newTenantIds);
+  if (vistaRifiutata) return vistaRifiutata;
 
   hub.transaction(() => {
-    updateUserRole(userId, role);
+    updateUserRole(userId, role, vistaCliente);
     const currentAccess = getUserTenantAccess(userId);
     const wanted = new Set(newTenantIds);
     for (const a of currentAccess) {

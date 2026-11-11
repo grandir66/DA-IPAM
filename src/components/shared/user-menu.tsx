@@ -34,7 +34,9 @@ import { toast } from "sonner";
 export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const { data: session } = useSession();
   const username = session?.user?.name ?? "";
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const ruoloSessione = session?.user as { role?: string; vistaCliente?: boolean } | undefined;
+  const role = ruoloSessione?.role;
+  const vistaCliente = ruoloSessione?.vistaCliente === true;
   const initial = username.charAt(0).toUpperCase() || "?";
 
   const tema = useTema();
@@ -85,8 +87,15 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
     }
   }
 
-  const roleLabel =
-    role === "superadmin" ? "Super Admin" : role === "admin" ? "Amministratore" : role === "viewer" ? "Solo lettura" : null;
+  const roleLabel = vistaCliente
+    ? "Cliente"
+    : role === "superadmin"
+      ? "Super Admin"
+      : role === "admin"
+        ? "Amministratore"
+        : role === "viewer"
+          ? "Solo lettura"
+          : null;
 
   return (
     <>

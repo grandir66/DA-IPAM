@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS users (
   totp_proposto_scade TEXT,
   -- Sessione e istanza (23/10, lib/accesso/sessione.ts).
   sessioni_valide_da INTEGER,
-  ultima_istanza TEXT
+  ultima_istanza TEXT,
+  -- Vista cliente (11/11): 1 = sola lettura chiusa in /cliente. Il ruolo resta viewer.
+  vista_cliente INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS user_tenant_access (

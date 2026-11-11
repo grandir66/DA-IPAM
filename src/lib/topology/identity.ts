@@ -92,3 +92,13 @@ export function announcedNames(hosts: ModelHostRow[], neighbors: ModelNeighborRo
   }
   return out;
 }
+
+/**
+ * Fornitori che dicono «è un computer»: su un apparato censito il tipo «switch» o «access_point» lì è un errore di
+ * censimento (vincolo 7 di Riccardo, 14/10: sull'hub 19 PC e server registrati come «switch» per l'inventario). Sta qui
+ * e non in cavi/: là non si nominano prodotti (prova I37).
+ */
+const FORNITORI_DI_COMPUTER: ReadonlySet<string> = new Set(["windows", "linux", "vmware", "proxmox", "synology", "qnap"]);
+export function fornitoreDiComputer(vendor: string | null | undefined): boolean {
+  return FORNITORI_DI_COMPUTER.has((vendor ?? "").trim().toLowerCase());
+}

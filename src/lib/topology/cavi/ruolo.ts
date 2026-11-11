@@ -5,7 +5,7 @@
  * mappa li mette in Da sistemare») non era mantenuta (vincolo 7 di Riccardo, 14/10). Alle quattro prove di D6 Riccardo
  * ne ha aggiunte sei e il ruolo a mano (14/10 sera). Logica pura, senza nomi di prodotto (prova I37).
  */
-import { nodeClass, ruoloLetto, type NodeClass } from "@/lib/topology/identity";
+import { nodeClass, ruoloLetto, type NodeClass, fornitoreDiComputer } from "@/lib/topology/identity";
 import { eReteDalleCapacita, leggeViciniDiRete } from "@/lib/topology/lettori/fonti";
 import { righeUltimoGiro } from "@/lib/topology/links";
 import type { ClasseMappa, MapNode, MapVm, TopologyModelInput } from "@/lib/topology/model-types";
@@ -17,7 +17,10 @@ import type { IndiceFatti, IngressoCavi, Prova } from "./prove";
 /** Il ruolo a mano come lo legge T1b: sta in identity.ts perché serve anche al nodo (node-index.ts). */
 export { ruoloLetto };
 
-export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano" | "firewall_censito";
+export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano" | "censito";
+
+/** I tipi dell'apparato censito che valgono come prova di ruolo se un altro apparato lo vede su una sua porta. */
+const TIPI_VISTI_SU_PORTA: ReadonlySet<string> = new Set(["switch", "access_point"]);
 
 /** Gli stati dello spanning tree che dicono che l'apparato lo parla (spec §13.8.2, I65): non `disabled`, non `broken`. */
 const STP_ATTIVO: ReadonlySet<string> = new Set(["forwarding", "learning", "listening", "blocking", "discarding"]);
@@ -64,17 +67,27 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
   }
   // La sua tabella MAC vede altri apparati di rete dietro una porta.
   // Chi è un MAC si cerca una volta sola: sul cliente A 2.637 righe per poche centinaia di MAC (tetto del modello, C17).
-  const diChi = new Map<string, string | null>();
+  // Sulla stessa passata: un apparato censito come switch o access point che un altro apparato vede su una sua porta ha
+  // la prova «censito» (Riccardo, 11/11/2026: «anche se non rispondono in SNMP direttamente, rispondono con altre
+  // tecnologie»; scelta «tipo + visto su porta»). Il tipo da solo no: alla 72729 fino al 09/11 undici stampanti erano
+  // censite «switch». Cambia I28 per gli apparati censiti; un host che il fingerprint chiama «switch» resta senza prova.
+  // Misurato sui dati veri (hub e cliente A, 11/11): col solo tipo entravano in mappa 6 e 5 apparati, tutti «switch» col
+  // fornitore «windows», cioè PC e server censiti col tipo sbagliato, e nessuno switch vero. Un apparato il cui fornitore
+  // è un sistema operativo da server o da PC non è uno switch: resta senza questa prova.
+  const tipoCensito = new Map(input.devices.map((d) => [`dev:${d.id}`,
+    fornitoreDiComputer(d.vendor) ? "" : (d.device_type ?? "").trim().toLowerCase()]));
+  const diChi = new Map<string, { altro: string | null; censito: string | null }>();
   for (const r of input.macPorts) {
     const io = `dev:${r.device_id}`;
-    let altro = diChi.get(r.mac);
-    if (altro === undefined) {
+    let v = diChi.get(r.mac);
+    if (v === undefined) {
       const id = chiDi(idx, { mac: r.mac });
       const k = id ? classeDi(idx, id) : null;
-      altro = k === "infra" || k === "ap" ? id : null;
-      diChi.set(r.mac, altro);
+      v = { altro: k === "infra" || k === "ap" ? id : null, censito: id && TIPI_VISTI_SU_PORTA.has(tipoCensito.get(id) ?? "") ? id : null };
+      diChi.set(r.mac, v);
     }
-    if (altro && altro !== io) metti(io, "mac_dietro");
+    if (v.altro && v.altro !== io) metti(io, "mac_dietro");
+    if (v.censito && v.censito !== io) metti(v.censito, "censito");
   }
   // Ospita VM (allora è un hypervisor).
   for (const v of extra.vms ?? []) metti(v.hypervisorNodeId, "vm");
@@ -88,9 +101,8 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
     if (d.uplink_mac) metti(chiDi(idx, { mac: d.uplink_mac }), "padre_di");
     if (ruoloLetto(d.topology_role) === "rete") metti(`dev:${d.id}`, "a_mano");
     // Un firewall censito fra gli apparati è un apparato di rete anche se non lo leggiamo (Riccardo, 11/11/2026: alla
-    // 72729 il FortiGate, visto sulla porta 1 di uno switch, finiva fra i «+ altri» come un PC). Solo il firewall, e solo
-    // l'apparato censito: un host che il fingerprint chiama «firewall» resta senza prova.
-    if ((d.device_type ?? "").trim().toLowerCase() === "firewall") metti(`dev:${d.id}`, "firewall_censito");
+    // 72729 il FortiGate, visto sulla porta 1 di uno switch, finiva fra i «+ altri» come un PC). Per il firewall basta il tipo.
+    if ((d.device_type ?? "").trim().toLowerCase() === "firewall") metti(`dev:${d.id}`, "censito");
   }
   // Si annuncia come apparato, contando solo le righe che passano R-superata: gli annunci di rete (non LLDP).
   for (const n of righeUltimoGiro(input)) {

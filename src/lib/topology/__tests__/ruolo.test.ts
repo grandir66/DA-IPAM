@@ -33,7 +33,7 @@ test("le prove, una per una (D6 e le sei aggiunte del 14/10 sera; il ruolo a man
     macPorts: [{ device_id: 1, mac: "02:00:00:00:00:02", port_name: "ether3", timestamp: ORA, source: "device" }],
   });
   assert.deepEqual(prove(i, "dev:1"), ["mac_dietro", "vicini"]);      // legge vicini; dietro una sua porta c'è SW-2
-  assert.deepEqual(prove(i, "dev:2"), ["controller", "uplink"]);      // gestito dal controller, con la sua porta di uplink
+  assert.deepEqual(prove(i, "dev:2"), ["censito", "controller", "uplink"]); // dall'11/11 anche «censito»: è uno switch censito che il router vede su una sua porta      // gestito dal controller, con la sua porta di uplink
   assert.deepEqual(prove(i, "dev:3"), ["controller", "padre_di"]);    // SW-2 esce verso di lui
   assert.deepEqual(prove(i, "dev:4"), ["a_mano"]);                     // «Ruolo nella mappa → Apparato di rete»
   assert.deepEqual(prove(i, "dev:5"), ["spanning_tree"]);             // una porta con lo stato dello spanning tree
@@ -220,4 +220,29 @@ test("il ruolo a mano vince anche nella tabella MAC: chi è «Attaccato» non co
   const m = buildTopologyModel(i);
   assert.equal(m.classiMappa?.["dev:31"], "att");
   assert.deepEqual(m.portClients.map((p) => [p.nodeId, p.port, p.clients.map((c) => c.nodeId)]), [["dev:2", "Port 7", ["host:41"]]]);
+});
+
+// Riccardo, 11/11/2026: alla 72729 il firewall, che non leggiamo ma che uno switch vede su una porta, finiva fra i «+ altri»;
+// «come per gli access point e gli apparati definiti come switch, anche se non rispondono in SNMP». Scelta: per il firewall
+// basta il tipo; per switch e access point serve anche essere visti su una porta da un altro apparato. Cambia I28 per gli
+// apparati censiti. Sui dati veri (hub, cliente A) col solo tipo entravano 6 e 5 «switch» col fornitore «windows».
+test("censito: firewall col solo tipo; switch e access point solo se visti su una porta; mai un computer", () => {
+  const MAC_SW = "02:00:00:00:10:02", MAC_AP = "02:00:00:00:10:03", MAC_PC = "02:00:00:00:10:04", MAC_SOLO = "02:00:00:00:10:05";
+  const i = baseInput({
+    devices: [
+      dev(1, { name: "SW-LETTO", via: "snmp" }),
+      dev(2, { name: "SW-MUTO" }), dev(3, { name: "AP-MUTO", device_type: "access_point" }),
+      dev(4, { name: "PC-SWITCH", vendor: "windows" }), dev(5, { name: "SW-SCOLLEGATO" }),
+      dev(6, { name: "FW", device_type: "firewall", vendor: "fortinet" }),
+    ],
+    knownMacs: [
+      { device_id: 2, mac: MAC_SW }, { device_id: 3, mac: MAC_AP }, { device_id: 4, mac: MAC_PC }, { device_id: 5, mac: MAC_SOLO },
+    ] as TopologyModelInput["knownMacs"],
+    macPorts: [MAC_SW, MAC_AP, MAC_PC].map((mac, n) => ({ device_id: 1, mac, port_name: `Port ${n + 2}`, timestamp: ORA, source: "device" })),
+  });
+  assert.ok(prove(i, "dev:2").includes("censito"), "switch censito visto su una porta");
+  assert.ok(prove(i, "dev:3").includes("censito"), "access point censito visto su una porta");
+  assert.ok(!prove(i, "dev:4").includes("censito"), "un computer censito «switch» resta senza prova");
+  assert.ok(!prove(i, "dev:5").includes("censito"), "il tipo da solo non basta");
+  assert.deepEqual(prove(i, "dev:6"), ["censito"], "al firewall basta il tipo");
 });

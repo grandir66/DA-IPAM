@@ -16,6 +16,9 @@ Riccardo (11/11): «VM server Windows, VM server Linux… potrebbero essere VM c
 
 ## [Non rilasciato] — 2026-11-11 · Filtro «Sistema» in subnet e Discovery
 
+### Cambiato
+- **Topologia: switch e access point censiti entrano in mappa anche se non li leggiamo.** Un apparato censito come switch o access point che non risponde in SNMP e non ha altre prove di ruolo finiva in «Da sistemare» o fra gli attaccati. Ora gli basta essere visto su una porta da un altro apparato letto (prova `censito`). Il tipo da solo non basta: sui dati veri di hub e cliente A avrebbe portato in mappa 6 e 5 PC e server Windows censiti per errore come «switch», e nessuno switch vero; per questo un apparato il cui fornitore è un sistema operativo (Windows, Linux, VMware, Proxmox, NAS) resta escluso. Per il firewall censito continua a bastare il tipo.
+
 Riccardo (11/11): «distinguere tra PC Windows, Linux e OSX… come per i server… VM server Windows, VM server Linux». Non sono classi nuove (il 21/10 «Server Windows» e «Server Linux» erano diventati «Server» più il sistema a parte): il sistema è un attributo a sé, e ora è anche un filtro.
 
 ### Aggiunto

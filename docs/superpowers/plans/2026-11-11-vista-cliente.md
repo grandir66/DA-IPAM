@@ -254,6 +254,12 @@ export const schedaReti: SchedaCliente;                                         
 
 ### [ ] Task 4 — Scheda Apparati
 
+**Dal controllo del Task 3 (11/11, commit `3ac1b4d8`): passato**, 7 prove verdi rilanciate, firme come da piano, nessun link fuori dall'area; non guardato a schermo. Due ritocchi a `src/lib/cliente/schede/reti.ts` da fare in questo task, prima del resto:
+1. nel riquadro, «N VLAN» conta le VLAN **distinte** (`new Set` dei `vlan` non nulli), non le reti che ne hanno una;
+2. `attenzioneReti` porta al più 5 voci; se le reti viste sono di più, la quinta voce diventa «Altre N reti viste e non censite».
+
+**In attesa di una decisione di Riccardo (non farlo finché non è scritta qui):** come mostrare gli host «assenti», cioè spenti da più di 7 giorni (`condizioneAssente` in `src/lib/hosts/assenti.ts`). Misura dell'11/11 sul cliente 70791: 186 accesi, 57 spenti da poco, 124 assenti; oggi nella griglia assenti e spenti da poco sono lo stesso grigio.
+
 **File**
 - crea `src/lib/cliente/schede/apparati.ts`, `src/lib/cliente/__tests__/apparati.test.ts`
 - crea `src/app/(cliente)/cliente/apparati/page.tsx`, `src/components/cliente/pannello-porte.tsx`
@@ -500,6 +506,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo dei Task 1 bis (`9d99898e`) e 2 (`13681f8f`): passati, 65 prove verdi rilanciate. Non guardata a schermo la casa. Correzione aggiunta al Task 3: niente vista cliente su «tutti i clienti».
 
 - 2026-11-11 Task 3 [x]: scheda Reti. Prima la correzione: senza un cliente in sessione, o con «tutti i clienti», la vista torna alla Dashboard. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 7 prove, 0 fallite. lint 0 errori, tsc 0 errori.
+
+- 2026-11-11 Controllo del Task 3 (`3ac1b4d8`): passato, 7 prove verdi rilanciate. Due ritocchi messi in testa al Task 4. Aperta una decisione per Riccardo sugli host assenti (124 su 367 sul cliente 70791).
 
 ## Consuntivo
 ### Fatto

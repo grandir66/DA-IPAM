@@ -21,6 +21,17 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 Piano proposto in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`. Prima consegna prevista su LAPS e valutazione dei template AD CS. Seguono ESC8, percorsi di controllo e confronto con copertura esplicita. Avviato sul ramo isolato: LAPS da metadati e pubblicazione dei template AD CS con candidati fuori dal punteggio. Il motore 0.9.1 rileva ACE Enroll, modifica dei template ESC4 e concessioni estese sugli attributi LAPS. I riscontri sono diagnostici. Restano il calcolo dei diritti effettivi, ESC8, le tappe successive e il collaudo sul dominio.
 
+## Scansioni interne, rilievi e conti — 10-11/11/2026
+
+Sessione lunga con Riccardo, tutto su `dev` (0.9.1088 → 0.9.1137), `main` non toccato. Dettaglio e misure in `TASKS.md`, sezione «2026-11-10 — «Solo controlli» sembrava non fare nulla».
+- **`/scans` segue il lanciatore di Nety** (idee, non codice: GPL). Profilo solo per la Discovery; «Solo controlli» non cerca porte, rilegge i servizi noti. Riquadro «Fuori dal giro»: impianti (`eImpianto`) ed esclusi a mano dell'Edge (`leggiEsclusi`) restano al solo ping. **Decisione di Riccardo, non riaprire: sugli impianti solo il ping**, niente prova di porta.
+- **Controlli nuovi nel giro** (`servizi-rete/giro.ts`): TLS attivo scritto a mano (`rilievi/tls-attivo.ts`, OpenSSL di Node non ha 3DES/RC4), sonde UDP (`servizi-rete/sonde-udp.ts`: DNS, NTP, NetBIOS, SQL Browser), controlli con credenziali (`rilievi/autenticati.ts`). **Regola di Riccardo: una credenziale si usa solo se `host_credentials.validated = 1` per quell'host; il giro non ne prova mai di nuove.** Solo dal lanciatore, mai nei giri automatici.
+- **Gravità**: Critical quando si entra senza password o con credenziali di fabbrica (Riccardo).
+- **Conti**: le barre «per rete» contano le cose da sistemare (software×host o rilievo×host), non le CVE. **Un conto solo per tutte le schermate: `rilievi/barre-di-serie.ts`.** Chi aggiunge una vista per rete passa da lì, mai da una query nuova (la Dashboard dava 701 dove Findings dava 460).
+- **Riavvii**: `scripts/auto-update.sh` non riavvia se `/api/health` dice `giri_in_corso > 0` (tetto 3 ore); i giri lanciati a mano ripartono da capo una volta dopo un riavvio (`scanner/giri-da-rilanciare.ts`). Nessuno dei due è provato dal vivo.
+- **Trappole**: la risposta RDP dei Windows moderni ha i flags a 0x1f (un parser che cerca «02 00 08 00» dà «RDP in chiaro» falso); un lancio mentre gira il giro automatico è rifiutato con un toast che si perde; uno script che apre il DB del tenant fuori dal servizio rifà il ricalcolo dei gruppi multihomed; il confronto con Nety vale solo a parità di profilo (i suoi giri d'ufficio erano «custom» con 27 porte e nessun secondo tentativo).
+- **Aperto**: Windows via WinRM con credenziali validate; ripresa dei giri dal punto; `/api/rilievi?host_id=` lento; elenco Findings ancora una riga per CVE; 192.168.4.42 è stata letta dal giro con credenziali (sola lettura), da decidere se escluderla.
+
 ## Accesso Windows e diritti — 04/11/2026
 
 La scansione sceglie da sola WinRM o WMI (`src/lib/scanner/accesso-windows.ts`), con un motivo per host. Trappole:

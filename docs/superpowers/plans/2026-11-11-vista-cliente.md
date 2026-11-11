@@ -20,7 +20,7 @@
 2. Dopo ogni task: `npm run lint && npx tsc --noEmit`, le prove del task, poi `git add <solo i file del task>`, `npm run version:release -- --staged-only`, `git push origin HEAD:dev`. **Mai `git add -A`**, mai `git reset --hard`.
 3. Una riga in `CHANGELOG.md` per task (cosa e perché), nello stesso commit.
 4. Le prove esistenti non si modificano per farle passare. Se una prova esistente fallisce, ci si ferma e lo si scrive nel task come `[!]`.
-5. TypeScript strict, niente `any`. Testi a schermo in italiano. `db-tenant` si importa solo in modo statico (regola 14 di `CLAUDE.md`). `JSON.parse` sempre in `try/catch`.
+5. Le prove si scrivono con `node:test` e `node:assert/strict`, come quelle già nel repo (esempio: `src/lib/users/__tests__/service.test.ts`), e si lanciano con `node --import tsx --test <file>`. Vitest non c'è e non si aggiunge. TypeScript strict, niente `any`. Testi a schermo in italiano. `db-tenant` si importa solo in modo statico (regola 14 di `CLAUDE.md`). `JSON.parse` sempre in `try/catch`.
 6. Stile: `docs/STILE-UI.md` e i mattoni di `src/components/shared/console.tsx` (`Pannello`, `TesseraNumero`, `VoceSelezionabile`, `Etichetta`, `SchedaDettaglio`, `DatoDettaglio`, `Vuoto`, `BadgeGravita`, `TempoRelativo`). Testo ≥ 13 px. shadcn v4: niente `asChild`, si usa `render={<Componente />}`.
 7. Riccardo è daltonico: ogni stato si distingue per **forma** (icona) e **luminosità**, mai solo per tinta.
 8. Fuori dal perimetro del task non si tocca niente. Le pagine dell'amministratore restano come sono, salvo dove il piano lo dice.
@@ -49,15 +49,16 @@
 
 ---
 
-### [!] Task 1 — Utente «Cliente» e recinto
+### [ ] Task 1 — Utente «Cliente» e recinto
 
-**Blocco (2026-11-11, prima del codice):** il piano dà per esistente in `src/lib/db-hub-schema.ts` un `ALTER TABLE … ADD COLUMN` idempotente «come le colonne già aggiunte». In quel file non c'è: è solo `HUB_SCHEMA_SQL` (`CREATE TABLE IF NOT EXISTS`). Le colonne aggiunte dopo (`email`, `totp_*`, `sessioni_valide_da`, `ultima_istanza`) le mette `initializeHubDb` in `src/lib/db-hub.ts` (righe 467-493), con `PRAGMA table_info` e poi `ALTER`. Quel file non è nell'elenco del task. Un `ALTER` nello schema SQL rieseguirebbe a ogni avvio e, a colonna già presente, farebbe fallire `db.exec`. Non ho messo la colonna solo nel `CREATE TABLE`: sulle installazioni esistenti non comparirebbe. Secondo fatto, stesso stop: la verifica chiede `npx vitest run`, ma Vitest non è una dipendenza. Le prove del repo sono `node --import tsx --test` con `node:test` (`service.test.ts` importa già `node:test`). Il resto dei punti citati c'è, alle righe indicate: i due `CHECK(role …)` (righe 33 e 53), `token.role` (riga 66), `u.role` (riga 132), `authorized` (riga 138), `User.role` (riga 12), i due `useState` del ruolo (righe 311 e 316), le voci «Solo lettura» (righe 872 e 903), l'etichetta in `user-menu.tsx` (riga 89). Nessun file di codice toccato.
+**Corretto l'11/11 dopo il primo stop (aveva ragione chi esegue):** la colonna si aggiunge in due posti, vedi «File»; le prove girano con `node --import tsx --test`, non con Vitest, che nel repo non c'è. Il task riparte da capo.
 
 **Perché un segno e non un ruolo nuovo.** Nel database hub il ruolo ha un vincolo `CHECK(role IN ('superadmin','admin','viewer'))` su `users` e `CHECK(role IN ('admin','viewer'))` su `user_tenant_access` (`src/lib/db-hub-schema.ts` righe 33 e 53): un ruolo nuovo vorrebbe dire ricostruire due tabelle con chiavi esterne. Si aggiunge invece una colonna. Gli utenti «Solo lettura» di oggi restano come sono.
 
 **File**
 - crea `src/lib/cliente/recinto.ts`, `src/lib/cliente/__tests__/recinto.test.ts`
-- modifica `src/lib/db-hub-schema.ts`: colonna `vista_cliente INTEGER NOT NULL DEFAULT 0` su `users`, con `ALTER TABLE … ADD COLUMN` idempotente, seguendo il modo già usato in quel file per le colonne aggiunte
+- modifica `src/lib/db-hub-schema.ts`: nel `CREATE TABLE users` la colonna `vista_cliente INTEGER NOT NULL DEFAULT 0` (vale per le installazioni nuove; in questo file **nessun** `ALTER`)
+- modifica `src/lib/db-hub.ts`: in `initializeHubDb`, nell'elenco `nuove` delle colonne di `users` (righe 477-488, quello con `totp_richiesta` … `ultima_istanza`), in coda la riga `["vista_cliente", "INTEGER NOT NULL DEFAULT 0"]` con un commento di una riga (vale per le installazioni esistenti: il ciclo sotto fa l'`ALTER` solo se la colonna manca); nel tipo `HubUser` il campo `vista_cliente: number`; nelle funzioni che creano e modificano un utente (quelle chiamate da `src/lib/users/service.ts`) la scrittura della colonna, 0 o 1
 - modifica `src/lib/auth.ts`: l'oggetto utente restituito da `authorize` porta `vistaCliente: boolean` letto dalla colonna
 - modifica `src/lib/auth.config.ts`: nel callback `jwt` `token.vistaCliente = user.vistaCliente === true` (accanto a `token.role`, riga 66); nel callback `session` `u.vistaCliente = token.vistaCliente === true` (accanto a `u.role`, riga 132); nel callback `authorized` (riga 138) il recinto, vedi sotto
 - modifica `src/types/index.ts` (tipo dell'utente, riga 12): campo `vista_cliente?: boolean`
@@ -93,7 +94,7 @@ if (esito === "vietato") return Response.json({ error: "Non consentito" }, { sta
 4. `service.ts`: `vista_cliente: true` è ammesso solo se il ruolo è `viewer` e i clienti assegnati sono esattamente uno; altrimenti 400 «Un utente cliente è in sola lettura e appartiene a un solo cliente». Aggiungere i casi a `src/lib/users/__tests__/service.test.ts` senza cambiare quelli che ci sono.
 5. Impostazioni → Utenti: nei due menu del ruolo una voce in più, `value="cliente"`, testo «Cliente (vista semplice)». È solo dell'interfaccia: al salvataggio manda `role: "viewer"` e `vista_cliente: true`; le altre voci mandano `vista_cliente: false`. In modifica, un utente con `vista_cliente` si apre con quella voce scelta.
 
-**Verifica:** `npx vitest run src/lib/cliente src/lib/users` → tutte verdi. Sul dev: creato un utente «Cliente» di prova, dopo l'accesso atterra su `/cliente`; `/settings` lo riporta a `/cliente`; `GET /api/hosts` con la sua sessione risponde 403; un utente «Solo lettura» normale vede l'interfaccia di sempre.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts src/lib/users/__tests__/*.test.ts` → tutte verdi. Sul dev: creato un utente «Cliente» di prova, dopo l'accesso atterra su `/cliente`; `/settings` lo riporta a `/cliente`; `GET /api/hosts` con la sua sessione risponde 403; un utente «Solo lettura» normale vede l'interfaccia di sempre.
 
 **Commit:** «Vista cliente: utente Cliente chiuso nella sua area».
 
@@ -154,7 +155,7 @@ export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grav
 - **Scheda inesistente o spenta**: le pagine dei task 3-7 cominciano con `if (!(await scheda.attiva(c))) redirect("/cliente")`.
 - **Prova** (`registro.test.ts`): `schedeAttive` con tre schede finte (una spenta, una che lancia, due in ordine inverso) e `ordinaAttenzione`.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde. Sul dev `/cliente` si apre con l'intestazione, «Niente da segnalare» e nessun riquadro (il registro è ancora vuoto).
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sul dev `/cliente` si apre con l'intestazione, «Niente da segnalare» e nessun riquadro (il registro è ancora vuoto).
 
 **Commit:** «Vista cliente: template dedicato, registro delle schede e casa».
 
@@ -226,7 +227,7 @@ export const schedaReti: SchedaCliente;                                         
 - `riquadro`: `numero` = numero di reti; `contesto` = «N VLAN · N indirizzi in uso»; `aperti` = numero di reti viste e non censite; `stato` = `attenzione` se `aperti > 0`, altrimenti `a_posto`.
 - `attenzione`: una voce per rete vista, gravità `attenzione`, testo «Rete <cidr> vista e non censita», `href` «/cliente/reti».
 
-**Verifica:** `npx vitest run src/lib/cliente` verde. La prova crea in memoria `networks`, `hosts`, `switch_ports`, `network_devices` con le sole colonne usate e copre: due reti, un host acceso, uno spento, uno senza switch, `open_ports` non JSON, una rete /16. Pagina guardata una volta a 1920 sul dev.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. La prova crea in memoria `networks`, `hosts`, `switch_ports`, `network_devices` con le sole colonne usate e copre: due reti, un host acceso, uno spento, uno senza switch, `open_ports` non JSON, una rete /16. Pagina guardata una volta a 1920 sul dev.
 
 **Commit:** «Vista cliente: scheda Reti con VLAN, reti viste sul cavo e scheda dell'apparato».
 
@@ -281,7 +282,7 @@ export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati",
 - `attenzione`: una voce per ognuno di quegli apparati (al più 5), gravità `nota`, testo «<nome> spento da <tempo>», `href` «/cliente/apparati?tipo=<tipo>&ip=<ip>».
 - Attenzione al confronto di date in SQLite: `last_seen` è scritto come `AAAA-MM-GG HH:MM:SS`; si confronta con `datetime('now','-1 day')`, mai con una stringa ISO con la `T`.
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (`tipoCliente` su ogni foglia di `CATEGORY_TAXONOMY`, nessuna esclusa; `porteDelloSwitch` con e senza righe; due host con lo stesso `physical_device_id` contati una volta). Pagina guardata una volta a 1920.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`tipoCliente` su ogni foglia di `CATEGORY_TAXONOMY`, nessuna esclusa; `porteDelloSwitch` con e senza righe; due host con lo stesso `physical_device_id` contati una volta). Pagina guardata una volta a 1920.
 
 **Commit:** «Vista cliente: scheda Apparati per tipo, con il pannello delle porte degli switch».
 
@@ -328,7 +329,7 @@ export const schedaDominio: SchedaCliente; // id "dominio", titolo "Dominio e ac
 - `riquadro`: `numero` = punteggio (o «—» se `null`), `unita` «su 100»; `contesto` = «stato del dominio · N accessi falliti» (somma dei `falliti`); `aperti` = numero di utenti bloccati più rilievi `grave`; `stato` = `grave` se c'è un rilievo `grave`, `attenzione` se c'è un bloccato, altrimenti `a_posto`.
 - `attenzione`: una voce per utente bloccato (gravità `attenzione`, «<utente> bloccato <n> volte oggi») e una per rilievo `grave` (gravità `grave`, «<quanti> · <testo>»), `href` «/cliente/dominio».
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (nessun giro `ok` → `null`; un solo giro → `unMeseFa` nullo; account con `$` scartati; 4 fallimenti non compaiono, 5 sì). Pagina guardata una volta a 1920 sull'hub, cliente 70791, che ha un dominio.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (nessun giro `ok` → `null`; un solo giro → `unMeseFa` nullo; account con `$` scartati; 4 fallimenti non compaiono, 5 sì). Pagina guardata una volta a 1920 sull'hub, cliente 70791, che ha un dominio.
 
 **Commit:** «Vista cliente: scheda Dominio e accessi».
 
@@ -382,7 +383,7 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 - `riquadro`: `numero` = `totaleAperti`; `contesto` = «avvisi aperti · <chiusiNelMese> chiusi nel mese»; `aperti` = `totaleAperti`; `stato` = `grave` se c'è un aperto `grave`, `attenzione` se ce n'è almeno uno, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni aperto `grave` (al più 5), testo «<testo> su <dove>», `href` «/cliente/log-sicurezza».
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (`fraseAvviso` con titolo in tabella e fuori; righe `diagnostic = 1` escluse; sette giorni sempre presenti). Pagina guardata una volta a 1920.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`fraseAvviso` con titolo in tabella e fuori; righe `diagnostic = 1` escluse; sette giorni sempre presenti). Pagina guardata una volta a 1920.
 
 **Commit:** «Vista cliente: scheda Log di sicurezza».
 
@@ -426,7 +427,7 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 - `riquadro`: `numero` = `gravi + alte`; `contesto` = «<gravi> gravi · <alte> alte»; `aperti` = `gravi + alte`; `stato` = `grave` se `gravi > 0`, `attenzione` se `alte > 0`, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni apparato con `gravi > 0` (al più 5), gravità `grave`, testo «<gravi> problemi gravi su <nome>» (singolare se 1), `href` «/cliente/da-sistemare».
 
-**Verifica:** `npx vitest run src/lib/cliente` verde (`perApparato`: un rilievo con tre ospiti, un ospite con gravità propria, rimedio vuoto). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`perApparato`: un rilievo con tre ospiti, un ospite con gravità propria, rimedio vuoto). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
 
 **Commit:** «Vista cliente: scheda Da sistemare».
 
@@ -466,6 +467,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 ## Registro
 
 - 2026-11-11 Task 1 [!]: fermo prima del codice. L'`ALTER` idempotente non sta in `db-hub-schema.ts` (solo `CREATE TABLE`); sta in `initializeHubDb` di `src/lib/db-hub.ts` (righe 467-493), file fuori elenco. Vitest non è nel progetto: le prove usano `node:test`. Nessun ripiego.
+
+- 2026-11-11 Piano corretto dopo lo stop del Task 1: colonna `vista_cliente` in `CREATE TABLE` (`db-hub-schema.ts`) e nell'elenco `nuove` di `initializeHubDb` (`db-hub.ts`); prove con `node --import tsx --test` in tutti i task. Task 1 torna `[ ]`.
 
 ## Consuntivo
 ### Fatto

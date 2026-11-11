@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Reti
+
+### Aggiunto
+- **Scheda Reti**: le reti del cliente, la VLAN e quanti indirizzi sono in uso. A destra i quadretti degli indirizzi; scegliendone uno si vede l'apparato, dove è collegato e le porte aperte. Le reti sentite sul cavo e mai dichiarate stanno a parte. Se in sessione non c'è un solo cliente, la vista torna alla Dashboard: non apre i dati di un altro.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa
 
 ### Aggiunto

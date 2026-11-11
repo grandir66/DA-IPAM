@@ -23,6 +23,10 @@ export interface ContestoCliente {
 const leggiContestoCliente = cache(async function leggiContestoCliente(): Promise<ContestoCliente> {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  // «Tutti i clienti» non è un cliente: getServerTenantCode() renderebbe DEFAULT
+  // e la vista mostrerebbe i dati del cliente sbagliato, col titolo «DEFAULT».
+  const codiceSessione = (session.user as { tenantCode?: string | null }).tenantCode;
+  if (!codiceSessione || codiceSessione === "__ALL__") redirect("/");
   const tenantCode = await getServerTenantCode();
   const tenants = (session.user as { tenants?: Array<{ code: string; name: string }> }).tenants ?? [];
   const nomeCliente = tenants.find((t) => t.code === tenantCode)?.name ?? tenantCode;

@@ -178,7 +178,7 @@ export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grav
 
 ---
 
-### [ ] Task 3 — Scheda Reti
+### [x] Task 3 — Scheda Reti
 
 **Dal controllo del Task 2 (11/11, commit `13681f8f`): passato**, 65 prove verdi rilanciate; non guardato a schermo. Una correzione da fare in questo task, prima del resto: in `src/lib/cliente/contesto.ts`, se il cliente in sessione manca o è `"__ALL__"` (superadmin su «tutti i clienti»), `redirect("/")`. Oggi `getServerTenantCode()` in quel caso rende `"DEFAULT"` e la vista mostrerebbe i dati del cliente sbagliato col titolo «DEFAULT». Si legge `session.user.tenantCode` prima di chiamare `getServerTenantCode()`.
 
@@ -246,7 +246,7 @@ export const schedaReti: SchedaCliente;                                         
 - `riquadro`: `numero` = numero di reti; `contesto` = «N VLAN · N indirizzi in uso»; `aperti` = numero di reti viste e non censite; `stato` = `attenzione` se `aperti > 0`, altrimenti `a_posto`.
 - `attenzione`: una voce per rete vista, gravità `attenzione`, testo «Rete <cidr> vista e non censita», `href` «/cliente/reti».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. La prova crea in memoria `networks`, `hosts`, `switch_ports`, `network_devices` con le sole colonne usate e copre: due reti, un host acceso, uno spento, uno senza switch, `open_ports` non JSON, una rete /16. Pagina guardata una volta a 1920 sul dev.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 7 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori. `npx tsc --noEmit` → 0 errori. Sul dev la pagina non è stata aperta con una sessione.
 
 **Commit:** «Vista cliente: scheda Reti con VLAN, reti viste sul cavo e scheda dell'apparato».
 
@@ -498,6 +498,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 2 [x]: template, registro delle schede e casa. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 4 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 - 2026-11-11 Controllo dei Task 1 bis (`9d99898e`) e 2 (`13681f8f`): passati, 65 prove verdi rilanciate. Non guardata a schermo la casa. Correzione aggiunta al Task 3: niente vista cliente su «tutti i clienti».
+
+- 2026-11-11 Task 3 [x]: scheda Reti. Prima la correzione: senza un cliente in sessione, o con «tutti i clienti», la vista torna alla Dashboard. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 7 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 ## Consuntivo
 ### Fatto

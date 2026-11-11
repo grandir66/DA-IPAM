@@ -1,4 +1,5 @@
 import type { ContestoCliente } from "./contesto";
+import { schedaReti } from "./schede/reti";
 
 export type Gravita = "grave" | "attenzione" | "nota";
 export type StatoRiquadro = "a_posto" | "attenzione" | "grave";
@@ -31,8 +32,8 @@ export interface SchedaCliente {
   attenzione(c: ContestoCliente): VoceAttenzione[] | Promise<VoceAttenzione[]>;
 }
 
-/** Vuoto in questo task: i task 3-7 aggiungono una riga ciascuno. */
-export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [];
+/** I task 4-7 aggiungono una riga ciascuno. */
+export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti];
 
 const PESO_GRAVITA: Record<Gravita, number> = { grave: 0, attenzione: 1, nota: 2 };
 

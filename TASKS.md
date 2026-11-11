@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-11 — Categorie e sottocategorie (Riccardo, proposta in attesa)
+
+Riccardo, 11/11: «le categorie dovrebbero essere raggruppate tipo OT → IoT, PLC, HMI… POSTAZIONI → PC, Notebook, Workstation… prova a ricostruire le categorie con categorie e sottocategorie per avere filtri anche più efficaci; manca anche il gruppo Telefonia, con Telefoni, Smartphone, Centralino, Convertitori VoIP»; e «anche la classificazione dei device dentro a subnet deve prevedere la scelta multipla e l'assegnazione delle categorie». Solo proposta: niente codice.
+
+- [ ] Oggi: 36 classi in 6 gruppi (`GROUP_BY_CLASSIFICATION` in `src/lib/device-classifications.ts`): Infrastruttura di rete, Server e virtualizzazione, Client e postazioni, Periferiche e servizi (dove finiscono insieme NAS, stampanti, VoIP, telecamere e UPS), IoT / OT, Media. I gruppi sono usati in 5 file. Il motore ha già 10 radici con le foglie giuste (`attribution/taxonomy.ts`: `voip.pbx`, `voip.gateway`, `av.nvr`, `power.pdu`…) ma quattro foglie non hanno una classe a cui proiettarsi.
+- [ ] Proposta, 9 categorie: **Postazioni** (PC, Notebook, Tablet, Thin client*) · **Telefonia** (Telefono VoIP, Smartphone, Centralino*, Convertitore VoIP*) · **Server** (Server, Macchina virtuale, Hypervisor) · **Archiviazione** (NAS, Storage) · **Rete** (Router, Switch, Firewall, Access point, Controller di rete, Modem / ONT, Bridge, Repeater, Load balancer, VPN gateway, Proxy) · **Stampa** (Stampante, Multifunzione, Scanner) · **Video** (Telecamera, Videoregistratore*, Smart TV, Decoder, Media player, Console) · **OT e IoT** (IoT, PLC, HMI, Sensore, Domotica, Rete OT) · **Alimentazione** (UPS, PDU*). Con * le cinque classi nuove.
+- [ ] Da decidere con Riccardo prima di scrivere: «PC» e «Workstation» sono due voci o una (oggi `workstation` si legge «PC»); lo Smartphone sta in Telefonia (come dice lui) e non più fra le postazioni; il Tablet resta fra le postazioni; cosa intende con «device dentro a subnet» (la lista della subnet ha già caselle e «Categoria…»: da capire se parla degli apparati o di un'altra pagina).
+- [ ] Poi: filtri a due livelli (scelta una categoria si prendono tutte le sue sottocategorie) in subnet, Discovery e vista cliente; nessuna classe esistente cambia nome nel database (misura sul 70791: 22 classi in uso, tutte presenti nell'albero, più 1 `windows` vecchia).
+
 ## 2026-11-11 — Riconoscimento: il telefono che diventa stampante (Riccardo)
 
 Riccardo, 11/11: «il mio Samsung S25 viene rilevato come stampante nel riepilogo degli oggetti ed è rilevato due volte nella subnet… un cambio di IP, che dovrebbe essere automaticamente corretto; non capisco da dove viene identificata la categoria, se dai dati di discovery o della subnet; e anche un oggetto che non è device deve essere possibile assegnarlo a una categoria in modo efficace». Solo diagnosi, misurata sull'hub (cliente 70791): niente codice scritto.

@@ -720,6 +720,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 
 - 2026-11-11 Task 7 [x]: scheda Da sistemare, dai gruppi per host. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. I totali del riquadro passano da `barreReteDiSerie()`, come la Dashboard; il confronto sullo stesso cliente non è stato fatto.
 
+- 2026-11-11 Controllo del Task 7 (`4de0b8a5`): il codice è come da piano, 36 prove verdi rilanciate. **Sul dato vero però la scheda non regge** (misura sull'hub, cliente 70791): i gruppi per host contano ogni CVE (una riga direbbe «374 gravi · 2211 alte» mentre il riquadro dice 124 e 385), la «cosa più grave» è una sigla (`CVE-2025-55315`, `controllo:tls-deep:…`), il rimedio si trova per 10 apparati su 92. Errore del piano, non di chi esegue. In attesa di una decisione di Riccardo: passare alla vista per software.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

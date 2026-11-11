@@ -637,6 +637,74 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 
 ---
 
+### [ ] Task 7 bis — Da sistemare: per programma da aggiornare
+
+**Perché.** Il Task 7 è fatto come da piano, ma sul dato vero non regge (misura dell'11/11 sull'hub, cliente 70791): per apparato escono conti di CVE («374 gravi · 2211 alte» su un solo server, contro i 124 e 385 del riquadro), la «cosa più grave» è una sigla (`CVE-2025-55315`), il rimedio c'è per 10 apparati su 92. Riccardo, 11/11: la scheda si rifà **per programma da aggiornare**. Sugli stessi dati il raggruppamento per software dà 120 programmi leggibili («Google Chrome» su 3 apparati, «Kernel Linux» su 11), un gruppo di 22 cose da correggere col titolo in italiano e un gruppo di 106 vulnerabilità senza programma. Si fa **dopo il Task 6 bis**, in un commit suo.
+
+**File**
+- modifica `src/lib/cliente/schede/da-sistemare.ts`, `src/lib/cliente/__tests__/da-sistemare.test.ts`, `src/app/(cliente)/cliente/da-sistemare/page.tsx`
+- le prove su `perApparato` **si tolgono** con la funzione (eccezione alla regola 4, come nel Task 6 bis)
+- **non** si modifica niente in `src/lib/rilievi/`
+
+**Fonte (verificata sull'hub l'11/11)**
+```ts
+elencoRilievi({
+  gravita: ["Critical", "High"],
+  raggruppa: "software",
+  pageSize: 1,
+  exploitDi: exploitPerRotte().exploitDi,
+  cvssDi: cvssPerRotte(),
+})
+```
+`gruppi: GruppoRilievi[]` arriva già ordinato (sfruttati attivamente, exploit pubblico, critici, alti) e ha tre tipi:
+- `tipo === "software"`: un programma. Servono `chiave`, `nome`, `host` (apparati distinti), `gravita.Critical`, `kev` (rilievi già sfruttati negli attacchi).
+- `tipo === "senza"`: al più un gruppo, «senza un aggiornamento da fare». Servono `rilievi`, `host`, `anteprima` (al più 12 titoli, già in italiano: «Login di fabbrica su 192.168.5.170:21 (ftp)»).
+- `tipo === "edge"`: al più un gruppo, vulnerabilità senza un programma indicato. Servono solo `rilievi` e `host`: i suoi titoli sono codici e **non si mostrano**.
+I conti di CVE dentro `gravita` (centinaia per programma) **non si mostrano mai**: servono solo a dire se c'è almeno un critico.
+
+**Interfacce (sostituiscono quelle del Task 7)**
+```ts
+export interface ProgrammaDaAggiornare { chiave: string; nome: string; apparati: number; gravita: "grave" | "attenzione"; sfruttato: boolean }
+export interface DaSistemare {
+  ultimoControllo: string | null;
+  gravi: number; alte: number;                                   // da barreReteDiSerie(), come oggi
+  programmi: ProgrammaDaAggiornare[];                            // al più 100, nell'ordine dei gruppi
+  totaleProgrammi: number;
+  daCorreggere: { titoli: string[]; rilievi: number; apparati: number } | null;
+  altri: { rilievi: number; apparati: number } | null;
+}
+/** Pura: dai gruppi per software alle tre parti della scheda. Provata con gruppi finti. */
+export function daGruppi(
+  gruppi: readonly Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "host" | "rilievi" | "gravita" | "kev" | "anteprima">[],
+): Pick<DaSistemare, "programmi" | "totaleProgrammi" | "daCorreggere" | "altri">;
+export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invariata
+```
+`DaSistemareApparato` e `perApparato` si tolgono.
+
+**Regole di calcolo**
+- Programma: `apparati` = `host`; `gravita` = `grave` se `gravita.Critical > 0`, altrimenti `attenzione`; `sfruttato` = `kev > 0`. L'ordine è quello dei gruppi: non si riordina.
+- `daCorreggere`: dal gruppo `senza` (se c'è e ha `rilievi > 0`): `titoli` = `anteprima`, `rilievi`, `apparati` = `host`.
+- `altri`: dal gruppo `edge` (se c'è e ha `rilievi > 0`): `rilievi`, `apparati` = `host`.
+- `ultimoControllo`: se esiste la tabella `vuln_findings`, `SELECT MAX(scanned_at) FROM vuln_findings`; altrimenti `null`. (Con `pageSize: 1` le righe di `data` non bastano più.)
+- **Una lettura sola per richiesta.** Oggi la casa chiama `daSistemare` due volte e la pagina una terza, 0,8 secondi l'una sul 70791. La lettura si avvolge in `cache` di `react` con chiave il codice del cliente (`const leggi = cache((tenantCode: string) => …)`, come `leggiContestoCliente` in `src/lib/cliente/contesto.ts`); `daSistemare(c)` chiama `leggi(c.tenantCode)`.
+
+**Pagina** (`/cliente/da-sistemare`, una colonna, tre pannelli)
+1. «Cosa aggiornare», con a destra «<totaleProgrammi> programmi»: una riga per programma: icona (triangolo se `grave`, cerchio con esclamativo se `attenzione`), `nome` in evidenza, «da aggiornare su <apparati> apparati» (singolare «su 1 apparato»), e, se `sfruttato`, un'`Etichetta` «già usato negli attacchi». Se `totaleProgrammi` supera i mostrati, in fondo «e altri <n> programmi». Senza programmi: «Nessun programma da aggiornare».
+2. «Da correggere», solo se `daCorreggere` c'è, con a destra «<rilievi> cose su <apparati> apparati»: un elenco dei `titoli`, uno per riga; se `rilievi` supera i titoli, in fondo «e altre <n>». Sottotitolo: «Non serve un aggiornamento: va cambiata un'impostazione.»
+3. Solo se `altri` c'è, una riga sola in fondo, senza pannello: «Altri <rilievi> problemi tecnici su <apparati> apparati.»
+- `PaginaModulo` con `contesto` «ultimo controllo: <data italiana>», come oggi.
+- Nessun conto di CVE, nessuna sigla, nessun punteggio, nessun link alla pagina Findings.
+
+**Scheda nel registro**
+- `attiva` e `riquadro`: come oggi (numero e stato dai totali di `barreReteDiSerie()`); il `contesto` diventa «<gravi> gravi · <alte> alte · <totaleProgrammi> programmi» (singolare «1 programma»).
+- `attenzione`: al più 3 voci `grave`, una per programma, prendendo prima quelli con `sfruttato` e `gravita === "grave"`, poi gli altri `grave`, nell'ordine dei gruppi: testo «<nome> da aggiornare su <apparati> apparati» e, se `sfruttato`, in coda «: già usato negli attacchi». In più, se `daCorreggere` c'è, una voce `attenzione`: «<rilievi> cose da correggere su <apparati> apparati». `href` «/cliente/da-sistemare».
+
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Casi di `daGruppi`: tre gruppi `software` restano nell'ordine dato; `Critical: 0` → `attenzione`; `kev: 2` → `sfruttato`; gruppo `senza` con 22 rilievi e 12 titoli → `daCorreggere` con 12 titoli e `rilievi: 22`; gruppo `edge` → `altri`, mai fra i programmi; nessun gruppo → programmi vuoti, `daCorreggere` e `altri` nulli.
+
+**Commit:** «Vista cliente: Da sistemare per programma da aggiornare».
+
+---
+
 ### [ ] Task 8 — Stampa, documenti, prova sull'hub
 
 **File**
@@ -723,6 +791,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 7 (`4de0b8a5`): il codice è come da piano, 36 prove verdi rilanciate. **Sul dato vero però la scheda non regge** (misura sull'hub, cliente 70791): i gruppi per host contano ogni CVE (una riga direbbe «374 gravi · 2211 alte» mentre il riquadro dice 124 e 385), la «cosa più grave» è una sigla (`CVE-2025-55315`, `controllo:tls-deep:…`), il rimedio si trova per 10 apparati su 92. Errore del piano, non di chi esegue. In attesa di una decisione di Riccardo: passare alla vista per software.
 
 - 2026-11-11 Task 6 bis [x]: i log mostrano gli ultimi 7 giorni per tipo, non gli avvisi aperti. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. La prova su aperti e chiusi è stata riscritta. La pagina autenticata non è stata aperta.
+
+- 2026-11-11 Riccardo: «Da sistemare» si rifà per programma da aggiornare. Aggiunto il Task 7 bis, dopo il 6 bis e prima dell'8.
 
 ## Consuntivo
 ### Fatto

@@ -12,6 +12,7 @@ import {
   foglieTassonomia,
   nomiDaSegnalare,
   porteDelloSwitch,
+  quantoSpento,
   schedaApparati,
   tipoCliente,
   TIPI_CLIENTE,
@@ -52,7 +53,8 @@ function dbDiProva(): Database.Database {
     CREATE TABLE network_devices (
       id INTEGER PRIMARY KEY,
       name TEXT,
-      host TEXT
+      host TEXT,
+      device_type TEXT
     );
     CREATE TABLE switch_ports (
       id INTEGER PRIMARY KEY,
@@ -162,7 +164,7 @@ test("la notizia è una rete o un server spento da più di un giorno e da meno d
 test("porteDelloSwitch: senza righe è null; con righe tiene le fisiche, ordinate", () => {
   const db = dbDiProva();
   db.prepare("INSERT INTO hosts (id, ip, custom_name) VALUES (9, '10.1.1.9', 'Stampante')").run();
-  db.prepare("INSERT INTO network_devices (id, name, host) VALUES (1, 'SW', '10.0.0.2')").run();
+  db.prepare("INSERT INTO network_devices (id, name, host, device_type) VALUES (1, 'SW', '10.0.0.2', 'switch')").run();
   assert.equal(porteDelloSwitch(db, "10.0.0.2"), null);
   assert.equal(porteDelloSwitch(db, "10.9.9.9"), null);
 
@@ -192,5 +194,30 @@ test("porteDelloSwitch: senza righe è null; con righe tiene le fisiche, ordinat
   assert.equal(dorsale?.verso, "Core");
   assert.equal(porte.find((p) => p.numero === 8)?.verso, "Piano 2");
   assert.equal(porte.find((p) => p.numero === 8)?.dorsale, true);
+  db.close();
+});
+
+test("quantoSpento: sotto le 48 ore è «da ieri», poi i giorni interi", () => {
+  const adesso = new Date("2026-11-11T12:00:00.000Z");
+  assert.equal(quantoSpento("2026-11-10 12:00:00", adesso), "da ieri");
+  assert.equal(quantoSpento("2026-11-09 12:00:01", adesso), "da ieri");
+  assert.equal(quantoSpento("2026-11-09 12:00:00", adesso), "da 2 giorni");
+  assert.equal(quantoSpento("2026-11-08 12:00:00", adesso), "da 3 giorni");
+});
+
+test("un NAS con porte non apre il pannello", () => {
+  const db = dbDiProva();
+  db.prepare("INSERT INTO network_devices (id, name, host, device_type) VALUES (1, 'DA-FILES', '10.0.0.9', 'nas')").run();
+  db.prepare(
+    "INSERT INTO switch_ports (id, device_id, port_index, port_name, status) VALUES (1, 1, 1, 'Gi1/0/1', 'up')",
+  ).run();
+  assert.equal(porteDelloSwitch(db, "10.0.0.9"), null);
+
+  db.prepare("INSERT INTO network_devices (id, name, host, device_type) VALUES (2, 'RTR', '10.0.0.1', 'router')").run();
+  db.prepare(
+    "INSERT INTO switch_ports (id, device_id, port_index, port_name, status) VALUES (2, 2, 1, 'Gi0/1', 'up')",
+  ).run();
+  const porte = porteDelloSwitch(db, "10.0.0.1");
+  assert.equal(porte?.length, 1);
   db.close();
 });

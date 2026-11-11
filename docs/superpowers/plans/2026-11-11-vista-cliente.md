@@ -359,7 +359,7 @@ export function daQuanto(data: Date, adesso: Date): string;
 
 ---
 
-### [ ] Task 5 — Scheda Dominio e accessi
+### [x] Task 5 — Scheda Dominio e accessi
 
 **Dal controllo del Task 4 (11/11, commit `288cdde7`): passato**, 14 prove verdi rilanciate, firme come da piano, quarto stato «assente» fatto come deciso; non guardato a schermo. Tre ritocchi da fare in questo task, prima del resto (misure sul cliente 70791 dell'hub):
 1. **Frase sbagliata.** `tempoSpento` in `src/lib/cliente/schede/apparati.ts` usa `testoRelativo`, che rende «2 giorni fa»: la voce diventa «X spento da 2 giorni fa». Si scrive una funzione propria, senza importare da `@/components`: meno di 48 ore → «da ieri»; altrimenti «da N giorni» (N = giorni interi). La voce resta «<nome> spento <quanto>» → «SW-PIANO1 spento da 3 giorni». Una prova nuova sulla funzione.
@@ -405,7 +405,7 @@ export const schedaDominio: SchedaCliente; // id "dominio", titolo "Dominio e ac
 - `riquadro`: `numero` = punteggio (o «—» se `null`), `unita` «su 100»; `contesto` = «stato del dominio · N accessi falliti» (somma dei `falliti`); `aperti` = numero di utenti bloccati più rilievi `grave`; `stato` = `grave` se c'è un rilievo `grave`, `attenzione` se c'è un bloccato, altrimenti `a_posto`.
 - `attenzione`: una voce per utente bloccato (gravità `attenzione`, «<utente> bloccato <n> volte oggi») e una per rilievo `grave` (gravità `grave`, «<quanti> · <testo>»), `href` «/cliente/dominio».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (nessun giro `ok` → `null`; un solo giro → `unMeseFa` nullo; account con `$` scartati; 4 fallimenti non compaiono, 5 sì). Pagina guardata una volta a 1920 sull'hub, cliente 70791, che ha un dominio.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 22 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. Coperti: nessun giro `ok` → `null`; un solo giro recente → `unMeseFa` nullo; account con `$` scartati; 4 fallimenti no, 5 sì; `quantoSpento`; un NAS non apre il pannello; le radici senza foglia hanno un nome. Sul dev la pagina non è stata aperta con una sessione. L'asserzione storica `nomeCategoria("network")` era `null`: il ritocco 3 la porta a «apparato di rete». Lo switch della prova porte ha ora `device_type` switch, altrimenti il filtro nuovo lo nasconderebbe.
 
 **Commit:** «Vista cliente: scheda Dominio e accessi».
 
@@ -567,6 +567,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 4 (`288cdde7`): passato, 14 prove verdi rilanciate. Tre ritocchi messi in testa al Task 5 (frase «spento da», pannello porte solo per switch e router, nomi delle categorie senza foglia).
 
 - 2026-11-11 Controllo del Task 4 (`288cdde7`): passato sul codice, 14 prove verdi. Resa guardata a 1920 sull'hub (casa, Reti, Apparati): 12 correzioni scritte nel Task 4 bis.
+
+- 2026-11-11 Task 5 [x]: scheda Dominio e accessi. Prima i tre ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 22 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 ## Consuntivo
 ### Fatto

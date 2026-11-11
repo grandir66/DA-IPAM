@@ -1,6 +1,18 @@
 import { CATEGORY_TAXONOMY } from "@/lib/attribution/taxonomy";
 
-/** Parola semplice per le foglie che il cliente riconosce. Le altre di iot.* e ot.* sono «dispositivo». */
+/** Nome della sola radice, quando l'host non ha la foglia. */
+const RADICI: Record<string, string> = {
+  compute: "computer o server",
+  storage: "archivio di rete",
+  network: "apparato di rete",
+  peripheral: "periferica",
+  av: "audio e video",
+  voip: "telefonia",
+  power: "alimentazione",
+  iot: "dispositivo",
+  ot: "dispositivo",
+  mobile: "dispositivo mobile",
+};
 const NOMI: Record<string, string> = {
   "network.router": "router",
   "network.switch": "switch",
@@ -32,13 +44,14 @@ const NOMI: Record<string, string> = {
   "mobile.tablet": "tablet",
 };
 
-/** attr_category ("network.switch", "compute.workstation", …) → parola semplice. Sconosciuta o null → null. */
+/** attr_category ("network.switch", "compute", …) → parola semplice. Sconosciuta o null → null. */
 export function nomeCategoria(categoria: string | null): string | null {
   if (!categoria) return null;
   const noto = NOMI[categoria];
   if (noto) return noto;
   const [radice, foglia] = categoria.split(".");
-  if (!foglia || (radice !== "iot" && radice !== "ot")) return null;
+  if (!foglia) return RADICI[radice] ?? null;
+  if (radice !== "iot" && radice !== "ot") return null;
   const foglie = CATEGORY_TAXONOMY[radice];
   return (foglie as readonly string[]).includes(foglia) ? "dispositivo" : null;
 }

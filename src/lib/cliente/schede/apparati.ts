@@ -1,6 +1,5 @@
 import type Database from "better-sqlite3";
 import { CATEGORY_TAXONOMY } from "@/lib/attribution/taxonomy";
-import { testoRelativo } from "@/components/shared/console";
 import { parseDbDate } from "@/lib/db-date";
 import { ePortaFisica, etichettaVelocita, numeroPorta, type PortaSwitch } from "@/lib/scheda/porte-da-guardare";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -151,11 +150,14 @@ function hostsTutti(db: Database.Database): RigaHost[] {
   return unici(db.prepare(`SELECT ${HOST} FROM hosts h`).all() as RigaHost[]);
 }
 
+const TIPI_CON_PORTE = "('switch', 'router')";
+
 function ipConPorte(db: Database.Database): Set<string> {
   const righe = db.prepare(`
     SELECT DISTINCT nd.host AS ip
     FROM network_devices nd
-    WHERE EXISTS (SELECT 1 FROM switch_ports sp WHERE sp.device_id = nd.id)
+    WHERE nd.device_type IN ${TIPI_CON_PORTE}
+      AND EXISTS (SELECT 1 FROM switch_ports sp WHERE sp.device_id = nd.id)
   `).all() as Array<{ ip: string }>;
   return new Set(righe.map((r) => r.ip));
 }
@@ -243,7 +245,7 @@ export function porteDelloSwitch(db: Database.Database, ip: string): PortaClient
       sp.trunk_neighbor_name, sp.trunk_primary_name
     FROM switch_ports sp
     JOIN network_devices nd ON nd.id = sp.device_id
-    WHERE nd.host = ?
+    WHERE nd.host = ? AND nd.device_type IN ${TIPI_CON_PORTE}
   `).all(ip) as RigaPorta[];
   if (porte.length === 0) return null;
   const nomi = nomiAttaccati(db, porte);
@@ -265,13 +267,14 @@ export function porteDelloSwitch(db: Database.Database, ip: string): PortaClient
     .sort((a, b) => a.numero - b.numero || a.nome.localeCompare(b.nome, "it"));
 }
 
-function porteLette(db: Database.Database): { switch: number; porte: number } {
+function porteLette(db: Database.Database): number {
   const riga = db.prepare(`
-    SELECT COUNT(DISTINCT nd.id) AS switch, COUNT(sp.id) AS porte
+    SELECT COUNT(sp.id) AS porte
     FROM network_devices nd
     JOIN switch_ports sp ON sp.device_id = nd.id
-  `).get() as { switch: number; porte: number };
-  return riga;
+    WHERE nd.device_type IN ${TIPI_CON_PORTE}
+  `).get() as { porte: number };
+  return riga.porte;
 }
 
 interface SpentoSegnalato {
@@ -296,28 +299,31 @@ export function nomiDaSegnalare(db: Database.Database): string[] {
   return spentiDaSegnalare(db).map((h) => h.nome);
 }
 
-function tempoSpento(lastSeen: string): string {
-  const data = parseDbDate(lastSeen);
-  if (Number.isNaN(data.getTime())) return "un giorno";
-  return testoRelativo(data, new Date());
+const MS_ORA = 3_600_000;
+
+/** «da ieri» sotto le 48 ore, altrimenti «da N giorni» con N giorni interi. */
+export function quantoSpento(lastSeen: string, adesso: Date = new Date()): string {
+  const ms = adesso.getTime() - parseDbDate(lastSeen).getTime();
+  if (!Number.isFinite(ms) || ms < 48 * MS_ORA) return "da ieri";
+  const giorni = Math.floor(ms / (24 * MS_ORA));
+  return `da ${giorni} giorni`;
 }
 
-function contestoApparati(accesi: number, switchN: number, porte: number): string {
+function contestoApparati(accesi: number, porte: number): string {
   const a = accesi === 1 ? "1 acceso" : `${accesi} accesi`;
-  const s = switchN === 1 ? "1 switch" : `${switchN} switch`;
-  const p = porte === 1 ? "1 porta" : `${porte} porte`;
-  return `${a} · ${s}, ${p}`;
+  const p = porte === 1 ? "1 porta di rete letta" : `${porte} porte di rete lette`;
+  return `${a} · ${p}`;
 }
 
 function riquadroApparati(c: ContestoCliente): RiquadroCliente {
   return nelCliente(c, (db) => {
     const hosts = hostsTutti(db);
     const accesi = hosts.filter((h) => h.status === "online").length;
-    const letti = porteLette(db);
+    const porte = porteLette(db);
     const aperti = spentiDaSegnalare(db).length;
     return {
       numero: String(hosts.length),
-      contesto: contestoApparati(accesi, letti.switch, letti.porte),
+      contesto: contestoApparati(accesi, porte),
       aperti,
       stato: aperti > 0 ? "attenzione" : "a_posto",
     };
@@ -328,7 +334,7 @@ function attenzioneApparati(c: ContestoCliente): VoceAttenzione[] {
   return nelCliente(c, (db) =>
     spentiDaSegnalare(db).slice(0, 5).map((h) => ({
       gravita: "nota" as const,
-      testo: `${h.nome} spento da ${tempoSpento(h.last_seen)}`,
+      testo: `${h.nome} spento ${quantoSpento(h.last_seen)}`,
       href: `/cliente/apparati?tipo=${h.tipo}&ip=${encodeURIComponent(h.ip)}`,
       scheda: "Apparati",
     })),

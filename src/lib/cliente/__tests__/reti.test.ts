@@ -56,7 +56,7 @@ function dbDiProva(): Database.Database {
 
 test("nomeCategoria e nomeDellaPorta", () => {
   assert.equal(nomeCategoria(null), null);
-  assert.equal(nomeCategoria("network"), null);
+  assert.equal(nomeCategoria("network"), "apparato di rete");
   assert.equal(nomeCategoria("sconosciuta"), null);
   assert.equal(nomeCategoria("compute.server"), "server");
   assert.equal(nomeCategoria("network.access_point"), "punto Wi-Fi");
@@ -67,6 +67,20 @@ test("nomeCategoria e nomeDellaPorta", () => {
   assert.equal(nomeDellaPorta(23), "accesso remoto non protetto");
   assert.equal(nomeDellaPorta(3389), "desktop remoto");
   assert.equal(nomeDellaPorta(1), null);
+});
+
+test("una categoria senza foglia ha il nome della radice", () => {
+  assert.equal(nomeCategoria("compute"), "computer o server");
+  assert.equal(nomeCategoria("storage"), "archivio di rete");
+  assert.equal(nomeCategoria("network"), "apparato di rete");
+  assert.equal(nomeCategoria("peripheral"), "periferica");
+  assert.equal(nomeCategoria("av"), "audio e video");
+  assert.equal(nomeCategoria("voip"), "telefonia");
+  assert.equal(nomeCategoria("power"), "alimentazione");
+  assert.equal(nomeCategoria("iot"), "dispositivo");
+  assert.equal(nomeCategoria("ot"), "dispositivo");
+  assert.equal(nomeCategoria("mobile"), "dispositivo mobile");
+  assert.equal(nomeCategoria("compute.server"), "server");
 });
 
 test("due reti, un acceso, uno spento, uno senza switch, porte illeggibili, una /16", () => {

@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Dominio e accessi
+
+Il cliente vede il rischio del dominio e gli accessi delle ultime 24 ore, senza i comandi dell'amministratore. Tre ritocchi nati dal controllo del Task 4: la frase «spento da» non si raddoppiava, il pannello porte si apriva anche sui NAS, e una categoria senza foglia perdeva il «cos'è».
+
+### Aggiunto
+- **Scheda Dominio e accessi**: punteggio su 100 (più alto è peggio), quattro aree, rilievi e problemi di accesso. Senza un controllo concluso non si inventa un punteggio né un «un mese fa».
+
+### Corretto
+- La voce dice «SW-PIANO1 spento da 3 giorni»: sotto le 48 ore è «da ieri», poi i giorni interi. Non più «spento da 2 giorni fa».
+- Il pannello delle porte si apre solo per switch e router. Il riquadro conta le porte di rete lette, non gli switch.
+- Una categoria con la sola radice (`compute`, `storage`, …) ha un nome.
+
 ## [Non rilasciato] — 2026-11-11 · LibreNMS 26.10: l'installazione crea di nuovo il gettone
 
 Riccardo (11/11), appliance 70151: «ho installato LibreNMS ma non riesco ad aggiungere device». L'installazione prendeva sempre l'ultima versione di LibreNMS; la 26.10 non ha più la tabella `api_tokens` (i gettoni stanno in `personal_access_tokens`), e il passo del gettone la aspettava per tre minuti e poi rinunciava: niente utente admin, niente gettone, e ogni aggiunta rispondeva «LibreNMS non configurato o disabilitato».

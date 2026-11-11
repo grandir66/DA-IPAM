@@ -1,102 +1,112 @@
-import { withTenant } from "@/lib/db-tenant";
-import { parseDbDate } from "@/lib/db-date";
+import { cache } from "react";
+import type Database from "better-sqlite3";
+import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { barreReteDiSerie, cvssPerRotte } from "@/lib/rilievi/barre-di-serie";
 import type { GruppoRilievi } from "@/lib/rilievi/gruppi";
-import type { RilievoUnito } from "@/lib/rilievi/tipi";
 import { elencoRilievi } from "@/lib/rilievi/unione";
 import { exploitPerRotte } from "@/lib/vuln/exploit-feed/archivio";
 import type { ContestoCliente } from "../contesto";
 import { moduloAttivo } from "../contesto";
 import type { RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
-export interface DaSistemareApparato {
+export interface ProgrammaDaAggiornare {
   chiave: string;
   nome: string;
-  dettaglio: string | null;
-  gravi: number;
-  alte: number;
-  cosa: string;
-  rimedio: string | null;
+  apparati: number;
+  gravita: "grave" | "attenzione";
+  sfruttato: boolean;
 }
 
 export interface DaSistemare {
   ultimoControllo: string | null;
   gravi: number;
   alte: number;
-  apparati: DaSistemareApparato[];
+  /** Al più 100, nell'ordine dei gruppi. */
+  programmi: ProgrammaDaAggiornare[];
+  totaleProgrammi: number;
+  daCorreggere: { titoli: string[]; rilievi: number; apparati: number } | null;
+  altri: { rilievi: number; apparati: number } | null;
 }
 
-const MASSIMO_APPARATI = 100;
-const MASSIMO_VOCI = 5;
-const SENZA_TITOLO = "Rilievo senza titolo";
+const MASSIMO_PROGRAMMI = 100;
+const MASSIMO_VOCI = 3;
 
-type GruppoApparato = Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "dettaglio" | "gravita" | "anteprima">;
+type GruppoSoftware = Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "host" | "rilievi" | "gravita" | "kev" | "anteprima">;
 
-/** Dai gruppi per host e dalle righe (per i rimedi) alle righe della scheda. */
-export function perApparato(
-  gruppi: readonly GruppoApparato[],
-  righe: readonly Pick<RilievoUnito, "titolo" | "rimedio">[],
-): DaSistemareApparato[] {
-  const rimedioDelTitolo = new Map<string, string | null>();
-  for (const riga of righe) {
-    if (rimedioDelTitolo.has(riga.titolo)) continue;
-    const rimedio = riga.rimedio.trim();
-    rimedioDelTitolo.set(riga.titolo, rimedio ? rimedio : null);
-  }
-
-  return gruppi
-    .filter((g) => g.tipo === "host" && g.gravita.Critical + g.gravita.High > 0)
-    .map((g) => {
-      const primo = g.anteprima[0];
-      const cosa = primo && primo.trim() ? primo : SENZA_TITOLO;
-      return {
-        chiave: g.chiave,
-        nome: g.nome,
-        dettaglio: g.dettaglio,
-        gravi: g.gravita.Critical,
-        alte: g.gravita.High,
-        cosa,
-        rimedio: rimedioDelTitolo.get(cosa) ?? null,
-      };
-    })
-    .sort((a, b) => b.gravi - a.gravi || b.alte - a.alte || a.nome.localeCompare(b.nome, "it"))
-    .slice(0, MASSIMO_APPARATI);
+/** Dai gruppi per software alle tre parti della scheda. L'ordine dei programmi è quello dei gruppi. */
+export function daGruppi(gruppi: readonly GruppoSoftware[]): Pick<DaSistemare, "programmi" | "totaleProgrammi" | "daCorreggere" | "altri"> {
+  const software = gruppi.filter((g) => g.tipo === "software");
+  const senza = gruppi.find((g) => g.tipo === "senza" && g.rilievi > 0);
+  const edge = gruppi.find((g) => g.tipo === "edge" && g.rilievi > 0);
+  return {
+    programmi: software.slice(0, MASSIMO_PROGRAMMI).map((g) => ({
+      chiave: g.chiave,
+      nome: g.nome,
+      apparati: g.host,
+      gravita: g.gravita.Critical > 0 ? "grave" : "attenzione",
+      sfruttato: g.kev > 0,
+    })),
+    totaleProgrammi: software.length,
+    daCorreggere: senza ? { titoli: [...senza.anteprima], rilievi: senza.rilievi, apparati: senza.host } : null,
+    altri: edge ? { rilievi: edge.rilievi, apparati: edge.host } : null,
+  };
 }
 
-function ultimoVisto(righe: readonly Pick<RilievoUnito, "visto">[]): string | null {
-  let migliore: { raw: string; istante: number } | null = null;
-  for (const riga of righe) {
-    if (!riga.visto) continue;
-    const istante = parseDbDate(riga.visto).getTime();
-    if (Number.isNaN(istante)) continue;
-    if (!migliore || istante > migliore.istante) migliore = { raw: riga.visto, istante };
-  }
-  return migliore?.raw ?? null;
+function tabella(db: Database.Database, nome: string): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(nome);
 }
 
-/** Lettura della scheda, dentro il contesto del cliente. Se la lettura lancia, lancia anche lei. */
-export function daSistemare(c: ContestoCliente): DaSistemare {
-  return withTenant(c.tenantCode, () => {
+function ultimoControllo(db: Database.Database): string | null {
+  if (!tabella(db, "vuln_findings")) return null;
+  const riga = db.prepare("SELECT MAX(scanned_at) AS t FROM vuln_findings").get() as { t: string | null };
+  return riga.t;
+}
+
+/**
+ * Una lettura per richiesta: la casa chiama la scheda due volte e la pagina una terza.
+ * La chiave è il codice del cliente.
+ */
+const leggi = cache((tenantCode: string): DaSistemare => {
+  return withTenant(tenantCode, () => {
     const elenco = elencoRilievi({
       gravita: ["Critical", "High"],
-      raggruppa: "host",
-      conIndicatori: true,
-      pageSize: 200,
+      raggruppa: "software",
+      pageSize: 1,
       exploitDi: exploitPerRotte().exploitDi,
       cvssDi: cvssPerRotte(),
     });
     const barre = barreReteDiSerie();
     return {
-      ultimoControllo: ultimoVisto(elenco.data),
+      ultimoControllo: ultimoControllo(getTenantDb(tenantCode)),
       gravi: barre.reduce((n, b) => n + b.critical, 0),
       alte: barre.reduce((n, b) => n + b.high, 0),
-      apparati: perApparato(elenco.gruppi ?? [], elenco.data),
+      ...daGruppi(elenco.gruppi ?? []),
     };
   });
+});
+
+/** Lettura della scheda, dentro il contesto del cliente. Se la lettura lancia, lancia anche lei. */
+export function daSistemare(c: ContestoCliente): DaSistemare {
+  return leggi(c.tenantCode);
 }
 
-function testoGrave(gravi: number, nome: string): string {
-  return gravi === 1 ? `1 problema grave su ${nome}` : `${gravi} problemi gravi su ${nome}`;
+function suApparati(n: number): string {
+  return n === 1 ? "su 1 apparato" : `su ${n} apparati`;
+}
+
+export function fraseProgramma(programma: ProgrammaDaAggiornare): string {
+  const coda = programma.sfruttato ? ": già usato negli attacchi" : "";
+  return `${programma.nome} da aggiornare ${suApparati(programma.apparati)}${coda}`;
+}
+
+function fraseDaCorreggere(rilievi: number, apparati: number): string {
+  const cose = rilievi === 1 ? "1 cosa da correggere" : `${rilievi} cose da correggere`;
+  return `${cose} ${suApparati(apparati)}`;
+}
+
+function contestoRiquadro(gravi: number, alte: number, programmi: number): string {
+  const n = programmi === 1 ? "1 programma" : `${programmi} programmi`;
+  return `${gravi} gravi · ${alte} alte · ${n}`;
 }
 
 function riquadroDaSistemare(c: ContestoCliente): RiquadroCliente {
@@ -104,22 +114,32 @@ function riquadroDaSistemare(c: ContestoCliente): RiquadroCliente {
   const aperti = dati.gravi + dati.alte;
   return {
     numero: String(aperti),
-    contesto: `${dati.gravi} gravi · ${dati.alte} alte`,
+    contesto: contestoRiquadro(dati.gravi, dati.alte, dati.totaleProgrammi),
     aperti,
     stato: dati.gravi > 0 ? "grave" : dati.alte > 0 ? "attenzione" : "a_posto",
   };
 }
 
 function attenzioneDaSistemare(c: ContestoCliente): VoceAttenzione[] {
-  return daSistemare(c).apparati
-    .filter((a) => a.gravi > 0)
+  const dati = daSistemare(c);
+  const gravi = dati.programmi.filter((p) => p.gravita === "grave");
+  const voci: VoceAttenzione[] = [...gravi.filter((p) => p.sfruttato), ...gravi.filter((p) => !p.sfruttato)]
     .slice(0, MASSIMO_VOCI)
-    .map((a) => ({
+    .map((p) => ({
       gravita: "grave" as const,
-      testo: testoGrave(a.gravi, a.nome),
+      testo: fraseProgramma(p),
       href: "/cliente/da-sistemare",
       scheda: "Da sistemare",
     }));
+  if (dati.daCorreggere) {
+    voci.push({
+      gravita: "attenzione",
+      testo: fraseDaCorreggere(dati.daCorreggere.rilievi, dati.daCorreggere.apparati),
+      href: "/cliente/da-sistemare",
+      scheda: "Da sistemare",
+    });
+  }
+  return voci;
 }
 
 export const schedaDaSistemare: SchedaCliente = {

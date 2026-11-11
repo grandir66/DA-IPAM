@@ -637,7 +637,7 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 
 ---
 
-### [ ] Task 7 bis — Da sistemare: per programma da aggiornare
+### [x] Task 7 bis — Da sistemare: per programma da aggiornare
 
 **Perché.** Il Task 7 è fatto come da piano, ma sul dato vero non regge (misura dell'11/11 sull'hub, cliente 70791): per apparato escono conti di CVE («374 gravi · 2211 alte» su un solo server, contro i 124 e 385 del riquadro), la «cosa più grave» è una sigla (`CVE-2025-55315`), il rimedio c'è per 10 apparati su 92. Riccardo, 11/11: la scheda si rifà **per programma da aggiornare**. Sugli stessi dati il raggruppamento per software dà 120 programmi leggibili («Google Chrome» su 3 apparati, «Kernel Linux» su 11), un gruppo di 22 cose da correggere col titolo in italiano e un gruppo di 106 vulnerabilità senza programma. Si fa **dopo il Task 6 bis**, in un commit suo.
 
@@ -699,7 +699,7 @@ export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invaria
 - `attiva` e `riquadro`: come oggi (numero e stato dai totali di `barreReteDiSerie()`); il `contesto` diventa «<gravi> gravi · <alte> alte · <totaleProgrammi> programmi» (singolare «1 programma»).
 - `attenzione`: al più 3 voci `grave`, una per programma, prendendo prima quelli con `sfruttato` e `gravita === "grave"`, poi gli altri `grave`, nell'ordine dei gruppi: testo «<nome> da aggiornare su <apparati> apparati» e, se `sfruttato`, in coda «: già usato negli attacchi». In più, se `daCorreggere` c'è, una voce `attenzione`: «<rilievi> cose da correggere su <apparati> apparati». `href` «/cliente/da-sistemare».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Casi di `daGruppi`: tre gruppi `software` restano nell'ordine dato; `Critical: 0` → `attenzione`; `kev: 2` → `sfruttato`; gruppo `senza` con 22 rilievi e 12 titoli → `daCorreggere` con 12 titoli e `rilievi: 22`; gruppo `edge` → `altri`, mai fra i programmi; nessun gruppo → programmi vuoti, `daCorreggere` e `altri` nulli.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. Le prove su `perApparato` sono tolte con la funzione. `daGruppi`: Chrome, Kernel Linux e Windows Server 2019 restano in quest'ordine; Chrome senza critici è `attenzione`; Kernel Linux con `kev: 2` è `grave` e `sfruttato`; il gruppo `senza` ha 22 rilievi e 12 titoli; il gruppo `edge` finisce in `altri` e la sigla non entra nei programmi; nessun gruppo lascia programmi vuoti e `daCorreggere` e `altri` nulli. La pagina autenticata non è stata aperta.
 
 **Commit:** «Vista cliente: Da sistemare per programma da aggiornare».
 
@@ -801,6 +801,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 6 bis (`2162c296`): passato sul codice, 36 prove verdi rilanciate; nessuna lettura di `acknowledged` rimasta; le parole «aperti», «chiusi», «presi in carico» non sono più nella vista. Non guardato a schermo.
 
 - 2026-11-11 Task 8 [x]: stampa e documenti. Verifica: lint 0 errori (72 avvisi), tsc 0, build compilato. `scripts/controlla.sh` non c'è nel repo. Anteprima di stampa e prova sull'hub non fatte (11:27): niente utente creato sul database dell'hub.
+
+- 2026-11-11 Task 7 bis [x]: Da sistemare per programma da aggiornare. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le prove su `perApparato` sono tolte con la funzione. La pagina autenticata non è stata aperta.
 
 ## Consuntivo
 ### Fatto

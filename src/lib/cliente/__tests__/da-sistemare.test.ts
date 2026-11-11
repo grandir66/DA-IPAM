@@ -1,5 +1,6 @@
 /**
- * Scheda Da sistemare: dai gruppi per host alle righe della pagina.
+ * Scheda Da sistemare: dai gruppi per software ai programmi da aggiornare.
+ * Le prove su perApparato sono tolte con la funzione (Task 7 bis).
  *
  * Run: node --import tsx --test src/lib/cliente/__tests__/da-sistemare.test.ts
  */
@@ -7,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GruppoRilievi } from "@/lib/rilievi/gruppi";
 import type { RollupRilievi } from "@/lib/rilievi/tipi";
-import { perApparato, schedaDaSistemare } from "../schede/da-sistemare";
+import { daGruppi, schedaDaSistemare } from "../schede/da-sistemare";
 import { SCHEDE_CLIENTE } from "../registro";
 
 function gravita(critical: number, high: number): RollupRilievi {
@@ -15,67 +16,61 @@ function gravita(critical: number, high: number): RollupRilievi {
 }
 
 function gruppo(
-  sopra: Partial<Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "dettaglio" | "gravita" | "anteprima">>,
-): Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "dettaglio" | "gravita" | "anteprima"> {
+  sopra: Partial<Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "host" | "rilievi" | "gravita" | "kev" | "anteprima">>,
+): Pick<GruppoRilievi, "chiave" | "tipo" | "nome" | "host" | "rilievi" | "gravita" | "kev" | "anteprima"> {
   return {
-    chiave: sopra.chiave ?? "host:1",
-    tipo: sopra.tipo ?? "host",
-    nome: sopra.nome ?? "Apparato",
-    dettaglio: sopra.dettaglio ?? null,
+    chiave: sopra.chiave ?? "sw:a",
+    tipo: sopra.tipo ?? "software",
+    nome: sopra.nome ?? "Programma",
+    host: sopra.host ?? 1,
+    rilievi: sopra.rilievi ?? 1,
     gravita: sopra.gravita ?? gravita(1, 0),
-    anteprima: sopra.anteprima ?? ["Titolo"],
+    kev: sopra.kev ?? 0,
+    anteprima: sopra.anteprima ?? [],
   };
 }
 
-test("perApparato scarta i gruppi senza host e quelli senza critici né alti", () => {
-  const apparati = perApparato(
-    [
-      gruppo({ chiave: "senza", tipo: "senza", nome: "Senza un host preciso", gravita: gravita(9, 9), anteprima: ["Da scartare"] }),
-      gruppo({ chiave: "host:vuoto", nome: "Vuoto", gravita: gravita(0, 0), anteprima: ["Niente"] }),
-      gruppo({ chiave: "host:1", nome: "Server", dettaglio: "10.0.0.1 · LAN", gravita: gravita(2, 1), anteprima: ["Aggiornare il kernel"] }),
-    ],
-    [{ titolo: "Aggiornare il kernel", rimedio: "  Installa gli aggiornamenti  " }],
+test("daGruppi tiene l'ordine dei programmi e separa da correggere e gli altri", () => {
+  const titoli = Array.from({ length: 12 }, (_, i) => `Titolo ${i + 1}`);
+  const esito = daGruppi([
+    gruppo({ chiave: "sw:chrome", nome: "Google Chrome", host: 3, gravita: gravita(0, 4), kev: 0 }),
+    gruppo({ chiave: "sw:kernel", nome: "Kernel Linux", host: 11, gravita: gravita(2, 0), kev: 2 }),
+    gruppo({ chiave: "sw:win", nome: "Windows Server 2019", host: 6, gravita: gravita(1, 0), kev: 0 }),
+    gruppo({ chiave: "senza", tipo: "senza", nome: "Senza un aggiornamento da fare", host: 12, rilievi: 22, anteprima: titoli }),
+    gruppo({ chiave: "edge", tipo: "edge", nome: "Vulnerabilità senza un pacchetto indicato", host: 40, rilievi: 106, anteprima: ["CVE-2025-55315"] }),
+  ]);
+  assert.deepEqual(
+    esito.programmi.map((p) => p.nome),
+    ["Google Chrome", "Kernel Linux", "Windows Server 2019"],
   );
-  assert.equal(apparati.length, 1);
-  assert.equal(apparati[0]?.chiave, "host:1");
-  assert.equal(apparati[0]?.nome, "Server");
-  assert.equal(apparati[0]?.dettaglio, "10.0.0.1 · LAN");
-  assert.equal(apparati[0]?.gravi, 2);
-  assert.equal(apparati[0]?.alte, 1);
-  assert.equal(apparati[0]?.cosa, "Aggiornare il kernel");
-  assert.equal(apparati[0]?.rimedio, "Installa gli aggiornamenti");
+  assert.equal(esito.programmi[0]?.gravita, "attenzione");
+  assert.equal(esito.programmi[0]?.sfruttato, false);
+  assert.equal(esito.programmi[1]?.gravita, "grave");
+  assert.equal(esito.programmi[1]?.sfruttato, true);
+  assert.equal(esito.totaleProgrammi, 3);
+  assert.equal(esito.daCorreggere?.rilievi, 22);
+  assert.equal(esito.daCorreggere?.apparati, 12);
+  assert.deepEqual(esito.daCorreggere?.titoli, titoli);
+  assert.deepEqual(esito.altri, { rilievi: 106, apparati: 40 });
+  assert.equal(esito.programmi.some((p) => p.nome.includes("CVE")), false);
 });
 
-test("il rimedio vuoto o di un altro titolo diventa null", () => {
-  const apparati = perApparato(
-    [
-      gruppo({ chiave: "host:1", nome: "Uno", anteprima: ["Titolo vuoto"] }),
-      gruppo({ chiave: "host:2", nome: "Due", anteprima: ["Titolo assente"] }),
-      gruppo({ chiave: "host:3", nome: "Tre", anteprima: [] }),
-    ],
-    [
-      { titolo: "Titolo vuoto", rimedio: "   " },
-      { titolo: "Titolo vuoto", rimedio: "Non vale: conta la prima riga" },
-      { titolo: "Altro", rimedio: "Non è questo" },
-    ],
-  );
-  assert.equal(apparati.find((a) => a.nome === "Uno")?.rimedio, null);
-  assert.equal(apparati.find((a) => a.nome === "Due")?.rimedio, null);
-  assert.equal(apparati.find((a) => a.nome === "Tre")?.cosa, "Rilievo senza titolo");
-  assert.equal(apparati.find((a) => a.nome === "Tre")?.rimedio, null);
+test("senza gruppi non c'è niente da mostrare", () => {
+  const esito = daGruppi([]);
+  assert.deepEqual(esito.programmi, []);
+  assert.equal(esito.totaleProgrammi, 0);
+  assert.equal(esito.daCorreggere, null);
+  assert.equal(esito.altri, null);
 });
 
-test("l'ordine è gravi, poi alte, poi il nome", () => {
-  const apparati = perApparato(
-    [
-      gruppo({ chiave: "host:z", nome: "Zeta", gravita: gravita(3, 1) }),
-      gruppo({ chiave: "host:a", nome: "Alfa", gravita: gravita(3, 1) }),
-      gruppo({ chiave: "host:b", nome: "Beta", gravita: gravita(3, 4) }),
-      gruppo({ chiave: "host:g", nome: "Gamma", gravita: gravita(8, 0) }),
-    ],
-    [],
-  );
-  assert.deepEqual(apparati.map((a) => a.nome), ["Gamma", "Beta", "Alfa", "Zeta"]);
+test("un gruppo edge o senza con zero rilievi non compare", () => {
+  const esito = daGruppi([
+    gruppo({ tipo: "edge", rilievi: 0, host: 4, anteprima: ["CVE-1"] }),
+    gruppo({ tipo: "senza", rilievi: 0, host: 2, anteprima: ["Login di fabbrica"] }),
+  ]);
+  assert.deepEqual(esito.programmi, []);
+  assert.equal(esito.daCorreggere, null);
+  assert.equal(esito.altri, null);
 });
 
 test("la scheda Da sistemare è nel registro", () => {

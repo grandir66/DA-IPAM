@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: cinque riquadri nuovi dal censimento dei dati
+
+Riccardo, 11/11: «valutiamo che altre fonti di dati utili per l'utente ci sono nel sistema». Censite sul cliente 70791: undici fonti con dati buoni e freschi, quattro oggi non presentabili (anomalie, spostamenti di porta, patch, inventario dei beni). Questo è il primo giro.
+
+### Aggiunto
+- **Apparati nuovi in rete**: cosa è comparso negli ultimi 7 giorni, con nome, tipo e giorno.
+- **Apparati importanti spenti**: gli apparati tenuti d'occhio che non rispondono, come nella Dashboard dell'amministratore.
+- **Disponibilità**: per ogni apparato tenuto d'occhio, la quota dei controlli in cui ha risposto negli ultimi 30 giorni; i peggiori prima.
+- **Sistemi operativi**: le versioni in uso e quante macchine hanno un sistema che il produttore non aggiorna più (Windows 10, Windows Server fino al 2012, Ubuntu fino alla 20.04, Debian fino alla 11).
+- **Certificati**: quelli scaduti o che scadono entro 30 giorni; quelli firmati da sé non contano.
+- Stanno nella libreria della casa (`RIQUADRI_CASA`) e si dispongono, ridimensionano e nascondono come gli altri. Letture in `src/lib/cliente/altri-dati.ts`.
+
 ## [Non rilasciato] — 2026-11-11 · La scelta della categoria a gruppi anche in Discovery e dalla griglia
 
 ### Cambiato

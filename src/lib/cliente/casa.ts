@@ -37,6 +37,12 @@ export const RIQUADRI_CASA: readonly RiquadroCasa[] = [
   { id: "reti", titolo: "Le tue reti", cosa: "Accesi e spenti da poco per ogni rete", l: 6, a: 4 },
   { id: "per-rete", titolo: "Da sistemare per rete", cosa: "Gravi e alte per ogni rete", l: 6, a: 4 },
   { id: "accessi-origini", titolo: "Accessi falliti: da dove", cosa: "Le postazioni da cui partono i tentativi nelle ultime 24 ore", l: 6, a: 3 },
+  // Dal censimento dell'11/11/2026: dati che DA-IPAM raccoglie già (src/lib/cliente/altri-dati.ts).
+  { id: "nuovi", titolo: "Apparati nuovi in rete", cosa: "Cosa è comparso in rete negli ultimi 7 giorni", l: 6, a: 4 },
+  { id: "importanti", titolo: "Apparati importanti spenti", cosa: "Gli apparati tenuti d'occhio che non rispondono", l: 6, a: 4 },
+  { id: "disponibilita", titolo: "Disponibilità", cosa: "Quanto sono stati accesi gli apparati tenuti d'occhio negli ultimi 30 giorni", l: 6, a: 5 },
+  { id: "sistemi", titolo: "Sistemi operativi", cosa: "Le versioni in uso, con quelle non più aggiornate dal produttore", l: 6, a: 5 },
+  { id: "certificati", titolo: "Certificati", cosa: "Quelli scaduti o che scadono entro 30 giorni", l: 6, a: 4 },
 ];
 
 export interface VoceDisposizione {

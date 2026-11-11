@@ -12,6 +12,7 @@ import { withTenant } from "@/lib/db-tenant";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import { kpiSicurezza } from "@/lib/security/kpi-dashboard";
 import type { StatusPoint } from "@/lib/status-over-time";
+import { apparatiNuovi, certificati, disponibilita, importantiSpenti, sistemiOperativi } from "./altri-dati";
 import { moduloAttivo, nelCliente, type ContestoCliente } from "./contesto";
 import { daSistemare } from "./schede/da-sistemare";
 import { accessi24Ore, statoDominio, type Accessi24Ore } from "./schede/dominio";
@@ -29,6 +30,11 @@ export interface GraficiCasa {
   /** Ultime 24 ore, ora per ora. `dettaglio` (chi e da dove) c'è solo con gli eventi dei server di dominio. */
   accessi: (Accessi24Ore & { dettaglio: boolean }) | null;
   perRete: Array<{ nome: string; gravi: number; alte: number }>;
+  nuovi: ReturnType<typeof apparatiNuovi> | null;
+  importanti: ReturnType<typeof importantiSpenti>;
+  disponibilita: ReturnType<typeof disponibilita>;
+  sistemi: ReturnType<typeof sistemiOperativi>;
+  certificati: ReturnType<typeof certificati>;
 }
 
 /** Pura: dai punti dello stato host alla serie degli accesi. Meno di due punti → niente grafico. */
@@ -98,5 +104,11 @@ export function graficiCasa(c: ContestoCliente, attive: ReadonlySet<string>): Gr
         }, null)
       : null;
   const perRete = attive.has("da-sistemare") ? prova("per rete", () => daSistemare(c).perRete.slice(0, MASSIMO_RETI), []) : [];
-  return { accesi, reti, rischio, accessi, perRete };
+  // Le fonti del censimento: non dipendono da un modulo, ci sono se la tabella ha righe.
+  const nuovi = prova("apparati nuovi", () => { const n = nelCliente(c, (db) => apparatiNuovi(db)); return n.totale > 0 ? n : null; }, null);
+  const importanti = prova("apparati importanti", () => nelCliente(c, (db) => importantiSpenti(db)), null);
+  const dispo = prova("disponibilità", () => nelCliente(c, (db) => disponibilita(db)), null);
+  const sistemi = prova("sistemi operativi", () => nelCliente(c, (db) => sistemiOperativi(db)), null);
+  const cert = prova("certificati", () => nelCliente(c, (db) => certificati(db, c.ora)), null);
+  return { accesi, reti, rischio, accessi, perRete, nuovi, importanti, disponibilita: dispo, sistemi, certificati: cert };
 }

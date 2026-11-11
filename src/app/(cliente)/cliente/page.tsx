@@ -1,6 +1,7 @@
 import { Pannello } from "@/components/shared/console";
 import { ElencoAttenzione } from "@/components/cliente/elenco-attenzione";
 import { AccessiDaDove, AccessiPerUtente, AndamentoAccessi, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
+import { ApparatiNuovi, Certificati, Disponibilita, ImportantiSpenti, SistemiOperativi } from "@/components/cliente/riquadri-altri";
 import { RiquadroPiccolo } from "@/components/cliente/riquadro-piccolo";
 import Link from "next/link";
 import { GrigliaCasa, type ContenutoRiquadro } from "@/components/cliente/griglia-casa";
@@ -104,6 +105,26 @@ export default async function CasaCliente({
       azioni: <Apri href="/cliente/da-sistemare" testo="Da sistemare" />,
       contenuto: g.perRete.length > 0 ? <BarrePerRete reti={g.perRete} /> : null,
     },
+    { id: "nuovi", titolo: "Apparati nuovi in rete", azioni: <Apri href="/cliente/apparati" testo="Apparati" />, contenuto: g.nuovi ? <ApparatiNuovi dati={g.nuovi} /> : null },
+    {
+      id: "importanti",
+      titolo: "Apparati importanti spenti",
+      azioni: <Apri href="/cliente/apparati" testo="Apparati" />,
+      contenuto: g.importanti ? <ImportantiSpenti dati={g.importanti} /> : null,
+    },
+    {
+      id: "disponibilita",
+      titolo: "Disponibilità · ultimi 30 giorni",
+      azioni: <Apri href="/cliente/apparati" testo="Apparati" />,
+      contenuto: g.disponibilita ? <Disponibilita dati={g.disponibilita} /> : null,
+    },
+    {
+      id: "sistemi",
+      titolo: "Sistemi operativi",
+      azioni: <Apri href="/cliente/da-sistemare" testo="Da sistemare" />,
+      contenuto: g.sistemi ? <SistemiOperativi dati={g.sistemi} /> : null,
+    },
+    { id: "certificati", titolo: "Certificati", azioni: <Apri href="/cliente/reti" testo="Reti" />, contenuto: g.certificati ? <Certificati dati={g.certificati} /> : null },
   ];
   const inModifica = c.amministratore && componi;
 

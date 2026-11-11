@@ -39,7 +39,6 @@ export const COLONNE_SUBNET: ReadonlyArray<string | null> = [
   "ad",
   "nome",
   "classificazione",
-  null, // rilevato
   null, // dispositivo
   null, // multihomed
   "vendor",
@@ -56,7 +55,7 @@ const ETICHETTE: Record<string, string> = {
   dhcp: "DHCP",
   ad: "AD",
   nome: "Nome",
-  classificazione: "Classificazione",
+  classificazione: "Categoria",
   vendor: "Vendor",
   note: "Note",
 };

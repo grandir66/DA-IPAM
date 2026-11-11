@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Subnet: una colonna «Categoria» e la scelta a gruppi
+
+Riccardo (11/11): «non capisco da dove viene identificata la categoria» e «un oggetto che non è device deve essere possibile assegnarlo a una categoria in modo efficace». Nella lista della subnet c'erano due colonne affiancate, «Attribuzione» (il motore) e «Rilevato» (l'impronta delle porte), che dicevano cose diverse; la scelta a mano era un elenco piatto di 52 voci.
+
+### Cambiato
+- **Una colonna sola, «Categoria»**, con accanto da dove viene («da SNMP», «dalle porte», «a mano»…). «Rilevato» non è più una colonna: l'impronta delle porte resta nel suggerimento della cella.
+- **Un clic sulla cella apre la scelta sulla riga** (`components/networks/scegli-categoria.tsx`): ricerca, la proposta del sistema da confermare con un clic, le voci raccolte nei gruppi del catalogo, «Torna automatica».
+- La stessa scelta nella finestra «Categoria…» per più righe, al posto dell'elenco piatto.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa si compone
 
 Riccardo, 11/11: i riquadri «dovrebbero avere dimensione uguale oppure modificabile in una griglia prestabilita, con la possibilità di spostarli, di nasconderli, di aggiungerne dalla libreria».

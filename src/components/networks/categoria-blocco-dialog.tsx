@@ -14,11 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  DEVICE_CLASSIFICATIONS_ORDERED,
-  getClassificationLabel,
-  sortClassificationsByDisplayLabel,
-} from "@/lib/device-classifications";
+import { ScegliCategoria } from "@/components/networks/scegli-categoria";
+import { getClassificationLabel } from "@/lib/device-classifications";
 
 export interface HostPerCategoria {
   id: number;
@@ -61,7 +58,6 @@ export function CategoriaBloccoDialog({
 
   const aMano = useMemo(() => hosts.filter((h) => h.classification_manual === 1).length, [hosts]);
   const ids = useMemo(() => hostDaScrivere(hosts, ancheAMano), [hosts, ancheAMano]);
-  const opzioni = useMemo(() => sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED), []);
 
   async function applica() {
     if (!categoria) {
@@ -101,17 +97,8 @@ export function CategoriaBloccoDialog({
           <DialogTitle>Categoria per {hosts.length} host</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 text-[13px]">
-          <select
-            aria-label="Categoria"
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value)}
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          >
-            <option value="">Scegli la categoria…</option>
-            {opzioni.map((c) => (
-              <option key={c} value={c}>{getClassificationLabel(c)}</option>
-            ))}
-          </select>
+          <ScegliCategoria attuale={categoria} onScegli={setCategoria} />
+          <p className="font-medium">{categoria ? `Scelta: ${getClassificationLabel(categoria)}` : "Nessuna categoria scelta"}</p>
           <p className="text-muted-foreground">Oggi: {riassuntoCategorie(hosts)}</p>
           {aMano > 0 && (
             <div className="flex items-center gap-2">

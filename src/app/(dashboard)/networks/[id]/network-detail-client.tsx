@@ -20,13 +20,6 @@ import {
   DIALOG_PANEL_WIDE_CLASS,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -42,6 +35,9 @@ import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
 import { CategoriaBloccoDialog } from "@/components/networks/categoria-blocco-dialog";
+import { ScegliCategoria } from "@/components/networks/scegli-categoria";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { origineCategoria } from "@/lib/classification/scelta-categoria";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -393,6 +389,28 @@ export function NetworkDetailClient({
     const id = setInterval(tick, ms);
     return () => clearInterval(id);
   }, [autoRefreshInterval, autoScanPing, network.id, refreshHosts]);
+
+  /** «Torna automatica» dal menu della riga: toglie la scelta a mano, poi rilegge gli host. */
+  async function tornaAutomaticaRiga(hostId: number) {
+    try {
+      const res = await fetch("/api/classificazione/automatica", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hostId }),
+      });
+      if (!res.ok) {
+        toast.error("Non sono riuscito a togliere la scelta a mano");
+        return;
+      }
+      await refreshHosts();
+      toast.success("Tornata automatica: decide il prossimo giro");
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setEditingHostId(null);
+      setEditingField(null);
+    }
+  }
 
   async function saveHostField(hostId: number, field: "custom_name" | "notes" | "classification" | "known_host", value: string | number, deviceId?: number) {
     try {
@@ -1681,11 +1699,10 @@ export function NetworkDetailClient({
                   sortColumn={listSortColumn}
                   sortDirection={listSortDir}
                   onSort={handleListSort}
-                  title="Attribution v2: categoria/vendor/OS calcolati da evidenze multi-fonte (OUI, SNMP, AD, Wazuh, LLDP/CDP). Badge 'Manuale' = classificazione impostata a mano, esclusa dai ricalcoli automatici."
+                  title="Che cos'è l'apparato e da dove lo sappiamo. Un clic sulla cella apre la scelta: «a mano» vuol dire che le scansioni non la cambiano più"
                 >
-                  Attribuzione
+                  Categoria
                 </SortableTableHead>
-                <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
                 <TableHead title="Stesso device su più subnet" className="w-10 text-center">MH</TableHead>
                 <SortableTableHead columnId="vendor" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
@@ -1817,31 +1834,29 @@ export function NetworkDetailClient({
                       )}
                     </TableCell>
                     <TableCell
-                      className="min-w-[160px] cursor-text text-xs"
+                      className="min-w-[160px] cursor-pointer text-xs"
+                      title={(() => {
+                        const det = parseDetectedDeviceFromDetectionJson(host.detection_json);
+                        return det ? `Scegli la categoria · impronta delle porte: ${det.label}${det.confidence != null ? ` (${Math.round(det.confidence * 100)}%)` : ""}` : "Scegli la categoria";
+                      })()}
                       onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
                     >
                       {editingHostId === host.id && editingField === "classification" ? (
-                        <Select
-                          value={host.classification || "__empty__"}
-                          onValueChange={(v) => {
-                            saveHostField(host.id, "classification", v === "__empty__" ? "" : (v ?? ""), (host as HostWithDevice).device_id);
-                            setEditingHostId(null);
-                            setEditingField(null);
-                          }}
-                          onOpenChange={(open) => { if (!open) { setEditingHostId(null); setEditingField(null); } }}
-                        >
-                          <SelectTrigger className="h-8 text-sm min-w-[120px]" onClick={(e) => e.stopPropagation()}>
-                            <SelectValue placeholder="Seleziona..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__empty__">— Nessuna —</SelectItem>
-                            {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {getClassificationLabel(c)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Popover open onOpenChange={(open) => { if (!open) { setEditingHostId(null); setEditingField(null); } }}>
+                          <PopoverTrigger
+                            render={<button type="button" className="rounded-md border px-2 py-1 text-left text-[13px]" onClick={(e) => e.stopPropagation()} />}
+                          >
+                            {host.classification ? getClassificationLabel(host.classification) : "Senza categoria"}
+                          </PopoverTrigger>
+                          <PopoverContent onClick={(e) => e.stopPropagation()}>
+                            <ScegliCategoria
+                              attuale={host.classification}
+                              proposta={(host as HostWithDevice).classification_manual === 1 ? null : host.classification}
+                              onScegli={(v) => { void saveHostField(host.id, "classification", v, (host as HostWithDevice).device_id); }}
+                              onAutomatica={(host as HostWithDevice).classification_manual === 1 ? () => void tornaAutomaticaRiga(host.id) : undefined}
+                            />
+                          </PopoverContent>
+                        </Popover>
                       ) : (host as HostWithDevice).classification_manual === 1 ? (
                         // Lock manuale: la proiezione automatica di Attribution v2 non tocca
                         // classification/inferred_* per questo host (invariante sacro, persist.ts).
@@ -1870,6 +1885,9 @@ export function NetworkDetailClient({
                             {host.attr_confidence_category != null && (
                               <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
                             )}
+                            {origineCategoria(false, host.attr_min_phase) && (
+                              <span className="text-muted-foreground font-normal ml-1">· {origineCategoria(false, host.attr_min_phase)}</span>
+                            )}
                           </span>
                           {(() => {
                             /* L'OS: la famiglia dell'attribuzione se c'è, altrimenti il nome
@@ -1897,29 +1915,8 @@ export function NetworkDetailClient({
                       ) : host.classification ? (
                         <Badge variant="outline">{getClassificationLabel(host.classification)}</Badge>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="rounded-md border border-dashed px-2 py-0.5 text-muted-foreground">Senza categoria</span>
                       )}
-                    </TableCell>
-                    <TableCell className="text-sm max-w-[200px]">
-                      {(() => {
-                        const det = parseDetectedDeviceFromDetectionJson(host.detection_json);
-                        if (!det) {
-                          return <span className="text-muted-foreground">—</span>;
-                        }
-                        const pct =
-                          det.confidence != null ? `${Math.round(det.confidence * 100)}%` : null;
-                        return (
-                          <span
-                            className="block truncate"
-                            title={pct ? `Confidenza fingerprint: ${pct}` : "Fingerprint"}
-                          >
-                            {det.label}
-                            {pct ? (
-                              <span className="text-muted-foreground text-xs ml-1 tabular-nums">({pct})</span>
-                            ) : null}
-                          </span>
-                        );
-                      })()}
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

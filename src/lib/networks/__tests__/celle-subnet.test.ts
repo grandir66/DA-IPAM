@@ -49,11 +49,12 @@ test("il nome segue l'ordine della colonna: a mano, hostname, DNS, apparato", ()
 });
 
 test("la colonna si riconosce dalla posizione; le colonne di pulsanti non filtrano", () => {
-  assert.equal(COLONNE_SUBNET.length, 18);
+  // 11/11/2026: tolta la colonna «Rilevato» (Riccardo: una colonna sola «Categoria»), quindi 17 e «vendor» in 12.
+  assert.equal(COLONNE_SUBNET.length, 17);
   assert.equal(colonnaDaIndice(0), null);
   assert.equal(colonnaDaIndice(2), "ip");
   assert.equal(colonnaDaIndice(9), "classificazione");
-  assert.equal(colonnaDaIndice(13), "vendor");
+  assert.equal(colonnaDaIndice(12), "vendor");
   assert.equal(colonnaDaIndice(99), null);
 });
 

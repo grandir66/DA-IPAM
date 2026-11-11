@@ -526,6 +526,54 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 
 ---
 
+### [ ] Task 6 bis — Log di sicurezza: gli ultimi 7 giorni per tipo
+
+**Perché.** Riccardo, 11/11. La scheda conta gli avvisi «aperti», cioè mai presi in carico. Sul cliente 70791 sono 209 (110 di livello medio, nessuno grave) e l'ultimo preso in carico è del 27/07: nessuno li chiude, quindi al cliente il numero crescerebbe sempre. Si mostra invece **cosa è successo negli ultimi 7 giorni, raggruppato per tipo**. Le parole «aperti», «chiusi», «presi in carico» spariscono dalla vista cliente. Si fa **prima del Task 7**, in un commit suo.
+
+**File**
+- modifica `src/lib/cliente/schede/log-sicurezza.ts`, `src/lib/cliente/__tests__/log-sicurezza.test.ts`, `src/app/(cliente)/cliente/log-sicurezza/page.tsx`
+- qui le prove esistenti che parlano di `aperti`, `totaleAperti` e `chiusiNelMese` **si riscrivono**: quei campi non esistono più (è l'unica eccezione alla regola 4)
+
+**Interfacce (sostituiscono quelle del Task 6)**
+```ts
+export interface TipoAvviso {
+  gravita: Gravita;
+  testo: string;      // fraseAvviso(rule_description)
+  avvisi: number;     // righe del tipo negli ultimi 7 giorni
+  computer: number;   // agent_name distinti (i vuoti non contano)
+  ultima: string;     // last_seen_at più recente del tipo
+}
+export interface LogSicurezza {
+  sottoControllo: number; totaleComputer: number;
+  perGiorno: Array<{ giorno: string; avvisi: number }>;   // com'è oggi
+  tipi: TipoAvviso[];                                      // al più 30
+  totaleSettimana: number;                                 // somma di perGiorno
+}
+export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza;   // firma invariata
+```
+`AvvisoCliente` si toglie.
+
+**Regole di calcolo**
+- Finestra: la stessa di `perGiorno` (dalla mezzanotte italiana di sei giorni fa a ora), righe con `diagnostic = 0`. La colonna `acknowledged` non si legge più.
+- Un tipo = le righe con la stessa `fraseAvviso(rule_description)` (descrizione vuota → «Avviso»).
+- `gravita` del tipo = quella della riga col `rule_level` più alto (`>= 12` grave, `>= 7` attenzione, altrimenti nota: le soglie di oggi).
+- Ordine: grave, attenzione, nota; a parità `avvisi` decrescente, poi `testo`.
+- `istanteSql` e le letture su `acknowledged_at` si tolgono se restano senza uso.
+
+**Pagina**
+- Sinistra: le sette barre restano. La riga sotto diventa «<totaleSettimana> avvisi in 7 giorni · <sottoControllo> computer sotto controllo su <totaleComputer>» e, solo se la differenza è maggiore di zero, « · <n> senza controllo».
+- Destra: pannello «Cosa è successo negli ultimi 7 giorni», una riga per tipo: icona della gravità, `testo`, «<avvisi> avvisi su <computer> computer» (singolari: «1 avviso», «1 computer»; con `computer` a zero solo «<avvisi> avvisi»), a destra «l'ultimo <daQuanto(ultima)>» con `daQuanto` di `@/lib/cliente/testi` (esce «l'ultimo da 3 ore», «l'ultimo da 2 giorni»). Senza tipi: «Nessun avviso negli ultimi 7 giorni».
+
+**Scheda nel registro**
+- `riquadro`: `numero` = `totaleSettimana`; `contesto` = «avvisi in 7 giorni · <n> tipi» (singolare «1 tipo»); `aperti` = numero di tipi `grave` o `attenzione`; `stato` = `grave` se c'è un tipo `grave`, `attenzione` se c'è un tipo `attenzione`, altrimenti `a_posto`.
+- `attenzione`: una voce per ogni tipo `grave` (al più 3), gravità `grave`, testo «<testo> · <avvisi> avvisi su <computer> computer», `href` «/cliente/log-sicurezza». I tipi `attenzione` non entrano in casa: restano nella scheda.
+
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Casi: due righe con la stessa frase e computer diversi → un tipo, 2 avvisi, 2 computer; una riga di 8 giorni fa non conta; una riga `diagnostic = 1` non conta; un tipo con una riga di livello 12 e una di livello 5 è `grave`; una riga già presa in carico (`acknowledged = 1`) **conta** come le altre.
+
+**Commit:** «Vista cliente: i log di sicurezza mostrano gli ultimi 7 giorni per tipo».
+
+---
+
 ### [ ] Task 7 — Scheda Da sistemare
 
 **Corretto l'11/11 dopo lo stop (aveva ragione chi esegue):** l'elenco dei rilievi non porta gli host e si ferma a 200 righe. Non serve: `elencoRilievi` sa già raggruppare **per host su tutte le pagine**, con la gravità che il rilievo ha su quell'host. La scheda legge i gruppi, non le righe. Fonti, interfacce e regole qui sotto sono riscritte; il task riparte da capo.
@@ -667,6 +715,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Piano corretto dopo lo stop del Task 7: la scheda legge i gruppi per host di `elencoRilievi` (`raggruppa: "host"`), non le righe; rimedio dal titolo. Task 7 torna `[ ]`.
 
 - 2026-11-11 Controllo dei Task 4 ter e 6 (consegnati senza passare dal controllo, fino alla v0.9.1154): passati sul codice, 32 prove verdi rilanciate; ritocchi dei controlli precedenti tutti fatti; nessun colore scritto nei componenti; formati delle date degli avvisi verificati sull'hub. Non guardati a schermo. Aperta una decisione per Riccardo sugli avvisi «aperti» (209 sul 70791, ultimo «preso in carico» a luglio).
+
+- 2026-11-11 Riccardo: nei Log di sicurezza si mostrano gli ultimi 7 giorni per tipo, non gli avvisi «aperti». Aggiunto il Task 6 bis, prima del Task 7.
 
 ## Consuntivo
 ### Fatto

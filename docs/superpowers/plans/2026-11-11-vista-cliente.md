@@ -526,7 +526,14 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 
 ---
 
-### [ ] Task 7 — Scheda Da sistemare
+### [!] Task 7 — Scheda Da sistemare
+
+**Fermo prima del codice (11/11/2026).** Due dati che il task dà per esistenti non tornano da `elencoRilievi` (`src/lib/rilievi/unione.ts`). Nessun file di codice toccato.
+
+1. `ospiti` non è nell'elenco. Alla riga 399 ogni riga di `data` è restituita senza `ospiti` («Gli host di ogni rilievo servono solo qui: nell'elenco non viaggiano»). Senza gli ospiti un rilievo non si può applicare a ogni host, e non si legge `ospite.gravita`.
+2. `pageSize` è tagliato a 200 (riga 392: `Math.min(Math.max(filtro.pageSize ?? 50, 1), 200)`). Non esiste un valore che renda tutte le righe.
+
+Ci sono, e non sono il blocco: `Severity` è `"Critical" | "High" | "Medium" | "Low"` (`src/lib/severity-style.ts`); `FiltroRilievi.gravita` c'è; `BarraRete` ha `critical` e `high`; `barreReteDiSerie()` è la fonte di «Critiche da sistemare» e «Alte da sistemare» sulla Dashboard.
 
 **File**
 - crea `src/lib/cliente/schede/da-sistemare.ts`, `src/lib/cliente/__tests__/da-sistemare.test.ts`, `src/app/(cliente)/cliente/da-sistemare/page.tsx`
@@ -642,6 +649,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 4 ter [x]: colori del marchio Domarc. Prima i due ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 27 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le pagine autenticate non sono state aperte.
 
 - 2026-11-11 Task 6 [x]: scheda Log di sicurezza. Prima i tre ritocchi a Dominio. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 32 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. La tabella delle frasi nasce dalla misura sul 70791 (210 avvisi veri, 20 titoli).
+
+- 2026-11-11 Task 7 [!]: fermo prima del codice. `elencoRilievi` non restituisce `ospiti` (unione.ts riga 399) e taglia `pageSize` a 200 (riga 392): non si può raggruppare per apparato né leggere tutte le righe. Nessun ripiego.
 
 ## Consuntivo
 ### Fatto

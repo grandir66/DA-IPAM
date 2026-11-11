@@ -4,6 +4,10 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Da sistemare ferma
+
+La scheda non è stata scritta. `elencoRilievi` non restituisce gli host di ogni rilievo e rende al più 200 righe: senza quelli il raggruppamento per apparato non si può fare, e non è stato inventato un altro modo di leggere i dati.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Log di sicurezza
 
 Il cliente vede gli avvisi aperti e l'andamento degli ultimi sette giorni, senza numeri di regola e senza il pulsante per prenderli in carico. I titoli in inglese dei venti avvisi più frequenti sul cliente 70791 diventano una frase. Tre ritocchi al dominio, nati dal controllo del Task 5: «100 su 100» sembrava un voto pieno, i nomi non uscivano mai, e troppi rilievi gravi finivano in casa.

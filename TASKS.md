@@ -23,6 +23,7 @@ Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i 
 - [x] Vista cliente, Task 4 (scheda Apparati e quarto stato, `288cdde7`, v0.9.1145): fatto da Cursor, controllato l'11/11 sul codice (14 prove verdi) e **guardato a schermo a 1920** sull'hub dalla sessione di Riccardo (casa, Reti, Apparati; tema scuro).
 - [ ] Vista cliente, **Task 4 bis — resa** (nel piano, 12 correzioni viste a schermo): marchio invisibile sul tema scuro, «spento da 7 giorni fa», reti viste sul cavo piene di rumore (25, anche pubbliche), dettaglio di Apparati fuori schermo, «Server 150» che sono 99 macchine virtuali, righe con insegne di porta al posto del sistema. Da fare prima del Task 5.
 - [ ] Riconoscimento: `PC-LasagniF` (Windows 11 Pro, 192.168.4.175) risulta «Router» sul 70791. Visto l'11/11 guardando la vista cliente.
+- [x] Vista cliente, Riccardo l'11/11: il tema **segue la preferenza** (non forzato in chiaro). Aggiunto al Task 4 bis il comando chiaro/scuro nell'intestazione, perché l'utente Cliente non vede il menu utente.
 - [ ] La scheda Apparati è il punto E del 10/11 (riepilogo per macro categoria): si fa una volta sola, qui.
 - [ ] Interfaccia: da proporre oggetto per oggetto con una tavola grafica prima di scriverla.
 

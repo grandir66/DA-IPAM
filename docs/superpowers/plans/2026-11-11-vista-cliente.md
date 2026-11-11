@@ -348,6 +348,9 @@ export function daQuanto(data: Date, adesso: Date): string;
 11. **«19 switch, 512 porte»** conta anche NAS, router e firewall. `porteLette` conta solo `network_devices.device_type = 'switch'` (sul 70791: 12 switch, 386 porte).
 12. **«1 dorsali»**: singolare e plurale in «N collegate · N libere · N dorsali» («1 collegata», «1 libera», «1 dorsale»).
 
+**Tema** (Riccardo, 11/11: la vista **segue la preferenza** chiaro/scuro, non è forzata in chiaro)
+13. Nell'intestazione, accanto a «Stampa», il comando per passare da chiaro a scuro: stesso gancio `useTema` e stessa resa che usa `src/components/shared/user-menu.tsx`, senza duplicarne la logica. Senza questo un utente Cliente non ha modo di scegliere, perché non vede il menu utente. Classe `nascosto-stampa`. Ogni correzione di questo task si guarda in tutti e due i temi.
+
 **Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sull'hub, da «Vista cliente»: marchio leggibile; nessuna voce con «giorni fa»; in Reti la rete scelta è evidenziata e le reti pubbliche non ci sono; in Apparati il clic su uno switch mostra le porte a destra senza scorrere.
 
 **Commit:** «Vista cliente: correzioni di resa su casa, Reti e Apparati».

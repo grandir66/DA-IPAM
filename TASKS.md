@@ -115,7 +115,10 @@ Fatto
   - 79993: interruttore acceso alle 21:42, 2 router creati («MK-RG-DOMOTICA» snmp; «MK-RG-CHR» ssh + snmp). Si entra dal Proxmox `192.168.99.1`, `qm guest exec 963`.
 
 Aperto
-- [ ] **Nessuna lettura provata** sui 21 apparati nuovi: sull'hub 0 su 19 hanno `last_info_update`, i legami sono tutti `untested`. Guardare dopo il primo giro.
+- [x] Letture dei 19 apparati dell'hub, accertato l'11/11: dopo 15 ore ne risulta letto 1 su 19 (`DA-RT-OUT`) e i 21 legami sono `untested`. **Non è un difetto della creazione**: un apparato si legge solo a mano dalla sua scheda (`devices/lettura-info.ts`) o se una persona lo mette in un job «Lettura apparati» (`apparati_scelti`, elenco chiuso di `device_ids`). Sull'hub c'è un job solo, «Switch e router del CED», con 6 apparati: dei 43 apparati vecchi, letti nelle ultime 48 ore proprio quei 6, 27 letti almeno una volta.
+- [ ] **Da decidere (Riccardo)**: gli apparati creati da soli non li legge nessuno. Proposta: (a) una prima lettura subito dopo la creazione, che prova anche i legami; (b) un job «Lettura apparati» proprio, una volta al giorno, solo «info», a cui ogni apparato nato da solo si aggiunge. Vuol dire accessi SSH/WinRM quotidiani a server e PC, `192.168.4.42` compresa.
+- [ ] Visto di passaggio sull'hub: 8 apparati **vecchi** con tipo `switch` e protocollo `winrm` — lo stesso difetto «un PC nasce switch» corretto il 10/11 solo per la creazione automatica; la finestra «Rendi apparato» lo fa ancora (`resolveDeviceTypeForCreate`).
+- [ ] Hub «degradato» l'11/11: `arp_poll` (job 26, ogni 30 minuti) fermo dalle 08:20 UTC, in ritardo di 195 minuti alle 12:05 UTC; causa non accertata.
 - [ ] Piattaforma proposta da rivedere su quattro apparati dell'hub: `DA-765` e `192.168.16.26` (NAS, «windows / windows_client» via ssh), `DA-SYN-VM` (NAS, «linux_client»), `DA-RT-VPN` (router, «linux_client»). Viene da `proponiApparato`, la stessa della finestra «Rendi apparato».
 - [ ] PBS `192.168.99.13`: classe «server» con confidenza 60, sotto la soglia di 80, quindi non diventa apparato (Riccardo, 10/11: «No, lascialo»).
 - [ ] 13 host accesi senza categoria sull'hub: tre switch Ubiquiti (`192.168.40.237/238/239`, solo ssh), APC `192.168.15.130`, QNAP `192.168.15.140`, otto senza indizi. Servono SNMP o credenziali, non regole.

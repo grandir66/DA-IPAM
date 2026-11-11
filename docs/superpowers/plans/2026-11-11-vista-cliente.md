@@ -180,6 +180,8 @@ export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grav
 
 ### [ ] Task 3 — Scheda Reti
 
+**Dal controllo del Task 2 (11/11, commit `13681f8f`): passato**, 65 prove verdi rilanciate; non guardato a schermo. Una correzione da fare in questo task, prima del resto: in `src/lib/cliente/contesto.ts`, se il cliente in sessione manca o è `"__ALL__"` (superadmin su «tutti i clienti»), `redirect("/")`. Oggi `getServerTenantCode()` in quel caso rende `"DEFAULT"` e la vista mostrerebbe i dati del cliente sbagliato col titolo «DEFAULT». Si legge `session.user.tenantCode` prima di chiamare `getServerTenantCode()`.
+
 **File**
 - crea `src/lib/cliente/categorie.ts`, `src/lib/cliente/porte-note.ts`, `src/lib/cliente/schede/reti.ts`, `src/lib/cliente/__tests__/reti.test.ts`
 - crea `src/app/(cliente)/cliente/reti/page.tsx`, `src/components/cliente/griglia-indirizzi.tsx`, `src/components/cliente/scheda-apparato.tsx`
@@ -494,6 +496,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 1 bis [x]: il cambio del segno chiude le sessioni. Verifica: `node --import tsx --test src/lib/users/__tests__/*.test.ts` → 61 prove, 0 fallite.
 
 - 2026-11-11 Task 2 [x]: template, registro delle schede e casa. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 4 prove, 0 fallite. lint 0 errori, tsc 0 errori.
+
+- 2026-11-11 Controllo dei Task 1 bis (`9d99898e`) e 2 (`13681f8f`): passati, 65 prove verdi rilanciate. Non guardata a schermo la casa. Correzione aggiunta al Task 3: niente vista cliente su «tutti i clienti».
 
 ## Consuntivo
 ### Fatto

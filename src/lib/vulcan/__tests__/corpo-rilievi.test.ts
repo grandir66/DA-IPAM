@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { migrateVulcanCoda } from "@/lib/db-tenant";
 import { DDL_VULCAN, TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
 import { accoda } from "../coda";
-import { corpoRilievi, type RilievoInterno } from "../corpo-rilievi";
+import { corpoRilievi, leggiRetePassiva, type RilievoInterno } from "../corpo-rilievi";
 
 const R: RilievoInterno = {
   chiave: "giro:telnet:7:23", tipo: "telnet", gravita: "High", titolo: "Telnet aperto su 10.0.0.7:23", prova: "Porta 23 aperta.", rimedio: "Spegni telnet.",
@@ -30,6 +30,23 @@ test("login di fabbrica: il nome dell'utente non esce (Riccardo, 11/11/2026)", (
   assert.ok(c.json.includes("Le credenziali di fabbrica danno accesso."));
   const i = corpoRilievi({ rilievi: [{ ...R, chiave: "giro:ipmi-rakp:7:623:udp", tipo: "ipmi-rakp", titolo: "IPMI RAKP utente admin su 10.0.0.7:623", prova: "RAKP Message 2 con status 0 per l'utente admin: HMAC recuperabile." }], parziale: false }, TESTA);
   assert.ok("json" in i && !i.json.includes("admin"));
+});
+
+test("lettura passiva: solo conteggi, niente MAC né indirizzi; senza sensore il campo non parte", () => {
+  const db = new Database(":memory:");
+  db.exec(TENANT_SCHEMA_SQL);
+  assert.equal(leggiRetePassiva(db), null);
+  db.prepare("INSERT INTO trunk_osservazioni (vid, mac_normalized, mac_display, ip, protocolli, prima_vista, ultima_vista) VALUES (1, 'aabbccddeeff', 'AA:BB:CC:DD:EE:FF', '10.1.2.3', 'arp,llmnr', datetime('now'), datetime('now'))").run();
+  db.prepare("INSERT INTO trunk_osservazioni (vid, mac_normalized, mac_display, ip, protocolli, prima_vista, ultima_vista) VALUES (1, '112233445566', '11:22:33:44:55:66', '10.1.2.4', 'arp', datetime('now'), datetime('now'))").run();
+  db.prepare("INSERT INTO rete_rilievi (chiave, tipo, categoria, gravita, mac, ip, descrizione, rilevato_il, aggiornato_il) VALUES ('k1', 'ip_conteso', 'allarme', 'media', 'AA:BB:CC:DD:EE:FF', '10.1.2.3', 'x', datetime('now'), datetime('now'))").run();
+  const p = leggiRetePassiva(db);
+  assert.ok(p);
+  assert.equal(p.dispositivi, 2);
+  assert.deepEqual(p.protocolli, [{ nome: "arp", dispositivi: 2 }, { nome: "llmnr", dispositivi: 1 }]);
+  assert.deepEqual(p.rilievi, [{ tipo: "ip_conteso", categoria: "allarme", gravita: "media", quanti: 1 }]);
+  const c = corpoRilievi({ rilievi: [R], parziale: false, passiva: p }, TESTA);
+  assert.ok("json" in c && c.json.includes('"rete_passiva"'));
+  assert.ok(!/10\.1\.2\.|AA:BB|aabbcc/i.test(c.json));
 });
 
 test("la coda nata prima dell'11/11 accetta «rilievi» dopo la migrazione e tiene le sue righe", () => {

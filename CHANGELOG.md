@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
 
+- **A DA-Vul-can anche la lettura passiva del trunk, a livello statistico** (Riccardo, 11/11/2026). La fotografia dei rilievi porta in più i soli conteggi del sensore: rilievi aperti per tipo, apparati che si annunciano, VLAN e server DHCP, dispositivi e protocolli sentiti. Mai indirizzi, MAC o nomi; senza sensore il campo non parte. Le porte esposte non hanno bisogno di un invio nuovo: Vulcan le calcola dall'inventario.
+
 ### Corretto
 - **Topologia, esportazione draw.io: le ridondanze non coprono più l'albero.** Sulla mappa dell'hub i collegamenti secondari, disegnati spessi e in diagonale insieme all'albero, rendevano il documento ingestibile. Ora stanno su un livello loro, «Ridondanze», che in draw.io si accende e si spegne da Visualizza › Livelli: sottili, grigio chiaro, a puntini, con le parole al passaggio del mouse invece che sulla linea. Il livello nasce nascosto, visibile se a schermo era acceso «Mostra ridondanze». Il testo dei riquadri è su due righe (nome, poi «tipo · indirizzo») e non esce più dal riquadro.
 

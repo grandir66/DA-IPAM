@@ -31,7 +31,58 @@ export interface RilievoInterno {
   visto: string | null;
 }
 
-export interface DatiRilievi { rilievi: RilievoInterno[]; parziale: boolean }
+/** Lettura passiva del trunk, a livello statistico (Riccardo, 11/11/2026): solo conteggi, mai indirizzi, MAC o nomi. */
+export interface RetePassiva {
+  rilievi: Array<{ tipo: string; categoria: string; gravita: string; quanti: number }>;
+  vicini: number;
+  vlan: number;
+  vlan_con_dhcp: number;
+  server_dhcp: number;
+  dispositivi: number;
+  protocolli: Array<{ nome: string; dispositivi: number }>;
+}
+
+export interface DatiRilievi { rilievi: RilievoInterno[]; parziale: boolean; passiva?: RetePassiva | null }
+
+/** Ultimi 30 giorni, come le regole del trunk. Senza sensore (tabelle assenti o vuote) = null: il campo non parte. */
+export function leggiRetePassiva(db: Database.Database): RetePassiva | null {
+  try {
+    const oss = db.prepare("SELECT mac_normalized AS mac, protocolli FROM trunk_osservazioni WHERE ultima_vista IS NULL OR julianday(ultima_vista) >= julianday('now') - 30").all() as Array<{ mac: string; protocolli: string | null }>;
+    const vlan = db.prepare("SELECT server_dhcp FROM trunk_vlan WHERE vista = 1").all() as Array<{ server_dhcp: string | null }>;
+    const vicini = (db.prepare("SELECT COUNT(*) AS n FROM trunk_vicini").get() as { n: number }).n;
+    const rilievi = db.prepare("SELECT tipo, categoria, gravita, COUNT(*) AS quanti FROM rete_rilievi WHERE chiuso_il IS NULL GROUP BY tipo, categoria, gravita ORDER BY tipo, gravita").all() as RetePassiva["rilievi"];
+    if (oss.length === 0 && vlan.length === 0 && vicini === 0 && rilievi.length === 0) return null;
+    const perProtocollo = new Map<string, Set<string>>();
+    for (const o of oss) for (const nome of (o.protocolli ?? "").split(",").filter(Boolean)) {
+      const s = perProtocollo.get(nome) ?? new Set<string>();
+      s.add(o.mac);
+      perProtocollo.set(nome, s);
+    }
+    let vlanConDhcp = 0, server = 0;
+    for (const v of vlan) {
+      let n = 0;
+      try {
+        const x: unknown = JSON.parse(v.server_dhcp ?? "[]");
+        n = Array.isArray(x) ? x.length : 0;
+      } catch {
+        n = 0;
+      }
+      if (n > 0) vlanConDhcp++;
+      server += n;
+    }
+    return {
+      rilievi: rilievi.map((r) => ({ tipo: String(r.tipo).slice(0, 60), categoria: String(r.categoria).slice(0, 40), gravita: String(r.gravita).slice(0, 20), quanti: r.quanti })),
+      vicini,
+      vlan: vlan.length,
+      vlan_con_dhcp: vlanConDhcp,
+      server_dhcp: server,
+      dispositivi: new Set(oss.map((o) => o.mac)).size,
+      protocolli: Array.from(perProtocollo, ([nome, s]) => ({ nome: nome.slice(0, 40), dispositivi: s.size })).sort((a, b) => b.dispositivi - a.dispositivi || a.nome.localeCompare(b.nome)).slice(0, 100),
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** La prova che esce al posto di quella di DA-IPAM, per i rilievi la cui prova nomina un utente. */
 export const PROVA_SENZA_UTENTE: Readonly<Record<string, string>> = {
@@ -73,7 +124,7 @@ export function leggiRilieviInterni(db: Database.Database): DatiRilievi {
       });
     }
   }
-  return { rilievi, parziale: servizi.length > 4000 };
+  return { rilievi, parziale: servizi.length > 4000, passiva: leggiRetePassiva(db) };
 }
 
 export function corpoRilievi(
@@ -107,6 +158,7 @@ export function corpoRilievi(
       versione_ipam: taglia(testa.versione, 40),
       fonte: "scansioni-interne",
       parziale: d.parziale,
+      ...(d.passiva ? { rete_passiva: d.passiva } : {}),
       rilievi: righe,
     }),
     rilievi: righe.length,

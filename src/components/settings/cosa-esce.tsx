@@ -132,7 +132,8 @@ function SchedaVulcan({ v, invio, onInvia }: { v: QuadroCosaEsce["vulcan"]; invi
           <CardTitle>Dati verso DA-Vul-can (AD Health, inventario e scansioni interne)</CardTitle>
           <CardDescription className="text-sm">
             Cosa parte: risultati AD Health dopo ogni esecuzione, un inventario al giorno (IP, rete, sistema, porte) e, con
-            l&apos;inventario, i rilievi delle scansioni interne (titolo, gravità, prova, rimedio, IP e porta). Mai
+            l&apos;inventario, i rilievi delle scansioni interne (titolo, gravità, prova, rimedio, IP e porta) coi conteggi della lettura passiva del
+            trunk. Mai
             credenziali, note, utenti, licenze.
           </CardDescription>
         </div>

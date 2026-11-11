@@ -359,6 +359,56 @@ export function daQuanto(data: Date, adesso: Date): string;
 
 ---
 
+### [ ] Task 4 ter — Colori del marchio Domarc
+
+**Perché.** Riccardo, 11/11: «dovresti anche usare i colori del brandmark di Domarc, non i colori attuali». Tavola approvata da Riccardo l'11/11 **sul tema chiaro**; la resa sul tema scuro qui sotto è una proposta di chi ha scritto il task e va guardata a schermo. Si fa **dopo il Task 4 bis** (che tocca gli stessi file) e **prima del Task 6**, in un commit suo. Il tema segue la preferenza (deciso da Riccardo, Task 4 bis punto 13): niente area forzata in chiaro.
+
+**File**
+- modifica `src/app/globals.css`, `src/app/(cliente)/cliente/layout.tsx`, `src/components/cliente/intestazione.tsx`, `riquadro-modulo.tsx`, `griglia-indirizzi.tsx`, `pannello-porte.tsx`, `src/app/(cliente)/cliente/dominio/page.tsx` (solo le barre)
+- crea `src/components/cliente/barra.tsx`
+- nessun file in `src/lib/`, nessuna prova da cambiare
+
+**I colori, una volta sola.** In `globals.css`:
+```css
+.vista-cliente {
+  --vc-navy: #0D2537;         /* fascia dell'intestazione, in tutti e due i temi */
+  --vc-cian: #00A7E7;         /* filo dei riquadri, dorsale, barre */
+  --vc-giallo: #FFD400;       /* solo: «questo è quello scelto» */
+  --vc-acceso: #0D2537;       /* acceso, porta collegata */
+  --vc-su-acceso: #FFFFFF;    /* numero scritto sopra --vc-acceso */
+  --vc-spento: #00A7E7;
+  --vc-assente: #BFE6F7;
+  --vc-bordo: #9AA6AE;        /* contorno di libero e libera */
+  --vc-barra-fondo: #DDF1FA;
+}
+.dark .vista-cliente {
+  --vc-acceso: #FFFFFF;
+  --vc-su-acceso: #0D2537;
+  --vc-spento: #00A7E7;
+  --vc-assente: #1F4E6B;
+  --vc-bordo: #5B6770;
+  --vc-barra-fondo: #123A55;
+}
+```
+Nei componenti: `bg-[var(--vc-acceso)]`, `border-[var(--vc-cian)]`, ecc. Nessun valore esadecimale scritto nei componenti.
+
+**Cosa cambia, oggetto per oggetto**
+1. **Intestazione**: una fascia `bg-[var(--vc-navy)]` a tutta larghezza della finestra, in tutti e due i temi (nel layout la fascia sta fuori dal `div` centrato da 1600 px, e dentro la fascia un `div` con la stessa larghezza massima); sotto la fascia un filo `border-b border-[var(--vc-cian)]`. Il marchio è **sempre** `/logo-white.png`: questo sostituisce il punto 1 del Task 4 bis (le due immagini `dark:hidden` / `hidden dark:block` si tolgono). Testo bianco; nome del cliente in `text-[var(--vc-cian)]`; «dati delle HH:MM» bianco al 75%. «Stampa», il comando del tema, «Torna alla Dashboard» ed «Esci»: contorno bianco al 50%, testo bianco, fondo trasparente, al passaggio fondo bianco al 10%.
+2. **Riquadro di un modulo**: in alto un filo di 3 px `border-t-[3px] border-t-[var(--vc-cian)]`; icona del titolo in `text-cian-testo`; al passaggio bordo `border-primary`. Fondo, numero e testi restano sui token di oggi (`bg-card`, `text-foreground`), che cambiano già col tema.
+3. **Griglia degli indirizzi**: `acceso` → `bg-[var(--vc-acceso)]`; `spento` → `bg-[var(--vc-spento)]`; `assente` → `bg-[var(--vc-assente)]`; `libero` → `border border-dashed border-[var(--vc-bordo)]`, senza fondo. Queste classi sostituiscono quelle del punto 6 del Task 4 bis; la legenda coi quattro quadretti veri di quel punto resta, con queste classi. L'indirizzo scelto: anello giallo staccato, `shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--vc-giallo)]`, al posto dell'`outline`.
+4. **Pannello delle porte** (`classePorta`): collegata → `bg-[var(--vc-acceso)] text-[var(--vc-su-acceso)]`; libera → `border border-[var(--vc-bordo)]`, numero in `text-muted-foreground`; dorsale → in più un filo intorno `shadow-[0_0_0_2px_var(--vc-cian)]`; porta scelta → lo stesso anello giallo del punto 3 (se è anche dorsale vince l'anello giallo). Legenda con tre caselle vere accanto alle parole: «collegata», «libera», «dorsale».
+5. **Righe scelte negli elenchi**: restano come le fa il Task 4 bis (punti 5 e 8, `VoceSelezionabile`: `bg-selezione` e `border-primary` sono già colori Domarc). Niente da fare qui.
+6. **Stati e gravità** (`SegnoStato`, `ElencoAttenzione`): restano su `STILE_STATO`. Non si toccano.
+7. **Barre**: nuovo `src/components/cliente/barra.tsx`, `Barra({ valore, massimo }: { valore: number; massimo: number })`: barra orizzontale alta 6 px, fondo `bg-[var(--vc-barra-fondo)]`, riempimento `bg-[var(--vc-cian)]`, larghezza `valore / massimo` limitata fra 0 e 100%. La pagina Dominio e accessi (Task 5, già fatta) la usa per le aree al posto delle classi di oggi; il Task 6 la usa per i giorni, in verticale con la stessa coppia di colori e il giorno più alto in `bg-[var(--vc-acceso)]`.
+
+**Regola che resta.** Riccardo è daltonico: gli stati della griglia si distinguono per **luminosità** (sul chiaro: scuro, medio, chiaro, vuoto tratteggiato; sullo scuro: bianco, medio, scuro, vuoto tratteggiato) e la legenda mostra i quadretti veri. Il giallo non è mai uno stato: vuol dire solo «scelto» (e «attenzione» dentro `STILE_STATO`).
+
+**Verifica:** `npm run lint` e `npx tsc --noEmit` a 0 errori; `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Le pagine `/cliente`, `/cliente/reti`, `/cliente/apparati` e `/cliente/dominio` guardate una volta a 1920 in tutti e due i temi.
+
+**Commit:** «Vista cliente: colori del marchio Domarc».
+
+---
+
 ### [x] Task 5 — Scheda Dominio e accessi
 
 **Dal controllo del Task 4 (11/11, commit `288cdde7`): passato**, 14 prove verdi rilanciate, firme come da piano, quarto stato «assente» fatto come deciso; non guardato a schermo. Tre ritocchi da fare in questo task, prima del resto (misure sul cliente 70791 dell'hub):
@@ -569,6 +619,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 4 (`288cdde7`): passato sul codice, 14 prove verdi. Resa guardata a 1920 sull'hub (casa, Reti, Apparati): 12 correzioni scritte nel Task 4 bis.
 
 - 2026-11-11 Task 5 [x]: scheda Dominio e accessi. Prima i tre ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 22 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
+
+- 2026-11-11 Riccardo: colori del marchio Domarc nella vista cliente (tavola approvata sul tema chiaro). Aggiunto il Task 4 ter, dopo il 4 bis e prima del 6; sostituisce i punti 1 e 6 (classi) del 4 bis. Il tema segue la preferenza.
 
 ## Consuntivo
 ### Fatto

@@ -17,6 +17,7 @@ import { request as httpRequest } from "node:http";
 import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { getNetworks, upsertMacIpMapping } from "@/lib/db";
 import { assicuraColonnaProtocolliTrunk, assicuraColonnaServerDhcpTrunk } from "@/lib/db-tenant-schema";
+import { sincronizzaDichiarazioni } from "@/lib/trunk/dichiarazioni";
 import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
@@ -566,6 +567,13 @@ async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise
   } catch (e) {
     console.warn(`[trunk] annunci CDP/LLDP non portati: ${e instanceof Error ? e.message : String(e)}`);
   }
+  // Cosa gli apparati dicono di sé (SSDP, mDNS, DHCP): prove di riconoscimento, mai rilievi.
+  try {
+    const dich = await sincronizzaDichiarazioni(l.leggi);
+    if (dich && (dich.prove || dich.campi)) console.info(`[trunk] dichiarazioni: ${dich.prove} prove e ${dich.campi} campi su ${dich.host} host`);
+  } catch (e) {
+    console.warn(`[trunk] dichiarazioni non portate: ${e instanceof Error ? e.message : String(e)}`);
+  }
   valutaRilievi();
   return { fonte: l.fonte, osservazioni: totale, vlan: vlan.length };
 }
@@ -612,6 +620,53 @@ export interface TrunkOsservazioneRiga {
   rilievi: TipoRilievo[];
   /** Ufficiale o no rispetto alle reti di DA-IPAM, col perché (08/11). Null per le righe senza IP. */
   appartenenza: Appartenenza | null;
+  /**
+   * Cosa l'oggetto dice di sé in modo passivo (Riccardo, 10/11/2026: «sono tutti dati che devono
+   * finire anche nella pagina del trunk dove riconosciamo a layer 2 gli oggetti in modo passivo»):
+   * annunci MNDP, Ubiquiti, CDP e LLDP, e le dichiarazioni in SSDP, mDNS e DHCP.
+   */
+  dichiara: Array<{ come: string; valore: string }>;
+}
+
+const COME_DICHIARA: Record<string, string> = {
+  ssdp_server: "SSDP", ssdp_tipo: "SSDP tipo", ssdp_agente: "cerca con", mdns_servizio: "mDNS", mdns_modello: "modello",
+  dhcp_classe: "DHCP", dhcp_fqdn: "nome DHCP",
+  nbt_dominio: "dominio", nbt_os: "Windows", nbt_ruolo: "ruolo", nbt_commento: "descrizione",
+  dhcp6_fqdn: "nome DHCPv6", dhcp6_classe: "DHCPv6", wsd_tipo: "WSD",
+  stp_radice: "radice STP", stp_ponte: "ponte STP", stp_costo: "costo STP", ra_prefisso: "annuncia IPv6",
+};
+const TETTO_DICHIARA = 8;
+
+/** Per ogni MAC della pagina, cosa dice di sé: una lettura sola per tabella. */
+function dichiaraPerMac(d: ReturnType<typeof db>, mac: string[]): Map<string, TrunkOsservazioneRiga["dichiara"]> {
+  const esito = new Map<string, TrunkOsservazioneRiga["dichiara"]>();
+  const chiavi = [...new Set(mac.map((m) => normalizeMacForStorage(m)).filter((m): m is string => !!m))];
+  if (chiavi.length === 0) return esito;
+  const segni = chiavi.map(() => "?").join(",");
+  const aggiungi = (m: string, come: string, valore: string) => {
+    const lista = esito.get(m) ?? [];
+    if (lista.length < TETTO_DICHIARA && !lista.some((x) => x.come === come && x.valore === valore)) lista.push({ come, valore });
+    esito.set(m, lista);
+  };
+  try {
+    // Gli annunci per primi: dicono modello e versione, che è quello che si cerca.
+    const annunci = d.prepare(
+      `SELECT mac, protocollo, piattaforma, versione, sistema FROM trunk_vicini WHERE mac IN (${segni}) ORDER BY ultima_vista DESC`,
+    ).all(...chiavi.flatMap((m) => [m])) as Array<{ mac: string; protocollo: string; piattaforma: string | null; versione: string | null; sistema: string }>;
+    for (const a of annunci) {
+      const m = normalizeMacForStorage(a.mac);
+      const testo = [a.piattaforma, a.versione?.split("\n")[0]].filter(Boolean).join(" · ") || a.sistema;
+      if (m && testo) aggiungi(m, a.protocollo.toUpperCase(), testo.slice(0, 80));
+    }
+    const dich = d.prepare(
+      `SELECT mac, chiave, valore FROM trunk_dichiarazioni WHERE mac IN (${segni}) ORDER BY chiave, ultima_vista DESC`,
+    ).all(...chiavi) as Array<{ mac: string; chiave: string; valore: string }>;
+    for (const r of dich) aggiungi(r.mac, COME_DICHIARA[r.chiave] ?? r.chiave, r.valore.slice(0, 80));
+  } catch (e) {
+    // Tabella non ancora creata su un tenant vecchio: la pagina resta com'era.
+    if (!(e instanceof Error && /no such (table|column)/.test(e.message))) throw e;
+  }
+  return esito;
 }
 
 /** Impostazione del tenant: la VLAN dei pacchetti senza tag. Vuota = non confermata, «nessuna» = nessuna. */
@@ -704,9 +759,11 @@ export function getTrunkOsservazioniPaginated(opts: {
   };
   const completa = (grezze: Grezza[]): TrunkOsservazioneRiga[] => {
     const rilievi = getTipiRilievoPerMac(grezze.map((r) => r.mac_display));
+    const dichiara = dichiaraPerMac(d, grezze.map((r) => r.mac_display));
     return grezze.map((r) => ({
       ...r, protocolli: protocolliDa(r.protocolli), vendor: lookupVendorSync(r.mac_display), rilievi: rilievi.get(r.mac_display) ?? [],
       appartenenza: di(r),
+      dichiara: dichiara.get(normalizeMacForStorage(r.mac_display) ?? "") ?? [],
     }));
   };
   if (opts.cidr) {

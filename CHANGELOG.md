@@ -8,7 +8,40 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - Preparato il confronto puro delle osservazioni. Una porta appena rilevata resta distinta da una porta prima verificata chiusa. Pagina unica «Network Changes» disponibile sotto Network e dal dettaglio subnet. Raccolta delle differenze da Discovery ancora da collegare.
 
+## [Non rilasciato] — 2026-11-10 · Cancello: tre prove rosse sistemate prima della promozione su main
+
+### Corretto
+- **Findings, barre per rete**: contavano ancora una tacca per CVE e per host (LAN Server 26.808). Ora, come in Dashboard, contano le cose da sistemare: tutte le CVE dello stesso software sullo stesso host sono una tacca, con la gravità più alta. Sui dati dell'hub: LAN Server 460, Lan Management 426, LAN Base 193, LAN Client 115, LAN DMZ 85.
+
+### Corretto
+- **I triage dei rilievi viaggiano col tenant** nell'esportazione: `triage_rilievi` non era nel registro dei trasferimenti, e stato e note decisi a mano sarebbero rimasti indietro.
+- `scanner/rilancia-giri` dichiarato fuori da Schedulazioni col perché (gira una volta all'avvio).
+- La prova del profilo «sconosciuti» guarda le porte da provare, non la riga intera: la 9100 ora compare in `--exclude-ports` proprio per non toccarla.
+
+## [Non rilasciato] — 2026-11-10 · Una VM con un ruolo prende il ruolo
+
+Riccardo (10/11): «99.13 è un proxmox pbs» — sul 79993 restava «vm».
+
+### Cambiato
+- **«VM» dice dove gira, non cosa fa**: se accanto a `compute.vm` (dalla scheda di rete virtuale) c'è un ruolo sopra soglia di calcolo, rete o storage — un server, un router CHR, un firewall virtuale — vince il ruolo. Senza ruolo resta «vm»; un UPS o un telefono non la scavalcano.
+
+## [Non rilasciato] — 2026-11-10 · Apparati creati da soli (interruttore spento di serie)
+
+Riccardo (10/11): «automatizzare … la trasformazione in device se le credenziali funzionano»; «se l'apparato risponde a più protocolli devono essere registrati tutti».
+
+### Aggiunto
+- **Opzioni → Automatismi → «Apparati creati da soli»**, per cliente, spento di serie. Acceso, a fine scansione ogni host con una credenziale validata (SNMP, SSH o WinRM) e una classe sicura (scelta a mano, o del motore con confidenza ≥ 80) diventa apparato, con le stesse scelte della finestra «Rendi apparato» e **tutte** le credenziali validate legate. Sull'hub 533 i candidati erano 38 e con la regola del 09/11 (solo classificazione a mano, solo SNMP) nessuno lo sarebbe diventato.
+- `scripts/apparati-automatici-cli.ts <tenant> [--applica]`: la prova a vuoto, coi nomi.
+- Una VM non prende la piattaforma del suo hypervisor e una postazione non nasce `switch`: alla prima creazione sull'hub «da-sns» era diventato un nodo Proxmox e quattro PC degli switch.
+- Un apparato con più IP nasce una volta sola: gli IP dello stesso gruppo (`multihomed_links`, il motore che c'è già) danno un apparato solo, dall'IP primario; gli altri si saltano col motivo.
+
 ## [Non rilasciato] — 2026-11-10 · Classi vecchie svuotate, telefoni e prese dal produttore
+
+### Aggiunto
+- **I giri lanciati a mano ripartono dopo un riavvio** (Riccardo, 10/11): Discovery e Solo controlli lanciati da `/scans` si scrivono finché girano; se il servizio si riavvia a metà, novanta secondi dopo l'avvio ripartono da capo con le stesse opzioni. Una volta sola, solo se lanciati da meno di due ore, e senza le prove invasive.
+
+### Modificato
+- **Dashboard, barre per rete**: contavano le CVE per host, e un solo kernel o una build di Windows ne portano 2.000-3.600: LAN Server risultava a 28.760 (Riccardo, 10/11: «non ritengo possibile che la rete Domarc abbia questi numeri»). Ora contano le cose da sistemare, cioè un pacchetto o un controllo per host con la gravità più alta fra le sue CVE: LAN Server 701. Le CVE restano scritte accanto.
 
 ### Corretto
 - **L'aggiornamento automatico non riavvia più sopra una scansione**: il 10/11 quattro Discovery lanciate a mano sull'hub sono morte al riavvio di un aggiornamento, senza una riga in cronologia. Ora `auto-update.sh` chiede all'app se c'è un giro in corso (`giri_in_corso` in `/api/health`) e rimanda al tick dopo; oltre 3 ore aggiorna comunque. «Aggiorna ora» dall'interfaccia non aspetta.

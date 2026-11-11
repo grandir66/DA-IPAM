@@ -243,6 +243,14 @@ app.prepare().then(() => {
       console.error("WARNING: giro automatico dei servizi di rete non avviato:", error);
     });
 
+    // Giri lanciati a mano e interrotti dal riavvio (10/11/2026): ripartono da capo, una volta sola,
+    // novanta secondi dopo l'avvio. Regole e freni in `scanner/giri-da-rilanciare.ts`.
+    setTimeout(() => {
+      import("./src/lib/scanner/rilancia-giri").then(({ rilanciaGiriInterrotti }) => rilanciaGiriInterrotti()).catch((error) => {
+        console.error("WARNING: rilancio dei giri interrotti non riuscito:", error);
+      });
+    }, 90_000).unref();
+
     // Matrice di segmentazione (09/11/2026, Riccardo: settimanale accesa di serie).
     import("./src/lib/segmentazione/job").then(({ avviaGiroSegmentazioneAutomatico }) => {
       avviaGiroSegmentazioneAutomatico();

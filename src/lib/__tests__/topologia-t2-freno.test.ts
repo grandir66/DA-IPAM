@@ -94,12 +94,15 @@ const senzaNuove = (r: Record<string, unknown>): Record<string, unknown> => Obje
  * ogni host dopo un ricalcolo completo (classificazione, colonne `attr_*`, evidenze attive, quante voci di storico).
  */
 function fotografia(db: Database.Database) {
+  // Il ricalcolo viene PRIMA di leggere l'ingresso (10/11/2026): dalla 0.9.1113 una classe non manuale senza
+  // categoria si svuota al ricalcolo, e gli host di prova hanno la classe scritta in SQL senza prove. Fatto dopo,
+  // la prima fotografia cambiava da sé lo stato che la seconda poi leggeva.
+  for (const h of db.prepare("SELECT id FROM hosts ORDER BY id").all() as Array<{ id: number }>) recomputeAttributionForDb(db, h.id, "manual");
   const input = normalizza(getTopologyModelInput(2, ADESSO));
   const modello = buildTopologyModel(input);
   const testa = proposeHead(modello);
   const righe = (query: string): Array<Record<string, unknown>> =>
     (db.prepare(query).all() as Array<Record<string, unknown>>).map((r) => normalizza(senzaNuove(r)));
-  for (const h of db.prepare("SELECT id FROM hosts ORDER BY id").all() as Array<{ id: number }>) recomputeAttributionForDb(db, h.id, "manual");
   return {
     input,
     modello: JSON.parse(serializza(modello)) as unknown,
@@ -341,7 +344,8 @@ test("giri veri, attribuzione: l'host che solo una fonte nuova vede non cambia c
   const prima = classi();
   assert.deepEqual([sighting(50), sighting(51), cdpLldp(50), cdpLldp(51)], [[], [], [], []], "le fonti nuove non arrivano all'attribuzione");
   assert.ok(sighting(52).length > 0 && cdpLldp(52).length > 0, "la fonte di oggi sì: il router vede 52");
-  assert.deepEqual((prima as Array<{ id: number; classification: string }>).filter((h) => h.id === 50 || h.id === 51).map((h) => h.classification), ["workstation", "workstation"]);
+  assert.deepEqual((prima as Array<{ id: number; classification: string | null }>).filter((h) => h.id === 50 || h.id === 51).map((h) => h.classification), [null, null],
+    "senza prove di categoria la classe scritta in SQL si svuota (regola del 10/11), e la fonte nuova non la cambia");
 
   // Controprova: le stesse due righe con la fonte di oggi, e le due classificazioni cambiano. Il confronto le vedrebbe.
   db.exec("UPDATE device_neighbors SET source = 'device' WHERE source IN ('ssh', 'snmp') AND remote_ip IN ('10.0.9.77', '10.0.9.78')");

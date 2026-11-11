@@ -85,7 +85,11 @@ test("il profilo non tocca la 9100 né le porte di campo e non fa UDP", () => {
   assert.equal(PROFILO_RICONOSCIMENTO.osDetection, true);
   const a = argomentiTcp(PROFILO_RICONOSCIMENTO, { privilegi: true, disponibili: new Set<string>() }).join(" ");
   assert.match(a, / -O /);
-  assert.equal(/\b9100\b/.test(a), false);
+  // Dal 10/11 (a96ab6ce) il comando NOMINA la 9100 in `--exclude-ports`, proprio per non toccarla:
+  // la prova guarda l'elenco delle porte da provare (`-p`), non tutta la riga.
+  const daProvare = /(?:^| )-p (\S+)/.exec(a)?.[1] ?? "";
+  assert.equal(daProvare.split(",").includes("9100"), false);
+  assert.match(a, /--exclude-ports \S*\b9100\b/);
 });
 
 const esitoFinto = (ip: string): EsitoProfilo => ({

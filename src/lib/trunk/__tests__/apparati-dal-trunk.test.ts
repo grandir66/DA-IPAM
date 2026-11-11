@@ -139,5 +139,17 @@ test("MNDP: il modello annunciato sostituisce quello generico e decide il mestie
     assert.equal(riga(generico).attr_category, "network.switch", "un CRS è uno switch, anche se in CDP si dichiara router");
     assert.equal(riga(routeros).model, "CCR2004-1G-12S+2XS");
     assert.equal(riga(preciso).model, "CRS326-24G-2S+", "un modello vero già scritto non si tocca");
+    // Il modello decide (Riccardo, 10/11/2026) anche contro più fonti che votano «router»: sull'hub
+    // porte di RouterOS, banner HTTP e vicini insieme battevano la sola prova MNDP.
+    const d = getTenantDb(T);
+    const voto = d.prepare(
+      "INSERT INTO attribution_evidence (host_id, source, phase, dimension, claim, confidence, raw_value) VALUES (?, ?, 'scan', 'category', 'network.router', ?, ?)",
+    );
+    voto.run(preciso, "http_banner", 0.7, "RouterOS");
+    voto.run(preciso, "ports", 0.5, "8291,8728");
+    voto.run(preciso, "tls_cert", 0.7, "router");
+    d.prepare("DELETE FROM attribution_evidence WHERE host_id = ? AND source = 'mndp'").run(preciso);
+    portaApparatiDalTrunk();
+    assert.equal(riga(preciso).attr_category, "network.switch");
   });
 });

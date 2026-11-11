@@ -42,6 +42,7 @@ import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/de
 import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
 import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
 import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
+import { apparatiAutomaticiDopoScansione } from "@/lib/devices/apparato-automatico";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
@@ -309,10 +310,17 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       return runPingSweep(job.network_id, opzioni);
     case "fast_scan":
       return runFastScan(job.network_id, opzioni);
-    case "snmp_scan":
-      return runSnmpScan(job.network_id, opzioni);
-    case "nmap_scan":
-      return runNmapScan(job.network_id, opzioni);
+    // Apparati creati da soli (10/11/2026): a fine giro, solo con l'interruttore acceso; non lancia.
+    case "snmp_scan": {
+      const r = await runSnmpScan(job.network_id, opzioni);
+      apparatiAutomaticiDopoScansione();
+      return r;
+    }
+    case "nmap_scan": {
+      const r = await runNmapScan(job.network_id, opzioni);
+      apparatiAutomaticiDopoScansione();
+      return r;
+    }
     case "arp_poll":
       await runArpPoll();
       break;

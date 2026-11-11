@@ -51,6 +51,10 @@ export const AUTHORITATIVE_SOURCES: Record<AttributionDimension, readonly Attrib
   // ot_probe: stessa logica di redfish/onvif — uno script di campo che risolve
   // (s7-info, enip-info, bacnet-info, omron-info) E' la definizione del
   // protocollo industriale; a 0.95 supera AUTHORITY_MIN_CONFIDENCE (0.9).
-  category: ["manual", "wsd", "redfish", "onvif", "ot_probe"],
+  // mndp, ubnt (Riccardo, 10/11/2026: «decide il modello»): l'apparato dice il proprio modello, e la
+  // sigla dice il mestiere (un CRS è uno switch anche se porte e banner di RouterOS votano «router»).
+  // Vale solo per le sigle riconosciute, emesse a CONFIDENZA_MODELLO_ANNUNCIATO; il generico
+  // «apparato di rete» resta a 0,85 e non salta la somma.
+  category: ["manual", "wsd", "redfish", "onvif", "ot_probe", "mndp", "ubnt"],
   os: ["manual", "ad", "wazuh", "inv_agent", "winrm"],
 };

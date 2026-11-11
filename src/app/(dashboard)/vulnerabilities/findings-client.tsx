@@ -723,7 +723,7 @@ function FasciaIndicatori({
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[13px] text-muted-foreground">
-              <span>Rilievi per rete (uno per host toccato), un clic filtra l&apos;elenco</span>
+              <span>Cose da sistemare per rete: un pacchetto o un rilievo per host, non le singole CVE. Un clic filtra l&apos;elenco</span>
               <LegendaGravita />
             </div>
             {reti.length === 0 ? (

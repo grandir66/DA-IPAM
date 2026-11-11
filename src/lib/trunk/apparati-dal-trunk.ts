@@ -9,7 +9,7 @@
 import type Database from "better-sqlite3";
 import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { SISTEMA_OPERATIVO, type Annuncio } from "@/lib/attribution/annunci";
-import { categoriaDaAnnuncio, CONFIDENZA_ANNUNCIO } from "@/lib/attribution/emitters";
+import { categoriaDaAnnuncio, confidenzaAnnuncio, CONFIDENZA_ANNUNCIO } from "@/lib/attribution/emitters";
 import { recomputeAttributionForDb } from "@/lib/attribution/recompute";
 import { propagaAllApparato, segnaDaRivedere } from "@/lib/scanner/profili/propaga-apparato";
 import type { FattiProfilo } from "@/lib/scanner/profili/tipi";
@@ -34,7 +34,7 @@ function fattiDaAnnuncio(r: RigaAnnuncio): Pick<FattiProfilo, "modello" | "firmw
 }
 
 /** Solo le evidenze degli annunci: quelle dal nome del vicino (0.7) hanno la stessa fonte, e `expires_at` è ISO con T e Z. */
-function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number, dalModello: boolean): boolean {
+function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number, dalModello: boolean, confidenza: number = CONFIDENZA_ANNUNCIO): boolean {
   // Se l'host si annuncia anche col modello (MNDP, Ubiquiti) serve QUELLA prova: quella del CDP
   // c'è già da prima e direbbe «a posto» senza che il modello sia mai stato considerato.
   const fonti = dalModello ? "'mndp', 'ubnt'" : "'cdp', 'lldp', 'mndp', 'ubnt'";
@@ -42,7 +42,7 @@ function haEvidenzaDiAnnuncio(d: Database.Database, hostId: number, dalModello: 
     `SELECT 1 FROM attribution_evidence WHERE host_id = ? AND source IN (${fonti})
      AND dimension = 'category' AND confidence >= ?
      AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) LIMIT 1`,
-  ).get(hostId, CONFIDENZA_ANNUNCIO);
+  ).get(hostId, confidenza);
 }
 
 /** Va dopo `salvaVicini`. Gira ogni 2 minuti: il ricalcolo parte solo quando c'è qualcosa di nuovo. */
@@ -76,11 +76,16 @@ export function portaApparatiDalTrunk(): EsitoApparati {
   // un MikroTik: «MikroTik») mentre un'altra sì (MNDP: «CRS504-4XQ»). Visto sull'hub il 10/11/2026:
   // guardando solo la prima riga l'host restava `unknown` con la prova già in tabella.
   const conCategoria = new Set<number>();
-  const conModello = new Set<number>();
+  // Per chi dice il modello: la confidenza con cui la prova deve esserci (una prova più debole, scritta
+  // prima che il modello decidesse, non basta a dire «già fatto»).
+  const conModello = new Map<number, number>();
   for (const r of righe) {
-    if (!categoriaDaAnnuncio(r)) continue;
+    const cat = categoriaDaAnnuncio(r);
+    if (!cat) continue;
     conCategoria.add(r.host_id);
-    if (r.protocollo === "mndp" || r.protocollo === "ubnt") conModello.add(r.host_id);
+    if (r.protocollo === "mndp" || r.protocollo === "ubnt") {
+      conModello.set(r.host_id, Math.max(conModello.get(r.host_id) ?? 0, confidenzaAnnuncio(r, cat)));
+    }
   }
   // Per ogni host vale la riga che dice il modello (MNDP, Ubiquiti), poi la più recente.
   const dalModello = (r: RigaAnnuncio) => (r.protocollo === "mndp" || r.protocollo === "ubnt" ? 0 : 1);
@@ -105,7 +110,7 @@ export function portaApparatiDalTrunk(): EsitoApparati {
         console.error(`[trunk] host ${r.host_id}: segno «da rivedere» o apparato non aggiornati:`, e);
       }
     }
-    if (riempite.length > 0 || (conCategoria.has(r.host_id) && !haEvidenzaDiAnnuncio(d, r.host_id, conModello.has(r.host_id)))) {
+    if (riempite.length > 0 || (conCategoria.has(r.host_id) && !haEvidenzaDiAnnuncio(d, r.host_id, conModello.has(r.host_id), conModello.get(r.host_id)))) {
       recomputeAttributionForDb(d, r.host_id, "scan");
     }
   }

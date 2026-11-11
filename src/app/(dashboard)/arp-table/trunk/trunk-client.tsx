@@ -21,6 +21,7 @@ import type {
 import type { TrunkMaschera } from "@/lib/trunk/reti";
 import { TIPI_RILIEVO, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
 import { PannelloRilievi, type DatiRilievi } from "./rilievi-pannello";
+import { PannelloAnnunci } from "./annunci-pannello";
 
 const PAGINA = 100;
 
@@ -132,7 +133,7 @@ const silenziosi = (x: TrunkReteMatrice) => x.ip.filter((i) => !i.passivo && i.a
 const nuoviIn = (x: TrunkReteMatrice, giorni: number) => x.serie.slice(-giorni).reduce((a, g) => a + g.nuovi, 0);
 const nuoviOggi = (x: TrunkReteMatrice) => x.serie[x.serie.length - 1]?.nuovi ?? 0;
 
-type Scheda = "sicurezza" | "reti";
+type Scheda = "sicurezza" | "reti" | "annunci";
 
 export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolean }) {
   const router = useRouter();
@@ -157,7 +158,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   const [scheda, setScheda] = useState<Scheda>("sicurezza");
   useEffect(() => {
     const h = window.location.hash.slice(1);
-    if (h === "reti" || h === "sicurezza") setScheda(h);
+    if (h === "reti" || h === "sicurezza" || h === "annunci") setScheda(h);
   }, []);
   const scegliScheda = useCallback((v: Scheda) => {
     setScheda(v);
@@ -322,6 +323,11 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
             titolo: "VLAN e reti",
             descrizione: `${iniziale.vlan.filter((v) => v.vista).length} VLAN viste · ${r.ip} indirizzi IP`,
           },
+          {
+            valore: "annunci",
+            titolo: "Annunci",
+            descrizione: "Chi si presenta da solo: MikroTik, Ubiquiti, Cisco",
+          },
         ]}
       />
 
@@ -336,6 +342,8 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
           <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
         </div>
       )}
+
+      {scheda === "annunci" && <PannelloAnnunci />}
 
       {scheda === "reti" && (
         <div className="space-y-4">
@@ -568,6 +576,16 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
                                 </Etichetta>
                               ))}
                             </div>
+                            {/* Cosa l'oggetto dice di sé in modo passivo: annunci (MNDP, Ubiquiti, CDP) e dichiarazioni (SSDP, mDNS, DHCP). */}
+                            {o.dichiara.length > 0 && (
+                              <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px]">
+                                {o.dichiara.map((x) => (
+                                  <span key={`${x.come}|${x.valore}`}>
+                                    <span className="text-muted-foreground">{x.come}</span> <span className="font-mono">{x.valore}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
                         </TableRow>

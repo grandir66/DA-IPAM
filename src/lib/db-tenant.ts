@@ -9639,14 +9639,33 @@ export interface RilieviPerRete {
   medium: number;
   low: number;
   total: number;
+  /** Le CVE per host dietro a quelle cose da sistemare: il numero che c'era prima in barra. */
+  cve: number;
 }
 
 /**
  * Rilievi per rete e gravità (09/11/2026, dall'Overview di Nety): la barra «rilievi per rete»
  * in testata di Vulnerabilità. Stessa deduplica di `getVulnSummary` (una CVE/NVT conta una volta
  * per host, con la gravità più alta, Edge + Wazuh), poi i conteggi raggruppati per rete dell'host.
+ *
+ * Dal 10/11/2026 la barra conta le COSE DA SISTEMARE, non le CVE (Riccardo: «non ritengo possibile
+ * che la rete Domarc abbia questi numeri di vulnerabilità»). Misura sull'hub: LAN Server 28.760
+ * «rilievi», di cui 31.731 CVE×host di Wazuh su 21 host che sono 196 pacchetti da aggiornare (un
+ * kernel o una build di Windows portano 2.000-3.600 CVE l'uno e si chiudono con un aggiornamento).
+ * Una cosa = un pacchetto su un host (Wazuh) o un controllo su un host (Edge), con la gravità più
+ * alta fra le sue CVE. Il totale delle CVE resta in `cve`.
  */
 export function getRilieviPerRete(): RilieviPerRete[] {
+  const perCosa = righeRilieviPerRete(true);
+  const cve = new Map(righeRilieviPerRete(false).map((r) => [r.network_id, r.critical + r.high + r.medium + r.low]));
+  return perCosa
+    .map((r) => ({ ...r, total: r.critical + r.high + r.medium + r.low, cve: cve.get(r.network_id) ?? 0 }))
+    .filter((r) => r.total > 0);
+}
+
+function righeRilieviPerRete(perCosa: boolean): Array<Omit<RilieviPerRete, "total" | "cve">> {
+  const chiaveEdge = perCosa ? "COALESCE('nvt:' || NULLIF(nvt_oid, ''), NULLIF(cve_id, ''))" : "COALESCE(NULLIF(cve_id, ''), 'nvt:' || nvt_oid)";
+  const chiaveWazuh = perCosa ? "'pkg:' || COALESCE(NULLIF(wv.package_name, ''), wv.cve)" : "wv.cve";
   const superati = [...kernelSuperati(
     db().prepare(
       `SELECT DISTINCT agent_id, package_name, package_version FROM wazuh_vuln
@@ -9662,13 +9681,13 @@ export function getRilieviPerRete(): RilieviPerRete[] {
               SUM(CASE WHEN rango = 3 THEN 1 ELSE 0 END) AS low
          FROM (
            SELECT host_id, chiave, MIN(rango) AS rango FROM (
-             SELECT host_id, COALESCE(NULLIF(cve_id, ''), 'nvt:' || nvt_oid) AS chiave,
+             SELECT host_id, ${chiaveEdge} AS chiave,
                     CASE severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END AS rango
                FROM vuln_findings_attuali
               WHERE host_id IS NOT NULL
                 AND severity IN ('Critical','High','Medium','Low')
              UNION ALL
-             SELECT wa.host_id, wv.cve,
+             SELECT wa.host_id, ${chiaveWazuh},
                     CASE wv.severity WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END
                FROM wazuh_vuln wv
                JOIN wazuh_agent wa ON wa.agent_id = wv.agent_id
@@ -9686,8 +9705,8 @@ export function getRilieviPerRete(): RilieviPerRete[] {
         GROUP BY n.id, n.name
         ORDER BY critical DESC, high DESC, medium DESC, low DESC`
     )
-    .all(JSON.stringify(superati)) as Array<Omit<RilieviPerRete, "total">>;
-  return rows.map((r) => ({ ...r, total: r.critical + r.high + r.medium + r.low })).filter((r) => r.total > 0);
+    .all(JSON.stringify(superati)) as Array<Omit<RilieviPerRete, "total" | "cve">>;
+  return rows;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

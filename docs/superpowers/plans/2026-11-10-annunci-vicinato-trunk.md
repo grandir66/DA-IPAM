@@ -83,13 +83,29 @@
   sull'hub (0.9.1117): «13 campi riempiti su 21 host»; 15 host hanno ora il modello vero
   (`CRS504-4XQ`, `CRS304-4XG`, `CRS309-1G-8S+`, `CCR2004-1G-12S+2XS`, `CCR2004-16G-2S+`, `RB5009UPr+S+`,
   `CHR`) al posto di «MikroTik» / «RouterOS (…)». Un modello vero già scritto non si tocca.
-- [ ] **Aperto, da decidere:** i CRS (switch) restano `network.router` in `hosts.attr_category`. La
-  prova `mndp` «switch» c'è (0,85 × peso 0,9), ma le altre fonti votano router (porte di RouterOS,
-  banner HTTP, vicini) e insieme vincono. Un CRS con RouterOS può fare tutti e due i mestieri: se il
-  modello deve decidere, `mndp` va reso autoritativo sulla categoria. (Il 10/11 avevo guardato
-  `hosts.classification`, che è un altro campo.)
-- [ ] **2.5 Dove si vede.** In «Reti dal trunk» un elenco «Annunci» con protocollo, sistema, porta,
-  indirizzo, VLAN, ultima vista. Da proporre oggetto per oggetto prima di scriverlo.
+- [x] **Il modello decide la categoria** (Riccardo, 10/11: «decide il modello»). `mndp` e `ubnt` sono
+  fonti dichiarative sulla categoria (`AUTHORITATIVE_SOURCES`), solo per le sigle riconosciute, emesse
+  a 0,95; il generico «apparato di rete» resta a 0,85. Verifica sull'hub (0.9.1121): dei 15 host che si
+  annunciano, 6 sono `network.switch` (`CRS304-4XG`, `CRS504-4XQ`, `CRS309-1G-8S+`) e 9 `network.router`
+  (`CCR2004…`, `RB5009UPr+S+`, `CHR`). Prima erano tutti router.
+- [x] **2.5 Elenco «Annunci»** (Riccardo, 10/11: «la tavola è perfetta»). Terza scheda di «Reti dal
+  trunk»: `src/lib/trunk/annunci.ts`, `GET /api/trunk/annunci`, `annunci-pannello.tsx`. Una riga per
+  apparato, filtri per protocollo e per stato in DA-IPAM, aperta le interfacce. Sola lettura, nessun
+  pulsante che scrive. *Vista a 1920 sull'hub (0.9.1129):* 20 apparati, MNDP 9, Ubiquiti 2, CDP 18,
+  LLDP 0; 3 non in DA-IPAM, 14 non registrati come apparato; compaiono anche i telefoni Yealink che
+  si annunciano in CDP.
+- [x] **3.5 Le dichiarazioni in DA-IPAM e nella pagina del trunk** (Riccardo, 10/11: «sono tutti dati
+  che devono finire anche nella pagina del trunk dove riconosciamo a layer 2 gli oggetti in modo
+  passivo»). `src/lib/trunk/dichiarazioni.ts`, tabella `trunk_dichiarazioni`: lette a ogni giro,
+  agganciate per MAC, prove con le regole delle sonde attive, modello e nome riempiti dove mancano;
+  nella scheda «VLAN e reti» ogni oggetto mostra ciò che dice di sé.
+- [x] **Errore trovato sui dati veri e corretto (sonda 0.8.293, DA-IPAM 0.9.1129):** il gateway UniFi
+  ripete fra le VLAN gli annunci mDNS degli altri col proprio MAC; con la 0.8.292 risultava offrire
+  AirPlay e SSH di un Mac ed era sceso da `network.controller` a `network`. Ora una dichiarazione
+  mDNS vale solo se chi parla dice anche il proprio indirizzo nello stesso pacchetto, e un SSDP con
+  in LOCATION l'indirizzo di un altro si scarta. Pulizia una volta sola nel sensore e in DA-IPAM
+  (24 host ricalcolati sull'hub; il controller è tornato `network.controller`). Un computer con
+  AirPlay non è più uno schermo.
 
 ## Tappa 3 — cos'altro dice il trunk (Riccardo, 10/11: «arrivano tante informazioni passive per tanti protocolli… non so cosa si può estrarre in più»)
 
@@ -115,9 +131,21 @@ il broadcast e multicast (9.968 telai):
 Non visti sull'hub ma probabili dai clienti con impianti (72729): Profinet DCP, EtherNet/IP, BACnet,
 che dicono nome, modello e produttore di PLC e pannelli senza interrogarli. Serve una cattura là.
 
-- [ ] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60, 61, 81): i tre che toccano più apparati.
-- [ ] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery.
-- [ ] **3.3** Spanning tree (radice, costo, cambi) e annunci dei router IPv6.
+- [x] **3.1** SSDP, mDNS (servizi e TXT) e DHCP (opzioni 60 e 81). **Rilasciato** con DA-Vul-can
+  0.8.292 (sì di Riccardo, 10/11) e attivo sulla sonda dell'hub: dopo due minuti e mezzo `GET /dichiarazioni`
+  dava 20 dichiarazioni da 11 apparati (due HP iLO, stampante 3D, Chromecast Ultra, client `ARM__boot` e
+  `udhcp`). Le sonde dei clienti restano alla loro versione (comandate da DA-Link). Ramo `macbook/sensore-passivo`. Tabella nuova `dichiarazione` (mac, chiave,
+  valore, VLAN, prima e ultima vista; al più 16 valori per apparato e chiave), `GET /dichiarazioni`.
+  Chiavi: `ssdp_server`, `ssdp_tipo`, `ssdp_agente`, `mdns_servizio`, `mdns_modello`, `dhcp_classe`,
+  `dhcp_fqdn`. *Verifica (10/11):* la cattura vera del trunk dell'hub (9.923 telai, 185 secondi)
+  passata agli interpreti: nessun errore; ne escono `HP-iLO-5/3.22` e `HP-iLO-4/2.81` (i BMC di due
+  server), una stampante 3D, un Chromecast Ultra, Spotify Connect, due client `ARM__boot` e un
+  `udhcp 1.34.1`. In tre minuti parlano pochi apparati: i numeri veri si vedono lasciandolo girare.
+  Prove del sensore: 62 verdi, resta rossa quella di `raggiungibilita.py` che non è di questo lavoro.
+- [x] **3.2** NetBIOS datagrammi, DHCPv6, WS-Discovery. Rilasciato con la sonda 0.8.294 e DA-IPAM 0.9.1133. Sull'hub dopo sette minuti: annunci di Windows da 22 apparati (17 agganciati a un host: due server SQL, i due DC, sette postazioni), classe DHCPv6 `CPQRIB3` da 3 schede iLO. **Corretto subito:** Samba sui NAS manda lo stesso annuncio con versione «6.1»: vale come prova solo dalla 10 in su; le prove sbagliate si tolgono al giro dopo (verificato: tolte sui tre NAS).
+- [x] **3.3** Spanning tree (radice, ponte, costo) e annunci dei router IPv6: raccolti e mostrati accanto all'oggetto, non usati come prove. Sull'hub la radice è `0/08:55:31:2b:17:f5`, il MAC che in MNDP è di `DA-RT-CORE`. I cambi di topologia non sono raccolti.
+- [ ] **Aperto:** le dichiarazioni di MAC che DA-IPAM non conosce (le tre iLO in DHCPv6, il ponte dello spanning tree) restano in tabella ma non si vedono da nessuna parte: mostrarle nell'elenco «Annunci».
+- [ ] **Aperto, non di questo lavoro:** i NAS `192.168.40.24` e `.26` risultano `compute` e non `storage` per prove di altre sonde (`smb`, `wsd` «Device Computer») che insieme battono `snmp_sysobj`/`mdns`.
 - [ ] **3.4** Cattura di tre minuti a DTS e, se c'è l'accesso, a 72729 e 70151: cosa gira dai clienti.
 - [ ] **3.5** DA-IPAM: questi dati entrano come prove nel riconoscimento degli apparati (oggi un terzo
   resta senza nome) e in «Reti dal trunk».

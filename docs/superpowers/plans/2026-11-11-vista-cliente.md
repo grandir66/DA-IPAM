@@ -49,7 +49,9 @@
 
 ---
 
-### [ ] Task 1 — Utente «Cliente» e recinto
+### [!] Task 1 — Utente «Cliente» e recinto
+
+**Blocco (2026-11-11, prima del codice):** il piano dà per esistente in `src/lib/db-hub-schema.ts` un `ALTER TABLE … ADD COLUMN` idempotente «come le colonne già aggiunte». In quel file non c'è: è solo `HUB_SCHEMA_SQL` (`CREATE TABLE IF NOT EXISTS`). Le colonne aggiunte dopo (`email`, `totp_*`, `sessioni_valide_da`, `ultima_istanza`) le mette `initializeHubDb` in `src/lib/db-hub.ts` (righe 467-493), con `PRAGMA table_info` e poi `ALTER`. Quel file non è nell'elenco del task. Un `ALTER` nello schema SQL rieseguirebbe a ogni avvio e, a colonna già presente, farebbe fallire `db.exec`. Non ho messo la colonna solo nel `CREATE TABLE`: sulle installazioni esistenti non comparirebbe. Secondo fatto, stesso stop: la verifica chiede `npx vitest run`, ma Vitest non è una dipendenza. Le prove del repo sono `node --import tsx --test` con `node:test` (`service.test.ts` importa già `node:test`). Il resto dei punti citati c'è, alle righe indicate: i due `CHECK(role …)` (righe 33 e 53), `token.role` (riga 66), `u.role` (riga 132), `authorized` (riga 138), `User.role` (riga 12), i due `useState` del ruolo (righe 311 e 316), le voci «Solo lettura» (righe 872 e 903), l'etichetta in `user-menu.tsx` (riga 89). Nessun file di codice toccato.
 
 **Perché un segno e non un ruolo nuovo.** Nel database hub il ruolo ha un vincolo `CHECK(role IN ('superadmin','admin','viewer'))` su `users` e `CHECK(role IN ('admin','viewer'))` su `user_tenant_access` (`src/lib/db-hub-schema.ts` righe 33 e 53): un ruolo nuovo vorrebbe dire ricostruire due tabelle con chiavi esterne. Si aggiunge invece una colonna. Gli utenti «Solo lettura» di oggi restano come sono.
 
@@ -462,6 +464,8 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica che i file toccati siano solo quelli elencati; rilancia le prove del task; confronta nomi e firme con le «Interfacce prodotte»; cerca nell'area `fetch(` con metodo diverso da GET e link fuori da `/cliente`; guarda la pagina una volta a 1920 sul dev. Un task passa solo se ha la riga `Verifica:` con comando ed esito.
 
 ## Registro
+
+- 2026-11-11 Task 1 [!]: fermo prima del codice. L'`ALTER` idempotente non sta in `db-hub-schema.ts` (solo `CREATE TABLE`); sta in `initializeHubDb` di `src/lib/db-hub.ts` (righe 467-493), file fuori elenco. Vitest non è nel progetto: le prove usano `node:test`. Nessun ripiego.
 
 ## Consuntivo
 ### Fatto

@@ -235,7 +235,7 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway, onCategoria, 
         <PopoverContent anchor={scelta?.el ?? null}>
           {scelta && (
             <>
-              <p className="px-2 pb-1 text-[13px] font-medium">
+              <p className="shrink-0 px-2 pb-1 text-[13px] font-medium">
                 {scelta.host.custom_name || scelta.host.hostname || scelta.host.ip}
                 <span className="ml-1 font-mono font-normal text-muted-foreground">{scelta.host.ip}</span>
               </p>

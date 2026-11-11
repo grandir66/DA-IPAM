@@ -36,14 +36,14 @@ export function ScegliCategoria({
   const riga = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent hover:text-accent-foreground";
 
   return (
-    <div className="flex w-72 flex-col gap-1">
+    <div className="flex min-h-0 w-72 flex-1 flex-col gap-1">
       <Input
         autoFocus
         value={cerca}
         onChange={(e) => setCerca(e.target.value)}
         placeholder="Cerca: stampante, nas, telefono"
         aria-label="Cerca una categoria"
-        className="h-8 text-[13px]"
+        className="h-8 shrink-0 text-[13px]"
       />
       {proposta && !cercando && (
         <>
@@ -55,7 +55,7 @@ export function ScegliCategoria({
           </button>
         </>
       )}
-      <div className="max-h-72 overflow-y-auto">
+      <div className="max-h-72 min-h-24 flex-1 overflow-y-auto">
         {gruppi.length === 0 && <p className="px-2 py-2 text-[13px] text-muted-foreground">Nessuna categoria con questo nome</p>}
         {gruppi.map((g) => {
           const mostra = cercando || aperto === g.gruppo;

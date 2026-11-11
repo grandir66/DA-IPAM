@@ -1883,7 +1883,7 @@ export function NetworkDetailClient({
                           </PopoverTrigger>
                           <PopoverContent onClick={(e) => e.stopPropagation()}>
                             {hostDelMenu(selectedHostIds, host.id).length > 1 && (
-                              <p className="mb-1 rounded-md border border-[#C9A800] bg-[#FFD400] px-2 py-1 text-[13px] font-medium text-[#0D2537]">
+                              <p className="mb-1 shrink-0 rounded-md border border-[#C9A800] bg-[#FFD400] px-2 py-1 text-[13px] font-medium text-[#0D2537]">
                                 Vale per i {hostDelMenu(selectedHostIds, host.id).length} host spuntati
                               </p>
                             )}

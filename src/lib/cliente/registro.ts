@@ -1,5 +1,6 @@
 import type { ContestoCliente } from "./contesto";
 import { schedaApparati } from "./schede/apparati";
+import { schedaDaSistemare } from "./schede/da-sistemare";
 import { schedaDominio } from "./schede/dominio";
 import { schedaLogSicurezza } from "./schede/log-sicurezza";
 import { schedaReti } from "./schede/reti";
@@ -35,8 +36,8 @@ export interface SchedaCliente {
   attenzione(c: ContestoCliente): VoceAttenzione[] | Promise<VoceAttenzione[]>;
 }
 
-/** I task 6-7 aggiungono una riga ciascuno. */
-export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaApparati, schedaDominio, schedaLogSicurezza];
+/** L'ordine a schermo è il campo `ordine`, non questo elenco. */
+export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaApparati, schedaDaSistemare, schedaDominio, schedaLogSicurezza];
 
 const PESO_GRAVITA: Record<Gravita, number> = { grave: 0, attenzione: 1, nota: 2 };
 

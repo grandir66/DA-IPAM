@@ -574,7 +574,7 @@ export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza;   
 
 ---
 
-### [ ] Task 7 — Scheda Da sistemare
+### [x] Task 7 — Scheda Da sistemare
 
 **Corretto l'11/11 dopo lo stop (aveva ragione chi esegue):** l'elenco dei rilievi non porta gli host e si ferma a 200 righe. Non serve: `elencoRilievi` sa già raggruppare **per host su tutte le pagine**, con la gravità che il rilievo ha su quell'host. La scheda legge i gruppi, non le righe. Fonti, interfacce e regole qui sotto sono riscritte; il task riparte da capo.
 
@@ -631,7 +631,7 @@ export const schedaDaSistemare: SchedaCliente; // id "da-sistemare", titolo "Da 
 - `riquadro`: `numero` = `gravi + alte`; `contesto` = «<gravi> gravi · <alte> alte»; `aperti` = `gravi + alte`; `stato` = `grave` se `gravi > 0`, `attenzione` se `alte > 0`, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni apparato con `gravi > 0` (al più 5), gravità `grave`, testo «<gravi> problemi gravi su <nome>» (singolare se 1), `href` «/cliente/da-sistemare».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`perApparato`: il gruppo `tipo: "senza"` scartato; un gruppo senza critici né alti scartato; rimedio trovato dal titolo; rimedio vuoto → `null`; ordine per gravi, alte, nome). Sul dev, stesso cliente: `gravi` e `alte` del riquadro coincidono con «Critiche da sistemare» e «Alte da sistemare» della Dashboard.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. Coperti: il gruppo `tipo: "senza"` scartato; un gruppo senza critici né alti scartato; rimedio trovato dal titolo; rimedio vuoto (la riga successiva con lo stesso titolo non conta) → `null`; ordine Gamma, Beta, Alfa, Zeta. I totali del riquadro sono la somma di `barreReteDiSerie()`, la stessa funzione di «Critiche da sistemare» e «Alte da sistemare»: il confronto sullo stesso cliente non è stato fatto, questo worktree non ha il database del cliente e la pagina autenticata non è stata aperta.
 
 **Commit:** «Vista cliente: scheda Da sistemare».
 
@@ -717,6 +717,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo dei Task 4 ter e 6 (consegnati senza passare dal controllo, fino alla v0.9.1154): passati sul codice, 32 prove verdi rilanciate; ritocchi dei controlli precedenti tutti fatti; nessun colore scritto nei componenti; formati delle date degli avvisi verificati sull'hub. Non guardati a schermo. Aperta una decisione per Riccardo sugli avvisi «aperti» (209 sul 70791, ultimo «preso in carico» a luglio).
 
 - 2026-11-11 Riccardo: nei Log di sicurezza si mostrano gli ultimi 7 giorni per tipo, non gli avvisi «aperti». Aggiunto il Task 6 bis, prima del Task 7.
+
+- 2026-11-11 Task 7 [x]: scheda Da sistemare, dai gruppi per host. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. I totali del riquadro passano da `barreReteDiSerie()`, come la Dashboard; il confronto sullo stesso cliente non è stato fatto.
 
 ## Consuntivo
 ### Fatto

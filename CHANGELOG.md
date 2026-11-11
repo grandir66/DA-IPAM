@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Da sistemare
+
+Il cliente vede, apparato per apparato, le cose critiche e alte da sistemare. I conti in casa sono gli stessi di «Critiche da sistemare» e «Alte da sistemare» sulla Dashboard. L'elenco dei rilievi non porta gli host e si ferma a 200 righe: la scheda legge i gruppi per host, che `elencoRilievi` calcola su tutte le pagine.
+
+### Aggiunto
+- **Scheda Da sistemare**: un apparato per riga, i più gravi prima, con il rimedio quando c'è. Media, bassa e informativa non si mostrano. Senza un host preciso la riga non c'è.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Da sistemare ferma
 
 La scheda non è stata scritta. `elencoRilievi` non restituisce gli host di ogni rilievo e rende al più 200 righe: senza quelli il raggruppamento per apparato non si può fare, e non è stato inventato un altro modo di leggere i dati.

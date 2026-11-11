@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, EyeOff, GripVertical, Minus, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, EyeOff, GripVertical, Minus, MoveHorizontal, MoveVertical, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Pannello } from "@/components/shared/console";
 import {
@@ -80,7 +80,7 @@ export function GrigliaCasa({
         <div className="nascosto-stampa flex flex-wrap items-center gap-2 rounded-xl border border-primary bg-selezione px-3.5 py-2.5">
           <p className="min-w-0 flex-1 text-sm">
             <span className="font-semibold">Stai componendo la casa di questo cliente.</span>{" "}
-            Trascina un riquadro sopra un altro per cambiargli posto; coi pulsanti lo allarghi, lo alzi o lo nascondi.
+            Trascina un riquadro sopra un altro per cambiargli posto. Sopra ogni riquadro: le frecce lo spostano, ↔ ne cambia la larghezza, ↕ l'altezza, l'occhio barrato lo nasconde.
           </p>
           <Button type="button" disabled={salvo} onClick={() => void salva()}>
             {salvo ? "Salvo…" : "Salva la disposizione"}
@@ -111,7 +111,7 @@ export function GrigliaCasa({
               onDrop={modifica ? (e) => { e.preventDefault(); if (trascinato) setVoci((p) => spostaPrima(p, trascinato, v.id)); setTrascinato(null); setSopra(null); } : undefined}
             >
               {modifica && (
-                <div className="nascosto-stampa mb-1 flex shrink-0 flex-wrap items-center gap-1 text-[13px]">
+                <div className="nascosto-stampa mb-1 flex shrink-0 items-center gap-1 overflow-hidden text-[13px]">
                   <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden />
                   <Button type="button" variant="outline" size="icon" aria-label={`Sposta prima ${nomeDi(v.id)}`} disabled={i === 0} onClick={() => setVoci((p) => sposta(p, v.id, "prima"))}>
                     <ArrowLeft aria-hidden />
@@ -119,23 +119,22 @@ export function GrigliaCasa({
                   <Button type="button" variant="outline" size="icon" aria-label={`Sposta dopo ${nomeDi(v.id)}`} disabled={i === inGriglia.length - 1} onClick={() => setVoci((p) => sposta(p, v.id, "dopo"))}>
                     <ArrowRight aria-hidden />
                   </Button>
-                  <span className="ml-1 text-muted-foreground">larghezza</span>
+                  <MoveHorizontal className="ml-1 size-4 shrink-0 text-muted-foreground" aria-label="larghezza" />
                   <Button type="button" variant="outline" size="icon" aria-label={`Stringi ${nomeDi(v.id)}`} disabled={v.l === LARGHEZZE[0]} onClick={() => setVoci((p) => allarga(p, v.id, -1))}>
                     <Minus aria-hidden />
                   </Button>
                   <Button type="button" variant="outline" size="icon" aria-label={`Allarga ${nomeDi(v.id)}`} disabled={v.l === LARGHEZZE[LARGHEZZE.length - 1]} onClick={() => setVoci((p) => allarga(p, v.id, 1))}>
                     <Plus aria-hidden />
                   </Button>
-                  <span className="ml-1 text-muted-foreground">altezza</span>
+                  <MoveVertical className="ml-1 size-4 shrink-0 text-muted-foreground" aria-label="altezza" />
                   <Button type="button" variant="outline" size="icon" aria-label={`Abbassa ${nomeDi(v.id)}`} disabled={v.a === ALTEZZA_MIN} onClick={() => setVoci((p) => alza(p, v.id, -1))}>
                     <Minus aria-hidden />
                   </Button>
                   <Button type="button" variant="outline" size="icon" aria-label={`Alza ${nomeDi(v.id)}`} disabled={v.a === ALTEZZA_MAX} onClick={() => setVoci((p) => alza(p, v.id, 1))}>
                     <Plus aria-hidden />
                   </Button>
-                  <Button type="button" variant="outline" className="ml-auto" onClick={() => setVoci((p) => p.map((x) => (x.id === v.id ? { ...x, visibile: false } : x)))}>
+                  <Button type="button" variant="outline" size="icon" className="ml-auto" aria-label={`Nascondi ${nomeDi(v.id)}`} title="Nascondi" onClick={() => setVoci((p) => p.map((x) => (x.id === v.id ? { ...x, visibile: false } : x)))}>
                     <EyeOff aria-hidden />
-                    Nascondi
                   </Button>
                 </div>
               )}

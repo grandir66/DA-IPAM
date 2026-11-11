@@ -55,6 +55,8 @@ describe("categorie e sottocategorie (11/11/2026)", () => {
     assert.deepEqual(new Set(perTitolo.get("ot")), new Set(["plc", "hmi", "rete_ot"]));
     assert.deepEqual(new Set(perTitolo.get("iot")), new Set(["iot", "sensore", "domotica"]));
     assert.ok(perTitolo.get("postazioni")?.includes("workstation"));
+    assert.deepEqual(new Set(perTitolo.get("videosorveglianza")), new Set(["telecamera", "nvr"]));
+    assert.deepEqual(new Set(perTitolo.get("multimedia")), new Set(["smart_tv", "decoder", "media_player", "console"]));
     assert.equal(perTitolo.get("postazioni")?.includes("smartphone"), false);
   });
   it("ogni classe del catalogo ha una categoria: nessuna resta fuori dal menu", () => {

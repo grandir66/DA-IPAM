@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Categorie: Videosorveglianza e Multimedia
+
+### Cambiato
+- «Video» si divide in due categorie (Riccardo, 11/11: «una categoria Multimedia e una Videosorveglianza sono più corrette»): **Videosorveglianza** (Telecamera, Videoregistratore) e **Multimedia** (Smart TV, Decoder, Media player, Console). Le categorie sono undici.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: «Porte di rete» nella striscia in testa
 
 Riccardo (11/11): «un box in alto con un link agli apparati di rete che hanno memorizzato uno schema delle porte … per vedere rapidamente che porte sono disponibili, un po' come gli ip nelle network»; «un modulo che si apre», «non direttamente visibile».

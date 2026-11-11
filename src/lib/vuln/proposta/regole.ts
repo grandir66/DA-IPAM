@@ -98,7 +98,7 @@ function categoriaDi(h: HostPerProposta): { radice: string; foglia: string } | n
   // sono le stesse di prima, classe per classe: lo smartphone resta «compute» anche se ora sta in Telefonia.
   if (gruppo === "rete") return { radice: "network", foglia: c };
   if (gruppo === "archiviazione") return /^nas/.test(c) ? { radice: "storage", foglia: "nas" } : { radice: "peripheral", foglia: c };
-  if (gruppo === "stampa" || gruppo === "video" || gruppo === "alimentazione") return { radice: "peripheral", foglia: c };
+  if (gruppo === "stampa" || gruppo === "videosorveglianza" || gruppo === "multimedia" || gruppo === "alimentazione") return { radice: "peripheral", foglia: c };
   if (gruppo === "telefonia" && c !== "smartphone") return { radice: "peripheral", foglia: c };
   if (gruppo === "ot" || gruppo === "iot") return { radice: "iot", foglia: c };
   return { radice: "compute", foglia: c === "hypervisor" ? "hypervisor" : c };

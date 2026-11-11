@@ -135,7 +135,7 @@ export function sortClassificationsByDisplayLabel(classifications: readonly stri
 /**
  * Categoria (primo livello) di ogni classe, per menu e filtri (Riccardo, 11/11/2026: «le categorie dovrebbero
  * essere raggruppate tipo OT → PLC, HMI… POSTAZIONI → PC, Notebook… manca anche il gruppo Telefonia»; «teniamo
- * separato IoT da OT»). Prima i gruppi erano sei, e «Periferiche e servizi» teneva insieme NAS, stampanti, VoIP,
+ * separato IoT da OT»; «una categoria Multimedia e una Videosorveglianza sono più corrette»). Prima i gruppi erano sei, e «Periferiche e servizi» teneva insieme NAS, stampanti, VoIP,
  * telecamere e UPS. Le classi nel database non cambiano nome: cambia solo a quale categoria appartengono.
  */
 export type DeviceCategoryGroup =
@@ -145,7 +145,8 @@ export type DeviceCategoryGroup =
   | "archiviazione"
   | "rete"
   | "stampa"
-  | "video"
+  | "videosorveglianza"
+  | "multimedia"
   | "ot"
   | "iot"
   | "alimentazione"
@@ -153,7 +154,7 @@ export type DeviceCategoryGroup =
 
 /** L'ordine in cui le categorie si mostrano. */
 export const DEVICE_CATEGORY_GROUP_ORDER: readonly DeviceCategoryGroup[] = [
-  "postazioni", "telefonia", "server", "archiviazione", "rete", "stampa", "video", "ot", "iot", "alimentazione",
+  "postazioni", "telefonia", "server", "archiviazione", "rete", "stampa", "videosorveglianza", "multimedia", "ot", "iot", "alimentazione",
 ];
 
 const GROUP_BY_CLASSIFICATION: Record<string, DeviceCategoryGroup> = {
@@ -198,12 +199,12 @@ const GROUP_BY_CLASSIFICATION: Record<string, DeviceCategoryGroup> = {
   multifunzione: "stampa",
   fotocopiatrice: "stampa",
   scanner: "stampa",
-  telecamera: "video",
-  nvr: "video",
-  smart_tv: "video",
-  decoder: "video",
-  media_player: "video",
-  console: "video",
+  telecamera: "videosorveglianza",
+  nvr: "videosorveglianza",
+  smart_tv: "multimedia",
+  decoder: "multimedia",
+  media_player: "multimedia",
+  console: "multimedia",
   plc: "ot",
   hmi: "ot",
   rete_ot: "ot",
@@ -230,7 +231,8 @@ export const DEVICE_CATEGORY_GROUP_LABELS: Record<DeviceCategoryGroup, string> =
   archiviazione: "Archiviazione",
   rete: "Rete",
   stampa: "Stampa",
-  video: "Video",
+  videosorveglianza: "Videosorveglianza",
+  multimedia: "Multimedia",
   ot: "OT (impianti)",
   iot: "IoT (oggetti connessi)",
   alimentazione: "Alimentazione",
@@ -245,7 +247,8 @@ export const DEVICE_CATEGORY_GROUP_COSA: Record<DeviceCategoryGroup, string> = {
   archiviazione: "dove stanno i dati",
   rete: "ciò che collega gli altri apparati",
   stampa: "stampanti e scanner",
-  video: "telecamere, registratori, schermi",
+  videosorveglianza: "telecamere e registratori",
+  multimedia: "televisori, decoder, lettori, console",
   ot: "le macchine dell'impianto: PLC, pannelli operatore, la loro rete",
   iot: "piccoli oggetti collegati: sensori, prese, domotica",
   alimentazione: "gruppi di continuità e prese comandate",

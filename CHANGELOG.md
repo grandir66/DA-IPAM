@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Riconoscimento: la scelta a mano arriva al motore
+
+Riccardo (11/11): «il mio Samsung S25 viene rilevato come stampante… non capisco da dove viene identificata la categoria». Sul cliente 70791 c'erano 106 classi scelte a mano e nessuna era nota al motore: le pagine dell'amministratore mostravano la classe scelta, la vista cliente la categoria del motore, che diceva altro.
+
+### Corretto
+- **Una classe scelta a mano diventa un'evidenza `manual` di categoria** a ogni ricalcolo (`src/lib/attribution/scelta-a-mano.ts`), e si ritira quando la scelta torna automatica. Classe e categoria dicono la stessa cosa in ogni pagina. Un punto solo nel ricalcolo, invece di inseguire chi scrive la classe.
+- **La scelta a mano vale subito** per il motore: `scriviClassificazione` ricalcola l'host appena scritta la classe, senza aspettare il giro successivo.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: log degli ultimi 7 giorni per tipo
 
 Gli avvisi «aperti» non venivano mai chiusi: sul cliente 70791 erano 209 e l'ultimo preso in carico era di luglio, quindi il numero cresceva sempre. La scheda mostra cosa è successo negli ultimi sette giorni, raggruppato per tipo. Le parole «aperti», «chiusi» e «presi in carico» non compaiono più.

@@ -7,6 +7,7 @@ import type { AttributionSignals } from "./emitters";
 import { fuseAttribution } from "./fuse";
 import type { AttributionResult } from "./fuse";
 import { applyAttribution } from "./persist";
+import { allineaSceltaAMano } from "./scelta-a-mano";
 
 /**
  * Fase 3b: emette le evidenze dai segnali già in DB e rifonde l'insieme
@@ -29,6 +30,8 @@ export function previewHostAttribution(
   const emitted = emitEvidenceFromSignals(signals);
   recordEvidence(dbh, signals.host.id, emitted);
   retireStaleEvidence(dbh, signals.host.id, emitted, RECOMPUTED_SOURCES);
+  // La scelta a mano della classe vale anche qui: diventa un'evidenza `manual` (scelta-a-mano.ts).
+  allineaSceltaAMano(dbh, signals.host.id);
   return fuseAttribution(getActiveEvidence(dbh, signals.host.id), new Date().toISOString());
 }
 

@@ -16,6 +16,8 @@ import { canonicalizza, type RuoloServer } from "./canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./scrittura";
 import { resolveDeviceTypeForCreate, type ProductProfileId } from "@/lib/device-product-profiles";
 import type { NetworkDevice } from "@/types";
+import { recomputeAttributionForDb } from "@/lib/attribution/recompute";
+import { allineaSceltaAMano } from "@/lib/attribution/scelta-a-mano";
 
 export interface Bersaglio {
   hostId?: number;
@@ -105,6 +107,10 @@ export function scriviClassificazione(
         db.prepare(`UPDATE network_devices SET classification = 'unknown', classification_manual = 0, updated_at = datetime('now') WHERE id = ?`).run(deviceId);
       }
     })();
+    // Tornata automatica: l'evidenza della scelta a mano si ritira subito (attribution/scelta-a-mano.ts).
+    // Solo il ritiro, non il ricalcolo: quello svuoterebbe la classe, che qui deve restare «unknown»
+    // finché non decide il prossimo giro.
+    if (b.hostId != null && hostId != null) allineaSceltaAMano(db, hostId);
     return { hostId, deviceId };
   }
 
@@ -140,6 +146,8 @@ export function scriviClassificazione(
     }
   })();
 
+  // La scelta a mano vale subito anche per il motore (categoria in `attr_category`), non al giro dopo.
+  if (hostId != null && opts.manuale) recomputeAttributionForDb(db, hostId, "manual");
   return { hostId, deviceId };
 }
 

@@ -24,6 +24,7 @@ Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i 
 - [ ] Vista cliente, **Task 4 bis — resa** (nel piano, 12 correzioni viste a schermo): marchio invisibile sul tema scuro, «spento da 7 giorni fa», reti viste sul cavo piene di rumore (25, anche pubbliche), dettaglio di Apparati fuori schermo, «Server 150» che sono 99 macchine virtuali, righe con insegne di porta al posto del sistema. Da fare prima del Task 5.
 - [ ] Riconoscimento: `PC-LasagniF` (Windows 11 Pro, 192.168.4.175) risulta «Router» sul 70791. Visto l'11/11 guardando la vista cliente.
 - [x] Vista cliente, Riccardo l'11/11: il tema **segue la preferenza** (non forzato in chiaro). Aggiunto al Task 4 bis il comando chiaro/scuro nell'intestazione, perché l'utente Cliente non vede il menu utente.
+- [ ] Vista cliente, Riccardo 11/11: «dovresti anche usare i colori del brandmark di Domarc, non i colori attuali». Oggi l'area usa i neutri dell'interfaccia dell'amministratore (griglia e porte in nero e grigio, intestazione senza fascia). Proposta mostrata in tavola l'11/11 (fascia navy `#0D2537` col logo bianco, accenti cian `#00A7E7`, giallo `#FFD400` per la scelta e l'attenzione; griglia in tre toni scuro/medio/chiaro): entra nel piano come task a parte quando Riccardo la approva.
 - [ ] La scheda Apparati è il punto E del 10/11 (riepilogo per macro categoria): si fa una volta sola, qui.
 - [ ] Interfaccia: da proporre oggetto per oggetto con una tavola grafica prima di scriverla.
 

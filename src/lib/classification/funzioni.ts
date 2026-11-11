@@ -93,6 +93,9 @@ export interface SegnaliFunzioni {
 
 export interface FunzioneTrovata { funzione: Funzione; origine: string }
 
+/** L'origine di una funzione che viene solo dalla categoria: nelle righe non si ripete accanto alla categoria. */
+export const ORIGINE_CATEGORIA = "dalla categoria";
+
 /** La classe che porta con sé una funzione: chi È un router FA da router. */
 const DA_CLASSE: Record<string, Funzione> = {
   router: "router", firewall: "firewall", vpn_gateway: "vpn", proxy: "proxy", load_balancer: "proxy",
@@ -170,7 +173,7 @@ export function funzioniDi(s: SegnaliFunzioni): FunzioneTrovata[] {
   }
   if (porte.has(88) && (porte.has(389) || porte.has(636))) aggiungi("ad_ldap", "dalle porte 88 e LDAP aperte insieme");
   const daClasse = s.classe ? DA_CLASSE[s.classe] : undefined;
-  if (daClasse) aggiungi(daClasse, "dalla categoria");
+  if (daClasse) aggiungi(daClasse, ORIGINE_CATEGORIA);
   for (const r of s.ruoli ?? []) {
     const f = DA_RUOLO[r];
     if (f) aggiungi(f, "dal ruolo scritto nella scheda");

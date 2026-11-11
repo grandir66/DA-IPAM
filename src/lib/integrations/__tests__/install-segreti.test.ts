@@ -213,7 +213,7 @@ test("LibreNMS 26.10: senza api_tokens il gettone lo crea lnms api:token-create 
     if (args.includes("mysql") && sql.includes("information_schema")) {
       return { stdout: sql.includes("personal_access_tokens") ? "1\n" : "0\n" };
     }
-    if (args.some((a) => a.includes("lnms api:token-create"))) return { stdout: `API token created\n${GETTONE}\n` };
+    if (args.some((a) => a.includes("lnms api:token-create"))) return { stdout: `Token created successfully.\n\n${GETTONE}\n\nSave this token. It will not be shown again.\n` };
     return rispostaLibreNMS(args);
   });
   const admin = parametriInstallazione({}).adminPassword;

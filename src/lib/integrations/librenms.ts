@@ -441,9 +441,11 @@ async function generateLibreNMSToken(
       ["sh", "-c", "exec lnms api:token-create --no-interaction --name=DA-IPAM admin"],
       { asUser: "librenms", timeout: 60_000 },
     );
-    // L'uscita è una riga di conferma e poi il gettone da solo su una riga: non si scrive nel registro.
-    const token = crea.stdout.split("\n").map((r) => r.trim()).filter(Boolean).at(-1) ?? "";
-    if (!crea.ok || !/^[A-Za-z0-9|]{20,}$/.test(token)) {
+    // L'uscita vera (26.10.2, letta sulla 70151): una riga di conferma, il gettone da solo su una riga
+    // (`<id>|<lettere e cifre>`), poi una frase che dice di conservarlo. Si prende la riga che ha quella
+    // forma, non l'ultima: la prima versione prendeva l'ultima e trovava la frase. Non si scrive nel registro.
+    const token = crea.stdout.split("\n").map((r) => r.trim()).find((r) => /^\d+\|[A-Za-z0-9]{20,}$/.test(r)) ?? "";
+    if (!crea.ok || !token) {
       log(`[token] lnms api:token-create non ha dato un gettone: ${crea.stderr.trim().substring(0, 300) || "uscita non riconosciuta"}`);
       return null;
     }

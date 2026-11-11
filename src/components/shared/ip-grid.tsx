@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { cn, parseCidr, longToIp, hostOpenPortsToFullLabel } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Popover, PopoverContent } from "@/components/ui/popover";
+import { ScegliCategoria } from "@/components/networks/scegli-categoria";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import type { Host } from "@/types";
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
@@ -14,6 +16,9 @@ interface IpGridProps {
   cidr: string;
   hosts: Host[];
   gateway?: string | null;
+  /** Se c'è, il tasto destro su un indirizzo apre la scelta della categoria (11/11/2026). */
+  onCategoria?: (hostId: number, slug: string) => void;
+  onAutomatica?: (hostId: number) => void;
 }
 
 interface CellData {
@@ -27,7 +32,8 @@ interface CellData {
 const COLS_PER_ROW = 32;
 const IPS_PER_BLOCK = 256;
 
-export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps) {
+export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway, onCategoria, onAutomatica }: IpGridProps) {
+  const [scelta, setScelta] = useState<{ host: Host & { classification_manual?: number | null }; el: HTMLElement } | null>(null);
   const router = useRouter();
 
   const parsed = useMemo(() => {
@@ -109,6 +115,7 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
       const adDns = (cell.host as Host & { ad_dns_host_name?: string | null }).ad_dns_host_name;
       if (adDns) lines.push("AD: ✓");
       if (cell.host.classification) lines.push(`Classificazione: ${cell.host.classification}`);
+      if (onCategoria) lines.push("Tasto destro: scegli la categoria");
       const device = (cell.host as { device?: { id: number; name: string; sysname?: string | null; vendor: string; protocol: string } }).device;
       if (device) {
         const displayName = cell.host.custom_name || cell.host.hostname || cell.host.dns_reverse || device.sysname || (device.name !== cell.host.ip ? device.name : null) || "—";
@@ -189,6 +196,11 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
                                   cell.host && "cursor-pointer hover:opacity-90",
                                 )}
                                 onClick={() => cell.host && router.push(`/hosts/${cell.host.id}`)}
+                                onContextMenu={(e) => {
+                                  if (!onCategoria || !cell.host) return;
+                                  e.preventDefault();
+                                  setScelta({ host: cell.host, el: e.currentTarget });
+                                }}
                               />
                             }
                           >
@@ -218,6 +230,26 @@ export const IpGrid = memo(function IpGrid({ cidr, hosts, gateway }: IpGridProps
         )}
       </div>
     </div>
+    {onCategoria && (
+      <Popover open={scelta != null} onOpenChange={(open) => { if (!open) setScelta(null); }}>
+        <PopoverContent anchor={scelta?.el ?? null}>
+          {scelta && (
+            <>
+              <p className="px-2 pb-1 text-[13px] font-medium">
+                {scelta.host.custom_name || scelta.host.hostname || scelta.host.ip}
+                <span className="ml-1 font-mono font-normal text-muted-foreground">{scelta.host.ip}</span>
+              </p>
+              <ScegliCategoria
+                attuale={scelta.host.classification && scelta.host.classification !== "unknown" ? scelta.host.classification : null}
+                proposta={scelta.host.classification && scelta.host.classification !== "unknown" && scelta.host.classification_manual !== 1 ? scelta.host.classification : null}
+                onScegli={(slug) => { onCategoria(scelta.host.id, slug); setScelta(null); }}
+                onAutomatica={onAutomatica && scelta.host.classification_manual === 1 ? () => { onAutomatica(scelta.host.id); setScelta(null); } : undefined}
+              />
+            </>
+          )}
+        </PopoverContent>
+      </Popover>
+    )}
     </TooltipProvider>
   );
 });

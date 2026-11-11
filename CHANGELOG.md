@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · La scelta della categoria a gruppi anche in Discovery e dalla griglia
+
+### Cambiato
+- **Discovery**: la cella «Classificazione» e il campo della «Modifica in blocco» aprono la scelta a gruppi con ricerca (`components/networks/categoria-in-riga.tsx`), al posto dell'elenco piatto. Le categorie aggiunte dal cliente stanno in un gruppo loro, «Categorie del cliente». «Torna automatica» fa quello che faceva «— Sconosciuta —».
+- **Griglia degli indirizzi** (pagina della subnet): il **tasto destro** su un indirizzo apre la stessa scelta. Il clic continua ad aprire la scheda dell'host.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: casa a celle, come la home di Entra
 
 Riccardo, 11/11: «pensavo a una modalità simile alla pagina di entra.domarc.it, dove potevo ridimensionare gli oggetti; alcuni ora hanno dimensione fissa e non occupano tutta la casella»; «elenco fallimenti per utente e andamento nel tempo dovrebbero essere due moduli diversi».

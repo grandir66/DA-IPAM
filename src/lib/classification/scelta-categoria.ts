@@ -12,7 +12,9 @@ import {
 } from "@/lib/device-classifications";
 
 export interface VoceScelta { slug: string; etichetta: string }
-export interface GruppoScelta { gruppo: DeviceCategoryGroup; titolo: string; voci: VoceScelta[] }
+export interface GruppoScelta { gruppo: DeviceCategoryGroup | "cliente"; titolo: string; voci: VoceScelta[] }
+
+const TITOLO_CLIENTE = "Categorie del cliente";
 
 const ORDINE: DeviceCategoryGroup[] = ["endpoints", "compute", "infrastructure", "peripheral", "iot_ot", "media"];
 
@@ -21,7 +23,7 @@ function piatto(s: string): string {
 }
 
 /** I gruppi con le loro voci, in ordine d'uso. Con `cerca`, restano solo le voci che lo contengono (nome o gruppo). */
-export function gruppiScelta(cerca: string = ""): GruppoScelta[] {
+export function gruppiScelta(cerca: string = "", extra: readonly VoceScelta[] = []): GruppoScelta[] {
   const q = piatto(cerca);
   const perGruppo = new Map<DeviceCategoryGroup, VoceScelta[]>();
   for (const slug of DEVICE_CLASSIFICATIONS_ORDERED) {
@@ -35,11 +37,19 @@ export function gruppiScelta(cerca: string = ""): GruppoScelta[] {
     if (!voci.some((v) => v.slug === slug)) voci.push({ slug, etichetta });
     perGruppo.set(gruppo, voci);
   }
-  return ORDINE.filter((g) => perGruppo.has(g)).map((g) => ({
+  const gruppi: GruppoScelta[] = ORDINE.filter((g) => perGruppo.has(g)).map((g) => ({
     gruppo: g,
     titolo: DEVICE_CATEGORY_GROUP_LABELS[g],
     voci: (perGruppo.get(g) ?? []).sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it")),
   }));
+  // Le categorie aggiunte dal cliente (Impostazioni, Classificazioni) non stanno nel catalogo: un gruppo loro, in fondo.
+  const gia = new Set(gruppi.flatMap((g) => g.voci.map((v) => v.slug)));
+  const delCliente = extra
+    .filter((v) => v.slug && v.slug !== "unknown" && !gia.has(v.slug))
+    .filter((v) => !q || piatto(v.etichetta).includes(q) || piatto(v.slug).includes(q) || piatto(TITOLO_CLIENTE).includes(q))
+    .sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it"));
+  if (delCliente.length > 0) gruppi.push({ gruppo: "cliente", titolo: TITOLO_CLIENTE, voci: delCliente });
+  return gruppi;
 }
 
 /**

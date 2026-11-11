@@ -108,6 +108,7 @@ import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host
 import { porteAperte } from "@/lib/integrations/meshcentral/senza-agente-porte";
 import type { ClassPreset, IconName } from "./preset-types";
 import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { CategoriaInRiga } from "@/components/networks/categoria-in-riga";
 import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
@@ -591,6 +592,8 @@ export default function DiscoveryPage() {
     for (const c of customClassifications) m.set(c.slug, c.label);
     return m;
   }, [customClassifications]);
+  /** Le categorie aggiunte dal cliente, per la scelta a gruppi (gruppo «Categorie del cliente»). */
+  const vociCliente = useMemo(() => customClassifications.map((c) => ({ slug: c.slug, etichetta: c.label })), [customClassifications]);
   const effectiveLabel = useCallback((slug: string) => customLabelMap.get(slug) ?? getClassificationLabel(slug), [customLabelMap]);
   const effectiveClassifications = useMemo(
     () => [...DEVICE_CLASSIFICATIONS_ORDERED, ...customClassifications.map((c) => c.slug)],
@@ -1593,26 +1596,27 @@ export default function DiscoveryPage() {
         // v0.2.618: editabile inline (select). Save → PUT /api/hosts/:id { classification }.
         // v0.2.621: ordinamento alfabetico per LABEL visibile (es. "Access Point", "Bridge", ...)
         // v0.2.632: include classification custom (effectiveClassifications + effectiveLabel).
-        const slugs = effectiveClassifications.filter((c) => c !== "unknown");
-        const sortedSlugs = [...slugs].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" }));
-        const opts = [{ value: "unknown", label: "— Sconosciuta —" },
-          ...sortedSlugs.map((c) => ({ value: c, label: effectiveLabel(c) }))];
+        // 11/11/2026: la scelta a gruppi con ricerca al posto dell'elenco piatto (Riccardo: «assegnarlo a una
+        // categoria in modo efficace»). «Torna automatica» fa quello che faceva «— Sconosciuta —».
+        const haClasse = !!h.classification && h.classification !== "unknown";
         return (
-          <InlineEditCell
-            mode="select"
-            value={h.classification && h.classification !== "unknown" ? h.classification : "unknown"}
-            selectOptions={opts}
-            onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
-            display={h.classification && h.classification !== "unknown"
+          <CategoriaInRiga
+            attuale={haClasse ? h.classification : null}
+            proposta={haClasse && h.classification_manual !== 1 ? h.classification : null}
+            extra={vociCliente}
+            title="Scegli la categoria"
+            onScegli={(v) => saveHostFieldInline(h.id, { classification: v })}
+            onAutomatica={haClasse ? () => saveHostFieldInline(h.id, { classification: "unknown" }) : undefined}
+          >
+            {haClasse
               ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+                  <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification as string) || h.classification}</Badge>
                   {h.classification_manual === 1 && <BadgeAMano piccolo />}
                 </span>
               )
-              : <span className="text-muted-foreground text-xs">—</span>}
-            title="Clicca per cambiare classificazione"
-          />
+              : <span className="rounded-md border border-dashed px-2 py-0.5 text-[13px] text-muted-foreground">Senza categoria</span>}
+          </CategoriaInRiga>
         );
       }
       case "known_host":
@@ -2756,19 +2760,15 @@ export default function DiscoveryPage() {
                 enabled={bulkForm.classification.enabled}
                 onToggle={(v) => updateBulkField("classification", { enabled: v })}
               >
-                <Select
-                  value={bulkForm.classification.value || "__empty__"}
-                  onValueChange={(v) => updateBulkField("classification", { value: v === "__empty__" ? "" : (v ?? "") })}
+                <CategoriaInRiga
+                  attuale={bulkForm.classification.value || null}
+                  extra={vociCliente}
                   disabled={!bulkForm.classification.enabled}
+                  className="h-8 w-full rounded-lg border border-input px-2.5 text-left text-sm disabled:opacity-50"
+                  onScegli={(v) => updateBulkField("classification", { value: v })}
                 >
-                  <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__empty__">— Seleziona —</SelectItem>
-                    {[...effectiveClassifications].sort((a, b) => effectiveLabel(a).localeCompare(effectiveLabel(b), "it", { sensitivity: "base" })).map((c) => (
-                      <SelectItem key={c} value={c}>{effectiveLabel(c)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {bulkForm.classification.value ? effectiveLabel(bulkForm.classification.value) : "Scegli la categoria…"}
+                </CategoriaInRiga>
               </BulkFieldRow>
 
               {/* Produttore */}

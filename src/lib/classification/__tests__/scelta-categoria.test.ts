@@ -33,3 +33,17 @@ describe("origineCategoria", () => {
     assert.equal(origineCategoria(false, null), null);
   });
 });
+
+describe("gruppiScelta con le categorie del cliente", () => {
+  it("le voci fuori dal catalogo stanno in un gruppo loro, in fondo; quelle già in catalogo non si ripetono", () => {
+    const gruppi = gruppiScelta("", [{ slug: "tornio_cnc", etichetta: "Tornio CNC" }, { slug: "stampante", etichetta: "Stampante" }]);
+    const ultimo = gruppi[gruppi.length - 1];
+    assert.equal(ultimo.gruppo, "cliente");
+    assert.deepEqual(ultimo.voci.map((v) => v.slug), ["tornio_cnc"]);
+    assert.equal(gruppi.flatMap((g) => g.voci).filter((v) => v.slug === "stampante").length, 1);
+  });
+  it("la ricerca trova anche quelle", () => {
+    const trovate = gruppiScelta("tornio", [{ slug: "tornio_cnc", etichetta: "Tornio CNC" }]).flatMap((g) => g.voci.map((v) => v.slug));
+    assert.deepEqual(trovate, ["tornio_cnc"]);
+  });
+});

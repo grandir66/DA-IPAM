@@ -9,14 +9,17 @@ import { useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getClassificationLabel } from "@/lib/device-classifications";
-import { gruppiScelta } from "@/lib/classification/scelta-categoria";
+import { gruppiScelta, type VoceScelta } from "@/lib/classification/scelta-categoria";
 
 export function ScegliCategoria({
   attuale,
   proposta,
   onScegli,
   onAutomatica,
+  extra,
 }: {
+  /** Categorie aggiunte dal cliente, fuori dal catalogo: un gruppo in fondo. */
+  extra?: readonly VoceScelta[];
   /** La classe di adesso, per segnarla nell'elenco. */
   attuale?: string | null;
   /** La classe proposta dal sistema e non ancora scelta a mano: in cima, da confermare con un clic. */
@@ -27,7 +30,8 @@ export function ScegliCategoria({
 }) {
   const [cerca, setCerca] = useState("");
   const [aperto, setAperto] = useState<string | null>(null);
-  const gruppi = useMemo(() => gruppiScelta(cerca), [cerca]);
+  const gruppi = useMemo(() => gruppiScelta(cerca, extra), [cerca, extra]);
+  const etichetta = (slug: string) => extra?.find((v) => v.slug === slug)?.etichetta ?? getClassificationLabel(slug);
   const cercando = cerca.trim() !== "";
   const riga = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent hover:text-accent-foreground";
 
@@ -46,7 +50,7 @@ export function ScegliCategoria({
           <p className="px-2 pt-1 text-[13px] text-muted-foreground">Proposta dal sistema</p>
           <button type="button" className={`${riga} border`} onClick={() => onScegli(proposta)}>
             <Check className="size-4 shrink-0" aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">{getClassificationLabel(proposta)}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{etichetta(proposta)}</span>
             <span className="shrink-0 text-muted-foreground">conferma</span>
           </button>
         </>

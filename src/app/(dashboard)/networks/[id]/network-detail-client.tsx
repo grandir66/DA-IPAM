@@ -390,6 +390,17 @@ export function NetworkDetailClient({
     return () => clearInterval(id);
   }, [autoRefreshInterval, autoScanPing, network.id, refreshHosts]);
 
+  // Dalla griglia: funzioni stabili (la griglia è `memo`, 256 celle), che chiamano l'ultima versione di quelle vere.
+  const azioniGriglia = useRef<{ salva: (id: number, slug: string) => void; automatica: (id: number) => void }>({ salva: () => {}, automatica: () => {} });
+  const categoriaDallaGriglia = useCallback((id: number, slug: string) => azioniGriglia.current.salva(id, slug), []);
+  const automaticaDallaGriglia = useCallback((id: number) => azioniGriglia.current.automatica(id), []);
+  useEffect(() => {
+    azioniGriglia.current = {
+      salva: (id, slug) => { void saveHostField(id, "classification", slug, (hosts.find((h) => h.id === id) as HostWithDevice | undefined)?.device_id); },
+      automatica: (id) => { void tornaAutomaticaRiga(id); },
+    };
+  });
+
   /** «Torna automatica» dal menu della riga: toglie la scelta a mano, poi rilegge gli host. */
   async function tornaAutomaticaRiga(hostId: number) {
     try {
@@ -1613,7 +1624,7 @@ export function NetworkDetailClient({
             <CardTitle className="text-sm">Mappa degli Indirizzi IP</CardTitle>
           </CardHeader>
           <CardContent className="overflow-visible p-3">
-            <IpGrid cidr={network.cidr} hosts={hosts} gateway={network.gateway} />
+            <IpGrid cidr={network.cidr} hosts={hosts} gateway={network.gateway} onCategoria={categoriaDallaGriglia} onAutomatica={automaticaDallaGriglia} />
             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-success inline-block" /> Online</span>
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-destructive inline-block" /> Offline</span>

@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: «Porte di rete» nella striscia in testa
+
+Riccardo (11/11): «un box in alto con un link agli apparati di rete che hanno memorizzato uno schema delle porte … per vedere rapidamente che porte sono disponibili, un po' come gli ip nelle network»; «un modulo che si apre», «non direttamente visibile».
+
+### Aggiunto
+- **Riquadro «Porte di rete»** in testa alla casa della vista cliente: dice quante porte sono libere e su quanti apparati; al clic apre un modulo con l'elenco degli switch e dei router e, per quello scelto, il pannello delle porte (collegata, libera, dorsale) con chi c'è attaccato. Chiuso occupa solo il suo riquadro.
+
 ## [Non rilasciato] — 2026-11-11 · I job si gestiscono in Schedulazioni, non più in due posti
 
 Riccardo (11/11): «i job schedulati a questo punto sono sia nel menù schedulazioni che in setting/schedulazioni» — in realtà in Schedulazioni e in Impostazioni → «Job schedulati»; scelta l'opzione 2 (tutto in Schedulazioni), tavola a sette oggetti approvata («Sì, scrivila»).

@@ -1,5 +1,10 @@
 # TASKS — DA-IPAM
 
+## 2026-11-11 — Vista cliente: porte di rete in testa, e l'idea della dashboard unica (Riccardo)
+
+- [x] Riccardo (11/11): «servirebbe un box in alto con un link agli apparati di rete che hanno memorizzato uno schema delle porte usate, per poter vedere rapidamente che porte sono disponibili, un po' come gli ip nelle network» · «ovviamente un modulo che si apre» · «non direttamente visibile» · «indicavo nel pannello veloce» (la striscia di riquadri in testa a `/cliente`). Fatto: riquadro «Porte di rete» (`components/cliente/riquadro-porte.tsx`) che apre un modulo con gli apparati e, per quello scelto, il pannello delle porte; dati da `apparatiConPorte` (`lib/cliente/schede/apparati.ts`, due query in tutto). «Libera» è quella della pagina Apparati: porta non collegata all'ultima lettura (le porte spente in configurazione contano come libere). Apparati: switch e router, come nella pagina Apparati; i firewall restano fuori.
+- [ ] **Idea da riprendere (Riccardo, 11/11)**: «questa potrà diventare la dashboard unica per tutti, semplicemente chi non ha diritti avanzati non potrà vedere tutto; quindi i moduli della dashboard attuale possiamo riproporli anche in questa visione». Vuol dire: `/cliente` come casa unica, i riquadri della Dashboard di oggi portati nella libreria della casa (`lib/cliente/casa.ts`, `RIQUADRI_CASA`), ognuno visibile o no secondo il ruolo. Da pianificare: censimento dei moduli della Dashboard, regola dei diritti per riquadro, cosa succede alla Dashboard attuale. Tocca il lavoro della sessione «01 - riclassificazione (fork)» sulla vista cliente: un flusso solo, non due.
+
 ## 2026-11-11 — I job in un posto solo: Schedulazioni (Riccardo, base)
 
 Riccardo (11/11): «i job schedulati a questo punto sono sia nel menù schedulazioni che in setting/schedulazioni» → «opzione 2» (tutta la gestione in Schedulazioni) → tavola a sette oggetti, «Sì, scrivila». Su `dev` 0.9.1182 (`c748a65a`), sull'hub 533.

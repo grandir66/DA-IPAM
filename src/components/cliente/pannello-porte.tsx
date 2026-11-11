@@ -132,7 +132,7 @@ export function ElencoApparati({
   );
 }
 
-function classePorta(porta: PortaCliente, scelta: boolean): string {
+export function classePorta(porta: PortaCliente, scelta: boolean): string {
   const fondo = porta.stato === "collegata"
     ? "bg-[var(--vc-acceso)] text-[var(--vc-su-acceso)]"
     : "border border-[var(--vc-bordo)] text-muted-foreground";
@@ -199,7 +199,7 @@ export function PannelloPorte({
   );
 }
 
-function DettaglioPorta({ porta }: { porta: PortaCliente }) {
+export function DettaglioPorta({ porta }: { porta: PortaCliente }) {
   const pezzi = [porta.stato === "collegata" ? "collegata" : "libera"];
   if (porta.velocita) pezzi.push(porta.velocita);
   if (porta.vlan != null) pezzi.push(`VLAN ${porta.vlan}`);

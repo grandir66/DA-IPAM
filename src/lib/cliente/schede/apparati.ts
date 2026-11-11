@@ -266,7 +266,10 @@ export function porteDelloSwitch(db: Database.Database, ip: string): PortaClient
     WHERE nd.host = ? AND nd.device_type IN ${TIPI_CON_PORTE}
   `).all(ip) as RigaPorta[];
   if (porte.length === 0) return null;
-  const nomi = nomiAttaccati(db, porte);
+  return inPorteCliente(porte, nomiAttaccati(db, porte));
+}
+
+function inPorteCliente(porte: RigaPorta[], nomi: Map<number, { nome: string; ip: string }>): PortaCliente[] {
   return porte
     .filter((p) => ePortaFisica(comePorta(p)))
     .map((p) => {
@@ -283,6 +286,44 @@ export function porteDelloSwitch(db: Database.Database, ip: string): PortaClient
       };
     })
     .sort((a, b) => a.numero - b.numero || a.nome.localeCompare(b.nome, "it"));
+}
+
+export interface ApparatoConPorte {
+  ip: string;
+  nome: string;
+  porte: PortaCliente[];
+  libere: number;
+}
+
+/**
+ * Gli apparati di rete con le porte lette, ognuno con le sue porte (Riccardo, 11/11/2026: «un box in alto con un link
+ * agli apparati di rete che hanno memorizzato uno schema delle porte, per vedere rapidamente che porte sono
+ * disponibili, un po' come gli IP nelle network»). Una query per le porte e una per i nomi, non una per apparato.
+ * «Libera» è la stessa della pagina Apparati: la porta non è collegata all'ultima lettura.
+ */
+export function apparatiConPorte(db: Database.Database): ApparatoConPorte[] {
+  const righe = db.prepare(`
+    SELECT sp.id, sp.device_id, sp.port_index, sp.port_name, sp.status, sp.speed, sp.vlan,
+      sp.is_trunk, sp.is_uplink, sp.host_id, sp.single_mac_hostname, sp.single_mac_ip,
+      sp.trunk_neighbor_name, sp.trunk_primary_name, nd.host AS ip_apparato, nd.name AS nome_apparato
+    FROM switch_ports sp
+    JOIN network_devices nd ON nd.id = sp.device_id
+    WHERE nd.device_type IN ${TIPI_CON_PORTE}
+  `).all() as Array<RigaPorta & { ip_apparato: string; nome_apparato: string }>;
+  const nomi = nomiAttaccati(db, righe);
+  const perApparato = new Map<number, { ip: string; nome: string; righe: RigaPorta[] }>();
+  for (const r of righe) {
+    const a = perApparato.get(r.device_id) ?? { ip: r.ip_apparato, nome: r.nome_apparato, righe: [] };
+    a.righe.push(r);
+    perApparato.set(r.device_id, a);
+  }
+  return [...perApparato.values()]
+    .map((a) => {
+      const porte = inPorteCliente(a.righe, nomi);
+      return { ip: a.ip, nome: a.nome, porte, libere: porte.filter((p) => p.stato === "libera").length };
+    })
+    .filter((a) => a.porte.length > 0)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
 }
 
 function porteLette(db: Database.Database): number {

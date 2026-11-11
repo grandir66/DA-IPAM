@@ -13,6 +13,7 @@ import {
   fraseApparatoSpento,
   nomiDaSegnalare,
   porteDelloSwitch,
+  apparatiConPorte,
   schedaApparati,
   tipoCliente,
   TIPI_CLIENTE,
@@ -233,4 +234,29 @@ test("fraseApparatoSpento: la categoria precede l'indirizzo quando manca il nome
     fraseApparatoSpento("10.0.0.8", "10.0.0.8", null, visto, adesso),
     "10.0.0.8 spento da 5 giorni",
   );
+});
+
+test("apparatiConPorte: solo switch e router con porte lette, ognuno con le sue e il conto delle libere", () => {
+  const db = dbDiProva();
+  const apparato = db.prepare("INSERT INTO network_devices (id, name, host, device_type) VALUES (?, ?, ?, ?)");
+  apparato.run(1, "SW-B", "10.0.0.2", "switch");
+  apparato.run(2, "SW-A", "10.0.0.3", "switch");
+  apparato.run(3, "Server", "10.0.0.4", "server");
+  apparato.run(4, "SW-vuoto", "10.0.0.5", "switch");
+  const porta = db.prepare(
+    "INSERT INTO switch_ports (id, device_id, port_index, port_name, status, is_trunk, is_uplink) VALUES (?, ?, ?, ?, ?, 0, 0)",
+  );
+  porta.run(1, 1, 1, "Gi1/0/1", "up");
+  porta.run(2, 1, 2, "Gi1/0/2", "down");
+  porta.run(3, 1, 3, "Gi1/0/3", "down");
+  porta.run(4, 2, 1, "Gi1/0/1", "up");
+  porta.run(5, 3, 1, "eth0", "up");
+
+  const elenco = apparatiConPorte(db);
+  assert.deepEqual(elenco.map((a) => [a.nome, a.ip, a.porte.length, a.libere]), [
+    ["SW-A", "10.0.0.3", 1, 0],
+    ["SW-B", "10.0.0.2", 3, 2],
+  ]);
+  assert.deepEqual(elenco[1].porte, porteDelloSwitch(db, "10.0.0.2"));
+  db.close();
 });

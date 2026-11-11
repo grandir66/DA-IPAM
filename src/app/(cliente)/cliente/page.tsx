@@ -3,6 +3,8 @@ import { ElencoAttenzione } from "@/components/cliente/elenco-attenzione";
 import { AccessiDaDove, AccessiPerUtente, AndamentoAccessi, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
 import { ApparatiNuovi, Certificati, Disponibilita, ImportantiSpenti, SistemiOperativi } from "@/components/cliente/riquadri-altri";
 import { RiquadroPiccolo } from "@/components/cliente/riquadro-piccolo";
+import { RiquadroPorte } from "@/components/cliente/riquadro-porte";
+import { apparatiConPorte, type ApparatoConPorte } from "@/lib/cliente/schede/apparati";
 import Link from "next/link";
 import { GrigliaCasa, type ContenutoRiquadro } from "@/components/cliente/griglia-casa";
 import { RIQUADRI_CASA, leggiDisposizione, disposizionePredefinita, type VoceDisposizione } from "@/lib/cliente/casa";
@@ -63,6 +65,15 @@ export default async function CasaCliente({
     disposizione = nelCliente(c, (db) => leggiDisposizione(db));
   } catch (e) {
     console.error("[cliente] disposizione della casa:", e instanceof Error ? e.message : String(e));
+  }
+  // «Porte di rete»: solo con il modulo Apparati attivo e almeno un apparato con le porte lette.
+  let conPorte: ApparatoConPorte[] = [];
+  if (schede.some((s) => s.id === "apparati")) {
+    try {
+      conPorte = nelCliente(c, (db) => apparatiConPorte(db));
+    } catch (e) {
+      console.error("[cliente] porte di rete:", e instanceof Error ? e.message : String(e));
+    }
   }
   const apriAccessi = g.accessi?.dettaglio
     ? <Apri href="/cliente/dominio" testo="Dominio e accessi" />
@@ -133,10 +144,11 @@ export default async function CasaCliente({
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="min-w-0 space-y-4">
-        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(1, riquadri.length)}, minmax(0, 1fr))` }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(1, riquadri.length + (conPorte.length > 0 ? 1 : 0))}, minmax(0, 1fr))` }}>
           {riquadri.map((r) => (
             <RiquadroPiccolo key={r.id} id={r.id} titolo={r.titolo} riquadro={r.riquadro} />
           ))}
+          {conPorte.length > 0 && <RiquadroPorte apparati={conPorte} />}
         </div>
         <GrigliaCasa key={inModifica ? "modifica" : "vista"} iniziale={disposizione} riquadri={contenuti} libreria={RIQUADRI_CASA} modifica={inModifica} />
         {c.amministratore && !componi && (

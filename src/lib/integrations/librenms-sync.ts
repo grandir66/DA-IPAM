@@ -166,19 +166,17 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
     }
     try {
       const snmpData   = parseSnmpData(host.snmp_data)!;
-      const snmpParams = resolveSnmpParams(snmpData, networkCommunity)!;
+      const daDati     = resolveSnmpParams(snmpData, networkCommunity)!;
+      // Come nell'aggiunta singola: prima la credenziale validata sull'host, poi la community dei dati.
+      const snmpParams: Record<string, unknown> = campiSnmpHostValidato(host.id)
+        ?? { community: daDati.community, snmpver: daDati.snmpver, port: daDati.port };
       const hostname   = pickHostname(host.ip);  // sempre IP per polling affidabile
       const sysName    = pickSysName(host.hostname, host.custom_name);
       const existing   = getLibreNMSMapByIp(networkId, host.ip);
 
       if (existing) {
         // Aggiorna parametri SNMP + metadati (community aggiornabile via PATCH)
-        const updateFields: Record<string, unknown> = {
-          community: snmpParams.community,
-          snmpver:   snmpParams.snmpver,
-          port:      snmpParams.port,
-          snmp_disable: false,
-        };
+        const updateFields: Record<string, unknown> = { ...snmpParams, snmp_disable: false };
         if (sysName)            updateFields.sysName  = sysName;
         if (host.model)         updateFields.hardware = host.model;
         if (host.serial_number) updateFields.serial   = host.serial_number;
@@ -194,9 +192,7 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
           // Device già in LibreNMS (aggiunto manualmente): aggiorna le credenziali SNMP
           deviceId = existingId;
           await client.updateDevice(deviceId, {
-            community:    snmpParams.community,
-            snmpver:      snmpParams.snmpver,
-            port:         snmpParams.port,
+            ...snmpParams,
             snmp_disable: false,
             ...(sysName            ? { sysName }            : {}),
             ...(host.model         ? { hardware: host.model }         : {}),
@@ -279,7 +275,10 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
   const snmpParams = resolveSnmpParams(snmpData, networkCommunity);
   // Senza community nei dati SNMP dell'host vale la credenziale SNMP validata sull'host (22/10: l'aggiunta automatica
   // prende tutti gli oggetti con SNMP verificato, e 60 host su 76 della sede di prova l'avevano solo lì).
-  const validata = snmpParams ? null : campiSnmpHostValidato(host.id);
+  // La credenziale validata viene PRIMA della community rimasta nei dati dell'host (11/11/2026, appliance 70151):
+  // lo switch 172.20.9.210 aveva nei dati una community vecchia che non risponde più e, legata all'host, la
+  // credenziale validata che risponde; passando la prima LibreNMS rifiutava con «Could not connect».
+  const validata = campiSnmpHostValidato(host.id);
   if (!snmpParams && !validata && !getLibreNMSMapByIp(host.network_id, host.ip)) {
     const messaggio = "Nessuna credenziale SNMP per questo oggetto: in LibreNMS si aggiunge solo chi ha l'SNMP (niente «solo ping»).";
     scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: "senza_snmp", motivo: messaggio });
@@ -296,9 +295,10 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
   const existing = getLibreNMSMapByIp(host.network_id, host.ip);
 
   // Campi SNMP da aggiornare/inviare (vuoto se ping-only)
-  const snmpFields: Omit<CampiAggiuntaLibreNms, "hostname"> = snmpParams
-    ? { community: snmpParams.community, snmpver: snmpParams.snmpver, port: snmpParams.port, snmp_disable: false }
-    : validata ?? { snmp_disable: true };
+  const snmpFields: Omit<CampiAggiuntaLibreNms, "hostname"> = validata
+    ?? (snmpParams
+      ? { community: snmpParams.community, snmpver: snmpParams.snmpver, port: snmpParams.port, snmp_disable: false }
+      : { snmp_disable: true });
   const metadati = {
     ...(sysName            ? { sysName }                        : {}),
     ...(host.model         ? { hardware: host.model }           : {}),

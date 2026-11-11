@@ -186,6 +186,22 @@ test("host senza SNMP: niente aggiunta «solo ping», nessuna chiamata a LibreNM
   assert.deepEqual(r, { codice: "senza_snmp" });
 });
 
+test("community vecchia nei dati dell'host e SNMP validata sull'host: vince la validata (11/11/2026, appliance 70151)", async () => {
+  // Incidente: lo switch 172.20.9.210 aveva in snmp_data una community che non risponde più; a LibreNMS andava
+  // quella e rifiutava con «Could not connect», mentre la credenziale validata sull'host rispondeva.
+  setIntegrationConfig("librenms", { mode: "external", url: "http://192.0.2.200:8090", apiToken: "token-finto" });
+  rispostaPost = () => Response.json({ status: "ok", id: [93] });
+  const d = getTenantDb(T);
+  const id = withTenant(T, () => Number(d.prepare("INSERT INTO hosts (network_id, ip, status, snmp_data) VALUES (1, '192.0.2.143', 'online', ?)")
+    .run(JSON.stringify({ community: "comm-vecchia", sysName: "sw" })).lastInsertRowid));
+  const cred = Number(d.prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('comm-buona', 'snmp', ?)").run(encrypt("comm-buona")).lastInsertRowid);
+  d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at) VALUES (?, ?, 'snmp', 161, 1, '2026-11-05 12:26:49')").run(id, cred);
+  chiamate.length = 0;
+  const esito = await withTenant(T, () => addSingleHostToLibreNMS(id));
+  assert.deepEqual(esito, { ok: true, librenms_device_id: 93, aggiunto: true });
+  assert.equal(chiamate.find((x) => x.metodo === "POST")?.corpo?.community, "comm-buona");
+});
+
 test("host senza community nei dati SNMP ma con una SNMP validata sull'host: si aggiunge con quella credenziale", async () => {
   // 22/10 sera: candidati automatici = tutti gli oggetti con SNMP verificato; sulla sede di prova 60 host avevano la
   // SNMP validata solo in host_credentials, e senza questo ripiego sarebbero finiti tutti in «senza_snmp».

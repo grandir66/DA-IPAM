@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · LibreNMS: la credenziale SNMP validata vince sulla community dei dati
+
+Riccardo (11/11), appliance 70151: «LibreNMS ha rifiutato l'aggiunta: Could not connect to 172.20.9.210». Lo switch aveva nei dati dell'host una community vecchia che non risponde più, e legata all'host la credenziale SNMP validata che risponde: a LibreNMS andava la prima.
+
+### Corretto
+- Nell'aggiunta di un oggetto a LibreNMS, singola e in blocco, **si usa prima la credenziale SNMP validata sull'host**; la community rimasta nei dati vale solo se una validata non c'è.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Da sistemare
 
 Il cliente vede, apparato per apparato, le cose critiche e alte da sistemare. I conti in casa sono gli stessi di «Critiche da sistemare» e «Alte da sistemare» sulla Dashboard. L'elenco dei rilievi non porta gli host e si ferma a 200 righe: la scheda legge i gruppi per host, che `elencoRilievi` calcola su tutte le pagine.

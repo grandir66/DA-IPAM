@@ -526,7 +526,7 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 
 ---
 
-### [ ] Task 6 bis — Log di sicurezza: gli ultimi 7 giorni per tipo
+### [x] Task 6 bis — Log di sicurezza: gli ultimi 7 giorni per tipo
 
 **Perché.** Riccardo, 11/11. La scheda conta gli avvisi «aperti», cioè mai presi in carico. Sul cliente 70791 sono 209 (110 di livello medio, nessuno grave) e l'ultimo preso in carico è del 27/07: nessuno li chiude, quindi al cliente il numero crescerebbe sempre. Si mostra invece **cosa è successo negli ultimi 7 giorni, raggruppato per tipo**. Le parole «aperti», «chiusi», «presi in carico» spariscono dalla vista cliente. Si fa **prima del Task 7**, in un commit suo.
 
@@ -568,7 +568,7 @@ export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza;   
 - `riquadro`: `numero` = `totaleSettimana`; `contesto` = «avvisi in 7 giorni · <n> tipi» (singolare «1 tipo»); `aperti` = numero di tipi `grave` o `attenzione`; `stato` = `grave` se c'è un tipo `grave`, `attenzione` se c'è un tipo `attenzione`, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni tipo `grave` (al più 3), gravità `grave`, testo «<testo> · <avvisi> avvisi su <computer> computer», `href` «/cliente/log-sicurezza». I tipi `attenzione` non entrano in casa: restano nella scheda.
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Casi: due righe con la stessa frase e computer diversi → un tipo, 2 avvisi, 2 computer; una riga di 8 giorni fa non conta; una riga `diagnostic = 1` non conta; un tipo con una riga di livello 12 e una di livello 5 è `grave`; una riga già presa in carico (`acknowledged = 1`) **conta** come le altre.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. La prova che parlava di aperti e chiusi è stata riscritta, come dice il task: due righe con la stessa frase e computer diversi fanno un tipo grave (livello 12 e livello 5), 2 avvisi, 2 computer; la riga del 3 novembre non conta; la riga `diagnostic = 1` non conta; la riga con `acknowledged = 1` conta. I sette giorni restano, dal 5 all'11 novembre. La pagina autenticata non è stata aperta.
 
 **Commit:** «Vista cliente: i log di sicurezza mostrano gli ultimi 7 giorni per tipo».
 
@@ -721,6 +721,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 7 [x]: scheda Da sistemare, dai gruppi per host. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. I totali del riquadro passano da `barreReteDiSerie()`, come la Dashboard; il confronto sullo stesso cliente non è stato fatto.
 
 - 2026-11-11 Controllo del Task 7 (`4de0b8a5`): il codice è come da piano, 36 prove verdi rilanciate. **Sul dato vero però la scheda non regge** (misura sull'hub, cliente 70791): i gruppi per host contano ogni CVE (una riga direbbe «374 gravi · 2211 alte» mentre il riquadro dice 124 e 385), la «cosa più grave» è una sigla (`CVE-2025-55315`, `controllo:tls-deep:…`), il rimedio si trova per 10 apparati su 92. Errore del piano, non di chi esegue. In attesa di una decisione di Riccardo: passare alla vista per software.
+
+- 2026-11-11 Task 6 bis [x]: i log mostrano gli ultimi 7 giorni per tipo, non gli avvisi aperti. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 36 prove, 0 fallite. lint 0 errori, tsc 0 errori. La prova su aperti e chiusi è stata riscritta. La pagina autenticata non è stata aperta.
 
 ## Consuntivo
 ### Fatto

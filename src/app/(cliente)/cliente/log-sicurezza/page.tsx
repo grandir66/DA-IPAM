@@ -1,12 +1,13 @@
 import { CircleAlert, Info, TriangleAlert } from "lucide-react";
 import { redirect } from "next/navigation";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
-import { Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
+import { Pannello, Vuoto } from "@/components/shared/console";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { contestoCliente, nelCliente } from "@/lib/cliente/contesto";
-import { logSicurezza, schedaLogSicurezza, type AvvisoCliente, type LogSicurezza } from "@/lib/cliente/schede/log-sicurezza";
+import { contoTipo, logSicurezza, schedaLogSicurezza, type LogSicurezza, type TipoAvviso } from "@/lib/cliente/schede/log-sicurezza";
+import { daQuanto } from "@/lib/cliente/testi";
 import type { Gravita } from "@/lib/cliente/registro";
-import { FUSO_UTENTI } from "@/lib/db-date";
+import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 
 function Segno({ gravita }: { gravita: Gravita }) {
   if (gravita === "grave") {
@@ -42,6 +43,13 @@ function quanti(n: number, uno: string, tanti: string): string {
   return `${n} ${n === 1 ? uno : tanti}`;
 }
 
+function rigaSettimana(log: LogSicurezza): string {
+  const avvisi = quanti(log.totaleSettimana, "avviso in 7 giorni", "avvisi in 7 giorni");
+  const computer = `${log.sottoControllo} computer sotto controllo su ${log.totaleComputer}`;
+  const senza = log.totaleComputer - log.sottoControllo;
+  return senza > 0 ? `${avvisi} · ${computer} · ${senza} senza controllo` : `${avvisi} · ${computer}`;
+}
+
 function BarreSetteGiorni({ giorni }: { giorni: LogSicurezza["perGiorno"] }) {
   const massimo = Math.max(0, ...giorni.map((g) => g.avvisi));
   return (
@@ -66,18 +74,15 @@ function BarreSetteGiorni({ giorni }: { giorni: LogSicurezza["perGiorno"] }) {
   );
 }
 
-function RigaAvviso({ avviso }: { avviso: AvvisoCliente }) {
+function RigaTipo({ tipo, ora }: { tipo: TipoAvviso; ora: Date }) {
   return (
     <div className="flex items-center gap-2 border-b py-2 text-sm last:border-b-0">
-      <Segno gravita={avviso.gravita} />
+      <Segno gravita={tipo.gravita} />
       <span className="min-w-0 flex-1">
-        {avviso.testo}
-        {avviso.volte > 1 && <span className="ml-2 font-mono">× {avviso.volte}</span>}
+        <span className="block">{tipo.testo}</span>
+        <span className="text-[13px] text-muted-foreground">{contoTipo(tipo.avvisi, tipo.computer)}</span>
       </span>
-      <span className="shrink-0 text-[13px] text-muted-foreground">
-        {avviso.dove ? `${avviso.dove} · ` : ""}
-        <TempoRelativo data={avviso.quando} />
-      </span>
+      <span className="shrink-0 text-[13px] text-muted-foreground">{`l'ultimo ${daQuanto(parseDbDate(tipo.ultima), ora)}`}</span>
     </div>
   );
 }
@@ -97,9 +102,8 @@ export default async function PaginaLogSicurezza() {
     console.error("[cliente] log di sicurezza:", e instanceof Error ? e.message : String(e));
   }
 
-  const senza = log ? Math.max(0, log.totaleComputer - log.sottoControllo) : 0;
   const contesto = log
-    ? `fonte: ${fonte} · ${quanti(log.sottoControllo, "computer sotto controllo", "computer sotto controllo")} su ${log.totaleComputer}`
+    ? `fonte: ${fonte} · ${log.sottoControllo} computer sotto controllo su ${log.totaleComputer}`
     : `fonte: ${fonte}`;
 
   return (
@@ -111,21 +115,19 @@ export default async function PaginaLogSicurezza() {
           ) : (
             <div className="space-y-3">
               <BarreSetteGiorni giorni={log.perGiorno} />
-              <p className="text-[13px] text-muted-foreground">
-                {quanti(log.totaleAperti, "aperto", "aperti")} · {quanti(log.chiusiNelMese, "chiuso nel mese", "chiusi nel mese")} · {quanti(senza, "computer senza controllo", "computer senza controllo")}
-              </p>
+              <p className="text-[13px] text-muted-foreground">{rigaSettimana(log)}</p>
             </div>
           )}
         </Pannello>
-        <Pannello titolo="Avvisi aperti" conteggio={log?.totaleAperti}>
+        <Pannello titolo="Cosa è successo negli ultimi 7 giorni" conteggio={log?.tipi.length}>
           {rotto || !log ? (
             <p className="text-sm">Dato non disponibile</p>
-          ) : log.aperti.length === 0 ? (
-            <Vuoto titolo="Nessun avviso aperto" />
+          ) : log.tipi.length === 0 ? (
+            <Vuoto titolo="Nessun avviso negli ultimi 7 giorni" />
           ) : (
             <div>
-              {log.aperti.map((avviso) => (
-                <RigaAvviso key={`${avviso.quando}-${avviso.testo}-${avviso.dove ?? ""}`} avviso={avviso} />
+              {log.tipi.map((tipo) => (
+                <RigaTipo key={tipo.testo} tipo={tipo} ora={c.ora} />
               ))}
             </div>
           )}

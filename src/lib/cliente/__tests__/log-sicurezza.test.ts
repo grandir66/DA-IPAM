@@ -1,5 +1,6 @@
 /**
- * Scheda Log di sicurezza: frasi, avvisi veri, sette giorni.
+ * Scheda Log di sicurezza: frasi e avvisi degli ultimi 7 giorni, per tipo.
+ * Gli «aperti» e i «chiusi» non ci sono più: una riga presa in carico conta come le altre.
  *
  * Run: node --import tsx --test src/lib/cliente/__tests__/log-sicurezza.test.ts
  */
@@ -40,7 +41,7 @@ test("fraseAvviso traduce i titoli misurati e lascia gli altri", () => {
   assert.equal(fraseAvviso("Una regola mai vista"), "Una regola mai vista");
 });
 
-test("gli avvisi diagnostici non contano e i sette giorni ci sono sempre", () => {
+test("gli ultimi 7 giorni si raggruppano per tipo, anche se già presi in carico", () => {
   const db = dbDiProva();
   const avviso = db.prepare(`
     INSERT INTO wazuh_alert_event
@@ -48,11 +49,9 @@ test("gli avvisi diagnostici non contano e i sette giorni ci sono sempre", () =>
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   avviso.run(1, 0, 12, "PAM: User login failed.", "PC-1", "mario", 3, "2026-11-09T10:00:00.000Z", 0, null);
-  avviso.run(2, 1, 15, "PAM: User login failed.", "PC-2", null, 1, "2026-11-09T11:00:00.000Z", 0, null);
-  avviso.run(3, 0, 3, "Regola rara", "PC-3", null, 1, "2026-10-01T10:00:00.000Z", 0, null);
-  avviso.run(4, 0, 8, "New user added to the system.", "PC-4", null, 1, "2026-11-01T10:00:00.000Z", 1, "2026-11-02 10:00:00");
-  avviso.run(5, 0, 8, "New user added to the system.", "PC-5", null, 1, "2026-09-01T10:00:00.000Z", 1, "2026-09-02 10:00:00");
-  avviso.run(6, 1, 8, "New user added to the system.", "PC-6", null, 1, "2026-11-02T10:00:00.000Z", 1, "2026-11-03 10:00:00");
+  avviso.run(2, 0, 5, "PAM: User login failed.", "PC-2", null, 1, "2026-11-10T08:00:00.000Z", 1, "2026-11-10 09:00:00");
+  avviso.run(3, 1, 15, "PAM: User login failed.", "PC-9", null, 1, "2026-11-09T11:00:00.000Z", 0, null);
+  avviso.run(4, 0, 8, "New user added to the system.", "PC-4", null, 1, "2026-11-03T10:00:00.000Z", 0, null);
   db.prepare("INSERT INTO wazuh_agent (agent_id, status) VALUES ('1', 'active')").run();
   db.prepare("INSERT INTO wazuh_agent (agent_id, status) VALUES ('2', 'active')").run();
   db.prepare("INSERT INTO wazuh_agent (agent_id, status) VALUES ('3', 'disconnected')").run();
@@ -62,14 +61,14 @@ test("gli avvisi diagnostici non contano e i sette giorni ci sono sempre", () =>
   assert.equal(log.perGiorno[0]?.giorno, "2026-11-05");
   assert.equal(log.perGiorno[6]?.giorno, "2026-11-11");
   assert.equal(log.perGiorno.find((g) => g.giorno === "2026-11-09")?.avvisi, 1);
-  assert.equal(log.perGiorno.filter((g) => g.avvisi === 0).length, 6);
-  assert.equal(log.totaleAperti, 2);
-  assert.equal(log.aperti[0]?.gravita, "grave");
-  assert.equal(log.aperti[0]?.testo, "Accesso non riuscito");
-  assert.equal(log.aperti[0]?.dove, "PC-1");
-  assert.equal(log.aperti[0]?.chi, "mario");
-  assert.equal(log.aperti[0]?.volte, 3);
-  assert.equal(log.chiusiNelMese, 1);
+  assert.equal(log.perGiorno.find((g) => g.giorno === "2026-11-10")?.avvisi, 1);
+  assert.equal(log.totaleSettimana, 2);
+  assert.equal(log.tipi.length, 1);
+  assert.equal(log.tipi[0]?.gravita, "grave");
+  assert.equal(log.tipi[0]?.testo, "Accesso non riuscito");
+  assert.equal(log.tipi[0]?.avvisi, 2);
+  assert.equal(log.tipi[0]?.computer, 2);
+  assert.equal(log.tipi[0]?.ultima, "2026-11-10T08:00:00.000Z");
   assert.equal(log.sottoControllo, 2);
   assert.equal(log.totaleComputer, 3);
   db.close();

@@ -4,13 +4,16 @@ import { fraseAvviso } from "../frasi-avvisi";
 import { nelCliente, moduloAttivo, type ContestoCliente } from "../contesto";
 import type { Gravita, RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
-export interface AvvisoCliente {
+export interface TipoAvviso {
   gravita: Gravita;
+  /** fraseAvviso(rule_description); descrizione vuota → «Avviso». */
   testo: string;
-  dove: string | null;
-  chi: string | null;
-  quando: string;
-  volte: number;
+  /** Righe del tipo negli ultimi 7 giorni. */
+  avvisi: number;
+  /** agent_name distinti; i vuoti non contano. */
+  computer: number;
+  /** last_seen_at più recente del tipo. */
+  ultima: string;
 }
 
 export interface LogSicurezza {
@@ -18,27 +21,25 @@ export interface LogSicurezza {
   totaleComputer: number;
   /** Sette giorni, dal più vecchio a oggi. `giorno` è YYYY-MM-DD in ora italiana. */
   perGiorno: Array<{ giorno: string; avvisi: number }>;
-  aperti: AvvisoCliente[];
-  totaleAperti: number;
-  chiusiNelMese: number;
+  /** Al più 30, i più gravi prima. */
+  tipi: TipoAvviso[];
+  /** Somma di perGiorno. */
+  totaleSettimana: number;
 }
 
-const MASSIMO_APERTI = 30;
-const MASSIMO_VOCI = 5;
+const MASSIMO_TIPI = 30;
+const MASSIMO_VOCI = 3;
 const GIORNI = 7;
-const GIORNI_MESE = 30;
 const PESO: Record<Gravita, number> = { grave: 0, attenzione: 1, nota: 2 };
 
-interface RigaAvviso {
+interface RigaFinestra {
   rule_level: number;
   rule_description: string | null;
   agent_name: string | null;
-  target_user: string | null;
   last_seen_at: string;
-  occurrence_count: number;
 }
 
-function testo(v: string | null | undefined): string | null {
+function pulito(v: string | null | undefined): string | null {
   const t = v?.trim();
   return t ? t : null;
 }
@@ -51,6 +52,11 @@ function gravitaDi(livello: number): Gravita {
   if (livello >= 12) return "grave";
   if (livello >= 7) return "attenzione";
   return "nota";
+}
+
+function fraseDi(descrizione: string | null): string {
+  const t = pulito(descrizione);
+  return t ? fraseAvviso(t) : "Avviso";
 }
 
 /** Giorno di calendario italiano (YYYY-MM-DD), come in kpi-dashboard. */
@@ -80,31 +86,18 @@ function setteGiorni(ora: Date): string[] {
   return giorni;
 }
 
-/** `acknowledged_at` è scritto con datetime('now'): lo spazio, non la T dell'ISO. */
-function istanteSql(data: Date): string {
-  return data.toISOString().slice(0, 19).replace("T", " ");
-}
-
-function avvisoDi(riga: RigaAvviso): AvvisoCliente {
-  return {
-    gravita: gravitaDi(riga.rule_level),
-    testo: fraseAvviso(testo(riga.rule_description) ?? "Avviso"),
-    dove: testo(riga.agent_name),
-    chi: testo(riga.target_user),
-    quando: riga.last_seen_at,
-    volte: riga.occurrence_count,
-  };
-}
-
-function perGiorno(db: Database.Database, ora: Date): LogSicurezza["perGiorno"] {
-  const giorni = setteGiorni(ora);
-  const conti = new Map(giorni.map((g) => [g, 0]));
-  if (!tabella(db, "wazuh_alert_event")) return giorni.map((giorno) => ({ giorno, avvisi: 0 }));
-  const dal = new Date(mezzanotteItaliana(giorni[0] ?? giornoItaliano(ora.getTime()))).toISOString();
-  const righe = db.prepare(`
-    SELECT last_seen_at FROM wazuh_alert_event
+function righeNellaFinestra(db: Database.Database, giorni: readonly string[]): RigaFinestra[] {
+  if (!tabella(db, "wazuh_alert_event")) return [];
+  const dal = new Date(mezzanotteItaliana(giorni[0] ?? "")).toISOString();
+  return db.prepare(`
+    SELECT rule_level, rule_description, agent_name, last_seen_at
+    FROM wazuh_alert_event
     WHERE diagnostic = 0 AND last_seen_at >= ?
-  `).all(dal) as Array<{ last_seen_at: string }>;
+  `).all(dal) as RigaFinestra[];
+}
+
+function perGiorno(giorni: readonly string[], righe: readonly RigaFinestra[]): LogSicurezza["perGiorno"] {
+  const conti = new Map(giorni.map((g) => [g, 0]));
   for (const riga of righe) {
     const giorno = giornoItaliano(parseDbDate(riga.last_seen_at).getTime());
     if (conti.has(giorno)) conti.set(giorno, (conti.get(giorno) ?? 0) + 1);
@@ -112,9 +105,42 @@ function perGiorno(db: Database.Database, ora: Date): LogSicurezza["perGiorno"] 
   return giorni.map((giorno) => ({ giorno, avvisi: conti.get(giorno) ?? 0 }));
 }
 
-/** Va chiamata dentro il contesto del cliente. Conta solo gli avvisi veri (diagnostic = 0). */
+function tipiDi(giorni: readonly string[], righe: readonly RigaFinestra[]): TipoAvviso[] {
+  const nelSet = new Set(giorni);
+  const gruppi = new Map<string, { livello: number; avvisi: number; computer: Set<string>; ultima: string; ultimaT: number }>();
+  for (const riga of righe) {
+    const istante = parseDbDate(riga.last_seen_at).getTime();
+    if (Number.isNaN(istante) || !nelSet.has(giornoItaliano(istante))) continue;
+    const testo = fraseDi(riga.rule_description);
+    let gruppo = gruppi.get(testo);
+    if (!gruppo) {
+      gruppo = { livello: riga.rule_level, avvisi: 0, computer: new Set(), ultima: riga.last_seen_at, ultimaT: istante };
+      gruppi.set(testo, gruppo);
+    }
+    gruppo.avvisi += 1;
+    if (riga.rule_level > gruppo.livello) gruppo.livello = riga.rule_level;
+    const computer = pulito(riga.agent_name);
+    if (computer) gruppo.computer.add(computer);
+    if (istante >= gruppo.ultimaT) {
+      gruppo.ultima = riga.last_seen_at;
+      gruppo.ultimaT = istante;
+    }
+  }
+  return [...gruppi.entries()]
+    .map(([testo, gruppo]) => ({
+      gravita: gravitaDi(gruppo.livello),
+      testo,
+      avvisi: gruppo.avvisi,
+      computer: gruppo.computer.size,
+      ultima: gruppo.ultima,
+    }))
+    .sort((a, b) => PESO[a.gravita] - PESO[b.gravita] || b.avvisi - a.avvisi || a.testo.localeCompare(b.testo, "it"))
+    .slice(0, MASSIMO_TIPI);
+}
+
+/** Va chiamata dentro il contesto del cliente. Conta solo gli avvisi veri (diagnostic = 0) degli ultimi 7 giorni. */
 export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza {
-  const giorni = perGiorno(db, ora);
+  const giorni = setteGiorni(ora);
   let sottoControllo = 0;
   let totaleComputer = 0;
   if (tabella(db, "wazuh_agent")) {
@@ -122,59 +148,56 @@ export function logSicurezza(db: Database.Database, ora: Date): LogSicurezza {
     totaleComputer = computer.n;
     sottoControllo = computer.accesi ?? 0;
   }
-  if (!tabella(db, "wazuh_alert_event")) {
-    return { sottoControllo, totaleComputer, perGiorno: giorni, aperti: [], totaleAperti: 0, chiusiNelMese: 0 };
-  }
-  const totaleAperti = (db.prepare(
-    "SELECT COUNT(*) AS n FROM wazuh_alert_event WHERE diagnostic = 0 AND acknowledged = 0",
-  ).get() as { n: number }).n;
-  const dalMese = istanteSql(new Date(ora.getTime() - GIORNI_MESE * 24 * 3_600_000));
-  const chiusiNelMese = (db.prepare(`
-    SELECT COUNT(*) AS n FROM wazuh_alert_event
-    WHERE diagnostic = 0 AND acknowledged = 1 AND acknowledged_at >= ?
-  `).get(dalMese) as { n: number }).n;
-  const righe = db.prepare(`
-    SELECT rule_level, rule_description, agent_name, target_user, last_seen_at, occurrence_count
-    FROM wazuh_alert_event
-    WHERE diagnostic = 0 AND acknowledged = 0
-    ORDER BY CASE WHEN rule_level >= 12 THEN 0 WHEN rule_level >= 7 THEN 1 ELSE 2 END,
-             last_seen_at DESC
-    LIMIT ?
-  `).all(MASSIMO_APERTI) as RigaAvviso[];
-  const aperti = righe.map(avvisoDi).sort((a, b) => PESO[a.gravita] - PESO[b.gravita] || b.quando.localeCompare(a.quando));
-  return { sottoControllo, totaleComputer, perGiorno: giorni, aperti, totaleAperti, chiusiNelMese };
+  const righe = righeNellaFinestra(db, giorni);
+  const barre = perGiorno(giorni, righe);
+  return {
+    sottoControllo,
+    totaleComputer,
+    perGiorno: barre,
+    tipi: tipiDi(giorni, righe),
+    totaleSettimana: barre.reduce((n, g) => n + g.avvisi, 0),
+  };
 }
 
-function contestoRiquadro(chiusi: number): string {
-  const n = chiusi === 1 ? "1 chiuso nel mese" : `${chiusi} chiusi nel mese`;
-  return `avvisi aperti · ${n}`;
+function contestoRiquadro(tipi: number): string {
+  const n = tipi === 1 ? "1 tipo" : `${tipi} tipi`;
+  return `avvisi in 7 giorni · ${n}`;
 }
 
 function riquadroLog(c: ContestoCliente): RiquadroCliente {
   return nelCliente(c, (db) => {
     const log = logSicurezza(db, c.ora);
-    const grave = log.aperti.some((a) => a.gravita === "grave");
+    const gravi = log.tipi.filter((t) => t.gravita === "grave").length;
+    const attenzioni = log.tipi.filter((t) => t.gravita === "attenzione").length;
     return {
-      numero: String(log.totaleAperti),
-      contesto: contestoRiquadro(log.chiusiNelMese),
-      aperti: log.totaleAperti,
-      stato: grave ? "grave" : log.totaleAperti > 0 ? "attenzione" : "a_posto",
+      numero: String(log.totaleSettimana),
+      contesto: contestoRiquadro(log.tipi.length),
+      aperti: gravi + attenzioni,
+      stato: gravi > 0 ? "grave" : attenzioni > 0 ? "attenzione" : "a_posto",
     };
   });
 }
 
 function attenzioneLog(c: ContestoCliente): VoceAttenzione[] {
   return nelCliente(c, (db) =>
-    logSicurezza(db, c.ora).aperti
-      .filter((a) => a.gravita === "grave")
+    logSicurezza(db, c.ora).tipi
+      .filter((t) => t.gravita === "grave")
       .slice(0, MASSIMO_VOCI)
-      .map((a) => ({
+      .map((t) => ({
         gravita: "grave" as const,
-        testo: a.dove ? `${a.testo} su ${a.dove}` : a.testo,
+        testo: `${t.testo} · ${contoTipo(t.avvisi, t.computer)}`,
         href: "/cliente/log-sicurezza",
         scheda: "Log di sicurezza",
       })),
   );
+}
+
+/** «2 avvisi su 3 computer», «1 avviso», «1 avviso su 1 computer». Con zero computer non si dice «su». */
+export function contoTipo(avvisi: number, computer: number): string {
+  const quantiAvvisi = avvisi === 1 ? "1 avviso" : `${avvisi} avvisi`;
+  if (computer <= 0) return quantiAvvisi;
+  const quantiComputer = computer === 1 ? "1 computer" : `${computer} computer`;
+  return `${quantiAvvisi} su ${quantiComputer}`;
 }
 
 export const schedaLogSicurezza: SchedaCliente = {

@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: log degli ultimi 7 giorni per tipo
+
+Gli avvisi «aperti» non venivano mai chiusi: sul cliente 70791 erano 209 e l'ultimo preso in carico era di luglio, quindi il numero cresceva sempre. La scheda mostra cosa è successo negli ultimi sette giorni, raggruppato per tipo. Le parole «aperti», «chiusi» e «presi in carico» non compaiono più.
+
+### Corretto
+- **Log di sicurezza**: sette barre come prima, a destra un tipo per frase. Una riga già presa in carico conta come le altre. In casa entrano al più tre tipi gravi.
+
 ## [Non rilasciato] — 2026-11-11 · LibreNMS: la credenziale SNMP validata vince sulla community dei dati
 
 Riccardo (11/11), appliance 70151: «LibreNMS ha rifiutato l'aggiunta: Could not connect to 172.20.9.210». Lo switch aveva nei dati dell'host una community vecchia che non risponde più, e legata all'host la credenziale SNMP validata che risponde: a LibreNMS andava la prima.

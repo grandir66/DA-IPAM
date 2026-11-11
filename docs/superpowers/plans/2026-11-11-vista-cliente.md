@@ -4,6 +4,8 @@
 > ogni task consegnato. Le caselle nel titolo dei task tengono il conto: `[ ]` da fare, `[~]` in corso,
 > `[x]` fatto (solo con la riga `Verifica:` scritta sotto), `[!]` bloccato (motivo).
 
+> **Chi scrive questo piano (Riccardo, 11/11/2026): una sessione sola**, quella che l'ha scritto e che controlla i task (worktree `.worktrees/da-ipam-classi-vecchie`). Chi esegue aggiorna solo lo stato del proprio task, la riga `Verifica:` e il Registro. Ogni altra sessione che vede un difetto (a schermo o nel codice) lo scrive in `TASKS.md`, sezione «2026-11-11 — Vista per operatori non amministratori», e non aggiunge né cambia task qui.
+
 **Obiettivo:** dare a una persona del cliente un'area di sola lettura, semplice, con i dati che le servono (reti, apparati, cose da sistemare, dominio e accessi, log di sicurezza), senza comandi né configurazione.
 
 **Architettura:** un'area a parte dentro DA-IPAM, sotto `/cliente`, in un gruppo di rotte suo `src/app/(cliente)/` con il suo layout (niente menu laterale). Le pagine sono Server Component che leggono il database del cliente con funzioni di sola lettura in `src/lib/cliente/`: nessuna rotta `/api` nuova. I moduli sono un registro di schede: ogni scheda dichiara quando compare, il suo riquadro in casa e le voci che porta in «Cosa richiede attenzione». Un utente «Solo lettura» con il segno `vista_cliente` è chiuso dentro quell'area.

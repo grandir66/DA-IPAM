@@ -20,6 +20,9 @@ Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i 
 - [x] Vista cliente, deciso da Riccardo l'11/11: gli host assenti da più di 7 giorni sono un **quarto stato, più chiaro** (non «liberi»). Misura sul 70791: 186 accesi, 57 spenti da poco, 124 assenti. Scritto nel piano, in testa al Task 4.
 - [x] Vista cliente, Task 4 (scheda Apparati e quarto stato «assente», `288cdde7`, v0.9.1145): fatto da Cursor, controllato l'11/11 sul codice e sui dati del 70791, 14 prove verdi; non guardata a schermo. Tre ritocchi messi in testa al Task 5: «spento da 2 giorni fa» (frase sbagliata), pannello porte che si apre anche per i due NAS, 22 host con categoria senza foglia che perdono il «cos'è».
 - [x] Vista cliente, recinto dal vivo: Riccardo l'11/11 ha passato `demo` a «Cliente (vista semplice)» dall'interfaccia; sull'hub il segno è acceso e la sessione vecchia è stata chiusa. Cosa vede `demo` a schermo: da confermare da Riccardo.
+- [x] Vista cliente, Task 4 (scheda Apparati e quarto stato, `288cdde7`, v0.9.1145): fatto da Cursor, controllato l'11/11 sul codice (14 prove verdi) e **guardato a schermo a 1920** sull'hub dalla sessione di Riccardo (casa, Reti, Apparati; tema scuro).
+- [ ] Vista cliente, **Task 4 bis — resa** (nel piano, 12 correzioni viste a schermo): marchio invisibile sul tema scuro, «spento da 7 giorni fa», reti viste sul cavo piene di rumore (25, anche pubbliche), dettaglio di Apparati fuori schermo, «Server 150» che sono 99 macchine virtuali, righe con insegne di porta al posto del sistema. Da fare prima del Task 5.
+- [ ] Riconoscimento: `PC-LasagniF` (Windows 11 Pro, 192.168.4.175) risulta «Router» sul 70791. Visto l'11/11 guardando la vista cliente.
 - [ ] La scheda Apparati è il punto E del 10/11 (riepilogo per macro categoria): si fa una volta sola, qui.
 - [ ] Interfaccia: da proporre oggetto per oggetto con una tavola grafica prima di scriverla.
 

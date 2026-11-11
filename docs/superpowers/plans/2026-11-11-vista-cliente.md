@@ -319,6 +319,43 @@ export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati",
 
 ---
 
+### [ ] Task 4 bis — Resa: correzioni viste a schermo (dal controllo del Task 4)
+
+**Controllo del Task 4 (11/11, commit `288cdde7`): passato sul codice**, 14 prove verdi rilanciate, firme come da piano. Poi casa, Reti e Apparati sono state guardate a 1920 sull'hub (cliente 70791, tema scuro). Quello che segue è ciò che a schermo non funziona. Si fa **prima del Task 5**, in un commit solo.
+
+**File** (solo questi): `src/components/cliente/intestazione.tsx`, `griglia-indirizzi.tsx`, `pannello-porte.tsx`, `scheda-apparato.tsx`, `src/app/(cliente)/cliente/reti/page.tsx`, `src/app/(cliente)/cliente/apparati/page.tsx`, `src/lib/cliente/schede/reti.ts`, `src/lib/cliente/schede/apparati.ts`, nuovo `src/lib/cliente/testi.ts`, e le prove in `src/lib/cliente/__tests__/` (solo casi nuovi, più l'adeguamento dei casi che contano i tipi, vedi punto 9).
+
+**Intestazione e testi**
+1. **Marchio invisibile sul tema scuro**: `/logo-color.png` su fondo scuro è un rettangolo nero. Due immagini: `/logo-color.png` con classe `dark:hidden` e `/logo-white.png` con classe `hidden dark:block` (esistono entrambe in `public/`; `sidebar.tsx` riga 553 usa già la bianca).
+2. **«spento da 7 giorni fa»** e **«non si vede da 26/10/2026»** sono sbagliati. Nuovo `src/lib/cliente/testi.ts`, puro e provato:
+```ts
+/** «da 3 ore», «da 1 giorno», «da 5 giorni»; oltre 7 giorni «dal 26/10/2026». Data illeggibile → «da tempo». */
+export function daQuanto(data: Date, adesso: Date): string;
+```
+   Sotto 1 ora: «da meno di un'ora». Lo usano le voci di attenzione di Apparati («<nome> spento da 5 giorni») e le righe dell'elenco («spento da 5 giorni», «non si vede dal 26/10/2026»). `testoRelativo` di `console.tsx` non si usa più nell'area cliente e non si tocca.
+3. **Apparati senza nome nelle voci di attenzione**: oggi «192.168.40.167 spento da…». Se il nome è l'indirizzo, la voce comincia con la categoria: «Router 192.168.40.167 spento da 5 giorni» (categoria da `nomeCategoria`, iniziale maiuscola; senza categoria resta l'indirizzo).
+
+**Reti**
+4. **Reti viste sul cavo: troppo rumore** (sul 70791 sono 25, con reti pubbliche di Internet e reti da 1 indirizzo). In `retiViste`: si scartano le reti che non sono private (si tengono solo 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) e quelle con meno di 3 indirizzi visti; ordine per indirizzi decrescente. Funzione pura `retePrivata(cidr: string): boolean` in `reti.ts`, provata (192.168.6.0/24 sì, 172.24.178.0/24 sì, 95.230.196.0/24 no, 217.28.64.0/24 no, 172.32.0.0/24 no). Le voci di attenzione restano al più 5 con la regola già scritta.
+5. **La rete scelta non si distingue**: l'elenco «Le reti» usa `VoceSelezionabile` di `console.tsx`, come fa «Per tipo» in Apparati (stesso aspetto: riga scelta con fondo e bordo).
+6. **«Assente» e «libero» sul tema scuro si confondono**. In `griglia-indirizzi.tsx`: `assente` → `bg-muted-foreground/50`; `libero` → `border border-dashed border-foreground/20`. La legenda a parole diventa una legenda con i quattro quadretti veri accanto alle parole («acceso», «spento», «non si vede da più di 7 giorni», «libero»), con il mattone `Legenda` di `console.tsx` se accetta un campione di classe, altrimenti quattro `span` con le stesse classi della griglia.
+
+**Apparati**
+7. **Il dettaglio finisce fuori schermo**: con 35 righe il pannello delle porte sta sotto l'elenco e non si vede che il clic ha fatto qualcosa. La pagina passa a tre colonne da 1280 px in su: `xl:grid-cols-[260px_minmax(0,1fr)_minmax(0,1fr)]` — tipi, elenco, dettaglio. Il dettaglio (`PannelloPorte` o `SchedaApparato`) sta nella terza colonna con `xl:sticky xl:top-4`. Senza apparato scelto la terza colonna mostra `Vuoto` con «Scegli un apparato per vedere i dettagli». Sotto 1280 resta com'è.
+8. **La riga scelta non si distingue**: la riga dell'apparato scelto prende fondo e bordo come una `VoceSelezionabile` scelta (non solo il grassetto).
+9. **«Server 150» è falso**: 99 sono macchine virtuali. Nuovo tipo `virtuali`, titolo «Macchine virtuali», icona `Boxes`, dopo «Server»: `compute.vm` → `virtuali`. `TipoCliente` e `TIPI_CLIENTE` si aggiornano; in `riquadro-modulo.tsx` non serve niente. Le prove che elencano i tipi si adeguano a questo solo cambio.
+10. **Righe troppo rumorose**: nell'elenco la colonna «cosa» mostra solo categoria e produttore; il sistema operativo resta nella scheda dell'apparato. In `RigaApparato` si aggiunge `cosaBreve: string` (categoria · produttore, o «Non riconosciuto»). Dovunque si mostri il sistema, si scarta se è `Linux/Unix/embedded` oppure comincia con cifre seguite da `/` (esempio vero: `21/MikroTik router ftpd 7.22`, che è l'insegna di una porta, non un sistema): funzione pura `sistemaPulito(s: string | null): string | null` in `testi.ts`, provata.
+11. **«19 switch, 512 porte»** conta anche NAS, router e firewall. `porteLette` conta solo `network_devices.device_type = 'switch'` (sul 70791: 12 switch, 386 porte).
+12. **«1 dorsali»**: singolare e plurale in «N collegate · N libere · N dorsali» («1 collegata», «1 libera», «1 dorsale»).
+
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sull'hub, da «Vista cliente»: marchio leggibile; nessuna voce con «giorni fa»; in Reti la rete scelta è evidenziata e le reti pubbliche non ci sono; in Apparati il clic su uno switch mostra le porte a destra senza scorrere.
+
+**Commit:** «Vista cliente: correzioni di resa su casa, Reti e Apparati».
+
+**Non di questo task (dato, non interfaccia):** `PC-LasagniF` (Windows 11 Pro) risulta «Router»: è il riconoscimento, va guardato a parte.
+
+---
+
 ### [ ] Task 5 — Scheda Dominio e accessi
 
 **Dal controllo del Task 4 (11/11, commit `288cdde7`): passato**, 14 prove verdi rilanciate, firme come da piano, quarto stato «assente» fatto come deciso; non guardato a schermo. Tre ritocchi da fare in questo task, prima del resto (misure sul cliente 70791 dell'hub):
@@ -525,6 +562,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 4 [x]: scheda Apparati. Prima i due ritocchi alle reti e il quarto stato assente. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 14 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 - 2026-11-11 Controllo del Task 4 (`288cdde7`): passato, 14 prove verdi rilanciate. Tre ritocchi messi in testa al Task 5 (frase «spento da», pannello porte solo per switch e router, nomi delle categorie senza foglia).
+
+- 2026-11-11 Controllo del Task 4 (`288cdde7`): passato sul codice, 14 prove verdi. Resa guardata a 1920 sull'hub (casa, Reti, Apparati): 12 correzioni scritte nel Task 4 bis.
 
 ## Consuntivo
 ### Fatto

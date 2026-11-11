@@ -41,6 +41,7 @@ import { origineCategoria, passaFiltroCategoria } from "@/lib/classification/sce
 import { OpzioniCategorie } from "@/components/networks/opzioni-categorie";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
 import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
+import { OpzioniFunzioni, PilloleFunzioni, type FunzioneInRiga } from "@/components/networks/funzioni-host";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -214,6 +215,17 @@ export function NetworkDetailClient({
   const [filterKnownOnly, setFilterKnownOnly] = useState(false);
   const [filterSistema, setFilterSistema] = useState<string>("");
   const [filterForma, setFilterForma] = useState<string>("");
+  const [filterFunzione, setFilterFunzione] = useState<string>("");
+  /** Le funzioni degli host della rete, lette a parte (`/api/hosts/funzioni`). */
+  const [funzioniHost, setFunzioniHost] = useState<Record<number, FunzioneInRiga[]>>({});
+  useEffect(() => {
+    let vivo = true;
+    void fetch(`/api/hosts/funzioni?network_id=${network.id}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d: Record<number, FunzioneInRiga[]>) => { if (vivo) setFunzioniHost(d); })
+      .catch(() => { /* le funzioni sono un di più: senza, la lista resta com'è */ });
+    return () => { vivo = false; };
+  }, [network.id]);
   const [listSortColumn, setListSortColumn] = useState<string | null>("ip");
   const [listSortDir, setListSortDir] = useState<SortDirection>("asc");
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
@@ -508,6 +520,7 @@ export function NetworkDetailClient({
     if (filterKnownOnly && !h.known_host) return false;
     if (!passaFiltroSistema(filterSistema, h)) return false;
     if (!passaFiltroForma(filterForma, h)) return false;
+    if (filterFunzione && !(funzioniHost[h.id] ?? []).some((f) => f.funzione === filterFunzione)) return false;
     if (filtriValore.length > 0 && !passaFiltriValore(filtriValore, (c) => testoCellaSubnet(h, c))) return false;
     return true;
   });
@@ -1526,6 +1539,18 @@ export function NetworkDetailClient({
                 </select>
               </div>
               <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Funzione</Label>
+                <select
+                  aria-label="Funzione"
+                  value={filterFunzione}
+                  onChange={(e) => setFilterFunzione(e.target.value)}
+                  className="h-8 max-w-[160px] rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Tutte</option>
+                  <OpzioniFunzioni />
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
                 <Switch
                   id="filter-known"
                   checked={filterKnownOnly}
@@ -1533,8 +1558,8 @@ export function NetworkDetailClient({
                 />
                 <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
               </div>
-              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterForma) && (
-                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
+              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterForma || filterFunzione) && (
+                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterForma(""); setFilterFunzione(""); }}>
                   Cancella filtri
                 </Button>
               )}
@@ -1991,6 +2016,7 @@ export function NetworkDetailClient({
                       ) : (
                         <span className="rounded-md border border-dashed px-2 py-0.5 text-muted-foreground">Senza categoria</span>
                       )}
+                      <PilloleFunzioni funzioni={funzioniHost[host.id]} />
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

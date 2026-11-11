@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: nelle liste e nei filtri
+
+### Aggiunto
+- **Le funzioni si vedono** nella lista della subnet, sotto la categoria (il suggerimento dice da dove viene ognuna), e c'è il **filtro «Funzione»** in subnet e Discovery.
+- **Si ricalcolano a fine scansione** (`funzioni-giro.ts`): scrive solo le righe trovate dal sistema, quelle messe o tolte a mano non si toccano.
+- Rotta di sola lettura `GET /api/hosts/funzioni`.
+
+### Corretto
+- Due regole strette dopo la prova a vuoto sul 70791: la porta 21 da sola non dice «trasferimento file» (FTP acceso di serie su router MikroTik e stampanti: 13 su 14 erano finti) e la 88 da sola non dice «AD o LDAP» (ogni Mac ha un suo Kerberos).
+- «Cancella filtri» nella subnet azzera anche Sistema, Fisico o virtuale e Funzione.
+
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: catalogo e riconoscimento (ancora senza pagina)
 
 Riccardo (11/11): «classificare le funzioni… DNS, DHCP, AD, DB, web… molte si potrebbero determinare direttamente dalle scansioni e servizi». La categoria dice che cosa è l'apparato, la funzione che cosa fa: un server virtuale può fare da firewall, da router o da storage.

@@ -43,6 +43,7 @@ import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
 import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
 import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { apparatiAutomaticiDopoScansione } from "@/lib/devices/apparato-automatico";
+import { funzioniDopoScansione } from "@/lib/classification/funzioni-giro";
 import { reloadTenantScheduler } from "./scheduler";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -332,11 +333,13 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
     case "snmp_scan": {
       const r = await runSnmpScan(job.network_id, opzioni);
       apparatiCreatiESubitoLetti();
+      funzioniDopoScansione();
       return r;
     }
     case "nmap_scan": {
       const r = await runNmapScan(job.network_id, opzioni);
       apparatiCreatiESubitoLetti();
+      funzioniDopoScansione();
       return r;
     }
     case "arp_poll":

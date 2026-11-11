@@ -107,17 +107,18 @@ const DA_RUOLO: Record<string, Funzione> = {
 /**
  * Porte che dicono una funzione da sole. Fuori di proposito: 80 e 443 (sul 70791 stanno su 113 host, sono le
  * pagine di gestione di ogni apparato: «web» si dice solo dal programma), 445 (ogni Windows), 22 (ogni Linux).
+ * Tolte dopo la prova a vuoto dell'11/11 sul 70791: la 21 (FTP acceso di serie su router MikroTik e stampanti:
+ * 13 «trasferimento file» finti su 14) e la 88 da sola (ogni Mac ha un suo Kerberos: due Mac risultavano
+ * «AD o LDAP»). Per AD dalle porte servono insieme Kerberos e LDAP, vedi `funzioniDi`.
  */
 const DA_PORTA: ReadonlyArray<readonly [readonly number[], Funzione]> = [
   [[53], "dns"],
-  [[88], "ad_ldap"],
   [[1433, 3306, 5432, 1521, 27017], "db_server"],
   [[25], "posta"],
   [[8007], "backup"],
   [[10051], "monitoraggio"],
   [[11434], "ia_locale"],
   [[8123], "controller_domotica"],
-  [[21], "trasferimento_file"],
 ];
 
 /**
@@ -167,6 +168,7 @@ export function funzioniDi(s: SegnaliFunzioni): FunzioneTrovata[] {
     const aperta = numeri.find((n) => porte.has(n));
     if (aperta != null) aggiungi(funzione, `dalla porta ${aperta} aperta`);
   }
+  if (porte.has(88) && (porte.has(389) || porte.has(636))) aggiungi("ad_ldap", "dalle porte 88 e LDAP aperte insieme");
   const daClasse = s.classe ? DA_CLASSE[s.classe] : undefined;
   if (daClasse) aggiungi(daClasse, "dalla categoria");
   for (const r of s.ruoli ?? []) {

@@ -36,9 +36,15 @@ describe("funzioniDi dai servizi (nomi veri del cliente 70791)", () => {
 });
 
 describe("funzioniDi dalle porte e dalla categoria", () => {
-  it("53, 88, 1433, 25 dicono la funzione; 80, 443, 445 e 22 no", () => {
-    assert.deepEqual(slug(funzioniDi({ porte: [53, 88, 1433, 25] })), ["ad_ldap", "db_server", "dns", "posta"]);
+  it("53, 1433, 25 dicono la funzione; 80, 443, 445 e 22 no", () => {
+    assert.deepEqual(slug(funzioniDi({ porte: [53, 1433, 25] })), ["db_server", "dns", "posta"]);
     assert.deepEqual(funzioniDi({ porte: [80, 443, 445, 22, 3389] }), []);
+  });
+  it("prova a vuoto del 70791: la 21 da sola non è «trasferimento file», la 88 da sola non è AD (ogni Mac ce l'ha)", () => {
+    assert.deepEqual(funzioniDi({ porte: [21, 22, 80, 8291] }), []);
+    assert.deepEqual(funzioniDi({ porte: [88, 445, 5900] }), []);
+    assert.deepEqual(slug(funzioniDi({ porte: [88, 389, 445] })), ["ad_ldap"]);
+    assert.deepEqual(slug(funzioniDi({ servizi: ["ftpsvc"] })), ["trasferimento_file"]);
   });
   it("chi è un router fa da router; un NAS fa da storage", () => {
     assert.deepEqual(slug(funzioniDi({ classe: "router", porte: [53] })), ["dns", "router"]);

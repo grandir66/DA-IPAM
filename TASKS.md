@@ -42,6 +42,7 @@ Riccardo: iniziare lo sviluppo senza sovrapporsi agli altri lavori. Piano in DA-
 - [x] Riccardo, 11/11: «metti in dev, le appliance in dev sono OK». Build di produzione, test mirati e lint dei file modificati verdi. Snapshot `pre-nc-discovery-20261111` della VM 533 su DA-PX-03.
 - [ ] Collaudare due giri Discovery con lo stesso profilo su una subnet di prova. Misurare quanti host hanno un MAC osservato direttamente da Nmap, soprattutto sulle subnet instradate.
 - [x] Riccardo, 11/11: verificare la sovrapposizione con Anomalie. MAC, nuovi host e porte sono temi comuni con fonti e criteri diversi. Sulla VM 533 (build `440dab2a`), il profilo misurato aveva 39 eventi, tutti MAC flip, e nessuna baseline Network Changes. Riprodotti due difetti di formato in Anomalie: porte serializzate come stringhe e `first_seen` SQLite confrontato con ISO.
+- [x] Riccardo, 11/11: procedere a ottimizzare le analisi. Anomalie legge porte numeriche, stringhe e oggetti. Per il confronto scarta gli elenchi incompleti e distingue i tipi di scansione. Le finestre per nuovi host, MAC, disponibilità e latenza usano UTC. Verificate 13 prove mirate e lint sui file toccati.
 - [ ] Da decidere dopo il collaudo: usare gli eventi di Network Changes come evidenze per Anomalie quando la copertura lo consente. Conservare ARP, disponibilità, latenza e storico Gestiti.
 - [ ] Tappe successive del piano: copertura UDP e passiva, variazioni di sistema operativo, firmware e confidenza.
 

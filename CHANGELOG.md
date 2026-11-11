@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Anomalie e storico delle scansioni
+
+- Anomalie legge le porte archiviate in formato numerico, testuale o a oggetto e confronta elenchi validi dello stesso tipo di scansione.
+- I controlli temporali di nuovi host, MAC, disponibilità e latenza interpretano in UTC i timestamp SQLite. La segnalazione di disponibilità indica la direzione corretta.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: colori del marchio Domarc
 
 La vista usava i grigi dell'interfaccia. Riccardo ha chiesto i colori del marchio: navy, ciano e giallo solo per «questo è quello scelto». La tavola chiara è approvata; quella scura è una proposta da guardare a schermo.

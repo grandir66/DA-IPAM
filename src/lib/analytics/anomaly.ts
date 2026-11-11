@@ -4,6 +4,7 @@
  * Il chiamante (cron job o API) è responsabile di persistere gli eventi con anomaly-db.ts.
  */
 
+import { parseDbDate } from "@/lib/db-date";
 import type {
   AnomalyType,
   AnomalySeverity,
@@ -45,7 +46,8 @@ export interface ArpEntryForAnomaly {
 
 export interface ScanHistoryForAnomaly {
   host_id: number;
-  ports_open: string | null; // JSON array di numeri
+  scan_type: string;
+  ports_open: string | null;
   timestamp: string;
 }
 
@@ -71,18 +73,22 @@ function zScore(values: number[], x: number): number {
   return std === 0 ? 0 : (x - mean) / std;
 }
 
-function parsePorts(json: string | null): number[] {
-  if (!json) return [];
+/** Lo storico usa anche stringhe numeriche, l'inventario usa oggetti con la porta. */
+function parsePorts(json: string | null): number[] | null {
+  if (!json) return null;
   try {
-    const parsed = JSON.parse(json);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((p) => (typeof p === "number" ? p : typeof p === "object" && p !== null ? (p as { port?: number }).port : undefined))
-        .filter((p): p is number => typeof p === "number");
+    const parsed: unknown = JSON.parse(json);
+    if (!Array.isArray(parsed)) return null;
+    const ports = new Set<number>();
+    for (const value of parsed) {
+      const raw: unknown = typeof value === "object" && value !== null && "port" in value ? value.port : value;
+      const port = typeof raw === "string" && /^\d+$/.test(raw.trim()) ? Number(raw) : raw;
+      if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+      ports.add(port);
     }
-    return [];
+    return [...ports];
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -96,7 +102,8 @@ const HIGH_RISK_PORTS = new Set([22, 23, 3389, 445, 135, 139, 5985, 5986]);
  */
 export function checkMacFlip(
   hosts: HostForAnomaly[],
-  recentArpEntries: ArpEntryForAnomaly[]
+  recentArpEntries: ArpEntryForAnomaly[],
+  now = Date.now(),
 ): PendingAnomalyEvent[] {
   const events: PendingAnomalyEvent[] = [];
 
@@ -112,8 +119,8 @@ export function checkMacFlip(
 
     // Ignora host visti per la prima volta nell'ultima ora
     if (host.first_seen) {
-      const firstSeenMs = new Date(host.first_seen).getTime();
-      const ageHours = (Date.now() - firstSeenMs) / 3_600_000;
+      const firstSeenMs = parseDbDate(host.first_seen).getTime();
+      const ageHours = (now - firstSeenMs) / 3_600_000;
       if (ageHours < 1) continue;
     }
 
@@ -145,15 +152,16 @@ export function checkMacFlip(
  * Rileva host con known_host = 0 comparsi nell'ultima ora.
  * Severity alta se ha porte ad alto rischio aperte.
  */
-export function checkNewUnknownHosts(hosts: HostForAnomaly[]): PendingAnomalyEvent[] {
+export function checkNewUnknownHosts(hosts: HostForAnomaly[], now = Date.now()): PendingAnomalyEvent[] {
   const events: PendingAnomalyEvent[] = [];
-  const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const oneHourAgo = now - 3_600_000;
 
   for (const host of hosts) {
-    if (host.known_host !== 0) continue;
-    if (!host.first_seen || host.first_seen < oneHourAgo) continue;
+    if (host.known_host !== 0 || !host.first_seen) continue;
+    const firstSeen = parseDbDate(host.first_seen).getTime();
+    if (!(firstSeen >= oneHourAgo && firstSeen <= now)) continue;
 
-    const ports = parsePorts(host.open_ports);
+    const ports = parsePorts(host.open_ports) ?? [];
     const hasHighRisk = ports.some((p) => HIGH_RISK_PORTS.has(p));
     const severity: AnomalySeverity = hasHighRisk ? "high" : "medium";
     const portInfo = ports.length > 0 ? ` (porte: ${ports.slice(0, 5).join(", ")})` : "";
@@ -174,7 +182,7 @@ export function checkNewUnknownHosts(hosts: HostForAnomaly[]): PendingAnomalyEve
 // ── 3. Port Change anomalo ────────────────────────────────────────────────────
 
 /**
- * Confronta le porte dell'ultimo scan con la baseline degli scan precedenti.
+ * Confronta le porte dell'ultimo scan con gli scan precedenti dello stesso tipo.
  * Anomalia se: >= 3 porte cambiate, o rimozione/aggiunta di porte ad alto rischio.
  */
 export function checkPortChanges(
@@ -189,16 +197,26 @@ export function checkPortChanges(
   for (const [hostId, scans] of hostScans) {
     if (scans.length < 2) continue;
 
-    // Ordina per timestamp DESC: il primo è il più recente
-    const sorted = [...scans].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    const currentPorts = new Set(parsePorts(sorted[0].ports_open));
-    // Baseline = unione di tutte le porte degli scan precedenti al più recente
+    const sorted = scans
+      .map((scan) => ({ scan, time: parseDbDate(scan.timestamp).getTime() }))
+      .filter(({ time }) => Number.isFinite(time))
+      .sort((a, b) => b.time - a.time);
+    const [latest, ...previous] = sorted;
+    if (!latest) continue;
+    const current = parsePorts(latest.scan.ports_open);
+    if (!current) continue;
+    const currentPorts = new Set(current);
     const baselinePorts = new Set<number>();
-    for (let i = 1; i < sorted.length; i++) {
-      for (const p of parsePorts(sorted[i].ports_open)) baselinePorts.add(p);
+    let hasBaseline = false;
+    for (const { scan } of previous) {
+      if (scan.scan_type !== latest.scan.scan_type) continue;
+      const ports = parsePorts(scan.ports_open);
+      if (!ports) continue;
+      hasBaseline = true;
+      for (const port of ports) baselinePorts.add(port);
     }
 
-    if (baselinePorts.size === 0 && currentPorts.size === 0) continue;
+    if (!hasBaseline || (baselinePorts.size === 0 && currentPorts.size === 0)) continue;
 
     const added = [...currentPorts].filter((p) => !baselinePorts.has(p));
     const removed = [...baselinePorts].filter((p) => !currentPorts.has(p));
@@ -250,16 +268,20 @@ export function checkUptimeAnomaly(
   hostId: number,
   networkId: number,
   ip: string,
-  history: StatusHistoryEntry[]
+  history: StatusHistoryEntry[],
+  now = Date.now(),
 ): PendingAnomalyEvent | null {
   if (history.length < 10) return null;
 
-  const now = Date.now();
-  const cutoff48h = new Date(now - 48 * 3_600_000).toISOString();
-  const cutoff7d = new Date(now - 7 * 24 * 3_600_000).toISOString();
-
-  const recent = history.filter((h) => h.checked_at >= cutoff48h);
-  const baseline = history.filter((h) => h.checked_at >= cutoff7d && h.checked_at < cutoff48h);
+  const cutoff48h = now - 48 * 3_600_000;
+  const cutoff7d = now - 7 * 24 * 3_600_000;
+  const recent: StatusHistoryEntry[] = [];
+  const baseline: StatusHistoryEntry[] = [];
+  for (const entry of history) {
+    const time = parseDbDate(entry.checked_at).getTime();
+    if (time >= cutoff48h && time <= now) recent.push(entry);
+    else if (time >= cutoff7d && time < cutoff48h) baseline.push(entry);
+  }
 
   if (recent.length < 5 || baseline.length < 5) return null;
 
@@ -279,7 +301,7 @@ export function checkUptimeAnomaly(
     check_window_hours: 48,
   };
 
-  const direction = recentRate > baselineRate ? "aumentata" : "diminuita";
+  const direction = recentRate > baselineRate ? "diminuita" : "aumentata";
   return {
     host_id: hostId,
     network_id: networkId,
@@ -300,19 +322,19 @@ export function checkLatencyAnomaly(
   hostId: number,
   networkId: number,
   ip: string,
-  history: { time: string; response_time_ms: number | null; status: string }[]
+  history: { time: string; response_time_ms: number | null; status: string }[],
+  now = Date.now(),
 ): PendingAnomalyEvent | null {
-  const now = Date.now();
-  const cut24h = new Date(now - 24 * 3_600_000).toISOString();
-  const cut72h = new Date(now - 72 * 3_600_000).toISOString();
-
-  const baseline = history
-    .filter((h) => h.time >= cut72h && h.time < cut24h && h.response_time_ms !== null && h.status === "online")
-    .map((h) => h.response_time_ms as number);
-
-  const recent = history
-    .filter((h) => h.time >= cut24h && h.response_time_ms !== null && h.status === "online")
-    .map((h) => h.response_time_ms as number);
+  const cut24h = now - 24 * 3_600_000;
+  const cut72h = now - 72 * 3_600_000;
+  const baseline: number[] = [];
+  const recent: number[] = [];
+  for (const entry of history) {
+    if (entry.status !== "online" || entry.response_time_ms === null) continue;
+    const time = parseDbDate(entry.time).getTime();
+    if (time >= cut24h && time <= now) recent.push(entry.response_time_ms);
+    else if (time >= cut72h && time < cut24h) baseline.push(entry.response_time_ms);
+  }
 
   if (baseline.length < 10 || recent.length < 3) return null;
 

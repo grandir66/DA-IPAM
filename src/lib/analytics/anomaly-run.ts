@@ -72,7 +72,7 @@ export async function runAnomalyCheckManual(networkId: number | null): Promise<n
     const scans = getScanHistory({ host_id: host.id, limit: 3 });
     const withPorts = scans
       .filter((s) => s.ports_open != null)
-      .map((s) => ({ host_id: host.id, ports_open: s.ports_open, timestamp: s.timestamp }));
+      .map((s) => ({ host_id: host.id, scan_type: s.scan_type, ports_open: s.ports_open, timestamp: s.timestamp }));
     if (withPorts.length >= 2) hostScans.set(host.id, withPorts);
   }
   for (const ev of checkPortChanges(hostScans, hosts)) {

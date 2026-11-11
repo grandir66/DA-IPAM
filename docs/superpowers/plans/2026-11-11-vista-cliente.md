@@ -365,6 +365,10 @@ export function daQuanto(data: Date, adesso: Date): string;
 
 **Perché.** Riccardo, 11/11: «dovresti anche usare i colori del brandmark di Domarc, non i colori attuali». Tavola approvata da Riccardo l'11/11 **sul tema chiaro**; la resa sul tema scuro qui sotto è una proposta di chi ha scritto il task e va guardata a schermo. Si fa **dopo il Task 4 bis** (che tocca gli stessi file) e **prima del Task 6**, in un commit suo. Il tema segue la preferenza (deciso da Riccardo, Task 4 bis punto 13): niente area forzata in chiaro.
 
+**Dal controllo del Task 4 bis (11/11, commit `bf5c3673`): passato sul codice**, 28 prove verdi rilanciate, file solo quelli elencati. Non guardato a schermo (sull'hub c'era ancora la 0.9.1147). Due ritocchi da fare in questo task, prima del resto:
+1. **«Scegli un apparato per vedere i dettagli» non compare mai.** In `src/app/(cliente)/cliente/apparati/page.tsx` riga 67, senza apparato scelto la classe è `hidden xl:sticky xl:top-4`: `hidden` resta anche da 1280 px in su. Diventa `hidden xl:block xl:sticky xl:top-4`.
+2. **Una funzione rimasta senza uso.** `quantoSpento` in `src/lib/cliente/schede/apparati.ts` (riga 342, «da ieri») non la chiama più nessuno dopo `daQuanto`. Si toglie, insieme al suo caso di prova in `apparati.test.ts` (è l'unica prova che si può togliere: prova una funzione che non esiste più).
+
 **File**
 - modifica `src/app/globals.css`, `src/app/(cliente)/cliente/layout.tsx`, `src/components/cliente/intestazione.tsx`, `riquadro-modulo.tsx`, `griglia-indirizzi.tsx`, `pannello-porte.tsx`, `src/app/(cliente)/cliente/dominio/page.tsx` (solo le barre)
 - crea `src/components/cliente/barra.tsx`
@@ -632,6 +636,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 5 (`d92be786`): passato sul codice, 22 prove verdi rilanciate. Tre ritocchi messi in testa al Task 6 («100 su 100» è il rischio, nomi mai mostrati, troppi rilievi gravi in casa).
 
 - 2026-11-11 Task 4 bis [x]: correzioni di resa su casa, Reti e Apparati (scritto prima del Task 5, eseguito dopo, il Task 5 resta). Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 28 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
+
+- 2026-11-11 Controllo del Task 4 bis (`bf5c3673`): passato sul codice, 28 prove verdi rilanciate. Due ritocchi in testa al Task 4 ter (segnaposto della terza colonna mai visibile, funzione `quantoSpento` rimasta senza uso).
 
 ## Consuntivo
 ### Fatto

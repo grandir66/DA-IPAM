@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Boxes,
   Camera,
   CircleCheck,
   CircleHelp,
@@ -16,11 +17,13 @@ import {
   Smartphone,
   type LucideIcon,
 } from "lucide-react";
-import { Pannello, TempoRelativo, VoceSelezionabile } from "@/components/shared/console";
-import { ASSENTE_DOPO_GIORNI } from "@/lib/hosts/assenti";
+import { Pannello, VoceSelezionabile } from "@/components/shared/console";
+import { parseDbDate } from "@/lib/db-date";
+import { daQuanto } from "@/lib/cliente/testi";
 import type { PortaCliente, RigaApparato, TipoCliente } from "@/lib/cliente/schede/apparati";
 
 const ICONE: Record<string, LucideIcon> = {
+  Boxes,
   Camera,
   CircleHelp,
   Monitor,
@@ -30,6 +33,11 @@ const ICONE: Record<string, LucideIcon> = {
   Server,
   Smartphone,
 };
+
+function daQuando(vistoIl: string | null): string {
+  if (!vistoIl) return "da tempo";
+  return daQuanto(parseDbDate(vistoIl), new Date());
+}
 
 export function ElencoTipi({
   voci,
@@ -86,15 +94,16 @@ export function ElencoApparati({
       <h2 className="text-base font-semibold">
         {titolo} · {quanti}
       </h2>
-      <ul>
+      <ul className="grid gap-1">
         {apparati.map((apparato) => {
           const scelto = apparato.ip === ipScelto;
+          const quando = daQuando(apparato.vistoIl);
           return (
-            <li key={apparato.ip} className="border-b last:border-b-0">
+            <li key={apparato.ip}>
               <Link
                 href={`/cliente/apparati?tipo=${tipo}&ip=${encodeURIComponent(apparato.ip)}`}
                 aria-current={scelto ? "true" : undefined}
-                className={`flex items-center gap-2 py-2 text-sm ${scelto ? "font-semibold" : ""}`}
+                className={`flex items-center gap-2 rounded-xl border p-3 text-sm ${scelto ? "border-primary bg-selezione font-semibold" : "border-transparent"}`}
               >
                 {apparato.acceso ? (
                   <CircleCheck className="size-4 shrink-0" aria-hidden />
@@ -105,22 +114,14 @@ export function ElencoApparati({
                 )}
                 <span className="min-w-0 flex-1 truncate">
                   {apparato.nome}
-                  <span className="ml-2 font-normal text-muted-foreground">{apparato.cosa}</span>
+                  <span className="ml-2 font-normal text-muted-foreground">{apparato.cosaBreve}</span>
                 </span>
                 {apparato.acceso ? (
                   <span className="shrink-0 font-mono text-[13px]">{apparato.ip}</span>
                 ) : apparato.assente ? (
-                  <span className="shrink-0 text-[13px] text-muted-foreground">
-                    {apparato.vistoIl ? (
-                      <>non si vede da <TempoRelativo data={apparato.vistoIl} /></>
-                    ) : (
-                      <>non si vede da più di {ASSENTE_DOPO_GIORNI} giorni</>
-                    )}
-                  </span>
+                  <span className="shrink-0 text-[13px] text-muted-foreground">non si vede {quando}</span>
                 ) : (
-                  <span className="shrink-0 text-[13px] text-muted-foreground">
-                    spento da <TempoRelativo data={apparato.vistoIl} />
-                  </span>
+                  <span className="shrink-0 text-[13px] text-muted-foreground">spento {quando}</span>
                 )}
               </Link>
             </li>
@@ -140,6 +141,10 @@ function classePorta(porta: PortaCliente, scelta: boolean): string {
       : "bg-transparent text-foreground";
   const anello = scelta ? "outline outline-2 outline-offset-1 outline-foreground" : "";
   return `flex h-7 items-center justify-center rounded-sm font-mono text-[13px] ${bordo} ${fondo} ${anello}`;
+}
+
+function conto(n: number, uno: string, tanti: string): string {
+  return `${n} ${n === 1 ? uno : tanti}`;
 }
 
 /** Pannello frontale: 12 porte per riga. */
@@ -181,7 +186,7 @@ export function PannelloPorte({
           ))}
         </div>
         <p className="font-mono text-[13px] text-muted-foreground">
-          {collegate} collegate · {libere} libere · {dorsali} dorsali
+          {conto(collegate, "collegata", "collegate")} · {conto(libere, "libera", "libere")} · {conto(dorsali, "dorsale", "dorsali")}
         </p>
         {scelta && <DettaglioPorta porta={scelta} />}
       </div>

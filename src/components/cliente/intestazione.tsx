@@ -1,9 +1,10 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { LogOut, Printer } from "lucide-react";
+import { LogOut, Moon, Printer, Sun } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useTema } from "@/components/shared/theme-toggle";
 
 /**
  * Intestazione della vista cliente. Niente menu laterale.
@@ -21,6 +22,8 @@ export function Intestazione({
   nomeUtente: string;
   amministratore: boolean;
 }) {
+  const tema = useTema();
+
   async function esci() {
     await signOut({ redirect: false });
     window.location.href = "/login";
@@ -29,7 +32,8 @@ export function Intestazione({
   return (
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
-        <img src="/logo-color.png" alt="Domarc" className="h-8 w-auto" />
+        <img src="/logo-color.png" alt="Domarc" className="h-8 w-auto dark:hidden" />
+        <img src="/logo-white.png" alt="Domarc" className="hidden h-8 w-auto dark:block" />
         <p className="truncate text-base font-semibold">
           La tua rete · {nomeCliente}
         </p>
@@ -39,6 +43,16 @@ export function Intestazione({
         <Button type="button" variant="outline" className="nascosto-stampa" onClick={() => window.print()}>
           <Printer aria-hidden />
           Stampa
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="nascosto-stampa"
+          onClick={tema.toggle}
+          disabled={!tema.mounted}
+        >
+          {tema.dark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+          {tema.etichetta}
         </Button>
         <span className="max-w-40 truncate text-sm">{nomeUtente}</span>
         {amministratore && (

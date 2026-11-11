@@ -10,7 +10,7 @@ import Database from "better-sqlite3";
 import { nomeCategoria } from "../categorie";
 import { nomeDellaPorta } from "../porte-note";
 import { SCHEDE_CLIENTE } from "../registro";
-import { apparatoCliente, indirizziDellaRete, retiCliente, schedaReti, vlanDistinte, vociRetiViste } from "../schede/reti";
+import { apparatoCliente, indirizziDellaRete, retePrivata, retiCliente, schedaReti, selezionaRetiViste, vlanDistinte, vociRetiViste } from "../schede/reti";
 
 function dbDiProva(): Database.Database {
   const db = new Database(":memory:");
@@ -208,4 +208,33 @@ test("la scheda Reti è nel registro", () => {
   assert.equal(schedaReti.ordine, 10);
   assert.equal(schedaReti.icona, "Network");
   assert.equal(SCHEDE_CLIENTE.some((s) => s.id === "reti"), true);
+});
+
+test("retePrivata tiene solo 10/8, 172.16/12 e 192.168/16", () => {
+  assert.equal(retePrivata("192.168.6.0/24"), true);
+  assert.equal(retePrivata("172.24.178.0/24"), true);
+  assert.equal(retePrivata("10.1.0.0/16"), true);
+  assert.equal(retePrivata("95.230.196.0/24"), false);
+  assert.equal(retePrivata("217.28.64.0/24"), false);
+  assert.equal(retePrivata("172.32.0.0/24"), false);
+});
+
+test("le reti viste scartano le pubbliche e quelle con meno di 3 indirizzi, le più piene prima", () => {
+  const scelte = selezionaRetiViste([
+    { cidr: "95.230.196.0/24", vlan: null, indirizzi: 20 },
+    { cidr: "192.168.1.0/24", vlan: 1, indirizzi: 2 },
+    { cidr: "10.2.0.0/24", vlan: 2, indirizzi: 4 },
+    { cidr: "172.24.178.0/24", vlan: 3, indirizzi: 9 },
+  ]);
+  assert.deepEqual(scelte.map((v) => v.cidr), ["172.24.178.0/24", "10.2.0.0/24"]);
+});
+
+test("un sistema generico o il banner di una porta non entra nel «cos'è»", () => {
+  const db = dbDiProva();
+  db.prepare(
+    `INSERT INTO hosts (id, ip, status, attr_category, attr_vendor_name, attr_os_name, os_info)
+     VALUES (1, '10.0.0.1', 'online', 'network.router', 'MikroTik', 'Linux/Unix/embedded', '21/MikroTik router ftpd 7.22')`,
+  ).run();
+  assert.equal(apparatoCliente(db, "10.0.0.1")?.cosa, "Router · MikroTik");
+  db.close();
 });

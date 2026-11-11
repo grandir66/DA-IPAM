@@ -1,11 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Etichetta, Pannello } from "@/components/shared/console";
-import { GrigliaIndirizzi } from "@/components/cliente/griglia-indirizzi";
+import { ElencoReti, GrigliaIndirizzi, LegendaIndirizzi } from "@/components/cliente/griglia-indirizzi";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
 import { SchedaApparato } from "@/components/cliente/scheda-apparato";
 import { contestoCliente, nelCliente } from "@/lib/cliente/contesto";
-import { ASSENTE_DOPO_GIORNI } from "@/lib/hosts/assenti";
 import {
   apparatoCliente,
   indirizziDellaRete,
@@ -80,37 +78,6 @@ export default async function PaginaReti({
   );
 }
 
-function ElencoReti({ reti, sceltaId }: { reti: ReteCliente[]; sceltaId: number | null }) {
-  return (
-    <Pannello titolo="Le reti" conteggio={reti.length}>
-      {reti.length === 0 ? (
-        <p className="text-sm">Nessuna rete dichiarata</p>
-      ) : (
-        <ul>
-          {reti.map((rete) => {
-            const scelta = rete.id === sceltaId;
-            return (
-              <li key={rete.id} className="border-b last:border-b-0">
-                <Link
-                  href={`/cliente/reti?rete=${rete.id}`}
-                  aria-current={scelta ? "true" : undefined}
-                  className={`flex items-center gap-2 py-2 text-sm ${scelta ? "font-semibold" : ""}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{rete.nome}</span>
-                  {rete.vlan != null && <Etichetta>VLAN {rete.vlan}</Etichetta>}
-                  <span className="shrink-0 font-mono text-[13px] text-muted-foreground">
-                    {rete.inUso} su {rete.totale}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Pannello>
-  );
-}
-
 function VisteSulCavo({ viste }: { viste: ReteVista[] }) {
   return (
     <Pannello
@@ -148,9 +115,7 @@ function DettaglioRete({
         <h2 className="font-mono text-base font-semibold">
           {rete.nome} · {rete.cidr}
         </h2>
-        <p className="text-[13px] text-muted-foreground">
-          pieno = acceso · grigio = spento · chiaro = non si vede da più di {ASSENTE_DOPO_GIORNI} giorni · vuoto = libero
-        </p>
+        <LegendaIndirizzi />
       </div>
       <GrigliaIndirizzi reteId={rete.id} indirizzi={indirizzi} ipScelto={ipScelto} />
       {apparato && <SchedaApparato apparato={apparato} />}

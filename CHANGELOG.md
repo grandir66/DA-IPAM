@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: correzioni di resa su casa, Reti e Apparati
+
+A schermo, sul tema scuro, il marchio spariva, «spento da» diceva «giorni fa», le reti pubbliche riempivano l'elenco e 99 macchine virtuali risultavano server. Il dettaglio di un apparato finiva sotto l'elenco.
+
+### Aggiunto
+- **Macchine virtuali**: `compute.vm` non conta più fra i server. Nell'intestazione, accanto a «Stampa», si passa da chiaro a scuro con la stessa preferenza del resto dell'applicazione.
+
+### Corretto
+- Il marchio colorato sta sul tema chiaro e quello bianco sul tema scuro.
+- Il tempo si dice «da 5 giorni» o «dal 26/10/2026», non «da 7 giorni fa». Se l'apparato non ha un nome, la voce di attenzione comincia con la categoria.
+- Le reti viste sul cavo tengono solo gli indirizzi privati e almeno 3 indirizzi, le più piene prima. La rete scelta ha fondo e bordo. Nella griglia, «assente» e «libero» non si confondono più, e la legenda mostra i quattro quadretti.
+- L'elenco di un apparato mostra categoria e produttore. Un sistema «Linux/Unix/embedded» o l'insegna di una porta non compaiono. Il conteggio delle porte è solo degli switch. «1 dorsale», non «1 dorsali».
+- Da 1280 px il dettaglio sta nella terza colonna, fermo in alto. La riga scelta ha lo stesso fondo e bordo di una voce scelta.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Dominio e accessi
 
 Il cliente vede il rischio del dominio e gli accessi delle ultime 24 ore, senza i comandi dell'amministratore. Tre ritocchi nati dal controllo del Task 4: la frase «spento da» non si raddoppiava, il pannello porte si apriva anche sui NAS, e una categoria senza foglia perdeva il «cos'è».

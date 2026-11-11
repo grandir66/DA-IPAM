@@ -10,6 +10,7 @@ import {
   apparatiDelTipo,
   conteggiPerTipo,
   foglieTassonomia,
+  fraseApparatoSpento,
   nomiDaSegnalare,
   porteDelloSwitch,
   quantoSpento,
@@ -85,12 +86,16 @@ test("tipoCliente copre ogni foglia della tassonomia", () => {
       assert.equal(tipo, "computer", foglia);
       continue;
     }
+    if (foglia === "compute.vm") {
+      assert.equal(tipo, "virtuali", foglia);
+      continue;
+    }
     const radice = foglia.split(".")[0] ?? "";
     assert.equal(tipo, ATTESI[radice], foglia);
   }
   assert.equal(tipoCliente(null), "non_riconosciuti");
   assert.equal(tipoCliente("sconosciuta"), "non_riconosciuti");
-  assert.equal(TIPI_CLIENTE.map((t) => t.tipo).join(","), "computer,server,rete,stampanti,telefoni,mobili,altro,non_riconosciuti");
+  assert.equal(TIPI_CLIENTE.map((t) => t.tipo).join(","), "computer,server,virtuali,rete,stampanti,telefoni,mobili,altro,non_riconosciuti");
   assert.equal(schedaApparati.id, "apparati");
   assert.equal(schedaApparati.ordine, 20);
   assert.equal(SCHEDE_CLIENTE.some((s) => s.id === "apparati"), true);
@@ -220,4 +225,21 @@ test("un NAS con porte non apre il pannello", () => {
   const porte = porteDelloSwitch(db, "10.0.0.1");
   assert.equal(porte?.length, 1);
   db.close();
+});
+
+test("fraseApparatoSpento: la categoria precede l'indirizzo quando manca il nome", () => {
+  const adesso = new Date("2026-11-11T12:00:00.000Z");
+  const visto = "2026-11-06T12:00:00.000Z";
+  assert.equal(
+    fraseApparatoSpento("192.168.40.167", "192.168.40.167", "router", visto, adesso),
+    "Router 192.168.40.167 spento da 5 giorni",
+  );
+  assert.equal(
+    fraseApparatoSpento("SW-PIANO1", "192.168.40.1", "switch", visto, adesso),
+    "SW-PIANO1 spento da 5 giorni",
+  );
+  assert.equal(
+    fraseApparatoSpento("10.0.0.8", "10.0.0.8", null, visto, adesso),
+    "10.0.0.8 spento da 5 giorni",
+  );
 });

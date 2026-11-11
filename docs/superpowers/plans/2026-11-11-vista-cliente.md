@@ -319,7 +319,7 @@ export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati",
 
 ---
 
-### [ ] Task 4 bis — Resa: correzioni viste a schermo (dal controllo del Task 4)
+### [x] Task 4 bis — Resa: correzioni viste a schermo (dal controllo del Task 4)
 
 **Controllo del Task 4 (11/11, commit `288cdde7`): passato sul codice**, 14 prove verdi rilanciate, firme come da piano. Poi casa, Reti e Apparati sono state guardate a 1920 sull'hub (cliente 70791, tema scuro). Quello che segue è ciò che a schermo non funziona. Si fa **prima del Task 5**, in un commit solo.
 
@@ -351,7 +351,7 @@ export function daQuanto(data: Date, adesso: Date): string;
 **Tema** (Riccardo, 11/11: la vista **segue la preferenza** chiaro/scuro, non è forzata in chiaro)
 13. Nell'intestazione, accanto a «Stampa», il comando per passare da chiaro a scuro: stesso gancio `useTema` e stessa resa che usa `src/components/shared/user-menu.tsx`, senza duplicarne la logica. Senza questo un utente Cliente non ha modo di scegliere, perché non vede il menu utente. Classe `nascosto-stampa`. Ogni correzione di questo task si guarda in tutti e due i temi.
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sull'hub, da «Vista cliente»: marchio leggibile; nessuna voce con «giorni fa»; in Reti la rete scelta è evidenziata e le reti pubbliche non ci sono; in Apparati il clic su uno switch mostra le porte a destra senza scorrere.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 28 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (73 avvisi: 72 già presenti, uno nuovo sul secondo marchio, lo stesso avviso che la sidebar ha già sulle due immagini). `npx tsc --noEmit` → 0 errori. Coperti: `daQuanto`, `sistemaPulito`, `retePrivata` (i cinque CIDR), le reti pubbliche e quelle con meno di 3 indirizzi scartate, `compute.vm` → `virtuali`, la frase con la categoria quando il nome è l'indirizzo. `quantoSpento` resta com'era. L'elenco «Le reti» usa `VoceSelezionabile`. La pagina autenticata non è stata aperta, né in chiaro né in scuro.
 
 **Commit:** «Vista cliente: correzioni di resa su casa, Reti e Apparati».
 
@@ -628,6 +628,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Riccardo: colori del marchio Domarc nella vista cliente (tavola approvata sul tema chiaro). Aggiunto il Task 4 ter, dopo il 4 bis e prima del 6; sostituisce i punti 1 e 6 (classi) del 4 bis. Il tema segue la preferenza.
 
 - 2026-11-11 Controllo del Task 5 (`d92be786`): passato sul codice, 22 prove verdi rilanciate. Tre ritocchi messi in testa al Task 6 («100 su 100» è il rischio, nomi mai mostrati, troppi rilievi gravi in casa).
+
+- 2026-11-11 Task 4 bis [x]: correzioni di resa su casa, Reti e Apparati (scritto prima del Task 5, eseguito dopo, il Task 5 resta). Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 28 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 ## Consuntivo
 ### Fatto

@@ -6,13 +6,15 @@ import { condizioneAssente } from "@/lib/hosts/assenti";
 import { ipNumero } from "@/lib/trunk/reti";
 import { nomeCategoria } from "../categorie";
 import { nelCliente, type ContestoCliente } from "../contesto";
+import { daQuanto, sistemaPulito } from "../testi";
 import type { RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
-export type TipoCliente = "computer" | "server" | "rete" | "stampanti" | "telefoni" | "mobili" | "altro" | "non_riconosciuti";
+export type TipoCliente = "computer" | "server" | "virtuali" | "rete" | "stampanti" | "telefoni" | "mobili" | "altro" | "non_riconosciuti";
 
 export const TIPI_CLIENTE: ReadonlyArray<{ tipo: TipoCliente; titolo: string; icona: string }> = [
   { tipo: "computer", titolo: "Computer", icona: "Monitor" },
   { tipo: "server", titolo: "Server", icona: "Server" },
+  { tipo: "virtuali", titolo: "Macchine virtuali", icona: "Boxes" },
   { tipo: "rete", titolo: "Rete", icona: "Network" },
   { tipo: "stampanti", titolo: "Stampanti", icona: "Printer" },
   { tipo: "telefoni", titolo: "Telefoni", icona: "Phone" },
@@ -34,10 +36,11 @@ const RADICE: Record<string, TipoCliente> = {
   power: "altro",
 };
 
-/** compute.workstation e compute.laptop sono computer; il resto segue la radice. */
+/** compute.workstation e compute.laptop sono computer; compute.vm è una macchina virtuale; il resto segue la radice. */
 export function tipoCliente(categoria: string | null): TipoCliente {
   if (!categoria) return "non_riconosciuti";
   if (categoria === "compute.workstation" || categoria === "compute.laptop") return "computer";
+  if (categoria === "compute.vm") return "virtuali";
   const radice = categoria.split(".")[0] ?? "";
   return RADICE[radice] ?? "non_riconosciuti";
 }
@@ -46,6 +49,8 @@ export interface RigaApparato {
   ip: string;
   nome: string;
   cosa: string;
+  /** Categoria e produttore, senza il sistema operativo. */
+  cosaBreve: string;
   acceso: boolean;
   /** Spento da più di 7 giorni, o spento senza una data. */
   assente: boolean;
@@ -116,14 +121,26 @@ function inizialeMaiuscola(s: string): string {
   return s.charAt(0).toLocaleUpperCase("it-IT") + s.slice(1);
 }
 
-function cosaDi(host: RigaHost): string {
+function pezziDi(host: RigaHost, conSistema: boolean): string[] {
   const pezzi: string[] = [];
   const categoria = nomeCategoria(testo(host.attr_category));
   if (categoria) pezzi.push(inizialeMaiuscola(categoria));
   const produttore = testo(host.attr_vendor_name) ?? testo(host.device_manufacturer) ?? testo(host.vendor);
   if (produttore) pezzi.push(produttore);
-  const sistema = testo(host.attr_os_name) ?? testo(host.os_info);
-  if (sistema) pezzi.push(sistema);
+  if (conSistema) {
+    const sistema = sistemaPulito(testo(host.attr_os_name)) ?? sistemaPulito(testo(host.os_info));
+    if (sistema) pezzi.push(sistema);
+  }
+  return pezzi;
+}
+
+function cosaDi(host: RigaHost): string {
+  const pezzi = pezziDi(host, true);
+  return pezzi.length > 0 ? pezzi.join(" · ") : "Non riconosciuto";
+}
+
+function cosaBreveDi(host: RigaHost): string {
+  const pezzi = pezziDi(host, false);
   return pezzi.length > 0 ? pezzi.join(" · ") : "Non riconosciuto";
 }
 
@@ -167,6 +184,7 @@ function rigaDi(host: RigaHost, conPorte: Set<string>): RigaApparato {
     ip: host.ip,
     nome: nomeDi(host),
     cosa: cosaDi(host),
+    cosaBreve: cosaBreveDi(host),
     acceso: host.status === "online",
     assente: host.assente === 1,
     vistoIl: testo(host.last_seen),
@@ -272,7 +290,7 @@ function porteLette(db: Database.Database): number {
     SELECT COUNT(sp.id) AS porte
     FROM network_devices nd
     JOIN switch_ports sp ON sp.device_id = nd.id
-    WHERE nd.device_type IN ${TIPI_CON_PORTE}
+    WHERE nd.device_type = 'switch'
   `).get() as { porte: number };
   return riga.porte;
 }
@@ -281,6 +299,7 @@ interface SpentoSegnalato {
   ip: string;
   nome: string;
   tipo: TipoCliente;
+  categoria: string | null;
   last_seen: string;
 }
 
@@ -290,7 +309,13 @@ function spentiDaSegnalare(db: Database.Database): SpentoSegnalato[] {
       const tipo = tipoCliente(testo(h.attr_category));
       return h.spento_lungo === 1 && (tipo === "rete" || tipo === "server");
     })
-    .map((h) => ({ ip: h.ip, nome: nomeDi(h), tipo: tipoCliente(testo(h.attr_category)), last_seen: h.last_seen ?? "" }))
+    .map((h) => ({
+      ip: h.ip,
+      nome: nomeDi(h),
+      tipo: tipoCliente(testo(h.attr_category)),
+      categoria: nomeCategoria(testo(h.attr_category)),
+      last_seen: h.last_seen ?? "",
+    }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
 }
 
@@ -300,6 +325,18 @@ export function nomiDaSegnalare(db: Database.Database): string[] {
 }
 
 const MS_ORA = 3_600_000;
+
+/** Se il nome è l'indirizzo, la voce comincia con la categoria. */
+export function fraseApparatoSpento(
+  nome: string,
+  ip: string,
+  categoria: string | null,
+  lastSeen: string,
+  adesso: Date = new Date(),
+): string {
+  const testa = nome !== ip ? nome : categoria ? `${inizialeMaiuscola(categoria)} ${ip}` : ip;
+  return `${testa} spento ${daQuanto(parseDbDate(lastSeen), adesso)}`;
+}
 
 /** «da ieri» sotto le 48 ore, altrimenti «da N giorni» con N giorni interi. */
 export function quantoSpento(lastSeen: string, adesso: Date = new Date()): string {
@@ -334,7 +371,7 @@ function attenzioneApparati(c: ContestoCliente): VoceAttenzione[] {
   return nelCliente(c, (db) =>
     spentiDaSegnalare(db).slice(0, 5).map((h) => ({
       gravita: "nota" as const,
-      testo: `${h.nome} spento ${quantoSpento(h.last_seen)}`,
+      testo: fraseApparatoSpento(h.nome, h.ip, h.categoria, h.last_seen),
       href: `/cliente/apparati?tipo=${h.tipo}&ip=${encodeURIComponent(h.ip)}`,
       scheda: "Apparati",
     })),

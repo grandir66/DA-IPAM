@@ -7,6 +7,7 @@ import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import { nelCliente, type ContestoCliente } from "../contesto";
 import { nomeCategoria } from "../categorie";
+import { sistemaPulito } from "../testi";
 import { nomeDellaPorta } from "../porte-note";
 import type { RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
@@ -164,7 +165,7 @@ function cosaDellHost(host: RigaHost): string {
   if (categoria) pezzi.push(inizialeMaiuscola(categoria));
   const produttore = testo(host.attr_vendor_name) ?? testo(host.device_manufacturer) ?? testo(host.vendor);
   if (produttore) pezzi.push(produttore);
-  const sistema = testo(host.attr_os_name) ?? testo(host.os_info);
+  const sistema = sistemaPulito(testo(host.attr_os_name)) ?? sistemaPulito(testo(host.os_info));
   if (sistema) pezzi.push(sistema);
   return pezzi.length > 0 ? pezzi.join(" · ") : "Non riconosciuto";
 }
@@ -243,17 +244,36 @@ export function apparatoCliente(db: Database.Database, ip: string): ApparatoClie
   return host ? daHost(db, host) : null;
 }
 
+/** true per 10.0.0.0/8, 172.16.0.0/12 e 192.168.0.0/16. Il resto, anche 172.32, no. */
+export function retePrivata(cidr: string): boolean {
+  const parti = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.exec(cidr.trim());
+  if (!parti) return false;
+  const a = Number(parti[1]);
+  const b = Number(parti[2]);
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return a === 192 && b === 168;
+}
+
 /** [] se la lettura del cavo è spenta. Va chiamata dentro il contesto del cliente. */
 export function retiViste(c: ContestoCliente): ReteVista[] {
   return nelCliente(c, (db) => {
     if (!trunkLetturaAttiva()) return [];
     const cidr = (db.prepare("SELECT cidr FROM networks").all() as Array<{ cidr: string }>).map((r) => r.cidr);
-    return retiProposte(cidr).map((p) => ({
+    const viste = retiProposte(cidr).map((p) => ({
       cidr: p.cidr,
       vlan: p.vid > 0 ? p.vid : null,
       indirizzi: p.ip,
     }));
+    return selezionaRetiViste(viste);
   });
+}
+
+/** Private, con almeno 3 indirizzi visti, le più piene prima. */
+export function selezionaRetiViste(viste: ReteVista[]): ReteVista[] {
+  return viste
+    .filter((v) => retePrivata(v.cidr) && v.indirizzi >= 3)
+    .sort((a, b) => b.indirizzi - a.indirizzi || a.cidr.localeCompare(b.cidr));
 }
 
 /** VLAN diverse, non le reti che ne hanno una. */

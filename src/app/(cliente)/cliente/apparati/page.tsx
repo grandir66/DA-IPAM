@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Vuoto } from "@/components/shared/console";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
 import { SchedaApparato } from "@/components/cliente/scheda-apparato";
 import { ElencoApparati, ElencoTipi, PannelloPorte } from "@/components/cliente/pannello-porte";
@@ -11,7 +12,6 @@ import {
   schedaApparati,
   TIPI_CLIENTE,
   type PortaCliente,
-  type RigaApparato,
   type TipoCliente,
 } from "@/lib/cliente/schede/apparati";
 
@@ -54,19 +54,27 @@ export default async function PaginaApparati({
 
   return (
     <PaginaModulo titolo="Apparati">
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)] xl:grid-cols-[260px_minmax(0,1fr)_minmax(0,1fr)]">
         <ElencoTipi voci={voci} scelto={dati.scelto?.tipo ?? null} />
         {dati.scelto && (
-          <Dettaglio
-            tipo={dati.scelto.tipo}
-            titolo={dati.scelto.titolo}
-            apparati={dati.apparati}
-            ipScelto={dati.riga?.ip ?? null}
-            nome={dati.riga?.nome ?? ""}
-            porte={dati.porte}
-            portaScelta={Number.isInteger(portaParam) ? portaParam : null}
-            scheda={dati.scheda}
-          />
+          <div className="space-y-4 xl:contents">
+            <ElencoApparati
+              tipo={dati.scelto.tipo}
+              titolo={dati.scelto.titolo}
+              apparati={dati.apparati}
+              ipScelto={dati.riga?.ip ?? null}
+            />
+            <div className={dati.riga ? "xl:sticky xl:top-4" : "hidden xl:sticky xl:top-4"}>
+              <Dettaglio
+                tipo={dati.scelto.tipo}
+                ipScelto={dati.riga?.ip ?? null}
+                nome={dati.riga?.nome ?? ""}
+                porte={dati.porte}
+                portaScelta={Number.isInteger(portaParam) ? portaParam : null}
+                scheda={dati.scheda}
+              />
+            </div>
+          </div>
         )}
       </div>
     </PaginaModulo>
@@ -75,8 +83,6 @@ export default async function PaginaApparati({
 
 function Dettaglio({
   tipo,
-  titolo,
-  apparati,
   ipScelto,
   nome,
   porte,
@@ -84,21 +90,15 @@ function Dettaglio({
   scheda,
 }: {
   tipo: TipoCliente;
-  titolo: string;
-  apparati: RigaApparato[];
   ipScelto: string | null;
   nome: string;
   porte: PortaCliente[] | null;
   portaScelta: number | null;
   scheda: ReturnType<typeof apparatoCliente>;
 }) {
-  return (
-    <div className="space-y-4">
-      <ElencoApparati tipo={tipo} titolo={titolo} apparati={apparati} ipScelto={ipScelto} />
-      {ipScelto && porte !== null && (
-        <PannelloPorte tipo={tipo} ip={ipScelto} nome={nome} porte={porte} portaScelta={portaScelta} />
-      )}
-      {ipScelto && porte === null && scheda && <SchedaApparato apparato={scheda} />}
-    </div>
-  );
+  if (ipScelto && porte !== null) {
+    return <PannelloPorte tipo={tipo} ip={ipScelto} nome={nome} porte={porte} portaScelta={portaScelta} />;
+  }
+  if (ipScelto && scheda) return <SchedaApparato apparato={scheda} />;
+  return <Vuoto titolo="Scegli un apparato per vedere i dettagli" />;
 }

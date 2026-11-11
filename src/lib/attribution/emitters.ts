@@ -246,7 +246,8 @@ const FIRME_NOME: ReadonlyArray<readonly [RegExp, CategorySlug]> = [
   [/^macbook/i, "compute.laptop"],
   [/^android-[0-9a-f]{16}$/i, "mobile.phone"], // nome di serie di Android
   [/^ipad\b/i, "mobile.tablet"],
-  [/^iphone\b|^pixel[-\s]?\d|^galaxy[-\s]|fairphone|nothing[-\s]phone|^redmi|^oneplus/i, "mobile.phone"],
+  // `^s2\d` (11/11/2026): i Samsung S si chiamano «S25-Ultra-di-<nome>», senza «Galaxy».
+  [/^iphone\b|^pixel[-\s]?\d|^galaxy[-\s]|^s2\d([-\s]|$)|fairphone|nothing[-\s]phone|^redmi|^oneplus/i, "mobile.phone"],
 ];
 const FIRME_PORTE: ReadonlyArray<readonly [(aperte: ReadonlySet<number>) => boolean, CategorySlug]> = [
   [(a) => a.has(8291) && (a.has(8728) || a.has(8729)), "network.router"], // Winbox + API RouterOS

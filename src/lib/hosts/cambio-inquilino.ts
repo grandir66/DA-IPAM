@@ -95,20 +95,28 @@ export function eCambioDiInquilino(
  * Svuota i dati d'identità dell'inquilino di prima e ritira le sue evidenze non manuali. Non tocca: MAC, stato,
  * date, nome dato a mano, classe scelta a mano, note, codice d'inventario, host noto. Poi ricalcola il riconoscimento.
  */
-export function svuotaInquilino(db: Database.Database, hostId: number, nowIso: string = new Date().toISOString()): void {
+export function svuotaInquilino(
+  db: Database.Database,
+  hostId: number,
+  opts: { tieniNome?: boolean; nowIso?: string } = {},
+): void {
+  const nowIso = opts.nowIso ?? new Date().toISOString();
+  // `tieniNome`: nella bonifica delle righe già sporche il nome è quello dell'apparato di ADESSO (arrivato col suo
+  // DHCP) e va tenuto. L'11/11 sull'hub 533 la prima bonifica l'ha tolto a 16 righe: rimesso dalla copia.
+  const nome = opts.tieniNome ? 1 : 0;
   db.transaction(() => {
     db.prepare(
       `UPDATE hosts SET vendor = NULL, os_info = NULL, model = NULL, serial_number = NULL, firmware = NULL,
          device_manufacturer = NULL, detection_json = NULL, snmp_data = NULL, open_ports = NULL,
-         hostname = CASE WHEN hostname_source = 'manual' THEN hostname ELSE NULL END,
-         hostname_source = CASE WHEN hostname_source = 'manual' THEN hostname_source ELSE NULL END,
+         hostname = CASE WHEN ? = 1 OR hostname_source = 'manual' THEN hostname ELSE NULL END,
+         hostname_source = CASE WHEN ? = 1 OR hostname_source = 'manual' THEN hostname_source ELSE NULL END,
          classification = CASE WHEN IFNULL(classification_manual, 0) = 1 THEN classification ELSE NULL END,
          classification_reason = CASE WHEN IFNULL(classification_manual, 0) = 1 THEN classification_reason ELSE NULL END,
          classification_json = CASE WHEN IFNULL(classification_manual, 0) = 1 THEN classification_json ELSE NULL END,
          server_roles = CASE WHEN IFNULL(classification_manual, 0) = 1 THEN server_roles ELSE NULL END,
          updated_at = datetime('now')
        WHERE id = ?`,
-    ).run(hostId);
+    ).run(nome, nome, hostId);
     db.prepare(
       `UPDATE attribution_evidence SET expires_at = ?
        WHERE host_id = ? AND source != 'manual' AND superseded_by IS NULL AND (expires_at IS NULL OR expires_at > ?)`,

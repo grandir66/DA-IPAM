@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Riconoscimento: la bonifica tiene il nome, firma dei Samsung S
+
+### Corretto
+- **La bonifica delle righe già sporche non toglie più il nome** (`svuotaInquilino` con `tieniNome`): lì il nome è dell'apparato di adesso. L'11/11 sull'hub la prima bonifica l'aveva tolto a 16 righe; rimesso dalla copia fatta prima.
+
+### Aggiunto
+- Firma di nome per i Samsung S («S25-Ultra-di-…»): telefono, come già «iPhone», «Galaxy», «Pixel».
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa con i grafici
 
 La casa era una griglia di riquadri con molto vuoto sotto. Riccardo, 11/11: «qualcosa di più estetico e che fa colpo, preso dalla dashboard iniziale, senza dover aprire i singoli moduli, che potrebbero diventare dei box più piccoli in testa alla pagina».

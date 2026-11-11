@@ -91,7 +91,7 @@ describe("svuotaInquilino", () => {
     riga(1, STAMPANTE);
     db.exec(`INSERT INTO attribution_evidence (host_id, source, phase, dimension, claim, confidence, weight) VALUES
       (1, 'snmp_sysobj', 'snmp', 'category', 'peripheral.printer', 0.95, 1), (1, 'manual', 'manual', 'vendor', 'kyocera', 1, 1)`);
-    svuotaInquilino(db, 1, "2026-11-11T10:00:00.000Z");
+    svuotaInquilino(db, 1, { nowIso: "2026-11-11T10:00:00.000Z" });
     const r = leggi(1);
     for (const c of ["vendor", "os_info", "snmp_data", "open_ports", "hostname", "hostname_source", "classification"]) assert.equal(r[c], null, c);
     assert.equal(r.notes, "piano 2");
@@ -106,6 +106,18 @@ describe("svuotaInquilino", () => {
     const r = leggi(1);
     assert.equal(r.classification, "smartphone");
     assert.equal(r.hostname, "telefono-di-riccardo");
+    assert.equal(r.snmp_data, null);
+  });
+});
+
+describe("svuotaInquilino con tieniNome (bonifica delle righe già sporche)", () => {
+  it("il nome è dell'apparato di adesso e resta; i dati di quello di prima vanno via", () => {
+    riga(1, TELEFONO, { hostname: "iPhone", hostname_source: "dhcp" });
+    svuotaInquilino(db, 1, { tieniNome: true });
+    const r = leggi(1);
+    assert.equal(r.hostname, "iPhone");
+    assert.equal(r.hostname_source, "dhcp");
+    assert.equal(r.vendor, null);
     assert.equal(r.snmp_data, null);
   });
 });

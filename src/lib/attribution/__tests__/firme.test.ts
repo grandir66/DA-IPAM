@@ -73,3 +73,12 @@ describe("una VM con un ruolo (79993, 10/11/2026: il PBS restava «vm»)", () =>
     assert.equal(categoria({ vendor: proxmox, hostname: "iPhone" }), "compute.vm");
   });
 });
+
+describe("firma di nome dei Samsung S (11/11/2026)", () => {
+  it("«S25-Ultra-di-riccardo» è un telefono; un nome che comincia per S2 senza essere un Samsung no", () => {
+    assert.equal(categoria({ hostname: "S25-Ultra-di-riccardo" }), "mobile.phone");
+    assert.equal(categoria({ hostname: "S24" }), "mobile.phone");
+    assert.notEqual(categoria({ hostname: "S2000-SWITCH" }), "mobile.phone");
+    assert.notEqual(categoria({ hostname: "s2sgateway" }), "mobile.phone");
+  });
+});

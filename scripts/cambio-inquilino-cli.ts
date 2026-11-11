@@ -23,7 +23,7 @@ withTenant(tenant, () => {
     console.log(gruppo ? "--- sicure: nome di un apparato personale, dati di un altro" : "--- da leggere: NON si svuotano da qui");
     for (const r of righe.filter((x) => x.sicura === gruppo)) {
       console.log([r.id, r.ip, r.nome ?? "-", r.mac, r.produttore ?? "-", r.snmp ? "snmp" : "-", r.classe ?? "-", r.categoria ?? "-", r.a_mano ? "a mano" : "-", r.perche].join(" | "));
-      if (applica && r.sicura) svuotaInquilino(db, r.id);
+      if (applica && r.sicura) svuotaInquilino(db, r.id, { tieniNome: true });
     }
   }
   const sicure = righe.filter((x) => x.sicura).length;

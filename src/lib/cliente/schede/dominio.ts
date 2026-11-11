@@ -8,6 +8,8 @@ export interface StatoDominio {
   controllatoIl: string | null;
   aree: Array<{ nome: string; punteggio: number }>;
   rilievi: Array<{ gravita: Gravita; testo: string; quanti: number; nomi: string[] }>;
+  /** Rilievi gravi del giro, anche oltre i dieci mostrati. */
+  graviTotali: number;
 }
 
 export interface ProblemaAccesso {
@@ -77,7 +79,7 @@ function gravitaDi(severity: string): Gravita {
   return "nota";
 }
 
-/** Primo CN= del nome distinto, fino alla virgola. JSON illeggibile → nessun nome. */
+/** Se c'è CN= si prende quel pezzo; altrimenti la voce così com'è. I doppi si tolgono. */
 function nomiDa(raw: string | null): string[] {
   if (!testo(raw)) return [];
   let parsed: unknown;
@@ -92,7 +94,7 @@ function nomiDa(raw: string | null): string[] {
   for (const voce of parsed) {
     if (typeof voce !== "string") continue;
     const trovato = /CN=([^,]*)/i.exec(voce);
-    const nome = trovato?.[1]?.trim();
+    const nome = (trovato ? trovato[1] : voce).trim();
     if (!nome || visti.has(nome)) continue;
     visti.add(nome);
     nomi.push(nome);
@@ -100,7 +102,15 @@ function nomiDa(raw: string | null): string[] {
   return nomi;
 }
 
-function rilieviDelGiro(db: Database.Database, runId: number): StatoDominio["rilievi"] {
+interface RilievoInterno {
+  gravita: Gravita;
+  testo: string;
+  quanti: number;
+  nomi: string[];
+  peso: number;
+}
+
+function rilieviTutti(db: Database.Database, runId: number): RilievoInterno[] {
   const righe = db.prepare(
     "SELECT severity, title, object_count, sample_dns_json FROM ad_health_findings WHERE run_id = ?",
   ).all(runId) as RigaRilievo[];
@@ -112,9 +122,7 @@ function rilieviDelGiro(db: Database.Database, runId: number): StatoDominio["ril
       nomi: nomiDa(r.sample_dns_json),
       peso: PESO_SEVERITY[r.severity] ?? 4,
     }))
-    .sort((a, b) => a.peso - b.peso || b.quanti - a.quanti)
-    .slice(0, MASSIMO_RILIEVI)
-    .map((r) => ({ gravita: r.gravita, testo: r.testo, quanti: r.quanti, nomi: r.nomi }));
+    .sort((a, b) => a.peso - b.peso || b.quanti - a.quanti);
 }
 
 /** null se non c'è un giro concluso bene. Il punteggio è un rischio: più alto è peggio. */
@@ -144,12 +152,14 @@ export function statoDominio(db: Database.Database): StatoDominio | null {
     aree.push({ nome: area.nome, punteggio });
   }
 
+  const tutti = tabella(db, "ad_health_findings") ? rilieviTutti(db, ultimo.id) : [];
   return {
     punteggio: ultimo.score_global,
     unMeseFa: vecchio?.score_global ?? null,
     controllatoIl: ultimo.started_at,
     aree,
-    rilievi: tabella(db, "ad_health_findings") ? rilieviDelGiro(db, ultimo.id) : [],
+    rilievi: tutti.slice(0, MASSIMO_RILIEVI).map((r) => ({ gravita: r.gravita, testo: r.testo, quanti: r.quanti, nomi: r.nomi })),
+    graviTotali: tutti.filter((r) => r.gravita === "grave").length,
   };
 }
 
@@ -216,7 +226,7 @@ export function problemiDiAccesso(db: Database.Database): ProblemaAccesso[] {
 
 function contestoDominio(falliti: number): string {
   const n = falliti === 1 ? "1 accesso fallito" : `${falliti} accessi falliti`;
-  return `stato del dominio · ${n}`;
+  return `più alto è peggio · ${n}`;
 }
 
 function riquadroDominio(c: ContestoCliente): RiquadroCliente {
@@ -225,11 +235,11 @@ function riquadroDominio(c: ContestoCliente): RiquadroCliente {
     const problemi = problemiDiAccesso(db);
     const bloccati = problemi.filter((p) => p.tipo === "bloccato");
     const falliti = problemi.filter((p) => p.tipo === "falliti").reduce((n, p) => n + p.quanti, 0);
-    const gravi = stato?.rilievi.filter((r) => r.gravita === "grave").length ?? 0;
+    const gravi = stato?.graviTotali ?? 0;
     const aperti = bloccati.length + gravi;
     return {
       numero: stato?.punteggio == null ? "—" : String(stato.punteggio),
-      unita: "su 100",
+      unita: "di rischio su 100",
       contesto: contestoDominio(falliti),
       aperti,
       stato: gravi > 0 ? "grave" : bloccati.length > 0 ? "attenzione" : "a_posto",
@@ -237,6 +247,28 @@ function riquadroDominio(c: ContestoCliente): RiquadroCliente {
   });
 }
 
+/** Al più tre voci. Se i gravi sono di più, la terza riassume quelli non elencati. */
+export function vociRilieviGravi(
+  gravi: Array<{ testo: string; quanti: number }>,
+  graviTotali: number,
+): VoceAttenzione[] {
+  const mostrati = graviTotali > 3 ? gravi.slice(0, 2) : gravi;
+  const voci: VoceAttenzione[] = mostrati.map((rilievo) => ({
+    gravita: "grave",
+    testo: `${rilievo.quanti} · ${rilievo.testo}`,
+    href: "/cliente/dominio",
+    scheda: "Dominio e accessi",
+  }));
+  if (graviTotali > 3) {
+    voci.push({
+      gravita: "grave",
+      testo: `Altri ${graviTotali - 2} rilievi gravi nel dominio`,
+      href: "/cliente/dominio",
+      scheda: "Dominio e accessi",
+    });
+  }
+  return voci;
+}
 function attenzioneDominio(c: ContestoCliente): VoceAttenzione[] {
   return nelCliente(c, (db) => {
     const voci: VoceAttenzione[] = [];
@@ -250,15 +282,9 @@ function attenzioneDominio(c: ContestoCliente): VoceAttenzione[] {
         scheda: "Dominio e accessi",
       });
     }
-    for (const rilievo of statoDominio(db)?.rilievi ?? []) {
-      if (rilievo.gravita !== "grave") continue;
-      voci.push({
-        gravita: "grave",
-        testo: `${rilievo.quanti} · ${rilievo.testo}`,
-        href: "/cliente/dominio",
-        scheda: "Dominio e accessi",
-      });
-    }
+    const stato = statoDominio(db);
+    const gravi = (stato?.rilievi ?? []).filter((r) => r.gravita === "grave");
+    voci.push(...vociRilieviGravi(gravi, stato?.graviTotali ?? 0));
     return voci;
   });
 }

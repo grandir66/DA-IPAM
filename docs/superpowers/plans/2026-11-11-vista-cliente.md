@@ -467,7 +467,7 @@ export const schedaDominio: SchedaCliente; // id "dominio", titolo "Dominio e ac
 
 ---
 
-### [ ] Task 6 — Scheda Log di sicurezza
+### [x] Task 6 — Scheda Log di sicurezza
 
 **Dal controllo del Task 5 (11/11, commit `d92be786`): passato sul codice**, 22 prove verdi rilanciate, firme come da piano; i tre ritocchi del Task 4 sono fatti; le date sul database sono in formato ISO, quindi i confronti delle ultime 24 ore sono giusti. Non guardato a schermo. Tre ritocchi a `src/lib/cliente/schede/dominio.ts` da fare in questo task, prima del resto (misure sul cliente 70791: punteggio 100, 4 rilievi `Critical`, 11 `High`, 15 `Medium`, 4 `Low`; nelle ultime 24 ore 26 blocchi di un solo account):
 1. **«100 su 100» sembra un voto pieno, ed è il rischio massimo.** Nel riquadro `unita` diventa «di rischio su 100» e il contesto «più alto è peggio · N accessi falliti». Nella pagina la stessa dicitura accanto al punteggio grande.
@@ -520,7 +520,7 @@ export const schedaLogSicurezza: SchedaCliente; // id "log-sicurezza", titolo "L
 - `riquadro`: `numero` = `totaleAperti`; `contesto` = «avvisi aperti · <chiusiNelMese> chiusi nel mese»; `aperti` = `totaleAperti`; `stato` = `grave` se c'è un aperto `grave`, `attenzione` se ce n'è almeno uno, altrimenti `a_posto`.
 - `attenzione`: una voce per ogni aperto `grave` (al più 5), testo «<testo> su <dove>», `href` «/cliente/log-sicurezza».
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`fraseAvviso` con titolo in tabella e fuori; righe `diagnostic = 1` escluse; sette giorni sempre presenti). Pagina guardata una volta a 1920.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 32 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. Coperti: `fraseAvviso` con un titolo in tabella e uno fuori; le righe `diagnostic = 1` escluse; sette giorni sempre presenti, dal 5 all'11 novembre con un solo avviso il 9; nomi `["Guest","mauri-a","nety-audit"]`; 12 rilievi gravi, in casa la terza voce è «Altri 10 rilievi gravi nel dominio». L'asserzione storica del CN teneva fuori «senza cn»: il ritocco 2 lo tiene, perché non c'è `CN=`. Misura sul cliente 70791, 11/11/2026, `diagnostic = 0` (210 righe su 248), i 20 titoli da cui nasce la tabella: sshd brute force utente inesistente 16, sshd authentication failed 15, PAM login failed 15, sshd non-existent user 14, Logon Failure 14, syslog authentication failure 12, New user 12, New group 12, PAM multiple failed 10, Multiple Windows Logon Failures 10, account locked out 9, unix_chkpwd 8, Windows Audit Policy changed 8, User account changed 7, Proxmox authentication failed 7, sshd brute force authentication failed 6, Windows DC Logon Failure 3, account enabled or created 3, Maximum authentication attempts 3, NTLM utente inesistente 2. La pagina autenticata non è stata aperta.
 
 **Commit:** «Vista cliente: scheda Log di sicurezza».
 
@@ -640,6 +640,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 4 bis (`bf5c3673`): passato sul codice, 28 prove verdi rilanciate. Due ritocchi in testa al Task 4 ter (segnaposto della terza colonna mai visibile, funzione `quantoSpento` rimasta senza uso).
 
 - 2026-11-11 Task 4 ter [x]: colori del marchio Domarc. Prima i due ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 27 prove, 0 fallite. lint 0 errori, tsc 0 errori. Le pagine autenticate non sono state aperte.
+
+- 2026-11-11 Task 6 [x]: scheda Log di sicurezza. Prima i tre ritocchi a Dominio. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 32 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta. La tabella delle frasi nasce dalla misura sul 70791 (210 avvisi veri, 20 titoli).
 
 ## Consuntivo
 ### Fatto

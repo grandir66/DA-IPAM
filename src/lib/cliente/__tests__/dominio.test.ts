@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { problemiDiAccesso, statoDominio } from "../schede/dominio";
+import { problemiDiAccesso, statoDominio, vociRilieviGravi } from "../schede/dominio";
 
 function dbDiProva(): Database.Database {
   const db = new Database(":memory:");
@@ -97,7 +97,7 @@ test("i rilievi più gravi vengono prima e il nome è il CN", () => {
   const rilievi = statoDominio(db)?.rilievi ?? [];
   assert.deepEqual(rilievi.map((r) => r.gravita), ["grave", "grave", "attenzione", "nota"]);
   assert.equal(rilievi[0]?.testo, "Admin");
-  assert.deepEqual(rilievi[0]?.nomi, ["Mario Rossi", "Anna"]);
+  assert.deepEqual(rilievi[0]?.nomi, ["Mario Rossi", "Anna", "senza cn"]);
   assert.deepEqual(rilievi[1]?.nomi, []);
   db.close();
 });
@@ -129,5 +129,35 @@ test("gli account che finiscono con $ si scartano; 4 fallimenti no, 5 sì", () =
 test("senza la tabella degli eventi l'elenco è vuoto", () => {
   const db = new Database(":memory:");
   assert.deepEqual(problemiDiAccesso(db), []);
+  db.close();
+});
+
+test("i nomi semplici restano, anche senza CN=", () => {
+  const db = dbDiProva();
+  db.prepare("INSERT INTO ad_health_runs (id, started_at, status, score_global) VALUES (1, ?, 'ok', 10)").run(isoOreFa(1));
+  db.prepare(
+    "INSERT INTO ad_health_findings (id, run_id, severity, title, object_count, sample_dns_json) VALUES (1, 1, 'Low', 'Nomi', 3, ?)",
+  ).run(JSON.stringify(["Guest", "mauri-a", "nety-audit", "Guest"]));
+  assert.deepEqual(statoDominio(db)?.rilievi[0]?.nomi, ["Guest", "mauri-a", "nety-audit"]);
+  db.close();
+});
+
+test("i gravi si contano tutti, e in casa al più tre voci", () => {
+  const db = dbDiProva();
+  db.prepare("INSERT INTO ad_health_runs (id, started_at, status, score_global) VALUES (1, ?, 'ok', 100)").run(isoOreFa(1));
+  const rilievo = db.prepare(
+    "INSERT INTO ad_health_findings (id, run_id, severity, title, object_count, sample_dns_json) VALUES (?, 1, 'Critical', ?, 1, '[]')",
+  );
+  for (let n = 1; n <= 12; n++) rilievo.run(n, `Rilievo ${n}`);
+  const stato = statoDominio(db);
+  assert.equal(stato?.graviTotali, 12);
+  assert.equal(stato?.rilievi.length, 10);
+  const voci = vociRilieviGravi(
+    (stato?.rilievi ?? []).filter((r) => r.gravita === "grave"),
+    stato?.graviTotali ?? 0,
+  );
+  assert.equal(voci.length, 3);
+  assert.equal(voci[2]?.testo, "Altri 10 rilievi gravi nel dominio");
+  assert.equal(vociRilieviGravi([{ testo: "Uno", quanti: 1 }], 1)[0]?.testo, "1 · Uno");
   db.close();
 });

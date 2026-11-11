@@ -1,6 +1,7 @@
 import type { ContestoCliente } from "./contesto";
 import { schedaApparati } from "./schede/apparati";
 import { schedaDominio } from "./schede/dominio";
+import { schedaLogSicurezza } from "./schede/log-sicurezza";
 import { schedaReti } from "./schede/reti";
 
 export type Gravita = "grave" | "attenzione" | "nota";
@@ -35,7 +36,7 @@ export interface SchedaCliente {
 }
 
 /** I task 6-7 aggiungono una riga ciascuno. */
-export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaApparati, schedaDominio];
+export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaApparati, schedaDominio, schedaLogSicurezza];
 
 const PESO_GRAVITA: Record<Gravita, number> = { grave: 0, attenzione: 1, nota: 2 };
 

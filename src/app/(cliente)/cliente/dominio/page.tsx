@@ -119,7 +119,7 @@ export default async function PaginaDominio({
               <TesseraNumero
                 titolo="Rischio del dominio"
                 valore={stato.punteggio}
-                qualifica={stato.unMeseFa == null ? "su 100" : `su 100 · un mese fa ${stato.unMeseFa}`}
+                qualifica={stato.unMeseFa == null ? "di rischio su 100" : `di rischio su 100 · un mese fa ${stato.unMeseFa}`}
               />
               {stato.aree.map((area) => (
                 <div key={area.nome} className="space-y-1">

@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Log di sicurezza
+
+Il cliente vede gli avvisi aperti e l'andamento degli ultimi sette giorni, senza numeri di regola e senza il pulsante per prenderli in carico. I titoli in inglese dei venti avvisi più frequenti sul cliente 70791 diventano una frase. Tre ritocchi al dominio, nati dal controllo del Task 5: «100 su 100» sembrava un voto pieno, i nomi non uscivano mai, e troppi rilievi gravi finivano in casa.
+
+### Aggiunto
+- **Scheda Log di sicurezza**: sette barre, gli avvisi aperti (i più gravi prima) e quanti computer sono sotto controllo. Gli avvisi di diagnostica non contano.
+
+### Corretto
+- Accanto al punteggio del dominio si legge «di rischio su 100» e «più alto è peggio».
+- Un nome senza `CN=` si mostra così com'è. In casa al più tre voci di rilievo: se sono di più, la terza riassume gli altri. Il conto dei gravi è su tutti i rilievi del giro, non sui primi dieci.
+
 ## [Non rilasciato] — 2026-11-11 · Anomalie e storico delle scansioni
 
 - Anomalie legge le porte archiviate in formato numerico, testuale o a oggetto e confronta elenchi validi dello stesso tipo di scansione.

@@ -94,10 +94,13 @@ function categoriaDi(h: HostPerProposta): { radice: string; foglia: string } | n
   if (!c || c === "unknown") return null;
   const gruppo = getDeviceCategoryGroup(c);
   if (gruppo === "unknown") return null;
-  if (gruppo === "infrastructure") return { radice: "network", foglia: c };
-  if (gruppo === "peripheral") return /^nas/.test(c) ? { radice: "storage", foglia: "nas" } : { radice: "peripheral", foglia: c };
-  if (gruppo === "media") return { radice: "peripheral", foglia: c };
-  if (gruppo === "iot_ot") return { radice: "iot", foglia: c };
+  // 11/11/2026: le categorie del catalogo sono cambiate (dieci invece di sei). Le radici che escono da qui
+  // sono le stesse di prima, classe per classe: lo smartphone resta «compute» anche se ora sta in Telefonia.
+  if (gruppo === "rete") return { radice: "network", foglia: c };
+  if (gruppo === "archiviazione") return /^nas/.test(c) ? { radice: "storage", foglia: "nas" } : { radice: "peripheral", foglia: c };
+  if (gruppo === "stampa" || gruppo === "video" || gruppo === "alimentazione") return { radice: "peripheral", foglia: c };
+  if (gruppo === "telefonia" && c !== "smartphone") return { radice: "peripheral", foglia: c };
+  if (gruppo === "ot" || gruppo === "iot") return { radice: "iot", foglia: c };
   return { radice: "compute", foglia: c === "hypervisor" ? "hypervisor" : c };
 }
 

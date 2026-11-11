@@ -51,14 +51,18 @@ const CATEGORY_TO_LEGACY: Record<string, string> = {
   "storage.nas": "nas",
   "av.camera": "telecamera",
   "voip.phone": "voip",
+  // 11/11/2026: centralino, convertitore VoIP, videoregistratore e PDU hanno ora una classe loro.
+  "voip.pbx": "centralino",
+  "voip.gateway": "gateway_voip",
+  "av.nvr": "nvr",
   "power.ups": "ups",
+  "power.pdu": "pdu",
   "mobile.phone": "smartphone",
   "mobile.tablet": "tablet",
   // "av.display" (smart_tv/decoder/media_player in avanti) NON ha un canonico
   // dichiarato dal brief: nessuna riga qui → null. Meglio non proiettare che
   // sceglierne uno arbitrariamente tra tre slug ugualmente validi.
-  // "voip.pbx", "voip.gateway", "power.pdu", "storage.san", "storage.tape",
-  // "av.nvr", "av.speaker": nessuno slug legacy dedicato → null.
+  // "storage.san", "storage.tape", "av.speaker": nessuno slug legacy dedicato → null.
 };
 
 function projectClassification(category: string | null, osFamily: string | null): string | null {

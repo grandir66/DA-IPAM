@@ -52,7 +52,9 @@ import { Pagination } from "@/components/shared/pagination";
 import { useClientTableSort } from "@/hooks/use-table-sort";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
+  DEVICE_CATEGORY_GROUP_LABELS, DEVICE_CATEGORY_GROUP_ORDER, getDeviceCategoryGroup,
 } from "@/lib/device-classifications";
+import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
   Search, RefreshCw, Columns3, Download, ExternalLink,
@@ -1006,6 +1008,11 @@ export default function DiscoveryPage() {
     for (const h of hosts) if (h.classification && h.classification !== "unknown") set.add(h.classification);
     return [...set].sort((a, b) => a.localeCompare(b, "it"));
   }, [hosts]);
+  /** Le categorie che hanno almeno un host, per il filtro a due livelli. */
+  const categoriePresenti = useMemo(() => {
+    const presenti = new Set(classifications.map((c) => getDeviceCategoryGroup(c)));
+    return DEVICE_CATEGORY_GROUP_ORDER.filter((g) => presenti.has(g)).map((g) => ({ valore: `${PREFISSO_GRUPPO}${g}`, titolo: DEVICE_CATEGORY_GROUP_LABELS[g] }));
+  }, [classifications]);
 
   // Per id, non per nome: due subnet con lo stesso nome si fondevano (UI-13).
   const networks = useMemo(() => {
@@ -1049,7 +1056,7 @@ export default function DiscoveryPage() {
       // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
       // preset personali `user:<slug>` prima svuotavano la tabella.
       const preset = presets.find((p) => p.filter === classFilter);
-      criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : h.classification === classFilter)));
+      criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
     }
     if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
     if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
@@ -2322,8 +2329,12 @@ export default function DiscoveryPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Tutte</SelectItem>
+                  {/* 11/11/2026: prima le categorie intere (solo quelle che hanno host), poi le classi col loro nome. */}
+                  {categoriePresenti.map((g) => (
+                    <SelectItem key={g.valore} value={g.valore}>{g.titolo}: tutte</SelectItem>
+                  ))}
                   {classifications.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                    <SelectItem key={c} value={c}>{effectiveLabel(c)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

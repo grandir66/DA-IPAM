@@ -4,7 +4,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gruppiScelta, origineCategoria } from "../scelta-categoria";
+import { gruppiScelta, origineCategoria, passaFiltroCategoria } from "../scelta-categoria";
 import { DEVICE_CLASSIFICATIONS_ORDERED, getDeviceCategoryGroup } from "@/lib/device-classifications";
 
 describe("gruppiScelta", () => {
@@ -45,5 +45,32 @@ describe("gruppiScelta con le categorie del cliente", () => {
   it("la ricerca trova anche quelle", () => {
     const trovate = gruppiScelta("tornio", [{ slug: "tornio_cnc", etichetta: "Tornio CNC" }]).flatMap((g) => g.voci.map((v) => v.slug));
     assert.deepEqual(trovate, ["tornio_cnc"]);
+  });
+});
+
+describe("categorie e sottocategorie (11/11/2026)", () => {
+  it("Telefonia esiste e tiene telefoni, smartphone, centralino e convertitore; OT e IoT sono separati", () => {
+    const perTitolo = new Map(gruppiScelta().map((g) => [g.gruppo, g.voci.map((v) => v.slug)]));
+    assert.deepEqual(new Set(perTitolo.get("telefonia")), new Set(["voip", "smartphone", "centralino", "gateway_voip"]));
+    assert.deepEqual(new Set(perTitolo.get("ot")), new Set(["plc", "hmi", "rete_ot"]));
+    assert.deepEqual(new Set(perTitolo.get("iot")), new Set(["iot", "sensore", "domotica"]));
+    assert.ok(perTitolo.get("postazioni")?.includes("workstation"));
+    assert.equal(perTitolo.get("postazioni")?.includes("smartphone"), false);
+  });
+  it("ogni classe del catalogo ha una categoria: nessuna resta fuori dal menu", () => {
+    const senza = DEVICE_CLASSIFICATIONS_ORDERED.filter((s) => s && s !== "unknown" && getDeviceCategoryGroup(s) === "unknown");
+    assert.deepEqual(senza, []);
+  });
+});
+
+describe("passaFiltroCategoria", () => {
+  it("una categoria intera prende tutte le sue classi; uno slug solo quella; vuoto tutto", () => {
+    assert.equal(passaFiltroCategoria("gruppo:telefonia", "voip"), true);
+    assert.equal(passaFiltroCategoria("gruppo:telefonia", "smartphone"), true);
+    assert.equal(passaFiltroCategoria("gruppo:telefonia", "workstation"), false);
+    assert.equal(passaFiltroCategoria("gruppo:telefonia", null), false);
+    assert.equal(passaFiltroCategoria("voip", "voip"), true);
+    assert.equal(passaFiltroCategoria("voip", "smartphone"), false);
+    assert.equal(passaFiltroCategoria("", "voip"), true);
   });
 });

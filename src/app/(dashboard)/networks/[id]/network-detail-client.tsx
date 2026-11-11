@@ -37,7 +37,8 @@ import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
 import { CategoriaBloccoDialog } from "@/components/networks/categoria-blocco-dialog";
 import { ScegliCategoria } from "@/components/networks/scegli-categoria";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { origineCategoria } from "@/lib/classification/scelta-categoria";
+import { origineCategoria, passaFiltroCategoria } from "@/lib/classification/scelta-categoria";
+import { OpzioniCategorie } from "@/components/networks/opzioni-categorie";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -63,11 +64,7 @@ import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
 /** Altezza uniforme per tutti i pulsanti della toolbar azioni subnet. */
 const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
-import {
-  DEVICE_CLASSIFICATIONS_ORDERED,
-  getClassificationLabel,
-  sortClassificationsByDisplayLabel,
-} from "@/lib/device-classifications";
+import { getClassificationLabel } from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
@@ -473,7 +470,7 @@ export function NetworkDetailClient({
     if (filterClassification) {
       if (filterClassification === "__empty__") {
         if (h.classification) return false;
-      } else if (h.classification !== filterClassification) {
+      } else if (!passaFiltroCategoria(filterClassification, h.classification)) {
         return false;
       }
     }
@@ -1466,9 +1463,7 @@ export function NetworkDetailClient({
                 >
                   <option value="">Tutte</option>
                   <option value="__empty__">— Senza classificazione</option>
-                  {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                    <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                  ))}
+                  <OpzioniCategorie />
                 </select>
               </div>
               <div className="flex items-center gap-2">
@@ -1503,9 +1498,9 @@ export function NetworkDetailClient({
                         if (!c) return;
                         const toSelect = c === "__empty__"
                           ? filteredHosts.filter((h) => !h.classification)
-                          : filteredHosts.filter((h) => h.classification === c);
+                          : filteredHosts.filter((h) => passaFiltroCategoria(c, h.classification));
                         if (toSelect.length === 0) {
-                          toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
+                          toast.info(c === "__empty__" ? "Nessun host senza classificazione" : "Nessun host di questo tipo fra quelli in elenco");
                           return;
                         }
                         setSelectedHostIds((prev) => {
@@ -1518,9 +1513,7 @@ export function NetworkDetailClient({
                     >
                       <option value="">—</option>
                       <option value="__empty__">— Senza classificazione</option>
-                      {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                        <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                      ))}
+                      <OpzioniCategorie />
                     </select>
                   </div>
                   <div className="flex flex-wrap gap-1.5 items-center">

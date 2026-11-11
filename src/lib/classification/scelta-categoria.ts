@@ -4,7 +4,9 @@
  * alfabetico. Qui: le stesse voci raccolte nei gruppi che il catalogo ha già, con la ricerca. Modulo puro.
  */
 import {
+  DEVICE_CATEGORY_GROUP_COSA,
   DEVICE_CATEGORY_GROUP_LABELS,
+  DEVICE_CATEGORY_GROUP_ORDER,
   DEVICE_CLASSIFICATIONS_ORDERED,
   getClassificationLabel,
   getDeviceCategoryGroup,
@@ -12,11 +14,11 @@ import {
 } from "@/lib/device-classifications";
 
 export interface VoceScelta { slug: string; etichetta: string }
-export interface GruppoScelta { gruppo: DeviceCategoryGroup | "cliente"; titolo: string; voci: VoceScelta[] }
+export interface GruppoScelta { gruppo: DeviceCategoryGroup | "cliente"; titolo: string; cosa?: string; voci: VoceScelta[] }
 
 const TITOLO_CLIENTE = "Categorie del cliente";
 
-const ORDINE: DeviceCategoryGroup[] = ["endpoints", "compute", "infrastructure", "peripheral", "iot_ot", "media"];
+const ORDINE: readonly DeviceCategoryGroup[] = DEVICE_CATEGORY_GROUP_ORDER;
 
 function piatto(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -40,6 +42,7 @@ export function gruppiScelta(cerca: string = "", extra: readonly VoceScelta[] = 
   const gruppi: GruppoScelta[] = ORDINE.filter((g) => perGruppo.has(g)).map((g) => ({
     gruppo: g,
     titolo: DEVICE_CATEGORY_GROUP_LABELS[g],
+    cosa: DEVICE_CATEGORY_GROUP_COSA[g],
     voci: (perGruppo.get(g) ?? []).sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it")),
   }));
   // Le categorie aggiunte dal cliente (Impostazioni, Classificazioni) non stanno nel catalogo: un gruppo loro, in fondo.
@@ -50,6 +53,18 @@ export function gruppiScelta(cerca: string = "", extra: readonly VoceScelta[] = 
     .sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it"));
   if (delCliente.length > 0) gruppi.push({ gruppo: "cliente", titolo: TITOLO_CLIENTE, voci: delCliente });
   return gruppi;
+}
+
+/**
+ * Filtro a due livelli (11/11/2026): il valore `gruppo:<categoria>` prende tutte le classi di quella categoria,
+ * uno slug prende solo quella classe. Vuoto o «all» prende tutto.
+ */
+export const PREFISSO_GRUPPO = "gruppo:";
+
+export function passaFiltroCategoria(filtro: string | null | undefined, classe: string | null | undefined): boolean {
+  if (!filtro || filtro === "all") return true;
+  if (filtro.startsWith(PREFISSO_GRUPPO)) return getDeviceCategoryGroup(classe) === filtro.slice(PREFISSO_GRUPPO.length);
+  return (classe ?? "") === filtro;
 }
 
 /**

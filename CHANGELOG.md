@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Categorie e sottocategorie
+
+Riccardo (11/11): «le categorie dovrebbero essere raggruppate tipo OT → PLC, HMI… POSTAZIONI → PC, Notebook… manca anche il gruppo Telefonia, con Telefoni, Smartphone, Centralino, Convertitori VoIP»; «teniamo separato IoT da OT». Prima i gruppi erano sei, e «Periferiche e servizi» teneva insieme NAS, stampanti, VoIP, telecamere e UPS.
+
+### Cambiato
+- **Dieci categorie** al posto di sei (`src/lib/device-classifications.ts`): Postazioni, Telefonia, Server, Archiviazione, Rete, Stampa, Video, OT (impianti), IoT (oggetti connessi), Alimentazione. Le classi nel database non cambiano nome: cambia solo a quale categoria appartengono. Lo smartphone passa da «postazioni» a Telefonia.
+- **Filtri a due livelli** nella subnet (filtro «Classificazione» e «Seleziona per tipo») e in Discovery: scegliendo una categoria si prendono tutte le sue classi (`passaFiltroCategoria`).
+- «VoIP» si legge ora «Telefono VoIP».
+
+### Aggiunto
+- Cinque classi: **Centralino**, **Convertitore VoIP**, **Videoregistratore**, **PDU**, **Thin client**. Le prime quattro il motore le distingueva già ma non avevano una classe a cui arrivare, e andavano perse.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: cinque riquadri nuovi dal censimento dei dati
 
 Riccardo, 11/11: «valutiamo che altre fonti di dati utili per l'utente ci sono nel sistema». Censite sul cliente 70791: undici fonti con dati buoni e freschi, quattro oggi non presentabili (anomalie, spostamenti di porta, patch, inventario dei beni). Questo è il primo giro.

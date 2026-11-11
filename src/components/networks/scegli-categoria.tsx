@@ -65,6 +65,7 @@ export function ScegliCategoria({
                 type="button"
                 className={`${riga} font-medium`}
                 aria-expanded={mostra}
+                title={g.cosa}
                 onClick={() => setAperto(aperto === g.gruppo ? null : g.gruppo)}
               >
                 {mostra ? <ChevronDown className="size-4 shrink-0" aria-hidden /> : <ChevronRight className="size-4 shrink-0" aria-hidden />}

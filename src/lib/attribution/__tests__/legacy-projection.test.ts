@@ -99,11 +99,11 @@ describe("projectLegacy", () => {
     { category: "storage.san", classification: null },
     { category: "storage.tape", classification: null },
     { category: "av.display", classification: null },
-    { category: "av.nvr", classification: null },
+    { category: "av.nvr", classification: "nvr" }, // 11/11/2026: ha una classe sua (categorie e sottocategorie)
     { category: "av.speaker", classification: null },
-    { category: "voip.pbx", classification: null },
-    { category: "voip.gateway", classification: null },
-    { category: "power.pdu", classification: null },
+    { category: "voip.pbx", classification: "centralino" }, // 11/11/2026: ha una classe sua (categorie e sottocategorie)
+    { category: "voip.gateway", classification: "gateway_voip" }, // 11/11/2026: ha una classe sua (categorie e sottocategorie)
+    { category: "power.pdu", classification: "pdu" }, // 11/11/2026: ha una classe sua (categorie e sottocategorie)
   ];
   for (const row of TABLE) {
     it(`categoria ${row.category}${row.os ? ` (os=${row.os})` : ""} → classification ${row.classification ?? "null"}`, () => {
@@ -162,6 +162,7 @@ describe("projectLegacy", () => {
     backup_server: "collassa su compute.server senza os_family → canonico 'server'",
     fotocopiatrice: "collassa su peripheral.mfp insieme a 'multifunzione' → canonico 'multifunzione'",
     nas_synology: "collassa su storage.nas insieme a 'nas' → canonico 'nas'",
+    thin_client: "collassa su compute.workstation insieme a 'workstation' → canonico 'workstation' (11/11/2026)",
     nas_qnap: "collassa su storage.nas insieme a 'nas' → canonico 'nas'",
     smart_tv: "av.display senza canonico dichiarato dal brief → null",
     decoder: "av.display senza canonico dichiarato dal brief → null",

@@ -119,6 +119,12 @@ const LEGACY_MAP: Record<string, { category: CategorySlug; os_family?: "windows"
   sensore: { category: "iot.sensor" },
   tablet: { category: "mobile.tablet" },
   smartphone: { category: "mobile.phone" },
+  /* 11/11/2026: classi nuove del catalogo, una per foglia che il motore distingueva già. */
+  centralino: { category: "voip.pbx" },
+  gateway_voip: { category: "voip.gateway" },
+  nvr: { category: "av.nvr" },
+  pdu: { category: "power.pdu" },
+  thin_client: { category: "compute.workstation" },
 };
 
 export function mapLegacyClassification(

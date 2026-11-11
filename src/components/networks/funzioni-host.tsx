@@ -13,7 +13,7 @@ export function PilloleFunzioni({ funzioni }: { funzioni: readonly FunzioneInRig
   const daMostrare = (funzioni ?? []).filter((f) => f.a_mano || f.origine !== ORIGINE_CATEGORIA);
   if (daMostrare.length === 0) return null;
   return (
-    <span className="mt-0.5 flex flex-wrap gap-1">
+    <span className="contents">
       {daMostrare.map((f) => (
         <span
           key={f.funzione}

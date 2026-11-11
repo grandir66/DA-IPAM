@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: si mettono e si tolgono a mano
+
+### Aggiunto
+- Nella lista della subnet, accanto alle funzioni di ogni riga, **«Funzioni»** apre l'elenco a gruppi con la ricerca: la spunta mette o toglie la funzione, la freccia la fa tornare automatica. Una funzione messa a mano il sistema non la toglie; una tolta a mano non la rimette. Se la riga è fra quelle spuntate, la scelta vale per tutte le spuntate.
+- `POST /api/hosts/funzioni` (solo amministratori).
+
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: nelle liste e nei filtri
 
 ### Corretto

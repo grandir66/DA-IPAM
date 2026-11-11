@@ -41,7 +41,8 @@ import { origineCategoria, passaFiltroCategoria } from "@/lib/classification/sce
 import { OpzioniCategorie } from "@/components/networks/opzioni-categorie";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
 import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
-import { OpzioniFunzioni, PilloleFunzioni, type FunzioneInRiga } from "@/components/networks/funzioni-host";
+import { OpzioniFunzioni, type FunzioneInRiga } from "@/components/networks/funzioni-host";
+import { FunzioniInRiga } from "@/components/networks/funzioni-in-riga";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -218,14 +219,37 @@ export function NetworkDetailClient({
   const [filterFunzione, setFilterFunzione] = useState<string>("");
   /** Le funzioni degli host della rete, lette a parte (`/api/hosts/funzioni`). */
   const [funzioniHost, setFunzioniHost] = useState<Record<number, FunzioneInRiga[]>>({});
-  useEffect(() => {
-    let vivo = true;
-    void fetch(`/api/hosts/funzioni?network_id=${network.id}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((d: Record<number, FunzioneInRiga[]>) => { if (vivo) setFunzioniHost(d); })
-      .catch(() => { /* le funzioni sono un di più: senza, la lista resta com'è */ });
-    return () => { vivo = false; };
+  const caricaFunzioni = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/hosts/funzioni?network_id=${network.id}`, { cache: "no-store" });
+      if (r.ok) setFunzioniHost((await r.json()) as Record<number, FunzioneInRiga[]>);
+    } catch {
+      /* le funzioni sono un di più: senza, la lista resta com'è */
+    }
   }, [network.id]);
+  useEffect(() => { void caricaFunzioni(); }, [caricaFunzioni]);
+
+  /** Mette, toglie o rende automatica una funzione, sulla riga o su tutte le righe spuntate se la riga è fra quelle. */
+  async function cambiaFunzione(hostId: number, funzione: string, azione: "metti" | "togli" | "automatica") {
+    const ids = hostDelMenu(selectedHostIds, hostId);
+    try {
+      const res = await fetch("/api/hosts/funzioni", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_ids: ids, funzione, azione }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(data.error ?? "Salvataggio non riuscito");
+        return;
+      }
+      await caricaFunzioni();
+      const su = ids.length > 1 ? ` su ${ids.length} host` : "";
+      toast.success(azione === "metti" ? `Funzione messa${su}` : azione === "togli" ? `Funzione tolta${su}` : `Tornata automatica${su}`);
+    } catch {
+      toast.error("Errore di rete");
+    }
+  }
   const [listSortColumn, setListSortColumn] = useState<string | null>("ip");
   const [listSortDir, setListSortDir] = useState<SortDirection>("asc");
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
@@ -2016,7 +2040,11 @@ export function NetworkDetailClient({
                       ) : (
                         <span className="rounded-md border border-dashed px-2 py-0.5 text-muted-foreground">Senza categoria</span>
                       )}
-                      <PilloleFunzioni funzioni={funzioniHost[host.id]} />
+                      <FunzioniInRiga
+                        funzioni={funzioniHost[host.id]}
+                        quantiHost={hostDelMenu(selectedHostIds, host.id).length}
+                        onCambia={(f, azione) => cambiaFunzione(host.id, f, azione)}
+                      />
                     </TableCell>
                     <TableCell className="text-sm">
                       {(host as HostWithDevice).device ? (

@@ -5,7 +5,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { funzioniPerHost, ricalcolaFunzioni } from "../funzioni-db";
+import { funzioniPerHost, impostaFunzioneAMano, ricalcolaFunzioni } from "../funzioni-db";
 
 let db: Database.Database;
 
@@ -56,5 +56,34 @@ describe("ricalcolaFunzioni", () => {
     assert.deepEqual(slug(2), ["ia_locale"]);
     assert.deepEqual(slug(3), []);
     assert.equal((db.prepare("SELECT a_mano FROM host_funzioni WHERE host_id = 3").get() as { a_mano: number }).a_mano, -1);
+  });
+});
+
+describe("impostaFunzioneAMano", () => {
+  it("metti: la funzione c'è anche se il sistema non la trova, e resta dopo un ricalcolo", () => {
+    ricalcolaFunzioni(db, { applica: true });
+    assert.equal(impostaFunzioneAMano(db, [2, 3], "ia_locale", "metti"), 2);
+    ricalcolaFunzioni(db, { applica: true });
+    assert.deepEqual(slug(2), ["ia_locale"]);
+    assert.deepEqual(slug(3), ["ia_locale", "router"]);
+    assert.equal(funzioniPerHost(db)[2][0].a_mano, true);
+  });
+  it("togli: la funzione sparisce e il sistema non la rimette", () => {
+    ricalcolaFunzioni(db, { applica: true });
+    impostaFunzioneAMano(db, [1], "dns", "togli");
+    ricalcolaFunzioni(db, { applica: true });
+    assert.deepEqual(slug(1), ["ad_ldap"]);
+  });
+  it("automatica: via la scelta della persona, il sistema rimette subito ciò che trova", () => {
+    ricalcolaFunzioni(db, { applica: true });
+    impostaFunzioneAMano(db, [1], "dns", "togli");
+    impostaFunzioneAMano(db, [2], "ia_locale", "metti");
+    impostaFunzioneAMano(db, [1], "dns", "automatica");
+    impostaFunzioneAMano(db, [2], "ia_locale", "automatica");
+    assert.deepEqual(slug(1), ["ad_ldap", "dns"]);
+    assert.deepEqual(slug(2), []);
+  });
+  it("un host che non esiste non scrive niente", () => {
+    assert.equal(impostaFunzioneAMano(db, [999], "dns", "metti"), 0);
   });
 });

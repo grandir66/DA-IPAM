@@ -136,3 +136,37 @@ export function funzioniPerHost(db: Database.Database, networkId?: number): Reco
   }
   return out;
 }
+
+export type AzioneFunzione = "metti" | "togli" | "automatica";
+
+/**
+ * La scelta di una persona su una funzione, per uno o più host (11/11/2026, passo 4).
+ * - `metti`: la funzione c'è, e il sistema non la toglie più;
+ * - `togli`: la funzione non c'è, e il sistema non la rimette (resta il segno `a_mano = -1`);
+ * - `automatica`: si toglie la scelta della persona e decide di nuovo il sistema, subito.
+ * Rende quante righe ha toccato.
+ */
+export function impostaFunzioneAMano(db: Database.Database, hostIds: readonly number[], funzione: Funzione, azione: AzioneFunzione): number {
+  assicuraTabellaFunzioni(db);
+  let toccate = 0;
+  db.transaction(() => {
+    if (azione === "automatica") {
+      const via = db.prepare("DELETE FROM host_funzioni WHERE host_id = ? AND funzione = ? AND a_mano != 0");
+      for (const id of hostIds) toccate += via.run(id, funzione).changes;
+      return;
+    }
+    const valore = azione === "metti" ? 1 : -1;
+    const scrivi = db.prepare(
+      `INSERT INTO host_funzioni (host_id, funzione, origine, a_mano, visto_il) VALUES (?, ?, 'a mano', ?, datetime('now'))
+       ON CONFLICT(host_id, funzione) DO UPDATE SET origine = 'a mano', a_mano = excluded.a_mano, visto_il = excluded.visto_il`,
+    );
+    const esisteHost = db.prepare("SELECT 1 FROM hosts WHERE id = ?");
+    for (const id of hostIds) {
+      if (!esisteHost.get(id)) continue;
+      toccate += scrivi.run(id, funzione, valore).changes;
+    }
+  })();
+  // Tornata automatica: il sistema rimette subito ciò che trova, senza aspettare la prossima scansione.
+  if (azione === "automatica") ricalcolaFunzioni(db, { applica: true });
+  return toccate;
+}

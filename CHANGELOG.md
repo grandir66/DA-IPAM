@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: casa a celle, come la home di Entra
+
+Riccardo, 11/11: «pensavo a una modalità simile alla pagina di entra.domarc.it, dove potevo ridimensionare gli oggetti; alcuni ora hanno dimensione fissa e non occupano tutta la casella»; «elenco fallimenti per utente e andamento nel tempo dovrebbero essere due moduli diversi».
+
+### Corretto
+- **Casa a celle**: griglia a 12 colonne con righe di altezza fissa. Ogni riquadro ha una larghezza (un quarto, un terzo, metà, due terzi, tre quarti, tutta) e un'altezza in righe, e riempie tutta la sua casella: la curva degli indirizzi si stira, le barre e l'anello crescono, gli elenchi scorrono dentro.
+- **Componi la casa** ora si fa sulla casa vera: un riquadro si trascina sopra un altro per cambiargli posto, si allarga, si alza, si nasconde; i nascosti stanno nel cassetto «Riquadri nascosti» e si rimettono da lì. La griglia riempie i buchi da sola, quindi non esistono sovrapposizioni.
+- **Accessi falliti in tre riquadri**: «nel tempo» (una barra per ora), «per utente», «da dove». Si dispongono e si nascondono ognuno per conto suo.
+- Una provenienza «::1» si legge «il server di dominio stesso».
+- Una disposizione salvata con la versione precedente (mezza riga, riga intera) viene letta e convertita.
+
 ## [Non rilasciato] — 2026-11-11 · Subnet: una colonna «Categoria» e la scelta a gruppi
 
 Riccardo (11/11): «non capisco da dove viene identificata la categoria» e «un oggetto che non è device deve essere possibile assegnarlo a una categoria in modo efficace». Nella lista della subnet c'erano due colonne affiancate, «Attribuzione» (il motore) e «Rilevato» (l'impronta delle porte), che dicevano cose diverse; la scelta a mano era un elenco piatto di 52 voci.

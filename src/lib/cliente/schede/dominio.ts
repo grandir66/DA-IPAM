@@ -166,8 +166,12 @@ export function statoDominio(db: Database.Database): StatoDominio | null {
   };
 }
 
+/** Indirizzi con cui un server indica sé stesso. */
+const SE_STESSO = new Set(["::1", "127.0.0.1", "localhost"]);
+
 function daDi(evento: RigaEvento): string | null {
-  return testo(evento.postazione) ?? testo(evento.ip);
+  const origine = testo(evento.postazione) ?? testo(evento.ip);
+  return origine && SE_STESSO.has(origine.toLowerCase()) ? "il server di dominio stesso" : origine;
 }
 
 /** Ultime 24 ore. [] se la tabella non c'è. Gli account vuoti e quelli del computer (finiscono con $) non contano. */

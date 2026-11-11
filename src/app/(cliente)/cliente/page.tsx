@@ -1,12 +1,11 @@
 import { Pannello } from "@/components/shared/console";
 import { ElencoAttenzione } from "@/components/cliente/elenco-attenzione";
-import { AccessiUltime24Ore, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
+import { AccessiDaDove, AccessiPerUtente, AndamentoAccessi, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
 import { RiquadroPiccolo } from "@/components/cliente/riquadro-piccolo";
 import Link from "next/link";
-import { ComponiCasa } from "@/components/cliente/componi-casa";
+import { GrigliaCasa, type ContenutoRiquadro } from "@/components/cliente/griglia-casa";
 import { RIQUADRI_CASA, leggiDisposizione, disposizionePredefinita, type VoceDisposizione } from "@/lib/cliente/casa";
 import { contestoCliente, nelCliente } from "@/lib/cliente/contesto";
-import type { ReactNode } from "react";
 import { graficiCasa, ORE_GRAFICO_ACCESI } from "@/lib/cliente/grafici";
 import {
   ordinaAttenzione,
@@ -64,34 +63,49 @@ export default async function CasaCliente({
   } catch (e) {
     console.error("[cliente] disposizione della casa:", e instanceof Error ? e.message : String(e));
   }
-  const corpo: Record<string, { titolo: string; azioni: ReactNode; contenuto: ReactNode } | null> = {
-    indirizzi: g.accesi && {
+  const apriAccessi = g.accessi?.dettaglio
+    ? <Apri href="/cliente/dominio" testo="Dominio e accessi" />
+    : <Apri href="/cliente/log-sicurezza" testo="Log di sicurezza" />;
+  const contenuti: ContenutoRiquadro[] = [
+    {
+      id: "indirizzi",
       titolo: `Indirizzi in uso nelle ultime ${ORE_GRAFICO_ACCESI} ore`,
       azioni: <Apri href="/cliente/reti" testo="Reti" />,
-      contenuto: <GraficoAccesi dati={g.accesi} />,
+      contenuto: g.accesi ? <GraficoAccesi dati={g.accesi} /> : null,
     },
-    accessi: g.accessi && {
+    {
+      id: "accessi-andamento",
       titolo: "Accessi falliti · ultime 24 ore",
-      azioni: (
-        <Apri
-          href={g.accessi.dettaglio ? "/cliente/dominio" : "/cliente/log-sicurezza"}
-          testo={g.accessi.dettaglio ? "Dominio e accessi" : "Log di sicurezza"}
-        />
-      ),
-      contenuto: <AccessiUltime24Ore dati={g.accessi} />,
+      azioni: apriAccessi,
+      contenuto: g.accessi ? <AndamentoAccessi dati={g.accessi} /> : null,
     },
-    reti: g.reti.length > 0 ? { titolo: "Le tue reti", azioni: <Apri href="/cliente/reti" testo="Reti" />, contenuto: <BarreReti reti={g.reti} /> } : null,
-    rischio: g.rischio && {
+    {
+      id: "accessi-utenti",
+      titolo: "Accessi falliti per utente",
+      azioni: apriAccessi,
+      contenuto: g.accessi?.dettaglio ? <AccessiPerUtente dati={g.accessi} /> : null,
+    },
+    {
+      id: "accessi-origini",
+      titolo: "Accessi falliti: da dove",
+      azioni: apriAccessi,
+      contenuto: g.accessi?.dettaglio && g.accessi.daDove.length > 0 ? <AccessiDaDove dati={g.accessi} /> : null,
+    },
+    { id: "reti", titolo: "Le tue reti", azioni: <Apri href="/cliente/reti" testo="Reti" />, contenuto: g.reti.length > 0 ? <BarreReti reti={g.reti} /> : null },
+    {
+      id: "rischio",
       titolo: "Rischio del dominio",
       azioni: <Apri href="/cliente/dominio" testo="Dominio e accessi" />,
-      contenuto: <AnelloRischio dati={g.rischio} />,
+      contenuto: g.rischio ? <AnelloRischio dati={g.rischio} /> : null,
     },
-    "per-rete": g.perRete.length > 0
-      ? { titolo: "Da sistemare per rete", azioni: <Apri href="/cliente/da-sistemare" testo="Da sistemare" />, contenuto: <BarrePerRete reti={g.perRete} /> }
-      : null,
-  };
-  const senzaDati = RIQUADRI_CASA.filter((r) => !corpo[r.id]).map((r) => r.id);
-  const mostrati = disposizione.filter((v) => v.visibile && corpo[v.id]);
+    {
+      id: "per-rete",
+      titolo: "Da sistemare per rete",
+      azioni: <Apri href="/cliente/da-sistemare" testo="Da sistemare" />,
+      contenuto: g.perRete.length > 0 ? <BarrePerRete reti={g.perRete} /> : null,
+    },
+  ];
+  const inModifica = c.amministratore && componi;
 
   // «Cosa richiede attenzione» sta in una colonna stretta a destra, con la sua barra di scorrimento:
   // in testa a tutta larghezza era la parte più grossa dello schermo (Riccardo, 11/11/2026).
@@ -103,24 +117,13 @@ export default async function CasaCliente({
             <RiquadroPiccolo key={r.id} id={r.id} titolo={r.titolo} riquadro={r.riquadro} />
           ))}
         </div>
-        {c.amministratore && componi && <ComponiCasa iniziale={disposizione} libreria={RIQUADRI_CASA} senzaDati={senzaDati} />}
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          {mostrati.map((v) => {
-            const r = corpo[v.id];
-            if (!r) return null;
-            return (
-              <Pannello key={v.id} titolo={r.titolo} azioni={r.azioni} className={v.misura === "intera" ? "lg:col-span-2" : undefined}>
-                {r.contenuto}
-              </Pannello>
-            );
-          })}
-        </div>
+        <GrigliaCasa key={inModifica ? "modifica" : "vista"} iniziale={disposizione} riquadri={contenuti} libreria={RIQUADRI_CASA} modifica={inModifica} />
         {c.amministratore && !componi && (
           <p className="nascosto-stampa text-[13px]">
             <Link href="/cliente?componi=1" className="font-medium text-cian-testo hover:underline">
               Componi la casa
             </Link>
-            <span className="ml-2 text-muted-foreground">Scegli quali riquadri vede questo cliente, in che ordine e in che misura. Lo vedi solo tu.</span>
+            <span className="ml-2 text-muted-foreground">Sposta, ridimensiona, nascondi o aggiungi i riquadri di questo cliente. Lo vedi solo tu.</span>
           </p>
         )}
       </div>

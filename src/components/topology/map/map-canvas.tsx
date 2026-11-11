@@ -57,7 +57,8 @@ interface Props {
   centerOn: string | null;
   centerKey: number;
   onSelect: (id: string | null) => void;
-  onMove: (nodeId: string, x: number, y: number) => void;
+  /** `ramo`: Maiusc premuto al rilascio, l'oggetto si porta dietro tutto il ramo. */
+  onMove: (nodeId: string, x: number, y: number, ramo: boolean) => void;
   /** Il contenuto del menu del tasto destro; `close` lo chiude (dopo un'azione che apre un dialogo). */
   renderMenu: (t: MenuTarget, close: () => void) => ReactNode;
   /** Solo admin: il pallino «Collega a…» sui riquadri. */
@@ -119,7 +120,7 @@ export function MapCanvas(p: Props) {
     for (const g of layout.apGroups) {
       out.push({
         id: `apg:${g.parent}`, type: "apGroup", position: { x: g.x, y: g.y }, width: g.w, height: g.h,
-        data: { count: g.count, w: g.w, h: g.h }, draggable: false, selectable: false, zIndex: 0,
+        data: { count: g.count, w: g.w, h: g.h }, draggable: p.draggable, selectable: false, zIndex: 0,
       });
     }
     for (const ln of layout.nodes.values()) {
@@ -290,11 +291,22 @@ export function MapCanvas(p: Props) {
         nodeTypes={MAP_NODE_TYPES}
         edgeTypes={MAP_EDGE_TYPES}
         onNodesChange={onNodesChange}
-        onNodeDragStop={(_e, node) => {
+        onNodeDragStop={(e, node) => {
           setDrag(null);
+          // Il riquadro grigio degli AP: il suo spostamento si salva come ritocco del primo AP del gruppo.
+          if (node.id.startsWith("apg:")) {
+            const parent = node.id.slice(4);
+            const g = layout.apGroups.find((x) => x.parent === parent);
+            const primo = [...layout.nodes.values()].filter((n) => n.role === "ap" && n.parent === parent).sort((a, b) => a.y - b.y || a.x - b.x)[0];
+            if (!g || !primo) return;
+            const dx = node.position.x - g.x, dy = node.position.y - g.y;
+            if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+            p.onMove(primo.id, Math.round(primo.x + dx), Math.round(primo.y + dy), false);
+            return;
+          }
           const ln = layout.nodes.get(node.id);
           if (!ln || (Math.abs(node.position.x - ln.x) < 1 && Math.abs(node.position.y - ln.y) < 1)) return;
-          p.onMove(node.id, Math.round(node.position.x), Math.round(node.position.y));
+          p.onMove(node.id, Math.round(node.position.x), Math.round(node.position.y), e.shiftKey);
         }}
         onNodeClick={(_e, node) => {
           if (node.type === "vm") {

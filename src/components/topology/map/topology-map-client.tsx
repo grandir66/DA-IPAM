@@ -277,12 +277,13 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     if (ok) renamesSent.current = key;
     return ok;
   }
-  async function move(nodeId: string, x: number, y: number) {
+  async function move(nodeId: string, x: number, y: number, ramo = false) {
     if (!d || !viewKey || !(await persistRenames())) return;
     // Il ritocco vale nell'orientamento in cui è fatto (spec §12.2): senza, la rotta risponde 400.
     // Il nodo si porta dietro il suo ramo (spec §4/§11.2): i ritocchi già salvati dei discendenti si spostano dello
     // stesso scarto, nella stessa chiamata.
-    const tweaks = dragTweaks(d.tree, d.layout, d.tweaks, nodeId, x, y, orientation);
+    // Di base si sposta solo l'oggetto, i figli restano fermi; con Maiusc si porta dietro il ramo (11/11/2026).
+    const tweaks = dragTweaks(d.tree, d.layout, d.tweaks, nodeId, x, y, orientation, !ramo);
     setPending({ view: viewKey, tweaks });
     await send("/api/topology/positions", "PUT", {
       view: positionsView, orientation, tweaks: tweaks.map((t) => ({ nodeId: t.nodeId, x: t.x, y: t.y, sig: t.sig })),
@@ -539,7 +540,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         centerOn={mode === "auto" ? d.head : (d.tree.roots[0] ?? null)}
         centerKey={centerKey}
         onSelect={setSelected}
-        onMove={(id, x, y) => void move(id, x, y)}
+        onMove={(id, x, y, ramo) => void move(id, x, y, ramo)}
         renderMenu={renderMenu}
         connectable={isAdmin}
         onConnect={openConnect}

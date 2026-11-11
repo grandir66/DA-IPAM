@@ -294,3 +294,33 @@ test("M10: in verticale «+N apparati non gestiti» ha la sua riga sotto il segm
   assert.ok(s.y + s.h + 17 <= sotto.y - 16, `la riga del segmento (fino a ${s.y + s.h + 17}) e le porte di sotto (da ${sotto.y - 16}) si toccano`);
   assert.ok(prima.nodes.get("dev:2")!.y - 16 < prima.nodes.get(SEG)!.y + prima.nodes.get(SEG)!.h + 17, "prima si sovrapponevano");
 });
+
+// Riccardo, 11/11/2026: «spostando anche solo un oggetto si spostano troppi altri oggetti e diventa impossibile organizzare
+// la mappa; il riquadro grigio degli AP è inamovibile». Di base si sposta solo l'oggetto: i figli (riquadri e gruppo AP)
+// restano dove sono, coi loro rami. Con Maiusc (soloOggetto = false) vale la regola di prima, tutto il ramo.
+test("trascinare solo l'oggetto: i figli e i nipoti restano fermi, gli attaccati lo seguono", () => {
+  const m = model([node("dev:1", "switch"), node("dev:2", "switch"), node("dev:3", "switch"), node("dev:4", "switch"), node("host:9", "server"), node("dev:7", "access_point"), node("dev:8", "access_point")]);
+  const t = tree(["dev:1"], { "dev:1": ["dev:2"], "dev:2": ["dev:3", "host:9", "dev:7", "dev:8"], "dev:3": ["dev:4"] });
+  const prima = layoutTree(m, t, [], new Set(), "lr");
+  const p = (r: LayoutResult, id: string) => r.nodes.get(id)!;
+  const solo = dragTweaks(t, prima, [], "dev:2", p(prima, "dev:2").x + 200, p(prima, "dev:2").y - 120, "lr", true);
+  const dopo = layoutTree(m, t, solo, new Set(), "lr");
+  assert.deepEqual([p(dopo, "dev:2").x - p(prima, "dev:2").x, p(dopo, "dev:2").y - p(prima, "dev:2").y], [200, -120]);
+  for (const id of ["dev:3", "dev:4", "dev:7", "dev:8"]) assert.deepEqual([p(dopo, id).x, p(dopo, id).y], [p(prima, id).x, p(prima, id).y], id);
+  assert.deepEqual([dopo.apGroups[0].x, dopo.apGroups[0].y], [prima.apGroups[0].x, prima.apGroups[0].y], "il riquadro degli AP resta");
+  assert.deepEqual([p(dopo, "host:9").x - p(prima, "host:9").x, p(dopo, "host:9").y - p(prima, "host:9").y], [200, -120], "l'attaccato segue il suo riquadro");
+  // Con Maiusc: il ramo intero, come prima.
+  const ramo = layoutTree(m, t, dragTweaks(t, prima, [], "dev:2", p(prima, "dev:2").x + 200, p(prima, "dev:2").y - 120, "lr"), new Set(), "lr");
+  assert.equal(p(ramo, "dev:4").x - p(prima, "dev:4").x, 200);
+});
+
+test("il riquadro degli AP si sposta col ritocco di un suo AP: gruppo e AP insieme, il genitore resta", () => {
+  const m = model([node("dev:1", "switch"), node("dev:7", "access_point"), node("dev:8", "access_point")]);
+  const t = tree(["dev:1"], { "dev:1": ["dev:7", "dev:8"] });
+  const prima = layoutTree(m, t, [], new Set(), "lr");
+  const a = prima.nodes.get("dev:7")!;
+  const dopo = layoutTree(m, t, [{ nodeId: "dev:7", x: a.x + 60, y: a.y + 90, sig: structureSig(t, "dev:7"), orientation: "lr" }], new Set(), "lr");
+  for (const id of ["dev:7", "dev:8"]) assert.deepEqual([dopo.nodes.get(id)!.x - prima.nodes.get(id)!.x, dopo.nodes.get(id)!.y - prima.nodes.get(id)!.y], [60, 90], id);
+  assert.deepEqual([dopo.apGroups[0].x - prima.apGroups[0].x, dopo.apGroups[0].y - prima.apGroups[0].y], [60, 90]);
+  assert.deepEqual([dopo.nodes.get("dev:1")!.x, dopo.nodes.get("dev:1")!.y], [prima.nodes.get("dev:1")!.x, prima.nodes.get("dev:1")!.y]);
+});

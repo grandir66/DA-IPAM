@@ -202,7 +202,7 @@ export function MapToolbar(p: Props) {
         Adatta
       </Button>
       {p.isAdmin && (
-        <Button size="sm" className="text-[13px]" variant="outline" disabled={!p.canRiordina} onClick={p.onRiordina} title="Toglie gli spostamenti fatti a mano">
+        <Button size="sm" className="text-[13px]" variant="outline" disabled={!p.canRiordina} onClick={p.onRiordina} title="Toglie gli spostamenti fatti a mano. Trascinando si sposta solo l'oggetto (coi suoi attaccati); con Maiusc premuto si porta dietro tutto il ramo. Anche il riquadro grigio degli AP si trascina.">
           Riordina
         </Button>
       )}

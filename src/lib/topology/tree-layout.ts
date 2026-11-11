@@ -193,6 +193,7 @@ function finish(
 
   // Ritocchi dell'orientamento in uso (gli altri restano da parte, non scadono): lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
   const expired: string[] = [];
+  const apMossi = new Set<string>();
   // Prima gli antenati, poi i discendenti: il ritocco è il punto assoluto del rilascio, visto con quelli degli antenati
   // già applicati. In ordine di id («dev:120» < «dev:78») lo scarto dell'antenato si sommava una seconda volta e il
   // riquadro saltava altrove al rilascio (cliente A, 15/10).
@@ -202,6 +203,17 @@ function finish(
   const mine = tweaks.filter((w) => w.orientation === orientation).map((t) => ({ t, d: depth(t.nodeId) }));
   for (const { t } of mine.sort((a, b) => a.d - b.d || (a.t.nodeId < b.t.nodeId ? -1 : 1))) {
     const n = nodes.get(t.nodeId);
+    // Il ritocco di un AP è quello del suo riquadro grigio (Riccardo, 11/11/2026: «il riquadro grigio degli AP è
+    // inamovibile»): sposta il gruppo e tutti gli AP dello stesso genitore, una volta sola per gruppo. Sta sull'id di un
+    // AP perché la rotta delle posizioni accetta solo oggetti veri.
+    if (n && n.role === "ap" && n.parent && !apMossi.has(n.parent)) {
+      if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }
+      apMossi.add(n.parent);
+      const ax = t.x - n.x, ay = t.y - n.y;
+      for (const m of [...nodes.values()]) if (m.role === "ap" && m.parent === n.parent) nodes.set(m.id, { ...m, x: m.x + ax, y: m.y + ay });
+      for (const g of apGroups) if (g.parent === n.parent) { g.x += ax; g.y += ay; }
+      continue;
+    }
     if (!n || n.role !== "box") continue;
     if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }
     const dx = t.x - n.x, dy = t.y - n.y;
@@ -227,12 +239,31 @@ function finish(
 export function dragTweaks(
   tree: TreeResult, layout: Pick<LayoutResult, "nodes">, tweaks: readonly SavedTweak[],
   nodeId: string, x: number, y: number, orientation: MapOrientation,
+  /**
+   * true = si sposta solo l'oggetto (coi suoi attaccati e le sue VM): i figli restano dove sono. È il trascinamento di
+   * base dall'11/11/2026 (Riccardo: «spostando anche solo un oggetto si spostano troppi altri oggetti e diventa
+   * impossibile organizzare la mappa»). false = l'oggetto si porta dietro tutto il ramo, come prima (Maiusc + trascina).
+   */
+  soloOggetto = false,
 ): Array<SavedTweak & { sig: string }> {
   const own = { nodeId, x, y, sig: structureSig(tree, nodeId), orientation };
   const from = layout.nodes.get(nodeId);
   if (!from) return [own];
   const dx = x - from.x, dy = y - from.y;
   if (dx === 0 && dy === 0) return [own];
+  if (soloOggetto) {
+    // La disposizione sposta sempre il ramo intero: per lasciare fermi i figli si fissa ognuno al punto in cui è adesso
+    // (un riquadro figlio, e un AP per il riquadro grigio). I loro rami restano fermi con loro.
+    const fermi: Array<SavedTweak & { sig: string }> = [];
+    let apFermo = false;
+    for (const k of [...(tree.children.get(nodeId) ?? [])].sort()) {
+      const c = layout.nodes.get(k);
+      if (!c || (c.role !== "box" && c.role !== "ap")) continue;
+      if (c.role === "ap") { if (apFermo) continue; apFermo = true; }
+      fermi.push({ nodeId: k, x: c.x, y: c.y, sig: structureSig(tree, k), orientation });
+    }
+    return [own, ...fermi];
+  }
   const branch = new Set<string>();
   const q = [nodeId];
   while (q.length) for (const k of tree.children.get(q.shift()!) ?? []) if (k !== nodeId && !branch.has(k)) { branch.add(k); q.push(k); }

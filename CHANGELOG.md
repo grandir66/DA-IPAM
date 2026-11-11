@@ -8,6 +8,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - **Verso DA-Vul-can non esce il nome dell'utente di fabbrica** (Riccardo, 11/11/2026). Di un login di fabbrica riuscito parte solo «Le credenziali di fabbrica danno accesso.»: il nome dell'utente accettato resta in DA-IPAM.
 
+### Cambiato
+- **Topologia: trascinando si sposta solo l'oggetto.** Uno spostamento portava con sé tutto il ramo sotto l'oggetto, e sistemare la mappa a mano era impraticabile: ogni ritocco ne disfaceva altri. Ora si muove solo il riquadro trascinato, coi suoi attaccati e le sue VM; i figli restano dove sono. Con Maiusc premuto vale la regola di prima, tutto il ramo.
+- **Topologia: il riquadro grigio degli access point si trascina.** Era fisso sotto il suo apparato. Lo spostamento si salva come gli altri e «Riordina» lo toglie.
+
 ### Corretto
 - **Topologia, esportazione draw.io: le linee restano separate.** Lasciate al tracciato automatico di draw.io partivano tutte dal centro del lato e si sovrapponevano, con le parole una sull'altra. Ora ogni linea dell'albero ha il percorso dello schermo scritto come punti fissi (uscita, tronco, braccio verso il figlio) e la scritta a metà del braccio; gli attaccati non hanno più linee e sono figli del loro riquadro, che li porta con sé quando lo si sposta; le ridondanze sono curve tratteggiate.
 

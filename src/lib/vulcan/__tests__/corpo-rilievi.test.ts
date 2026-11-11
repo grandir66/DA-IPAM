@@ -23,6 +23,15 @@ test("corpo dei rilievi: solo i campi dichiarati, ordinati per chiave", () => {
   assert.deepEqual(Object.keys(o.rilievi[0]).sort(), ["chiave", "gravita", "hostname", "ip", "porta", "protocollo", "prova", "rete_cidr", "rimedio", "tipo", "titolo", "visto"]);
 });
 
+test("login di fabbrica: il nome dell'utente non esce (Riccardo, 11/11/2026)", () => {
+  const c = corpoRilievi({ rilievi: [{ ...R, chiave: "giro:login-fabbrica:7:80", tipo: "login-fabbrica", prova: "Accettato l'utente «admin»." }], parziale: false }, TESTA);
+  assert.ok("json" in c);
+  assert.ok(!c.json.includes("admin"));
+  assert.ok(c.json.includes("Le credenziali di fabbrica danno accesso."));
+  const i = corpoRilievi({ rilievi: [{ ...R, chiave: "giro:ipmi-rakp:7:623:udp", tipo: "ipmi-rakp", titolo: "IPMI RAKP utente admin su 10.0.0.7:623", prova: "RAKP Message 2 con status 0 per l'utente admin: HMAC recuperabile." }], parziale: false }, TESTA);
+  assert.ok("json" in i && !i.json.includes("admin"));
+});
+
 test("la coda nata prima dell'11/11 accetta «rilievi» dopo la migrazione e tiene le sue righe", () => {
   const db = new Database(":memory:");
   db.exec(TENANT_SCHEMA_SQL);

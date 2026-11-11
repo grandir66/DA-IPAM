@@ -728,6 +728,25 @@ export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invaria
 
 ---
 
+### [ ] Task 9 — Un apparato conta una volta sola, anche per gruppo (Riccardo, 11/11, rimedio C2 del riconoscimento)
+
+**Perché.** Un telefono che gira ha una riga per ogni indirizzo preso: sull'hub il Samsung di Riccardo ne aveva 6. Il motore dei gruppi (`multihomed_links`) le riunisce già in un gruppo, ma `unici()` in `src/lib/cliente/schede/apparati.ts` toglie i doppioni solo per `physical_device_id`: nella vista cliente quell'apparato valeva 6. Stessa cosa per un server con più schede.
+
+**File:** `src/lib/cliente/schede/apparati.ts`, `src/lib/cliente/__tests__/apparati.test.ts` (solo casi nuovi).
+
+**Cosa fare**
+- La `SELECT` degli host porta in più `gruppo`: `(SELECT ml.group_id FROM multihomed_links ml WHERE ml.host_id = h.id LIMIT 1)`.
+- `unici()`: la chiave dell'apparato è `gruppo` se c'è, altrimenti `physical_device_id`, altrimenti la riga da sola. Fra le righe con la stessa chiave resta **quella vista più di recente**: prima una riga `online`, poi il `last_seen` più alto, a parità l'indirizzo più basso (oggi resta l'indirizzo più basso, che può essere una riga morta da mesi).
+- Vale per conteggi per tipo, elenco e riquadro in casa: passano tutti da `hostsTutti`, quindi basta `unici()`.
+- La scheda Reti **non cambia**: lì una riga è un indirizzo, ed è giusto vederli tutti.
+- Prove: tre righe dello stesso gruppo (una online, due spente) contano 1 e resta quella online; due righe dello stesso gruppo spente → resta quella col `last_seen` più recente; gruppo e `physical_device_id` diversi sulla stessa riga → vale il gruppo. La tabella `multihomed_links` va creata nel database in memoria della prova (`group_id TEXT, host_id INTEGER`).
+
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sull'hub, cliente 70791: `S25-Ultra-di-riccardo` compare una volta in «Cellulari e tablet».
+
+**Commit:** «Vista cliente: un apparato conta una volta, anche per gruppo».
+
+---
+
 ## Non in questo piano
 
 - «Lo segue Domarc» accanto a un problema: il dato non esiste. Si aggiunge quando c'è una fonte.
@@ -806,6 +825,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo dei Task 7 bis (`305011a1`) e 8 (`17626f82`): passati sul codice, 36 prove verdi rilanciate. La casa è stata composta sull'hub coi dati veri del 70791 con uno script di sola lettura (cinque schede attive, 16 voci di attenzione, nessun errore). Consuntivo scritto.
 
 - 2026-11-11 Prova sull'hub della vista cliente, dopo il Task 7 bis. Il timer aveva rimandato l'aggiornamento perché c'era un giro in corso; a giro finito il servizio è stato allineato a `305011a1` (0.9.1160) con `scripts/update.sh`. Le pagine, lette come amministratore sul cliente 70791, rispondono 200: la casa elenca i programmi da aggiornare e Da sistemare mostra 120 programmi, le cose da correggere e i problemi tecnici, senza sigle. Il recinto (`/settings` e `GET /api/hosts`) non è stato provato: la password dell'utente `demo` non è nel vault. L'ultima istanza dell'amministratore, che la prova aveva impostato su 70791, è stata rimessa vuota.
+
+- 2026-11-11 Aggiunto il Task 9 (un apparato conta una volta, anche per gruppo), dal lavoro sul riconoscimento.
 
 ## Consuntivo
 

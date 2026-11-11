@@ -34,10 +34,12 @@ export function ElencoAttenzione({ voci }: { voci: VoceAttenzione[] }) {
     <ul>
       {voci.map((voce, indice) => (
         <li key={`${voce.scheda}-${voce.testo}-${indice}`} className="border-b last:border-b-0">
-          <Link href={voce.href} className="flex items-center gap-3 py-2 text-sm hover:bg-muted/40">
+          <Link href={voce.href} className="flex items-start gap-3 py-2 text-sm hover:bg-muted/40">
             <SegnoGravita gravita={voce.gravita} />
-            <span className="min-w-0 flex-1">{voce.testo}</span>
-            <span className="shrink-0 text-[13px] text-muted-foreground">{voce.scheda}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block">{voce.testo}</span>
+              <span className="block text-[13px] text-muted-foreground">{voce.scheda}</span>
+            </span>
           </Link>
         </li>
       ))}

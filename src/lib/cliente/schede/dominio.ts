@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { nelCliente, type ContestoCliente } from "../contesto";
+import { conQuanti, fraseRilievo, rilievoNascosto } from "../frasi-dominio";
 import type { Gravita, RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
 export interface StatoDominio {
@@ -48,6 +49,7 @@ interface RigaRun {
 }
 
 interface RigaRilievo {
+  rule_id: string | null;
   severity: string;
   title: string;
   object_count: number;
@@ -112,12 +114,13 @@ interface RilievoInterno {
 
 function rilieviTutti(db: Database.Database, runId: number): RilievoInterno[] {
   const righe = db.prepare(
-    "SELECT severity, title, object_count, sample_dns_json FROM ad_health_findings WHERE run_id = ?",
+    "SELECT rule_id, severity, title, object_count, sample_dns_json FROM ad_health_findings WHERE run_id = ?",
   ).all(runId) as RigaRilievo[];
   return righe
+    .filter((r) => !rilievoNascosto(r.rule_id))
     .map((r) => ({
       gravita: gravitaDi(r.severity),
-      testo: r.title,
+      testo: fraseRilievo(r.rule_id, r.title),
       quanti: r.object_count,
       nomi: nomiDa(r.sample_dns_json),
       peso: PESO_SEVERITY[r.severity] ?? 4,
@@ -255,7 +258,7 @@ export function vociRilieviGravi(
   const mostrati = graviTotali > 3 ? gravi.slice(0, 2) : gravi;
   const voci: VoceAttenzione[] = mostrati.map((rilievo) => ({
     gravita: "grave",
-    testo: `${rilievo.quanti} · ${rilievo.testo}`,
+    testo: conQuanti(rilievo.quanti, rilievo.testo),
     href: "/cliente/dominio",
     scheda: "Dominio e accessi",
   }));

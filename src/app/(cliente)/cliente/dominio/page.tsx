@@ -13,6 +13,7 @@ import {
   type ProblemaAccesso,
   type StatoDominio,
 } from "@/lib/cliente/schede/dominio";
+import { conQuanti } from "@/lib/cliente/frasi-dominio";
 import type { Gravita } from "@/lib/cliente/registro";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 
@@ -142,7 +143,7 @@ export default async function PaginaDominio({
                       <div className="flex items-center gap-2 text-sm">
                         <Segno gravita={voce.gravita} />
                         <span className="min-w-0 flex-1">
-                          {voce.quanti} · {voce.testo}
+                          {conQuanti(voce.quanti, voce.testo)}
                         </span>
                         <Link
                           href={`/cliente/dominio?rilievo=${i}`}

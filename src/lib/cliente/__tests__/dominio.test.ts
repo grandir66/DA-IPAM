@@ -28,7 +28,8 @@ function dbDiProva(): Database.Database {
       severity TEXT,
       title TEXT,
       object_count INTEGER,
-      sample_dns_json TEXT
+      sample_dns_json TEXT,
+      rule_id TEXT
     );
     CREATE TABLE dc_evento (
       id INTEGER PRIMARY KEY,

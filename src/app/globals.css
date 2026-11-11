@@ -266,6 +266,11 @@
   .vista-cliente header img {
     filter: brightness(0);
   }
+  /* In stampa l'elenco di attenzione si vede tutto, senza barra di scorrimento. */
+  .vista-cliente .scorre-attenzione {
+    max-height: none !important;
+    overflow: visible !important;
+  }
   .vista-cliente .nascosto-stampa {
     display: none !important;
   }

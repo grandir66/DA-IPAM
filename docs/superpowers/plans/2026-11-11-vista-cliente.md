@@ -794,6 +794,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 
 - 2026-11-11 Riccardo: «Da sistemare» si rifà per programma da aggiornare. Aggiunto il Task 7 bis, dopo il 6 bis e prima dell'8.
 
+- 2026-11-11 Controllo del Task 6 bis (`2162c296`): passato sul codice, 36 prove verdi rilanciate; nessuna lettura di `acknowledged` rimasta; le parole «aperti», «chiusi», «presi in carico» non sono più nella vista. Non guardato a schermo.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

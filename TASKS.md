@@ -1,5 +1,20 @@
 # TASKS — DA-IPAM
 
+## 2026-11-11 — Riconoscimento: il telefono che diventa stampante (Riccardo)
+
+Riccardo, 11/11: «il mio Samsung S25 viene rilevato come stampante nel riepilogo degli oggetti ed è rilevato due volte nella subnet… un cambio di IP, che dovrebbe essere automaticamente corretto; non capisco da dove viene identificata la categoria, se dai dati di discovery o della subnet; e anche un oggetto che non è device deve essere possibile assegnarlo a una categoria in modo efficace». Solo diagnosi, misurata sull'hub (cliente 70791): niente codice scritto.
+
+- [x] **Causa 1 — la riga è l'indirizzo, non l'apparato.** `S25-Ultra-di-riccardo` ha 6 righe in `hosts` (id 31, 93, 248, 370, 413, 421), su tre reti, con 5 MAC diversi tutti «privati» (casuali per rete). La riga 248 (192.168.5.142) era una Kyocera: il telefono ha preso quell'indirizzo, la riga ha cambiato nome e MAC ma ha tenuto `snmp_data`, `os_info`, `vendor`, porte e `detection_json` della stampante; il ricalcolo rilegge quei campi a ogni giro e riemette `snmp_sysobj → peripheral.printer` a 0,95 con la data di oggi. Stessa cosa sulla 370 (era un Fanvil → `voip.phone`) e sulla 93 (era una VM Proxmox → `compute.vm`).
+- [x] **Causa 2 — `mac_gemello` (aggiunto il 10/11) peggiora:** 248 e 370 hanno lo stesso MAC, quindi si scambiano «stampante» e «telefono VoIP», tutte e due ereditate dall'inquilino di prima.
+- [x] **Causa 3 — le scelte a mano non arrivano al motore:** 106 host con `classification_manual = 1`, **0** con un'evidenza `manual` in `attribution_evidence`. Le pagine dell'amministratore mostrano `hosts.classification` (che la scelta a mano protegge), la vista cliente mostra `attr_category` (che la ignora): sulla riga 93 uno dice «smartphone», l'altro «macchina virtuale». È la risposta a «da dove viene la categoria»: da due campi diversi.
+- [x] Misure: 59 host su 367 con MAC privato, di cui 15 con una categoria che non c'entra (router, VoIP, stampante, server) e 6 con `snmp_data` di qualcun altro; 36 nomi ripetuti su 111 righe.
+- [ ] **Rimedio A — cambio di inquilino:** quando su una riga cambia il MAC (e il nuovo non è un altro indirizzo dello stesso apparato in `multihomed_links`), i dati d'identità dell'inquilino di prima si svuotano e le sue evidenze non manuali si ritirano. Zona delicata (dati): prova a vuoto coi nomi, copia prima.
+- [ ] **Rimedio B — MAC privato:** con un MAC privato l'OUI non dice niente e non si usa (né `oui` né `mac_gemello` fra reti diverse); firma di nome per i Samsung (`S25`, `S24-Ultra`…) accanto a quelle già scritte. Attenzione: MAC privato non vuol dire telefono (lo usano anche contenitori e macchine virtuali).
+- [ ] **Rimedio C — lo stesso apparato su più righe:** stesso nome DHCP + MAC privato = un apparato solo; le righe vecchie e assenti si archiviano da sole e nei conteggi vale una volta.
+- [ ] **Rimedio D — la scelta a mano vale dappertutto:** le 106 scelte diventano evidenze `manual` (una tantum) e da lì in poi ogni scelta a mano la scrive; `attr_category` e classe dicono la stessa cosa. Sistema anche la vista cliente senza toccarne il piano.
+- [ ] **Rimedio E — assegnare una categoria a qualunque riga, in fretta:** dalla griglia e dagli elenchi (Reti, Discovery), anche a più righe insieme, senza dover prima «rendere apparato». Interfaccia da proporre oggetto per oggetto.
+- [ ] Ordine proposto: D, A, B, C, poi E. Aspetta l'ok di Riccardo.
+
 ## 2026-11-11 — Vista per operatori non amministratori (Riccardo, in discussione)
 
 Riccardo: «una sola UI con i dati rilevanti senza mostrare le complessità e i comandi di configurazione, ovviamente in read only… qualcosa che possa essere l'estensione della dashboard attuale, casomai modulare». Nulla di scritto nel codice: si sta ragionando.

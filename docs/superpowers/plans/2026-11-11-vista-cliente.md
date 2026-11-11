@@ -258,7 +258,13 @@ export const schedaReti: SchedaCliente;                                         
 1. nel riquadro, «N VLAN» conta le VLAN **distinte** (`new Set` dei `vlan` non nulli), non le reti che ne hanno una;
 2. `attenzioneReti` porta al più 5 voci; se le reti viste sono di più, la quinta voce diventa «Altre N reti viste e non censite».
 
-**In attesa di una decisione di Riccardo (non farlo finché non è scritta qui):** come mostrare gli host «assenti», cioè spenti da più di 7 giorni (`condizioneAssente` in `src/lib/hosts/assenti.ts`). Misura dell'11/11 sul cliente 70791: 186 accesi, 57 spenti da poco, 124 assenti; oggi nella griglia assenti e spenti da poco sono lo stesso grigio.
+**Deciso da Riccardo l'11/11: gli assenti sono un quarto stato, più chiaro.** Da fare in questo task, dopo i due ritocchi. Misura sul cliente 70791: 186 accesi, 57 spenti da poco, 124 assenti.
+3. `src/lib/cliente/schede/reti.ts`: `IndirizzoCliente["stato"]` diventa `"acceso" | "spento" | "assente" | "libero"`. Un host è `assente` quando soddisfa `condizioneAssente()` di `@/lib/hosts/assenti` (`status = 'offline'` e `last_seen` nullo o più vecchio di `ASSENTE_DOPO_GIORNI`): la condizione si mette nella `SELECT` degli host come colonna `assente` (0 o 1), non si ricalcola in JavaScript. `ApparatoCliente` prende il campo `assente: boolean`. `inUso` non cambia (conta solo gli accesi).
+4. `src/components/cliente/griglia-indirizzi.tsx`: `assente` → `bg-muted-foreground/30`, senza bordo; resta un link come lo spento. Quattro livelli di luminosità: pieno (`bg-foreground`), grigio (`bg-muted-foreground`), chiaro (`bg-muted-foreground/30`), vuoto (solo bordo).
+5. `src/app/(cliente)/cliente/reti/page.tsx`: la legenda diventa «pieno = acceso · grigio = spento · chiaro = non si vede da più di 7 giorni · vuoto = libero» (il 7 viene da `ASSENTE_DOPO_GIORNI`).
+6. `src/components/cliente/scheda-apparato.tsx`: per un apparato `assente` lo stato a schermo è «non si vede da più di 7 giorni», con un'icona diversa da quella di «spento».
+7. `src/lib/cliente/__tests__/reti.test.ts`: casi nuovi (non si cambiano gli esistenti): un host `offline` con `last_seen` di 10 giorni fa è `assente`; uno `offline` di ieri è `spento`; uno `offline` senza `last_seen` è `assente`.
+8. In questo task (Apparati) vale la stessa distinzione: in `RigaApparato` si aggiunge `assente: boolean`; nell'elenco l'ordine è accesi, spenti, assenti; la riga di un assente dice «non si vede da <tempo>». Le voci di attenzione e `aperti` contano solo gli apparati di tipo `rete` o `server` **spenti da più di 24 ore e non assenti** (fra 1 e 7 giorni): un apparato fermo da mesi non è una notizia.
 
 **File**
 - crea `src/lib/cliente/schede/apparati.ts`, `src/lib/cliente/__tests__/apparati.test.ts`
@@ -508,6 +514,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 3 [x]: scheda Reti. Prima la correzione: senza un cliente in sessione, o con «tutti i clienti», la vista torna alla Dashboard. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 7 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 - 2026-11-11 Controllo del Task 3 (`3ac1b4d8`): passato, 7 prove verdi rilanciate. Due ritocchi messi in testa al Task 4. Aperta una decisione per Riccardo sugli host assenti (124 su 367 sul cliente 70791).
+
+- 2026-11-11 Riccardo: gli host assenti (spenti da più di 7 giorni) sono un quarto stato, più chiaro. Scritto in testa al Task 4, punti 3-8.
 
 ## Consuntivo
 ### Fatto

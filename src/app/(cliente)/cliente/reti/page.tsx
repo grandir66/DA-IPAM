@@ -5,6 +5,7 @@ import { GrigliaIndirizzi } from "@/components/cliente/griglia-indirizzi";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
 import { SchedaApparato } from "@/components/cliente/scheda-apparato";
 import { contestoCliente, nelCliente } from "@/lib/cliente/contesto";
+import { ASSENTE_DOPO_GIORNI } from "@/lib/hosts/assenti";
 import {
   apparatoCliente,
   indirizziDellaRete,
@@ -147,7 +148,9 @@ function DettaglioRete({
         <h2 className="font-mono text-base font-semibold">
           {rete.nome} · {rete.cidr}
         </h2>
-        <p className="text-[13px] text-muted-foreground">pieno = acceso · grigio = spento · vuoto = libero</p>
+        <p className="text-[13px] text-muted-foreground">
+          pieno = acceso · grigio = spento · chiaro = non si vede da più di {ASSENTE_DOPO_GIORNI} giorni · vuoto = libero
+        </p>
       </div>
       <GrigliaIndirizzi reteId={rete.id} indirizzi={indirizzi} ipScelto={ipScelto} />
       {apparato && <SchedaApparato apparato={apparato} />}

@@ -4,6 +4,7 @@ import { ipNumero, numeroIp } from "@/lib/trunk/reti";
 import { retiProposte } from "@/lib/trunk/reti-proposte";
 import { trunkLetturaAttiva } from "@/lib/trunk/sensore-trunk";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
+import { condizioneAssente } from "@/lib/hosts/assenti";
 import { nelCliente, type ContestoCliente } from "../contesto";
 import { nomeCategoria } from "../categorie";
 import { nomeDellaPorta } from "../porte-note";
@@ -26,7 +27,7 @@ export interface ReteVista {
 
 export interface IndirizzoCliente {
   ip: string;
-  stato: "acceso" | "spento" | "libero";
+  stato: "acceso" | "spento" | "assente" | "libero";
 }
 
 export interface ApparatoCliente {
@@ -34,6 +35,8 @@ export interface ApparatoCliente {
   nome: string;
   cosa: string;
   acceso: boolean;
+  /** Spento da più di 7 giorni, o spento senza una data. */
+  assente: boolean;
   vistoIl: string | null;
   collegatoA: { switch: string; porta: string; vlan: number | null; velocita: string | null } | null;
   porteAperte: Array<{ numero: number; nome: string | null }>;
@@ -61,6 +64,7 @@ interface RigaHost {
   device_manufacturer: string | null;
   vendor: string | null;
   os_info: string | null;
+  assente: number;
 }
 
 interface RigaPorta {
@@ -71,7 +75,8 @@ interface RigaPorta {
 }
 
 const HOST = `id, ip, status, custom_name, hostname, last_seen, open_ports,
-  attr_category, attr_vendor_name, attr_os_name, device_manufacturer, vendor, os_info`;
+  attr_category, attr_vendor_name, attr_os_name, device_manufacturer, vendor, os_info,
+  CASE WHEN ${condizioneAssente()} THEN 1 ELSE 0 END AS assente`;
 
 function testo(v: string | null | undefined): string | null {
   const t = v?.trim();
@@ -118,7 +123,8 @@ function hostsDellaRete(db: Database.Database, reteId: number): RigaHost[] {
 
 function statoHost(host: RigaHost | undefined): IndirizzoCliente["stato"] {
   if (!host) return "libero";
-  return host.status === "online" ? "acceso" : "spento";
+  if (host.status === "online") return "acceso";
+  return host.assente === 1 ? "assente" : "spento";
 }
 
 /**
@@ -225,6 +231,7 @@ function daHost(db: Database.Database, host: RigaHost): ApparatoCliente {
     nome: testo(host.custom_name) ?? testo(host.hostname) ?? host.ip,
     cosa: cosaDellHost(host),
     acceso: host.status === "online",
+    assente: host.assente === 1,
     vistoIl: vistoIl(host.last_seen),
     collegatoA: collegatoA(db, host.id),
     porteAperte: porteAperte(host.open_ports),
@@ -249,6 +256,32 @@ export function retiViste(c: ContestoCliente): ReteVista[] {
   });
 }
 
+/** VLAN diverse, non le reti che ne hanno una. */
+export function vlanDistinte(vlan: Array<number | null>): number {
+  return new Set(vlan.filter((v): v is number => v != null)).size;
+}
+
+/** Al più 5 voci. Dalla sesta in poi, la quinta riassume il resto. */
+export function vociRetiViste(viste: ReteVista[]): VoceAttenzione[] {
+  const voce = (v: ReteVista): VoceAttenzione => ({
+    gravita: "attenzione",
+    testo: `Rete ${v.cidr} vista e non censita`,
+    href: "/cliente/reti",
+    scheda: "Reti",
+  });
+  if (viste.length <= 5) return viste.map(voce);
+  const altre = viste.length - 4;
+  return [
+    ...viste.slice(0, 4).map(voce),
+    {
+      gravita: "attenzione",
+      testo: `Altre ${altre} reti viste e non censite`,
+      href: "/cliente/reti",
+      scheda: "Reti",
+    },
+  ];
+}
+
 function contestoRiquadro(vlan: number, inUso: number): string {
   const v = `${vlan} VLAN`;
   const i = inUso === 1 ? "1 indirizzo in uso" : `${inUso} indirizzi in uso`;
@@ -266,7 +299,7 @@ function riquadroReti(c: ContestoCliente): RiquadroCliente {
   const inUso = reti.reduce((n, r) => n + r.inUso, 0);
   return {
     numero: String(reti.length),
-    contesto: contestoRiquadro(reti.filter((r) => r.vlan != null).length, inUso),
+    contesto: contestoRiquadro(vlanDistinte(reti.map((r) => r.vlan)), inUso),
     aperti,
     stato: aperti > 0 ? "attenzione" : "a_posto",
   };
@@ -280,12 +313,7 @@ function attenzioneReti(c: ContestoCliente): VoceAttenzione[] {
     console.error("[cliente] reti viste:", e instanceof Error ? e.message : String(e));
     return [];
   }
-  return viste.map((v) => ({
-    gravita: "attenzione",
-    testo: `Rete ${v.cidr} vista e non censita`,
-    href: "/cliente/reti",
-    scheda: "Reti",
-  }));
+  return vociRetiViste(viste);
 }
 
 export const schedaReti: SchedaCliente = {

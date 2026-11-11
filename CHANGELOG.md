@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Apparati
+
+### Aggiunto
+- **Scheda Apparati**: i tipi con un conteggio (computer, server, rete, stampanti, telefoni, cellulari, telecamere, non riconosciuti). A destra l'elenco: accesi, poi spenti, poi quelli che non si vedono da più di 7 giorni, segnati più chiari. Uno switch apre il pannello delle porte: piene se collegate, bordo spesso se sono dorsali, e sotto chi c'è attaccato. Due indirizzi dello stesso apparato contano una volta. Un apparato di rete o un server fermo da mesi non è una notizia: lo è solo se è spento da più di un giorno e da meno di sette.
+- **Casa, reti viste**: le VLAN nel riquadro sono quelle diverse, non una per rete. Se le reti non censite sono più di cinque, la quinta voce riassume le altre. Nella griglia di una rete, il quadrato chiaro è un indirizzo che non si vede da più di 7 giorni.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: scheda Reti
 
 ### Aggiunto

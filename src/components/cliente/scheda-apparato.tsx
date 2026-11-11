@@ -1,5 +1,6 @@
-import { CircleCheck, CircleOff } from "lucide-react";
+import { CircleCheck, CircleOff, EyeOff } from "lucide-react";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
+import { ASSENTE_DOPO_GIORNI } from "@/lib/hosts/assenti";
 import type { ApparatoCliente } from "@/lib/cliente/schede/reti";
 
 function testoCollegamento(c: NonNullable<ApparatoCliente["collegatoA"]>): string {
@@ -28,6 +29,11 @@ export function SchedaApparato({ apparato }: { apparato: ApparatoCliente }) {
         <p className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold ${STILE_STATO.ok.classi}`}>
           <CircleCheck className="size-4 shrink-0" aria-hidden />
           acceso
+        </p>
+      ) : apparato.assente ? (
+        <p className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold ${STILE_STATO.da_verificare.classi}`}>
+          <EyeOff className="size-4 shrink-0" aria-hidden />
+          non si vede da più di {ASSENTE_DOPO_GIORNI} giorni
         </p>
       ) : (
         <p className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold ${STILE_STATO.grigio.classi}`}>

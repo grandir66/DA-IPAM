@@ -10,7 +10,7 @@ import Database from "better-sqlite3";
 import { nomeCategoria } from "../categorie";
 import { nomeDellaPorta } from "../porte-note";
 import { SCHEDE_CLIENTE } from "../registro";
-import { apparatoCliente, indirizziDellaRete, retiCliente, schedaReti } from "../schede/reti";
+import { apparatoCliente, indirizziDellaRete, retiCliente, schedaReti, vlanDistinte, vociRetiViste } from "../schede/reti";
 
 function dbDiProva(): Database.Database {
   const db = new Database(":memory:");
@@ -88,6 +88,8 @@ test("due reti, un acceso, uno spento, uno senza switch, porte illeggibili, una 
     JSON.stringify(porte), "compute.server", "Dell", "Windows",
   );
   host.run(2, 1, "10.1.1.2", "offline", null, "Pc-spento", null, "{", null, null, null);
+  // Ieri, non dieci giorni: resta «spento». Senza data sarebbe assente.
+  db.prepare("UPDATE hosts SET last_seen = datetime('now', '-1 day') WHERE id = 2").run();
   host.run(3, 2, "10.2.1.5", "online", null, null, null, null, null, null, null);
 
   db.prepare("INSERT INTO network_devices (id, name) VALUES (1, 'SW-Piano')").run();
@@ -140,7 +142,8 @@ test("due reti, un acceso, uno spento, uno senza switch, porte illeggibili, una 
   assert.equal(spento.nome, "Pc-spento");
   assert.equal(spento.cosa, "Non riconosciuto");
   assert.equal(spento.acceso, false);
-  assert.equal(spento.vistoIl, null);
+  assert.equal(spento.assente, false);
+  assert.ok(spento.vistoIl);
   assert.equal(spento.collegatoA, null);
   assert.deepEqual(spento.porteAperte, []);
 
@@ -151,6 +154,38 @@ test("due reti, un acceso, uno spento, uno senza switch, porte illeggibili, una 
 
   assert.equal(apparatoCliente(db, "10.9.9.9"), null);
   db.close();
+});
+
+test("offline da dieci giorni o senza data è assente; offline di ieri è spento", () => {
+  const db = dbDiProva();
+  db.prepare("INSERT INTO networks (id, cidr, name, vlan_id) VALUES (1, '10.8.0.0/29', 'Prova', null)").run();
+  db.exec(`
+    INSERT INTO hosts (id, network_id, ip, status, last_seen) VALUES
+      (1, 1, '10.8.0.1', 'offline', datetime('now', '-10 days')),
+      (2, 1, '10.8.0.2', 'offline', datetime('now', '-1 day')),
+      (3, 1, '10.8.0.3', 'offline', NULL);
+  `);
+  const indirizzi = indirizziDellaRete(db, 1);
+  assert.equal(indirizzi.find((i) => i.ip === "10.8.0.1")?.stato, "assente");
+  assert.equal(indirizzi.find((i) => i.ip === "10.8.0.2")?.stato, "spento");
+  assert.equal(indirizzi.find((i) => i.ip === "10.8.0.3")?.stato, "assente");
+  assert.equal(apparatoCliente(db, "10.8.0.1")?.assente, true);
+  assert.equal(apparatoCliente(db, "10.8.0.2")?.assente, false);
+  assert.equal(apparatoCliente(db, "10.8.0.3")?.assente, true);
+  db.close();
+});
+
+test("le VLAN del riquadro sono distinte e le voci in casa sono al più cinque", () => {
+  assert.equal(vlanDistinte([10, 10, null, 20]), 2);
+  assert.equal(vlanDistinte([null, null]), 0);
+  const viste = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ cidr: `10.${n}.0.0/24`, vlan: n, indirizzi: n }));
+  const cinque = vociRetiViste(viste.slice(0, 5));
+  assert.equal(cinque.length, 5);
+  assert.equal(cinque[4]?.testo, "Rete 10.5.0.0/24 vista e non censita");
+  const oltre = vociRetiViste(viste);
+  assert.equal(oltre.length, 5);
+  assert.equal(oltre[3]?.testo, "Rete 10.4.0.0/24 vista e non censita");
+  assert.equal(oltre[4]?.testo, "Altre 3 reti viste e non censite");
 });
 
 test("la scheda Reti è nel registro", () => {

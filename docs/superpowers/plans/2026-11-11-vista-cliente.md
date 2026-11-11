@@ -252,7 +252,7 @@ export const schedaReti: SchedaCliente;                                         
 
 ---
 
-### [ ] Task 4 — Scheda Apparati
+### [x] Task 4 — Scheda Apparati
 
 **Dal controllo del Task 3 (11/11, commit `3ac1b4d8`): passato**, 7 prove verdi rilanciate, firme come da piano, nessun link fuori dall'area; non guardato a schermo. Due ritocchi a `src/lib/cliente/schede/reti.ts` da fare in questo task, prima del resto:
 1. nel riquadro, «N VLAN» conta le VLAN **distinte** (`new Set` dei `vlan` non nulli), non le reti che ne hanno una;
@@ -313,7 +313,7 @@ export const schedaApparati: SchedaCliente; // id "apparati", titolo "Apparati",
 - `attenzione`: una voce per ognuno di quegli apparati (al più 5), gravità `nota`, testo «<nome> spento da <tempo>», `href` «/cliente/apparati?tipo=<tipo>&ip=<ip>».
 - Attenzione al confronto di date in SQLite: `last_seen` è scritto come `AAAA-MM-GG HH:MM:SS`; si confronta con `datetime('now','-1 day')`, mai con una stringa ISO con la `T`.
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde (`tipoCliente` su ogni foglia di `CATEGORY_TAXONOMY`, nessuna esclusa; `porteDelloSwitch` con e senza righe; due host con lo stesso `physical_device_id` contati una volta). Pagina guardata una volta a 1920.
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 14 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. Coperti: ogni foglia di `CATEGORY_TAXONOMY`, `porteDelloSwitch` con e senza righe, due host con lo stesso `physical_device_id` contati una volta, i tre casi dell'assente, l'ordine acceso/spento/assente, le notizie solo fra 1 e 7 giorni. Sul dev la pagina non è stata aperta con una sessione. L'host «spento» della prova già esistente ha `last_seen` di ieri: senza data sarebbe assente.
 
 **Commit:** «Vista cliente: scheda Apparati per tipo, con il pannello delle porte degli switch».
 
@@ -516,6 +516,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 3 (`3ac1b4d8`): passato, 7 prove verdi rilanciate. Due ritocchi messi in testa al Task 4. Aperta una decisione per Riccardo sugli host assenti (124 su 367 sul cliente 70791).
 
 - 2026-11-11 Riccardo: gli host assenti (spenti da più di 7 giorni) sono un quarto stato, più chiaro. Scritto in testa al Task 4, punti 3-8.
+
+- 2026-11-11 Task 4 [x]: scheda Apparati. Prima i due ritocchi alle reti e il quarto stato assente. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 14 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 ## Consuntivo
 ### Fatto

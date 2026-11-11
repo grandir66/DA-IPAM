@@ -4,6 +4,7 @@ import type { IndirizzoCliente } from "@/lib/cliente/schede/reti";
 const FONDO: Record<IndirizzoCliente["stato"], string> = {
   acceso: "bg-foreground",
   spento: "bg-muted-foreground",
+  assente: "bg-muted-foreground/30",
   libero: "border border-foreground/30",
 };
 

@@ -61,7 +61,8 @@ export interface RigaApparato {
 export interface PortaCliente {
   numero: number;
   nome: string;
-  stato: "collegata" | "libera";
+  /** `senza_stato`: la lettura non ha dato lo stato della porta. Non è «libera»: non si sa (Riccardo, 11/11/2026). */
+  stato: "collegata" | "libera" | "senza_stato";
   dorsale: boolean;
   velocita: string | null;
   vlan: number | null;
@@ -277,7 +278,7 @@ function inPorteCliente(porte: RigaPorta[], nomi: Map<number, { nome: string; ip
       return {
         numero: numeroPorta(comePorta(p)),
         nome: p.port_name,
-        stato: p.status === "up" ? "collegata" as const : "libera" as const,
+        stato: p.status === "up" ? "collegata" as const : p.status === "down" || p.status === "disabled" ? "libera" as const : "senza_stato" as const,
         dorsale,
         velocita: etichettaVelocita(p.speed),
         vlan: p.vlan,
@@ -293,6 +294,8 @@ export interface ApparatoConPorte {
   nome: string;
   porte: PortaCliente[];
   libere: number;
+  /** Porte di cui la lettura non ha dato lo stato: contate a parte, non fra le libere. */
+  senzaStato: number;
 }
 
 /**
@@ -320,7 +323,11 @@ export function apparatiConPorte(db: Database.Database): ApparatoConPorte[] {
   return [...perApparato.values()]
     .map((a) => {
       const porte = inPorteCliente(a.righe, nomi);
-      return { ip: a.ip, nome: a.nome, porte, libere: porte.filter((p) => p.stato === "libera").length };
+      return {
+        ip: a.ip, nome: a.nome, porte,
+        libere: porte.filter((p) => p.stato === "libera").length,
+        senzaStato: porte.filter((p) => p.stato === "senza_stato").length,
+      };
     })
     .filter((a) => a.porte.length > 0)
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));

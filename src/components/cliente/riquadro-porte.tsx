@@ -21,9 +21,10 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
   const [porta, setPorta] = useState<number | null>(null);
   const libere = apparati.reduce((n, a) => n + a.libere, 0);
   const totale = apparati.reduce((n, a) => n + a.porte.length, 0);
+  const senzaStato = apparati.reduce((n, a) => n + a.senzaStato, 0);
   const scelto = apparati.find((a) => a.ip === ip) ?? null;
   const portaScelta = scelto?.porte.find((p) => p.numero === porta) ?? null;
-  const contesto = `${conto(apparati.length, "apparato", "apparati")} · ${conto(totale, "porta letta", "porte lette")}`;
+  const contesto = `${conto(apparati.length, "apparato", "apparati")} · ${conto(totale, "porta letta", "porte lette")}${senzaStato > 0 ? ` · ${senzaStato} senza stato` : ""}`;
 
   return (
     <Dialog>
@@ -51,13 +52,14 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
           <DialogTitle className="text-xl font-bold">Porte di rete</DialogTitle>
           <DialogDescription>
             {conto(libere, "porta libera", "porte libere")} su {totale}, all&apos;ultima lettura di ogni apparato.
+            {senzaStato > 0 && ` Di ${senzaStato} la lettura non ha dato lo stato: non contano come libere.`}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
           <ul className="space-y-1">
             {apparati.map((a) => {
               const attivo = a.ip === ip;
-              const piene = a.porte.length - a.libere;
+              const piene = a.porte.length - a.libere - a.senzaStato;
               return (
                 <li key={a.ip}>
                   <button
@@ -73,7 +75,9 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
                     <span className="mt-1 flex h-1.5 overflow-hidden rounded-sm border border-[var(--vc-bordo)]" aria-hidden="true">
                       <span className="bg-[var(--vc-acceso)]" style={{ width: `${a.porte.length ? (piene / a.porte.length) * 100 : 0}%` }} />
                     </span>
-                    <span className="text-[13px] font-normal text-muted-foreground">{a.ip} · {piene} collegate su {a.porte.length}</span>
+                    <span className="text-[13px] font-normal text-muted-foreground">
+                      {a.ip} · {piene} collegate su {a.porte.length}{a.senzaStato > 0 ? ` · ${a.senzaStato} senza stato` : ""}
+                    </span>
                   </button>
                 </li>
               );
@@ -91,6 +95,7 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
                 voci={[
                   { classe: "bg-[var(--vc-acceso)]", testo: "collegata" },
                   { classe: "border-[var(--vc-bordo)]", testo: "libera" },
+                  ...(scelto.senzaStato > 0 ? [{ classe: "border-dashed border-[var(--vc-bordo)]", testo: "senza stato" }] : []),
                   { classe: "shadow-[0_0_0_2px_var(--vc-cian)]", testo: "dorsale" },
                 ]}
               />
@@ -100,12 +105,12 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
                     key={`${p.nome}-${p.numero}`}
                     type="button"
                     title={p.nome}
-                    aria-label={`Porta ${p.numero}, ${p.stato}`}
+                    aria-label={`Porta ${p.numero}, ${p.stato === "senza_stato" ? "stato non letto" : p.stato}`}
                     aria-pressed={p.numero === porta}
                     onClick={() => setPorta(p.numero)}
                     className={classePorta(p, p.numero === porta)}
                   >
-                    {p.numero}
+                    {p.stato === "senza_stato" ? `${p.numero}?` : p.numero}
                   </button>
                 ))}
               </div>

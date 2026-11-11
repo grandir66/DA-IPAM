@@ -15,6 +15,7 @@ Riccardo (11/11): «un box in alto con un link agli apparati di rete che hanno m
 
 ### Aggiunto
 - **Riquadro «Porte di rete»** in testa alla casa della vista cliente: dice quante porte sono libere e su quanti apparati; al clic apre un modulo con l'elenco degli switch e dei router e, per quello scelto, il pannello delle porte (collegata, libera, dorsale) con chi c'è attaccato. Chiuso occupa solo il suo riquadro.
+- **Porte senza stato**: una porta di cui la lettura non ha dato lo stato non conta più come libera; ha un suo segno (bordo tratteggiato, numero col punto di domanda) nel modulo e nella pagina Apparati, e un suo conto.
 
 ## [Non rilasciato] — 2026-11-11 · I job si gestiscono in Schedulazioni, non più in due posti
 

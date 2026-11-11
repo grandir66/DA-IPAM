@@ -133,9 +133,12 @@ export function ElencoApparati({
 }
 
 export function classePorta(porta: PortaCliente, scelta: boolean): string {
+  // Tre stati distinti per forma oltre che per tinta: piena, bordo continuo, bordo tratteggiato col punto di domanda.
   const fondo = porta.stato === "collegata"
     ? "bg-[var(--vc-acceso)] text-[var(--vc-su-acceso)]"
-    : "border border-[var(--vc-bordo)] text-muted-foreground";
+    : porta.stato === "libera"
+      ? "border border-[var(--vc-bordo)] text-muted-foreground"
+      : "border border-dashed border-[var(--vc-bordo)] text-muted-foreground italic";
   const anello = scelta
     ? "shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--vc-giallo)]"
     : porta.dorsale
@@ -164,7 +167,8 @@ export function PannelloPorte({
 }) {
   const collegate = porte.filter((p) => p.stato === "collegata").length;
   const dorsali = porte.filter((p) => p.dorsale).length;
-  const libere = porte.length - collegate;
+  const libere = porte.filter((p) => p.stato === "libera").length;
+  const senzaStato = porte.length - collegate - libere;
   const scelta = porte.find((p) => p.numero === portaScelta) ?? null;
   return (
     <Pannello titolo={`Porte di ${nome}`}>
@@ -173,6 +177,7 @@ export function PannelloPorte({
           voci={[
             { classe: "bg-[var(--vc-acceso)]", testo: "collegata" },
             { classe: "border-[var(--vc-bordo)]", testo: "libera" },
+            ...(senzaStato > 0 ? [{ classe: "border-dashed border-[var(--vc-bordo)]", testo: "senza stato" }] : []),
             { classe: "shadow-[0_0_0_2px_var(--vc-cian)]", testo: "dorsale" },
           ]}
         />
@@ -191,7 +196,7 @@ export function PannelloPorte({
           ))}
         </div>
         <p className="font-mono text-[13px] text-muted-foreground">
-          {conto(collegate, "collegata", "collegate")} · {conto(libere, "libera", "libere")} · {conto(dorsali, "dorsale", "dorsali")}
+          {conto(collegate, "collegata", "collegate")} · {conto(libere, "libera", "libere")}{senzaStato > 0 ? ` · ${senzaStato} senza stato` : ""} · {conto(dorsali, "dorsale", "dorsali")}
         </p>
         {scelta && <DettaglioPorta porta={scelta} />}
       </div>
@@ -200,7 +205,7 @@ export function PannelloPorte({
 }
 
 export function DettaglioPorta({ porta }: { porta: PortaCliente }) {
-  const pezzi = [porta.stato === "collegata" ? "collegata" : "libera"];
+  const pezzi = [porta.stato === "collegata" ? "collegata" : porta.stato === "libera" ? "libera" : "stato non letto"];
   if (porta.velocita) pezzi.push(porta.velocita);
   if (porta.vlan != null) pezzi.push(`VLAN ${porta.vlan}`);
   return (

@@ -251,12 +251,15 @@ test("apparatiConPorte: solo switch e router con porte lette, ognuno con le sue 
   porta.run(3, 1, 3, "Gi1/0/3", "down");
   porta.run(4, 2, 1, "Gi1/0/1", "up");
   porta.run(5, 3, 1, "eth0", "up");
+  // Lettura senza stato (hub 533, SW-LAB-PROXMOX: 8 porte tutte così): non è «libera».
+  porta.run(6, 1, 4, "Gi1/0/4", null);
 
   const elenco = apparatiConPorte(db);
-  assert.deepEqual(elenco.map((a) => [a.nome, a.ip, a.porte.length, a.libere]), [
-    ["SW-A", "10.0.0.3", 1, 0],
-    ["SW-B", "10.0.0.2", 3, 2],
+  assert.deepEqual(elenco.map((a) => [a.nome, a.ip, a.porte.length, a.libere, a.senzaStato]), [
+    ["SW-A", "10.0.0.3", 1, 0, 0],
+    ["SW-B", "10.0.0.2", 4, 2, 1],
   ]);
+  assert.equal(elenco[1].porte.find((p) => p.numero === 4)?.stato, "senza_stato");
   assert.deepEqual(elenco[1].porte, porteDelloSwitch(db, "10.0.0.2"));
   db.close();
 });

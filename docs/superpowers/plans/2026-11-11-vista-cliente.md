@@ -463,6 +463,11 @@ export const schedaDominio: SchedaCliente; // id "dominio", titolo "Dominio e ac
 
 ### [ ] Task 6 — Scheda Log di sicurezza
 
+**Dal controllo del Task 5 (11/11, commit `d92be786`): passato sul codice**, 22 prove verdi rilanciate, firme come da piano; i tre ritocchi del Task 4 sono fatti; le date sul database sono in formato ISO, quindi i confronti delle ultime 24 ore sono giusti. Non guardato a schermo. Tre ritocchi a `src/lib/cliente/schede/dominio.ts` da fare in questo task, prima del resto (misure sul cliente 70791: punteggio 100, 4 rilievi `Critical`, 11 `High`, 15 `Medium`, 4 `Low`; nelle ultime 24 ore 26 blocchi di un solo account):
+1. **«100 su 100» sembra un voto pieno, ed è il rischio massimo.** Nel riquadro `unita` diventa «di rischio su 100» e il contesto «più alto è peggio · N accessi falliti». Nella pagina la stessa dicitura accanto al punteggio grande.
+2. **I nomi non escono mai.** `sample_dns_json` sul dato vero contiene nomi semplici (`["Guest","mauri-a","nety-audit",…]`), non nomi distinti con `CN=`: `nomiDa` rende sempre un elenco vuoto e «vedi i nomi» non mostra niente. Se la voce contiene `CN=` si prende quel pezzo, altrimenti la voce così com'è (senza spazi ai lati); i doppi si tolgono. Una prova nuova con l'elenco vero qui sopra → `["Guest", "mauri-a", "nety-audit"]`.
+3. **Troppi rilievi gravi in casa.** `attenzioneDominio` oggi porta una voce per ogni rilievo grave (sul 70791 sarebbero 10). Al più 3 voci di rilievo, le più gravi; se i rilievi gravi sono di più, la terza diventa «Altri N rilievi gravi nel dominio». Il conto dei gravi (per `aperti` e per questa voce) si fa su **tutti** i rilievi del giro, non sui primi 10: `statoDominio` espone in più `graviTotali: number`. Una prova nuova.
+
 **File**
 - crea `src/lib/cliente/frasi-avvisi.ts`, `src/lib/cliente/schede/log-sicurezza.ts`, `src/lib/cliente/__tests__/log-sicurezza.test.ts`, `src/app/(cliente)/cliente/log-sicurezza/page.tsx`
 - modifica `src/lib/cliente/registro.ts`: una riga in `SCHEDE_CLIENTE`
@@ -621,6 +626,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Task 5 [x]: scheda Dominio e accessi. Prima i tre ritocchi. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 22 prove, 0 fallite. lint 0 errori, tsc 0 errori. La pagina autenticata non è stata aperta.
 
 - 2026-11-11 Riccardo: colori del marchio Domarc nella vista cliente (tavola approvata sul tema chiaro). Aggiunto il Task 4 ter, dopo il 4 bis e prima del 6; sostituisce i punti 1 e 6 (classi) del 4 bis. Il tema segue la preferenza.
+
+- 2026-11-11 Controllo del Task 5 (`d92be786`): passato sul codice, 22 prove verdi rilanciate. Tre ritocchi messi in testa al Task 6 («100 su 100» è il rischio, nomi mai mostrati, troppi rilievi gravi in casa).
 
 ## Consuntivo
 ### Fatto

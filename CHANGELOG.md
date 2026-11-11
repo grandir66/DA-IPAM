@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa si compone
+
+Riccardo, 11/11: i riquadri «dovrebbero avere dimensione uguale oppure modificabile in una griglia prestabilita, con la possibilità di spostarli, di nasconderli, di aggiungerne dalla libreria».
+
+### Aggiunto
+- **Componi la casa** (solo amministratori, link in fondo alla casa): per ogni cliente si sceglie quali riquadri si vedono, in che ordine e in che misura, mezza riga o riga intera. Griglia fissa a due colonne, frecce e interruttori: niente trascinamento né ridimensionamento a mano, apposta.
+- La libreria è `RIQUADRI_CASA` in `src/lib/cliente/casa.ts`; la disposizione sta in `tenant_settings` (chiave `cliente.casa`) e si salva con `PUT /api/vista-cliente/casa`, riservata agli amministratori. Un riquadro nuovo aggiunto alla libreria compare da solo, in coda. La striscia dei moduli e «Cosa richiede attenzione» restano fisse.
+
 ## [Non rilasciato] — 2026-11-11 · Riconoscimento: nomi di serie e indirizzi passati di un telefono
 
 Riccardo (11/11): il suo S25 «è rilevato due volte nella subnet». Sull'hub aveva 6 righe: il motore dei gruppi le riuniva già, ma la pulizia non archivia mai una riga di un gruppo, quindi restavano per sempre. E otto iPhone diversi erano un gruppo solo, perché si chiamano tutti «iPhone».

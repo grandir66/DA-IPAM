@@ -248,3 +248,30 @@
   --vc-bordo: #5B6770;
   --vc-barra-fondo: #123A55;
 }
+
+/* Stampa solo dell'area cliente. «Stampa», «Esci», «Torna alla Dashboard» e «← La tua rete» hanno la classe nascosto-stampa. */
+@media print {
+  .vista-cliente {
+    background: #fff !important;
+    color: #0D2537 !important;
+  }
+  .vista-cliente > div:first-child {
+    background: #fff !important;
+  }
+  .vista-cliente header,
+  .vista-cliente header p,
+  .vista-cliente header span {
+    color: #0D2537 !important;
+  }
+  .vista-cliente header img {
+    filter: brightness(0);
+  }
+  .vista-cliente .nascosto-stampa {
+    display: none !important;
+  }
+  .vista-cliente .rounded-xl {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    background: #fff !important;
+  }
+}

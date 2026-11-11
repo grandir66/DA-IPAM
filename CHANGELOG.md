@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: stampa e documenti
+
+La vista cliente si può stampare senza i pulsanti, e nel manuale c'è come creare l'utente che la vede.
+
+### Aggiunto
+- In stampa, nell'area del cliente, lo sfondo è bianco, i riquadri non si spezzano fra due pagine, e spariscono «Stampa», «Esci», «Torna alla Dashboard» e «← La tua rete».
+- Nel manuale: Impostazioni → Utenti → Nuovo utente → Ruolo «Cliente (vista semplice)» → un solo cliente, e cosa vede.
+
 ## [Non rilasciato] — 2026-11-11 · Riconoscimento: la scelta a mano arriva al motore
 
 Riccardo (11/11): «il mio Samsung S25 viene rilevato come stampante… non capisco da dove viene identificata la categoria». Sul cliente 70791 c'erano 106 classi scelte a mano e nessuna era nota al motore: le pagine dell'amministratore mostravano la classe scelta, la vista cliente la categoria del motore, che diceva altro.

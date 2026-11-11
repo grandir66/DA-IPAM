@@ -17,6 +17,12 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## Vista cliente — 11/11/2026
+
+Area di sola lettura sotto `/cliente`, gruppo di rotte `src/app/(cliente)/`, senza menu laterale. La vede un utente «Solo lettura» con il segno `vista_cliente` (in interfaccia: ruolo «Cliente (vista semplice)»): non è un ruolo nuovo, perché il `CHECK` del database hub non lo permette. Il recinto è `src/lib/cliente/recinto.ts`: quell'utente resta in `/cliente`, le scritture sulle `/api` rispondono 403, `/settings` lo riporta a `/cliente`. L'amministratore ci entra dalla Dashboard e può tornare indietro.
+
+Un modulo nuovo è tre pezzi: un file in `src/lib/cliente/schede/`, una riga in `SCHEDE_CLIENTE` (`src/lib/cliente/registro.ts`), una cartella in `src/app/(cliente)/cliente/<id>/`. Se il modulo è spento, la scheda non si vede. Piano: `docs/superpowers/plans/2026-11-11-vista-cliente.md`.
+
 ## AD Health — piano del 10/11/2026
 
 Piano proposto in `docs/superpowers/plans/2026-11-10-ad-health-evidenze-e-percorsi.md`. Prima consegna prevista su LAPS e valutazione dei template AD CS. Seguono ESC8, percorsi di controllo e confronto con copertura esplicita. Avviato sul ramo isolato: LAPS da metadati e pubblicazione dei template AD CS con candidati fuori dal punteggio. Il motore 0.9.1 rileva ACE Enroll, modifica dei template ESC4 e concessioni estese sugli attributi LAPS. I riscontri sono diagnostici. Restano il calcolo dei diritti effettivi, ESC8, le tappe successive e il collaudo sul dominio.

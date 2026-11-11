@@ -877,6 +877,7 @@ inseriscono i dati.
 ### Utenti e ruoli
 - Crea/modifica utenti (admin only)
 - Ruoli: `superadmin`, `admin`, `user`
+- **Cliente (vista semplice):** Impostazioni → Utenti → Nuovo utente → Ruolo «Cliente (vista semplice)» → un solo cliente. Entra in un'area di sola lettura, «La tua rete», senza menu e senza comandi. Vede le schede dei moduli accesi (Reti, Apparati e, se il modulo c'è, Da sistemare, Dominio e accessi, Log di sicurezza). Non vede le Impostazioni: ci torna alla sua area. Non può modificare niente.
 - Reset password, cambio username
 - Multi-tenant access (quali tenant può vedere)
 - **Due passaggi** (verifica in due passaggi): «–» non richiesta → **Richiedi**; «▲ da attivare» (al prossimo accesso vedrà il QR) → **Togli**; «✓ attiva» → **Azzera** (telefono perso: QR nuovo al prossimo accesso) o **Togli**. Sul proprio utente si può chiedere e azzerare, non togliere. Ogni azione finisce nel registro `data/audit/accessi-*.jsonl`. Se l'unico amministratore ha perso il telefono, dal server: `npx tsx scripts/seconda-verifica.ts azzera <utente>`.

@@ -705,7 +705,7 @@ export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invaria
 
 ---
 
-### [ ] Task 8 — Stampa, documenti, prova sull'hub
+### [x] Task 8 — Stampa, documenti, prova sull'hub
 
 **File**
 - modifica `src/app/globals.css`: un blocco `@media print` limitato all'area (classe `vista-cliente` sul contenitore del layout del Task 2): si nascondono «Stampa», «Esci», «Torna alla Dashboard» e i link «← La tua rete»; i riquadri non si spezzano fra due pagine (`break-inside: avoid`); sfondo bianco
@@ -719,7 +719,11 @@ export function daSistemare(c: ContestoCliente): DaSistemare;   // firma invaria
 - Sull'hub (VM 533, `192.168.4.8`), dopo che il servizio ha preso il commit: utente «Cliente» di prova sul cliente 70791. Entra, vede la casa, apre ogni scheda attiva; `/settings` lo riporta a `/cliente`; `GET /api/hosts` risponde 403.
 - Niente su `main`: il passaggio lo decide Riccardo.
 
-**Verifica:** le quattro righe della prova sull'hub, scritte qui sotto il task con data e ora.
+**Verifica:** `npm run lint` → 0 errori (72 avvisi già presenti). `npx tsc --noEmit` → 0 errori. `npm run build` → compilato, 335 pagine (11/11/2026, prima del fast-forward che ha portato il Task 7 bis). `bash scripts/controlla.sh` → il file non c'è nel repo: non l'ho creato. Anteprima di stampa della casa e di una pagina interna: non guardata, la pagina autenticata non è stata aperta. Prova sull'hub, 11/11/2026 11:27, non eseguita (il servizio non ha questo commit e non ho creato un utente sul database dell'hub):
+- entra e vede la casa: non provato
+- apre ogni scheda attiva: non provato
+- `/settings` lo riporta a `/cliente`: non provato
+- `GET /api/hosts` risponde 403: non provato
 
 **Commit:** «Vista cliente: stampa e documenti».
 
@@ -795,6 +799,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Riccardo: «Da sistemare» si rifà per programma da aggiornare. Aggiunto il Task 7 bis, dopo il 6 bis e prima dell'8.
 
 - 2026-11-11 Controllo del Task 6 bis (`2162c296`): passato sul codice, 36 prove verdi rilanciate; nessuna lettura di `acknowledged` rimasta; le parole «aperti», «chiusi», «presi in carico» non sono più nella vista. Non guardato a schermo.
+
+- 2026-11-11 Task 8 [x]: stampa e documenti. Verifica: lint 0 errori (72 avvisi), tsc 0, build compilato. `scripts/controlla.sh` non c'è nel repo. Anteprima di stampa e prova sull'hub non fatte (11:27): niente utente creato sul database dell'hub.
 
 ## Consuntivo
 ### Fatto

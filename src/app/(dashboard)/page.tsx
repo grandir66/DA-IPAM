@@ -9,7 +9,9 @@ import { Network, Shield, Activity, PlugZap } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { getTenantDb, withTenant, getRilieviPerRete, type RilieviPerRete } from "@/lib/db-tenant";
+import { getTenantDb, withTenant } from "@/lib/db-tenant";
+import { barreReteDiSerie } from "@/lib/rilievi/barre-di-serie";
+import type { BarraRete } from "@/lib/rilievi/gruppi";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { IstogrammaAccessi } from "@/components/dashboard/istogramma-accessi";
 import { CardSicurezza } from "@/components/dashboard/card-sicurezza";
@@ -157,12 +159,17 @@ export default async function DashboardPage() {
   );
   // «—» se l'archivio non si legge: l'indicatore non fa cadere la dashboard (m11, revisione finale).
   const archiviati = withTenant(tenantCode, () => contaArchiviatiOTrattino());
-  let rilieviRete: RilieviPerRete[] = [];
+  // Stesso conto della pagina Findings (11/11/2026): barre e tessere «critiche/alte» vengono da qui.
+  let barreRete: BarraRete[] | null = null;
   try {
-    rilieviRete = withTenant(tenantCode, () => getRilieviPerRete()).slice(0, 6);
+    barreRete = withTenant(tenantCode, () => barreReteDiSerie());
   } catch {
-    rilieviRete = [];
+    barreRete = null;
   }
+  const rilieviRete = (barreRete ?? []).slice(0, 6);
+  const daSistemare = barreRete
+    ? { critiche: barreRete.reduce((n, b) => n + b.critical, 0), alte: barreRete.reduce((n, b) => n + b.high, 0), reti: barreRete.length }
+    : null;
   const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =
@@ -189,7 +196,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* ── Riga 2: sicurezza, card bianche con striscia (Riccardo, 20/10) ── */}
-      <RigaSicurezza k={sicurezza} accessi={accessi} />
+      <RigaSicurezza k={sicurezza} accessi={accessi} daSistemare={daSistemare} />
 
       {/* Rilievi per rete (Riccardo, 09/11): le barre della pagina Vulnerabilità, anche qui. */}
       {rilieviRete.length > 0 && <RigaRilieviPerRete reti={rilieviRete} />}
@@ -339,11 +346,11 @@ const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
  * bloccati da Wazuh, alert da gestire, Health di Active Directory. Una fonte non
  * configurata è grigia, non «zero». Card bianche con la striscia del token e il simbolo.
  */
-function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
+function RigaRilieviPerRete({ reti }: { reti: BarraRete[] }) {
   return (
     <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Cose da sistemare per rete <span className="text-[13px] font-normal text-muted-foreground">· un pacchetto o un controllo per host; a destra le CVE che ci stanno dietro</span></CardTitle>
+        <CardTitle className="text-base">Cose da sistemare per rete <span className="text-[13px] font-normal text-muted-foreground">· un software o un rilievo per host, come in Findings</span></CardTitle>
         <LegendaGravita />
       </CardHeader>
       <CardContent className="space-y-2">
@@ -352,7 +359,6 @@ function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
             <Link href="/vulnerabilities#vulnerabilita" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
             <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
             <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
-            <span className="w-24 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground" title="CVE per host dietro a queste cose da sistemare">{r.cve.toLocaleString("it-IT")} CVE</span>
           </div>
         ))}
       </CardContent>
@@ -360,18 +366,18 @@ function RigaRilieviPerRete({ reti }: { reti: RilieviPerRete[] }) {
   );
 }
 
-function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi | null }) {
+function RigaSicurezza({ k, accessi, daSistemare }: { k: KpiSicurezza; accessi: SerieAccessi | null; daSistemare: { critiche: number; alte: number; reti: number } | null }) {
   const a = k.accessi;
   const falliti = accessi?.totale24h ?? 0;
   const prima = accessi?.totale24hPrima ?? 0;
   const freccia = accessi?.tendenza === "su" ? " ↑" : accessi?.tendenza === "giu" ? " ↓" : "";
   return (
     <div className="grid gap-2 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shrink-0">
-      {k.cve ? (
+      {daSistemare ? (
         <>
-          <CardSicurezza tono={k.cve.critiche.cve > 0 ? "guasto" : "ok"} titolo="Vulnerabilità critiche" valore={numero(k.cve.critiche.cve)} nota={`su ${k.cve.critiche.host} host`} href="/vulnerabilities#vulnerabilita"
-            title={`Scanner-Edge: vulnerabilità distinte di gravità Critical (CVE, o NVT quando manca la CVE) e host colpiti${k.cve.ultimaScansione ? ` · ultima scansione ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
-          <CardSicurezza tono={k.cve.alte.cve > 0 ? "attenzione" : "ok"} titolo="Vulnerabilità alte" valore={numero(k.cve.alte.cve)} nota={`su ${k.cve.alte.host} host`} href="/vulnerabilities#vulnerabilita" title="Scanner-Edge: vulnerabilità distinte di gravità High e host colpiti" />
+          <CardSicurezza tono={daSistemare.critiche > 0 ? "guasto" : "ok"} titolo="Critiche da sistemare" valore={numero(daSistemare.critiche)} nota={`in ${daSistemare.reti} reti`} href="/vulnerabilities#vulnerabilita"
+            title={`Cose da sistemare di gravità critica: un software o un rilievo per host, lo stesso conto delle barre e della pagina Findings${k.cve?.ultimaScansione ? ` · ultima scansione Edge ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
+          <CardSicurezza tono={daSistemare.alte > 0 ? "attenzione" : "ok"} titolo="Alte da sistemare" valore={numero(daSistemare.alte)} nota={`in ${daSistemare.reti} reti`} href="/vulnerabilities#vulnerabilita" title="Cose da sistemare di gravità alta: stesso conto delle barre e della pagina Findings" />
         </>
       ) : (
         <CardSicurezza tono="grigio" titolo="Vulnerabilità" valore="Scanner-Edge non configurato" href="/settings/moduli/edge" />

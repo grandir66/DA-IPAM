@@ -7,6 +7,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## [Non rilasciato] — 2026-11-10 · Cancello: tre prove rosse sistemate prima della promozione su main
 
 ### Corretto
+- **Dashboard e Findings danno gli stessi numeri** (Riccardo, 11/11: «i dati devono essere coerenti tra le schermate»): le barre per rete della Dashboard venivano da una query a parte e davano LAN Server 701 contro i 460 di Findings. Ora c'è un conto solo (`rilievi/barre-di-serie.ts`) per Dashboard, Findings e `/api/vulnerabilities/per-rete`. Le tessere «Critiche da sistemare» e «Alte da sistemare» sono la somma delle stesse barre, non più le CVE distinte del solo Edge.
+
+### Corretto
 - **Findings, barre per rete**: contavano ancora una tacca per CVE e per host (LAN Server 26.808). Ora, come in Dashboard, contano le cose da sistemare: tutte le CVE dello stesso software sullo stesso host sono una tacca, con la gravità più alta. Sui dati dell'hub: LAN Server 460, Lan Management 426, LAN Base 193, LAN Client 115, LAN DMZ 85.
 
 ### Corretto

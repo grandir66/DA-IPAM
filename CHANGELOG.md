@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Vista cliente: la casa
+
+### Aggiunto
+- **Casa in sola lettura**: un'area a parte, senza il menu di amministrazione. In cima «La tua rete», poi ciò che richiede attenzione e i moduli attivi. Le schede arrivano dopo: per ora la casa dice «Niente da segnalare». Dalla Dashboard un amministratore entra con «Vista cliente».
+
 ## [Non rilasciato] — 2026-11-11 · Chocolatey automatico nasce spento
 
 Riccardo (11/11): «Sì, spento di serie». Sull'appliance 70151 l'automatismo, acceso dove nessuno l'aveva scelto, provava ogni notte a installare Chocolatey via WinRM su 31 macchine del cliente: l'MDR del cliente ha aperto un allarme (ticket 1934292).

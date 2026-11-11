@@ -117,7 +117,7 @@ if (esito === "vietato") return Response.json({ error: "Non consentito" }, { sta
 
 ---
 
-### [ ] Task 2 — Template, registro delle schede e casa
+### [x] Task 2 — Template, registro delle schede e casa
 
 **File**
 - crea `src/lib/cliente/contesto.ts`, `src/lib/cliente/registro.ts`, `src/lib/cliente/__tests__/registro.test.ts`
@@ -172,7 +172,7 @@ export function ordinaAttenzione(v: VoceAttenzione[]): VoceAttenzione[]; // grav
 - **Scheda inesistente o spenta**: le pagine dei task 3-7 cominciano con `if (!(await scheda.attiva(c))) redirect("/cliente")`.
 - **Prova** (`registro.test.ts`): `schedeAttive` con tre schede finte (una spenta, una che lancia, due in ordine inverso) e `ordinaAttenzione`.
 
-**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` verde. Sul dev `/cliente` si apre con l'intestazione, «Niente da segnalare» e nessun riquadro (il registro è ancora vuoto).
+**Verifica:** `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 4 prove, 0 fallite (2026-11-11). `npm run lint` → 0 errori. `npx tsc --noEmit` → 0 errori. Sul dev, senza sessione, `/cliente` porta al login. La casa autenticata non è stata aperta.
 
 **Commit:** «Vista cliente: template dedicato, registro delle schede e casa».
 
@@ -492,6 +492,8 @@ Chi controlla, per ogni task consegnato: legge `git diff` del commit; verifica c
 - 2026-11-11 Controllo del Task 1: passato (commit `3a0da573`, 62 prove verdi rilanciate). Aggiunto il Task 1 bis: il cambio del segno chiude le sessioni aperte.
 
 - 2026-11-11 Task 1 bis [x]: il cambio del segno chiude le sessioni. Verifica: `node --import tsx --test src/lib/users/__tests__/*.test.ts` → 61 prove, 0 fallite.
+
+- 2026-11-11 Task 2 [x]: template, registro delle schede e casa. Verifica: `node --import tsx --test src/lib/cliente/__tests__/*.test.ts` → 4 prove, 0 fallite. lint 0 errori, tsc 0 errori.
 
 ## Consuntivo
 ### Fatto

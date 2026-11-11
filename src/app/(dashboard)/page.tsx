@@ -59,9 +59,11 @@ export default async function DashboardPage() {
   // apre il modulo o la configurazione (UI-20). Se non si legge, le righe
   // tornano ad aprire la configurazione, come prima, e l'errore va nel log.
   let moduleStates: ModuleState[] = [];
+  // Il ruolo decide il link di LibreNMS (accesso automatico solo admin, T3-26)
+  // e il collegamento «Vista cliente» accanto al titolo.
+  let ruolo: string | undefined;
   try {
-    // Il ruolo decide il link di LibreNMS (accesso automatico solo admin, T3-26).
-    const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
+    ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
     moduleStates = await withTenant(tenantCode, () => resolveModules(tenantCode, ruolo));
   } catch (e) {
     console.error("[dashboard] stato dei moduli non leggibile:", e);
@@ -184,6 +186,11 @@ export default async function DashboardPage() {
       {/* ── Riga 1: titolo e indicatori ───────────────────────────────── */}
       <div className="flex flex-wrap items-stretch gap-2 shrink-0">
         <h1 className="text-xl font-bold tracking-tight mr-2 self-center">Dashboard</h1>
+        {(ruolo === "admin" || ruolo === "superadmin") && (
+          <Link href="/cliente" className="self-center text-sm font-medium text-cian-testo hover:underline">
+            Vista cliente
+          </Link>
+        )}
         <Indicatore titolo="Health" valore={`${healthPct}%`} colore={healthColor} nota={`${stats.online_hosts}/${denom} host online (offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni)`} anello={healthPct} />
         <Indicatore titolo="Subnet" valore={stats.total_networks} href="/networks" />
         <Indicatore titolo="Host" valore={stats.total_hosts} href="/discovery" />

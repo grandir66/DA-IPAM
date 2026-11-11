@@ -2489,3 +2489,12 @@ Riccardo: «tutti gli oggetti dopo i primi vengono mostrati con + n altri… un'
 - [ ] Non visto a schermo, e non su `main`: la 72729 ha il firewall (0.9.1187) ma non la regola per switch e access point.
 - [x] 11/11 ~14:10 UTC: `main` promosso a `04e0f10f` (0.9.1190) col sì di Riccardo. Cancello sul commit esatto: lint e tipi verdi, 8142 passate, 1 rossa (la solita `discovery-accesso-windows`). Sulla 72729 arrivata entro le 14:28 UTC: versione 0.9.1190, servizio attivo. `arp_poll` ha chiuso un giro alle 14:22 UTC e il J9660A è stato riletto alle 14:21 (chiude il punto aperto sopra).
 - [ ] 72729: nella Mappa porte il firewall è ancora «visto» il 09/11 sulla porta 1 del J9660A anche dopo la rilettura delle 14:21: da ricontrollare dopo il prossimo ricalcolo della mappa (ogni 30 minuti).
+
+## 2026-11-11 — Topologia della 72729: anomalie viste da Riccardo a schermo
+
+Riccardo: riquadro grigio degli AP troppo grande; «il link principale indicato come down da due giorni»; le VM dovrebbero stare sotto l'ESXi; «mancano forse degli altri AP»; utile un'esportazione per draw.io.
+- [x] Riquadro degli AP largo quanto gli AP (`tree-layout.ts`, `tree-layout-lr.ts`); lo spazio riservato non cambia. Non visto a schermo.
+- [ ] Link «giù da due giorni»: non riprodotto. Dato letto sulla sonda: gli switch non erano stati riletti dal 09/11 (`arp_poll` spento), la soglia «non visto» è 2 giorni; riletti alle 14:21 UTC dell'11/11. Da riguardare a schermo dopo la rilettura. Nota: il J9660A ha quattro porte con lo stesso nome «Link Aggregate» (indici 54-57), una giù: se la scritta resta, il sospetto è lì.
+- [ ] VM sotto l'ESXi: sulla 72729 non c'è nessuna VM letta. La Topologia prende le VM solo da `last_proxmox_scan_result` (scansione Proxmox); il vCenter #43 non ha scansione e non c'è una lettura VMware che la riempia. Serve la lettura delle VM da vCenter/ESXi: lavoro a sé, da decidere con Riccardo.
+- [ ] Access point: in archivio sono 4 (192.168.0.208, .221, .226, .246) ma solo .226 è un apparato censito; gli altri tre sono host classificati `access_point` senza prove di ruolo, quindi non entrano nella mappa come AP. Da «Topologia › Dati» si promuovono ad apparato; con la regola «censito» dell'11/11 entrano se uno switch li vede su una porta.
+- [ ] Esportazione draw.io della mappa: richiesta, non iniziata.

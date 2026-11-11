@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: nelle liste e nei filtri
 
+### Corretto
+- **Topologia: il riquadro grigio degli access point è largo quanto gli AP che contiene.** Con un AP solo era largo quattro colonne e sembrava un riquadro vuoto (72729). Lo spazio riservato nella disposizione resta lo stesso, così un AP in più non sposta i rami vicini.
+
 ### Aggiunto
 - **Le funzioni si vedono** nella lista della subnet, sotto la categoria (il suggerimento dice da dove viene ognuna), e c'è il **filtro «Funzione»** in subnet e Discovery.
 - **Si ricalcolano a fine scansione** (`funzioni-giro.ts`): scrive solo le righe trovate dal sistema, quelle messe o tolte a mano non si toccano.

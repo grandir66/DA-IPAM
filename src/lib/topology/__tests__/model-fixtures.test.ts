@@ -174,7 +174,9 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     // Visto a schermo (Task 16): il disegno legge la classe della mappa, non più il solo tipo dichiarato. Domarc
     // 1442x1524->1182x1548 perché l'unico «hypervisor» dell'albero senza VM né scansione (I65), attaccato, passa dal
     // riquadro alla fascia degli attaccati del suo padre (stesso padre). cliente-a non cambia.
-    const attesi = nome === "topologia-domarc.json" ? [1182, 1548] : [2514, 3104];
+    // 11/11/2026: domarc 1182->1038 in larghezza perché il riquadro grigio degli AP è largo quanto gli AP che contiene
+    // (l'ultima colonna ha un gruppo con un AP solo: una colonna di AP in meno, 144 px).
+    const attesi = nome === "topologia-domarc.json" ? [1038, 1548] : [2514, 3104];
     assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }

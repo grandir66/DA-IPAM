@@ -148,11 +148,14 @@ export function layoutTree(
       cur += width.get(k)! + GAP;
     }
     if (p.ap.length) {
+      // Lo spazio riservato resta di AP_COLS colonne (un AP in più non sposta gli altri rami); il riquadro grigio è largo
+      // quanto gli AP che contiene, centrato in quello spazio: con un AP solo sembrava un riquadro vuoto (Riccardo, 11/11/2026).
+      const gw = Math.min(p.ap.length, AP_COLS) * (AP_W + 8), gx = cur + (AP_BLOCK - gw) / 2;
       p.ap.forEach((a, i) => nodes.set(a, {
-        id: a, x: cur + 4 + (i % AP_COLS) * (AP_W + 8), y: y[lvl + 1] + AP_HEAD + Math.floor(i / AP_COLS) * (AP_H + 6),
+        id: a, x: gx + 4 + (i % AP_COLS) * (AP_W + 8), y: y[lvl + 1] + AP_HEAD + Math.floor(i / AP_COLS) * (AP_H + 6),
         w: AP_W, h: AP_H, role: "ap", parent: id,
       }));
-      apGroups.push({ parent: id, x: cur, y: y[lvl + 1], w: AP_BLOCK, h: AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6) + 4, count: p.ap.length });
+      apGroups.push({ parent: id, x: gx, y: y[lvl + 1], w: gw, h: AP_HEAD + Math.ceil(p.ap.length / AP_COLS) * (AP_H + 6) + 4, count: p.ap.length });
       centres.push(cur + AP_BLOCK / 2);
     }
     // Il riquadro sta a metà fra il centro del primo e dell'ultimo figlio (dove

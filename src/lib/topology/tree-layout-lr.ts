@@ -85,7 +85,8 @@ export function layoutLr(c: LrContext, tree: TreeResult): Pick<LayoutResult, "no
         id: a, x: colX[lvl + 1] + AP_PAD + (i % AP_COLS_LR) * (AP_W + 8), y: cur + AP_HEAD + Math.floor(i / AP_COLS_LR) * (AP_H + 6),
         w: AP_W, h: AP_H, role: "ap", parent: id,
       }));
-      apGroups.push({ parent: id, x: colX[lvl + 1], y: cur, w: AP_BLOCK_LR, h: gh, count: p.ap.length });
+      // Largo quanto gli AP che contiene (la colonna resta larga AP_BLOCK_LR): uno solo non mostra una colonna vuota.
+      apGroups.push({ parent: id, x: colX[lvl + 1], y: cur, w: Math.min(p.ap.length, AP_COLS_LR) * (AP_W + 8), h: gh, count: p.ap.length });
       centres.push(cur + gh / 2);
     }
     // A metà fra il centro del primo e dell'ultimo figlio (dove corre la linea verticale), ma col

@@ -1359,6 +1359,18 @@ export function migrateVulcanCoda(db: Database.Database): string[] {
         db.exec(ddl);
         added.push(n);
       }
+      // v2 (11/11/2026): il tipo «rilievi». Un CHECK di SQLite non si altera: la coda nata con la v1 si ricostruisce
+      // con le sue righe (i corpi non ancora inviati restano), nella stessa transazione.
+      const vecchia = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'vulcan_coda'").get() as { sql: string } | undefined;
+      const ddlCoda = DDL_VULCAN.find(([n]) => n === "vulcan_coda")?.[1];
+      if (vecchia && ddlCoda && !vecchia.sql.includes("'rilievi'")) {
+        db.exec("ALTER TABLE vulcan_coda RENAME TO vulcan_coda_v1");
+        db.exec(ddlCoda);
+        db.exec("INSERT INTO vulcan_coda SELECT * FROM vulcan_coda_v1");
+        db.exec("DROP TABLE vulcan_coda_v1");
+        for (const [n, ddl] of INDICI_VULCAN) if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(n)) db.exec(ddl);
+        added.push("vulcan_coda:rilievi");
+      }
       const chiusa = `:v${VERSIONE_VULCAN}`;
       const attuale = leggiSegno(db, SEGNO_VULCAN);
       if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {

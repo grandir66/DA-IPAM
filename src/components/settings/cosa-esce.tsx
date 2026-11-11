@@ -120,7 +120,7 @@ const NOMI_BATTITO: Record<string, string> = {
   errore: "Errore",
 };
 
-const NOMI_TIPO: Record<string, string> = { "ad-health": "AD Health", inventario: "Inventario" };
+const NOMI_TIPO: Record<string, string> = { "ad-health": "AD Health", inventario: "Inventario", rilievi: "Scansioni interne" };
 
 /** Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM): stato letto dal sistema vivo. */
 function SchedaVulcan({ v, invio, onInvia }: { v: QuadroCosaEsce["vulcan"]; invio: boolean; onInvia: () => void }) {
@@ -129,9 +129,10 @@ function SchedaVulcan({ v, invio, onInvia }: { v: QuadroCosaEsce["vulcan"]; invi
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>Dati verso DA-Vul-can (AD Health e inventario)</CardTitle>
+          <CardTitle>Dati verso DA-Vul-can (AD Health, inventario e scansioni interne)</CardTitle>
           <CardDescription className="text-sm">
-            Cosa parte: risultati AD Health dopo ogni esecuzione e un inventario al giorno (IP, rete, sistema, porte). Mai
+            Cosa parte: risultati AD Health dopo ogni esecuzione, un inventario al giorno (IP, rete, sistema, porte) e, con
+            l&apos;inventario, i rilievi delle scansioni interne (titolo, gravità, prova, rimedio, IP e porta). Mai
             credenziali, note, utenti, licenze.
           </CardDescription>
         </div>

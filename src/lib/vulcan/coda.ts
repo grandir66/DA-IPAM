@@ -29,7 +29,7 @@ export const PRESA_MIN = 10;
 /** Righe uscite dalla coda (inviate, scartate, superate) tenute per la pagina «Cosa esce». */
 export const GIORNI_STORIA = 90;
 
-export type TipoInvio = "ad-health" | "inventario";
+export type TipoInvio = "ad-health" | "inventario" | "rilievi";
 export type StatoCoda = "in_attesa" | "inviato" | "scartato" | "fallito" | "superato";
 
 export interface RigaCoda {
@@ -101,11 +101,12 @@ export function accoda(
       | { id: number; stato: StatoCoda }
       | undefined;
     if (c && c.stato !== "scartato") return { id: c.id, nuovo: false };
-    if (v.tipo === "inventario") {
+    // Le fotografie (inventario, rilievi): la più nuova rende superata quella dello stesso tipo ancora in attesa.
+    if (v.tipo === "inventario" || v.tipo === "rilievi") {
       db.prepare(
         `UPDATE vulcan_coda SET stato = 'superato', corpo_gz = zeroblob(0), preso_fino = NULL, esito_il = datetime('now')
-         WHERE tipo = 'inventario' AND stato = 'in_attesa'`,
-      ).run();
+         WHERE tipo = ? AND stato = 'in_attesa'`,
+      ).run(v.tipo);
     }
     if (c) {
       db.prepare(

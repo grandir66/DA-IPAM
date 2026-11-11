@@ -1079,7 +1079,7 @@ export const VERSIONE_APPARATI_SCELTI = 1;
 export const DDL_VULCAN: ReadonlyArray<readonly [string, string]> = [
   ["vulcan_coda", `CREATE TABLE vulcan_coda (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tipo TEXT NOT NULL CHECK (tipo IN ('ad-health', 'inventario')),
+  tipo TEXT NOT NULL CHECK (tipo IN ('ad-health', 'inventario', 'rilievi')),
   rif TEXT,
   corpo_gz BLOB NOT NULL,
   byte_json INTEGER NOT NULL,
@@ -1112,7 +1112,7 @@ export const INDICI_VULCAN: ReadonlyArray<readonly [string, string]> = [
 ];
 /** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
 export const SEGNO_VULCAN = "vulcan_coda_v21";
-export const VERSIONE_VULCAN = 1;
+export const VERSIONE_VULCAN = 2;
 
 /**
  * Assegnatari NIS2 da AD e utente prevalente dei PC (piano 2026-10-23-assegnatari-da-ad, passo 1).

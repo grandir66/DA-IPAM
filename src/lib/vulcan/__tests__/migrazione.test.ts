@@ -41,21 +41,21 @@ test("lo schema base non crea la coda: nasce solo nella migrazione", () => {
   assert.deepEqual(nomi(dbSchema()), []);
 });
 
-test("DB senza coda: crea tabelle e indice in una volta, segno done:<data>:v1", () => {
+test("DB senza coda: crea tabelle e indice in una volta, segno done:<data>:v2 (dall'11/11/2026, tipo «rilievi»)", () => {
   const db = dbSchema();
   assert.deepEqual(migrateVulcanCoda(db), OGGETTI);
   assert.deepEqual(nomi(db), [...OGGETTI].sort());
-  assert.match(leggiSegno(db, SEGNO_VULCAN) ?? "", /^done:\d{4}-\d{2}-\d{2}:v1$/);
+  assert.match(leggiSegno(db, SEGNO_VULCAN) ?? "", /^done:\d{4}-\d{2}-\d{2}:v2$/);
   assert.equal(schemaVulcanPresente(db), true);
 });
 
 test("seconda esecuzione: niente cambia, segno invariato", () => {
   const db = dbSchema();
   migrateVulcanCoda(db);
-  scriviSegno(db, SEGNO_VULCAN, "done:2026-10-01:v1");
+  scriviSegno(db, SEGNO_VULCAN, "done:2026-10-01:v2");
   const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name LIKE '%vulcan%' ORDER BY name").all();
   assert.deepEqual(migrateVulcanCoda(db), []);
-  assert.equal(leggiSegno(db, SEGNO_VULCAN), "done:2026-10-01:v1");
+  assert.equal(leggiSegno(db, SEGNO_VULCAN), "done:2026-10-01:v2");
   assert.deepEqual(db.prepare("SELECT sql FROM sqlite_master WHERE name LIKE '%vulcan%' ORDER BY name").all(), sql);
 });
 
@@ -80,7 +80,7 @@ test("tenant nuovo aperto con getTenantDb: coda, indice e segno; riga nel journa
     console.info = info;
   }
   assert.deepEqual(nomi(db), [...OGGETTI].sort());
-  assert.match(leggiSegno(db, SEGNO_VULCAN) ?? "", /^done:\d{4}-\d{2}-\d{2}:v1$/);
+  assert.match(leggiSegno(db, SEGNO_VULCAN) ?? "", /^done:\d{4}-\d{2}-\d{2}:v2$/);
   assert.equal(schemaVulcanPresente(db), true);
   assert.ok(righe.some((r) => r.includes(`[db-tenant] ${T}: coda vulcan, aggiunto vulcan_coda, vulcan_stato, idx_vulcan_coda_attesa`)), righe.join("\n"));
   closeTenantDb(T);
@@ -88,7 +88,7 @@ test("tenant nuovo aperto con getTenantDb: coda, indice e segno; riga nel journa
 
 test("tenant riaperto: nessuna riga nel journal, segno invariato", () => {
   const db0 = getTenantDb(T);
-  scriviSegno(db0, SEGNO_VULCAN, "done:2026-10-01:v1");
+  scriviSegno(db0, SEGNO_VULCAN, "done:2026-10-01:v2");
   closeTenantDb(T);
   const righe: string[] = [];
   const info = console.info;
@@ -99,7 +99,7 @@ test("tenant riaperto: nessuna riga nel journal, segno invariato", () => {
   } finally {
     console.info = info;
   }
-  assert.equal(leggiSegno(db, SEGNO_VULCAN), "done:2026-10-01:v1");
+  assert.equal(leggiSegno(db, SEGNO_VULCAN), "done:2026-10-01:v2");
   assert.ok(!righe.some((r) => r.includes("coda vulcan")));
   closeTenantDb(T);
 });

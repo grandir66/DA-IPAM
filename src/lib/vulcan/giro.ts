@@ -46,6 +46,7 @@ import {
 } from "./coda";
 import { leggiConfigVulcan, tenantPerVulcan, type ConfigVulcan } from "./config";
 import { corpoInventario } from "./corpo-inventario";
+import { corpoRilievi, leggiRilieviInterni } from "./corpo-rilievi";
 import { leggiDatiInventario, type DatiInventario } from "./dati-inventario";
 import { scriviRegistroVulcan, type RigaAuditVulcan } from "./registro";
 import { ErroreHub, chiamaHub, type PercorsoHub, type RichiestaHub, type RispostaHub } from "./trasporto";
@@ -109,6 +110,7 @@ function motivoSospeso(status: number): string {
 
 function motivoScarto(status: number, tipo: TipoInvio): string {
   if (status === 404) {
+    if (tipo === "rilievi") return "l'hub non riceve ancora i rilievi delle scansioni interne (404): scartato";
     return tipo === "inventario" ? "l'hub non riceve ancora l'inventario (404): scartato" : "l'hub non ha la rotta d'invio (404): scartato";
   }
   if (status === 400) return "l'hub non ha letto il corpo (400): scartato";
@@ -149,7 +151,7 @@ export function _azzeraMemoriaVulcan(): void {
 }
 
 /** Una riga `[vulcan]` solo quando l'esito del canale cambia; `spento` è muto. */
-function registra(canale: "invio" | "battito" | "inventario", e: EsitoGiroVulcan, causa?: string): EsitoGiroVulcan {
+function registra(canale: "invio" | "battito" | "inventario" | "rilievi", e: EsitoGiroVulcan, causa?: string): EsitoGiroVulcan {
   if (e.esito === "spento") return e;
   const chiave = `${e.esito}|${causa ?? (e.esito === "ok" ? "" : e.dettaglio)}`;
   const m = memoria().righe;
@@ -277,7 +279,7 @@ function rispostaId(body: string, tipo: TipoInvio): string | null {
   try {
     const o = JSON.parse(body) as unknown;
     if (o && typeof o === "object" && !Array.isArray(o)) {
-      const v = (o as Record<string, unknown>)[tipo === "ad-health" ? "report_id" : "inventario_id"];
+      const v = (o as Record<string, unknown>)[tipo === "ad-health" ? "report_id" : tipo === "rilievi" ? "rilievi_id" : "inventario_id"];
       if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) return String(v);
     }
   } catch {
@@ -286,7 +288,7 @@ function rispostaId(body: string, tipo: TipoInvio): string | null {
   return null;
 }
 
-const PERCORSO: Record<TipoInvio, PercorsoHub> = { "ad-health": "/api/ipam/ad-health", inventario: "/api/ipam/inventario" };
+const PERCORSO: Record<TipoInvio, PercorsoHub> = { "ad-health": "/api/ipam/ad-health", inventario: "/api/ipam/inventario", rilievi: "/api/ipam/rilievi" };
 
 export async function giroCoda(dip: Partial<DipendenzeGiro> = {}): Promise<EsitoGiroVulcan> {
   const d: DipendenzeGiro = { ...dipendenzeReali, ...dip };
@@ -493,6 +495,33 @@ export async function accodaInventario(dip: Partial<DipendenzeGiro> = {}): Promi
     } catch (e2) {
       console.error(`[vulcan] riga d'errore dell'inventario non scritta: ${e2 instanceof Error ? e2.message : "errore"}`);
     }
+    return "errore";
+  }
+}
+
+/**
+ * La fotografia dei rilievi delle Scansioni interne entra in coda dopo l'inventario del giorno
+ * (Riccardo, 11/11/2026: «vale come greenbone o nuclei»). Un guasto qui è una riga `[vulcan]`
+ * nel journal: l'inventario e il resto del giro non ne risentono.
+ */
+export async function accodaRilievi(dip: Partial<DipendenzeGiro> = {}): Promise<"accodato" | "doppione" | "spento" | "errore"> {
+  const d: DipendenzeGiro = { ...dipendenzeReali, ...dip };
+  const config = d.config();
+  if (config.stato !== "pronta") return "spento";
+  const a = apri({ ...d, config: () => config });
+  if ("esito" in a) {
+    registra("rilievi", a.esito);
+    return "errore";
+  }
+  const { cfg, db } = a;
+  try {
+    const c = corpoRilievi(leggiRilieviInterni(db), { codcli: cfg.codcli, nodo: cfg.nodo, versione: d.versione(), adesso: d.ora() });
+    if ("errore" in c) throw new Error(c.errore);
+    const r = accoda(db, { tipo: "rilievi", rif: null, json: c.json, oggetti: c.rilievi });
+    registra("rilievi", { esito: "ok", dettaglio: "fotografia dei rilievi in coda" });
+    return r.nuovo ? "accodato" : "doppione";
+  } catch (e) {
+    registra("rilievi", { esito: "errore", dettaglio: `rilievi non accodati: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}` });
     return "errore";
   }
 }

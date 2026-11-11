@@ -29,7 +29,7 @@ export class ErroreHub extends Error {
   }
 }
 
-export type PercorsoHub = "/api/ipam/ping" | "/api/ipam/heartbeat" | "/api/ipam/ad-health" | "/api/ipam/inventario";
+export type PercorsoHub = "/api/ipam/ping" | "/api/ipam/heartbeat" | "/api/ipam/ad-health" | "/api/ipam/inventario" | "/api/ipam/rilievi";
 
 export interface RichiestaHub {
   /** Origine dell'hub (https), come la rende `leggiConfigVulcan`. */

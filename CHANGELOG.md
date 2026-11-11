@@ -15,6 +15,8 @@ Riccardo (11/11): «aggiungiamo una colonna e togliamo aggiungi a LibreNMS e Waz
 
 ## [Non rilasciato] — 2026-11-11 · Funzioni degli apparati: si mettono e si tolgono a mano
 
+- **I rilievi delle Scansioni interne vanno a DA-Vul-can** (Riccardo, 11/11/2026: «vale come greenbone o nuclei»). Con l'inventario del giorno parte anche la fotografia dei rilievi dei giri (titolo, gravità, prova, rimedio, IP, porta), solo dove l'invio è acceso. La coda accetta il tipo nuovo dopo una migrazione che ne conserva le righe; la pagina «Cosa esce» lo dichiara. Finché l'hub non ha la rotta, l'invio è scartato con il suo motivo.
+
 - **Topologia: pulsante «draw.io»** (Riccardo, 11/11/2026). Scarica la mappa che si guarda come documento draw.io: ogni riquadro è una forma e ogni linea è agganciata ai suoi estremi, con le stesse parole dello schermo, così la mappa si ritocca e si presenta fuori da DA-IPAM.
 
 ### Aggiunto

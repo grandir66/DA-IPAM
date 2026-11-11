@@ -23,7 +23,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { getTenantDb, schemaVulcanPresente } from "@/lib/db-tenant";
 import { rimettiFalliti, ultimoInventarioCreato } from "./coda";
 import { leggiConfigVulcan, tenantPerVulcan, type ConfigVulcan } from "./config";
-import { accodaInventario, battito, giroCoda, type EsitoGiroVulcan } from "./giro";
+import { accodaInventario, accodaRilievi, battito, giroCoda, type EsitoGiroVulcan } from "./giro";
 import { scriviRegistroVulcan, type RigaAuditVulcan } from "./registro";
 
 export const CODA_OGNI_MS = 60_000;
@@ -67,7 +67,11 @@ const dipendenzeReali: DipendenzeJob = {
   config: () => leggiConfigVulcan(),
   giro: () => giroCoda(),
   battito: () => battito(),
-  inventario: () => accodaInventario(),
+  inventario: async () => {
+    const r = await accodaInventario();
+    await accodaRilievi();
+    return r;
+  },
   db: dbReale,
   ora: () => new Date(),
   audit: (r) => scriviRegistroVulcan(r),

@@ -15,7 +15,8 @@ import { assicuraColonnaControlloServizi, assicuraColonnaNtlmServizi } from "@/l
 import { SEVERITY_RANK, type Severity } from "@/lib/severity-style";
 import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
 import type { GravitaRilievo } from "@/lib/trunk/rilievi-tipi";
-import { rilieviDelServizio } from "./del-servizio";
+import type Database from "better-sqlite3";
+import { rilieviDelServizio, type ServizioPerRilievi } from "./del-servizio";
 import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type OspiteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 import { agganciaTriage } from "./triage-aggancio";
 import { barrePerRete, indicatori, raggruppa, type Raggruppamento } from "./gruppi";
@@ -154,13 +155,11 @@ function daTrunk(): { righe: RilievoUnito[]; parziale: boolean } {
   return { righe: risultati, parziale: righe.length < totale };
 }
 
-function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
-  const tenant = getCurrentTenantCode();
-  if (!tenant) return { righe: [], parziale: false };
-  const d = getTenantDb(tenant);
+/** I servizi che possono dare un rilievo, visti da un giro recente: al più 4001 (la 4001ª dice «parziale»). */
+export function serviziPerRilievi(d: Database.Database, hostId?: number): ServizioPerRilievi[] {
   assicuraColonnaNtlmServizi(d);
   assicuraColonnaControlloServizi(d);
-  const righe = d.prepare(
+  return d.prepare(
     `SELECT s.host_id, s.porta, s.protocollo, s.tls_json, s.ntlm_json, s.ssh_json, s.http_json, s.controllo_json,
             h.ip, h.hostname, h.network_id, n.name AS network_name
      FROM servizi_rete s
@@ -176,20 +175,13 @@ function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
        AND (s.ultimo_visto IS NULL OR julianday(s.ultimo_visto) >= julianday('now') - ${RILIEVO_RECENTE_GIORNI})
      ORDER BY s.ultimo_visto DESC, s.host_id, s.porta, s.protocollo
      LIMIT 4001`,
-  ).all(...(hostId ? [hostId] : [])) as Array<{
-    host_id: number;
-    porta: number;
-    protocollo: string;
-    tls_json: string | null;
-    ntlm_json: string | null;
-    ssh_json: string | null;
-    http_json: string | null;
-    controllo_json: string | null;
-    ip: string;
-    hostname: string | null;
-    network_id: number | null;
-    network_name: string | null;
-  }>;
+  ).all(...(hostId ? [hostId] : [])) as ServizioPerRilievi[];
+}
+
+function daGiri(hostId?: number): { righe: RilievoUnito[]; parziale: boolean } {
+  const tenant = getCurrentTenantCode();
+  if (!tenant) return { righe: [], parziale: false };
+  const righe = serviziPerRilievi(getTenantDb(tenant), hostId);
   const out: RilievoUnito[] = [];
   for (const r of righe.slice(0, 4000)) out.push(...rilieviDelServizio(r));
   return { righe: out, parziale: righe.length > 4000 };

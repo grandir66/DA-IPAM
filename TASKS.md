@@ -2498,3 +2498,13 @@ Riccardo: riquadro grigio degli AP troppo grande; «il link principale indicato 
 - [ ] VM sotto l'ESXi: sulla 72729 non c'è nessuna VM letta. La Topologia prende le VM solo da `last_proxmox_scan_result` (scansione Proxmox); il vCenter #43 non ha scansione e non c'è una lettura VMware che la riempia. Serve la lettura delle VM da vCenter/ESXi: lavoro a sé, da decidere con Riccardo.
 - [ ] Access point: in archivio sono 4 (192.168.0.208, .221, .226, .246) ma solo .226 è un apparato censito; gli altri tre sono host classificati `access_point` senza prove di ruolo, quindi non entrano nella mappa come AP. Da «Topologia › Dati» si promuovono ad apparato; con la regola «censito» dell'11/11 entrano se uno switch li vede su una porta.
 - [ ] Esportazione draw.io della mappa: richiesta, non iniziata.
+
+## 2026-11-11 — Cosa arriva a Vulcan, e cosa no (domanda di Riccardo)
+
+Riccardo: «vorrei sapere se inventario, AD, AD health, scansioni Greenbone, nuclei, motori nuovi di Nety e i dati passivi vanno a da-vulcan, perché è un bel report su cosa succede nella rete; e la mappa di draw.io sarebbe bella da presentare».
+
+Letto l'11/11 in `src/lib/vulcan/` e sulla 72729 (sola lettura): l'invio lì è acceso (gettone presente, battito ok alle 14:47 UTC, 9 inventari e 2 AD Health inviati).
+
+- [x] Partono già: inventario giornaliero (20 campi a lista bianca, `CAMPI_OGGETTO`), export AD Health a fine run, battito. Greenbone e nuclei arrivano a Vulcan dallo Scanner-Edge, non da IPAM.
+- [ ] Non partono (in Vulcan esistono solo `/api/ipam/{ping,heartbeat,ad-health,inventario}`): Scansioni interne/controlli ripresi da Nety (`servizi_rete`, rilievi), dati passivi del trunk (`rete_rilievi`, `trunk_vicini`), matrice di segmentazione, Topologia e Mappa porte, modifiche AD nel tempo (parte solo la fotografia Health). Serve un tipo d'invio nuovo per ciascuno e la rotta che lo riceve in DA-Vul-can: lavoro su due repo, da pianificare con Riccardo (lista bianca dei campi: niente credenziali né PII).
+- [ ] Esportazione draw.io della Topologia: richiesta due volte l'11/11, non iniziata. Utile anche come allegato del documento di Vulcan.

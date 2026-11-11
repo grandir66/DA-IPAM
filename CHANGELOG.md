@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Filtro «Sistema» in subnet e Discovery
+
+Riccardo (11/11): «distinguere tra PC Windows, Linux e OSX… come per i server… VM server Windows, VM server Linux». Non sono classi nuove (il 21/10 «Server Windows» e «Server Linux» erano diventati «Server» più il sistema a parte): il sistema è un attributo a sé, e ora è anche un filtro.
+
+### Aggiunto
+- **Filtro «Sistema»** (Windows, Linux, macOS, Sistema di rete, Non si sa) nella lista della subnet e in Discovery. Si combina con la categoria: «Server» più «Windows», «PC» più «macOS». Regola in `src/lib/classification/sistema.ts`: vale il motore, poi la famiglia ricavata dal testo, poi il testo grezzo.
+
 ## [Non rilasciato] — 2026-11-11 · Categorie: Videosorveglianza e Multimedia
 
 ### Cambiato

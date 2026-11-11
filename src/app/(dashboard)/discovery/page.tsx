@@ -55,6 +55,7 @@ import {
   DEVICE_CATEGORY_GROUP_LABELS, DEVICE_CATEGORY_GROUP_ORDER, getDeviceCategoryGroup,
 } from "@/lib/device-classifications";
 import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
+import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
   Search, RefreshCw, Columns3, Download, ExternalLink,
@@ -558,6 +559,7 @@ export default function DiscoveryPage() {
   const [classFilter, setClassFilter] = useState("");
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
+  const [sistemaFilter, setSistemaFilter] = useState("");
   // Riccardo, 29/10: «solo quelli in cui l'acquisizione dei dati è stata fatta», e i filtri sul
   // valore di una cella dal menu del tasto destro.
   const [acqFilter, setAcqFilter] = useState<FiltroAcquisizione>("");
@@ -1058,6 +1060,7 @@ export default function DiscoveryPage() {
       const preset = presets.find((p) => p.filter === classFilter);
       criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
     }
+    if (sistemaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroSistema(sistemaFilter, h)));
     if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
     if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
     if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
@@ -2349,6 +2352,18 @@ export default function DiscoveryPage() {
                   {networks.map(([id, n]) => (
                     <SelectItem key={id} value={id}>{n.name} ({n.cidr})</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+
+              {/* Sistema (11/11/2026): vale per ogni categoria, server e macchine virtuali comprese. */}
+              <Select value={sistemaFilter} onValueChange={(v) => setSistemaFilter(v ?? "")}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Sistema" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tutti i sistemi</SelectItem>
+                  {SISTEMI.map((x) => <SelectItem key={x.valore} value={x.valore}>{x.etichetta}</SelectItem>)}
+                  <SelectItem value={SISTEMA_IGNOTO}>Non si sa</SelectItem>
                 </SelectContent>
               </Select>
 

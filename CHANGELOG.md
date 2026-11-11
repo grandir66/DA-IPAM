@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Filtro «Fisico o virtuale»
+
+Riccardo (11/11): «VM server Windows, VM server Linux… potrebbero essere VM client o VDI». Una macchina virtuale può essere un server o una postazione: «virtuale» è un attributo a sé e non decide la categoria. Sul cliente 70791, 26 server su 28 sono virtuali e non si vedeva.
+
+### Aggiunto
+- **Filtro «Fisico o virtuale»** nella lista della subnet e in Discovery (`src/lib/classification/forma.ts`). Virtuale: scheda con un prefisso da hypervisor (VMware, QEMU, Proxmox, Hyper-V, Xen, VirtualBox, Parallels) o classe «VM». Fisico: solo con una scheda di un produttore vero. Con un MAC casuale non si sa.
+
+### Corretto
+- **Il filtro «Sistema» in Discovery non si applicava** al cambio di valore (rilasciato un'ora prima, non provato a schermo): mancava fra le dipendenze del calcolo dell'elenco.
+
 ## [Non rilasciato] — 2026-11-11 · Filtro «Sistema» in subnet e Discovery
 
 Riccardo (11/11): «distinguere tra PC Windows, Linux e OSX… come per i server… VM server Windows, VM server Linux». Non sono classi nuove (il 21/10 «Server Windows» e «Server Linux» erano diventati «Server» più il sistema a parte): il sistema è un attributo a sé, e ora è anche un filtro.

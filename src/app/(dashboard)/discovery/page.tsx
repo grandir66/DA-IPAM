@@ -56,6 +56,7 @@ import {
 } from "@/lib/device-classifications";
 import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
+import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
   Search, RefreshCw, Columns3, Download, ExternalLink,
@@ -560,6 +561,7 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [sistemaFilter, setSistemaFilter] = useState("");
+  const [formaFilter, setFormaFilter] = useState("");
   // Riccardo, 29/10: «solo quelli in cui l'acquisizione dei dati è stata fatta», e i filtri sul
   // valore di una cella dal menu del tasto destro.
   const [acqFilter, setAcqFilter] = useState<FiltroAcquisizione>("");
@@ -1061,6 +1063,7 @@ export default function DiscoveryPage() {
       criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
     }
     if (sistemaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroSistema(sistemaFilter, h)));
+    if (formaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroForma(formaFilter, h)));
     if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
     if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
     if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
@@ -1080,7 +1083,7 @@ export default function DiscoveryPage() {
       return true;
     });
     return { filtered: righe, comeSecondario: trovati };
-  }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore, presets, soloDaRivedere]);
+  }, [hosts, qDebounced, statusFilter, classFilter, sistemaFilter, formaFilter, networkFilter, vulnFilter, acqFilter, filtriValore, presets, soloDaRivedere]);
 
   // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
   const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
@@ -1144,7 +1147,7 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
+  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, sistemaFilter, formaFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
   const handlePageSizeChange = useCallback((size: number) => {
@@ -2364,6 +2367,18 @@ export default function DiscoveryPage() {
                   <SelectItem value="">Tutti i sistemi</SelectItem>
                   {SISTEMI.map((x) => <SelectItem key={x.valore} value={x.valore}>{x.etichetta}</SelectItem>)}
                   <SelectItem value={SISTEMA_IGNOTO}>Non si sa</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Fisico o virtuale (11/11/2026): attributo a sé, non decide la categoria. */}
+              <Select value={formaFilter} onValueChange={(v) => setFormaFilter(v ?? "")}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Fisico o virtuale" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Fisici e virtuali</SelectItem>
+                  {FORME.map((x) => <SelectItem key={x.valore} value={x.valore}>{x.etichetta}</SelectItem>)}
+                  <SelectItem value={FORMA_IGNOTA}>Non si sa</SelectItem>
                 </SelectContent>
               </Select>
 

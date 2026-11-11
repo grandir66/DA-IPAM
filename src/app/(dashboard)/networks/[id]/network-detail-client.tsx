@@ -40,6 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { origineCategoria, passaFiltroCategoria } from "@/lib/classification/scelta-categoria";
 import { OpzioniCategorie } from "@/components/networks/opzioni-categorie";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
+import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -212,6 +213,7 @@ export function NetworkDetailClient({
   const [filterClassification, setFilterClassification] = useState<string>("");
   const [filterKnownOnly, setFilterKnownOnly] = useState(false);
   const [filterSistema, setFilterSistema] = useState<string>("");
+  const [filterForma, setFilterForma] = useState<string>("");
   const [listSortColumn, setListSortColumn] = useState<string | null>("ip");
   const [listSortDir, setListSortDir] = useState<SortDirection>("asc");
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
@@ -505,6 +507,7 @@ export function NetworkDetailClient({
     }
     if (filterKnownOnly && !h.known_host) return false;
     if (!passaFiltroSistema(filterSistema, h)) return false;
+    if (!passaFiltroForma(filterForma, h)) return false;
     if (filtriValore.length > 0 && !passaFiltriValore(filtriValore, (c) => testoCellaSubnet(h, c))) return false;
     return true;
   });
@@ -1510,6 +1513,19 @@ export function NetworkDetailClient({
                 </select>
               </div>
               <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Fisico o virtuale</Label>
+                <select
+                  aria-label="Fisico o virtuale"
+                  value={filterForma}
+                  onChange={(e) => setFilterForma(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Tutti</option>
+                  {FORME.map((x) => <option key={x.valore} value={x.valore}>{x.etichetta}</option>)}
+                  <option value={FORMA_IGNOTA}>— Non si sa</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
                 <Switch
                   id="filter-known"
                   checked={filterKnownOnly}
@@ -1517,7 +1533,7 @@ export function NetworkDetailClient({
                 />
                 <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
               </div>
-              {(filterStatus || filterClassification || filterKnownOnly || filterSistema) && (
+              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterForma) && (
                 <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
                   Cancella filtri
                 </Button>

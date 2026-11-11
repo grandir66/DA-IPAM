@@ -32,6 +32,8 @@ beforeEach(() => {
   db.exec(TENANT_INDEXES_SQL);
   applyPatchModuleMigrations(db);
   db.prepare("INSERT INTO networks (id, cidr, name) VALUES (1, '10.7.0.0/24', 'Rete')").run();
+  // Dall'11/11/2026 l'automatismo nasce spento: qui si prova il cliente che l'ha acceso.
+  choco.impostaChocoAutomaticoDb(db, true);
   voceWinrm = Number(
     db
       .prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('win', 'windows', ?, ?)")
@@ -113,8 +115,11 @@ describe("Chocolatey automatico", () => {
     assert.equal(h > 0, true);
   });
 
-  it("interruttore spento → niente, né al salvataggio né di notte; acceso di default", async () => {
+  it("interruttore spento → niente, né al salvataggio né di notte; spento di serie (11/11/2026, allarme MDR sulla 70151)", async () => {
     const h = host("10.7.0.13", "Microsoft Windows Server 2022");
+    db.prepare("DELETE FROM tenant_settings WHERE key = ?").run(choco.CHIAVE_CHOCO_AUTOMATICO);
+    assert.equal(choco.chocoAutomaticoAccesoDb(db), false, "senza impostazione è spento");
+    choco.impostaChocoAutomaticoDb(db, true);
     assert.equal(choco.chocoAutomaticoAccesoDb(db), true);
     choco.impostaChocoAutomaticoDb(db, false);
     assert.equal(choco.chocoAutomaticoAccesoDb(db), false);

@@ -708,7 +708,7 @@ function opzioniAutomatismi(): Opzione[] {
       cosa: "installa Chocolatey sugli host Windows, ogni notte alle 02:00",
       valePer: "cliente",
       forma: "levetta",
-      diSerie: "acceso",
+      diSerie: "spento",
       spegnendo: { siFerma: "l'installazione automatica di Chocolatey, di notte e al salvataggio delle credenziali WinRM.", resta: "Chocolatey dove è già installato." },
       async leggi() {
         const acceso = chocoAutomaticoAccesoDb(getTenantDb(tenant()));

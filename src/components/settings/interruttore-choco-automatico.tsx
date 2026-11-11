@@ -16,7 +16,7 @@ interface StatoChoco {
 const URL_STATO = "/api/patch/choco-automatico";
 
 /**
- * «Installa Chocolatey automaticamente» (21/10/2026): acceso di default. Con
+ * «Installa Chocolatey automaticamente» (21/10/2026): spento di serie dall'11/11/2026. Con
  * l'interruttore acceso Chocolatey parte da solo sugli host Windows con
  * credenziale WinRM, al salvataggio o alla verifica della credenziale e ogni
  * notte; l'esito di ogni tentativo sta nello storico delle patch.

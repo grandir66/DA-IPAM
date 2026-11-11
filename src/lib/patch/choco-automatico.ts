@@ -4,7 +4,7 @@
  * Prima Chocolatey si installava solo a mano, un host alla volta
  * (`POST /api/patch/bootstrap`): senza quel clic l'host non riceveva patch, e
  * nessuno lo ricordava. Ora, con il modulo Patch Management attivo e
- * l'interruttore della pagina del modulo acceso (lo è di default):
+ * l'interruttore della pagina del modulo acceso (spento di serie dall'11/11/2026):
  *
  * 1. appena le credenziali WinRM di un host vengono salvate o verificate con
  *    successo (rotte delle credenziali → `avviaChocoDopoCredenziali`);
@@ -37,7 +37,14 @@ import { isPatchEnabled } from "./feature";
 import { patchModuleTablesExist } from "./schema";
 import { executeBootstrap } from "./executor";
 
-/** Impostazione del tenant: «0» = spento; assente o altro = acceso (default). */
+/**
+ * Impostazione del tenant: «1» = acceso; assente o altro = spento.
+ *
+ * Spento di serie dall'11/11/2026 (Riccardo: «Sì, spento di serie»). Fino ad allora era acceso dove nessuno
+ * l'aveva scelto: sull'appliance 70151 ogni notte provava a installare Chocolatey via WinRM su 31 macchine del
+ * cliente, e l'MDR del cliente ha aperto un allarme (ticket 1934292). Un automatismo che installa software
+ * nasce spento: lo accende chi lo vuole, cliente per cliente.
+ */
 export const CHIAVE_CHOCO_AUTOMATICO = "patch.choco_automatico";
 /** Tentativi automatici falliti dopo i quali il giro notturno lascia stare l'host. */
 export const TENTATIVI_NOTTURNI_MAX = 3;
@@ -50,7 +57,7 @@ export function chocoAutomaticoAccesoDb(db: Database): boolean {
   const r = db.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_CHOCO_AUTOMATICO) as
     | { value: string }
     | undefined;
-  return r?.value !== "0";
+  return r?.value === "1";
 }
 
 export function impostaChocoAutomaticoDb(db: Database, acceso: boolean): void {

@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-11 — I job in un posto solo: Schedulazioni (Riccardo, base)
+
+Riccardo (11/11): «i job schedulati a questo punto sono sia nel menù schedulazioni che in setting/schedulazioni» → «opzione 2» (tutta la gestione in Schedulazioni) → tavola a sette oggetti, «Sì, scrivila». Su `dev` 0.9.1182 (`c748a65a`), sull'hub 533.
+
+- [x] Schedulazioni: «Nuovo job» (`components/schedulazioni/nuovo-job.tsx`, la finestra che stava in Impostazioni), «Esegui ora», «Modifica» per i job «Lettura apparati» (`FinestraScansioneAutomatica`), «Elimina» con conferma, esito per apparato dall'esito della riga (`EsitiApparatiScelti`). Colonna «Dove» → «Azioni».
+- [x] Impostazioni: tolta la scheda «Job pianificati» (stato, funzioni, costanti e import); `/settings?tab=jobs#job-<id>` porta a `/settings/schedulazioni#job.<id>`. Rimandi aggiornati: scheda dell'apparato, finestra di Discovery, notifica dello scheduler (la prova `rimandi-impostazioni` l'ha trovata).
+- [x] Visto a schermo a 1920 sull'hub con `prova-claude-admin`: intestazioni, 27 «Esegui ora», 2 «Modifica», 27 «Elimina», esiti aperti del job #29, finestra «Nuovo job», rimando dal vecchio indirizzo, nessuna scheda job in Impostazioni. Prove 44/44, `tsc` 0, lint pulito.
+- [ ] **Non provati dal vivo**: creare, modificare ed eliminare un job (clic che scrivono). «Modifica» c'è solo per «Lettura apparati», come prima: l'intervallo degli altri job si cambia ancora da Opzioni. Tema chiaro/scuro e larghezze diverse da 1920 non guardati.
+
 ## 2026-11-11 — Categorie e sottocategorie (Riccardo)
 
 Riccardo, 11/11: «le categorie dovrebbero essere raggruppate tipo OT → IoT, PLC, HMI… POSTAZIONI → PC, Notebook, Workstation… prova a ricostruire le categorie con categorie e sottocategorie per avere filtri anche più efficaci; manca anche il gruppo Telefonia, con Telefoni, Smartphone, Centralino, Convertitori VoIP»; poi «ok teniamo separato IoT da OT, anche se fatico io a distinguerle».

@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
 
+### Aggiunto
+- **Topologia: le VM riconosciute dal MAC stanno dentro l'hypervisor.** Dove non leggiamo l'hypervisor (alla 72729 non ci sono credenziali VMware) le VM comparivano sotto lo switch che ne vede il MAC. Se in archivio c'è un solo hypervisor fisico, ogni oggetto con un MAC da macchina virtuale (VMware, Hyper-V, KVM/Proxmox, Xen, VirtualBox) ora sta dentro di lui, senza collegamento verso lo switch. Con due o più hypervisor non si deduce nulla: lo dice solo la lettura dell'hypervisor. Un «hypervisor» che ha lui stesso un MAC da VM (un vCenter) non conta come fisico ed è trattato da VM.
+
 Riccardo (11/11): «aggiungiamo una colonna e togliamo aggiungi a LibreNMS e Wazuh, che saranno solo in Discovery; la colonna dispositivo non serve che abbia il nome, basta un badge come per DHCP o AD che indichi che è un dispositivo, con il link».
 
 ### Cambiato

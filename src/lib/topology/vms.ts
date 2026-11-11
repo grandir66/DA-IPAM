@@ -245,5 +245,61 @@ export function placeVms(input: Pick<TopologyModelInput, "vms" | "scanHosts">, i
     const hyps = new Set(run.map((r) => r.hypervisor));
     runningVmMacs.set(m, { vm: run[0].vm, hypervisor: hyps.size === 1 ? run[0].hypervisor : null });
   }
+  vmDalMac(idx, { vms, vmNodeIds, vmMacs, runningVmMacs });
   return { vms, vmNodeIds, vmMacs, runningVmMacs };
+}
+
+/**
+ * I prefissi MAC che i prodotti di virtualizzazione danno alle schede delle VM (VMware, Hyper-V, KVM/Proxmox, Xen,
+ * VirtualBox). Un oggetto con uno di questi MAC è una macchina virtuale, anche se nessuno ha letto l'hypervisor.
+ */
+const PREFISSI_VM: ReadonlySet<string> = new Set([
+  "00:50:56", "00:0C:29", "00:05:69", "00:1C:14", "00:15:5D", "52:54:00", "BC:24:11", "00:16:3E", "08:00:27",
+]);
+export const macDiVm = (mac: string): boolean => PREFISSI_VM.has(mac.trim().toUpperCase().slice(0, 8));
+
+/**
+ * Le VM riconosciute dal MAC (Riccardo, 11/11/2026: «le vm dovrebbero essere legate all'hypervisor e non allo switch in
+ * cui sono viste; si può usare il macaddress… se ci sono più host l'unico modo è la config letta dentro l'hypervisor»).
+ * Vale solo se in archivio c'è UN solo hypervisor fisico (classe «hyper», senza un MAC da VM): allora ogni oggetto con un
+ * MAC da VM che nessuna lettura ha già posato sta dentro di lui. Con due o più hypervisor non si deduce nulla: lo dice solo
+ * la lettura dell'hypervisor. Caso che l'ha chiesto: la 72729, nove VM VMware viste tutte su una porta dello switch.
+ */
+function vmDalMac(idx: NodeIndex, p: PlacedVms): void {
+  // Senza far nascere nodi: `nodeAt` crea un host semplice per ogni MAC che gli si chiede, e qui si guardano tutti.
+  const esistente = (id: string): MapNode | undefined => idx.nodes.get(idx.alias.get(id) ?? id);
+  const macVmDi = new Set<string>();
+  for (const [mac, id] of idx.byMac) {
+    const n = typeof id === "string" && macDiVm(mac) ? esistente(id) : undefined;
+    if (n) macVmDi.add(n.id);
+  }
+  const fisici = [...idx.nodes.values()].filter((n) => !n.hidden && nodeClass(n) === "hyper" && !macVmDi.has(n.id)).map((n) => n.id);
+  // Un host non è ancora un nodo finché non serve: gli hypervisor fra gli host si contano dalla loro riga.
+  for (const r of idx.hostById.values()) {
+    const id = `host:${r.id}`;
+    if (idx.nodes.has(idx.alias.get(id) ?? id)) continue; // già contato fra i nodi (suo, o dell'apparato in cui è fuso)
+    if (nodeClass({ type: r.classification ?? "" }) === "hyper" && !macDiVm(r.mac ?? "")) fisici.push(id);
+  }
+  if (fisici.length !== 1) return;
+  const h = nodeAt(idx, fisici[0])?.id;
+  if (!h) return;
+  // Da qui la regola vale: gli oggetti con un MAC da VM diventano nodi (un PC che non lo era nasce adesso).
+  const macDi = new Map<string, string[]>();
+  for (const [mac, id] of idx.byMac) {
+    const n = typeof id === "string" && macDiVm(mac) ? nodeAt(idx, id) : undefined;
+    if (n) macDi.set(n.id, [...(macDi.get(n.id) ?? []), mac]);
+  }
+  const gia = new Set(p.vms.map((v) => v.nodeId).filter((x): x is string => x !== null));
+  for (const [id, macs] of [...macDi].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (id === h || gia.has(id) || !macs.some(macDiVm)) continue;
+    const n = idx.nodes.get(id);
+    if (!n || n.hidden) continue;
+    const vm = `vm:0:${id}`;
+    p.vms.push({ id: vm, name: n.name, status: "running", ips: n.mgmtIp ? [n.mgmtIp] : [], hypervisorNodeId: h, nodeId: id, scannedAt: null });
+    p.vmNodeIds.add(id);
+    for (const m of macs.filter(macDiVm)) {
+      p.vmMacs.add(m);
+      if (!p.runningVmMacs.has(m)) p.runningVmMacs.set(m, { vm, hypervisor: h });
+    }
+  }
 }

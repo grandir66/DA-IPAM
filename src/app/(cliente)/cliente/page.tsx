@@ -59,7 +59,7 @@ export default async function CasaCliente() {
           ))}
         </div>
         {g.accesi && (
-          <Pannello titolo={`Apparati accesi nelle ultime ${ORE_GRAFICO_ACCESI} ore`} azioni={<Apri href="/cliente/apparati" testo="Apparati" />}>
+          <Pannello titolo={`Indirizzi in uso nelle ultime ${ORE_GRAFICO_ACCESI} ore`} azioni={<Apri href="/cliente/reti" testo="Reti" />}>
             <GraficoAccesi dati={g.accesi} />
           </Pannello>
         )}

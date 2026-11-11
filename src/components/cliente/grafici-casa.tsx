@@ -33,7 +33,7 @@ export function GraficoAccesi({ dati }: { dati: NonNullable<GraficiCasa["accesi"
   const ultimoY = y(adesso);
   const meta = Math.floor((punti.length - 1) / 2);
   return (
-    <svg viewBox={`0 0 ${L} ${A}`} className="block h-auto w-full" role="img" aria-label={`Apparati accesi: ${adesso} adesso, da ${minimo} a ${massimo} nel periodo`}>
+    <svg viewBox={`0 0 ${L} ${A}`} className="block h-auto w-full" role="img" aria-label={`Indirizzi in uso: ${adesso} adesso, da ${minimo} a ${massimo} nel periodo`}>
       <line x1={MARGINE.sx} x2={L - MARGINE.dx} y1={fondo} y2={fondo} stroke="var(--border)" />
       <line x1={MARGINE.sx} x2={L - MARGINE.dx} y1={y(massimo)} y2={y(massimo)} stroke="var(--border)" strokeDasharray="4 4" />
       <path d={area} fill="var(--vc-barra-fondo)" />

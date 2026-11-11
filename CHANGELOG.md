@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-11 · Riconoscimento: l'indirizzo passato a un altro apparato
+
+Riccardo (11/11): «il mio Samsung S25 viene rilevato come stampante… un cambio di IP, che dovrebbe essere automaticamente corretto». In `hosts` la riga è l'indirizzo: quando lo prende un altro apparato, la riga cambiava MAC e nome ma teneva dati SNMP, sistema, produttore e porte di quello di prima, e il ricalcolo li riconfermava a ogni giro.
+
+### Aggiunto
+- **Cambio di inquilino** (`src/lib/hosts/cambio-inquilino.ts`): quando su una riga arriva il MAC di un altro apparato, i dati d'identità di quello di prima si svuotano e le sue evidenze non manuali si ritirano. Non è un cambio se il nome DHCP è lo stesso (telefono che cambia MAC casuale), se il MAC è di un'altra riga dello stesso apparato, se è un MAC condiviso (VRRP, HSRP) o se sta su più di 4 righe (router che risponde per altri). Restano classe scelta a mano, nome dato a mano, note e codice d'inventario.
+- Opzione per cliente «Indirizzo passato a un altro apparato», **spenta di serie**.
+- `scripts/cambio-inquilino-cli.ts <cliente> [--applica]`: elenca le righe già sporche (MAC casuale con un produttore o dati SNMP) e, con `--applica`, le svuota. Senza `--applica` non scrive.
+
 ## [Non rilasciato] — 2026-11-11 · Vista cliente: rilievi del dominio in parole semplici, attenzione a destra
 
 In casa uscivano i titoli delle regole del controllo del dominio, in inglese («Shadow credentials (KeyCredentialLink) present»), e una riga che non è un difetto («0 · Domain score»). «Cosa richiede attenzione», in testa a tutta larghezza, era la parte più grossa dello schermo (Riccardo, 11/11).

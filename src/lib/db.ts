@@ -17,6 +17,7 @@
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
 import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
+import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
@@ -2979,6 +2980,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   ).get(input.network_id, input.ip) as { id: number } | undefined;
 
   if (existing) {
+    // Cambio di inquilino (hosts/cambio-inquilino.ts): se il MAC che arriva è di un altro apparato, i dati di
+    // quello di prima si svuotano PRIMA di leggere la riga, così qui sotto non si fondono col nuovo. Spento di serie.
+    if (input.mac !== undefined) {
+      cambioInquilinoSeServe(getDb(), existing.id, input.mac, input.hostname_source === "dhcp" ? input.hostname : undefined);
+    }
     const existingRow = getDb().prepare(
       // Fase 4: snmp_data/detection_json/vendor/hostname aggiunti al SELECT per
       // poter gate-are recomputeAttributionSafe con shouldRecomputeClassification

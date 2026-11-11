@@ -10,6 +10,7 @@
  */
 
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -4065,6 +4066,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
   ).get(input.network_id, input.ip) as { id: number } | undefined;
 
   if (existing) {
+    // Cambio di inquilino (hosts/cambio-inquilino.ts): se il MAC che arriva è di un altro apparato, i dati di
+    // quello di prima si svuotano PRIMA di leggere la riga, così qui sotto non si fondono col nuovo. Spento di serie.
+    if (input.mac !== undefined) {
+      cambioInquilinoSeServe(db(), existing.id, input.mac, input.hostname_source === "dhcp" ? input.hostname : undefined);
+    }
     // v0.2.637 audit B3: aggiunti snmp_data/detection_json/vendor/hostname al
     // SELECT per poter confrontare i SIGNAL del classifier e gate-are la
     // chiamata a applyAutoClassification — vedi `shouldRecomputeClassification`.

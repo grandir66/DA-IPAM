@@ -36,6 +36,7 @@ import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { chocoAutomaticoAccesoDb, impostaChocoAutomaticoDb } from "@/lib/patch/choco-automatico";
 import { apparatiAutomaticiAccesi, impostaApparatiAutomatici } from "@/lib/devices/apparato-automatico";
+import { cambioInquilinoAcceso, impostaCambioInquilino } from "@/lib/hosts/cambio-inquilino";
 import { CHIAVE_FEED_EXPLOIT, feedExploitAcceso } from "@/lib/vuln/exploit-feed/job";
 import { archivioExploit, statoFeed } from "@/lib/vuln/exploit-feed/archivio";
 import { CHIAVE_CVE_LOCALI, cveLocaliAccese } from "@/lib/vuln/cve-locali/job";
@@ -718,6 +719,23 @@ function opzioniAutomatismi(): Opzione[] {
       },
       cambia(r) {
         impostaChocoAutomaticoDb(getTenantDb(tenant()), soloAcceso(r));
+      },
+    },
+    {
+      id: "automatismo.cambio_inquilino",
+      gruppo: "automatismi",
+      nome: "Indirizzo passato a un altro apparato",
+      cosa: "quando su un indirizzo arriva il MAC di un altro apparato, svuota i dati di quello di prima (sistema, produttore, porte, dati SNMP) invece di attribuirli al nuovo",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: { siFerma: "lo svuotamento dei dati al cambio di apparato su un indirizzo.", resta: "le righe già ripulite; le scelte a mano non vengono mai toccate." },
+      async leggi() {
+        const acceso = cambioInquilinoAcceso(getTenantDb(tenant()));
+        return diSerieStato(acceso, esito(acceso ? "ok" : "neutro", acceso ? "attivo" : "spento"));
+      },
+      cambia(r) {
+        impostaCambioInquilino(getTenantDb(tenant()), soloAcceso(r));
       },
     },
     {

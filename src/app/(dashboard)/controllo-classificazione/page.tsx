@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Controllo classificazione (Riccardo, 12/11/2026): la classe scritta contro la migliore possibile. L'elenco dei
+ * Attribuzione (Riccardo, 12/11/2026): il modo unico per controllare e correggere la classificazione; la classe
+ * scritta contro la migliore possibile, più le righe con fonti in disaccordo (finestra `IpContesiDialog`). L'elenco dei
  * rilievi è il centro della pagina; si spuntano le proposte e si applicano. Le regole stanno in
  * src/lib/classification/controllo.ts.
  */
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IntestazionePagina, Pannello, Vuoto } from "@/components/shared/console";
+import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import { ETICHETTA_FAMIGLIA, type Famiglia, type Rilievo, type Sicurezza } from "@/lib/classification/controllo";
 
@@ -38,6 +40,7 @@ export default function ControlloClassificazionePage() {
   const [soloProposte, setSoloProposte] = useState(true);
   const [spuntate, setSpuntate] = useState<Set<string>>(new Set());
   const [occupato, setOccupato] = useState(false);
+  const [contesiAperti, setContesiAperti] = useState(false);
   /** Rete scelta da chi arriva dalla pagina di una subnet (`?rete=<id>`); letta dopo il montaggio. */
   const [rete, setRete] = useState<number | null>(null);
   useEffect(() => {
@@ -125,10 +128,15 @@ export default function ControlloClassificazionePage() {
   return (
     <div className="space-y-4">
       <IntestazionePagina
-        titolo="Controllo classificazione"
+        titolo="Attribuzione"
         sottotitolo={voci ? `${righe} righe in archivio, ${new Set(voci.map((v) => v.host_id)).size} con qualcosa da guardare. Le proposte applicate valgono come scelta a mano.` : "Lettura in corso…"}
         azioni={
           <>
+            {rete !== null && (
+              <Button variant="outline" size="sm" onClick={() => setContesiAperti(true)} title="Le righe di questa rete dove le fonti danno categoria, sistema o produttore diversi: si confrontano e si sceglie">
+                Fonti in disaccordo
+              </Button>
+            )}
             <Button variant="outline" size="sm" disabled={occupato} onClick={() => void ricalcola()} title="Rilancia il riconoscimento di oggi su tutte le righe. Le scelte a mano non cambiano.">
               Ricalcola col motore di oggi
             </Button>
@@ -214,6 +222,10 @@ export default function ControlloClassificazionePage() {
           </div>
         )}
       </Pannello>
+
+      {rete !== null && (
+        <IpContesiDialog open={contesiAperti} onOpenChange={setContesiAperti} networkId={rete} onApplied={() => void carica()} />
+      )}
     </div>
   );
 }

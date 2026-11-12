@@ -2519,7 +2519,7 @@ export default function DiscoveryPage() {
               className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted"
               title="Confronta la categoria scritta con quella migliore possibile e applica le proposte"
             >
-              Controllo classi
+              Attribuzione
             </Link>
             {(() => {
               /* Il conteggio esce dai dati già caricati: se nessuno aspetta una revisione

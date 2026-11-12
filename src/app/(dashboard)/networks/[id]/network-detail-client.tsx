@@ -33,7 +33,6 @@ import { IpGrid } from "@/components/shared/ip-grid";
 import { useGiri } from "@/components/shared/giri-context";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
-import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
 import { CategoriaBloccoDialog } from "@/components/networks/categoria-blocco-dialog";
 import { ScegliCategoria } from "@/components/networks/scegli-categoria";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -62,7 +61,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag, ListChecks } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -256,7 +255,6 @@ export function NetworkDetailClient({
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [enriching, setEnriching] = useState(false);
-  const [attributionPreviewOpen, setAttributionPreviewOpen] = useState(false);
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string; port?: number | null }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -1404,15 +1402,15 @@ export function NetworkDetailClient({
               {hostScope ? `Accedi a ${selectedHostIds.size} host` : "Accesso agli host"}
             </Button>
 
-            <Button
-              size="default"
-              variant="outline"
-              className={cn(ACTION_BTN, "bg-background/90")}
-              onClick={() => setAttributionPreviewOpen(true)}
+            {/* Un modo solo per la classificazione (Riccardo, 12/11/2026): il pulsante apre la pagina «Attribuzione»
+                ristretta a questa rete; le righe con fonti in disaccordo si aprono da lì. */}
+            <Link
+              href={`/controllo-classificazione?rete=${network.id}`}
+              className={cn(buttonVariants({ variant: "outline", size: "default" }), ACTION_BTN, "bg-background/90")}
               title={
                 scanPhases
-                  ? `IP con dati di classificazione diversi: si confrontano e si sceglie. Oggi: ${scanPhases.attribution.level2} host a livello 2, ${scanPhases.attribution.level1} a livello 1, ${scanPhases.attribution.none} senza su ${scanPhases.attribution.total}.${scanPhases.attribution.suggestion ? ` ${scanPhases.attribution.suggestion}` : ""}`
-                  : "IP con dati di classificazione diversi: si confrontano e si sceglie"
+                  ? `Controlla e correggi la classificazione di questa rete. Oggi: ${scanPhases.attribution.level2} host con categoria precisa, ${scanPhases.attribution.level1} con la sola famiglia, ${scanPhases.attribution.none} senza, su ${scanPhases.attribution.total}`
+                  : "Controlla e correggi la classificazione di questa rete"
               }
             >
               <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
@@ -1422,7 +1420,7 @@ export function NetworkDetailClient({
                   {scanPhases.attribution.level2}/{scanPhases.attribution.total}
                 </span>
               )}
-            </Button>
+            </Link>
 
             <SubnetScheduleCard networkId={network.id} />
 
@@ -1546,14 +1544,6 @@ export function NetworkDetailClient({
                   Cancella filtri
                 </Button>
               )}
-              {/* Il controllo della classificazione di questa rete (12/11/2026: Riccardo lo cercava qui). */}
-              <Link
-                href={`/controllo-classificazione?rete=${network.id}`}
-                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-muted"
-                title="Confronta la categoria scritta con quella migliore possibile e applica le proposte"
-              >
-                <ListChecks className="h-4 w-4" /> Controllo classi
-              </Link>
             </div>
               )}
               {view === "list" ? (
@@ -2111,16 +2101,6 @@ export function NetworkDetailClient({
         />
       )}
 
-      <IpContesiDialog
-        open={attributionPreviewOpen}
-        onOpenChange={setAttributionPreviewOpen}
-        networkId={network.id}
-        onApplied={() => {
-          void refreshHosts();
-          router.refresh();
-          setScanPhasesRefreshKey((k) => k + 1);
-        }}
-      />
 
       <CassettoHost hostId={cassettoId} onClose={() => setCassettoId(null)} />
     </div>

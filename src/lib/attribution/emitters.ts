@@ -157,6 +157,24 @@ const OUI_SOLO_OT: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bmeross\b/i, "iot"],
 ];
 
+/**
+ * Produttori che fanno quasi solo una famiglia di apparati (DTS, 12/11/2026: 258 righe senza categoria, 179 col
+ * produttore noto; il motore lo usava su 74). Meno sicuri di `OUI_SOLO_OT`: qui il produttore dice la famiglia, non
+ * sempre il tipo esatto (un MikroTik può essere uno switch), quindi la confidenza è bassa e ogni altra fonte la batte.
+ * Fuori apposta: Intel, Dell, HP, Samsung, Ubiquiti, Cisco (fanno di tutto) e «GE Security» (ipotesi non verificata).
+ */
+// 0.65 x il peso dell'OUI (0.9) = 0.585: appena sopra MIN_CLAIM_SCORE (0.56), quindi da sola classifica, ma una firma
+// di nome o di porte (0.595) e ogni fonte forte la battono.
+const CONFIDENZA_FAMIGLIA_PRODUTTORE = 0.65;
+const OUI_FAMIGLIA: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(siemens|keyence|hms industrial|asem|estic|beckhoff|omron|rockwell|allen-bradley|phoenix contact|wago|pilz|tosibox|ewon|weidm[uü]ller|b&r industrial|mitsubishi electric|schneider electric)\b/i, "rete_ot"],
+  [/\b(espressif|tuya|shelly|sonoff|itead)\b/i, "iot"],
+  [/\b(snom|grandstream|gigaset|polycom|poly\b)/i, "voip"],
+  [/\b(routerboard|mikrotik)/i, "router"],
+  [/\b(hikvision|dahua|axis communications|uniview|hanwha)\b/i, "telecamera"],
+  [/\b(kyocera|ricoh|lexmark|zebra technologies|konica)\b/i, "stampante"],
+];
+
 // Lacuna 2: voci placeholder del registro IEEE (nessun produttore reale dietro il
 // MAC, es. locally-administered/random) — match esatto (dopo trim), non sostringa.
 // Estesa (caso reale 192.168.40.23, Synology): il lookup sysObjectID net-snmp
@@ -240,6 +258,9 @@ export function prodottoDaVersione(versione: string | null | undefined) {
  * venivano i falsi «voip» sulla rete dei client.
  */
 const PESO_FIRMA = 0.85;
+/** Nome da server (DTS, 12/11/2026: `SRV-PDM`, `SRV-VEEAM`, `mag-modula_srv` scritti «VM»). Che sia virtuale lo dice
+ *  «Fisico o virtuale»: il nome vince sulla scheda di rete virtuale, quindi confidenza e peso sopra quelli dell'OUI. */
+const NOME_SERVER_RE = /^(srv|server)[-_][a-z0-9]|[-_](srv|server)\d*$/i;
 const FIRME_NOME: ReadonlyArray<readonly [RegExp, CategorySlug]> = [
   [/^desktop-[a-z0-9]{7}$/i, "compute.workstation"], // nome di serie di Windows 10/11
   [/^(mac-?mini|imac|mac-?studio|surface)\b/i, "compute.workstation"],
@@ -337,6 +358,15 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
         source: "oui", phase: "scan_icmp", dimension: "category",
         claim: categoriaOt, confidence: 0.85, raw_value: host.vendor,
       });
+    } else {
+      const famiglia = OUI_FAMIGLIA.find(([re]) => re.test(host.vendor ?? ""));
+      const categoriaFamiglia = famiglia ? mapLegacyClassification(famiglia[1]).category : null;
+      if (categoriaFamiglia) {
+        out.push({
+          source: "oui", phase: "scan_icmp", dimension: "category",
+          claim: categoriaFamiglia, confidence: CONFIDENZA_FAMIGLIA_PRODUTTORE, raw_value: host.vendor,
+        });
+      }
     }
   }
 
@@ -439,7 +469,9 @@ export function emitEvidenceFromSignals(signals: AttributionSignals): EvidenceIn
   // 4. hostname: prima le firme (nomi che dicono il tipo), poi la regola debole
   if (host.hostname) {
     const firma = FIRME_NOME.find(([re]) => re.test(host.hostname ?? ""));
-    if (firma) {
+    if (NOME_SERVER_RE.test(host.hostname.trim().split(".")[0])) {
+      out.push({ source: "hostname", phase: "scan_icmp", dimension: "category", claim: "compute.server", confidence: 0.9, weight: 0.95, raw_value: host.hostname });
+    } else if (firma) {
       out.push({ source: "hostname", phase: "scan_icmp", dimension: "category", claim: firma[1], confidence: 0.7, weight: PESO_FIRMA, raw_value: host.hostname });
     } else {
       const cat = categoryFromLegacyText({ hostname: host.hostname });

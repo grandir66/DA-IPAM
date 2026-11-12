@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-12 · Un modo solo per la classificazione
+
+### Cambiato
+- «Attribuzione» e «Controllo classi» facevano lo stesso lavoro da due porte: ora c'è la sola pagina «Attribuzione», aperta dal pulsante della subnet già ristretta alla rete; le righe con fonti in disaccordo si aprono da lì.
+- Il motore usa il produttore anche quando dice solo la famiglia (automazione, IoT, VoIP, MikroTik, videosorveglianza, stampanti) e riconosce i nomi da server: su DTS 258 righe erano senza categoria pur avendo il produttore su 179.
+
 ## [Non rilasciato] — 2026-11-12 · Discovery: un apparato una riga anche senza apparato censito
 
 ### Corretto

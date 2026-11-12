@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-12 · Discovery: un apparato una riga anche senza apparato censito
+
+### Corretto
+- Su DTS quattro MikroTik diversi erano un gruppo solo: il «seriale» `F2510000.USB3` è la porta USB, uguale su ogni router. Un seriale finto non unisce più le righe; lo stesso MAC vero su reti diverse sì (esclusi VRRP, HSRP e MAC casuali).
+- Discovery accorpava solo gli IP di un apparato fisico censito: ora anche i gruppi di indirizzi, così un router con dodici indirizzi è una riga.
+- La categoria assegnata a mano toglie il segno «da rivedere»: chi l'ha messa ha guardato la riga, e vederla ancora in coda faceva credere che il salvataggio non fosse riuscito.
+
 ## [Non rilasciato] — 2026-11-12 · Controllo della classificazione e filtro per produttore
 
 ### Aggiunto

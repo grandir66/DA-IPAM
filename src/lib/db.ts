@@ -19,6 +19,7 @@
 import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
+import { macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
@@ -6649,7 +6650,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   const db = getDb();
 
   const hosts = db.prepare(`
-    SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name,
+    SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name,
            nd.sysname AS dev_sysname, nd.serial_number AS dev_serial,
            ac.dns_host_name AS ad_dns,
            CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device
@@ -6661,7 +6662,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
       GROUP BY host_id
     ) ac ON ac.host_id = h.id
   `).all() as Array<{
-    id: number; network_id: number; ip: string;
+    id: number; network_id: number; ip: string; mac: string | null;
     hostname: string | null; serial_number: string | null;
     snmp_data: string | null; custom_name: string | null;
     dev_sysname: string | null; dev_serial: string | null;
@@ -6692,10 +6693,11 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     hostNet.set(h.id, h.network_id);
 
     // 1. Serial number (host o device)
-    const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
-    if (serial && serial.length >= 4) {
-      addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
-    }
+    // Ancore (hosts/ancore-gruppo.ts): un seriale finto non unisce, lo stesso MAC vero sì.
+    const serial = serialeAncora(h.serial_number) ?? serialeAncora(h.dev_serial);
+    if (serial) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
+    const macVero = macAncora(h.mac);
+    if (macVero) addToBucket(`mac:${macVero}`, h.id, "mac", `mac:${macVero}`);
 
     // 2. SNMP sysName
     let sysName = h.dev_sysname ?? null;
@@ -6739,8 +6741,9 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     if (ra !== rb) parent.set(ra, rb);
   }
 
-  for (const [, hostIds] of buckets) {
+  for (const [key, hostIds] of buckets) {
     if (hostIds.size < 2) continue;
+    if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
     // Verifica che ci siano ≥2 reti diverse
     const nets = new Set<number>();
     for (const hid of hostIds) nets.add(hostNet.get(hid)!);
@@ -6791,7 +6794,8 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
       for (const hid of members) {
         const best = hostBest.get(hid);
         if (best) {
-          ins.run(groupId, hid, best.type, best.value, hid === primaryHid ? 1 : 0);
+          // «mac» non passa il CHECK di match_type: va come «hostname», col prefisso `mac:` nel valore.
+          ins.run(groupId, hid, best.type === "mac" ? "hostname" : best.type, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }
       }

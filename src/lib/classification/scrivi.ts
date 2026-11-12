@@ -18,6 +18,7 @@ import { resolveDeviceTypeForCreate, type ProductProfileId } from "@/lib/device-
 import type { NetworkDevice } from "@/types";
 import { recomputeAttributionForDb } from "@/lib/attribution/recompute";
 import { allineaSceltaAMano } from "@/lib/attribution/scelta-a-mano";
+import { togliDaRivedere } from "@/lib/scanner/profili/propaga-apparato";
 
 export interface Bersaglio {
   hostId?: number;
@@ -148,6 +149,9 @@ export function scriviClassificazione(
 
   // La scelta a mano vale subito anche per il motore (categoria in `attr_category`), non al giro dopo.
   if (hostId != null && opts.manuale) recomputeAttributionForDb(db, hostId, "manual");
+  // Chi assegna la categoria a mano ha guardato la riga: il segno «da rivedere» si toglie (Riccardo, 12/11/2026:
+  // «ho impostato la categoria su molti telefoni… che cadevano in "da rivedere" e non è cambiato nulla»).
+  if (hostId != null && opts.manuale) togliDaRivedere(db, [hostId]);
   return { hostId, deviceId };
 }
 

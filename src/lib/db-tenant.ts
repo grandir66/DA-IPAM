@@ -12,6 +12,7 @@
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
+import { macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -9102,7 +9103,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   // F4 v0.2.596: leggo anche hosts.physical_device_id come anchor di aggregazione.
   // Un physical_device_id condiviso è la firma più forte possibile (utente l'ha
   // dichiarato esplicitamente o l'identity-resolver l'ha trovato): prevale su tutto.
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; mac: string | null; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
   const hostMeta = new Map<number, { ip: string; has_device: number }>();
   for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
   const buckets = new Map<string, Set<number>>();
@@ -9132,8 +9133,11 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
         addToBucket(`physical:${h.physical_device_id}`, h.id, "serial_number", `physical_device:${h.physical_device_id}`);
       }
     }
-    const serial = (h.serial_number || h.dev_serial || "").trim().toUpperCase();
-    if (serial && serial.length >= 4) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
+    // Ancore (hosts/ancore-gruppo.ts): un seriale finto non unisce, lo stesso MAC vero sì.
+    const serial = serialeAncora(h.serial_number) ?? serialeAncora(h.dev_serial);
+    if (serial) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
+    const macVero = macAncora(h.mac);
+    if (macVero) addToBucket(`mac:${macVero}`, h.id, "mac", `mac:${macVero}`);
     let sysName = h.dev_sysname ?? null;
     if (!sysName && h.snmp_data) { try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ } }
     if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase()) && !nomeGenerico(sysName)) addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
@@ -9152,6 +9156,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   function union(a: number, b: number) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
   for (const [key, hostIds] of buckets) {
     if (hostIds.size < 2) continue;
+    if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
     const isPhysical = key.startsWith("physical:");
     if (isPhysical) {
       for (const hid of hostIds) physicalLinkedHosts.add(hid);
@@ -9198,7 +9203,8 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
         if (best) {
           // v0.2.617: type 'physical_device' non passa il CHECK constraint (vedi
           // commento sopra). Lo mappiamo a 'serial_number' col marker nel value.
-          const dbType = best.type === "physical_device" ? "serial_number" : best.type;
+          // «mac» non passa il CHECK di match_type: va come «hostname», col prefisso `mac:` nel valore.
+          const dbType = best.type === "physical_device" ? "serial_number" : best.type === "mac" ? "hostname" : best.type;
           ins.run(groupId, hid, dbType, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }

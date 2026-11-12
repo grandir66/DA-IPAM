@@ -15,7 +15,8 @@ import { sqlApparatoDellHost } from "./apparato-del-cluster";
 export interface MembroCluster { host_id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: boolean }
 
 export interface InfoClusterDiscovery {
-  physical_device_id: number;
+  /** `null` = accorpato dal gruppo di indirizzi (`multihomed_links`), senza apparato fisico censito. */
+  physical_device_id: number | null;
   principale: boolean;
   principale_host_id: number;
   /** Solo sulla riga principale: gli altri IP, in ordine di IP. */
@@ -78,5 +79,50 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
       mappa.set(m.host_id, { physical_device_id: pd, principale, principale_host_id: p, altri: principale ? altri : [] });
     }
   }
+  aggiungiGruppiDiIndirizzi(db, mappa);
   return mappa;
+}
+
+/**
+ * I gruppi di indirizzi (`multihomed_links`: stesso seriale, nome o MAC su reti diverse) accorpano anche loro
+ * (Riccardo, 12/11/2026: «molti dei router mikrotik erano semplicemente degli ip aggiuntivi rispetto al principale…
+ * nella vista discovery contano gli oggetti non gli ip»). Su DTS i MikroTik non avevano un apparato fisico censito,
+ * quindi restavano una riga per indirizzo. Un gruppo che tocca un cluster fisico già accorpato si lascia a quello.
+ */
+function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, InfoClusterDiscovery>): void {
+  let righe: Array<{ group_id: string; is_primary: number; id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: number | null }>;
+  try {
+    righe = db.prepare(
+      `SELECT ml.group_id, ml.is_primary, h.id, h.ip, h.network_id, n.name AS network_name, h.status,
+              (SELECT 1 FROM network_devices nd WHERE ${sqlApparatoDellHost("nd", "h")} LIMIT 1) AS ha_apparato
+         FROM multihomed_links ml
+         JOIN hosts h ON h.id = ml.host_id
+         JOIN networks n ON n.id = h.network_id`,
+    ).all() as typeof righe;
+  } catch {
+    return; // tabella assente su un archivio vecchio: restano i soli cluster fisici
+  }
+  const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[] }>();
+  for (const r of righe) {
+    let g = perGruppo.get(r.group_id);
+    if (!g) {
+      g = { primario: null, membri: [] };
+      perGruppo.set(r.group_id, g);
+    }
+    if (r.is_primary === 1) g.primario = r.id;
+    g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1 });
+  }
+  for (const { primario, membri } of perGruppo.values()) {
+    if (membri.some((m) => mappa.has(m.host_id))) continue;
+    const p = principaleDelCluster(membri, primario);
+    if (p == null) continue;
+    const altri = membri
+      .filter((m) => m.host_id !== p)
+      .sort(perIp)
+      .map((m) => ({ host_id: m.host_id, ip: m.ip, network_id: m.network_id, network_name: m.network_name, status: m.status }));
+    for (const m of membri) {
+      const principale = m.host_id === p;
+      mappa.set(m.host_id, { physical_device_id: null, principale, principale_host_id: p, altri: principale ? altri : [] });
+    }
+  }
 }

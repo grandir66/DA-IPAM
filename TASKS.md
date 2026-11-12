@@ -1,5 +1,13 @@
 # TASKS — DA-IPAM
 
+## 2026-11-12 — Intestazione della subnet: troppe opzioni e troppi modi di filtrare (Riccardo, tavola proposta)
+
+Riccardo, 12/11: «l'intestazione ha molte opzioni e molte modalità di filtri e credo sarebbero da chiarire, ottimizzare»: «Spunta tutte le righe ha poco senso con i filtri già possibili»; «le voci griglia e lista insieme ai filtri fanno perdere il significato di quelle funzioni»; «i pulsanti in alto un pochino a sinistra ed uno a destra non hanno molto senso»; «i filtri attivabili potrebbero essere di più»; «il filtro per categoria dovrebbe prevedere di poter scegliere anche la madre di una categoria, non solo le foglie».
+
+- [x] Tavola grafica mostrata in chat il 12/11, tredici oggetti: (1-5) una riga sola di azioni sulla rete, tutte a sinistra, con «Avanzata» e «Profilo» dentro il menu di «Scoperta host»; (6) Lista/Griglia a destra, come cambio di vista e non in mezzo ai filtri; (7) casella di ricerca; (8) filtri attivi come etichette che si tolgono con ✕; (9, 12) un solo pulsante «+ Filtro» con dentro tutti i filtri, compresi i nuovi (è un apparato, in DHCP, in AD, con credenziale valida, senza categoria, da rivedere); (10) conteggio «N di M righe»; (11) barra delle azioni sulle righe spuntate, che compare solo con una spunta; via «Spunta le righe di tipo»; (13) scelta della categoria con la madre come riga che si sceglie, col numero di righe.
+- [ ] Nota: la madre si può già scegliere («Telefonia: tutte» è la prima voce di ogni gruppo), ma non si vede: è questo che la tavola corregge.
+- [ ] In attesa del sì di Riccardo sulla tavola. Stessa barra da portare poi in Discovery.
+
 ## 2026-11-12 — Automatismi: funzioni e apparati che nascono da soli (Riccardo)
 
 Riccardo, 12/11: «manca anche l'assegnazione delle funzioni per le cose conosciute, la generazione automatica degli apparati dentro discovery se snmp li classifica o le credenziali funzionano e il sistema riesce ad accedere; dobbiamo gestire molti automatismi, per evitare di fare troppe cose manualmente».

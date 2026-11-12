@@ -13,7 +13,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth (niente `DAAUTH_URL` né pulsante Domarc); l'accesso Domarc vale solo per l'hub. `git revert fbca510` per rimetterlo.
 
-> **Trappola accesso hub (10/11):** se il login non tiene (ogni pagina torna a `/login`), è l'URL pubblico. `AUTH_TRUST_HOST=true` da solo non basta dietro l'nginx in container: Auth.js prende `0.0.0.0:3001` e il callback non combacia. Fix: `AUTH_URL=https://<ip-hub>` in `.env.local` + restart; verifica `curl -skiD - https://localhost/api/auth/csrf` → `callback-url` deve essere l'IP vero. Vedi lezione 10/11.
+> **Trappola accesso hub (10/11):** se il login non tiene (ogni pagina torna a `/login`), è l'URL pubblico. `AUTH_TRUST_HOST=true` da solo non basta dietro l'nginx in container: Auth.js prende `0.0.0.0:3001` e il callback non combacia. Fix: `AUTH_URL` in `.env.local` = **l'indirizzo con cui si apre l'hub**, cioè `https://da-ipam.domarc.it` (non l'IP) + restart; verifica `curl -skiD - https://localhost/api/auth/csrf` → `callback-url` deve essere quel nome. **12/11**: dal 09/11 era `https://192.168.4.8`; chi apriva `da-ipam.domarc.it` veniva rimandato all'IP, dove l'accesso con l'account Domarc non funziona. Corretto, backup `.env.local.bak-20261112-093210`. Ora chi apre l'IP viene portato al nome. Vedi lezione 10/11.
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 

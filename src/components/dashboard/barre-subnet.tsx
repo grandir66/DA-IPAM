@@ -10,7 +10,8 @@ import type { NetworkWithStats } from "@/types";
  */
 const TRAMA_OFFLINE = "repeating-linear-gradient(135deg, var(--host-offline) 0 3px, var(--card) 3px 5px)";
 
-export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
+/** `hrefRete`: dove porta una riga; di serie alla pagina della rete (la vista cliente passa la sua). */
+export function BarreSubnet({ reti, hrefRete = (id) => `/networks/${id}` }: { reti: NetworkWithStats[]; hrefRete?: (id: number) => string }) {
   const max = Math.max(1, ...reti.map((r) => r.total_hosts));
   return (
     <div className="divide-y divide-border">
@@ -19,7 +20,7 @@ export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
         return (
           <Link
             key={net.id}
-            href={`/networks/${net.id}`}
+            href={hrefRete(net.id)}
             className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-[13px] hover:bg-muted/50 transition-colors group"
             title={`${net.cidr} · ${net.online_count} online / ${net.offline_count} offline / ${net.unknown_count} sconosciuti${net.last_scan ? ` · ultima scansione ${parseDbDate(net.last_scan).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`}
           >

@@ -14,7 +14,8 @@ import type Database from "better-sqlite3";
 export const COLONNE = 12;
 /** Le larghezze ammesse, in colonne: un quarto, un terzo, metà, due terzi, tre quarti, tutta. */
 export const LARGHEZZE: readonly number[] = [3, 4, 6, 8, 9, 12];
-export const ALTEZZA_MIN = 2;
+/** 1 dal 12/11/2026: le due fasce della Dashboard (numeri e sicurezza) sono alte una riga. */
+export const ALTEZZA_MIN = 1;
 export const ALTEZZA_MAX = 8;
 /** Altezza di una riga della griglia, in pixel (lo spazio fra le righe è a parte). */
 export const RIGA_PX = 84;
@@ -26,16 +27,25 @@ export interface RiquadroCasa {
   /** Misura predefinita: colonne e righe. */
   l: number;
   a: number;
+  /** Solo per amministratori: all'utente «Cliente» non si mostra e non si offre (Riccardo, 12/11/2026). */
+  soloAmministratori?: boolean;
+  /** Se manca da una disposizione già salvata entra in testa, non in coda. */
+  inTesta?: boolean;
 }
 
 /** La libreria, nell'ordine predefinito. */
 export const RIQUADRI_CASA: readonly RiquadroCasa[] = [
-  { id: "indirizzi", titolo: "Indirizzi in uso nel tempo", cosa: "La curva degli indirizzi accesi nelle ultime 48 ore", l: 12, a: 4 },
+  // I widget della Dashboard, gli stessi (Riccardo, 12/11/2026: «i widget completi, semplicemente filtrati»).
+  { id: "indicatori", titolo: "Numeri della rete", cosa: "Health, subnet, host, offline, assenti e monitorati, come in testa alla Dashboard", l: 12, a: 1, inTesta: true },
+  { id: "sicurezza", titolo: "Sicurezza", cosa: "Critiche e alte da sistemare, accessi e alert, Health AD", l: 12, a: 1, inTesta: true },
+  { id: "indirizzi", titolo: "Stato host nel tempo", cosa: "Online, offline e uptime nelle ultime 24 ore, 7 o 30 giorni", l: 12, a: 5 },
   { id: "accessi-andamento", titolo: "Accessi falliti nel tempo", cosa: "Una barra per ora nelle ultime 24 ore, con i blocchi di account", l: 6, a: 4 },
   { id: "accessi-utenti", titolo: "Accessi falliti per utente", cosa: "Gli account che sbagliano di più nelle ultime 24 ore", l: 3, a: 4 },
   { id: "rischio", titolo: "Rischio del dominio", cosa: "Il punteggio di rischio e i rilievi gravi", l: 3, a: 4 },
-  { id: "reti", titolo: "Le tue reti", cosa: "Accesi e spenti da poco per ogni rete", l: 6, a: 4 },
-  { id: "per-rete", titolo: "Da sistemare per rete", cosa: "Gravi e alte per ogni rete", l: 6, a: 4 },
+  { id: "reti", titolo: "Subnet", cosa: "Online e offline per ogni rete", l: 6, a: 4 },
+  { id: "per-rete", titolo: "Cose da sistemare per rete", cosa: "Un software o un rilievo per host, per gravità", l: 6, a: 4 },
+  { id: "transizioni", titolo: "Transizioni recenti", cosa: "Chi si è acceso o spento nelle ultime 24 ore", l: 6, a: 4 },
+  { id: "moduli", titolo: "Moduli", cosa: "Lo stato dei moduli e delle integrazioni", l: 6, a: 3, soloAmministratori: true },
   { id: "accessi-origini", titolo: "Accessi falliti: da dove", cosa: "Le postazioni da cui partono i tentativi nelle ultime 24 ore", l: 6, a: 3 },
   // Dal censimento dell'11/11/2026: dati che DA-IPAM raccoglie già (src/lib/cliente/altri-dati.ts).
   { id: "nuovi", titolo: "Apparati nuovi in rete", cosa: "Cosa è comparso in rete negli ultimi 7 giorni", l: 6, a: 4 },
@@ -79,7 +89,8 @@ function altezzaDa(v: { a?: unknown }, predefinita: number): number {
 /**
  * Pura. Da un valore qualsiasi a una disposizione valida: gli id che la libreria non conosce si
  * scartano, i doppi pure, una misura sbagliata torna quella predefinita, e i riquadri della
- * libreria che mancano si aggiungono in coda, visibili (così uno nuovo compare a tutti).
+ * libreria che mancano si aggiungono in coda, visibili (così uno nuovo compare a tutti); quelli segnati
+ * `inTesta` entrano in testa.
  */
 export function normalizza(salvata: unknown): VoceDisposizione[] {
   const noti = new Map(RIQUADRI_CASA.map((r) => [r.id, r]));
@@ -97,10 +108,11 @@ export function normalizza(salvata: unknown): VoceDisposizione[] {
       voci.push({ id, l: larghezzaDa(v, noto.l), a: altezzaDa(v, noto.a), visibile: v.visibile !== false });
     }
   }
+  const inTesta: VoceDisposizione[] = [];
   for (const r of RIQUADRI_CASA) {
-    if (!visti.has(r.id)) voci.push({ id: r.id, l: r.l, a: r.a, visibile: true });
+    if (!visti.has(r.id)) (r.inTesta ? inTesta : voci).push({ id: r.id, l: r.l, a: r.a, visibile: true });
   }
-  return voci;
+  return [...inTesta, ...voci];
 }
 
 /** La disposizione del cliente; senza niente di salvato, o con un valore illeggibile, quella predefinita. */

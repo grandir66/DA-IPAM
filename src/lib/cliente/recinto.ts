@@ -19,12 +19,14 @@ export type EsitoRecinto = "passa" | "vai_a_cliente" | "vietato";
  * le scritture stanno sulle stesse rotte e restano vietate (e chiedono comunque l'amministratore).
  */
 const LETTURE_TOPOLOGIA = /^\/api\/topology\/(model|maps|maps\/[^/]+|links|ports)$/;
+/** Le letture dei due widget della Dashboard che si caricano dal browser: «Stato host nel tempo» e «Transizioni recenti». */
+const LETTURE_STATO = /^\/api\/status\/(chart-detailed|changes)$/;
 
 export function recinto(vistaCliente: boolean, percorso: string, metodo?: string): EsitoRecinto {
   if (!vistaCliente) return "passa";
   if (percorso === "/cliente" || percorso.startsWith("/cliente/")) return "passa";
   if (percorso.startsWith("/api/auth")) return "passa";
-  if (metodo === "GET" && LETTURE_TOPOLOGIA.test(percorso)) return "passa";
+  if (metodo === "GET" && (LETTURE_TOPOLOGIA.test(percorso) || LETTURE_STATO.test(percorso))) return "passa";
   if (percorso.startsWith("/api/")) return "vietato";
   return "vai_a_cliente";
 }

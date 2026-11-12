@@ -52,6 +52,12 @@ test("recinto: il Cliente legge la topologia, e nient'altro", () => {
     assert.equal(recinto(true, p, "GET"), "passa", p);
     for (const m of ["POST", "PUT", "PATCH", "DELETE", undefined]) assert.equal(recinto(true, p, m), "vietato", `${m} ${p}`);
   }
+  // I due widget della Dashboard che si caricano dal browser (12/11/2026).
+  for (const p of ["/api/status/chart-detailed", "/api/status/changes"]) {
+    assert.equal(recinto(true, p, "GET"), "passa", p);
+    assert.equal(recinto(true, p, "POST"), "vietato", p);
+  }
+  assert.equal(recinto(true, "/api/status/altro", "GET"), "vietato");
   for (const p of ["/api/topology/positions", "/api/topology/maps/12/nodes", "/api/topology/nodes/hidden", "/api/topology/candidati", "/api/topology", "/api/topology/modelX", "/api/hosts"]) {
     assert.equal(recinto(true, p, "GET"), "vietato", p);
   }

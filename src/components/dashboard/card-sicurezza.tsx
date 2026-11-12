@@ -30,22 +30,21 @@ export function CardSicurezza({ tono, titolo, valore, nota, href, title }: {
   titolo: string;
   valore: string;
   nota?: string;
-  href: string;
+  /** Senza collegamento (vista cliente, dove la pagina non esiste) resta una tessera ferma. */
+  href?: string;
   title?: string;
 }) {
   const grigio = tono === "grigio";
-  return (
-    <Link
-      href={href}
-      title={title}
-      className={`flex flex-col justify-center min-w-0 rounded-md border border-l-[6px] bg-card px-3 py-1.5 hover:bg-muted/40 transition-colors ${STRISCIA[tono]}`}
-    >
+  const classi = `flex flex-col justify-center min-w-0 rounded-md border border-l-[6px] bg-card px-3 py-1.5 hover:bg-muted/40 transition-colors ${STRISCIA[tono]}`;
+  const corpo = (
+    <>
       <span className="flex items-center gap-1.5 text-[13px] leading-tight text-muted-foreground truncate">
         <span aria-hidden className={`font-bold ${SEGNO[tono]}`}>{STILE_STATO[tono].segno}</span>
         <span className="truncate">{titolo}</span>
       </span>
       <span className={`truncate leading-tight ${grigio ? "text-[13px] text-muted-foreground" : "text-xl font-bold"}`}>{valore}</span>
       {nota && <span className="text-[13px] leading-tight text-muted-foreground truncate">{nota}</span>}
-    </Link>
+    </>
   );
+  return href ? <Link href={href} title={title} className={classi}>{corpo}</Link> : <span title={title} className={classi}>{corpo}</span>;
 }

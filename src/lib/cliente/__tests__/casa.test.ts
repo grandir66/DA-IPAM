@@ -24,7 +24,9 @@ test("normalizza: scarta sconosciuti e doppi, corregge le misure, aggiunge in co
     { id: "rischio", l: 3, a: 4, visibile: true },
     { id: "reti", l: 5, a: 99 },
   ]);
-  assert.deepEqual(voci.slice(0, 2), [
+  // In testa entrano le due fasce della Dashboard (`inTesta`, 12/11/2026): le voci salvate vengono dopo, nel loro ordine.
+  assert.deepEqual(voci.slice(0, 2).map((v) => v.id), ["indicatori", "sicurezza"]);
+  assert.deepEqual(voci.slice(2, 4), [
     { id: "rischio", l: 12, a: 3, visibile: false },
     { id: "reti", l: 6, a: 4, visibile: true },
   ]);
@@ -37,8 +39,8 @@ test("normalizza: legge la prima versione, mezza e intera, e il vecchio riquadro
     { id: "accessi", misura: "mezza", visibile: false },
     { id: "reti", misura: "intera", visibile: true },
   ]);
-  assert.deepEqual(voci[0], { id: "accessi-andamento", l: 6, a: 4, visibile: false });
-  assert.deepEqual(voci[1], { id: "reti", l: 12, a: 4, visibile: true });
+  assert.deepEqual(voci[2], { id: "accessi-andamento", l: 6, a: 4, visibile: false });
+  assert.deepEqual(voci[3], { id: "reti", l: 12, a: 4, visibile: true });
 });
 
 test("sposta e spostaPrima: cambiano solo l'ordine", () => {
@@ -67,7 +69,7 @@ test("salva e rileggi: una per cliente, il valore rotto torna predefinito", () =
   db.exec("CREATE TABLE tenant_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)");
   assert.deepEqual(leggiDisposizione(db), disposizionePredefinita());
   const salvata = salvaDisposizione(db, [{ id: "reti", l: 9, a: 6, visibile: false }]);
-  assert.deepEqual(salvata[0], { id: "reti", l: 9, a: 6, visibile: false });
+  assert.deepEqual(salvata.find((v) => v.id === "reti"), { id: "reti", l: 9, a: 6, visibile: false });
   assert.deepEqual(leggiDisposizione(db), salvata);
   db.prepare("UPDATE tenant_settings SET value = '{non json' WHERE key = 'cliente.casa'").run();
   assert.deepEqual(leggiDisposizione(db), disposizionePredefinita());

@@ -1,5 +1,5 @@
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
-import { getDashboardStats, getNetworks, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
+import { getUserCount } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
@@ -9,34 +9,15 @@ import { Network, Shield, Activity, PlugZap } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { getTenantDb, withTenant } from "@/lib/db-tenant";
-import { barreReteDiSerie } from "@/lib/rilievi/barre-di-serie";
-import type { BarraRete } from "@/lib/rilievi/gruppi";
-import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { IstogrammaAccessi } from "@/components/dashboard/istogramma-accessi";
-import { CardSicurezza } from "@/components/dashboard/card-sicurezza";
 import { BarreSubnet, LegendaSubnet } from "@/components/dashboard/barre-subnet";
-import { BarraGravita, LegendaGravita } from "@/components/shared/console";
 import { ModuliCompatti } from "@/components/dashboard/moduli-compatti";
-import { leggiAccessiIndexer, type SerieAccessi } from "@/lib/security/accessi-indexer";
-import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
-import { contaArchiviatiOTrattino } from "@/lib/hosts/pulizia-archivio";
-import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
-import { getModulesHealth } from "@/lib/modules/health";
-import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
-import { moduleRowTarget, type DestinazioneRigaModulo } from "@/lib/modules/dashboard-rows";
-import { completaRiquadri, tempoFa, type StatoPannelloZabbix } from "@/lib/modules/riquadri-dashboard";
+import { FilaIndicatori, RigaRilieviPerRete, RigaSicurezza } from "@/components/dashboard/widget";
+import { datiDashboard, moduliDashboard } from "@/lib/dashboard/dati";
+import { tempoFa } from "@/lib/modules/riquadri-dashboard";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
-import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
-import { leggiConfigLettura } from "@/lib/zabbix-lettura/config";
 
 /** Riga «Stato moduli»: le righe dei moduli portano anche dove aprono (UI-20). */
-type StatoModuloRiga = IntegrationHealth & {
-  apre?: DestinazioneRigaModulo["apre"];
-  notaStato?: string | null;
-  /** false = modulo non installato: fuori dal conteggio errori, icona neutra. */
-  contaNegliErrori?: boolean;
-};
 
 export const dynamic = "force-dynamic";
 
@@ -48,136 +29,16 @@ export default async function DashboardPage() {
   }
 
   const tenantCode = await getServerTenantCode();
-  const stats = withTenant(tenantCode, () => getDashboardStats());
-  const networks = withTenant(tenantCode, () => getNetworks());
-  const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
-  const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
-  // Stato moduli (registry + health cachato 60s) + riga Active Directory separata
-  // (AD non è uno dei 6 moduli base ma resta visibile per non regredire).
-  const moduleHealth = await getModulesHealth(tenantCode);
-  // Stato dal registry (solo letture locali, niente sonde): decide se la riga
-  // apre il modulo o la configurazione (UI-20). Se non si legge, le righe
-  // tornano ad aprire la configurazione, come prima, e l'errore va nel log.
-  let moduleStates: ModuleState[] = [];
-  // Il ruolo decide il link di LibreNMS (accesso automatico solo admin, T3-26)
-  // e il collegamento «Vista cliente» accanto al titolo.
   let ruolo: string | undefined;
   try {
     ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
-    moduleStates = await withTenant(tenantCode, () => resolveModules(tenantCode, ruolo));
   } catch (e) {
-    console.error("[dashboard] stato dei moduli non leggibile:", e);
+    console.error("[dashboard] ruolo non leggibile:", e);
   }
-  const moduleRows: StatoModuloRiga[] = moduleHealth.map((h) => {
-    const d = MODULE_DESCRIPTORS.find((m) => m.key === h.key);
-    const target = moduleRowTarget(
-      d,
-      moduleStates.find((m) => m.key === h.key),
-      h,
-    );
-    return {
-      key: h.key,
-      label: d?.label ?? h.key,
-      status: h.status === "unknown" ? "stale" : h.status,
-      // La colonna timestamp = "ultima verifica" del modulo. Solo il probe `edge`
-      // espone un last_sync_at reale; gli altri probe sono live ma senza timestamp
-      // di data-sync → senza fallback un modulo CONNESSO mostrava "Mai eseguita"
-      // (l'utente lo leggeva come "non sincronizzato"). Fallback al `probedAt`
-      // (istante dell'health-check) per i moduli configurati. I moduli non
-      // attivi mostrano al posto dell'ora la nota di moduleRowTarget
-      // («Modulo non attivo», UI-20), non più «Mai eseguita».
-      lastSync: h.lastSync ?? (h.status === "never" ? null : h.probedAt),
-      message: h.message,
-      href: target.href,
-      apre: target.apre,
-      notaStato: target.notaStato,
-      contaNegliErrori: target.contaNegliErrori,
-      abilitato: moduleStates.find((m) => m.key === h.key)?.enabled,
-    };
-  });
-  const adRows = withTenant(tenantCode, () => getIntegrationsOverview()).filter((i) =>
-    i.key.startsWith("ad_"),
-  );
-  const integrations: StatoModuloRiga[] = [...moduleRows, ...adRows];
-  // Riquadri (Riccardo, 20/10): tutti i moduli possibili, i non configurati in grigio.
-  let zabbix: StatoPannelloZabbix | null = null;
-  try {
-    zabbix = withTenant(tenantCode, () => {
-      const d = dipendenzeReali();
-      return d.acquistato() ? leggiConfigLettura(d.db) : null;
-    });
-  } catch (e) {
-    console.error("[dashboard] pannello Zabbix non leggibile:", e);
-  }
-  // KPI di sicurezza (Riccardo, 20/10): solo letture del DB del cliente.
-  let sicurezza: KpiSicurezza = { cve: null, accessi: null, healthAd: null };
-  try {
-    sicurezza = withTenant(tenantCode, () => kpiSicurezza(getTenantDb(tenantCode)));
-  } catch (e) {
-    console.error("[dashboard] KPI di sicurezza non leggibili:", e);
-  }
-  // Le tabelle esistono sempre (schema e job di pulizia): «non configurato» lo dice il
-  // catalogo dei moduli, non la presenza della tabella (revisione del 20/10).
-  const configurato = (k: string) => moduleStates.find((m) => m.key === k)?.configured === true;
-  if (!configurato("edge")) sicurezza = { ...sicurezza, cve: null };
-  if (!configurato("wazuh")) sicurezza = { ...sicurezza, accessi: null };
-  const riquadri = completaRiquadri(
-    integrations,
-    MODULE_DESCRIPTORS.map((d) => ({ ...d, enabled: moduleStates.find((m) => m.key === d.key)?.enabled === true })),
-    { zabbix },
-  );
-  // Un modulo non installato non conta: la sua sonda può fallire (MeshCentral
-  // disinstallato tiene i parametri di collegamento) senza che sia un guasto.
-  const contate = integrations.filter((i) => i.contaNegliErrori !== false);
-  const integrationErrors = contate.filter((i) => i.status === "error").length;
-  const integrationWarnings = contate.filter(
-    (i) => i.status === "warning" || i.status === "stale",
-  ).length;
-
-
-  // Accessi falliti (Riccardo, 20/10): i conteggi veri dell'indexer; senza indexer la stima.
-  const lettura = sicurezza.accessi ? await leggiAccessiIndexer(tenantCode) : null;
-  const stimati = sicurezza.accessi;
-  const accessi: SerieAccessi | null = lettura?.serie ?? (stimati
-    ? {
-        fonte: "stima",
-        motivo: lettura?.motivo ?? undefined,
-        ore: stimati.serie24h.map((o) => ({ ora: o.ora, falliti: o.falliti })),
-        giorni: stimati.serie.map((g) => ({ giorno: g.giorno, falliti: g.falliti })),
-        // Lo stesso totale del grafico (le 24 ore ora per ora), non un secondo calcolo.
-        totale24h: stimati.serie24h.reduce((n, o) => n + o.falliti, 0),
-        totale24hPrima: stimati.falliti24hPrima,
-        tendenza: stimati.falliti24h > stimati.falliti24hPrima ? "su" : stimati.falliti24h < stimati.falliti24hPrima ? "giu" : "pari",
-      }
-    : null);
-
-  // Indicatori: Health%, totali, subnet, monitorati.
-  // Offline = visti negli ultimi 7 giorni; gli «assenti» a parte, fuori dalla salute, come
-  // nel grafico (Riccardo, 20/10: in alto 51%, nel grafico 98%).
-  const offlineSplit = withTenant(tenantCode, () =>
-    getTenantDb(tenantCode)
-      .prepare(`SELECT COALESCE(SUM(status = 'offline' AND NOT ${condizioneAssente()}), 0) AS recenti, COALESCE(SUM(${condizioneAssente()}), 0) AS assenti FROM hosts`)
-      .get() as { recenti: number; assenti: number },
-  );
-  // «—» se l'archivio non si legge: l'indicatore non fa cadere la dashboard (m11, revisione finale).
-  const archiviati = withTenant(tenantCode, () => contaArchiviatiOTrattino());
-  // Stesso conto della pagina Findings (11/11/2026): barre e tessere «critiche/alte» vengono da qui.
-  let barreRete: BarraRete[] | null = null;
-  try {
-    barreRete = withTenant(tenantCode, () => barreReteDiSerie());
-  } catch {
-    barreRete = null;
-  }
-  const rilieviRete = (barreRete ?? []).slice(0, 6);
-  const daSistemare = barreRete
-    ? { critiche: barreRete.reduce((n, b) => n + b.critical, 0), alte: barreRete.reduce((n, b) => n + b.high, 0), reti: barreRete.length }
-    : null;
-  const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
-  const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
-  const healthColor =
-    healthPct >= 90 ? "text-success" :
-    healthPct >= 70 ? "text-amber-600" :
-    "text-destructive";
+  // I dati stanno in src/lib/dashboard/dati.ts: li legge anche la casa di /cliente (12/11/2026).
+  const { riquadri, integrationErrors, integrationWarnings, moduleStates } = await moduliDashboard(tenantCode, ruolo);
+  const dati = await datiDashboard(tenantCode, moduleStates);
+  const { networks, monitorStats, offlineKnown, sicurezza, accessi, rilieviRete, daSistemare } = dati;
 
   // Dashboard in una schermata, disposizione a tre colonne (Riccardo, 20/10): andamenti a
   // sinistra, operatività al centro, infrastruttura a destra. Le liste scorrono nel riquadro.
@@ -191,15 +52,7 @@ export default async function DashboardPage() {
             Vista cliente
           </Link>
         )}
-        <Indicatore titolo="Health" valore={`${healthPct}%`} colore={healthColor} nota={`${stats.online_hosts}/${denom} host online (offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni)`} anello={healthPct} />
-        <Indicatore titolo="Subnet" valore={stats.total_networks} href="/networks" />
-        <Indicatore titolo="Host" valore={stats.total_hosts} href="/discovery" />
-        <Indicatore titolo="Offline" valore={offlineSplit.recenti} colore="text-destructive" href="/discovery?status=offline" nota={`Offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni`} />
-        <Indicatore titolo={`Assenti > ${ASSENTE_DOPO_GIORNI} g`} valore={offlineSplit.assenti} colore="text-muted-foreground" href="/discovery?status=offline" nota={`Offline e non visti da oltre ${ASSENTE_DOPO_GIORNI} giorni: fuori dalla salute`} />
-        <Indicatore titolo="Archiviati" valore={archiviati} colore="text-muted-foreground" href="/settings?tab=sistema#pulizia-host" nota="Archiviati dalla pulizia: si recuperano per 90 giorni" />
-        {monitorStats.total > 0 && (
-          <Indicatore titolo="Monitorati" valore={`${monitorStats.online}/${monitorStats.total}`} nota={monitorStats.avg_latency !== null ? `latenza media ${Math.round(monitorStats.avg_latency)} ms` : undefined} href="/monitoring/known-hosts" />
-        )}
+        <FilaIndicatori dati={dati} />
       </div>
 
       {/* ── Riga 2: sicurezza, card bianche con striscia (Riccardo, 20/10) ── */}
@@ -343,109 +196,5 @@ export default async function DashboardPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
-
-/**
- * Riga «Sicurezza» (Riccardo, 20/10): CVE dello Scanner-Edge, accessi falliti e account
- * bloccati da Wazuh, alert da gestire, Health di Active Directory. Una fonte non
- * configurata è grigia, non «zero». Card bianche con la striscia del token e il simbolo.
- */
-function RigaRilieviPerRete({ reti }: { reti: BarraRete[] }) {
-  return (
-    <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Cose da sistemare per rete <span className="text-[13px] font-normal text-muted-foreground">· un software o un rilievo per host, come in Findings</span></CardTitle>
-        <LegendaGravita />
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {reti.map((r) => (
-          <div key={r.network_id} className="flex items-center gap-3">
-            <Link href="/vulnerabilities#vulnerabilita" className="w-44 shrink-0 truncate text-[13px] font-medium hover:underline" title={r.network_name}>{r.network_name}</Link>
-            <BarraGravita className="flex-1" conteggi={{ Critical: r.critical, High: r.high, Medium: r.medium, Low: r.low }} />
-            <span className="w-12 shrink-0 text-right font-mono text-[13px] tabular-nums">{r.total}</span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function RigaSicurezza({ k, accessi, daSistemare }: { k: KpiSicurezza; accessi: SerieAccessi | null; daSistemare: { critiche: number; alte: number; reti: number } | null }) {
-  const a = k.accessi;
-  const falliti = accessi?.totale24h ?? 0;
-  const prima = accessi?.totale24hPrima ?? 0;
-  const freccia = accessi?.tendenza === "su" ? " ↑" : accessi?.tendenza === "giu" ? " ↓" : "";
-  return (
-    <div className="grid gap-2 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shrink-0">
-      {daSistemare ? (
-        <>
-          <CardSicurezza tono={daSistemare.critiche > 0 ? "guasto" : "ok"} titolo="Critiche da sistemare" valore={numero(daSistemare.critiche)} nota={`in ${daSistemare.reti} reti`} href="/vulnerabilities#vulnerabilita"
-            title={`Cose da sistemare di gravità critica: un software o un rilievo per host, lo stesso conto delle barre e della pagina Findings${k.cve?.ultimaScansione ? ` · ultima scansione Edge ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
-          <CardSicurezza tono={daSistemare.alte > 0 ? "attenzione" : "ok"} titolo="Alte da sistemare" valore={numero(daSistemare.alte)} nota={`in ${daSistemare.reti} reti`} href="/vulnerabilities#vulnerabilita" title="Cose da sistemare di gravità alta: stesso conto delle barre e della pagina Findings" />
-        </>
-      ) : (
-        <CardSicurezza tono="grigio" titolo="Vulnerabilità" valore="Scanner-Edge non configurato" href="/settings/moduli/edge" />
-      )}
-      {a && accessi ? (
-        <>
-          <CardSicurezza
-            tono={falliti === 0 ? "ok" : falliti > 100 && falliti > prima * 2 ? "guasto" : "attenzione"}
-            titolo="Accessi falliti 24h" valore={`${numero(falliti)}${freccia}`} nota={`le 24 ore prima: ${numero(prima)}${accessi.fonte === "stima" ? " · stima" : ""}`} href="/security-alerts"
-            title={accessi.fonte === "indexer"
-              ? "Fallimenti di autenticazione di Windows e Linux dall'indexer di Wazuh nelle ultime 24 ore, esclusi i nostri account e le nostre reti. La freccia confronta le 24 ore piene con le 24 prima."
-              : `${accessi.motivo ? `${accessi.motivo[0].toUpperCase()}${accessi.motivo.slice(1)}: ` : ""}eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
-          <CardSicurezza tono={a.bloccati30g > 0 ? "attenzione" : "ok"} titolo="Account bloccati 30g" valore={numero(a.bloccati30g)} href="/security-alerts" title="Eventi 4740 da Wazuh negli ultimi 30 giorni" />
-          <CardSicurezza tono={a.daGestire > 0 ? "attenzione" : "ok"} titolo="Alert da gestire" valore={numero(a.daGestire)} href="/security-alerts" title="Alert di Wazuh non ancora presi in carico" />
-        </>
-      ) : (
-        <CardSicurezza tono="grigio" titolo="Accessi e alert" valore="Wazuh non configurato" href="/settings/moduli/wazuh" />
-      )}
-      {k.healthAd ? (
-        <CardSicurezza
-          tono={k.healthAd.critici > 0 ? "guasto" : k.healthAd.alti > 0 || k.healthAd.giorni > 7 || k.healthAd.ultimoFallito ? "attenzione" : "ok"}
-          titolo="Health AD" valore={`${k.healthAd.critici} critici · ${k.healthAd.alti} alti`}
-          nota={`${k.healthAd.giorni === 0 ? "oggi" : `${k.healthAd.giorni} g fa`}${k.healthAd.ultimoFallito ? " · ultimo tentativo fallito" : ""}`}
-          href="/sicurezza-dominio?tab=health" title={`Ultima Health riuscita, punteggio globale ${k.healthAd.punteggio ?? "—"}. Oltre 7 giorni è da rifare.${k.healthAd.ultimoFallito ? " L'ultimo tentativo è fallito." : ""}`} />
-      ) : (
-        <CardSicurezza tono="grigio" titolo="Health AD" valore="mai eseguita" href="/sicurezza-dominio?tab=health" />
-      )}
-    </div>
-  );
-}
-
-/** Indicatore della prima riga: card bassa, etichetta sopra e valore grande; Health con l'anello. */
-function Indicatore({ titolo, valore, colore = "text-foreground", nota, href, anello }: {
-  titolo: string;
-  valore: number | string;
-  colore?: string;
-  nota?: string;
-  href?: string;
-  anello?: number;
-}) {
-  const corpo = (
-    <span className="flex h-full items-center gap-2 rounded-md border bg-card px-3 py-1 hover:border-primary/40 transition-colors" title={nota}>
-      {anello !== undefined && <Anello pct={anello} colore={colore} />}
-      <span className="flex flex-col leading-tight">
-        <span className="text-[13px] text-muted-foreground">{titolo}</span>
-        <span className={`text-xl font-bold leading-none ${colore}`}>{valore}</span>
-      </span>
-    </span>
-  );
-  return href ? <Link href={href}>{corpo}</Link> : corpo;
-}
-
-/** Anello della Health: la parte piena nel colore della soglia, il resto grigio. */
-function Anello({ pct, colore }: { pct: number; colore: string }) {
-  const r = 14;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden className={colore}>
-      <circle cx="18" cy="18" r={r} fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="5" />
-      <circle cx="18" cy="18" r={r} fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round"
-        strokeDasharray={`${(Math.max(0, Math.min(100, pct)) / 100) * c} ${c}`} transform="rotate(-90 18 18)" />
-    </svg>
   );
 }

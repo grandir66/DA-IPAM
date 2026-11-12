@@ -1,6 +1,13 @@
 import { Pannello } from "@/components/shared/console";
 import { ElencoAttenzione } from "@/components/cliente/elenco-attenzione";
-import { AccessiDaDove, AccessiPerUtente, AndamentoAccessi, AnelloRischio, BarrePerRete, BarreReti, GraficoAccesi } from "@/components/cliente/grafici-casa";
+import { AccessiDaDove, AccessiPerUtente, AndamentoAccessi, AnelloRischio } from "@/components/cliente/grafici-casa";
+import { BarreSubnet, LegendaSubnet } from "@/components/dashboard/barre-subnet";
+import { ModuliCompatti } from "@/components/dashboard/moduli-compatti";
+import { BarreRilieviPerRete, FilaIndicatori, RigaSicurezza } from "@/components/dashboard/widget";
+import { LegendaGravita } from "@/components/shared/console";
+import { StatusChangeFeed } from "@/components/shared/status-change-feed";
+import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
+import { datiDashboard, moduliDashboard, type DatiDashboard } from "@/lib/dashboard/dati";
 import { ApparatiNuovi, Certificati, Disponibilita, ImportantiSpenti, SistemiOperativi } from "@/components/cliente/riquadri-altri";
 import { RiquadroPiccolo } from "@/components/cliente/riquadro-piccolo";
 import { RiquadroPorte } from "@/components/cliente/riquadro-porte";
@@ -8,9 +15,9 @@ import { RiquadroTopologia } from "@/components/cliente/riquadro-topologia";
 import { apparatiConPorte, type ApparatoConPorte } from "@/lib/cliente/schede/apparati";
 import Link from "next/link";
 import { GrigliaCasa, type ContenutoRiquadro } from "@/components/cliente/griglia-casa";
-import { RIQUADRI_CASA, leggiDisposizione, disposizionePredefinita, type VoceDisposizione } from "@/lib/cliente/casa";
+import { RIGA_PX, RIQUADRI_CASA, leggiDisposizione, disposizionePredefinita, type VoceDisposizione } from "@/lib/cliente/casa";
 import { contestoCliente, nelCliente } from "@/lib/cliente/contesto";
-import { graficiCasa, ORE_GRAFICO_ACCESI } from "@/lib/cliente/grafici";
+import { graficiCasa } from "@/lib/cliente/grafici";
 import {
   ordinaAttenzione,
   schedeAttive,
@@ -77,15 +84,46 @@ export default async function CasaCliente({
       console.error("[cliente] porte di rete:", e instanceof Error ? e.message : String(e));
     }
   }
+  // I widget della Dashboard: stessi dati, stessi componenti. Un guasto qui non fa cadere la casa.
+  let dash: DatiDashboard | null = null;
+  let moduli: Awaited<ReturnType<typeof moduliDashboard>> | null = null;
+  try {
+    dash = await datiDashboard(c.tenantCode, c.moduli);
+    if (c.amministratore) moduli = await moduliDashboard(c.tenantCode, "admin");
+  } catch (e) {
+    console.error("[cliente] widget della Dashboard:", e instanceof Error ? e.message : String(e));
+  }
+  // Riccardo, 12/11/2026: alcuni riquadri sono solo per amministratori. Al Cliente non si mostrano né si offrono.
+  const perTutti = (id: string): boolean => c.amministratore || !RIQUADRI_CASA.find((r) => r.id === id)?.soloAmministratori;
+  disposizione = disposizione.filter((v) => perTutti(v.id));
+  const libreria = RIQUADRI_CASA.filter((r) => perTutti(r.id));
+  // Il grafico vuole l'altezza in pixel: quella della sua casella, tolti titolo, tasti e legenda.
+  const righeGrafico = disposizione.find((v) => v.id === "indirizzi")?.a ?? 5;
+  const altezzaGrafico = Math.max(140, righeGrafico * RIGA_PX + (righeGrafico - 1) * 16 - 170);
   const apriAccessi = g.accessi?.dettaglio
     ? <Apri href="/cliente/dominio" testo="Dominio e accessi" />
     : <Apri href="/cliente/log-sicurezza" testo="Log di sicurezza" />;
   const contenuti: ContenutoRiquadro[] = [
+    // I widget della Dashboard, gli stessi componenti e gli stessi conti (src/lib/dashboard/dati.ts).
+    { id: "indicatori", titolo: "Numeri della rete", azioni: null, nudo: true, contenuto: dash ? <div className="flex h-full flex-wrap items-stretch gap-2"><FilaIndicatori dati={dash} dove="cliente" /></div> : null },
+    { id: "sicurezza", titolo: "Sicurezza", azioni: null, nudo: true, contenuto: dash ? <div className="h-full [&>div]:h-full"><RigaSicurezza k={dash.sicurezza} accessi={dash.accessi} daSistemare={dash.daSistemare} dove="cliente" /></div> : null },
     {
       id: "indirizzi",
-      titolo: `Indirizzi in uso nelle ultime ${ORE_GRAFICO_ACCESI} ore`,
+      titolo: "Stato host nel tempo",
       azioni: <Apri href="/cliente/reti" testo="Reti" />,
-      contenuto: g.accesi ? <GraficoAccesi dati={g.accesi} /> : null,
+      contenuto: <StatusOverTimeChart altezza={altezzaGrafico} />,
+    },
+    {
+      id: "transizioni",
+      titolo: "Transizioni recenti",
+      azioni: <Apri href="/cliente/apparati" testo="Apparati" />,
+      contenuto: <StatusChangeFeed hrefHost="/cliente/apparati" />,
+    },
+    {
+      id: "moduli",
+      titolo: "Moduli",
+      azioni: <Apri href="/settings/moduli" testo="Moduli" />,
+      contenuto: moduli ? <ModuliCompatti riquadri={moduli.riquadri} /> : null,
     },
     {
       id: "accessi-andamento",
@@ -105,7 +143,12 @@ export default async function CasaCliente({
       azioni: apriAccessi,
       contenuto: g.accessi?.dettaglio && g.accessi.daDove.length > 0 ? <AccessiDaDove dati={g.accessi} /> : null,
     },
-    { id: "reti", titolo: "Le tue reti", azioni: <Apri href="/cliente/reti" testo="Reti" />, contenuto: g.reti.length > 0 ? <BarreReti reti={g.reti} /> : null },
+    {
+      id: "reti",
+      titolo: "Subnet",
+      azioni: <Apri href="/cliente/reti" testo="Vedi tutte" />,
+      contenuto: dash && dash.networks.length > 0 ? <div className="-m-3"><BarreSubnet reti={dash.networks} hrefRete={() => "/cliente/reti"} /><LegendaSubnet /></div> : null,
+    },
     {
       id: "rischio",
       titolo: "Rischio del dominio",
@@ -114,9 +157,9 @@ export default async function CasaCliente({
     },
     {
       id: "per-rete",
-      titolo: "Da sistemare per rete",
-      azioni: <Apri href="/cliente/da-sistemare" testo="Da sistemare" />,
-      contenuto: g.perRete.length > 0 ? <BarrePerRete reti={g.perRete} /> : null,
+      titolo: "Cose da sistemare per rete",
+      azioni: <LegendaGravita />,
+      contenuto: dash && dash.rilieviRete.length > 0 ? <div className="space-y-2"><BarreRilieviPerRete reti={dash.rilieviRete} dove="cliente" /></div> : null,
     },
     { id: "nuovi", titolo: "Apparati nuovi in rete", azioni: <Apri href="/cliente/apparati" testo="Apparati" />, contenuto: g.nuovi ? <ApparatiNuovi dati={g.nuovi} /> : null },
     {
@@ -138,7 +181,7 @@ export default async function CasaCliente({
       contenuto: g.sistemi ? <SistemiOperativi dati={g.sistemi} /> : null,
     },
     { id: "certificati", titolo: "Certificati", azioni: <Apri href="/cliente/reti" testo="Reti" />, contenuto: g.certificati ? <Certificati dati={g.certificati} /> : null },
-  ];
+  ].filter((r) => perTutti(r.id));
   const inModifica = c.amministratore && componi;
 
   // «Cosa richiede attenzione» sta in una colonna stretta a destra, con la sua barra di scorrimento:
@@ -153,7 +196,7 @@ export default async function CasaCliente({
           {conPorte.length > 0 && <RiquadroPorte apparati={conPorte} />}
           {conApparati && <RiquadroTopologia apparatiDiRete={conPorte.length} />}
         </div>
-        <GrigliaCasa key={inModifica ? "modifica" : "vista"} iniziale={disposizione} riquadri={contenuti} libreria={RIQUADRI_CASA} modifica={inModifica} />
+        <GrigliaCasa key={inModifica ? "modifica" : "vista"} iniziale={disposizione} riquadri={contenuti} libreria={libreria} modifica={inModifica} />
         {c.amministratore && !componi && (
           <p className="nascosto-stampa text-[13px]">
             <Link href="/cliente?componi=1" className="font-medium text-cian-testo hover:underline">

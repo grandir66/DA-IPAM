@@ -16,6 +16,8 @@ export interface ContenutoRiquadro {
   azioni: ReactNode;
   /** null = oggi per questo cliente non c'è niente da mostrare. */
   contenuto: ReactNode | null;
+  /** Senza cornice né titolo fuori dalla modifica: per le fasce alte una riga (i numeri e la sicurezza). */
+  nudo?: boolean;
 }
 
 /**
@@ -138,9 +140,11 @@ export function GrigliaCasa({
                   </Button>
                 </div>
               )}
+              {!modifica && r?.nudo ? <div className="min-h-0 flex-1">{r.contenuto}</div> : (
               <Pannello titolo={r?.titolo ?? nomeDi(v.id)} azioni={modifica ? undefined : r?.azioni} className="min-h-0 flex-1" corpoClassName="overflow-auto p-3">
                 {r?.contenuto ?? <p className="text-sm text-muted-foreground">Oggi senza dati per questo cliente: fuori dalla modifica non compare.</p>}
               </Pannello>
+              )}
             </div>
           );
         })}

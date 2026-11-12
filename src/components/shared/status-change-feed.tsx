@@ -18,7 +18,8 @@ interface Change {
  * Feed cronologico delle ultime transizioni di stato dei host monitorati
  * (online↔offline). Polling ogni 30s. Mostra max 8 righe.
  */
-export function StatusChangeFeed() {
+/** `hrefHost`: dove porta una riga; di serie alla scheda dell'host. La vista cliente passa la sua pagina Apparati. */
+export function StatusChangeFeed({ hrefHost }: { hrefHost?: string } = {}) {
   const [items, setItems] = useState<Change[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +54,7 @@ export function StatusChangeFeed() {
         return (
           <Link
             key={`${c.host_id}-${c.changed_at}-${i}`}
-            href={`/hosts/${c.host_id}`}
+            href={hrefHost ?? `/hosts/${c.host_id}`}
             className="flex items-center gap-2 px-2 py-2 text-sm hover:bg-muted/50 transition-colors"
           >
             {wentDown ? (

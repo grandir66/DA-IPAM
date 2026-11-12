@@ -66,8 +66,9 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
   un `Pannello` con filtri nelle azioni e la tabella dentro.
 - Le liste lunghe scorrono **dentro** il pannello (`max-h-[…] overflow-y-auto`, oppure
   `<Table fissa>`), non fanno scorrere la pagina.
-- **Una forma sola di scheda** (Riccardo, 13/11: «i tab… dovrebbero essere organizzati in modo coerente»): fila con la
-  riga sotto, scheda scelta con barra spessa e testo pieno, 14 px. Le classi stanno in
+- **Una forma sola di scheda** (Riccardo, 13/11: «i tab… dovrebbero essere organizzati in modo coerente»): pulsanti in fila sopra
+  una riga, alti 40 px, testo a 15 px; quello scelto è pieno (fondo primario, grassetto), gli altri hanno fondo tenue e
+  bordo («quasi dei pulsanti da selezionare in alto», «deve essere chiaro che ci sono opzioni dentro uno stesso menù»). Le classi stanno in
   `src/components/shared/forma-scheda.ts` e le leggono tutti e tre i componenti: `SchedeSezione` (sopra il titolo: le
   pagine di una voce di menu), `SchedePagina` e `Tabs` di `ui/tabs` (sotto il titolo: le parti di una pagina). I
   riquadri grandi del 25/10 e le pillole grigie non esistono più: non si ridisegnano. Lista/Griglia non è una scheda:

@@ -108,6 +108,53 @@ export function TesseraNumero({
   );
 }
 
+/** Un numero della fila in cima alla pagina. */
+export interface NumeroFila {
+  titolo: string;
+  /** `null` = non lo sappiamo: si scrive «—», mai 0. */
+  valore: number | string | null;
+  /** Due o tre parole accanto al numero. */
+  qualifica?: string;
+  /** Spiegazione al passaggio del mouse (da dove viene, perché manca). */
+  aiuto?: string;
+  /** Se il numero corrisponde a un filtro: un clic lo accende o lo spegne. */
+  onClick?: () => void;
+  /** Il filtro di questo numero è acceso: bordo pieno. */
+  acceso?: boolean;
+}
+
+/**
+ * La fila dei numeri, uguale in ogni pagina (Riccardo, 13/11/2026: «un sistema di kpi comune… graficamente le kpi,
+ * con i contenuti coerenti con le pagine»). Da tre a cinque tessere basse su una riga: etichetta sopra, numero sotto.
+ * Più compatta di `TesseraNumero`, che resta per i pannelli dove serve anche l'icona e la nota.
+ */
+export function FilaNumeri({ voci, className }: { voci: NumeroFila[]; className?: string }) {
+  return (
+    <div className={cn("grid gap-2", className)} style={{ gridTemplateColumns: `repeat(${Math.max(1, voci.length)}, minmax(0, 1fr))` }}>
+      {voci.map((v) => {
+        const testo = v.valore == null ? "—" : typeof v.valore === "number" ? v.valore.toLocaleString("it-IT") : v.valore;
+        const dentro = (
+          <>
+            <span className="block truncate text-[13px] text-muted-foreground">{v.titolo}</span>
+            <span className="flex items-baseline gap-2">
+              <span className={cn("text-xl font-bold tabular-nums", v.valore == null && "text-muted-foreground")}>{testo}</span>
+              {v.qualifica && <span className="truncate text-[13px] text-muted-foreground">{v.qualifica}</span>}
+            </span>
+          </>
+        );
+        const classi = cn("min-w-0 rounded-lg border-2 bg-card px-3 py-1.5 text-left", v.acceso ? "border-primary" : "border-border");
+        return v.onClick ? (
+          <button key={v.titolo} type="button" title={v.aiuto} aria-pressed={v.acceso === true} onClick={v.onClick} className={cn(classi, "transition-colors hover:border-foreground/40")}>
+            {dentro}
+          </button>
+        ) : (
+          <div key={v.titolo} title={v.aiuto} className={classi}>{dentro}</div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Pannello con intestazione: numero del livello (1. VLAN → 2. Subnet → 3. Oggetti), titolo,
  * conteggio, una riga di spiegazione e le azioni a destra. Il piede è per un consiglio breve.

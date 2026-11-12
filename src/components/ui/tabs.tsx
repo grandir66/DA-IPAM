@@ -62,7 +62,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
       data-slot="tabs-trigger"
       className={cn(
         SCHEDA_BASE,
-        "border-transparent text-muted-foreground hover:text-foreground data-active:border-primary data-active:font-semibold data-active:text-foreground",
+        "border-border bg-muted/50 font-medium text-foreground/80 hover:border-foreground/40 hover:bg-muted hover:text-foreground data-active:border-primary data-active:bg-primary data-active:font-semibold data-active:text-primary-foreground",
         "justify-center group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}

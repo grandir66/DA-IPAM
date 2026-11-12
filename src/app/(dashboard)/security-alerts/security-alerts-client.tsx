@@ -1,6 +1,8 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 import { LoadError } from "@/components/shared/load-error";
+import { BarraFiltri, PannelloFiltri, VoceFiltro, type FiltroAcceso } from "@/components/shared/barra-filtri";
+import { FilaNumeri } from "@/components/shared/console";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -122,6 +124,7 @@ export function SecurityAlertsClient() {
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [windowId, setWindowId] = useState("24h");
   const [system, setSystem] = useState<string | null>(null);
+  const [filtriAperti, setFiltriAperti] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [classifica, setClassifica] = useState<Classifica>("account");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -245,6 +248,10 @@ export function SecurityAlertsClient() {
   const events = truncated ? allEvents.slice(0, ALERTS_LIMIT) : allEvents;
   const windows = WINDOW_CHOICES;
   const windowLabel = windows.find((w) => w.id === windowId)?.labelIt ?? windowId;
+  /** I filtri accesi come etichette: il periodo c'è sempre, e toglierlo riporta alle ultime 24 ore. */
+  const filtriAccesi: FiltroAcceso[] = [{ chiave: "periodo", testo: windowLabel, togli: () => setWindowId("24h") }];
+  if (system) filtriAccesi.push({ chiave: "sistema", testo: `Sistema: ${SYSTEM_CHOICES.find((x) => x.id === system)?.labelIt ?? system}`, togli: () => setSystem(null) });
+  if (onlyOpen) filtriAccesi.push({ chiave: "stato", testo: "Solo aperti", togli: () => setOnlyOpen(false) });
   const systemLabel = system ? (stats?.systems.find((sy) => sy.id === system)?.labelIt ?? system) : null;
   // Aperti fuori dal periodo: senza questa cifra un evento vecchio non preso in carico
   // sparirebbe dall'elenco senza dirlo.
@@ -307,50 +314,19 @@ export function SecurityAlertsClient() {
         </div>
       </div>
 
-      {/* ── Filtri in una riga: periodo, sistema, categoria, stato ────── */}
-      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-        {windows.map((w) => (
-          <Button key={w.id} variant={windowId === w.id ? "default" : "outline"} size="sm" onClick={() => setWindowId(w.id)}>
-            {w.labelIt}
-          </Button>
-        ))}
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-        <Button variant={system === null ? "default" : "outline"} size="sm" onClick={() => setSystem(null)}>
-          Tutti i sistemi
-        </Button>
-        {systems.map((sy) => (
-          <Button key={sy.id} variant={system === sy.id ? "default" : "outline"} size="sm" onClick={() => setSystem(sy.id)}>
-            {sy.labelIt}
-          </Button>
-        ))}
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-        <Button variant={onlyOpen ? "default" : "outline"} size="sm" onClick={() => setOnlyOpen((v) => !v)}>
-          {onlyOpen ? "Solo aperti" : "Tutti gli stati"}
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-        <Button variant={category === null ? "default" : "outline"} size="sm" onClick={() => setCategory(null)}>
-          Tutte le categorie
-        </Button>
-        {categories.map((c) => (
-          <Button key={c.id} variant={category === c.id ? "default" : "outline"} size="sm" onClick={() => setCategory(c.id)}>
-            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
-            {c.labelIt}
-            {openCounts[c.id] ? <span className="ml-1.5 font-bold tabular-nums">{openCounts[c.id]}</span> : null}
-          </Button>
-        ))}
-      </div>
-
-      {/* ── Numeri di testa e avvisi, in una riga ─────────────────────── */}
-      <div className="flex flex-wrap items-stretch gap-2 shrink-0">
-        <Numero
-          titolo="Alert nel periodo"
-          valore={statsAssenti ? "—" : numero(split.attackTotal)}
-          title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${windowLabel} · ${split.diagnosticTotal} non ostili esclusi` : windowLabel}
-        />
-        <Numero titolo="Eventi aperti" valore={stats ? numero(stats.openTotal) : "—"} title="Da prendere in carico" />
-        <Numero titolo={daDc ? "DC coinvolti" : "Agent coinvolti"} valore={statsAssenti ? "—" : numero(totals?.agents ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
-        <Numero titolo={daDc ? "Tipi di evento" : "Regole distinte"} valore={statsAssenti ? "—" : numero(totals?.rules ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
+      {/* Scheletro comune (Riccardo, 13/11/2026: «molti livelli di pulsanti sovrapposti»): fila dei numeri, barra dei
+          filtri col pannello a destra, poi una sola fila di categorie. Prima erano cinque livelli. */}
+      <FilaNumeri
+        className="shrink-0"
+        voci={[
+          { titolo: "Alert nel periodo", valore: statsAssenti ? null : split.attackTotal, qualifica: windowLabel.toLowerCase(), aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${split.diagnosticTotal} non ostili esclusi` : undefined },
+          { titolo: "Eventi aperti", valore: stats ? stats.openTotal : null, aiuto: "Da prendere in carico. Un clic mostra solo gli aperti, un altro tutti gli stati", onClick: () => setOnlyOpen((v) => !v), acceso: onlyOpen },
+          { titolo: daDc ? "DC coinvolti" : "Agent coinvolti", valore: statsAssenti ? null : totals?.agents ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+          { titolo: daDc ? "Tipi di evento" : "Regole distinte", valore: statsAssenti ? null : totals?.rules ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+        ]}
+      />
+      {(stats?.unavailable || stats?.syncState.lastError) && (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
         {stats?.unavailable ? (
           <span className={`self-center rounded-md border px-2 py-1 text-[13px] ${STILE_STATO.attenzione.classi}`}>
             {STILE_STATO.attenzione.segno} Grafici non disponibili: {stats.unavailable}
@@ -361,6 +337,47 @@ export function SecurityAlertsClient() {
             {STILE_STATO.guasto.segno} {daDc ? "Lettura non riuscita" : "Ultimo poll fallito"}: {stats.syncState.lastError}
           </span>
         ) : null}
+        </div>
+      )}
+
+      <div className="shrink-0">
+        <BarraFiltri
+          accesi={filtriAccesi}
+          onApri={() => setFiltriAperti(true)}
+          onTogliTutti={() => { setWindowId("24h"); setSystem(null); setOnlyOpen(false); setCategory(null); }}
+        />
+      </div>
+      <PannelloFiltri aperto={filtriAperti} onAperto={setFiltriAperti} chiudi="Chiudi">
+        <VoceFiltro etichetta="Periodo">
+          <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+            {windows.map((w) => <option key={w.id} value={w.id}>{w.labelIt}</option>)}
+          </select>
+        </VoceFiltro>
+        <VoceFiltro etichetta="Sistema">
+          <select value={system ?? ""} onChange={(e) => setSystem(e.target.value || null)} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+            <option value="">Tutti i sistemi</option>
+            {systems.map((sy) => <option key={sy.id} value={sy.id}>{sy.labelIt}</option>)}
+          </select>
+        </VoceFiltro>
+        <VoceFiltro etichetta="Stato">
+          <select value={onlyOpen ? "aperti" : "tutti"} onChange={(e) => setOnlyOpen(e.target.value === "aperti")} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+            <option value="aperti">Solo aperti</option>
+            <option value="tutti">Tutti gli stati</option>
+          </select>
+        </VoceFiltro>
+      </PannelloFiltri>
+
+      <div className="flex items-center gap-1.5 overflow-x-auto shrink-0" role="group" aria-label="Categoria">
+        <Button variant={category === null ? "default" : "outline"} size="sm" className="shrink-0" onClick={() => setCategory(null)}>
+          Tutte le categorie
+        </Button>
+        {categories.filter((c) => (openCounts[c.id] ?? 0) > 0 || category === c.id).map((c) => (
+          <Button key={c.id} variant={category === c.id ? "default" : "outline"} size="sm" className="shrink-0" onClick={() => setCategory(category === c.id ? null : c.id)}>
+            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
+            {c.labelIt}
+            <span className="ml-1.5 font-bold tabular-nums">{openCounts[c.id] ?? 0}</span>
+          </Button>
+        ))}
       </div>
 
       {/* ── Corpo: coda a sinistra, analisi a destra ──────────────────── */}
@@ -545,14 +562,6 @@ const CLASSIFICHE: { id: Classifica; etichetta: string; spiegazione: string }[] 
 ];
 
 /** Numero di testa: card bassa come gli indicatori della dashboard. */
-function Numero({ titolo, valore, title }: { titolo: string; valore: string; title?: string }) {
-  return (
-    <span className="flex flex-col justify-center rounded-md border bg-card px-3 py-1 leading-tight" title={title}>
-      <span className="text-[13px] text-muted-foreground">{titolo}</span>
-      <span className="text-xl font-bold leading-none tabular-nums">{valore}</span>
-    </span>
-  );
-}
 
 /**
  * Testata quando i dati vengono dai DC: quali DC si leggono, quando, e cosa non va. Un registro

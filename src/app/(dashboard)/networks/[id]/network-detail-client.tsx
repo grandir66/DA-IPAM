@@ -216,6 +216,11 @@ export function NetworkDetailClient({
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterClassification, setFilterClassification] = useState<string>("");
   const [filterKnownOnly, setFilterKnownOnly] = useState(false);
+  /** Filtri sì/no aggiunti il 12/11/2026. Dichiarati QUI, prima di `filteredHosts` che li legge: messi più sotto, la pagina
+   *  cadeva a ogni resa («Cannot access before initialization», 0.9.1222 e 0.9.1223 su DTS) (Riccardo: «i filtri attivabili potrebbero essere di più»). */
+  const [filterApparato, setFilterApparato] = useState(false);
+  const [filterAd, setFilterAd] = useState(false);
+  const [filterDhcp, setFilterDhcp] = useState(false);
   const [filterSistema, setFilterSistema] = useState<string>("");
   const [filterProduttore, setFilterProduttore] = useState<string>("");
   const [filterForma, setFilterForma] = useState<string>("");
@@ -500,10 +505,6 @@ export function NetworkDetailClient({
   });
 
   const [filtriAperti, setFiltriAperti] = useState(false);
-  /** Filtri sì/no aggiunti il 12/11/2026 (Riccardo: «i filtri attivabili potrebbero essere di più»). */
-  const [filterApparato, setFilterApparato] = useState(false);
-  const [filterAd, setFilterAd] = useState(false);
-  const [filterDhcp, setFilterDhcp] = useState(false);
   const cancellaFiltri = () => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); setFilterApparato(false); setFilterAd(false); setFilterDhcp(false); };
   /** Le categorie madri presenti in questa rete, col numero di righe: un pulsante l'una. */
   const categorieMadri = useMemo(() => {

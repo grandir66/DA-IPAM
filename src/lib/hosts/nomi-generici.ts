@@ -15,3 +15,14 @@ export function nomeGenerico(nome: string | null | undefined): boolean {
   if (!corto) return false;
   return GENERICI.has(corto) || GENERICI.has(corto.replace(/[-_ ]?\d{1,2}$/, ""));
 }
+
+/**
+ * Nome che un telefono, un tablet, un orologio o un Mac si dà da solo in DHCP. Serve solo alla bonifica delle righe
+ * già sporche: lì è l'unico segno sicuro che i dati rimasti sono di un altro apparato (un iPhone non è «HP Inc.»).
+ */
+const NOME_PERSONALE = /^(iphone|ipad|watch|apple-?watch|mac|macbook[\w-]*|imac|galaxy[\w-]*|s2\d[\w-]*|pixel[\w-]*|fairphone[\w-]*|android-[0-9a-f]+|redmi[\w-]*|oneplus[\w-]*|xiaomi[\w-]*|huawei[\w-]*)$/i;
+
+export function nomePersonale(nome: string | null | undefined): boolean {
+  const corto = (nome ?? "").trim().split(".")[0];
+  return NOME_PERSONALE.test(corto);
+}

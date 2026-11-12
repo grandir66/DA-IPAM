@@ -7,8 +7,9 @@
  * Modulo puro, senza database. Le scelte a mano si segnalano e basta: nessuna proposta le sostituisce da sola.
  */
 import { getDeviceCategoryGroup } from "@/lib/device-classifications";
-import { nomeGenerico } from "@/lib/hosts/nomi-generici";
-import { nomePersonale } from "@/lib/hosts/cambio-inquilino";
+// Solo moduli puri: questo file lo importa anche la pagina (la build del 12/11 è caduta per un import che
+// portava better-sqlite3 nel browser).
+import { nomeGenerico, nomePersonale } from "@/lib/hosts/nomi-generici";
 
 export type Famiglia =
   | "ricalcolo"

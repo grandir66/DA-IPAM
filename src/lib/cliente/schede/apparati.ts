@@ -330,7 +330,8 @@ export function apparatiConPorte(db: Database.Database): ApparatoConPorte[] {
       };
     })
     .filter((a) => a.porte.length > 0)
-    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+    // Ordine «naturale»: SW-2 prima di SW-10, maiuscole e minuscole insieme (Riccardo, 12/11: «in modo casuale»).
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it", { numeric: true, sensitivity: "base" }));
 }
 
 function porteLette(db: Database.Database): number {

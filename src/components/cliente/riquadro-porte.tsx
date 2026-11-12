@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { EthernetPort } from "lucide-react";
 import { Legenda } from "@/components/shared/console";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { classePorta, DettaglioPorta } from "@/components/cliente/pannello-porte";
 import type { ApparatoConPorte } from "@/lib/cliente/schede/apparati";
@@ -19,9 +20,16 @@ const conto = (n: number, uno: string, tanti: string): string => `${n} ${n === 1
 export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
   const [ip, setIp] = useState<string | null>(apparati[0]?.ip ?? null);
   const [porta, setPorta] = useState<number | null>(null);
+  const [cerca, setCerca] = useState("");
+  const [ordine, setOrdine] = useState<"nome" | "libere">("nome");
   const libere = apparati.reduce((n, a) => n + a.libere, 0);
   const totale = apparati.reduce((n, a) => n + a.porte.length, 0);
   const senzaStato = apparati.reduce((n, a) => n + a.senzaStato, 0);
+  // Con molti switch l'elenco non si scorre a occhio (Riccardo, 12/11/2026): si cerca per nome o indirizzo e si può
+  // mettere in testa chi ha più porte libere. L'ordine per nome arriva già fatto dal server.
+  const q = cerca.trim().toLowerCase();
+  const trovati = q ? apparati.filter((a) => a.nome.toLowerCase().includes(q) || a.ip.includes(q)) : apparati;
+  const elenco = ordine === "libere" ? [...trovati].sort((a, b) => b.libere - a.libere) : trovati;
   const scelto = apparati.find((a) => a.ip === ip) ?? null;
   const portaScelta = scelto?.porte.find((p) => p.numero === porta) ?? null;
   const contesto = `${conto(apparati.length, "apparato", "apparati")} · ${conto(totale, "porta letta", "porte lette")}${senzaStato > 0 ? ` · ${senzaStato} senza stato` : ""}`;
@@ -57,8 +65,34 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
           {/* Scorre solo l'elenco: il pannello delle porte resta in vista anche scegliendo un apparato in fondo. */}
-          <ul className="max-h-[66vh] space-y-1 overflow-y-auto pr-1">
-            {apparati.map((a) => {
+          <div className="min-w-0 space-y-2">
+            <Input
+              type="search"
+              value={cerca}
+              onChange={(e) => setCerca(e.target.value)}
+              placeholder="Cerca per nome o indirizzo"
+              aria-label="Cerca un apparato per nome o indirizzo"
+              className="h-9 text-[14px]"
+            />
+            <div className="flex items-center justify-between gap-2 text-[13px] text-muted-foreground">
+              <span>{q ? `${trovati.length} su ${apparati.length}` : conto(apparati.length, "apparato", "apparati")}</span>
+              <span className="flex gap-1">
+                {([["nome", "Per nome"], ["libere", "Più libere"]] as const).map(([id, testo]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={ordine === id}
+                    onClick={() => setOrdine(id)}
+                    className={`rounded-md border px-2 py-0.5 ${ordine === id ? "border-foreground bg-muted font-semibold text-foreground" : "border-[var(--vc-bordo)] hover:border-primary"}`}
+                  >
+                    {testo}
+                  </button>
+                ))}
+              </span>
+            </div>
+          <ul className="max-h-[58vh] space-y-1 overflow-y-auto pr-1">
+            {elenco.length === 0 && <li className="px-2.5 py-2 text-[13px] text-muted-foreground">Nessun apparato con questo nome o indirizzo.</li>}
+            {elenco.map((a) => {
               const attivo = a.ip === ip;
               const piene = a.porte.length - a.libere - a.senzaStato;
               return (
@@ -84,6 +118,7 @@ export function RiquadroPorte({ apparati }: { apparati: ApparatoConPorte[] }) {
               );
             })}
           </ul>
+          </div>
           {scelto && (
             <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">

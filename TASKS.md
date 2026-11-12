@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-12 — Menu troppo ricco: Network e Sicurezza da riordinare (Riccardo, tavola proposta)
+
+Riccardo, 12/11: «anche il menù mi sembra troppo ricco di opzioni; pur mantenendo le funzioni, alcune sono davvero accessorie e non dovrebbero forse essere visualizzate sempre, e alcune dovrebbero stare dentro altre opzioni… mi serve il tuo aiuto per riorganizzare i menù, i tab della UI, sia della parte network che security».
+
+- [x] Tavola mostrata in chat il 12/11 (prima e dopo, dodici oggetti). Criterio: nel menu resta dove si va tutti i giorni; ciò che serve una pagina diventa una scheda di quella pagina; nessuna funzione si perde, gli indirizzi vecchi continuano a rispondere.
+  - **Network da 13 a 6 voci**: Subnet · Discovery (schede Elenco, Attribuzione, Cambiamenti, IP esclusi) · Topologia (Mappa, Porte, Tabella ARP) · Software · Active Directory · Credenziali (Credenziali, Controller di rete). «Sorgenti DHCP» diventa una scheda di «DHCP» in Network Services. Spariscono le intestazioni «Credenziali» e «Diagnostica».
+  - **Sicurezza da 8 a 5 voci, senza i blocchi per motore**: Findings · Scansioni (Interne, VA dall'Edge) · Rete (Servizi di rete, Segmentazione, Reti dal trunk) · Alert sicurezza · Sicurezza del dominio.
+- [ ] In attesa del sì di Riccardo. Da decidere con lui: il nome della voce «Rete» sotto Sicurezza (si confonde con Network?); se «Software» resta in Network o va in Inventario.
+
 ## 2026-11-12 — Intestazione della subnet: troppe opzioni e troppi modi di filtrare (Riccardo, tavola proposta)
 
 Riccardo, 12/11: «l'intestazione ha molte opzioni e molte modalità di filtri e credo sarebbero da chiarire, ottimizzare»: «Spunta tutte le righe ha poco senso con i filtri già possibili»; «le voci griglia e lista insieme ai filtri fanno perdere il significato di quelle funzioni»; «i pulsanti in alto un pochino a sinistra ed uno a destra non hanno molto senso»; «i filtri attivabili potrebbero essere di più»; «il filtro per categoria dovrebbe prevedere di poter scegliere anche la madre di una categoria, non solo le foglie».

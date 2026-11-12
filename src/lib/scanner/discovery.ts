@@ -84,6 +84,7 @@ import {
   recordEsitiAccessoWindows,
   getCredentialById,
 } from "@/lib/db";
+import { segnaSnmpLetto } from "@/lib/credentials/snmp-letto";
 import type { EsitoAccessoDaScrivere } from "@/lib/db-tenant";
 import { resolveCredentialsForDb } from "@/lib/credentials/resolve";
 import type { CredProtocol, ResolveTarget, ResolvedCredential } from "@/lib/credentials/resolve";
@@ -3752,6 +3753,13 @@ async function runDiscovery(
 
     if (!host) continue;
     if (host.first_seen === host.created_at) newHosts++;
+
+    // SNMP ha risposto: la voce d'archivio di quella community vale come validata per l'host (credentials/snmp-letto.ts).
+    // Annota una lettura già fatta, non prova niente; un difetto qui non ferma la scansione.
+    if (snmpDataJson !== undefined && nmapData?.snmpCommunity) {
+      try { segnaSnmpLetto(getDb(), host.id, networkId, nmapData.snmpCommunity); }
+      catch (e) { console.error("[snmp-letto] annotazione non riuscita:", e instanceof Error ? e.message : e); }
+    }
 
     // Fix C1 (fase 4, ritiro legacy): qui girava anche runClassificationEngineForHost
     // (motore di classificazione legacy) a OGNI scan schedulato — era rimasto l'ultimo

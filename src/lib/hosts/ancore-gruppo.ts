@@ -29,3 +29,13 @@ export function macAncora(valore: string | null | undefined): string | null {
   if (MAC_CONDIVISO.test(m)) return null;
   return m;
 }
+
+/**
+ * Un nome o un seriale che unisce righe con tanti MAC veri diversi non è un apparato: è un modello («SIP-T23G» su
+ * diciotto telefoni, DTS 12/11/2026). Un apparato con più schede ne ha poche rispetto alle righe (un router con
+ * dodici indirizzi ne aveva due). `macVeri` = i MAC d'ancora (`macAncora`) delle righe unite, coi doppioni.
+ */
+export function ancoraDiModello(righe: number, macVeri: readonly string[]): boolean {
+  const diversi = new Set(macVeri).size;
+  return diversi >= 3 && diversi >= righe * 0.75;
+}

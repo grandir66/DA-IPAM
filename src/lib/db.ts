@@ -19,7 +19,7 @@
 import { correggiOidProfiliStampanti, correggiOidProfiloQnap } from "./db-hub";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
-import { macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
+import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import Database from "better-sqlite3";
@@ -6676,6 +6676,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   // Key → Set<host_id>
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
+  const macDellHost = new Map<number, string>();
   const PRIORITY: Record<string, number> = { serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
 
@@ -6697,6 +6698,7 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
     const serial = serialeAncora(h.serial_number) ?? serialeAncora(h.dev_serial);
     if (serial) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
     const macVero = macAncora(h.mac);
+    if (macVero) macDellHost.set(h.id, macVero);
     if (macVero) addToBucket(`mac:${macVero}`, h.id, "mac", `mac:${macVero}`);
 
     // 2. SNMP sysName
@@ -6744,6 +6746,9 @@ export function recomputeMultihomedLinks(): { groups: number; hosts_linked: numb
   for (const [key, hostIds] of buckets) {
     if (hostIds.size < 2) continue;
     if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
+    // Tanti MAC veri diversi sotto lo stesso nome o seriale: è un modello, non un apparato (ancore-gruppo.ts).
+    if (!key.startsWith("mac:") && !key.startsWith("physical:")
+      && ancoraDiModello(hostIds.size, [...hostIds].map((hid) => macDellHost.get(hid)).filter((m): m is string => !!m))) continue;
     // Verifica che ci siano ≥2 reti diverse
     const nets = new Set<number>();
     for (const hid of hostIds) nets.add(hostNet.get(hid)!);

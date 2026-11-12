@@ -11,6 +11,7 @@
 import type Database from "better-sqlite3";
 import { ipToLong } from "@/lib/utils";
 import { sqlApparatoDellHost } from "./apparato-del-cluster";
+import { macAncora } from "@/lib/hosts/ancore-gruppo";
 
 export interface MembroCluster { host_id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: boolean }
 
@@ -88,12 +89,15 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
  * (Riccardo, 12/11/2026: «molti dei router mikrotik erano semplicemente degli ip aggiuntivi rispetto al principale…
  * nella vista discovery contano gli oggetti non gli ip»). Su DTS i MikroTik non avevano un apparato fisico censito,
  * quindi restavano una riga per indirizzo. Un gruppo che tocca un cluster fisico già accorpato si lascia a quello.
+ * Prudenza: un gruppo con più di due MAC veri diversi non si accorpa. I gruppi nascono anche da seriali ereditati e
+ * da nomi di modello, e nascondere una riga è peggio che mostrarne una di troppo.
  */
+const MAX_MAC_VERI_PER_ACCORPARE = 2;
 function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, InfoClusterDiscovery>): void {
-  let righe: Array<{ group_id: string; is_primary: number; id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: number | null }>;
+  let righe: Array<{ group_id: string; is_primary: number; id: number; ip: string; mac: string | null; network_id: number; network_name: string; status: string; ha_apparato: number | null }>;
   try {
     righe = db.prepare(
-      `SELECT ml.group_id, ml.is_primary, h.id, h.ip, h.network_id, n.name AS network_name, h.status,
+      `SELECT ml.group_id, ml.is_primary, h.id, h.ip, h.mac, h.network_id, n.name AS network_name, h.status,
               (SELECT 1 FROM network_devices nd WHERE ${sqlApparatoDellHost("nd", "h")} LIMIT 1) AS ha_apparato
          FROM multihomed_links ml
          JOIN hosts h ON h.id = ml.host_id
@@ -102,17 +106,20 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
   } catch {
     return; // tabella assente su un archivio vecchio: restano i soli cluster fisici
   }
-  const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[] }>();
+  const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[]; mac: Set<string> }>();
   for (const r of righe) {
     let g = perGruppo.get(r.group_id);
     if (!g) {
-      g = { primario: null, membri: [] };
+      g = { primario: null, membri: [], mac: new Set() };
       perGruppo.set(r.group_id, g);
     }
+    const vero = macAncora(r.mac);
+    if (vero) g.mac.add(vero);
     if (r.is_primary === 1) g.primario = r.id;
     g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1 });
   }
-  for (const { primario, membri } of perGruppo.values()) {
+  for (const { primario, membri, mac } of perGruppo.values()) {
+    if (mac.size > MAX_MAC_VERI_PER_ACCORPARE) continue;
     if (membri.some((m) => mappa.has(m.host_id))) continue;
     const p = principaleDelCluster(membri, primario);
     if (p == null) continue;

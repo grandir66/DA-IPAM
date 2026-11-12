@@ -12,7 +12,7 @@
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
-import { macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
+import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -9108,6 +9108,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
+  const macDellHost = new Map<number, string>();
   // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
   const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
@@ -9137,6 +9138,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     const serial = serialeAncora(h.serial_number) ?? serialeAncora(h.dev_serial);
     if (serial) addToBucket(`serial:${serial}`, h.id, "serial_number", serial);
     const macVero = macAncora(h.mac);
+    if (macVero) macDellHost.set(h.id, macVero);
     if (macVero) addToBucket(`mac:${macVero}`, h.id, "mac", `mac:${macVero}`);
     let sysName = h.dev_sysname ?? null;
     if (!sysName && h.snmp_data) { try { sysName = (JSON.parse(h.snmp_data) as { sysName?: string }).sysName ?? null; } catch { /* skip */ } }
@@ -9157,6 +9159,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   for (const [key, hostIds] of buckets) {
     if (hostIds.size < 2) continue;
     if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
+    // Tanti MAC veri diversi sotto lo stesso nome o seriale: è un modello, non un apparato (ancore-gruppo.ts).
+    if (!key.startsWith("mac:") && !key.startsWith("physical:")
+      && ancoraDiModello(hostIds.size, [...hostIds].map((hid) => macDellHost.get(hid)).filter((m): m is string => !!m))) continue;
     const isPhysical = key.startsWith("physical:");
     if (isPhysical) {
       for (const hid of hostIds) physicalLinkedHosts.add(hid);

@@ -56,6 +56,8 @@ import {
 } from "@/lib/device-classifications";
 import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { etichettaFunzione } from "@/lib/classification/funzioni";
 import { passaFiltroProduttore, produttoriTrovati, PRODUTTORE_IGNOTO } from "@/lib/classification/produttore";
 import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
 import { gruppiFunzioni } from "@/lib/classification/funzioni";
@@ -534,6 +536,9 @@ function testoCella(h: EnrichedHost, colId: string): string {
   }
 }
 
+/** Valore del filtro di categoria per le righe senza categoria. */
+const SENZA_CATEGORIA = "__senza__";
+
 export default function DiscoveryPage() {
   const [hosts, setHosts] = useState<EnrichedHost[]>([]);
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, LibreNMSHostMap>>(new Map());
@@ -564,6 +569,7 @@ export default function DiscoveryPage() {
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [sistemaFilter, setSistemaFilter] = useState("");
   const [produttoreFilter, setProduttoreFilter] = useState("");
+  const [filtriAperti, setFiltriAperti] = useState(false);
   const produttori = useMemo(() => produttoriTrovati(hosts), [hosts]);
   const [formaFilter, setFormaFilter] = useState("");
   const [funzioneFilter, setFunzioneFilter] = useState("");
@@ -1075,7 +1081,8 @@ export default function DiscoveryPage() {
       // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
       // preset personali `user:<slug>` prima svuotavano la tabella.
       const preset = presets.find((p) => p.filter === classFilter);
-      criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
+      if (classFilter === SENZA_CATEGORIA) criteri.push((id) => prendi(id, (h) => !h.classification || h.classification === "unknown"));
+      else criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
     }
     if (sistemaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroSistema(sistemaFilter, h)));
     if (produttoreFilter) criteri.push((id) => prendi(id, (h) => passaFiltroProduttore(produttoreFilter, h.vendor)));
@@ -1104,6 +1111,25 @@ export default function DiscoveryPage() {
 
   // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
   const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
+  /** Le categorie madri presenti, col numero di righe, più «Più IP» e «Senza categoria»: un pulsante l'una. */
+  const categorieMadri = useMemo(() => {
+    const conta = new Map<string, number>();
+    for (const h of hostVisibili) {
+      const g = getDeviceCategoryGroup(h.classification);
+      conta.set(g, (conta.get(g) ?? 0) + 1);
+    }
+    const scelto = classFilter.startsWith(PREFISSO_GRUPPO) ? classFilter.slice(PREFISSO_GRUPPO.length)
+      : classFilter && classFilter !== SENZA_CATEGORIA && !classFilter.includes(":") ? getDeviceCategoryGroup(classFilter) : null;
+    const madri: Array<{ valore: string; titolo: string; cosa: string; quanti: number; attiva: boolean }> = DEVICE_CATEGORY_GROUP_ORDER
+      .filter((g) => (conta.get(g) ?? 0) > 0)
+      .map((g) => ({ valore: `${PREFISSO_GRUPPO}${g}`, titolo: DEVICE_CATEGORY_GROUP_LABELS[g], cosa: `Tutta la categoria «${DEVICE_CATEGORY_GROUP_LABELS[g]}». Per una sola classe: Filtri → Classificazione`, quanti: conta.get(g) ?? 0, attiva: scelto === g }));
+    const senza = conta.get("unknown") ?? 0;
+    if (senza > 0) madri.push({ valore: SENZA_CATEGORIA, titolo: "Senza categoria", cosa: "Le righe che non hanno ancora una categoria", quanti: senza, attiva: classFilter === SENZA_CATEGORIA });
+    const piuIp = hostVisibili.filter((h) => h.multihomed != null).length;
+    if (piuIp > 0) madri.push({ valore: "group:multihomed", titolo: "Più IP", cosa: "Gli apparati con più di un indirizzo", quanti: piuIp, attiva: classFilter === "group:multihomed" });
+    return madri;
+  }, [hostVisibili, classFilter]);
+
   const hostPerId = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
 
   // ---------- sort ----------
@@ -1164,6 +1190,24 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
+  const cancellaFiltri = () => { setStatusFilter(""); setClassFilter(""); setNetworkFilter(""); setSistemaFilter(""); setProduttoreFilter(""); setFormaFilter(""); setFunzioneFilter(""); setVulnFilter(""); setAcqFilter(""); setSoloDaRivedere(false); };
+  /** I filtri accesi, come etichette che si tolgono una per una. */
+  const filtriAttivi: Array<{ chiave: string; testo: string; togli: () => void }> = [];
+  if (statusFilter) filtriAttivi.push({ chiave: "stato", testo: `Stato: ${statusFilter}`, togli: () => setStatusFilter("") });
+  if (classFilter) {
+    const madre = categorieMadri.find((c) => c.valore === classFilter);
+    const preset = presets.find((x) => x.filter === classFilter);
+    filtriAttivi.push({ chiave: "categoria", testo: `Categoria: ${madre?.titolo ?? (preset ? etichettaPreset(preset) : getClassificationLabel(classFilter))}`, togli: () => setClassFilter("") });
+  }
+  if (networkFilter) filtriAttivi.push({ chiave: "subnet", testo: `Subnet: ${networks.find(([id]) => String(id) === networkFilter)?.[1].name ?? networkFilter}`, togli: () => setNetworkFilter("") });
+  if (sistemaFilter) filtriAttivi.push({ chiave: "sistema", testo: `Sistema: ${sistemaFilter === SISTEMA_IGNOTO ? "non si sa" : SISTEMI.find((x) => x.valore === sistemaFilter)?.etichetta ?? sistemaFilter}`, togli: () => setSistemaFilter("") });
+  if (produttoreFilter) filtriAttivi.push({ chiave: "produttore", testo: `Produttore: ${produttoreFilter === PRODUTTORE_IGNOTO ? "non si sa" : produttoreFilter}`, togli: () => setProduttoreFilter("") });
+  if (formaFilter) filtriAttivi.push({ chiave: "forma", testo: "Fisico o virtuale", togli: () => setFormaFilter("") });
+  if (funzioneFilter) filtriAttivi.push({ chiave: "funzione", testo: `Funzione: ${etichettaFunzione(funzioneFilter)}`, togli: () => setFunzioneFilter("") });
+  if (vulnFilter) filtriAttivi.push({ chiave: "vuln", testo: "Vulnerabilità", togli: () => setVulnFilter("") });
+  if (acqFilter) filtriAttivi.push({ chiave: "acq", testo: "Dati acquisiti", togli: () => setAcqFilter("") });
+  if (soloDaRivedere) filtriAttivi.push({ chiave: "rivedere", testo: "Da rivedere", togli: () => setSoloDaRivedere(false) });
+
   useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, sistemaFilter, produttoreFilter, formaFilter, funzioneFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
@@ -2332,6 +2376,63 @@ export default function DiscoveryPage() {
                 />
               </div>
 
+              {/* Barra compatta (Riccardo, 12/11/2026): le tendine stanno nel pannello a destra, i filtri accesi sono
+                  etichette che si tolgono. Stessa forma della pagina della subnet. */}
+              <Button variant="outline" onClick={() => setFiltriAperti(true)}>
+                <Filter className="h-4 w-4 mr-1" />
+                Filtri{filtriAttivi.length > 0 ? ` · ${filtriAttivi.length}` : ""}
+              </Button>
+              {filtriAttivi.map((f) => (
+                <button
+                  key={f.chiave}
+                  type="button"
+                  onClick={f.togli}
+                  title="Togli questo filtro"
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-primary/60 bg-primary/10 px-2 text-[13px] hover:bg-primary/20"
+                >
+                  {f.testo}
+                  <X className="h-3 w-3" />
+                </button>
+              ))}
+              {filtriAttivi.length > 1 && (
+                <Button variant="ghost" size="sm" onClick={cancellaFiltri}>Togli tutti</Button>
+              )}
+              <span className="ml-auto" />
+              <select
+                aria-label="Colonne mostrate"
+                title="Quali colonne mostrare"
+                value={vista}
+                onChange={(e) => setVista(e.target.value as typeof vista)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
+                  <option key={v} value={v}>Colonne: {v === "tutte" ? "le tue" : VISTE[v].etichetta.toLowerCase()}</option>
+                ))}
+              </select>
+
+              {/* Column picker */}
+              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => { setVista("tutte"); setColumnsDialogOpen(true); }}>
+                <Columns3 className="h-4 w-4" />
+              </Button>
+
+              {/* Export CSV */}
+              <Button variant="outline" size="icon" onClick={exportCsv} title="Esporta CSV">
+                <Download className="h-4 w-4" />
+              </Button>
+
+              {/* Refresh */}
+              <Button variant="outline" size="icon" onClick={fetchData} disabled={loading} title="Aggiorna">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+      </div>
+
+      <Sheet open={filtriAperti} onOpenChange={setFiltriAperti}>
+        <SheetContent side="right" className="sm:max-w-sm overflow-y-auto" showCloseButton>
+          <SheetHeader>
+            <SheetTitle>Filtri</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col gap-3 px-4 pb-4 [&_[data-slot=select-trigger]]:w-full">
               {/* Status filter */}
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "")}>
                 <SelectTrigger className="w-32">
@@ -2449,22 +2550,17 @@ export default function DiscoveryPage() {
                 </SelectContent>
               </Select>
 
-              {/* Column picker */}
-              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => { setVista("tutte"); setColumnsDialogOpen(true); }}>
-                <Columns3 className="h-4 w-4" />
-              </Button>
-
-              {/* Export CSV */}
-              <Button variant="outline" size="icon" onClick={exportCsv} title="Esporta CSV">
-                <Download className="h-4 w-4" />
-              </Button>
-
-              {/* Refresh */}
-              <Button variant="outline" size="icon" onClick={fetchData} disabled={loading} title="Aggiorna">
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              </Button>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={soloDaRivedere} onCheckedChange={(v) => setSoloDaRivedere(v === true)} />
+              Solo le righe da rivedere
+            </label>
+            <div className="flex justify-between gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={cancellaFiltri} disabled={filtriAttivi.length === 0}>Togli tutti</Button>
+              <Button size="sm" onClick={() => setFiltriAperti(false)}>Mostra {filtered.length} righe</Button>
             </div>
-      </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Main table card */}
       <Card>
@@ -2475,24 +2571,32 @@ export default function DiscoveryPage() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           {/* Riga «Vista» a tutta larghezza con la paginazione a destra (Riccardo, 20/10): sotto
               la scheda la paginazione occupava ~100 px, nella riga del titolo mandava a capo i filtri. */}
-          <div className="flex w-full flex-wrap items-center gap-1.5">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Vista delle colonne">
-            <span className="text-xs text-muted-foreground mr-1">Vista</span>
-            {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
-              <Button
-                key={v}
-                variant={vista === v ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs"
-                aria-pressed={vista === v}
-                onClick={() => setVista(v)}
-                title={v === "tutte" ? "Le colonne scelte da te" : `Solo le colonne per ${VISTE[v].etichetta.toLowerCase()}`}
-              >
-                {v === "tutte" ? "Tutte" : VISTE[v].etichetta}
+          <div className="flex w-full items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto" role="group" aria-label="Categoria">
+              <Button variant={classFilter === "" ? "default" : "outline"} size="sm" className="h-7 shrink-0 text-[13px]" onClick={() => setClassFilter("")}>
+                Tutti <span className="ml-1.5 tabular-nums opacity-70">{hostVisibili.length}</span>
               </Button>
-            ))}
-          </div>
-            <div className="ml-auto">
+              {categorieMadri.map((c) => (
+                <Button
+                  key={c.valore}
+                  variant={c.attiva ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 shrink-0 text-[13px]"
+                  title={c.cosa}
+                  onClick={() => setClassFilter(c.attiva ? "" : c.valore)}
+                >
+                  {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
+                </Button>
+              ))}
+              <Link
+                href="/controllo-classificazione"
+                className="inline-flex h-7 shrink-0 items-center rounded-md px-2 text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                title="Controlla e correggi la classificazione"
+              >
+                Attribuzione
+              </Link>
+            </div>
+            <div className="ml-auto shrink-0">
               <Pagination
                 inTesta
                 page={safeP}
@@ -2504,89 +2608,6 @@ export default function DiscoveryPage() {
                 total={sortedRows.length}
               />
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              variant={classFilter === "" ? "default" : "outline"}
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => setClassFilter("")}
-            >
-              Tutti
-            </Button>
-            <Link
-              href="/controllo-classificazione"
-              className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted"
-              title="Confronta la categoria scritta con quella migliore possibile e applica le proposte"
-            >
-              Attribuzione
-            </Link>
-            {(() => {
-              /* Il conteggio esce dai dati già caricati: se nessuno aspetta una revisione
-               * la chip non c'è, invece di mostrare uno zero inventato. */
-              const quanti = hostVisibili.filter((h) => (h.campi_da_rivedere ?? "").trim() !== "").length;
-              if (quanti === 0 && !soloDaRivedere) return null;
-              return (
-                <Button
-                  variant={soloDaRivedere ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setSoloDaRivedere((v) => !v)}
-                  title="Solo gli host con campi scritti da un profilo e non ancora confermati"
-                >
-                  Da rivedere {quanti}
-                </Button>
-              );
-            })()}
-            {(() => {
-              const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hostVisibili, presets) }));
-              const piene = conConteggio.filter(({ preset, count }) => count > 0 || classFilter === preset.filter);
-              const vuote = conConteggio.filter(({ preset, count }) => count === 0 && classFilter !== preset.filter);
-              const chip = ({ preset, count }: { preset: ClassPreset; count: number }) => {
-                const Icon = ICON_MAP[preset.iconName] ?? Boxes;
-                const active = classFilter === preset.filter;
-                return (
-                  <Button
-                    key={preset.filter}
-                    variant={active ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    onClick={() => setClassFilter(active ? "" : preset.filter)}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {etichettaPreset(preset)}
-                    <span className="text-muted-foreground/80">({count})</span>
-                  </Button>
-                );
-              };
-              return (
-                <>
-                  {piene.map(chip)}
-                  {mostraVuote && vuote.map(chip)}
-                  {vuote.length > 0 && (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => setMostraVuote((v) => !v)}>
-                      {mostraVuote ? "Nascondi le categorie vuote" : `Altre categorie (${vuote.length}, vuote)`}
-                    </Button>
-                  )}
-                </>
-              );
-            })()}
-            {/* v0.2.628: bottone per gestire i preset */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setPresetsDialogOpen(true)}
-              title="Aggiungi/modifica/rimuovi i filtri rapidi"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Gestisci filtri
-            </Button>
-            {/* v0.2.632: shortcut a gestione classification custom */}
-            <Link href="/settings/classifications" className="h-7 inline-flex items-center px-2 text-xs text-muted-foreground hover:text-foreground rounded" title="Aggiungi/modifica classification custom">
-              <Pencil className="h-3.5 w-3.5 mr-1" />
-              Classification
-            </Link>
           </div>
           </div>
           {filtriValore.length > 0 && (

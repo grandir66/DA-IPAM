@@ -10,13 +10,10 @@ import { useSidebar } from "./sidebar-context";
 import { useGiri } from "./giri-context";
 import {
   Activity,
-  Cable,
-  EthernetPort,
   LayoutDashboard,
   ArrowUpFromLine,
   Network,
   Scan,
-  ScanSearch,
   Key,
   Settings,
   ServerCog,
@@ -25,7 +22,6 @@ import {
   ChevronDown,
   ChevronRight,
   Server,
-  ListOrdered,
   Package,
   User,
   Link2,
@@ -41,7 +37,6 @@ import {
   KeyRound,
   Workflow,
   BookOpen,
-  Ban,
   ShieldCheck,
   MonitorSmartphone,
   ExternalLink,
@@ -57,8 +52,8 @@ import {
   type LucideIcon,
   SlidersHorizontal, CalendarClock, FileCode2,
   Plug,
-  ListChecks,
 } from "lucide-react";
+import { voceAccesaDallaSezione } from "@/lib/menu/sezioni";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
@@ -97,20 +92,16 @@ const inventorySubItems: readonly SubItem[] = [
 
 // Network (Riccardo, 19/10 sera): «Credenziali» con i controller di rete sotto la sua
 // intestazione; Vulnerabilità e Alert sicurezza nel gruppo «Sicurezza».
+// Dal 12/11/2026 (Riccardo: «troppo ricco di opzioni») nel menu resta la prima pagina di ogni sezione; le altre sono
+// schede in cima alla pagina (`lib/menu/sezioni.ts`): Attribuzione, Cambiamenti e IP esclusi sotto Discovery; Mappa
+// porte e Tabella ARP sotto Topologia; Controller di rete sotto Credenziali; Sorgenti DHCP sotto DHCP.
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
-  { href: "/controllo-classificazione", label: "Attribuzione", icon: ListChecks },
-  { href: "/network-changes", label: "Network Changes", icon: History },
   { href: "/topology", label: "Topologia", icon: Workflow },
-  { href: "/port-map", label: "Mappa porte", icon: EthernetPort },
   { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
-  { href: "/credentials", label: "Credenziali", icon: Key, divider: "Credenziali" },
-  { href: "/controllers", label: "Controller di rete", icon: Router },
-  { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
-  { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
-  { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
+  { href: "/credentials", label: "Credenziali", icon: Key },
 ];
 
 // Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. «Reti dal trunk»
@@ -119,20 +110,14 @@ const networkSubItems: readonly SubItem[] = [
 // una voce sola, su tutte le installazioni. Vulnerabilità, Scansioni VA e Alert sicurezza
 // diventano grigie senza il modulo che le alimenta (`condizione`).
 const sicurezzaSubItems: readonly SubItem[] = [
-  // Tutta l'analisi in un gruppo, divisa per motore (Riccardo, 10/11): così la gestione delle
-  // scansioni vive dentro il blocco del suo motore, e senza Edge resta il motore interno.
+  // Dal 12/11/2026 per domanda e non per motore: cosa c'è da sistemare, cosa ho lanciato, com'è esposta la rete.
+  // «Scansioni» = Interne + VA dall'Edge; «Rete» = Servizi di rete + Segmentazione + Reti dal trunk (schede).
   { href: "/vulnerabilities", label: "Findings", icon: ShieldAlert },
-  // Motore interno: sonde, trunk, controlli, segmentazione — sempre disponibile, anche senza Edge.
-  { href: "/servizi-rete", label: "Servizi di rete", icon: Plug, divider: "Analisi interna (IPAM / Nety)" },
-  { href: "/segmentazione", label: "Matrice di segmentazione", icon: LayoutGrid },
-  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
-  { href: "/scans", label: "Scansioni interne", icon: Scan },
-  // Vulnerability Assessment dall'Edge (Greenbone/Nuclei): grigio se il modulo manca.
-  { href: "/vulnerabilities/scansioni", label: "Scansioni VA", icon: ScanSearch, condizione: "scansioni_va", divider: "Vulnerability Assessment (Edge)" },
-  // Endpoint (Wazuh).
-  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza", divider: "Endpoint (Wazuh)" },
-  // Dominio.
-  { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound, divider: "Dominio" },
+  { href: "/scans", label: "Scansioni", icon: Scan },
+  { href: "/servizi-rete", label: "Rete", icon: Plug },
+  // Endpoint (Wazuh): grigia senza il modulo che la alimenta (`condizione`).
+  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
+  { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
 ];
 
 const networkServicesSubItems: readonly SubItem[] = [
@@ -451,7 +436,7 @@ export function Sidebar() {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(() =>
-    !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
+    networkSubItems.some((d) => voceAccesaDallaSezione(pathname, d.href) ?? pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
     ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/servizi-rete", "/scans"].some((h) => pathname.startsWith(h))
@@ -469,7 +454,7 @@ export function Sidebar() {
   const sicurezzaItems = useMemo<SubItem[]>(
     () => sicurezzaSubItems.map((v) => ({
       ...v,
-      ...(v.href === "/arp-table/trunk" ? { badge: allarmiRete } : {}),
+      ...(v.href === "/servizi-rete" ? { badge: allarmiRete } : {}),
       ...(v.condizione ? { bloccata: motivoBlocco(v.condizione, presenze) } : {}),
     })),
     [allarmiRete, presenze],
@@ -537,6 +522,9 @@ export function Sidebar() {
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     if (href.includes("?")) return attivaConQuery(href);
+    // Dentro una sezione (lib/menu/sezioni.ts) si accende solo la sua prima pagina: su «Tabella ARP», Topologia.
+    const dallaSezione = voceAccesaDallaSezione(pathname, href);
+    if (dallaSezione !== null) return dallaSezione;
     // Su Scansioni VA non si accende anche «Vulnerabilità».
     if (href === "/vulnerabilities" && pathname.startsWith("/vulnerabilities/scansioni")) return false;
     // Sulle Reti dal trunk non si accende anche «Tabella ARP».

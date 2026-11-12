@@ -27,8 +27,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertCircle,
-  Filter,
-  History,
   Loader2,
   Package,
   PackageSearch,
@@ -230,30 +228,12 @@ export default function PatchManagementHomePage() {
             )}
             Calcola matching
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            render={<Link href="/patch-management/cve" />}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filtra per CVE
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            render={<Link href="/patch-management/history" />}
-          >
-            <History className="h-4 w-4 mr-2" />
-            Storico operazioni
-          </Button>
         </div>
       </div>
 
       {/* Tabs (key bump → refetch dopo matching) */}
       <Tabs key={refreshKey} defaultValue="device" className="space-y-4">
-        <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border">
+        <TabsList>
           <TabsTrigger value="device" className="px-4 py-1.5 text-sm">
             <ServerCog className="h-4 w-4 mr-1.5" />
             Device

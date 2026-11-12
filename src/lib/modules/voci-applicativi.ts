@@ -40,20 +40,16 @@ export function vociApplicativi(moduli: readonly ModuloPerMenu[], pannelloZabbix
     return url ? [{ href: url, label, icona: "ExternalLink", esterno: true }] : [];
   };
 
+  // Dal 13/11/2026 (Riccardo: «chocolatey e mesh central… voci singole anch'esse con i tab e non voci di menù»):
+  // una voce per prodotto; CVE e Storico sono schede della pagina (`lib/menu/sezioni.ts`). La console di MeshCentral
+  // sta con le altre console esterne.
   const v: VoceApplicativo[] = [];
-  if (acceso("patch_management")) {
-    v.push(
-      { href: "/patch-management", label: "Panoramica", icona: "ShieldCheck", divider: "Patch Management" },
-      { href: "/patch-management/cve", label: "CVE", icona: "Bug" },
-      { href: "/patch-management/history", label: "Storico", icona: "History" },
-    );
-  }
-  if (acceso("meshcentral")) {
-    v.push({ href: "/rmm", label: "Dispositivi", icona: "MonitorSmartphone", divider: "Controllo remoto" }, ...console("meshcentral", "Console MeshCentral"));
-  }
-  if (pannelloZabbix) v.push({ href: "/zabbix", label: "Pannello", icona: "Activity", divider: "Zabbix" });
+  if (acceso("patch_management")) v.push({ href: "/patch-management", label: "Patch Management", icona: "ShieldCheck" });
+  if (acceso("meshcentral")) v.push({ href: "/rmm", label: "Controllo remoto", icona: "MonitorSmartphone" });
+  if (pannelloZabbix) v.push({ href: "/zabbix", label: "Zabbix", icona: "Activity" });
 
   const esterne = [
+    ...console("meshcentral", "MeshCentral"),
     ...console("edge", "Scanner-Edge"), ...console("wazuh", "Wazuh"), ...console("unifi", "UniFi"),
     ...console("librenms", "LibreNMS"), ...console("graylog", "Graylog"), ...console("mdm", "MDM (Headwind)"),
   ];

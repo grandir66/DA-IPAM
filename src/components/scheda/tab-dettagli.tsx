@@ -22,7 +22,7 @@ export function TabDettagli({ ctx }: { ctx: ContestoScheda }) {
   const [sotto, setSotto] = useState<Sotto>(SOTTO.includes(ctx.sottoTabDettagli as Sotto) ? (ctx.sottoTabDettagli as Sotto) : "generale");
   return (
     <Tabs value={sotto} onValueChange={(v) => setSotto(v as Sotto)} className="space-y-4">
-      <TabsList className="!h-10 p-1 gap-1 bg-muted border border-border flex-wrap">
+      <TabsList>
         <TabsTrigger value="generale" className="px-3 py-1.5 text-sm"><Boxes className="h-4 w-4 mr-1.5" />Generale</TabsTrigger>
         <TabsTrigger value="sistema" className="px-3 py-1.5 text-sm"><ServerCog className="h-4 w-4 mr-1.5" />Sistema</TabsTrigger>
         <TabsTrigger value="network" className="px-3 py-1.5 text-sm"><Network className="h-4 w-4 mr-1.5" />Rete</TabsTrigger>

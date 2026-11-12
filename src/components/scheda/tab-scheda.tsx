@@ -208,7 +208,7 @@ export function TabScheda({ ctx, tabs, attiva, onCambia }: { ctx: ContestoScheda
   return (
     <div className="space-y-4">
       <Tabs value={attiva} onValueChange={(v) => onCambia(v as TabId)}>
-        <TabsList className="!h-auto min-h-10 flex-wrap gap-1 border border-border bg-muted p-1">
+        <TabsList>
           {proprie.map(trigger)}
           {proprie.length > 0 && comuni.length > 0 && <span aria-hidden className="mx-1 h-5 w-px bg-border" />}
           {comuni.map(trigger)}

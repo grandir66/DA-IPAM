@@ -19,7 +19,7 @@ test("tutto spento: nessuna voce (le pagine interne stanno in Sicurezza e in Net
   assert.deepEqual(vociApplicativi([], false), []);
 });
 
-test("moduli accesi: sezioni dei moduli opzionali, poi tutte le console esterne", () => {
+test("moduli accesi: una voce per prodotto, poi tutte le console esterne", () => {
   const v = vociApplicativi([
     m("edge", { externalUiUrl: "https://edge:6443" }),
     m("wazuh", { uiUrl: "https://wazuh", uiIsInternal: false }),
@@ -30,13 +30,13 @@ test("moduli accesi: sezioni dei moduli opzionali, poi tutte le console esterne"
     m("graylog", { uiUrl: "https://gl", uiIsInternal: false }),
     m("mdm", { uiUrl: "https://mdm", uiIsInternal: false }),
   ], true);
+  // 13/11/2026: una voce per prodotto (CVE e Storico sono schede della pagina), la console di MeshCentral con le altre.
   assert.deepEqual(v.map((x) => x.href), [
-    "/patch-management", "/patch-management/cve", "/patch-management/history",
-    "/rmm", "https://mesh",
-    "/zabbix",
-    "https://edge:6443", "https://wazuh", "https://unifi", "https://lnms", "https://gl", "https://mdm",
+    "/patch-management", "/rmm", "/zabbix",
+    "https://mesh", "https://edge:6443", "https://wazuh", "https://unifi", "https://lnms", "https://gl", "https://mdm",
   ]);
-  assert.deepEqual(v.filter((x) => x.divider).map((x) => x.divider), ["Patch Management", "Controllo remoto", "Zabbix", "Console esterne"]);
+  assert.deepEqual(v.filter((x) => !x.esterno).map((x) => x.label), ["Patch Management", "Controllo remoto", "Zabbix"]);
+  assert.deepEqual(v.filter((x) => x.divider).map((x) => x.divider), ["Console esterne"]);
   assert.ok(v.filter((x) => x.href.startsWith("https://")).every((x) => x.esterno));
 });
 

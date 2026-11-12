@@ -27,6 +27,11 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/dhcp", etichetta: "DHCP" },
     { href: "/dhcp/sources", etichetta: "Sorgenti" },
   ] },
+  { nome: "Patch Management", schede: [
+    { href: "/patch-management", etichetta: "Panoramica" },
+    { href: "/patch-management/cve", etichetta: "CVE" },
+    { href: "/patch-management/history", etichetta: "Storico" },
+  ] },
   { nome: "Scansioni", schede: [
     { href: "/scans", etichetta: "Interne" },
     { href: "/vulnerabilities/scansioni", etichetta: "VA dall'Edge" },

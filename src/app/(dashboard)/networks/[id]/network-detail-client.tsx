@@ -1,7 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { Fragment, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1553,18 +1553,18 @@ export function NetworkDetailClient({
                   Tutte <span className="ml-1.5 tabular-nums opacity-70">{hosts.length}</span>
                 </Button>
                 {categorieMadri.map((c) => (
-                  <Button
-                    key={c.gruppo}
-                    variant={c.attiva ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 shrink-0"
-                    title={`Tutta la categoria «${c.titolo}». Per una sola classe: Filtri → Classificazione`}
-                    onClick={() => setFilterClassification(c.attiva ? "" : c.valore)}
-                  >
-                    {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
-                  </Button>
-                ))}
-                {madreScelta && figlie.map((f) => (
+                  <Fragment key={c.gruppo}>
+                    <Button
+                      key={c.gruppo}
+                      variant={c.attiva ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 shrink-0"
+                      title={`Tutta la categoria «${c.titolo}». Per una sola classe: Filtri → Classificazione`}
+                      onClick={() => setFilterClassification(c.attiva ? "" : c.valore)}
+                    >
+                      {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
+                    </Button>
+                    {c.gruppo === madreScelta && figlie.map((f) => (
                   <Button
                     key={f.slug}
                     variant={filterClassification === f.slug ? "secondary" : "ghost"}
@@ -1575,6 +1575,8 @@ export function NetworkDetailClient({
                   >
                     › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
                   </Button>
+                ))}
+                  </Fragment>
                 ))}
               </div>
             )}

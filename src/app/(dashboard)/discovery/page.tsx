@@ -2,7 +2,7 @@
 import { joinCsvRow } from "@/lib/csv-utils";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useState, useCallback, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { useEAdmin } from "@/hooks/use-e-admin";
@@ -2580,18 +2580,18 @@ export default function DiscoveryPage() {
                 Tutti <span className="ml-1.5 tabular-nums opacity-70">{hostVisibili.length}</span>
               </Button>
               {categorieMadri.map((c) => (
-                <Button
-                  key={c.valore}
-                  variant={c.attiva ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 shrink-0 text-[13px]"
-                  title={c.cosa}
-                  onClick={() => setClassFilter(c.attiva ? "" : c.valore)}
-                >
-                  {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
-                </Button>
-              ))}
-                {madreScelta && figlie.map((f) => (
+                <Fragment key={c.valore}>
+                  <Button
+                    key={c.valore}
+                    variant={c.attiva ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 shrink-0 text-[13px]"
+                    title={c.cosa}
+                    onClick={() => setClassFilter(c.attiva ? "" : c.valore)}
+                  >
+                    {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
+                  </Button>
+                  {madreScelta !== null && c.valore === `${PREFISSO_GRUPPO}${madreScelta}` && figlie.map((f) => (
                   <Button
                     key={f.slug}
                     variant={classFilter === f.slug ? "secondary" : "ghost"}
@@ -2603,6 +2603,8 @@ export default function DiscoveryPage() {
                     › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
                   </Button>
                 ))}
+                </Fragment>
+              ))}
               <Link
                 href="/controllo-classificazione"
                 className="inline-flex h-7 shrink-0 items-center rounded-md px-2 text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"

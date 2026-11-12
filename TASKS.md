@@ -10,8 +10,10 @@ Riccardo: «servirebbe un sistema che controllasse la classificazione dei device
   - **forma al posto della funzione**: 18 «VM» fra cui `SRV-PDM`, `SRV-GEST`, `SRV-VEEAM`, `SRV-WIN2025` (sono server; che siano virtuali lo dice già «Fisico o virtuale»);
   - **segnali che si contraddicono**: telefono Yealink con «Windows XP» e nome `prdal-bianchi`; `UNIFI` e altre VM Linux con «Windows 7»;
   - **lo stesso apparato su tante righe**: 25 «Router» per quattro o cinque MikroTik (`MK-D1-RTR` su una dozzina di indirizzi).
-- [ ] Non misurato: quante di queste si sistemano col solo ricalcolo del motore di oggi sulle righe ferme.
-- [ ] Proposta fatta a Riccardo il 12/11 (comando in sola lettura prima, pagina dopo, scelte a mano mai toccate): in attesa del sì.
+- [x] Riccardo, 12/11: «Sì, scrivilo». `src/lib/classification/controllo.ts` (regole indipendenti, 11 prove) e `scripts/controllo-classificazione-cli.ts <copia-del-db>`: rifiuta il DB vivo, ricalcola sulla copia, stampa per famiglia. Girato su una copia di DTS (copia e file tolti dopo): **152 righe cambiano col solo ricalcolo del motore di oggi** (123 senza classe e 12 «VoIP» diventano smartphone), 5 «VM» sono server, 2 sistemi non credibili, 266 senza classe di cui 91 con una proposta dal produttore (29 automazione, 19 postazioni Intel, 17 IoT, 6 MikroTik, 5 snom, 4 GE Security).
+- [ ] Da guardare: `172.17.4.1` «SIP-T27G» che il motore porterebbe da VoIP a router (indirizzo di gateway con un nome di telefono); «GE Security» proposto come telecamera è un'ipotesi.
+- [ ] Prossimo: applicare su DTS il ricalcolo (`attribution-recompute-cli.ts 71734`, con copia prima) col sì di Riccardo; poi la pagina «Controllo classificazione» con «Applica» sulle righe spuntate.
+- [x] Riccardo, 12/11: «in discovery e in subnet sarebbe utile avere un filtro prepopolato con i valori trovati per il campo produttore o vendor dal macaddress». Filtro «Produttore» nelle due pagine (`classification/produttore.ts`): elenco dei produttori trovati col numero di righe, dal più frequente, più «Non si sa». Non visto a schermo.
 
 ## 2026-11-11 — Vista cliente: porte di rete in testa, e l'idea della dashboard unica (Riccardo)
 

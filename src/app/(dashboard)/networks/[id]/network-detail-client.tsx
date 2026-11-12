@@ -40,6 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { origineCategoria, passaFiltroCategoria } from "@/lib/classification/scelta-categoria";
 import { OpzioniCategorie } from "@/components/networks/opzioni-categorie";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
+import { passaFiltroProduttore, produttoriTrovati, PRODUTTORE_IGNOTO } from "@/lib/classification/produttore";
 import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
 import { OpzioniFunzioni, type FunzioneInRiga } from "@/components/networks/funzioni-host";
 import { FunzioniInRiga } from "@/components/networks/funzioni-in-riga";
@@ -214,6 +215,7 @@ export function NetworkDetailClient({
   const [filterClassification, setFilterClassification] = useState<string>("");
   const [filterKnownOnly, setFilterKnownOnly] = useState(false);
   const [filterSistema, setFilterSistema] = useState<string>("");
+  const [filterProduttore, setFilterProduttore] = useState<string>("");
   const [filterForma, setFilterForma] = useState<string>("");
   const [filterFunzione, setFilterFunzione] = useState<string>("");
   /** Le funzioni degli host della rete, lette a parte (`/api/hosts/funzioni`). */
@@ -474,6 +476,7 @@ export function NetworkDetailClient({
     }
   }
 
+  const produttori = useMemo(() => produttoriTrovati(hosts), [hosts]);
   const filteredHosts = hosts.filter((h) => {
     if (filterStatus && h.status !== filterStatus) return false;
     if (filterClassification) {
@@ -485,6 +488,7 @@ export function NetworkDetailClient({
     }
     if (filterKnownOnly && !h.known_host) return false;
     if (!passaFiltroSistema(filterSistema, h)) return false;
+    if (!passaFiltroProduttore(filterProduttore, h.vendor)) return false;
     if (!passaFiltroForma(filterForma, h)) return false;
     if (filterFunzione && !(funzioniHost[h.id] ?? []).some((f) => f.funzione === filterFunzione)) return false;
     if (filtriValore.length > 0 && !passaFiltriValore(filtriValore, (c) => testoCellaSubnet(h, c))) return false;
@@ -1492,6 +1496,19 @@ export function NetworkDetailClient({
                 </select>
               </div>
               <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Produttore</Label>
+                <select
+                  aria-label="Produttore"
+                  value={filterProduttore}
+                  onChange={(e) => setFilterProduttore(e.target.value)}
+                  className="h-8 max-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Tutti</option>
+                  {produttori.trovati.map((x) => <option key={x.valore} value={x.valore}>{x.valore} ({x.quanti})</option>)}
+                  {produttori.ignoti > 0 && <option value={PRODUTTORE_IGNOTO}>— Non si sa ({produttori.ignoti})</option>}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
                 <Label className="text-xs text-muted-foreground">Fisico o virtuale</Label>
                 <select
                   aria-label="Fisico o virtuale"
@@ -1524,8 +1541,8 @@ export function NetworkDetailClient({
                 />
                 <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
               </div>
-              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterForma || filterFunzione) && (
-                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterForma(""); setFilterFunzione(""); }}>
+              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterProduttore || filterForma || filterFunzione) && (
+                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); }}>
                   Cancella filtri
                 </Button>
               )}

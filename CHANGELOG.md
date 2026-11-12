@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-11-12 · Controllo della classificazione e filtro per produttore
+
+### Aggiunto
+- `scripts/controllo-classificazione-cli.ts`: confronta la classe scritta con quella migliore possibile, su una copia del DB. Su DTS la classe scritta coincideva col motore perché viene da lì: servivano regole indipendenti (nome contro classe, «VM» che è un server, sistema non credibile, senza classe col produttore noto, stesso apparato su tante righe) e il ricalcolo delle righe ferme.
+- Filtro «Produttore» in Discovery e nella subnet, con i valori trovati dal MAC e il numero di righe: per trovare in un colpo tutti gli apparati di un produttore senza scriverne il nome.
+
 ## [Non rilasciato] — 2026-11-11 · Subnet: colonna Funzioni, apparato come segno, via LibreNMS e Wazuh
 
 - **A DA-Vul-can anche la lettura passiva del trunk, a livello statistico** (Riccardo, 11/11/2026). La fotografia dei rilievi porta in più i soli conteggi del sensore: rilievi aperti per tipo, apparati che si annunciano, VLAN e server DHCP, dispositivi e protocolli sentiti. Mai indirizzi, MAC o nomi; senza sensore il campo non parte. Le porte esposte non hanno bisogno di un invio nuovo: Vulcan le calcola dall'inventario.

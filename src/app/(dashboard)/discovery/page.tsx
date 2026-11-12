@@ -56,6 +56,7 @@ import {
 } from "@/lib/device-classifications";
 import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
+import { passaFiltroProduttore, produttoriTrovati, PRODUTTORE_IGNOTO } from "@/lib/classification/produttore";
 import { FORMA_IGNOTA, FORME, passaFiltroForma } from "@/lib/classification/forma";
 import { gruppiFunzioni } from "@/lib/classification/funzioni";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
@@ -562,6 +563,8 @@ export default function DiscoveryPage() {
   const [networkFilter, setNetworkFilter] = useState("");
   const [vulnFilter, setVulnFilter] = useState<"" | "critical_high" | "critical" | "with_findings">("");
   const [sistemaFilter, setSistemaFilter] = useState("");
+  const [produttoreFilter, setProduttoreFilter] = useState("");
+  const produttori = useMemo(() => produttoriTrovati(hosts), [hosts]);
   const [formaFilter, setFormaFilter] = useState("");
   const [funzioneFilter, setFunzioneFilter] = useState("");
   /** Le funzioni degli host, lette a parte (`/api/hosts/funzioni`): host_id → slug delle funzioni. */
@@ -1075,6 +1078,7 @@ export default function DiscoveryPage() {
       criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : passaFiltroCategoria(classFilter, h.classification))));
     }
     if (sistemaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroSistema(sistemaFilter, h)));
+    if (produttoreFilter) criteri.push((id) => prendi(id, (h) => passaFiltroProduttore(produttoreFilter, h.vendor)));
     if (formaFilter) criteri.push((id) => prendi(id, (h) => passaFiltroForma(formaFilter, h)));
     if (funzioneFilter) criteri.push((id) => prendi(id, (h) => (funzioniHost[h.id] ?? []).some((f) => f.funzione === funzioneFilter)));
     if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
@@ -1096,7 +1100,7 @@ export default function DiscoveryPage() {
       return true;
     });
     return { filtered: righe, comeSecondario: trovati };
-  }, [hosts, qDebounced, statusFilter, classFilter, sistemaFilter, formaFilter, funzioneFilter, funzioniHost, networkFilter, vulnFilter, acqFilter, filtriValore, presets, soloDaRivedere]);
+  }, [hosts, qDebounced, statusFilter, classFilter, sistemaFilter, produttoreFilter, formaFilter, funzioneFilter, funzioniHost, networkFilter, vulnFilter, acqFilter, filtriValore, presets, soloDaRivedere]);
 
   // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
   const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
@@ -1160,7 +1164,7 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, sistemaFilter, formaFilter, funzioneFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
+  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, sistemaFilter, produttoreFilter, formaFilter, funzioneFilter, networkFilter, vulnFilter, acqFilter, filtriValore]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
   const handlePageSizeChange = useCallback((size: number) => {
@@ -2380,6 +2384,18 @@ export default function DiscoveryPage() {
                   <SelectItem value="">Tutti i sistemi</SelectItem>
                   {SISTEMI.map((x) => <SelectItem key={x.valore} value={x.valore}>{x.etichetta}</SelectItem>)}
                   <SelectItem value={SISTEMA_IGNOTO}>Non si sa</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Produttore dal MAC (12/11/2026): l'elenco è quello dei valori trovati, dal più frequente. */}
+              <Select value={produttoreFilter} onValueChange={(v) => setProduttoreFilter(v ?? "")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Produttore" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tutti i produttori</SelectItem>
+                  {produttori.trovati.map((x) => <SelectItem key={x.valore} value={x.valore}>{x.valore} ({x.quanti})</SelectItem>)}
+                  {produttori.ignoti > 0 && <SelectItem value={PRODUTTORE_IGNOTO}>Non si sa ({produttori.ignoti})</SelectItem>}
                 </SelectContent>
               </Select>
 

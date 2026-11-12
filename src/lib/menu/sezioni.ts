@@ -8,7 +8,7 @@ export interface SchedaSezione { href: string; etichetta: string }
 export interface Sezione { nome: string; schede: readonly SchedaSezione[] }
 
 export const SEZIONI: readonly Sezione[] = [
-  { nome: "Discovery", schede: [
+  { nome: "Apparati", schede: [
     { href: "/discovery", etichetta: "Elenco" },
     { href: "/controllo-classificazione", etichetta: "Attribuzione" },
     { href: "/network-changes", etichetta: "Cambiamenti" },

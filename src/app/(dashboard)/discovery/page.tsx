@@ -2350,7 +2350,7 @@ export default function DiscoveryPage() {
           descrittiva e i quattro riquadri di conteggio occupavano ~260 px sopra la tabella. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <h1 className="text-2xl font-bold tracking-tight">Discovery</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Apparati</h1>
             <span className="text-sm text-muted-foreground">
               <span
                 className="font-semibold text-foreground"

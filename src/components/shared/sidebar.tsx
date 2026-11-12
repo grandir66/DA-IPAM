@@ -97,7 +97,9 @@ const inventorySubItems: readonly SubItem[] = [
 // porte e Tabella ARP sotto Topologia; Controller di rete sotto Credenziali; Sorgenti DHCP sotto DHCP.
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
-  { href: "/discovery", label: "Discovery", icon: Radar },
+  // «Apparati» dal 12/11/2026 (Riccardo: «la voce discovery dovrebbe essere apparati o devices»): la pagina è l'elenco
+  // degli oggetti, non l'azione di scoprirli. L'indirizzo resta /discovery.
+  { href: "/discovery", label: "Apparati", icon: Radar },
   { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },

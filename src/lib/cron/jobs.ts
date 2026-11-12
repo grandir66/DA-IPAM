@@ -325,10 +325,21 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
   if (pausa) return { esito: "saltato", motivo: pausa };
 
   switch (job.job_type) {
-    case "ping_sweep":
-      return runPingSweep(job.network_id, opzioni);
-    case "fast_scan":
-      return runFastScan(job.network_id, opzioni);
+    /* Anche dopo la scoperta periodica (Riccardo, 12/11/2026: «manca l'assegnazione delle funzioni per le cose
+     * conosciute, la generazione automatica degli apparati»). Su DTS girano solo `fast_scan` e `known_host_check`:
+     * funzioni e apparati automatici erano agganciati ai soli giri SNMP e nmap pianificati, quindi non partivano mai
+     * (0 funzioni scritte). Gli apparati restano dietro il loro interruttore. */
+    case "ping_sweep": {
+      const r = await runPingSweep(job.network_id, opzioni);
+      funzioniDopoScansione();
+      return r;
+    }
+    case "fast_scan": {
+      const r = await runFastScan(job.network_id, opzioni);
+      apparatiCreatiESubitoLetti();
+      funzioniDopoScansione();
+      return r;
+    }
     // Apparati creati da soli (10/11/2026): a fine giro, solo con l'interruttore acceso; non lancia.
     case "snmp_scan": {
       const r = await runSnmpScan(job.network_id, opzioni);

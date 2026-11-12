@@ -1,5 +1,15 @@
 # TASKS — DA-IPAM
 
+## 2026-11-12 — Automatismi: funzioni e apparati che nascono da soli (Riccardo)
+
+Riccardo, 12/11: «manca anche l'assegnazione delle funzioni per le cose conosciute, la generazione automatica degli apparati dentro discovery se snmp li classifica o le credenziali funzionano e il sistema riesce ad accedere; dobbiamo gestire molti automatismi, per evitare di fare troppe cose manualmente».
+
+- [x] Misura su DTS: **0 funzioni scritte**. Funzioni e «Apparati creati da soli» erano agganciati solo ai giri `snmp_scan` e `nmap_scan` pianificati; su DTS girano solo `fast_scan` e `known_host_check`, quindi non partivano mai. 0.9.1216: agganciati anche a `fast_scan` (e le funzioni a `ping_sweep`). Su DTS applicate a mano con `funzioni-cli.ts 71734 --applica`: 93 funzioni su 86 apparati (33 router, 26 DNS, 9 storage, 9 hypervisor, 5 DB, 3 AD, 3 web, 2 DHCP, 2 posta, 1 backup).
+- [ ] **«Apparati creati da soli» esiste già** (`devices/apparato-automatico.ts`, interruttore `apparati.automatici`, del 10/11) ma su DTS è spento, e anche acceso farebbe poco: vuole una credenziale validata sull'host, e ce ne sono 21 in tutto (10 SSH, 8 WinRM, 3 SNMP); gli host con credenziale validata e senza apparato sono 6.
+- [ ] **L'anello che manca: 86 host hanno risposto a SNMP nella scansione ma non hanno una credenziale SNMP «validata»**. La scansione legge con le community della rete e non segna quale voce dell'archivio ha funzionato (`setHostCredentialValidatedByKey`). Da fare: quando SNMP risponde con la community di una voce in archivio, segnarla validata per quell'host; da lì l'automatismo crea l'apparato e partono le letture. Tocca lo scanner e le credenziali: zona gialla, da fare con prova su copia.
+- [ ] Senza apparato su DTS, per classe: 30 router (10 con SNMP letto), 20 server, 19 stampanti (16 con SNMP), 9 NAS, 6 hypervisor, 2 AP, 2 UPS. Molti router sono indirizzi dello stesso MikroTik: l'automatismo deve creare un apparato per gruppo, non per indirizzo.
+- [ ] Da decidere con Riccardo: accendere `apparati.automatici` su DTS; SSH e WinRM restano legati alle credenziali già validate (regola del 10/11: il giro non ne prova di nuove).
+
 ## 2026-11-12 — Un modo solo per la classificazione: «Attribuzione» e «Controllo classi» insieme (Riccardo, proposto)
 
 Riccardo, 12/11: «ora ha quel pulsante ed ho anche attribuzione che fanno lo stesso lavoro o ci provano; vorrei un unico modo che funzioni al meglio, controlla anche gli algoritmi di assegnazione».

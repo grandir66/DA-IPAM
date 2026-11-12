@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-13 — Uniformità: schede, cambio di vista e azioni della pagina (Riccardo, tavola proposta)
+
+Riccardo, 13/11: «vorrei chiederti uno sforzo di uniformità: i tab per selezionare le schede di diverse parti di software dovrebbero essere organizzati in modo coerente». Esempi suoi: Patch Management (Panoramica), subnet (Lista o Griglia), Apparati (schede in alto), Active Directory (Computer, Utenti, Gruppi, DHCP, e i comandi in alto a destra su due righe).
+
+- [x] Censimento: oggi le schede sono fatte in quattro modi. Pillole piccole di `ui/tabs` in 17 file (AD, Patch Management, DHCP, DNS, Network Services, scheda apparato, scheda asset, schede host, Impostazioni); riquadri grandi `SchedePagina` in 6 (Reti dal trunk, Mappa porte, Segmentazione, Sicurezza del dominio, Health AD, Scansioni VA); schede a sottolineatura `SchedeSezione` (12/11, sei sezioni del menu); pulsanti Lista/Griglia nella subnet.
+- [x] Tavola mostrata in chat, quattro oggetti: (1) **una forma sola di scheda**, a sottolineatura con barra spessa e numero accanto, su due livelli: sopra il titolo le pagine di una voce di menu, sotto il titolo le parti di una pagina; (2) **cambio di vista** (Lista/Griglia) come interruttore a due posizioni, sempre a destra della barra dei filtri: stessi dati, altra forma, quindi non è una scheda; (3) **azioni della pagina** su una riga sola in alto a destra accanto al titolo, le secondarie nel menu «⋯»; (4) spariscono pillole piccole e riquadri grandi.
+- [ ] **Contraddizione da confermare, non da decidere per simmetria**: i riquadri grandi li aveva chiesti Riccardo il 25/10 («due pulsantini microscopici», irraggiungibili). La forma proposta sta in mezzo: più grande e più visibile delle pillole, più bassa dei riquadri. Se li vuole tenere, la forma unica diventano i riquadri e si perde spazio in altezza.
+- [ ] In attesa del sì. Poi: un componente solo, e la conversione pagina per pagina, aprendo ogni pagina toccata (lezione del 12/11).
+
 ## 2026-11-12 — Menu troppo ricco: Network e Sicurezza da riordinare (Riccardo, tavola proposta)
 
 Riccardo, 12/11: «anche il menù mi sembra troppo ricco di opzioni; pur mantenendo le funzioni, alcune sono davvero accessorie e non dovrebbero forse essere visualizzate sempre, e alcune dovrebbero stare dentro altre opzioni… mi serve il tuo aiuto per riorganizzare i menù, i tab della UI, sia della parte network che security».

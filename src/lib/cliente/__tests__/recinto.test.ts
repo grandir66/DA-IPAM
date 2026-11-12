@@ -44,3 +44,15 @@ test("senza vista cliente ogni percorso passa", () => {
     assert.equal(recinto(false, percorso), "passa", percorso);
   }
 });
+
+// La topologia in sola lettura della vista cliente (Riccardo, 12/11/2026) legge dalle rotte della mappa: si aprono
+// solo quelle, solo in GET. Ogni scrittura e ogni altra rotta restano vietate.
+test("recinto: il Cliente legge la topologia, e nient'altro", () => {
+  for (const p of ["/api/topology/model", "/api/topology/maps", "/api/topology/maps/auto", "/api/topology/maps/12", "/api/topology/links", "/api/topology/ports"]) {
+    assert.equal(recinto(true, p, "GET"), "passa", p);
+    for (const m of ["POST", "PUT", "PATCH", "DELETE", undefined]) assert.equal(recinto(true, p, m), "vietato", `${m} ${p}`);
+  }
+  for (const p of ["/api/topology/positions", "/api/topology/maps/12/nodes", "/api/topology/nodes/hidden", "/api/topology/candidati", "/api/topology", "/api/topology/modelX", "/api/hosts"]) {
+    assert.equal(recinto(true, p, "GET"), "vietato", p);
+  }
+});

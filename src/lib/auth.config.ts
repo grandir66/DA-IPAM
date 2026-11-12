@@ -138,7 +138,7 @@ export const authConfig: NextAuthConfig = {
       }
       return session;
     },
-    authorized({ auth, request: { nextUrl } }) {
+    authorized({ auth, request: { nextUrl, method } }) {
       const isLoggedIn = !!auth?.user;
       const pathname = nextUrl.pathname;
 
@@ -173,7 +173,7 @@ export const authConfig: NextAuthConfig = {
       // interno del server (https://0.0.0.0:3001/), che compariva nella barra del browser
       // dietro nginx (prova del 29/10, 79994-ipam-4). La pagina di login non lo usa.
       if (!isLoggedIn) return Response.redirect(new URL("/login", nextUrl));
-      const esito = recinto((auth?.user as { vistaCliente?: boolean } | undefined)?.vistaCliente === true, pathname);
+      const esito = recinto((auth?.user as { vistaCliente?: boolean } | undefined)?.vistaCliente === true, pathname, method);
       if (esito === "vai_a_cliente") return Response.redirect(new URL("/cliente", nextUrl));
       if (esito === "vietato") return Response.json({ error: "Non consentito" }, { status: 403 });
       return true;

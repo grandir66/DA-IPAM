@@ -128,15 +128,16 @@ function writeShowRedundant(show: boolean): void {
   }
 }
 
-export function TopologyMapClient({ isAdmin }: { isAdmin: boolean }) {
+/** `altezza`: classi d'altezza al posto di quelle della pagina intera (la mappa dentro un modale, vista cliente). */
+export function TopologyMapClient({ isAdmin, altezza }: { isAdmin: boolean; altezza?: string }) {
   return (
     <ReactFlowProvider>
-      <TopologyMap isAdmin={isAdmin} />
+      <TopologyMap isAdmin={isAdmin} altezza={altezza} />
     </ReactFlowProvider>
   );
 }
 
-function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
+function TopologyMap({ isAdmin, altezza }: { isAdmin: boolean; altezza?: string }) {
   const router = useRouter();
   const rf = useReactFlow();
   const [mode, setMode] = useState<Mode>("auto");
@@ -587,7 +588,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
   const paroleIgnora = membroDelSegmento ? "Togli dal segmento" : membriFascio ? "Ignora i cavi scelti" : `Ignora questo ${nomeDelGenere(genereIgnora)}`;
   return (
-    <div className="flex h-[calc(100dvh-6.5rem)] min-h-[560px] md:h-[calc(100dvh-4rem)] flex-col overflow-hidden rounded-lg border border-border bg-card">
+    <div className={`flex ${altezza ?? "h-[calc(100dvh-6.5rem)] min-h-[560px] md:h-[calc(100dvh-4rem)]"} flex-col overflow-hidden rounded-lg border border-border bg-card`}>
       <TopologyIconDefs />
       <MapToolbar
         mode={mode}

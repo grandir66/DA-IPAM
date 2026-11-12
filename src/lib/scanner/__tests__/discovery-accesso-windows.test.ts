@@ -82,7 +82,10 @@ function tenant(code: string, host: Host[]): Tenant {
       const json = h.porte.length ? JSON.stringify(h.porte.map((port) => ({ port, protocol: "tcp" }))) : null;
       mappa.set(h.ip, Number(ins.run(rete, h.ip, json, h.classification ?? null).lastInsertRowid));
     }
-    return { code, d, rete, host: mappa, ips: host.map((h) => h.ip) };
+    // `d` si riprende a ogni lettura. Il giro dei servizi di rete di una prova finita scrive ancora in sottofondo e riapre
+    // il suo database: oltre i 20 aperti la cache chiude il più vecchio, cioè quello della prova che sta aspettando
+    // (12/11/2026: «The database connection is not open» dopo 15 s di SSH vero su una macchina con la porta 22 aperta).
+    return { code, get d() { return getTenantDb(code); }, rete, host: mappa, ips: host.map((h) => h.ip) };
   });
 }
 

@@ -62,7 +62,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -1546,6 +1546,14 @@ export function NetworkDetailClient({
                   Cancella filtri
                 </Button>
               )}
+              {/* Il controllo della classificazione di questa rete (12/11/2026: Riccardo lo cercava qui). */}
+              <Link
+                href={`/controllo-classificazione?rete=${network.id}`}
+                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-muted"
+                title="Confronta la categoria scritta con quella migliore possibile e applica le proposte"
+              >
+                <ListChecks className="h-4 w-4" /> Controllo classi
+              </Link>
             </div>
               )}
               {view === "list" ? (

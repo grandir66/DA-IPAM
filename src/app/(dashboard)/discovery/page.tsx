@@ -2514,6 +2514,13 @@ export default function DiscoveryPage() {
             >
               Tutti
             </Button>
+            <Link
+              href="/controllo-classificazione"
+              className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium hover:bg-muted"
+              title="Confronta la categoria scritta con quella migliore possibile e applica le proposte"
+            >
+              Controllo classi
+            </Link>
             {(() => {
               /* Il conteggio esce dai dati già caricati: se nessuno aspetta una revisione
                * la chip non c'è, invece di mostrare uno zero inventato. */

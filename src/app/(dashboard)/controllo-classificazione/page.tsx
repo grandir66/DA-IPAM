@@ -38,6 +38,12 @@ export default function ControlloClassificazionePage() {
   const [soloProposte, setSoloProposte] = useState(true);
   const [spuntate, setSpuntate] = useState<Set<string>>(new Set());
   const [occupato, setOccupato] = useState(false);
+  /** Rete scelta da chi arriva dalla pagina di una subnet (`?rete=<id>`); letta dopo il montaggio. */
+  const [rete, setRete] = useState<number | null>(null);
+  useEffect(() => {
+    const r = new URLSearchParams(window.location.search).get("rete");
+    if (r && /^\d+$/.test(r)) setRete(Number(r));
+  }, []);
 
   const carica = useCallback(async () => {
     try {
@@ -57,20 +63,21 @@ export default function ControlloClassificazionePage() {
   const conteggi = useMemo(() => {
     const m = new Map<Famiglia, { tutte: number; proposte: number }>();
     for (const v of voci ?? []) {
+      if (rete !== null && v.network_id !== rete) continue;
       const c = m.get(v.rilievo.famiglia) ?? { tutte: 0, proposte: 0 };
       c.tutte++;
       if (v.rilievo.proposta) c.proposte++;
       m.set(v.rilievo.famiglia, c);
     }
     return m;
-  }, [voci]);
+  }, [voci, rete]);
 
   const visibili = useMemo(() => (voci ?? [])
-    .filter((v) => (!famiglia || v.rilievo.famiglia === famiglia) && (!soloProposte || v.rilievo.proposta !== null))
+    .filter((v) => (rete === null || v.network_id === rete) && (!famiglia || v.rilievo.famiglia === famiglia) && (!soloProposte || v.rilievo.proposta !== null))
     .sort((a, b) => ORDINE.indexOf(a.rilievo.famiglia) - ORDINE.indexOf(b.rilievo.famiglia)
       || PESO[a.rilievo.sicurezza] - PESO[b.rilievo.sicurezza]
       || (a.rilievo.proposta ?? "").localeCompare(b.rilievo.proposta ?? "")
-      || a.ip.localeCompare(b.ip, undefined, { numeric: true })), [voci, famiglia, soloProposte]);
+      || a.ip.localeCompare(b.ip, undefined, { numeric: true })), [voci, famiglia, soloProposte, rete]);
 
   /** Spuntabili in blocco: con una proposta e non scelte a mano (quelle si spuntano una per una). */
   const inBlocco = useMemo(() => visibili.filter((v) => v.rilievo.proposta !== null && !v.a_mano), [visibili]);
@@ -133,6 +140,11 @@ export default function ControlloClassificazionePage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
+        {rete !== null && (
+          <Button variant="outline" size="sm" onClick={() => setRete(null)} title="Stai guardando una rete sola: mostra tutte le reti">
+            Solo questa rete ✕
+          </Button>
+        )}
         <Button variant={famiglia === "" ? "default" : "outline"} size="sm" onClick={() => setFamiglia("")}>Tutti</Button>
         {ORDINE.filter((f) => conteggi.has(f)).map((f) => (
           <Button key={f} variant={famiglia === f ? "default" : "outline"} size="sm" onClick={() => setFamiglia(f)}>

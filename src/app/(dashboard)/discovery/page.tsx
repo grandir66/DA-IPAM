@@ -54,7 +54,7 @@ import {
   DEVICE_CLASSIFICATIONS_ORDERED, getClassificationLabel, sortClassificationsByDisplayLabel,
   DEVICE_CATEGORY_GROUP_LABELS, DEVICE_CATEGORY_GROUP_ORDER, getDeviceCategoryGroup,
 } from "@/lib/device-classifications";
-import { passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
+import { figliePresenti, passaFiltroCategoria, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { passaFiltroSistema, SISTEMA_IGNOTO, SISTEMI } from "@/lib/classification/sistema";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { etichettaFunzione } from "@/lib/classification/funzioni";
@@ -1129,6 +1129,9 @@ export default function DiscoveryPage() {
     if (piuIp > 0) madri.push({ valore: "group:multihomed", titolo: "Più IP", cosa: "Gli apparati con più di un indirizzo", quanti: piuIp, attiva: classFilter === "group:multihomed" });
     return madri;
   }, [hostVisibili, classFilter]);
+  /** La madre scelta (anche quando è scelta una sua figlia) e le sue classi presenti. */
+  const madreScelta = categorieMadri.find((c) => c.attiva && c.valore.startsWith(PREFISSO_GRUPPO))?.valore.slice(PREFISSO_GRUPPO.length) ?? null;
+  const figlie = useMemo(() => (madreScelta ? figliePresenti(hostVisibili, madreScelta) : []), [hostVisibili, madreScelta]);
 
   const hostPerId = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
 
@@ -2588,6 +2591,18 @@ export default function DiscoveryPage() {
                   {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
                 </Button>
               ))}
+                {madreScelta && figlie.map((f) => (
+                  <Button
+                    key={f.slug}
+                    variant={classFilter === f.slug ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 shrink-0 border border-dashed text-[13px]"
+                    title={`Solo «${f.etichetta}»`}
+                    onClick={() => setClassFilter(classFilter === f.slug ? `${PREFISSO_GRUPPO}${madreScelta}` : f.slug)}
+                  >
+                    › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
+                  </Button>
+                ))}
               <Link
                 href="/controllo-classificazione"
                 className="inline-flex h-7 shrink-0 items-center rounded-md px-2 text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"

@@ -71,7 +71,7 @@ const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
 import { getClassificationLabel, getDeviceCategoryGroup, DEVICE_CATEGORY_GROUP_LABELS, DEVICE_CATEGORY_GROUP_ORDER } from "@/lib/device-classifications";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { etichettaFunzione } from "@/lib/classification/funzioni";
-import { PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
+import { figliePresenti, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
@@ -488,6 +488,9 @@ export function NetworkDetailClient({
       }
     }
     if (filterKnownOnly && !h.known_host) return false;
+    if (filterApparato && !(h as HostWithDevice).device) return false;
+    if (filterAd && !(h as HostWithDevice).ad_dns_host_name) return false;
+    if (filterDhcp && h.ip_assignment !== "dynamic") return false;
     if (!passaFiltroSistema(filterSistema, h)) return false;
     if (!passaFiltroProduttore(filterProduttore, h.vendor)) return false;
     if (!passaFiltroForma(filterForma, h)) return false;
@@ -497,7 +500,11 @@ export function NetworkDetailClient({
   });
 
   const [filtriAperti, setFiltriAperti] = useState(false);
-  const cancellaFiltri = () => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); };
+  /** Filtri sì/no aggiunti il 12/11/2026 (Riccardo: «i filtri attivabili potrebbero essere di più»). */
+  const [filterApparato, setFilterApparato] = useState(false);
+  const [filterAd, setFilterAd] = useState(false);
+  const [filterDhcp, setFilterDhcp] = useState(false);
+  const cancellaFiltri = () => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); setFilterApparato(false); setFilterAd(false); setFilterDhcp(false); };
   /** Le categorie madri presenti in questa rete, col numero di righe: un pulsante l'una. */
   const categorieMadri = useMemo(() => {
     const conta = new Map<string, number>();
@@ -516,6 +523,9 @@ export function NetworkDetailClient({
     if (senza > 0) madri.push({ gruppo: "unknown", titolo: "Senza categoria", quanti: senza, valore: "__empty__", attiva: filterClassification === "__empty__" });
     return madri;
   }, [hosts, filterClassification]);
+  /** La madre scelta (anche quando è scelta una sua figlia) e le sue classi presenti. */
+  const madreScelta = categorieMadri.find((c) => c.attiva && c.gruppo !== "unknown")?.gruppo ?? null;
+  const figlie = useMemo(() => (madreScelta ? figliePresenti(hosts, madreScelta) : []), [hosts, madreScelta]);
   /** I filtri accesi, come etichette che si tolgono una per una. */
   const filtriAttivi: Array<{ chiave: string; testo: string; togli: () => void }> = [];
   if (filterStatus) filtriAttivi.push({ chiave: "stato", testo: `Stato: ${filterStatus === "online" ? "online" : filterStatus === "offline" ? "offline" : "sconosciuto"}`, togli: () => setFilterStatus("") });
@@ -531,6 +541,9 @@ export function NetworkDetailClient({
   if (filterForma) filtriAttivi.push({ chiave: "forma", testo: filterForma === FORMA_IGNOTA ? "Fisico o virtuale: non si sa" : FORME.find((x) => x.valore === filterForma)?.etichetta ?? filterForma, togli: () => setFilterForma("") });
   if (filterFunzione) filtriAttivi.push({ chiave: "funzione", testo: `Funzione: ${etichettaFunzione(filterFunzione)}`, togli: () => setFilterFunzione("") });
   if (filterKnownOnly) filtriAttivi.push({ chiave: "conosciuti", testo: "Solo conosciuti", togli: () => setFilterKnownOnly(false) });
+  if (filterApparato) filtriAttivi.push({ chiave: "apparato", testo: "È un apparato", togli: () => setFilterApparato(false) });
+  if (filterAd) filtriAttivi.push({ chiave: "ad", testo: "In Active Directory", togli: () => setFilterAd(false) });
+  if (filterDhcp) filtriAttivi.push({ chiave: "dhcp", testo: "Indirizzo da DHCP", togli: () => setFilterDhcp(false) });
 
   const displayHosts = useMemo(() => {
     if (!listSortColumn) return filteredHosts;
@@ -1551,6 +1564,18 @@ export function NetworkDetailClient({
                     {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
                   </Button>
                 ))}
+                {madreScelta && figlie.map((f) => (
+                  <Button
+                    key={f.slug}
+                    variant={filterClassification === f.slug ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 shrink-0 border border-dashed text-[13px]"
+                    title={`Solo «${f.etichetta}»`}
+                    onClick={() => setFilterClassification(filterClassification === f.slug ? `${PREFISSO_GRUPPO}${madreScelta}` : f.slug)}
+                  >
+                    › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
+                  </Button>
+                ))}
               </div>
             )}
 
@@ -1703,6 +1728,18 @@ export function NetworkDetailClient({
                 />
                 <Label htmlFor="filter-known" className="text-[13px] text-muted-foreground">Solo conosciuti</Label>
               </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="filter-apparato" checked={filterApparato} onCheckedChange={setFilterApparato} />
+                  <Label htmlFor="filter-apparato" className="text-[13px] text-muted-foreground">Solo gli apparati</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="filter-ad" checked={filterAd} onCheckedChange={setFilterAd} />
+                  <Label htmlFor="filter-ad" className="text-[13px] text-muted-foreground">Solo quelli in Active Directory</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="filter-dhcp" checked={filterDhcp} onCheckedChange={setFilterDhcp} />
+                  <Label htmlFor="filter-dhcp" className="text-[13px] text-muted-foreground">Solo con indirizzo da DHCP</Label>
+                </div>
                 <div className="flex justify-between gap-2 pt-2">
                   <Button variant="ghost" size="sm" onClick={cancellaFiltri} disabled={filtriAttivi.length === 0}>Togli tutti</Button>
                   <Button size="sm" onClick={() => setFiltriAperti(false)}>Mostra {filteredHosts.length} righe</Button>

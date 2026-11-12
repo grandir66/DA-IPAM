@@ -85,3 +85,20 @@ export function origineCategoria(aMano: boolean, fase: string | null | undefined
     default: return null;
   }
 }
+
+/**
+ * Le classi di una categoria madre presenti fra le righe, col numero, dalla più frequente (12/11/2026: scelta la
+ * madre, le figlie compaiono accanto come pulsanti). Una madre con una classe sola non ha figlie da mostrare.
+ */
+export function figliePresenti(righe: ReadonlyArray<{ classification?: string | null }>, gruppo: string): Array<{ slug: string; etichetta: string; quanti: number }> {
+  const conta = new Map<string, number>();
+  for (const r of righe) {
+    const c = r.classification;
+    if (!c || c === "unknown" || getDeviceCategoryGroup(c) !== gruppo) continue;
+    conta.set(c, (conta.get(c) ?? 0) + 1);
+  }
+  if (conta.size < 2) return [];
+  return [...conta.entries()]
+    .map(([slug, quanti]) => ({ slug, etichetta: getClassificationLabel(slug), quanti }))
+    .sort((a, b) => b.quanti - a.quanti || a.etichetta.localeCompare(b.etichetta, "it"));
+}

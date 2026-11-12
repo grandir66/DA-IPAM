@@ -76,3 +76,10 @@ describe("passaFiltroCategoria", () => {
     assert.equal(passaFiltroCategoria("", "voip"), true);
   });
 });
+
+it("figliePresenti: le classi della madre presenti, dalla più frequente; una sola classe = niente figlie", async () => {
+  const { figliePresenti } = await import("../scelta-categoria");
+  const righe = [{ classification: "switch" }, { classification: "switch" }, { classification: "router" }, { classification: "voip" }, { classification: null }];
+  assert.deepEqual(figliePresenti(righe, "rete").map((f) => [f.slug, f.quanti]), [["switch", 2], ["router", 1]]);
+  assert.deepEqual(figliePresenti(righe, "telefonia"), []);
+});

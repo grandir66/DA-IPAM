@@ -58,7 +58,12 @@ export function RigaRilieviPerRete({ reti, dove = "dashboard" }: { reti: BarraRe
   );
 }
 
-export function RigaSicurezza({ k, accessi, daSistemare, dove = "dashboard" }: { dove?: Dove; k: KpiSicurezza; accessi: SerieAccessi | null; daSistemare: { critiche: number; alte: number; reti: number } | null }) {
+/**
+ * `accessiDominio`: nella casa di /cliente gli accessi falliti si contano dagli eventi dei server di dominio, come il
+ * grafico lì accanto (12/11/2026: 581 da Wazuh nella tessera e 558 nel grafico, uno sopra l'altro). Se c'è, la tessera
+ * «Accessi falliti 24h» mostra quel numero.
+ */
+export function RigaSicurezza({ k, accessi, daSistemare, dove = "dashboard", accessiDominio }: { dove?: Dove; accessiDominio?: number; k: KpiSicurezza; accessi: SerieAccessi | null; daSistemare: { critiche: number; alte: number; reti: number } | null }) {
   const a = k.accessi;
   const falliti = accessi?.totale24h ?? 0;
   const prima = accessi?.totale24hPrima ?? 0;
@@ -76,12 +81,16 @@ export function RigaSicurezza({ k, accessi, daSistemare, dove = "dashboard" }: {
       )}
       {a && accessi ? (
         <>
+          {accessiDominio !== undefined ? (
+            <CardSicurezza tono={accessiDominio === 0 ? "ok" : "attenzione"} titolo="Accessi falliti 24h" valore={numero(accessiDominio)} nota="dai server di dominio" href={vai(dove, "/sicurezza-dominio?tab=health")} title="Accessi falliti e blocchi letti dagli eventi dei server di dominio nelle ultime 24 ore: lo stesso conto del grafico." />
+          ) : (
           <CardSicurezza
-            tono={falliti === 0 ? "ok" : falliti > 100 && falliti > prima * 2 ? "guasto" : "attenzione"}
-            titolo="Accessi falliti 24h" valore={`${numero(falliti)}${freccia}`} nota={`le 24 ore prima: ${numero(prima)}${accessi.fonte === "stima" ? " · stima" : ""}`} href={vai(dove, "/security-alerts")}
-            title={accessi.fonte === "indexer"
-              ? "Fallimenti di autenticazione di Windows e Linux dall'indexer di Wazuh nelle ultime 24 ore, esclusi i nostri account e le nostre reti. La freccia confronta le 24 ore piene con le 24 prima."
-              : `${accessi.motivo ? `${accessi.motivo[0].toUpperCase()}${accessi.motivo.slice(1)}: ` : ""}eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
+              tono={falliti === 0 ? "ok" : falliti > 100 && falliti > prima * 2 ? "guasto" : "attenzione"}
+              titolo="Accessi falliti 24h" valore={`${numero(falliti)}${freccia}`} nota={`le 24 ore prima: ${numero(prima)}${accessi.fonte === "stima" ? " · stima" : ""}`} href={vai(dove, "/security-alerts")}
+              title={accessi.fonte === "indexer"
+                ? "Fallimenti di autenticazione di Windows e Linux dall'indexer di Wazuh nelle ultime 24 ore, esclusi i nostri account e le nostre reti. La freccia confronta le 24 ore piene con le 24 prima."
+                : `${accessi.motivo ? `${accessi.motivo[0].toUpperCase()}${accessi.motivo.slice(1)}: ` : ""}eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
+          )}
           <CardSicurezza tono={a.bloccati30g > 0 ? "attenzione" : "ok"} titolo="Account bloccati 30g" valore={numero(a.bloccati30g)} href={vai(dove, "/security-alerts")} title="Eventi 4740 da Wazuh negli ultimi 30 giorni" />
           <CardSicurezza tono={a.daGestire > 0 ? "attenzione" : "ok"} titolo="Alert da gestire" valore={numero(a.daGestire)} href={vai(dove, "/security-alerts")} title="Alert di Wazuh non ancora presi in carico" />
         </>
@@ -157,7 +166,7 @@ export function FilaIndicatori({ dati, dove = "dashboard" }: { dati: DatiDashboa
     <>
         <Indicatore titolo="Health" valore={`${healthPct}%`} colore={healthColor} nota={`${stats.online_hosts}/${denom} host online (offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni)`} anello={healthPct} />
         <Indicatore titolo="Subnet" valore={stats.total_networks} href={vai(dove, "/networks")} />
-        <Indicatore titolo="Host" valore={stats.total_hosts} href={vai(dove, "/discovery")} />
+        <Indicatore titolo={dove === "cliente" ? "Indirizzi" : "Host"} nota={dove === "cliente" ? "Indirizzi visti in rete: un apparato con più indirizzi qui conta più volte, in «Apparati» una sola" : undefined} valore={stats.total_hosts} href={vai(dove, "/discovery")} />
         <Indicatore titolo="Offline" valore={offlineSplit.recenti} colore="text-destructive" href={vai(dove, "/discovery?status=offline")} nota={`Offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni`} />
         <Indicatore titolo={`Assenti > ${ASSENTE_DOPO_GIORNI} g`} valore={offlineSplit.assenti} colore="text-muted-foreground" href={vai(dove, "/discovery?status=offline")} nota={`Offline e non visti da oltre ${ASSENTE_DOPO_GIORNI} giorni: fuori dalla salute`} />
         <Indicatore titolo="Archiviati" valore={archiviati} colore="text-muted-foreground" href={vai(dove, "/settings?tab=sistema#pulizia-host")} nota="Archiviati dalla pulizia: si recuperano per 90 giorni" />

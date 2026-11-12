@@ -106,7 +106,7 @@ export default async function CasaCliente({
   const contenuti: ContenutoRiquadro[] = [
     // I widget della Dashboard, gli stessi componenti e gli stessi conti (src/lib/dashboard/dati.ts).
     { id: "indicatori", titolo: "Numeri della rete", azioni: null, nudo: true, contenuto: dash ? <div className="flex h-full flex-wrap items-stretch gap-2"><FilaIndicatori dati={dash} dove="cliente" /></div> : null },
-    { id: "sicurezza", titolo: "Sicurezza", azioni: null, nudo: true, contenuto: dash ? <div className="h-full [&>div]:h-full"><RigaSicurezza k={dash.sicurezza} accessi={dash.accessi} daSistemare={dash.daSistemare} dove="cliente" /></div> : null },
+    { id: "sicurezza", titolo: "Sicurezza", azioni: null, nudo: true, contenuto: dash ? <div className="h-full [&>div]:h-full"><RigaSicurezza k={dash.sicurezza} accessi={dash.accessi} daSistemare={dash.daSistemare} dove="cliente" accessiDominio={g.accessi?.dettaglio ? g.accessi.falliti : undefined} /></div> : null },
     {
       id: "indirizzi",
       titolo: "Stato host nel tempo",

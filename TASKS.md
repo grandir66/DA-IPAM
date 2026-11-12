@@ -1,5 +1,18 @@
 # TASKS — DA-IPAM
 
+## 2026-11-12 — Controllo della classificazione: quella scritta contro la migliore possibile (Riccardo, in discussione)
+
+Riccardo: «servirebbe un sistema che controllasse la classificazione dei device presente con quella migliore possibile; sul server 172.16.0.2 del cliente DTS ho dei casini totali di assegnazione».
+
+- [x] Misura in sola lettura su DTS (71734, `ssh dts`, 0.9.1208), 12/11: 783 righe, 78 scelte a mano. Cinque famiglie di errore:
+  - **classe rimasta senza motore**: 14 telefoni e un orologio (`Galaxy-S25`, `iPhone`, `S24-di-…`, `Watch` in 10.0.80.x) scritti «VoIP» con `attr_category` vuota; in tutto 36 righe hanno una classe che il motore oggi non sostiene;
+  - **senza classe ma con segnali**: 390 righe (`unknown` o vuoto), 388 con MAC, 200 con produttore, 257 con un nome; fra i produttori Siemens, Keyence, HMS, ESTIC, ASEM, Tosibox (OT), Espressif (IoT), Intel con nome (PC), Routerboard, Ubiquiti, snom;
+  - **forma al posto della funzione**: 18 «VM» fra cui `SRV-PDM`, `SRV-GEST`, `SRV-VEEAM`, `SRV-WIN2025` (sono server; che siano virtuali lo dice già «Fisico o virtuale»);
+  - **segnali che si contraddicono**: telefono Yealink con «Windows XP» e nome `prdal-bianchi`; `UNIFI` e altre VM Linux con «Windows 7»;
+  - **lo stesso apparato su tante righe**: 25 «Router» per quattro o cinque MikroTik (`MK-D1-RTR` su una dozzina di indirizzi).
+- [ ] Non misurato: quante di queste si sistemano col solo ricalcolo del motore di oggi sulle righe ferme.
+- [ ] Proposta fatta a Riccardo il 12/11 (comando in sola lettura prima, pagina dopo, scelte a mano mai toccate): in attesa del sì.
+
 ## 2026-11-11 — Vista cliente: porte di rete in testa, e l'idea della dashboard unica (Riccardo)
 
 - [x] Riccardo (11/11): «servirebbe un box in alto con un link agli apparati di rete che hanno memorizzato uno schema delle porte usate, per poter vedere rapidamente che porte sono disponibili, un po' come gli ip nelle network» · «ovviamente un modulo che si apre» · «non direttamente visibile» · «indicavo nel pannello veloce» (la striscia di riquadri in testa a `/cliente`). Fatto: riquadro «Porte di rete» (`components/cliente/riquadro-porte.tsx`) che apre un modulo con gli apparati e, per quello scelto, il pannello delle porte; dati da `apparatiConPorte` (`lib/cliente/schede/apparati.ts`, due query in tutto). «Libera» è quella della pagina Apparati: porta non collegata all'ultima lettura (le porte spente in configurazione contano come libere). Apparati: switch e router, come nella pagina Apparati; i firewall restano fuori.

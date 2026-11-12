@@ -6,7 +6,8 @@ Riccardo, 12/11: «l'intestazione ha molte opzioni e molte modalità di filtri e
 
 - [x] Tavola grafica mostrata in chat il 12/11, tredici oggetti: (1-5) una riga sola di azioni sulla rete, tutte a sinistra, con «Avanzata» e «Profilo» dentro il menu di «Scoperta host»; (6) Lista/Griglia a destra, come cambio di vista e non in mezzo ai filtri; (7) casella di ricerca; (8) filtri attivi come etichette che si tolgono con ✕; (9, 12) un solo pulsante «+ Filtro» con dentro tutti i filtri, compresi i nuovi (è un apparato, in DHCP, in AD, con credenziale valida, senza categoria, da rivedere); (10) conteggio «N di M righe»; (11) barra delle azioni sulle righe spuntate, che compare solo con una spunta; via «Spunta le righe di tipo»; (13) scelta della categoria con la madre come riga che si sceglie, col numero di righe.
 - [ ] Nota: la madre si può già scegliere («Telefonia: tutte» è la prima voce di ogni gruppo), ma non si vede: è questo che la tavola corregge.
-- [ ] In attesa del sì di Riccardo sulla tavola. Stessa barra da portare poi in Discovery.
+- [x] Riccardo, 12/11, su Discovery: «la gestione dei filtri è fatta con selezione da una lista e anche con pulsanti, è un doppione, anche se i pulsanti diretti sono comodi». Seconda tavola mostrata in chat: **una barra sola per Discovery e subnet**. I pulsanti di categoria restano e sono l'unico filtro per categoria (via la tendina «Classificazione»): uno per categoria madre, col numero; la freccia apre le figlie. Tutti gli altri filtri stanno in «+ Filtro» e, accesi, compaiono come etichette con la ✕. Via le righe «Vista» e «Tutti / Attribuzione / Da rivedere» come pulsanti a parte: «Da rivedere» e «Più IP» diventano filtri.
+- [ ] In attesa del sì di Riccardo sulle due tavole.
 
 ## 2026-11-12 — Automatismi: funzioni e apparati che nascono da soli (Riccardo)
 

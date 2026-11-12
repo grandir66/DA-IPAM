@@ -68,7 +68,10 @@ import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
 /** Altezza uniforme per tutti i pulsanti della toolbar azioni subnet. */
 const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
-import { getClassificationLabel } from "@/lib/device-classifications";
+import { getClassificationLabel, getDeviceCategoryGroup, DEVICE_CATEGORY_GROUP_LABELS, DEVICE_CATEGORY_GROUP_ORDER } from "@/lib/device-classifications";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { etichettaFunzione } from "@/lib/classification/funzioni";
+import { PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
@@ -492,6 +495,42 @@ export function NetworkDetailClient({
     if (filtriValore.length > 0 && !passaFiltriValore(filtriValore, (c) => testoCellaSubnet(h, c))) return false;
     return true;
   });
+
+  const [filtriAperti, setFiltriAperti] = useState(false);
+  const cancellaFiltri = () => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); };
+  /** Le categorie madri presenti in questa rete, col numero di righe: un pulsante l'una. */
+  const categorieMadri = useMemo(() => {
+    const conta = new Map<string, number>();
+    for (const h of hosts) {
+      const g = getDeviceCategoryGroup(h.classification);
+      conta.set(g, (conta.get(g) ?? 0) + 1);
+    }
+    const gruppoScelto = filterClassification.startsWith(PREFISSO_GRUPPO)
+      ? filterClassification.slice(PREFISSO_GRUPPO.length)
+      : filterClassification && filterClassification !== "__empty__" ? getDeviceCategoryGroup(filterClassification) : null;
+    const madri = DEVICE_CATEGORY_GROUP_ORDER.filter((g) => (conta.get(g) ?? 0) > 0).map((g) => ({
+      gruppo: g as string, titolo: DEVICE_CATEGORY_GROUP_LABELS[g], quanti: conta.get(g) ?? 0,
+      valore: `${PREFISSO_GRUPPO}${g}`, attiva: gruppoScelto === g,
+    }));
+    const senza = conta.get("unknown") ?? 0;
+    if (senza > 0) madri.push({ gruppo: "unknown", titolo: "Senza categoria", quanti: senza, valore: "__empty__", attiva: filterClassification === "__empty__" });
+    return madri;
+  }, [hosts, filterClassification]);
+  /** I filtri accesi, come etichette che si tolgono una per una. */
+  const filtriAttivi: Array<{ chiave: string; testo: string; togli: () => void }> = [];
+  if (filterStatus) filtriAttivi.push({ chiave: "stato", testo: `Stato: ${filterStatus === "online" ? "online" : filterStatus === "offline" ? "offline" : "sconosciuto"}`, togli: () => setFilterStatus("") });
+  if (filterClassification) {
+    const testo = filterClassification === "__empty__" ? "Senza categoria"
+      : filterClassification.startsWith(PREFISSO_GRUPPO)
+        ? (DEVICE_CATEGORY_GROUP_LABELS as Record<string, string>)[filterClassification.slice(PREFISSO_GRUPPO.length)] ?? filterClassification
+        : getClassificationLabel(filterClassification);
+    filtriAttivi.push({ chiave: "categoria", testo: `Categoria: ${testo}`, togli: () => setFilterClassification("") });
+  }
+  if (filterSistema) filtriAttivi.push({ chiave: "sistema", testo: `Sistema: ${filterSistema === SISTEMA_IGNOTO ? "non si sa" : SISTEMI.find((x) => x.valore === filterSistema)?.etichetta ?? filterSistema}`, togli: () => setFilterSistema("") });
+  if (filterProduttore) filtriAttivi.push({ chiave: "produttore", testo: `Produttore: ${filterProduttore === PRODUTTORE_IGNOTO ? "non si sa" : filterProduttore}`, togli: () => setFilterProduttore("") });
+  if (filterForma) filtriAttivi.push({ chiave: "forma", testo: filterForma === FORMA_IGNOTA ? "Fisico o virtuale: non si sa" : FORME.find((x) => x.valore === filterForma)?.etichetta ?? filterForma, togli: () => setFilterForma("") });
+  if (filterFunzione) filtriAttivi.push({ chiave: "funzione", testo: `Funzione: ${etichettaFunzione(filterFunzione)}`, togli: () => setFilterFunzione("") });
+  if (filterKnownOnly) filtriAttivi.push({ chiave: "conosciuti", testo: "Solo conosciuti", togli: () => setFilterKnownOnly(false) });
 
   const displayHosts = useMemo(() => {
     if (!listSortColumn) return filteredHosts;
@@ -1425,163 +1464,99 @@ export function NetworkDetailClient({
             <SubnetScheduleCard networkId={network.id} />
 
             {/* VA Scan a parte: scansione invasiva dall'edge, con la sua pianificazione */}
-            <div className="ml-auto">
+            <div>
               <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
             </div>
           </div>
 
 
-          {/* Barra unica: azioni bulk a sinistra, refresh live a destra (niente toolbar dedicata sotto) */}
-          <div
-            className={cn(
-              "rounded-lg border px-2.5 py-2 flex flex-wrap items-center gap-x-3 gap-y-2 justify-between",
-              view === "list" && selectedHostIds.size > 0
-                ? "border-amber-500/40 bg-amber-500/5"
-                : "border-border/80 bg-muted/10"
-            )}
-          >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
-              {/* Vista: nella stessa barra (testata compatta, 20/10) */}
-              <div className="flex items-center gap-1" role="group" aria-label="Visualizzazione">
-                <Button variant={view === "grid" ? "secondary" : "outline"} size="sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
-                  <LayoutGrid className="h-4 w-4 mr-1" />
-                  Griglia IP
-                </Button>
+          {/* Barra dei filtri compatta (Riccardo, 12/11/2026: «non usare tutto lo schermo per i filtri… un pannello che
+              si apre a destra»; «i pulsanti diretti sono comodi»). Riga 1: «Filtri» apre il pannello, i filtri accesi sono
+              etichette che si tolgono; riga 2: le categorie madri, un pulsante l'una; la barra delle azioni compare solo
+              con righe spuntate. Via «Spunta le righe di tipo»: si filtra e si spunta la casella in testa. */}
+          <div className="rounded-lg border border-border/80 bg-muted/10 px-2.5 py-2 space-y-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {view === "list" && (
+                <>
+                  <Button variant="outline" size="sm" className="shrink-0" onClick={() => setFiltriAperti(true)}>
+                    <Filter className="h-4 w-4 mr-1" />
+                    Filtri{filtriAttivi.length > 0 ? ` · ${filtriAttivi.length}` : ""}
+                  </Button>
+                  <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+                    {filtriAttivi.map((f) => (
+                      <button
+                        key={f.chiave}
+                        type="button"
+                        onClick={f.togli}
+                        title="Togli questo filtro"
+                        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-primary/60 bg-primary/10 px-2 text-[13px] hover:bg-primary/20"
+                      >
+                        {f.testo}
+                        <X className="h-3 w-3" />
+                      </button>
+                    ))}
+                    {filtriAttivi.length > 1 && (
+                      <Button variant="ghost" size="sm" className="shrink-0" onClick={cancellaFiltri}>Togli tutti</Button>
+                    )}
+                  </div>
+                  <span className="ml-auto shrink-0 text-[13px] tabular-nums text-muted-foreground">
+                    {filteredHosts.length === hosts.length ? `${hosts.length} righe` : `${filteredHosts.length} di ${hosts.length} righe`}
+                  </span>
+                </>
+              )}
+              <div className={cn("flex items-center gap-1 shrink-0", view !== "list" && "ml-auto")} role="group" aria-label="Visualizzazione">
                 <Button variant={view === "list" ? "secondary" : "outline"} size="sm" aria-pressed={view === "list"} onClick={() => setView("list")}>
                   <List className="h-4 w-4 mr-1" />
                   Lista
                 </Button>
-              </div>
-              {/* Filtri della lista nella stessa barra (testata compatta, 20/10) */}
-              {view === "list" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Stato</Label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[100px]"
-                >
-                  <option value="">Tutti</option>
-                  <option value="online">Online</option>
-                  <option value="offline">Offline</option>
-                  <option value="unknown">Sconosciuto</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Classificazione</Label>
-                <select
-                  value={filterClassification}
-                  onChange={(e) => setFilterClassification(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-                >
-                  <option value="">Tutte</option>
-                  <option value="__empty__">— Senza classificazione</option>
-                  <OpzioniCategorie />
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Sistema</Label>
-                <select
-                  aria-label="Sistema"
-                  value={filterSistema}
-                  onChange={(e) => setFilterSistema(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">Tutti</option>
-                  {SISTEMI.map((x) => <option key={x.valore} value={x.valore}>{x.etichetta}</option>)}
-                  <option value={SISTEMA_IGNOTO}>— Non si sa</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Produttore</Label>
-                <select
-                  aria-label="Produttore"
-                  value={filterProduttore}
-                  onChange={(e) => setFilterProduttore(e.target.value)}
-                  className="h-8 max-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">Tutti</option>
-                  {produttori.trovati.map((x) => <option key={x.valore} value={x.valore}>{x.valore} ({x.quanti})</option>)}
-                  {produttori.ignoti > 0 && <option value={PRODUTTORE_IGNOTO}>— Non si sa ({produttori.ignoti})</option>}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Fisico o virtuale</Label>
-                <select
-                  aria-label="Fisico o virtuale"
-                  value={filterForma}
-                  onChange={(e) => setFilterForma(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">Tutti</option>
-                  {FORME.map((x) => <option key={x.valore} value={x.valore}>{x.etichetta}</option>)}
-                  <option value={FORMA_IGNOTA}>— Non si sa</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Funzione</Label>
-                <select
-                  aria-label="Funzione"
-                  value={filterFunzione}
-                  onChange={(e) => setFilterFunzione(e.target.value)}
-                  className="h-8 max-w-[160px] rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">Tutte</option>
-                  <OpzioniFunzioni />
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="filter-known"
-                  checked={filterKnownOnly}
-                  onCheckedChange={setFilterKnownOnly}
-                />
-                <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
-              </div>
-              {(filterStatus || filterClassification || filterKnownOnly || filterSistema || filterProduttore || filterForma || filterFunzione) && (
-                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); setFilterSistema(""); setFilterProduttore(""); setFilterForma(""); setFilterFunzione(""); }}>
-                  Cancella filtri
+                <Button variant={view === "grid" ? "secondary" : "outline"} size="sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                  <LayoutGrid className="h-4 w-4 mr-1" />
+                  Griglia IP
                 </Button>
+              </div>
+              <select
+                id="auto-refresh"
+                aria-label="Aggiornamento automatico della pagina"
+                title="Aggiornamento automatico della pagina"
+                value={autoRefreshInterval}
+                onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                className="h-8 shrink-0 rounded-md border border-input bg-background px-1.5 text-[13px]"
+              >
+                {REFRESH_INTERVALS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.value === 0 ? "Aggiorna: mai" : `Aggiorna: ${o.label}`}</option>
+                ))}
+              </select>
+              {autoRefreshInterval > 0 && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Switch id="auto-scan" checked={autoScanPing} onCheckedChange={setAutoScanPing} />
+                  <Label htmlFor="auto-scan" className="text-[13px] font-normal text-muted-foreground">Scoperta periodica</Label>
+                </div>
               )}
             </div>
-              )}
-              {view === "list" ? (
-                <>
-                  <p className="text-[11px] text-muted-foreground whitespace-nowrap" title="Spunta gli host nella tabella per le azioni qui a fianco.">
-                    {selectedHostIds.size === 0 ? "Nessun host selezionato" : `${selectedHostIds.size} host selezionati`}
-                  </p>
-                  {/* Aggiunge alla selezione, non filtra: sta col gruppo della selezione (revisione 20/10). */}
-                  <div className="flex items-center gap-1">
-                    <Label className="text-xs text-muted-foreground" title="Spunta le righe di quel tipo: non cambia la loro categoria. Per assegnarla c'è «Assegna categoria…»">Spunta le righe di tipo:</Label>
-                    <select
-                      className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-                      value=""
-                      onChange={(e) => {
-                        const c = e.target.value;
-                        e.target.value = "";
-                        if (!c) return;
-                        const toSelect = c === "__empty__"
-                          ? filteredHosts.filter((h) => !h.classification)
-                          : filteredHosts.filter((h) => passaFiltroCategoria(c, h.classification));
-                        if (toSelect.length === 0) {
-                          toast.info(c === "__empty__" ? "Nessun host senza classificazione" : "Nessun host di questo tipo fra quelli in elenco");
-                          return;
-                        }
-                        setSelectedHostIds((prev) => {
-                          const next = new Set(prev);
-                          for (const h of toSelect) next.add(h.id);
-                          return next;
-                        });
-                        toast.success(`${toSelect.length} host selezionati`);
-                      }}
-                    >
-                      <option value="">—</option>
-                      <option value="__empty__">— Senza classificazione</option>
-                      <OpzioniCategorie />
-                    </select>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 items-center">
+
+            {view === "list" && (
+              <div className="flex items-center gap-1.5 overflow-x-auto" role="group" aria-label="Categoria">
+                <Button variant={filterClassification === "" ? "default" : "outline"} size="sm" className="h-7 shrink-0" onClick={() => setFilterClassification("")}>
+                  Tutte <span className="ml-1.5 tabular-nums opacity-70">{hosts.length}</span>
+                </Button>
+                {categorieMadri.map((c) => (
+                  <Button
+                    key={c.gruppo}
+                    variant={c.attiva ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 shrink-0"
+                    title={`Tutta la categoria «${c.titolo}». Per una sola classe: Filtri → Classificazione`}
+                    onClick={() => setFilterClassification(c.attiva ? "" : c.valore)}
+                  >
+                    {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {view === "list" && selectedHostIds.size > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/50 bg-primary/5 px-2 py-1.5">
+                <span className="mr-1 text-[13px] font-semibold tabular-nums">{selectedHostIds.size} righe spuntate</span>
                     <Button
                       variant="default"
                       size="default"
@@ -1634,44 +1609,107 @@ export function NetworkDetailClient({
                     <Button variant="ghost" size="icon-sm" className="size-8" onClick={clearHostSelection} disabled={selectedHostIds.size === 0} title="Deseleziona tutti">
                       <X className="h-3.5 w-3.5" />
                     </Button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  Vista griglia: passa a <span className="font-medium text-foreground">Lista</span> per selezione e azioni bulk a sinistra.
-                </p>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0 border-t border-border/50 pt-2 mt-1 w-full sm:border-t-0 sm:border-l sm:pt-0 sm:mt-0 sm:pl-3 sm:w-auto sm:max-w-[min(100%,28rem)]">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 whitespace-nowrap">
-                Refresh
-              </span>
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="auto-refresh" className="text-[11px] whitespace-nowrap font-normal text-muted-foreground">
-                  Intervallo
-                </Label>
+          <Sheet open={filtriAperti} onOpenChange={setFiltriAperti}>
+            <SheetContent side="right" className="sm:max-w-sm overflow-y-auto" showCloseButton>
+              <SheetHeader>
+                <SheetTitle>Filtri</SheetTitle>
+              </SheetHeader>
+              <div className="flex flex-col gap-3 px-4 pb-4">
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Stato</Label>
                 <select
-                  id="auto-refresh"
-                  value={autoRefreshInterval}
-                  onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                  className="h-7 rounded border border-input/80 bg-background px-1.5 text-[11px] text-foreground"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
                 >
-                  {REFRESH_INTERVALS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
+                  <option value="">Tutti</option>
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="unknown">Sconosciuto</option>
                 </select>
               </div>
-              {autoRefreshInterval > 0 && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Switch id="auto-scan" checked={autoScanPing} onCheckedChange={setAutoScanPing} />
-                  <Label htmlFor="auto-scan" className="text-[11px] font-normal leading-snug text-muted-foreground">
-                    Scoperta periodica
-                  </Label>
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Classificazione</Label>
+                <select
+                  value={filterClassification}
+                  onChange={(e) => setFilterClassification(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
+                >
+                  <option value="">Tutte</option>
+                  <option value="__empty__">— Senza classificazione</option>
+                  <OpzioniCategorie />
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Sistema</Label>
+                <select
+                  aria-label="Sistema"
+                  value={filterSistema}
+                  onChange={(e) => setFilterSistema(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
+                >
+                  <option value="">Tutti</option>
+                  {SISTEMI.map((x) => <option key={x.valore} value={x.valore}>{x.etichetta}</option>)}
+                  <option value={SISTEMA_IGNOTO}>— Non si sa</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Produttore</Label>
+                <select
+                  aria-label="Produttore"
+                  value={filterProduttore}
+                  onChange={(e) => setFilterProduttore(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
+                >
+                  <option value="">Tutti</option>
+                  {produttori.trovati.map((x) => <option key={x.valore} value={x.valore}>{x.valore} ({x.quanti})</option>)}
+                  {produttori.ignoti > 0 && <option value={PRODUTTORE_IGNOTO}>— Non si sa ({produttori.ignoti})</option>}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Fisico o virtuale</Label>
+                <select
+                  aria-label="Fisico o virtuale"
+                  value={filterForma}
+                  onChange={(e) => setFilterForma(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
+                >
+                  <option value="">Tutti</option>
+                  {FORME.map((x) => <option key={x.valore} value={x.valore}>{x.etichetta}</option>)}
+                  <option value={FORMA_IGNOTA}>— Non si sa</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-[13px] text-muted-foreground">Funzione</Label>
+                <select
+                  aria-label="Funzione"
+                  value={filterFunzione}
+                  onChange={(e) => setFilterFunzione(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm w-full"
+                >
+                  <option value="">Tutte</option>
+                  <OpzioniFunzioni />
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Switch
+                  id="filter-known"
+                  checked={filterKnownOnly}
+                  onCheckedChange={setFilterKnownOnly}
+                />
+                <Label htmlFor="filter-known" className="text-[13px] text-muted-foreground">Solo conosciuti</Label>
+              </div>
+                <div className="flex justify-between gap-2 pt-2">
+                  <Button variant="ghost" size="sm" onClick={cancellaFiltri} disabled={filtriAttivi.length === 0}>Togli tutti</Button>
+                  <Button size="sm" onClick={() => setFiltriAperti(false)}>Mostra {filteredHosts.length} righe</Button>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 

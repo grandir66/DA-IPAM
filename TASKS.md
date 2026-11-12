@@ -1,5 +1,15 @@
 # TASKS — DA-IPAM
 
+## 2026-11-12 — Un modo solo per la classificazione: «Attribuzione» e «Controllo classi» insieme (Riccardo, proposto)
+
+Riccardo, 12/11: «ora ha quel pulsante ed ho anche attribuzione che fanno lo stesso lavoro o ci provano; vorrei un unico modo che funzioni al meglio, controlla anche gli algoritmi di assegnazione».
+
+- [x] Letto: «Attribuzione N/M» apre `ip-contesi-dialog.tsx` (righe dove le fonti del motore non sono d'accordo, si sceglie a mano); «Controllo classi» apre le regole fuori dal motore (`classification/controllo.ts`). Due porte per lo stesso lavoro.
+- [x] Misura sul motore, DTS 12/11 (783 righe): categoria retta da **una fonte sola su 268 righe**; la fonte più usata è il nome host (256 righe, peso 0,64), il produttore dal MAC decide solo su 74. **258 righe senza categoria**: 179 hanno il produttore, 128 un nome, 98 un sistema operativo, 87 delle porte. Il motore non usa ciò che ha.
+- [ ] Proposta (livello leggero, in attesa del sì): (1) le regole del controllo diventano fonti del motore, a peso basso: produttore monotematico → categoria, sistema operativo → postazione o server, nome da server, «VM» con nome da server → server; (2) un pulsante solo, «Attribuzione», che apre la pagina del controllo ristretta alla rete, con dentro anche le righe contese; via il pulsante «Controllo classi» e la finestra vecchia; (3) la pagina mostra solo ciò che il motore non sa decidere da sé.
+- [ ] Trovato insieme: sulla LAN BASE di DTS il job 3 è tornato spento. Alle 12:15 circa era a 120 minuti (messo dalla scheda) e il riavvio dell'aggiornamento lo ha rispento: la regola sulle reti da /22 in su vuole almeno 720 minuti, la scheda lascia scegliere meno e non lo dice. Da decidere con Riccardo: rimetterlo a 12 ore, e far rifiutare alla scheda gli intervalli che la regola spegnerebbe.
+- [ ] Il pulsante «Controllo classi» nella subnet esce tagliato a destra a 1920 (schermata di Riccardo): sparisce con la proposta (2).
+
 ## 2026-11-12 — Controllo della classificazione: quella scritta contro la migliore possibile (Riccardo, in discussione)
 
 Riccardo: «servirebbe un sistema che controllasse la classificazione dei device presente con quella migliore possibile; sul server 172.16.0.2 del cliente DTS ho dei casini totali di assegnazione».

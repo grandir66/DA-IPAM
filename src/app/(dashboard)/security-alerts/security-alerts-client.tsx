@@ -3,6 +3,8 @@ import { parseDbDate } from "@/lib/db-date";
 import { LoadError } from "@/components/shared/load-error";
 import { BarraFiltri, PannelloFiltri, VoceFiltro, type FiltroAcceso } from "@/components/shared/barra-filtri";
 import { FilaNumeri } from "@/components/shared/console";
+import { cn } from "@/lib/utils";
+import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -367,16 +369,20 @@ export function SecurityAlertsClient() {
         </VoceFiltro>
       </PannelloFiltri>
 
-      <div className="flex items-center gap-1.5 overflow-x-auto shrink-0" role="group" aria-label="Categoria">
-        <Button variant={category === null ? "default" : "outline"} size="sm" className="shrink-0" onClick={() => setCategory(null)}>
-          Tutte le categorie
-        </Button>
-        {categories.filter((c) => (openCounts[c.id] ?? 0) > 0 || category === c.id).map((c) => (
-          <Button key={c.id} variant={category === c.id ? "default" : "outline"} size="sm" className="shrink-0" onClick={() => setCategory(category === c.id ? null : c.id)}>
-            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
+      {/* Le categorie sono le schede della pagina, nella forma unica (`forma-scheda.ts`). Riccardo, 13/11/2026: «alert
+          sicurezza non ha dei TAB di selezione, solo KPI»: erano pulsantini piccoli, e con «solo quelle con eventi
+          aperti» su DTS ne restava uno. Ora si vedono sempre tutte, col numero quando c'è. */}
+      <div role="tablist" aria-label="Categoria" className={cn(FILA_SCHEDE, "shrink-0")}>
+        <button type="button" role="tab" aria-selected={category === null} onClick={() => setCategory(null)} className={cn(SCHEDA_BASE, category === null ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+          Tutte
+          <span className="tabular-nums opacity-80">{Object.values(openCounts).reduce((a, b) => a + b, 0)}</span>
+        </button>
+        {categories.map((c) => (
+          <button key={c.id} type="button" role="tab" aria-selected={category === c.id} onClick={() => setCategory(c.id)} className={cn(SCHEDA_BASE, category === c.id ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
             {c.labelIt}
-            <span className="ml-1.5 font-bold tabular-nums">{openCounts[c.id] ?? 0}</span>
-          </Button>
+            {openCounts[c.id] ? <span className="tabular-nums opacity-80">{openCounts[c.id]}</span> : null}
+          </button>
         ))}
       </div>
 

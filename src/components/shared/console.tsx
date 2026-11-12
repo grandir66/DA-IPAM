@@ -1,3 +1,4 @@
+import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "./forma-scheda";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { GRAVITA_SCALA, SEVERITIES, normalizeSeverity, type Severity } from "@/lib/severity-style";
@@ -349,10 +350,10 @@ export interface VoceScheda<T extends string> {
 }
 
 /**
- * Schede della pagina, grandi e tutte in vista (Riccardo, 25/10: le schede piccole di shadcn
- * erano «due pulsantini microscopici», irraggiungibili se non sai che ci sono). Una colonna per
- * scheda a tutta larghezza, titolo a 16 px con una riga di spiegazione; la scelta ha il fondo navy
- * e la barra ciano sotto. Si usa al posto di `Tabs` di ui/tabs per dividere una pagina.
+ * Schede della pagina. Dal 13/11/2026 hanno la forma unica (`forma-scheda.ts`): Riccardo, che il 25/10 aveva voluto i
+ * riquadri grandi al posto delle pillole («due pulsantini microscopici»), ha indicato proprio i riquadri fra i «modi
+ * diversi di avere i tab» (Scansioni, Sicurezza del dominio). La riga di spiegazione resta, sotto la fila, per la
+ * scheda scelta; quella delle altre si legge passandoci sopra.
  */
 export function SchedePagina<T extends string>({
   voci,
@@ -366,34 +367,29 @@ export function SchedePagina<T extends string>({
   /** Nome del gruppo di schede per i lettori di schermo. */
   etichetta: string;
 }) {
+  const descrizione = voci.find((v) => v.valore === scelta)?.descrizione;
   return (
-    <div role="tablist" aria-label={etichetta} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${voci.length}, minmax(0, 1fr))` }}>
-      {voci.map((v) => {
-        const attiva = v.valore === scelta;
-        return (
-          <button
-            key={v.valore}
-            type="button"
-            role="tab"
-            aria-selected={attiva}
-            onClick={() => onScegli(v.valore)}
-            className={cn(
-              "flex min-h-14 flex-col items-start justify-center rounded-xl border-2 border-b-4 px-4 py-2.5 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-              attiva
-                ? "border-[#0D2537] border-b-primary bg-[#0D2537] text-white dark:border-primary dark:bg-primary/20"
-                : "border-border bg-card text-foreground hover:border-foreground/40 hover:bg-muted/40",
-            )}
-          >
-            <span className="flex items-center gap-2 text-base font-semibold">
+    <div>
+      <div role="tablist" aria-label={etichetta} className={FILA_SCHEDE}>
+        {voci.map((v) => {
+          const attiva = v.valore === scelta;
+          return (
+            <button
+              key={v.valore}
+              type="button"
+              role="tab"
+              aria-selected={attiva}
+              title={v.descrizione}
+              onClick={() => onScegli(v.valore)}
+              className={cn(SCHEDA_BASE, attiva ? SCHEDA_ACCESA : SCHEDA_SPENTA)}
+            >
               {v.titolo}
               {v.segnale}
-            </span>
-            {v.descrizione && (
-              <span className={cn("text-[13px]", attiva ? "text-white/80" : "text-muted-foreground")}>{v.descrizione}</span>
-            )}
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
+      {descrizione && <p className="mt-1.5 text-[13px] text-muted-foreground">{descrizione}</p>}
     </div>
   );
 }

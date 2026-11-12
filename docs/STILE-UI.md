@@ -66,12 +66,12 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
   un `Pannello` con filtri nelle azioni e la tabella dentro.
 - Le liste lunghe scorrono **dentro** il pannello (`max-h-[…] overflow-y-auto`, oppure
   `<Table fissa>`), non fanno scorrere la pagina.
-- **Schede ben visibili, sempre** (Riccardo, 25/10): una pagina che diventa troppo lunga si divide
-  con `SchedePagina`, mai con `Tabs` di `ui/tabs` (alto 32 px, testo grigio: «pulsantini
-  microscopici», non si capisce che ci sono). Le schede stanno tutte in vista sotto la barra di
-  stato, a tutta larghezza, ognuna con titolo a 16 px, una riga che dice cosa contiene e, se serve,
-  il segno degli allarmi. Al massimo 4: se ne servono di più, o se le parti non hanno niente in
-  comune, sono voci di menu separate. La scheda scelta sta nell'indirizzo (`#nome`).
+- **Una forma sola di scheda** (Riccardo, 13/11: «i tab… dovrebbero essere organizzati in modo coerente»): fila con la
+  riga sotto, scheda scelta con barra spessa e testo pieno, 14 px. Le classi stanno in
+  `src/components/shared/forma-scheda.ts` e le leggono tutti e tre i componenti: `SchedeSezione` (sopra il titolo: le
+  pagine di una voce di menu), `SchedePagina` e `Tabs` di `ui/tabs` (sotto il titolo: le parti di una pagina). I
+  riquadri grandi del 25/10 e le pillole grigie non esistono più: non si ridisegnano. Lista/Griglia non è una scheda:
+  è un cambio di vista, a destra della barra dei filtri. Le azioni della pagina stanno su una riga, in alto a destra.
 
 ## I mattoni (`src/components/shared/console.tsx`)
 
@@ -81,7 +81,7 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
 | `BarraStato` | dati che vengono da un servizio o sensore | pallino pieno/vuoto + parola «acceso/spento», dettagli in mono, azione a destra |
 | `TesseraNumero` | i 3–4 numeri sotto il titolo | `valore={null}` scrive «—» (non sappiamo), mai 0 finto; `qualifica` accanto al numero, `nota` = la fonte |
 | `Pannello` | ogni riquadro | `numero` per i livelli; `azioni` = filtri e pulsanti del riquadro; `piede` = un consiglio |
-| `SchedePagina` | dividere una pagina lunga in 2–4 parti | grandi e tutte in vista; scelta = fondo navy e barra ciano; mai `Tabs` di `ui/tabs` |
+| `SchedePagina` | dividere una pagina in parti | forma unica (`forma-scheda.ts`): sottolineatura, barra spessa sulla scelta; la riga di spiegazione sotto la fila |
 | `VoceSelezionabile` | voce di una lista che filtra il resto | scelta = bordo ciano + `bg-selezione`; tastiera inclusa |
 | `Etichetta` | identificativi corti: «VLAN 20», «GW», «DHCP», «eth1» | `tono="ruolo"` = giallo pieno con navy |
 | `Legenda` | accanto a ogni mappa, griglia, barra colorata | stesse classi delle celle che spiega |

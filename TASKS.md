@@ -7,6 +7,7 @@ Riccardo: «una dashboard dentro da-ipam per i rilievi di zabbix per una singola
 - [ ] Base che c'è già: `src/lib/zabbix-lettura/` (API di lettura v1 del centro DA-Zabbix: cliente, host, problemi, valori su 7 chiavi; regole «non so» sui dati vecchi) e la vista cliente (`/cliente`, utente Cliente in sola lettura, riquadri in `lib/cliente/casa.ts`).
 - [ ] Proposta: pagina «DATIA MONITORING» nella vista cliente, visibile solo con l'integrazione acquistata, configurata e accesa. Fascia di stato, servizi, apparati, problemi aperti in parole semplici, storico.
 - [ ] Mancano oggi: il concetto di «servizio» (ci sono solo host e problemi), lo storico (la v1 dà solo l'adesso), le misure oltre le 7 (dischi, controlli web, porte), i nomi dei problemi in italiano da cliente.
+- [ ] **Riccardo, 13/11 (correzione alla tavola)**: «sicuramente dovremo monitorare apparati di rete, firewall, macchine Windows e Linux, Proxmox». Quindi l'asse della pagina sono le cinque famiglie di apparati (dal campo `tipologia` che il centro dà già), ognuna con le sue misure; le 7 chiavi della v1 non bastano (porte, VPN, dischi, servizi, VM, storage): le rotte nuove di DA-Zabbix diventano parte della prima consegna, non una seconda tappa.
 - [ ] Tappa 1 solo DA-IPAM con la v1; tappa 2 chiede rotte nuove a DA-Zabbix (storico dei problemi chiusi, più misure). Decisioni chieste a Riccardo il 13/11: dove sta la pagina, chi definisce i servizi, quali problemi vede il cliente, se toccare DA-Zabbix.
 
 ## 2026-11-13 — Alert di sicurezza di DTS: eventi ripetuti senza i dettagli veri (Riccardo)

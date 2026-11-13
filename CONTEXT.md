@@ -17,6 +17,15 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Vincoli di Riccardo (16/10) — non riaprire:** Zabbix è modulo opzionale commerciale; DA-Zabbix genera il profilo cliente e ne resta titolare, DA-IPAM lo riusa; LibreNMS solo locale integrato.
 
+## Classificazione, interfaccia uniforme, alert — 12-13/11/2026
+
+Sessione lunga con Riccardo, tutto su `dev` (0.9.1196 → 0.9.1240); `main` fermo alla 0.9.1213. **DTS (71734) segue `dev`**, come l'hub. Dettaglio in `TASKS.md`, sezioni del 12 e 13/11.
+- **Classificazione**: una porta sola, la pagina «Attribuzione» (`/controllo-classificazione`, regole in `classification/controllo.ts`); il motore usa il produttore che dice la famiglia (`OUI_FAMIGLIA`) e i nomi da server. Gruppi di indirizzi: seriali finti e nomi di modello non uniscono, lo stesso MAC vero sì (`hosts/ancore-gruppo.ts`); Apparati accorpa anche i gruppi. SNMP letto = credenziale validata (`credentials/snmp-letto.ts`); «Apparati creati da soli» acceso su DTS.
+- **Interfaccia, regole in `docs/STILE-UI.md`**: una forma sola di scheda (`components/shared/forma-scheda.ts`, pulsanti in fila; anche Lista/Griglia è una coppia di schede); barra in alto su una riga divisa in aree; mattoni `FilaNumeri` e `BarraFiltri`/`PannelloFiltri`; menu ridotto con le schede di sezione (`lib/menu/sezioni.ts`, anche con àncora). «Discovery» nel menu si chiama «Apparati».
+- **Alert**: i dettagli veri dell'evento si salvano e si aprono cliccando la riga (`integrations/wazuh-dettagli.ts`). Le prove verso altri sistemi usano nomi neutri (`scanner/identita-neutra.ts`): mai più il nome del programma in utenti, User-Agent, saluti.
+- **Trappole**: la sessione di Chrome sull'hub è scaduta, da allora niente è visto a schermo: Riccardo conferma lui pagina per pagina. Un `useState` dichiarato sotto il punto che lo legge fa cadere la pagina e il controllo dei tipi non lo vede (subnet rotta 20 minuti il 12/11): dopo una modifica si apre QUELLA pagina, e si passa il lint «usato prima di essere dichiarato». La build non gira in questo worktree: la prova è quella di DTS.
+- **Aperto**: promozione su `main`; segmentazione su DTS (rimandata da Riccardo) e i tre zeri della matrice dell'hub; fonti che il motore non usa (DHCP, porta dello switch, rilievi passivi, sistema operativo); Sicurezza del dominio e Patch Management da portare sullo scheletro; rileggere i dettagli di «User account changed» su DTS; dire al cliente DTS dell'attacco automatico su un account Microsoft 365.
+
 ## Vista cliente — 11/11/2026
 
 Area di sola lettura sotto `/cliente`, gruppo di rotte `src/app/(cliente)/`, senza menu laterale. La vede un utente «Solo lettura» con il segno `vista_cliente` (in interfaccia: ruolo «Cliente (vista semplice)»): non è un ruolo nuovo, perché il `CHECK` del database hub non lo permette. Il recinto è `src/lib/cliente/recinto.ts`: quell'utente resta in `/cliente`, le scritture sulle `/api` rispondono 403, `/settings` lo riporta a `/cliente`. L'amministratore ci entra dalla Dashboard e può tornare indietro.

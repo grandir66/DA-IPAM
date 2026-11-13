@@ -16,10 +16,18 @@
  * prove girano con un centro finto e contano le chiamate.
  */
 import type Database from "better-sqlite3";
-import type { HostDelCentro, RispostaValori } from "./api";
+import type { HostDelCentro, RispostaFamiglie, RispostaStorico, RispostaValori } from "./api";
 import { abbina, type EsitoAbbinamento, type RisultatoAbbinamento } from "./abbinamento";
 import { abbinamentiSalvati, hostIpamPerIp, salvaAbbinamento } from "./abbinamenti-db";
-import { leggiCentro, leggiValori, normalizzaBase, type LetturaCentro, type Lettore } from "./client";
+import {
+  leggiCentro,
+  leggiFamiglie,
+  leggiStorico,
+  leggiValori,
+  normalizzaBase,
+  type LetturaCentro,
+  type Lettore,
+} from "./client";
 import {
   chiaveLettura,
   leggiConfigLettura,
@@ -71,14 +79,26 @@ const cacheLetture = new Map<string, VoceCache>();
 const cacheValori = new Map<string, VoceValori>();
 const inVolo = new Map<string, Promise<LetturaCentro>>();
 
+/** Famiglie e storico costano di più al centro: due e dieci minuti, come le sue cache. */
+export const DURATA_FAMIGLIE_MS = 120_000;
+export const DURATA_STORICO_MS = 600_000;
+/** I problemi contati nello storico: da «Media» in su, la soglia della pagina del cliente. */
+export const GRAVITA_MIN_CLIENTE = 3;
+const cacheFamiglie = new Map<string, { dati: RispostaFamiglie; quando: number; firma: string }>();
+const cacheStorico = new Map<string, { dati: RispostaStorico; quando: number; firma: string }>();
+
 /** Svuota la cache di un cliente (configurazione cambiata) o di tutti (prove). */
 export function svuotaCachePannello(tenant?: string): void {
   if (tenant === undefined) {
     cacheLetture.clear();
     cacheValori.clear();
+    cacheFamiglie.clear();
+    cacheStorico.clear();
     return;
   }
   cacheLetture.delete(tenant);
+  cacheFamiglie.delete(tenant);
+  cacheStorico.delete(tenant);
   for (const k of [...cacheValori.keys()]) if (k.startsWith(`${tenant}|`)) cacheValori.delete(k);
 }
 
@@ -347,4 +367,54 @@ export function confermaAbbinamento(
   }
   salvaAbbinamento(d.db, { hostid: h.hostid, hostId: esito.hostId, ip: esito.ip }, chi);
   return { ok: true };
+}
+
+/** Ciò che serve alla pagina DATIA MONITORING della vista cliente (13/11/2026). */
+export type LetturaMonitoring =
+  | { stato: "fermo"; pannello: Exclude<PannelloZabbix, { stato: "ok" }> }
+  | {
+      stato: "ok";
+      centro: LetturaCentro;
+      famiglie: RispostaFamiglie;
+      /** null: lo storico non si è letto; il resto della pagina resta in piedi. */
+      storico: RispostaStorico | null;
+    };
+
+/**
+ * La lettura per la pagina del cliente: gli stessi stati e la stessa attesa crescente
+ * del pannello, più le famiglie (obbligatorie: senza, è un guasto detto) e lo storico
+ * (facoltativo). Mai `forza`: il cliente non scavalca l'attesa.
+ */
+export async function leggiMonitoringCentro(d: DipendenzePannello): Promise<LetturaMonitoring> {
+  const p = prepara(d);
+  if (p.tipo === "fermo") return { stato: "fermo", pannello: p.pannello as Exclude<PannelloZabbix, { stato: "ok" }> };
+  const { cfg, chiave, proxy } = p;
+  const esito = await lettura(d, cfg, chiave, proxy, false);
+  if (!esito.ok) return { stato: "fermo", pannello: esito.pannello as Exclude<PannelloZabbix, { stato: "ok" }> };
+  const f = firma(cfg);
+  const ora = d.adesso().getTime();
+  const l = lettore(d, cfg, chiave);
+  let fam = cacheFamiglie.get(d.tenant);
+  if (!fam || fam.firma !== f || ora - fam.quando >= DURATA_FAMIGLIE_MS) {
+    try {
+      fam = { dati: await leggiFamiglie(l), quando: ora, firma: f };
+      cacheFamiglie.set(d.tenant, fam);
+    } catch (e) {
+      const testo = e instanceof ErroreLettura ? e.message : "lettura delle famiglie non riuscita";
+      // Il centro ha appena risposto alle altre rotte: niente attesa crescente, ma nessun dato di prima.
+      cacheFamiglie.delete(d.tenant);
+      return { stato: "fermo", pannello: guasto(cfg, proxy, testo, false) as Exclude<PannelloZabbix, { stato: "ok" }> };
+    }
+  }
+  let sto = cacheStorico.get(d.tenant);
+  if (!sto || sto.firma !== f || ora - sto.quando >= DURATA_STORICO_MS) {
+    try {
+      sto = { dati: await leggiStorico(l, GRAVITA_MIN_CLIENTE), quando: ora, firma: f };
+      cacheStorico.set(d.tenant, sto);
+    } catch {
+      cacheStorico.delete(d.tenant);
+      sto = undefined;
+    }
+  }
+  return { stato: "ok", centro: esito.lettura, famiglie: fam.dati, storico: sto?.dati ?? null };
 }

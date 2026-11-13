@@ -11,8 +11,11 @@
  */
 import { z } from "zod";
 
-/** Le quattro rotte della v1, una per una: nessun prefisso libero. */
-export const ROTTE_LETTURA = ["cliente", "host", "problemi", "valori"] as const;
+/**
+ * Le rotte della v1, una per una: nessun prefisso libero. `famiglie` e `storico` sono
+ * del 13/11/2026, per la pagina DATIA MONITORING della vista cliente.
+ */
+export const ROTTE_LETTURA = ["cliente", "host", "problemi", "valori", "famiglie", "storico"] as const;
 export type RottaLettura = (typeof ROTTE_LETTURA)[number];
 
 /** Le sette chiavi ammesse dall'API (`CHIAVI_LETTURA` lato DA-Zabbix): niente altro in v1. */
@@ -118,6 +121,57 @@ export const RispostaValori = Testa.extend({
   sconosciuti: z.array(z.string()).catch([]),
 });
 export type RispostaValori = z.infer<typeof RispostaValori>;
+
+/**
+ * Una misura di un oggetto, già riassunta dal centro per la sua famiglia: «3 porte su 4»,
+ * «disco più pieno 93% (D:)». `valore` è un numero o uno stato di un elenco chiuso.
+ */
+export const MisuraDelCentro = z.object({
+  codice: z.string(),
+  etichetta: z.string().catch(""),
+  valore: z.union([z.number(), z.string()]).nullable().catch(null),
+  unita: z.string().catch(""),
+  totale: z.number().optional().catch(undefined),
+  dettaglio: z.string().optional().catch(undefined),
+  quanti: z.number().optional().catch(undefined),
+  /** Assente = vecchio. */
+  vecchio: z.boolean().catch(true),
+});
+export type MisuraDelCentro = z.infer<typeof MisuraDelCentro>;
+
+export const OggettoDiFamiglia = z.object({
+  hostid: z.string().regex(/^\d{1,20}$/),
+  nome: z.string().catch(""),
+  famiglia: z.string().catch("altro"),
+  disponibilita: Disponibilita,
+  /** Assente = non affidabile, come per gli host. */
+  dati_affidabili: z.boolean().catch(false),
+  ping: Disponibilita,
+  misure_configurate: z.number().int().nonnegative().catch(0),
+  misure_vive: z.number().int().nonnegative().catch(0),
+  misure: z.array(MisuraDelCentro).catch([]),
+});
+export type OggettoDiFamiglia = z.infer<typeof OggettoDiFamiglia>;
+
+export const RispostaFamiglie = Testa.extend({
+  famiglie: z.array(z.object({ codice: z.string(), etichetta: z.string() })),
+  host: z.array(OggettoDiFamiglia),
+  tronca: z.boolean().catch(false),
+});
+export type RispostaFamiglie = z.infer<typeof RispostaFamiglie>;
+
+const GiorniDiMinuti = z.record(z.string(), z.array(z.number().nonnegative()));
+
+export const RispostaStorico = Testa.extend({
+  /** 30 date UTC (YYYY-MM-DD), dalla più vecchia a oggi. */
+  giorni: z.array(z.string()),
+  famiglie: z.record(z.string(), z.array(z.number().nullable())),
+  minuti: GiorniDiMinuti,
+  /** Minuti con un problema di disponibilità: la barra «era fermo». */
+  minuti_fermo: GiorniDiMinuti,
+  tronca: z.boolean().catch(false),
+});
+export type RispostaStorico = z.infer<typeof RispostaStorico>;
 
 /** Corpo d'errore dell'API (§3): `{"errore": "...", "codice": "..."}`. */
 export const ErroreApi = z.object({

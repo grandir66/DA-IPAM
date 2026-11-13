@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — DATIA MONITORING nella vista cliente
+
+### Aggiunto
+- **Scheda e pagina «DATIA MONITORING» nella vista cliente** (`/cliente/monitoring`), solo con il pannello Zabbix acquistato, configurato e acceso. Perché: Riccardo vuole che il cliente veda lo stato dei suoi apparati senza entrare in Zabbix. La pagina legge dal centro due rotte nuove (`famiglie`, `storico`, in DA-Zabbix dal 13/11) con la chiave di sola lettura che c'è già, e mostra una fascia di stato, un riquadro per famiglia (rete, firewall, Windows, Linux, Proxmox, storage e NAS, alimentazione e hardware, certificati), i problemi aperti in italiano da cliente, gli ultimi 30 giorni e una tabella per famiglia con le sue misure.
+- Regole scelte con Riccardo: «fermo» è solo chi non risponde; i problemi si vedono da «Media» in su; «preso in carico» diventa «Domarc ci sta lavorando»; «non so» è uno stato a sé (lettura vecchia, collegamento con la sede fermo, nessun segno di vita) e non diventa mai un «funziona» di prima; un oggetto che risponde ma non manda le sue misure si dice.
+- La barra dei 30 giorni conta solo i fermi veri: sui dati di DTS e Domarc i problemi qualunque coprivano quasi tutto il mese.
+
 ## [Non rilasciato] — 2026-11-12 · Un modo solo per la classificazione
 
 ### Cambiato

@@ -3,6 +3,7 @@ import { schedaApparati } from "./schede/apparati";
 import { schedaDaSistemare } from "./schede/da-sistemare";
 import { schedaDominio } from "./schede/dominio";
 import { schedaLogSicurezza } from "./schede/log-sicurezza";
+import { schedaMonitoring } from "./schede/monitoring";
 import { schedaReti } from "./schede/reti";
 
 export type Gravita = "grave" | "attenzione" | "nota";
@@ -37,7 +38,7 @@ export interface SchedaCliente {
 }
 
 /** L'ordine a schermo è il campo `ordine`, non questo elenco. */
-export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaApparati, schedaDaSistemare, schedaDominio, schedaLogSicurezza];
+export const SCHEDE_CLIENTE: readonly SchedaCliente[] = [schedaReti, schedaMonitoring, schedaApparati, schedaDaSistemare, schedaDominio, schedaLogSicurezza];
 
 const PESO_GRAVITA: Record<Gravita, number> = { grave: 0, attenzione: 1, nota: 2 };
 

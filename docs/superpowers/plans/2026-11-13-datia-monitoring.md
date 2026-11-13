@@ -1,6 +1,6 @@
 # DATIA MONITORING — la pagina del cliente sui dati di Zabbix, e l'inserimento degli oggetti da DA-IPAM
 
-> Piano del 13/11/2026 (Riccardo). Stato: **in attesa di approvazione**. Storia e misure: `TASKS.md`,
+> Piano del 13/11/2026 (Riccardo). Stato: **approvato da Riccardo il 13/11 («Sì a tutto»), D1-D4 secondo la proposta; A e B fatte, C da fare**. Storia e misure: `TASKS.md`,
 > sezione «2026-11-13 — DATIA MONITORING». Tocca due repo: DA-IPAM (questo) e DA-Zabbix
 > (`/Users/riccardo/Progetti/DA-Zabbix`, ramo `revisione/20260830`, live `192.168.4.15`).
 
@@ -35,32 +35,33 @@ Ogni tappa si chiude da sola e si può rilasciare senza la successiva. Tutto nas
 
 ### Tappa A — DA-Zabbix: rotta di lettura per famiglia (zona gialla)
 
-- [ ] A1. `zbximport/famiglie.py` (nuovo): tipologia → famiglia; per famiglia l'elenco delle misure
+- [x] A1. `zbximport/famiglie.py` (nuovo): tipologia → famiglia; per famiglia l'elenco delle misure
   ammesse, scritte come regole sulle chiavi dei modelli veri (vfs.fs, net.if, service, volumi Synology
   e QNAP, nodi e macchine Proxmox, VPN e alta affidabilità Stormshield). Puro, con prove su dati della
   forma vera presi dalla misura del 13/11 (DTS e Domarc).
-- [ ] A2. `leggi_famiglie` in `zbximport/lettura_clienti.py`: usa `SoloLettura` e il token del cliente
+- [x] A2. `leggi_famiglie` in `zbximport/lettura_clienti.py`: usa `SoloLettura` e il token del cliente
   come le altre letture; per ogni oggetto dà stato, misure della sua famiglia, `vecchio`, `dati_affidabili`.
   Un oggetto con misure configurate e nessun dato si dice («configurato, senza dati»): è il caso dei
   2 Proxmox di DTS e del Windows con MSSQL di Domarc.
-- [ ] A3. Rotta `GET /api/lettura/v1/famiglie` in `web/app.py`, aggiunta a `_APERTE_ESATTE`, prova con
+- [x] A3. Rotta `GET /api/lettura/v1/famiglie` in `web/app.py`, aggiunta a `_APERTE_ESATTE`, prova con
   `pytest.mark.auth_reale`. Stessa cache e stessa testa (`codcli`, `eta_s`, `vecchio`) delle altre quattro.
-- [ ] A4. Rotta `GET /api/lettura/v1/storico`: problemi chiusi degli ultimi 30 giorni, per famiglia e per giorno.
-- [ ] A5. Aggiornare `docs/2026-10-16-api-lettura-per-cliente-design.md` (§3) e `CHANGELOG.md`.
-- Verifica: prove mirate; poi sul live la rotta chiamata dal di fuori con la chiave di lettura di DTS.
+- [x] A4. Rotta `GET /api/lettura/v1/storico`: problemi chiusi degli ultimi 30 giorni, per famiglia e per giorno.
+- [x] A5. Aggiornare `docs/2026-10-16-api-lettura-per-cliente-design.md` (§3) e `CHANGELOG.md`.
+- Verifica (13/11): 110 prove mirate verdi, cancello completo di DA-Zabbix verde, lettura provata sui dati veri di DTS (14 host) e Domarc (45) con l'utenza tecnica in sola lettura, rilascio sul `.15` (`a2653b1b`), rotta nuova 401 senza chiave. Non ancora chiamata dal di fuori con una chiave di lettura vera.
+- Fuori dal piano, aggiunto strada facendo: `ping` per oggetto (chi è controllato col solo ping non ha un'interfaccia che dica se risponde) e `minuti_fermo` nello storico.
 
 ### Tappa B — DA-IPAM: la pagina DATIA MONITORING (zona verde)
 
-- [ ] B1. `src/lib/zabbix-lettura/api.ts`: schemi di `famiglie` e `storico`; `client.ts` e `servizio.ts`:
+- [x] B1. `src/lib/zabbix-lettura/api.ts`: schemi di `famiglie` e `storico`; `client.ts` e `servizio.ts`:
   lettura con la cache e l'attesa crescente che ci sono già.
-- [ ] B2. `src/lib/cliente/monitoring.ts` (nuovo, puro): frase della fascia, stato della famiglia
+- [x] B2. `src/lib/cliente/monitoring.ts` (nuovo, puro): frase della fascia, stato della famiglia
   (il peggiore fra i suoi oggetti), soglia «Media», frasi dei problemi in italiano da cliente
   (sul modello di `src/lib/cliente/frasi-avvisi.ts`), regola del «non so».
-- [ ] B3. Rotta `GET /api/cliente/monitoring` con `withTenantFromSession`, in sola lettura.
-- [ ] B4. Pagina `/cliente/monitoring` e voce di menu, visibili solo con integrazione acquistata,
+- [-] B3. Annullato: le pagine della vista cliente leggono dal server (`nelCliente`), una rotta in più non serve.
+- [x] B4. Pagina `/cliente/monitoring` e voce di menu, visibili solo con integrazione acquistata,
   configurata e accesa (`pannelloNelMenu`). Gli oggetti della tavola del 13/11: fascia, famiglie,
   problemi aperti, scheda della famiglia a colonne separate, ultimi 30 giorni. Stati per forma e luminanza.
-- [ ] B5. Riquadro «Monitoring» nella casa del cliente (`RIQUADRI_CASA`): la fascia e le famiglie in piccolo.
+- [x] B5. La scheda è nel registro (`SCHEDE_CLIENTE`): riquadro e voci di attenzione compaiono nella casa. Il riquadro componibile in `RIQUADRI_CASA` non è fatto: la casa è in lavorazione in un'altra sessione.
 - Verifica: prove mirate sui file puri; una schermata a 1920 sull'hub col tenant di Domarc.
 
 ### Tappa C — inserimento degli oggetti (zona rossa: è una chiave che scrive)

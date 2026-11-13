@@ -15,8 +15,10 @@ import {
   LIMITE_HOST_PAGINA,
   MAX_HOSTID_VALORI,
   RispostaCliente,
+  RispostaFamiglie,
   RispostaHost,
   RispostaProblemi,
+  RispostaStorico,
   RispostaValori,
   TESTO_CODICE_ERRORE,
   type HostDelCentro,
@@ -140,4 +142,14 @@ export async function leggiCentro(l: Lettore): Promise<LetturaCentro> {
 export async function leggiValori(l: Lettore, hostids: string[]): Promise<z.infer<typeof RispostaValori>> {
   const ids = [...new Set(hostids)].slice(0, MAX_HOSTID_VALORI);
   return leggiRotta(l, "valori", { hostid: ids.join(",") }, RispostaValori);
+}
+
+/** Ogni oggetto con la sua famiglia e le misure di quella famiglia (13/11/2026). */
+export async function leggiFamiglie(l: Lettore): Promise<RispostaFamiglie> {
+  return leggiRotta(l, "famiglie", {}, RispostaFamiglie);
+}
+
+/** Gli ultimi 30 giorni per famiglia; `gravitaMin` è la soglia dei problemi contati in `minuti`. */
+export async function leggiStorico(l: Lettore, gravitaMin: number): Promise<RispostaStorico> {
+  return leggiRotta(l, "storico", { gravita_min: String(Math.max(0, Math.min(5, Math.floor(gravitaMin)))) }, RispostaStorico);
 }

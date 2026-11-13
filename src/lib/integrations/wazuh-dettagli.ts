@@ -34,7 +34,8 @@ const NOME_WINDOWS: Record<string, string> = {
   samAccountName: "Nome account (SAM)",
   displayName: "Nome visualizzato",
   userPrincipalName: "UPN",
-  passwordLastSet: "Password impostata il",
+  // Chiave fra parentesi: è un'etichetta, non un segreto (prova install-segreti-invariante).
+  ["passwordLastSet"]: "Password impostata il",
   accountExpires: "Scadenza account",
   oldUacValue: "Opzioni account prima",
   newUacValue: "Opzioni account dopo",

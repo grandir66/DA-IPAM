@@ -268,6 +268,28 @@ describe("aggiornamento automatico", () => {
     assert.equal(s.commit_avviato, prima);
   });
 
+  test("build persa dopo una riconfigura: stesso commit, ma si ricostruisce e si riavvia (13/11/2026, 73322)", () => {
+    giro(a);
+    pubblica(a, { "app.ts": "export const v = 2;\n" });
+    assert.equal(giro(a).codice, 0);
+    const dir = buildInUso(a);
+    assert.ok(fs.existsSync(path.join(a.app, dir, "DA_COMMIT")));
+    // La riconfigura: via le cartelle dell'aggiornatore, resta la .next dell'immagine (senza DA_COMMIT).
+    fs.rmSync(path.join(a.app, dir), { recursive: true, force: true });
+    fs.rmSync(path.join(a.app, ".next-attiva"), { force: true });
+    fs.rmSync(path.join(a.app, ".next"), { recursive: true, force: true });
+    fs.mkdirSync(path.join(a.app, ".next"));
+    fs.writeFileSync(path.join(a.app, ".next", "BUILD_ID"), "immagine\n");
+    const g = giro(a);
+    assert.equal(g.codice, 0, g.uscita);
+    assert.ok(g.chiamate.some((c) => c.startsWith("npm run build")), g.uscita);
+    assert.ok(g.chiamate.some((c) => c.startsWith("restart")), g.uscita);
+    assert.equal(buildId(a), head(a));
+    assert.ok(fs.existsSync(path.join(a.app, buildInUso(a), "DA_COMMIT")));
+    // Il giro dopo è di nuovo fermo: niente build a ripetizione.
+    assert.deepEqual(giro(a).chiamate.filter((c) => c.startsWith("npm run build")), []);
+  });
+
   test("cambio di ramo: il checkout non salta più build e riavvio", () => {
     giro(a);
     const dev = pubblica(a, { "app.ts": "export const v = 9;\n" }, "dev");

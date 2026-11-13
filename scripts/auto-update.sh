@@ -106,7 +106,21 @@ echo "[auto-update] $(date -Is) — branch $BRANCH"
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 
-if [ "$AVVIATO" = "$REMOTE" ]; then
+# Build persa (13/11/2026, appliance 73322): una riconfigura aveva tolto .next-a/.next-b e
+# .next-attiva lasciando la .next dell'immagine. Il commit avviato era ancora quello di origin,
+# quindi «già aggiornato» a ogni giro, col programma di due giorni prima acceso e il codice
+# nuovo sul disco. Ogni build attivata da update.sh porta DA_COMMIT: se questo aggiornatore
+# ha già lavorato qui (c'è un tentativo nello stato) e la build in uso non ce l'ha, non è
+# la sua e si ricostruisce. Un'immagine appena posata non ha tentativi e non entra qui.
+DIR_IN_USO="$(cat .next-attiva 2>/dev/null || true)"
+case "$DIR_IN_USO" in .next-a|.next-b) ;; *) DIR_IN_USO=".next" ;; esac
+BUILD_PERSA=0
+if [ -n "$(stato leggi commit_tentato 2>/dev/null || true)" ] && [ ! -s "$DIR_IN_USO/DA_COMMIT" ]; then
+  BUILD_PERSA=1
+  echo "[auto-update] la build in uso ($DIR_IN_USO) non è di questo aggiornatore (manca DA_COMMIT): si ricostruisce."
+fi
+
+if [ "$AVVIATO" = "$REMOTE" ] && [ "$BUILD_PERSA" != "1" ]; then
   stato controllo gia_aggiornato $ORIGINE || true
   echo "[auto-update] già aggiornato ($(git rev-parse --short "$AVVIATO")). Nessun downtime."
   exit 0

@@ -33,7 +33,7 @@ test("elenco unico: in Zabbix con modelli e agente, e da aggiungere solo chi Zab
     ["z:1", "funziona", "non_serve", null, "storage"],
     ["z:2", "funziona", "no", "windows", "windows"],
     ["i:8", "da_aggiungere", "da_installare", "windows", "windows"],
-    ["i:9", "da_aggiungere", "non_serve", null, "rete"],
+    ["i:9", "da_aggiungere", "non_serve", null, "switch"],
   ]);
   // L'agente deve dichiarare il nome tecnico di Zabbix, non quello visibile.
   assert.equal(e[1]?.hostTecnico, "DA-DC01");
@@ -42,7 +42,7 @@ test("elenco unico: in Zabbix con modelli e agente, e da aggiungere solo chi Zab
 test("famiglia dalla classificazione di DA-IPAM", () => {
   assert.deepEqual(
     ["server_windows", "server_linux", "switch", "firewall", "nas", "ups", "hypervisor", "stampante", null].map(famigliaDaClassificazione),
-    ["windows", "linux", "rete", "firewall", "storage", "hardware", "proxmox", "altro", "altro"],
+    ["windows", "linux", "switch", "firewall", "storage", "ups", "virtualizzazione", "altro", "altro"],
   );
 });
 

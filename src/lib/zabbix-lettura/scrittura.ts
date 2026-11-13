@@ -39,6 +39,8 @@ export interface OpzioniScrittura {
   forza?: boolean;
   /** Dove l'agente manda i dati; senza, lo ricava il centro. */
   serverActive?: string | null;
+  /** La famiglia da scrivere in Zabbix (tag `famiglia`, 13/11/2026); senza, la decide il centro. */
+  famiglia?: string | null;
 }
 
 const Comune = {
@@ -95,6 +97,7 @@ export function corpoScrittura(o: OggettoDaMettere, op: OpzioniScrittura = {}): 
   if (op.prova) corpo.prova = true;
   if (op.forza) corpo.forza = true;
   if (op.serverActive && op.serverActive.trim()) corpo.server_active = op.serverActive.trim();
+  if (op.famiglia && op.famiglia !== "altro") corpo.famiglia = op.famiglia;
   return corpo;
 }
 
@@ -181,6 +184,27 @@ export async function comandoAgente(
   if (a.hostname && a.hostname.trim()) corpo.hostname = a.hostname.trim();
   if (a.serverActive && a.serverActive.trim()) corpo.server_active = a.serverActive.trim();
   return posta(l, "/api/scrittura/v1/agente", corpo, EsitoAgente);
+}
+
+// ── Famiglia (13/11/2026): il tag `famiglia` sull'host decide dove compare nella pagina del cliente ──
+
+export const EsitoFamiglia = z.object({
+  esito: z.enum(["prova", "cambiato", "invariato"]),
+  hostid: z.string(),
+  nome: z.string().catch(""),
+  prima: z.string().catch(""),
+  dopo: z.string().catch(""),
+});
+export type EsitoFamiglia = z.infer<typeof EsitoFamiglia>;
+
+/** Cambia la famiglia di un apparato; `famiglia: ""` la riporta a quella decisa dal centro. */
+export async function cambiaFamiglia(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  c: { hostid: string; famiglia: string; prova?: boolean },
+): Promise<EsitoFamiglia> {
+  const corpo: Record<string, unknown> = { hostid: c.hostid, famiglia: c.famiglia };
+  if (c.prova) corpo.prova = true;
+  return posta(l, "/api/scrittura/v1/famiglia", corpo, EsitoFamiglia);
 }
 
 /** I testi nostri per i codici che solo la scrittura può dare. */

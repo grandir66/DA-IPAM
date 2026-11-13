@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — famiglie di DatIA Mon dalla tabella di Riccardo (13/11/2026)
+
+### Cambiato
+- Le famiglie della pagina del cliente e di «Apparati» seguono le colonne della tabella di Riccardo: linee dati, firewall, switch, router, Wi-Fi, ponti radio, storage, host di virtualizzazione (Proxmox e VMware), VM, datastore, server Windows e Linux, AD/DNS, database, servizi, UPS, centralino, videosorveglianza. AD/DNS e database sono **servizi** («intendevo il servizio di dominio, non tanto il server»): righe ricavate dal centro, con lo stato deciso là e senza i problemi dell'host (un disco pieno del DC non è un guasto del dominio). Le famiglie nascoste coi codici vecchi restano nascoste.
+
+### Aggiunto
+- «Cambia famiglia» in Apparati, e la famiglia scritta in Zabbix all'inserimento partendo dalla classificazione di DA-IPAM: è il tag `famiglia` sull'host, che vince su tutto il resto.
+
 ## 2026-11-13 — DatIA Mon: pagina «Apparati» con modelli e agente
 
 ### Aggiunto

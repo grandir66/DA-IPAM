@@ -12,7 +12,7 @@ import { salvaImpostazioneMonitoring } from "@/lib/cliente/monitoring-impostazio
 const Corpo = z
   .object({
     tipo: z.enum(["famiglia", "host"]),
-    chiave: z.string().min(1).max(30),
+    chiave: z.string().min(1).max(200),
     visibile: z.boolean(),
     nomeCliente: z.string().max(200).nullable().optional(),
   })

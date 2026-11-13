@@ -200,7 +200,7 @@ test("un apparato nascosto sparisce del tutto: elenco, conti, frase, problemi, K
   assert.equal(m.kpi.disponibilita?.corrente, 100);
   // Il pannello di gestione invece vede tutto, col nome di Zabbix e quello per il cliente.
   const tutti = m.gestione.flatMap((f) => f.oggetti);
-  assert.deepEqual(tutti.map((o) => [o.hostid, o.nomeZabbix, o.nomeCliente, o.visibile]), [
+  assert.deepEqual(tutti.map((o) => [o.riga, o.nomeZabbix, o.nomeCliente, o.visibile]), [
     ["1", "DA-RT-CORE", "Router principale", true],
     ["2", "srv-nascosto", null, false],
   ]);
@@ -258,4 +258,21 @@ test("tempo di soluzione: la mediana delle chiusure, che i pochi problemi lunghi
   });
   assert.equal(m.kpi.soluzioneMin?.corrente, 25);
   assert.equal(m.kpi.soluzioneMin?.precedente, null);
+});
+
+test("righe ricavate (13/11): stato dal centro, problemi dell'host non ereditati, riga come chiave", () => {
+  const dc = oggetto("2", "DA-DC01.domarc.it", "windows");
+  const dominio = oggetto("2", "Dominio domarc.it", "altro", {
+    riga: "dominio:domarc.it", derivata: true, ping: "non_so", disponibilita: "si",
+    stato_riga: "attenzione", motivo_riga: "un domain controller ha servizi fermi: il dominio funziona sugli altri",
+  });
+  const m = componiMonitoring({ ...BASE, famiglie: famiglie([dc, dominio]), problemi: [problema("2", "FS [C:]: Space is low", 4)] });
+  const righe = m.famiglie.flatMap((f) => f.oggetti);
+  const d = righe.find((o) => o.riga === "dominio:domarc.it")!;
+  assert.equal(d.stato, "attenzione");
+  assert.equal(d.problemi, 0);
+  assert.equal(righe.find((o) => o.riga === "2")!.problemi, 1);
+  // Il problema compare una volta sola, sull'host.
+  assert.equal(m.problemi.length, 1);
+  assert.equal(m.problemi[0]!.nomeOggetto, "DA-DC01.domarc.it");
 });

@@ -11,13 +11,19 @@ import { assicuraTabelleZabbixLettura } from "@/lib/db-tenant-schema";
 export interface ImpostazioniMonitoring {
   famiglieNascoste: ReadonlySet<string>;
   hostNascosti: ReadonlySet<string>;
-  /** hostid → nome per il cliente. */
+  /** riga (l'hostid, per un host) → nome per il cliente. */
   nomi: ReadonlyMap<string, string>;
 }
 
 export const IMPOSTAZIONI_VUOTE: ImpostazioniMonitoring = { famiglieNascoste: new Set(), hostNascosti: new Set(), nomi: new Map() };
 
 export const FORMA_HOSTID = /^\d{1,20}$/;
+/** La chiave di una riga: un hostid, o quella di una riga ricavata («12:qemu:100», «dominio:domarc.it»). */
+export const FORMA_RIGA = /^[A-Za-z0-9_.:$*@-]{1,200}$/;
+/** I codici di famiglia di prima del 13/11 sera: una famiglia nascosta allora resta nascosta. */
+const VECCHI_CODICI: Record<string, readonly string[]> = {
+  rete: ["switch", "router", "wifi"], proxmox: ["virtualizzazione"], certificati: ["servizi"], hardware: ["ups"],
+};
 export const FORMA_FAMIGLIA = /^[a-z_]{1,30}$/;
 export const NOME_MASSIMO = 80;
 
@@ -35,7 +41,7 @@ export function leggiImpostazioniMonitoring(db: Database.Database): Impostazioni
   const hostNascosti = new Set<string>();
   const nomi = new Map<string, string>();
   for (const r of righe) {
-    if (r.tipo === "famiglia" && r.visibile === 0) famiglieNascoste.add(r.chiave);
+    if (r.tipo === "famiglia" && r.visibile === 0) for (const c of VECCHI_CODICI[r.chiave] ?? [r.chiave]) famiglieNascoste.add(c);
     if (r.tipo === "host" && r.visibile === 0) hostNascosti.add(r.chiave);
     if (r.tipo === "host" && r.nome_cliente && r.nome_cliente.trim()) nomi.set(r.chiave, r.nome_cliente.trim());
   }
@@ -54,7 +60,7 @@ export type EsitoImpostazione = { ok: true } | { ok: false; errore: string };
 
 /** Scrive una voce. Una voce che torna al valore di serie (visibile, senza nome) si toglie. */
 export function salvaImpostazioneMonitoring(db: Database.Database, v: VoceImpostazione, chi: string): EsitoImpostazione {
-  if (v.tipo === "host" && !FORMA_HOSTID.test(v.chiave)) return { ok: false, errore: "Apparato non valido" };
+  if (v.tipo === "host" && !FORMA_RIGA.test(v.chiave)) return { ok: false, errore: "Apparato non valido" };
   if (v.tipo === "famiglia" && !FORMA_FAMIGLIA.test(v.chiave)) return { ok: false, errore: "Famiglia non valida" };
   if (v.tipo !== "host" && v.tipo !== "famiglia") return { ok: false, errore: "Tipo non valido" };
   const nome = v.tipo === "host" ? (v.nomeCliente ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim() : "";

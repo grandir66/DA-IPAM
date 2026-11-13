@@ -219,6 +219,79 @@ function FinestraModelli({ cambio, adatti, chiudi, fatto }: { cambio: CambioMode
   );
 }
 
+// ── Finestra della famiglia (13/11/2026): il tag `famiglia` in Zabbix, dove l'apparato compare per il cliente ──
+
+/** Le famiglie che sono righe ricavate dal centro (dominio, database, datastore): non si danno a un apparato. */
+const FAMIGLIE_RICAVATE = new Set(["dominio", "db", "datastore"]);
+
+function FinestraFamiglia({ apparati, famiglie, chiudi, fatto }: {
+  apparati: ApparatoElenco[];
+  famiglie: Array<{ codice: string; etichetta: string }>;
+  chiudi: () => void;
+  fatto: () => void;
+}) {
+  const [scelta, setScelta] = useState<string | null>(null);
+  const [lavoro, setLavoro] = useState(false);
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+  const voci = famiglie.filter((f) => !FAMIGLIE_RICAVATE.has(f.codice));
+
+  async function applica() {
+    if (scelta === null) return;
+    setLavoro(true);
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const r = await postaConAttesa<{ esito: string }>("/api/zabbix/apparati/famiglia", { hostid: a.hostid, famiglia: scelta });
+      m.set(a.chiave, r.ok ? (r.data.esito === "invariato" ? "era già così" : "fatto") : r.message);
+      setEsiti(new Map(m));
+    }
+    setLavoro(false);
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">Cambia famiglia · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            La famiglia decide dove l&apos;apparato compare nella pagina del cliente. Si scrive in Zabbix e non tocca né modelli né misure.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="space-y-3 px-4 py-3">
+          <div className="flex flex-wrap gap-1.5">
+            {voci.map((f) => (
+              <Button key={f.codice} type="button" size="sm" variant={scelta === f.codice ? "default" : "outline"} disabled={lavoro || esiti !== null} onClick={() => setScelta(f.codice)}>
+                {f.etichetta}
+              </Button>
+            ))}
+            <Button type="button" size="sm" variant={scelta === "" ? "default" : "outline"} disabled={lavoro || esiti !== null} onClick={() => setScelta("")}>
+              Come la decide il centro
+            </Button>
+          </div>
+          <ul className="divide-y text-sm">
+            {apparati.map((a) => (
+              <li key={a.chiave} className="flex gap-3 py-1.5">
+                <span className="w-56 min-w-0 truncate font-medium">{a.nome}</span>
+                <span className="flex-1 text-muted-foreground">
+                  {esiti?.get(a.chiave) ?? `ora: ${famiglie.find((f) => f.codice === a.famiglia)?.etichetta ?? "Altro"}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {!esiti && (
+            <Button type="button" disabled={scelta === null || lavoro} onClick={() => void applica()}>
+              {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}Cambia
+            </Button>
+          )}
+          <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Finestra dell'agente: una macchina alla volta, o un comando per tutte ──
 
 type ModoAgente = "una_per_una" | "windows_tutte" | "linux_tutte";
@@ -420,7 +493,11 @@ export function ApparatiDatia() {
   const [scelti, setScelti] = useState<Set<string>>(new Set());
   // Le finestre ricevono una copia degli apparati fissata all'apertura: l'elenco si rilegge sotto di loro.
   const [finestra, setFinestra] = useState<
-    { tipo: "aggiungi"; apparati: ApparatoElenco[] } | { tipo: "agente"; apparati: ApparatoElenco[] } | { tipo: "modelli"; cambio: CambioModelli } | null
+    | { tipo: "aggiungi"; apparati: ApparatoElenco[] }
+    | { tipo: "agente"; apparati: ApparatoElenco[] }
+    | { tipo: "famiglia"; apparati: ApparatoElenco[] }
+    | { tipo: "modelli"; cambio: CambioModelli }
+    | null
   >(null);
 
   const carica = useCallback(async () => {
@@ -505,6 +582,7 @@ export function ApparatiDatia() {
               <Button size="sm" variant="outline" disabled={!scrive || !daAggiungere.length} onClick={() => setFinestra({ tipo: "aggiungi", apparati: daAggiungere })}>Aggiungi a Zabbix ({daAggiungere.length})</Button>
               <Button size="sm" variant="outline" disabled={!scrive || !monitorati.length} onClick={() => setFinestra({ tipo: "modelli", cambio: { tipo: "aggiungi", apparati: monitorati } })}>Aggiungi un modello</Button>
               <Button size="sm" variant="outline" disabled={!scrive || !monitorati.length} onClick={() => setFinestra({ tipo: "modelli", cambio: { tipo: "togli", apparati: monitorati } })}>Togli un modello</Button>
+              <Button size="sm" variant="outline" disabled={!scrive || !monitorati.length} onClick={() => setFinestra({ tipo: "famiglia", apparati: monitorati })}>Cambia famiglia</Button>
               <Button size="sm" variant="outline" disabled={!scrive || !selezionati.some((a) => a.sistema)} onClick={() => setFinestra({ tipo: "agente", apparati: selezionati })}>Prepara l&apos;agente</Button>
               <Button size="sm" variant="ghost" onClick={() => setScelti(new Set())}>Togli la selezione</Button>
               {scelti.size >= MASSIMO_SELEZIONE && <span className="text-[13px] text-muted-foreground">Al massimo {MASSIMO_SELEZIONE} alla volta.</span>}
@@ -563,6 +641,7 @@ export function ApparatiDatia() {
       )}
       {finestra?.tipo === "aggiungi" && <FinestraAggiungi apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
       {finestra?.tipo === "agente" && <FinestraAgente apparati={finestra.apparati} chiudi={() => setFinestra(null)} />}
+      {finestra?.tipo === "famiglia" && <FinestraFamiglia apparati={finestra.apparati} famiglie={dati.famiglie ?? []} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
       {finestra?.tipo === "modelli" && <FinestraModelli cambio={finestra.cambio} adatti={dati.modelliAdatti ?? null} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
     </div>
   );

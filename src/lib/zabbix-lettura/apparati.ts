@@ -43,12 +43,18 @@ export interface RigaIpam {
 export function famigliaDaClassificazione(c: string | null): string {
   const v = (c ?? "").toLowerCase();
   if (v.includes("windows")) return "windows";
-  if (v === "server_linux" || v === "server" || v === "linux") return "linux";
-  if (v === "firewall") return "firewall";
-  if (["switch", "router", "access_point", "rete_ot"].includes(v)) return "rete";
-  if (v === "nas" || v === "storage") return "storage";
-  if (["ups", "ilo", "idrac", "bmc"].includes(v)) return "hardware";
-  if (v === "hypervisor") return "proxmox";
+  if (["server_linux", "server", "linux", "dhcp_server", "dns_server", "nfs_server", "mail_server", "web_server",
+    "database_server", "backup_server"].includes(v)) return "linux";
+  if (v === "vm") return "vm";
+  if (v === "firewall" || v === "vpn_gateway") return "firewall";
+  if (["switch", "bridge", "rete_ot"].includes(v)) return "switch";
+  if (["router", "modem", "ont", "load_balancer"].includes(v)) return "router";
+  if (["access_point", "controller_wifi", "network_controller", "repeater"].includes(v)) return "wifi";
+  if (v.startsWith("nas") || v === "storage") return "storage";
+  if (v === "ups" || v === "pdu") return "ups";
+  if (v === "hypervisor") return "virtualizzazione";
+  if (v === "centralino" || v === "gateway_voip") return "centralino";
+  if (v === "telecamera" || v === "nvr") return "videosorveglianza";
   return "altro";
 }
 
@@ -69,7 +75,9 @@ export function elencoApparati(i: {
   const tecnicoDi = new Map(i.host.map((h) => [h.hostid, h.host]));
   const problemiDi = new Map<string, ProblemaDelCentro[]>();
   for (const p of i.problemi) problemiDi.set(p.hostid, [...(problemiDi.get(p.hostid) ?? []), p]);
-  const elenco: ApparatoElenco[] = i.famiglie.map((o) => {
+  // Le righe ricavate (VM del Proxmox, dominio, database, datastore) non sono host di Zabbix:
+  // qui non hanno modelli né agente da gestire.
+  const elenco: ApparatoElenco[] = i.famiglie.filter((o) => !o.derivata).map((o) => {
     const { stato, motivo } = statoOggetto(o, problemiDi.get(o.hostid) ?? [], i.vecchio);
     return {
       chiave: `z:${o.hostid}`,

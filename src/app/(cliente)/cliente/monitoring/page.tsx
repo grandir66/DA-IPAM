@@ -153,7 +153,7 @@ function SchedaFamiglia({ f }: { f: FamigliaMostrata }) {
               </tr>
             </thead>
             <tbody>
-              {f.oggetti.map((o) => <RigaOggetto key={o.hostid} o={o} col={col} />)}
+              {f.oggetti.map((o) => <RigaOggetto key={o.riga} o={o} col={col} />)}
             </tbody>
           </table>
         </div>

@@ -6,12 +6,15 @@
 import type Database from "better-sqlite3";
 import { normalizzaBase } from "./client";
 import { chiaveScrittura, leggiConfigLettura } from "./config";
+import { famigliaDaClassificazione } from "./apparati";
 import {
+  cambiaFamiglia,
   cambiaModelli,
   comandoAgente,
   mettiInMonitoraggio,
   type CambioModelli,
   type EsitoAgente,
+  type EsitoFamiglia,
   type EsitoModelli,
   type EsitoScrittura,
   type OggettoDaMettere,
@@ -98,8 +101,11 @@ export async function inserisciHost(
   const cfg = leggiConfigLettura(d.db)!;
   const chiave = chiaveScrittura(d.db)!;
   const base = new URL(normalizzaBase(cfg.baseUrl));
+  // La famiglia parte dalla classificazione di DA-IPAM (Riccardo, 13/11/2026: «i gruppi con cui
+  // classificare inizialmente gli oggetti in zabbix»); da «Apparati» si corregge.
+  const famiglia = op.famiglia ?? famigliaDaClassificazione(oggetto.classification ?? null);
   try {
-    const esito = await mettiInMonitoraggio({ base, trasportoPost: d.trasportoPost(base, chiave, cfg.impronta) }, oggetto, op);
+    const esito = await mettiInMonitoraggio({ base, trasportoPost: d.trasportoPost(base, chiave, cfg.impronta) }, oggetto, { ...op, famiglia });
     return { ok: true, esito };
   } catch (e) {
     const testo = e instanceof ErroreLettura ? e.message : "il centro non ha risposto";
@@ -129,6 +135,14 @@ async function colCentro<T>(d: DipendenzeInserimento, fai: (l: { base: URL; tras
 /** Aggiunge e toglie modelli a un apparato di Zabbix (13/11/2026). */
 export function cambiaModelliApparato(d: DipendenzeInserimento, c: CambioModelli): Promise<Esito<EsitoModelli>> {
   return colCentro(d, (l) => cambiaModelli(l, c));
+}
+
+/** La famiglia di un apparato in Zabbix (tag `famiglia`, 13/11/2026). */
+export function cambiaFamigliaApparato(
+  d: DipendenzeInserimento,
+  c: { hostid: string; famiglia: string; prova?: boolean },
+): Promise<Esito<EsitoFamiglia>> {
+  return colCentro(d, (l) => cambiaFamiglia(l, c));
 }
 
 const CHIAVE_SERVER_ACTIVE = "zabbix.server_active";

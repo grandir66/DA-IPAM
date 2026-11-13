@@ -153,7 +153,17 @@ export const OggettoDiFamiglia = z.object({
   /** I modelli collegati e lo stato dell'agente (13/11/2026). Assenti su un centro vecchio. */
   modelli: z.array(z.string()).catch([]),
   agente: z.enum(["si", "no", "non_so", "non_serve"]).catch("non_so"),
-});
+  /**
+   * Righe ricavate (13/11/2026): VM e datastore dal Proxmox, il dominio dai servizi dei DC, i
+   * database dai servizi dei server. Hanno l'`hostid` dell'host da cui vengono, una `riga`
+   * propria e lo stato già deciso dal centro. Su un centro vecchio `riga` manca: vale l'hostid.
+   */
+  riga: z.string().max(200).catch(""),
+  derivata: z.boolean().catch(false),
+  padre: z.string().catch(""),
+  stato_riga: z.enum(["funziona", "attenzione", "fermo", "non_so"]).catch("non_so"),
+  motivo_riga: z.string().nullable().catch(null),
+}).transform((o) => ({ ...o, riga: o.riga || o.hostid }));
 export type OggettoDiFamiglia = z.infer<typeof OggettoDiFamiglia>;
 
 export const RispostaFamiglie = Testa.extend({

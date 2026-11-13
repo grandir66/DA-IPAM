@@ -35,12 +35,12 @@ function RigaApparato({ o, famigliaVisibile }: { o: FamigliaGestita["oggetti"][n
   const [visibile, setVisibile] = useState(o.visibile);
   async function cambia(v: boolean) {
     setVisibile(v);
-    if (await salva({ tipo: "host", chiave: o.hostid, visibile: v, nomeCliente: nome })) router.refresh();
+    if (await salva({ tipo: "host", chiave: o.riga, visibile: v, nomeCliente: nome })) router.refresh();
     else setVisibile(!v);
   }
   async function rinomina() {
     if ((o.nomeCliente ?? "") === nome.trim()) return;
-    if (await salva({ tipo: "host", chiave: o.hostid, visibile, nomeCliente: nome })) router.refresh();
+    if (await salva({ tipo: "host", chiave: o.riga, visibile, nomeCliente: nome })) router.refresh();
   }
   return (
     <li className="flex flex-wrap items-center gap-3 border-t py-1.5 text-sm">
@@ -88,7 +88,7 @@ export function GestioneVisibilita({ famiglie }: { famiglie: FamigliaGestita[] }
                 </span>
               </div>
               <ul className="mt-1 pl-12">
-                {oggetti.map((o) => <RigaApparato key={o.hostid} o={o} famigliaVisibile={fam.visibile} />)}
+                {oggetti.map((o) => <RigaApparato key={o.riga} o={o} famigliaVisibile={fam.visibile} />)}
               </ul>
             </section>
           );

@@ -61,6 +61,8 @@ export interface ProblemaMostrato {
 
 export interface OggettoMostrato {
   hostid: string;
+  /** La chiave della riga: l'hostid, o quella di una riga ricavata (VM, dominio, database). */
+  riga: string;
   nome: string;
   stato: StatoOggetto;
   /** Perché è in quello stato, quando non è «funziona». */
@@ -118,7 +120,7 @@ export interface FamigliaGestita {
   codice: string;
   etichetta: string;
   visibile: boolean;
-  oggetti: Array<{ hostid: string; nomeZabbix: string; nomeCliente: string | null; visibile: boolean }>;
+  oggetti: Array<{ riga: string; nomeZabbix: string; nomeCliente: string | null; visibile: boolean }>;
 }
 
 export interface Monitoring {
@@ -201,6 +203,9 @@ export function statoOggetto(
 ): { stato: StatoOggetto; motivo: string | null } {
   if (letturaVecchia) return { stato: "non_so", motivo: "il centro non ha dati recenti" };
   if (!o.dati_affidabili) return { stato: "non_so", motivo: "il collegamento con la sede non risponde" };
+  // Una riga ricavata ha lo stato deciso dal centro: i problemi di Zabbix stanno sull'host e non
+  // direbbero niente di giusto (un disco pieno del DC non è un guasto del dominio).
+  if (o.derivata) return { stato: o.stato_riga, motivo: o.motivo_riga };
   const visibili = problemi.filter((p) => p.gravita >= SOGLIA_CLIENTE);
   if (o.ping === "no" || o.disponibilita === "no" || problemi.some((p) => DISPONIBILITA.test(p.nome))) {
     return { stato: "fermo", motivo: "non risponde" };
@@ -316,14 +321,16 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
       visibile: !imp.famiglieNascoste.has(f.codice),
       oggetti: i.famiglie.host
         .filter((o) => famigliaVera(o) === f.codice)
-        .map((o) => ({ hostid: o.hostid, nomeZabbix: o.nome, nomeCliente: imp.nomi.get(o.hostid) ?? null, visibile: !imp.hostNascosti.has(o.hostid) }))
+        .map((o) => ({ riga: o.riga, nomeZabbix: o.nome, nomeCliente: imp.nomi.get(o.riga) ?? null, visibile: !imp.hostNascosti.has(o.riga) }))
         .sort((a, b) => a.nomeZabbix.localeCompare(b.nomeZabbix, "it")),
     }))
     .filter((f) => f.oggetti.length > 0);
   const oggettiVisibili = i.famiglie.host
-    .filter((o) => !imp.hostNascosti.has(o.hostid) && !imp.famiglieNascoste.has(famigliaVera(o)))
-    .map((o) => ({ ...o, nome: imp.nomi.get(o.hostid) ?? o.nome }));
-  const idVisibili = new Set(oggettiVisibili.map((o) => o.hostid));
+    .filter((o) => !imp.hostNascosti.has(o.riga) && !imp.famiglieNascoste.has(famigliaVera(o)))
+    .map((o) => ({ ...o, nome: imp.nomi.get(o.riga) ?? o.nome }));
+  // Problemi, disponibilità e incidenti contano gli host, non le righe ricavate (che ne
+  // ripetono l'hostid).
+  const idVisibili = new Set(oggettiVisibili.filter((o) => !o.derivata).map((o) => o.hostid));
   i = { ...i, famiglie: { ...i.famiglie, host: oggettiVisibili }, problemi: i.problemi.filter((p) => idVisibili.has(p.hostid)) };
   // I conti per apparato del centro (60 giorni): solo così si tolgono dai conti gli apparati nascosti.
   const perHost = i.storico && i.storico.giorni_lunghi.length === GIORNI_LUNGHI ? i.storico.per_host : null;
@@ -347,12 +354,13 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
     if (!lista?.length) continue;
     const conta = contaVuota();
     const oggetti: OggettoMostrato[] = lista.map((o) => {
-      const suoi = problemiDi.get(o.hostid) ?? [];
+      const suoi = o.derivata ? [] : (problemiDi.get(o.hostid) ?? []);
       const { stato, motivo } = statoOggetto(o, suoi, vecchio);
       conta[stato] += 1;
       totali[stato] += 1;
       return {
         hostid: o.hostid,
+        riga: o.riga,
         nome: o.nome,
         stato,
         motivo,
@@ -363,13 +371,16 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
     oggetti.sort((a, b) => PESO[a.stato] - PESO[b.stato] || a.nome.localeCompare(b.nome, "it"));
     // Con i conti per apparato: il giorno è «fermo» se almeno un apparato visibile della famiglia lo era,
     // e la disponibilità è la media sugli apparati. Senza (centro vecchio): il conto per famiglia di prima.
+    const host = lista.filter((o) => !o.derivata);
     const fermo = perHost
-      ? Array.from({ length: GIORNI }, (_, d) => Math.max(0, ...lista.map((o) => serieDi(o.hostid, "fermo")[GIORNI + d] ?? 0)))
+      ? host.length
+        ? Array.from({ length: GIORNI }, (_, d) => Math.max(0, ...host.map((o) => serieDi(o.hostid, "fermo")[GIORNI + d] ?? 0)))
+        : null
       : i.storico
         ? (i.storico.minuti_fermo[codice] ?? i.storico.giorni.map(() => 0))
         : null;
     const giorni = i.storico?.giorni.length ?? 0;
-    const disponibilitaFamiglia = perHost && lista.length > 0 ? disponibilitaDi(lista.map((o) => o.hostid), serieDi, GIORNI, GIORNI_LUNGHI) : null;
+    const disponibilitaFamiglia = perHost && host.length > 0 ? disponibilitaDi(host.map((o) => o.hostid), serieDi, GIORNI, GIORNI_LUNGHI) : null;
     famiglie.push({
       codice,
       etichetta: etichette.get(codice) ?? codice,
@@ -387,6 +398,7 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
   const famigliaDi = new Map<string, string>();
   const nomeDi = new Map<string, string>();
   for (const f of famiglie) for (const o of f.oggetti) {
+    if (o.riga !== o.hostid) continue;
     famigliaDi.set(o.hostid, f.etichetta);
     nomeDi.set(o.hostid, o.nome);
   }

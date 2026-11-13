@@ -14,7 +14,7 @@ export const RIQUADRI_MONITORING: readonly RiquadroCasa[] = [
   { id: "fascia", titolo: "Stato in una frase", cosa: "Quanti apparati sono fermi o da tenere d'occhio, e l'ora dell'ultima lettura", l: 12, a: 1, inTesta: true },
   { id: "kpi-disponibilita", titolo: "Disponibilità 30 giorni", cosa: "Percentuale di tempo senza fermi, col mese prima", l: 3, a: 1 },
   { id: "kpi-incidenti", titolo: "Incidenti 30 giorni", cosa: "Problemi da «Media» in su aperti nel mese, col mese prima", l: 3, a: 1 },
-  { id: "kpi-soluzione", titolo: "Tempo medio di soluzione", cosa: "Fra apertura e chiusura dei problemi chiusi nel mese, col mese prima", l: 3, a: 1 },
+  { id: "kpi-soluzione", titolo: "Tempo di soluzione", cosa: "Entro quanto si chiude metà dei problemi del mese, col mese prima", l: 3, a: 1 },
   { id: "kpi-scadenza", titolo: "Prima scadenza", cosa: "Il certificato che scade per primo", l: 3, a: 1 },
   { id: "famiglie", titolo: "Famiglie", cosa: "Un riquadro per famiglia di apparati, con le sue misure", l: 12, a: 2 },
   { id: "grafico-disponibilita", titolo: "Disponibilità per giorno", cosa: "Gli ultimi 30 giorni, in percentuale", l: 6, a: 3 },

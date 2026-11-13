@@ -182,6 +182,8 @@ export const RispostaStorico = Testa.extend({
         gravi: z.array(z.number().nonnegative()).catch([]),
         chiusi: z.array(z.number().nonnegative()).catch([]),
         durata_chiusi: z.array(z.number().nonnegative()).catch([]),
+        /** Le chiusure una per una, `[giorno, minuti]` (per la mediana). Assente su un centro vecchio. */
+        chiusure: z.array(z.tuple([z.number(), z.number().nonnegative()])).catch([]),
       }),
     )
     .catch({}),

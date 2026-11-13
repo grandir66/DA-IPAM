@@ -51,7 +51,8 @@ export function KpiIncidenti({ m }: { m: Monitoring }) {
 export function KpiSoluzione({ m }: { m: Monitoring }) {
   const c = m.kpi.soluzioneMin;
   if (!c) return null;
-  return <TesseraKpi titolo="Tempo medio di soluzione" valore={durata(c.corrente)} sotto={andamento(c, false, durata)} />;
+  // Mediana (Riccardo, 13/11/2026): il titolo dice cosa vuol dire, senza la parola.
+  return <TesseraKpi titolo="Metà dei problemi si chiude entro" valore={durata(c.corrente)} sotto={andamento(c, false, durata)} />;
 }
 
 export function KpiScadenza({ m }: { m: Monitoring }) {

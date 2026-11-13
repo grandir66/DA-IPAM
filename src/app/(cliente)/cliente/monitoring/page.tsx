@@ -264,7 +264,7 @@ export default async function PaginaMonitoring({ searchParams }: { searchParams:
     { id: "fascia", titolo: "Stato in una frase", azioni: null, nudo: true, contenuto: <Fascia m={m} /> },
     { id: "kpi-disponibilita", titolo: "Disponibilità 30 giorni", azioni: null, nudo: true, contenuto: m.kpi.disponibilita ? <KpiDisponibilita m={m} /> : null },
     { id: "kpi-incidenti", titolo: "Incidenti 30 giorni", azioni: null, nudo: true, contenuto: m.kpi.incidenti ? <KpiIncidenti m={m} /> : null },
-    { id: "kpi-soluzione", titolo: "Tempo medio di soluzione", azioni: null, nudo: true, contenuto: m.kpi.soluzioneMin ? <KpiSoluzione m={m} /> : null },
+    { id: "kpi-soluzione", titolo: "Tempo di soluzione", azioni: null, nudo: true, contenuto: m.kpi.soluzioneMin ? <KpiSoluzione m={m} /> : null },
     { id: "kpi-scadenza", titolo: "Prima scadenza", azioni: null, nudo: true, contenuto: m.kpi.scadenza ? <KpiScadenza m={m} /> : null },
     { id: "famiglie", titolo: "Famiglie", azioni: null, nudo: true, contenuto: m.famiglie.length ? <Famiglie m={m} /> : null },
     { id: "grafico-disponibilita", titolo: "Disponibilità per giorno", azioni: null, contenuto: m.serie ? <GraficoDisponibilita serie={m.serie} /> : null },

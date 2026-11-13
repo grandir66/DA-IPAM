@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RispostaFamiglie, RispostaStorico, type ProblemaDelCentro } from "@/lib/zabbix-lettura/api";
-import { componiMonitoring, fraseProblema, statoOggetto, testoMisura } from "../monitoring";
+import { componiMonitoring, fraseProblema, mediana, statoOggetto, testoMisura } from "../monitoring";
 
 const TESTA = { codcli: "12345", cliente: "Esempio", letto_alle: "2026-11-13T09:40:00Z", eta_s: 20, vecchio: false };
 
@@ -174,7 +174,7 @@ test("una famiglia che il centro non elenca finisce in Altro, non sparisce", () 
 
 // ── 13/11/2026: apparati e famiglie nascosti, nomi per il cliente, KPI ──
 
-function storicoLungo(perHost: Record<string, Partial<Record<"fermo" | "minuti" | "aperti" | "gravi" | "chiusi" | "durata_chiusi", number[]>>>) {
+function storicoLungo(perHost: Record<string, Partial<Record<"fermo" | "minuti" | "aperti" | "gravi" | "chiusi" | "durata_chiusi", number[]>> & { chiusure?: Array<[number, number]> }>) {
   const giorni_lunghi = Array.from({ length: 60 }, (_, i) => `2026-${String(9 + Math.floor(i / 30)).padStart(2, "0")}-${String((i % 30) + 1).padStart(2, "0")}`);
   const zero = () => Array.from({ length: 60 }, () => 0);
   const per_host = Object.fromEntries(
@@ -242,4 +242,20 @@ test("KPI: mese contro mese prima, tempo medio di soluzione, settimane, spazio e
 test("senza i conti per apparato (centro vecchio) i KPI dello storico non si inventano", () => {
   const m = componiMonitoring({ ...BASE, famiglie: famiglie([oggetto("1", "sw", "rete")]), problemi: [] });
   assert.deepEqual([m.kpi.disponibilita, m.kpi.incidenti, m.kpi.soluzioneMin, m.serie], [null, null, null, null]);
+});
+
+test("tempo di soluzione: la mediana delle chiusure, che i pochi problemi lunghi non spostano", () => {
+  assert.deepEqual([mediana([]), mediana([5]), mediana([10, 20]), mediana([3, 1, 2])], [null, 5, 15, 2]);
+  const m = componiMonitoring({
+    ...BASE,
+    // Mese: 10, 20, 30 minuti e un NAS fermo 3 settimane. La media direbbe più di 2 giorni; la mediana 25 minuti.
+    storico: storicoLungo({
+      "1": { chiusure: [[40, 10], [41, 20], [50, 30]], chiusi: ad(40, 3), durata_chiusi: ad(40, 60) },
+      "2": { chiusure: [[55, 30240]], chiusi: ad(55, 1), durata_chiusi: ad(55, 30240) },
+    }),
+    famiglie: famiglie([oggetto("1", "a", "rete"), oggetto("2", "nas", "storage")]),
+    problemi: [],
+  });
+  assert.equal(m.kpi.soluzioneMin?.corrente, 25);
+  assert.equal(m.kpi.soluzioneMin?.precedente, null);
 });

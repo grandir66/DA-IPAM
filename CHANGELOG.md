@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — Tempo di soluzione: la mediana
+
+### Cambiato
+- **Il KPI del tempo di soluzione è la mediana** («Metà dei problemi si chiude entro»), non più la media (Riccardo, 13/11). Perché: dopo il conteggio una volta al giorno, su Domarc la media dava 27 ore, spostata da pochi problemi lunghissimi (due NAS fermi da settimane). Il centro ora dà le chiusure una per una; con un centro vecchio resta la media.
+
 ## 2026-11-13 — Il gruppo di menu si chiama «DatIA Mon»
 
 ### Cambiato

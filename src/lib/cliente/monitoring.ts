@@ -94,7 +94,11 @@ export interface KpiMonitoring {
   disponibilita: Confronto | null;
   /** Problemi da «Media» in su aperti nei 30 giorni. */
   incidenti: Confronto | null;
-  /** Minuti medi fra apertura e chiusura dei problemi chiusi nei 30 giorni. */
+  /**
+   * Minuti entro cui si chiude metà dei problemi chiusi nei 30 giorni: la **mediana** (Riccardo, 13/11/2026).
+   * La media la spostavano i pochi problemi lunghi (due NAS fermi da settimane). Su un centro che non dà le
+   * chiusure una per una, la media.
+   */
   soluzioneMin: Confronto | null;
   /** Il certificato che scade per primo fra quelli visibili. */
   scadenza: { giorni: number; oggetto: string } | null;
@@ -271,6 +275,14 @@ function disponibilitaDi(ids: readonly string[], serieDi: (h: string, k: ChiaveS
   return Math.max(0, Math.round((1 - fermi / totale) * 1000) / 10);
 }
 
+/** La mediana, arrotondata al minuto; null senza valori. */
+export function mediana(valori: readonly number[]): number | null {
+  if (valori.length === 0) return null;
+  const o = [...valori].sort((a, b) => a - b);
+  const m = Math.floor(o.length / 2);
+  return Math.round(o.length % 2 ? o[m]! : (o[m - 1]! + o[m]!) / 2);
+}
+
 /** «2026-11-06» → «06/11». */
 function etichettaGiorno(g: string): string {
   const [, m, d] = g.split("-");
@@ -444,7 +456,12 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
   const somma = (k: ChiaveSerie, da: number, a: number) => ids.reduce((s, h) => s + serieDi(h, k).slice(da, a).reduce((x, y) => x + y, 0), 0);
   const confronto = (corrente: number | null, precedente: number | null): Confronto | null =>
     corrente === null ? null : { corrente, precedente };
+  const conChiusure = perHost !== null && ids.some((h) => (perHost[h]?.chiusure.length ?? 0) > 0);
   const media = (da: number, a: number): number | null => {
+    if (conChiusure) {
+      const durate = ids.flatMap((h) => (perHost?.[h]?.chiusure ?? []).filter(([g]) => g >= da && g < a).map(([, m]) => m));
+      return mediana(durate);
+    }
     const chiusi = somma("chiusi", da, a);
     return chiusi > 0 ? Math.round(somma("durata_chiusi", da, a) / chiusi) : null;
   };

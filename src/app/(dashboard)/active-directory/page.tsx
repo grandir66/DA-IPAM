@@ -26,7 +26,6 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FilaNumeri } from "@/components/shared/console";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -564,12 +563,96 @@ function PaginaActiveDirectory() {
       animate={{ opacity: 1, y: 0 }}
       className="p-6 space-y-6"
     >
-      <div className="flex items-center justify-between">
+      {/* Una barra sola divisa in aree (Riccardo, 13/11/2026: «perché usare 4 righe… quando potresti dividere le prime
+          tre in un'unica barra… in aree anche ben isolate»): titolo · quale integrazione · stato · azioni
+          sull'integrazione · azioni della pagina. Le aree sono separate da una riga verticale. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <FolderTree className="w-6 h-6 text-primary" />
           Active Directory
         </h1>
-        <div className="flex items-center gap-2">
+        {integrations.length > 0 && (
+          <div className="flex items-center gap-2 border-l pl-4">
+            <Select
+              value={selectedIntegration?.id.toString() ?? ""}
+              onValueChange={(v) => {
+                const int = integrations.find((i) => i.id === parseInt(v ?? "0"));
+                setSelectedIntegration(int ?? null);
+                setComputersPage(1);
+                setUsersPage(1);
+                setGroupsPage(1);
+                setDhcpPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[260px]" aria-label="Integrazione">
+                <SelectValue placeholder="Seleziona integrazione" />
+              </SelectTrigger>
+              <SelectContent>
+                {integrations.map((i) => (
+                  <SelectItem key={i.id} value={i.id.toString()}>
+                    {i.name} ({i.domain})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {selectedIntegration && (
+          <div className="border-l pl-4 text-[13px]" title={selectedIntegration.last_sync_status ?? undefined}>
+            <span className="text-muted-foreground">Ultima sincronizzazione </span>
+            <strong className="tabular-nums">{formatDate(selectedIntegration.last_sync_at)}</strong>
+            {!selectedIntegration.winrm_credential_id && <span className="text-muted-foreground"> · WinRM non configurato</span>}
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {selectedIntegration && (
+            <>
+                <label
+                  className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium ${
+                    selectedIntegration.enabled
+                      ? "border-[#1F7A4D] bg-[#1F7A4D] text-white"
+                      : "border-dashed border-muted-foreground/60 text-foreground"
+                  }`}
+                  title="Accende o spegne l'integrazione; accesa, si sincronizza da sola ogni 6 ore"
+                >
+                  <Switch
+                    checked={!!selectedIntegration.enabled}
+                    disabled={commutando}
+                    onCheckedChange={(c) => handleAbilita(selectedIntegration, !!c)}
+                    aria-label="Integrazione abilitata"
+                  />
+                  {selectedIntegration.enabled ? "✓ Abilitata" : "– Disabilitata"}
+                </label>
+                <Button
+                  size="sm"
+                  onClick={() => handleSync(selectedIntegration.id)}
+                  disabled={syncing === selectedIntegration.id}
+                >
+                  {syncing === selectedIntegration.id ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                  )}
+                  Sincronizza
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Altre azioni sull'integrazione" title="Modifica, prova, elimina"><MoreHorizontal className="w-4 h-4" /></Button>} />
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => openEditDialog(selectedIntegration)}>
+                      <Pencil className="w-4 h-4 mr-2" />Modifica
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={testing === selectedIntegration.id} onClick={() => handleTest(selectedIntegration.id)}>
+                      <TestTube className="w-4 h-4 mr-2" />{testing === selectedIntegration.id ? "Prova in corso…" : "Prova la connessione"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleDelete(selectedIntegration.id)}>
+                      <Trash2 className="w-4 h-4 mr-2" />Elimina l&apos;integrazione
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+            </>
+          )}
           {/* Una riga di azioni (Riccardo, 13/11/2026): le tre guide stanno in un menu solo. «Cosa serve» è la pagina
               con diritti, script e configurazione degli eventi (04/11); «Guida DC» e «Audit dei DC» aprono la finestra. */}
           <DropdownMenu>
@@ -831,90 +914,10 @@ function PaginaActiveDirectory() {
         </Card>
       ) : (
         <>
-          <div className="flex items-center gap-4 mb-4">
-            <label className="text-sm font-medium">Integrazione:</label>
-            <Select
-              value={selectedIntegration?.id.toString() ?? ""}
-              onValueChange={(v) => {
-                const int = integrations.find((i) => i.id === parseInt(v ?? "0"));
-                setSelectedIntegration(int ?? null);
-                setComputersPage(1);
-                setUsersPage(1);
-                setGroupsPage(1);
-                setDhcpPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[300px]">
-                <SelectValue placeholder="Seleziona integrazione" />
-              </SelectTrigger>
-              <SelectContent>
-                {integrations.map((i) => (
-                  <SelectItem key={i.id} value={i.id.toString()}>
-                    {i.name} ({i.domain})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {selectedIntegration && (
-              <div className="flex items-center gap-2 ml-auto">
-                <label
-                  className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium ${
-                    selectedIntegration.enabled
-                      ? "border-[#1F7A4D] bg-[#1F7A4D] text-white"
-                      : "border-dashed border-muted-foreground/60 text-foreground"
-                  }`}
-                  title="Accende o spegne l'integrazione; accesa, si sincronizza da sola ogni 6 ore"
-                >
-                  <Switch
-                    checked={!!selectedIntegration.enabled}
-                    disabled={commutando}
-                    onCheckedChange={(c) => handleAbilita(selectedIntegration, !!c)}
-                    aria-label="Integrazione abilitata"
-                  />
-                  {selectedIntegration.enabled ? "✓ Abilitata" : "– Disabilitata"}
-                </label>
-                <Button
-                  size="sm"
-                  onClick={() => handleSync(selectedIntegration.id)}
-                  disabled={syncing === selectedIntegration.id}
-                >
-                  {syncing === selectedIntegration.id ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                  )}
-                  Sincronizza
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Altre azioni sull'integrazione" title="Modifica, prova, elimina"><MoreHorizontal className="w-4 h-4" /></Button>} />
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem onClick={() => openEditDialog(selectedIntegration)}>
-                      <Pencil className="w-4 h-4 mr-2" />Modifica
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled={testing === selectedIntegration.id} onClick={() => handleTest(selectedIntegration.id)}>
-                      <TestTube className="w-4 h-4 mr-2" />{testing === selectedIntegration.id ? "Prova in corso…" : "Prova la connessione"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleDelete(selectedIntegration.id)}>
-                      <Trash2 className="w-4 h-4 mr-2" />Elimina l&apos;integrazione
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
-          </div>
 
           {selectedIntegration && (
             <>
-              {/* I conteggi di computer, utenti, gruppi e lease stanno sulle schede qui sotto: una cosa si dice una volta.
-                  Qui resta quello che le schede non dicono (13/11/2026). */}
-              <FilaNumeri
-                voci={[
-                  { titolo: "Ultima sincronizzazione", valore: formatDate(selectedIntegration.last_sync_at), aiuto: selectedIntegration.last_sync_status ?? undefined },
-                  ...(!selectedIntegration.winrm_credential_id ? [{ titolo: "Lease DHCP", valore: null, qualifica: "WinRM non configurato" }] : []),
-                ]}
-              />
+              {/* I conteggi stanno sulle schede; l'ultima sincronizzazione sta nella barra in alto (13/11/2026). */}
 
               <Tabs value={scheda} onValueChange={(v) => setScheda(String(v))} className="mt-3">
                 <TabsList>

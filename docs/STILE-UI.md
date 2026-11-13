@@ -66,6 +66,11 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
   un `Pannello` con filtri nelle azioni e la tabella dentro.
 - Le liste lunghe scorrono **dentro** il pannello (`max-h-[…] overflow-y-auto`, oppure
   `<Table fissa>`), non fanno scorrere la pagina.
+- **La barra in alto è una riga sola, divisa in aree** (Riccardo, 13/11: «perché usare spazio verticale inutilmente,
+  quando potresti dividere la barra superiore in aree anche ben isolate e visualizzate»). Da sinistra: titolo · di cosa
+  si parla (la tendina dell'oggetto) · stato e numeri · e, spinte a destra, le azioni sull'oggetto e poi quelle della
+  pagina. Le aree si separano con una riga verticale (`border-l pl-4`, o `h-6 w-px bg-border` fra i pulsanti). Una
+  seconda riga nasce solo se la prima non ci sta a 1920: mai una riga per un dato solo.
 - **Una forma sola di scheda** (Riccardo, 13/11: «i tab… dovrebbero essere organizzati in modo coerente»): pulsanti in fila sopra
   una riga, alti 40 px, testo a 15 px; quello scelto è pieno (fondo primario, grassetto), gli altri hanno fondo tenue e
   bordo («quasi dei pulsanti da selezionare in alto», «deve essere chiaro che ci sono opzioni dentro uno stesso menù»). Le classi stanno in

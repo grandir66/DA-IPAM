@@ -32,10 +32,10 @@ test("moduli accesi: una voce per prodotto, poi tutte le console esterne", () =>
   ], true);
   // 13/11/2026: una voce per prodotto (CVE e Storico sono schede della pagina), la console di MeshCentral con le altre.
   assert.deepEqual(v.map((x) => x.href), [
-    "/patch-management", "/rmm", "/zabbix",
+    "/patch-management", "/rmm", "/zabbix", "/cliente/monitoring",
     "https://mesh", "https://edge:6443", "https://wazuh", "https://unifi", "https://lnms", "https://gl", "https://mdm",
   ]);
-  assert.deepEqual(v.filter((x) => !x.esterno).map((x) => x.label), ["Patch Management", "Controllo remoto", "Zabbix"]);
+  assert.deepEqual(v.filter((x) => !x.esterno).map((x) => x.label), ["Patch Management", "Controllo remoto", "Zabbix", "DATIA MONITORING"]);
   assert.deepEqual(v.filter((x) => x.divider).map((x) => x.divider), ["Console esterne"]);
   assert.ok(v.filter((x) => x.href.startsWith("https://")).every((x) => x.esterno));
 });

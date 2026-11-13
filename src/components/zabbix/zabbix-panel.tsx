@@ -313,6 +313,12 @@ export function ZabbixPanel() {
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {/* La pagina che vede il cliente, coi dati di questo pannello riassunti per famiglia (13/11/2026). */}
+        {pannello?.stato === "ok" && (
+          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/cliente/monitoring" />}>
+            DATIA MONITORING
+          </Button>
+        )}
         {/* «Aggiungi a Zabbix» (13/11/2026): la pagina dice da sé se manca la chiave di scrittura. */}
         {isAdmin && pannello?.stato === "ok" && (
           <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/zabbix/aggiungi" />}>

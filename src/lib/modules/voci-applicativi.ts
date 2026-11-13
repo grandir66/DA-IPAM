@@ -47,6 +47,9 @@ export function vociApplicativi(moduli: readonly ModuloPerMenu[], pannelloZabbix
   if (acceso("patch_management")) v.push({ href: "/patch-management", label: "Patch Management", icona: "ShieldCheck" });
   if (acceso("meshcentral")) v.push({ href: "/rmm", label: "Controllo remoto", icona: "MonitorSmartphone" });
   if (pannelloZabbix) v.push({ href: "/zabbix", label: "Zabbix", icona: "Activity" });
+  // DATIA MONITORING (13/11/2026): la pagina del cliente sui dati di Zabbix. Sta nella vista cliente, ma senza
+  // una voce qui l'amministratore non la trovava (Riccardo: «non ci sono UI dedicate al monitoraggio»).
+  if (pannelloZabbix) v.push({ href: "/cliente/monitoring", label: "DATIA MONITORING", icona: "Activity" });
 
   const esterne = [
     ...console("meshcentral", "MeshCentral"),

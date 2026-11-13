@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — DATIA MONITORING raggiungibile dal menu
+
+### Corretto
+- **DATIA MONITORING ha una voce nel menu** (Applicativi, sotto Zabbix) e un pulsante nella pagina Zabbix. Perché: la pagina stava solo nella vista cliente, e Riccardo dall'interfaccia normale non la trovava («non ci sono UI dedicate al monitoraggio»). Compare alle stesse condizioni della voce Zabbix: pannello acquistato, configurato e acceso.
+
 ## 2026-11-13 — «Metti in monitoraggio»: apparati in Zabbix da DA-IPAM
 
 ### Aggiunto

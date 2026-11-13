@@ -10,6 +10,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Pulsante «Metti in monitoraggio» sulla scheda dell'apparato** (Gestione → Collegamenti esterni, solo amministratori) e **pagina «Aggiungi a Zabbix»** (`/zabbix/aggiungi`) per più apparati insieme. Perché: Riccardo vuole aggiungere gli oggetti in Zabbix da qui, su richiesta, e per Windows e Linux avere lo script dell'agente. Il centro DA-Zabbix decide modello e perimetro con la sua regola di sempre; DA-IPAM manda quello che sa dell'apparato.
 - **Sempre due passi**: prima il centro dice cosa farebbe (prova a vuoto, niente scritto), poi si conferma. Nella pagina a gruppi si aggiunge solo ciò che la prova ha accettato.
 - **Lo script dell'agente si copia o si scarica (.ps1, .sh) e lo lancia una persona sulla macchina**: DA-IPAM non lo esegue (Riccardo, 13/11: «l'install sarà sempre manuale, solo verso i sistemi monitorati»).
+- Con l'apparato vanno al centro anche **gli altri suoi IP** (stesso apparato fisico): provando su Domarc il NAS `drive.domarc.it` (.4.22) era già in Zabbix come `DA-SYN` (.40.22), e senza questo sarebbe nato un doppione.
 - **Chiave di scrittura a parte** (`zs1.…`, Impostazioni → Moduli → Zabbix), emessa da DA-Link e diversa da quella di lettura: senza, il pulsante non compare. Tabella sua (`zabbix_scrittura_config`), cifrata, non viaggia nei trasferimenti fra installazioni.
 
 ## 2026-11-13 — DATIA MONITORING nella vista cliente

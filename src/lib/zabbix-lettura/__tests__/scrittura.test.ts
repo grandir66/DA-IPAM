@@ -72,14 +72,21 @@ test("senza configurazione o senza chiave di scrittura non si chiama il centro, 
 test("il corpo porta l'host com'è in DA-IPAM, senza campi vuoti, e le opzioni solo se chieste", () => {
   const d = db();
   const o = oggettoDaHost(d, hostVero(d))!;
-  assert.deepEqual(corpoScrittura(o), {
+  assert.deepEqual(corpoScrittura({ ...o, altriIp: [] }), {
     ip: "192.0.2.20", hostname: "srv-dc01", classification: "server_windows",
     os_info: "Windows Server 2022", open_ports: '[{"port":10050}]',
   });
-  assert.deepEqual(corpoScrittura(o, { prova: true, forza: true, serverActive: " 192.0.2.1 " }), {
-    ...corpoScrittura(o), prova: true, forza: true, server_active: "192.0.2.1",
+  assert.deepEqual(corpoScrittura({ ...o, altriIp: [] }, { prova: true, forza: true, serverActive: " 192.0.2.1 " }), {
+    ...corpoScrittura({ ...o, altriIp: [] }), prova: true, forza: true, server_active: "192.0.2.1",
   });
   assert.equal(oggettoDaHost(d, 9999), null);
+  // Gli altri IP dello stesso apparato fisico vanno al centro, mai quello dell'host stesso.
+  d.prepare("INSERT INTO physical_devices (id) VALUES (20)").run();
+  const id2 = Number(d.prepare("INSERT INTO hosts (network_id, ip, physical_device_id) VALUES (1, '192.0.2.122', 20)").run().lastInsertRowid);
+  d.prepare("UPDATE hosts SET physical_device_id = 20 WHERE id <> ?").run(id2);
+  const conAltri = oggettoDaHost(d, Number((d.prepare("SELECT id FROM hosts WHERE ip = '192.0.2.20'").get() as { id: number }).id))!;
+  assert.deepEqual(conAltri.altriIp, ["192.0.2.122"]);
+  assert.deepEqual(corpoScrittura(conAltri).altri_ip, ["192.0.2.122"]);
 });
 
 test("inserimento: chiave di scrittura nella richiesta, percorso giusto, esito letto", async () => {

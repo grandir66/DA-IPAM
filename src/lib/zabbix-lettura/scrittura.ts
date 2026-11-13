@@ -28,6 +28,8 @@ export interface OggettoDaMettere {
   /** JSON, come lo tiene DA-IPAM. */
   openPorts?: string | null;
   snmpData?: string | null;
+  /** Gli altri IP dello stesso apparato fisico: il centro li usa per non fare doppioni. */
+  altriIp?: string[];
 }
 
 export interface OpzioniScrittura {
@@ -88,6 +90,8 @@ export function corpoScrittura(o: OggettoDaMettere, op: OpzioniScrittura = {}): 
   ];
   const corpo: Record<string, unknown> = {};
   for (const [k, v] of campi) if (typeof v === "string" && v.trim() !== "") corpo[k] = v;
+  const altri = (o.altriIp ?? []).filter((x) => x && x !== o.ip).slice(0, 16);
+  if (altri.length) corpo.altri_ip = altri;
   if (op.prova) corpo.prova = true;
   if (op.forza) corpo.forza = true;
   if (op.serverActive && op.serverActive.trim()) corpo.server_active = op.serverActive.trim();

@@ -35,7 +35,19 @@ export function oggettoDaHost(db: Database.Database, hostId: number): OggettoDaM
     )
     .get(hostId) as RigaHost | undefined;
   if (!r || !r.ip) return null;
+  // Lo stesso apparato visto da più reti (Domarc, 13/11: `drive.domarc.it` .4.22 e `DA-SYN`
+  // .40.22 sono un NAS solo): il centro deve saperlo per non creare un secondo host.
+  const altri = (
+    db
+      .prepare(
+        `SELECT ip FROM hosts WHERE physical_device_id IS NOT NULL AND id <> ?
+           AND physical_device_id = (SELECT physical_device_id FROM hosts WHERE id = ?) AND ip <> ''
+         LIMIT 16`,
+      )
+      .all(hostId, hostId) as Array<{ ip: string }>
+  ).map((x) => x.ip);
   return {
+    altriIp: altri,
     ip: r.ip,
     mac: r.mac,
     hostname: r.hostname,

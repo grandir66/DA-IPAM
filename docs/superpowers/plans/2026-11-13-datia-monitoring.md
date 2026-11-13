@@ -47,7 +47,7 @@ Ogni tappa si chiude da sola e si può rilasciare senza la successiva. Tutto nas
   `pytest.mark.auth_reale`. Stessa cache e stessa testa (`codcli`, `eta_s`, `vecchio`) delle altre quattro.
 - [x] A4. Rotta `GET /api/lettura/v1/storico`: problemi chiusi degli ultimi 30 giorni, per famiglia e per giorno.
 - [x] A5. Aggiornare `docs/2026-10-16-api-lettura-per-cliente-design.md` (§3) e `CHANGELOG.md`.
-- Verifica (13/11): 110 prove mirate verdi, cancello completo di DA-Zabbix verde, lettura provata sui dati veri di DTS (14 host) e Domarc (45) con l'utenza tecnica in sola lettura, rilascio sul `.15` (`a2653b1b`), rotta nuova 401 senza chiave. Non ancora chiamata dal di fuori con una chiave di lettura vera.
+- Verifica (13/11): 110 prove mirate verdi, cancello completo di DA-Zabbix verde, lettura provata sui dati veri di DTS (14 host) e Domarc (45) con l'utenza tecnica in sola lettura, rilascio sul `.15` (`a2653b1b`), rotta nuova 401 senza chiave. Chiamata dal di fuori con la chiave di lettura vera di Domarc, dall'hub via TLS: 45 apparati, 1,2 s.
 - Fuori dal piano, aggiunto strada facendo: `ping` per oggetto (chi è controllato col solo ping non ha un'interfaccia che dica se risponde) e `minuti_fermo` nello storico.
 
 ### Tappa B — DA-IPAM: la pagina DATIA MONITORING (zona verde)

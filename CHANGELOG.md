@@ -11,6 +11,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Modelli**: per ogni apparato quelli collegati; su più apparati insieme «Aggiungi un modello» e «Togli un modello», scegliendo fra quelli adatti alla famiglia. Sempre prova e poi conferma; togliere cancella le misure di quel modello e lo si dice. Il centro accetta solo modelli del suo elenco e solo sugli apparati del cliente (Riccardo, 13/11: «sì, solo modelli»).
 - **Agente**: stato per apparato (attivo, non manda dati, da installare) e «Prepara l'agente» con tre modi: un comando per macchina; un comando solo per tutte le Windows del dominio (GPO o Intune); un comando solo per tutti i Linux. Il comando unico usa il nome della macchina: la finestra elenca i nomi in Zabbix da controllare. L'installazione la fa sempre una persona.
 - Il pannello tecnico di prima resta, raggiungibile da «Vista tecnica e abbinamenti».
+- Se il centro non sa a quale indirizzo l'agente deve mandare i dati (cliente senza proxy, come Domarc), la finestra lo fa scrivere e lo ricorda per quel cliente (`tenant_settings`, `zabbix.server_active`). Trovato nella prova vera del 13/11.
 
 ## 2026-11-13 — Tempo di soluzione: la mediana
 

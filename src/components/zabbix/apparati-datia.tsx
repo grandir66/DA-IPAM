@@ -232,13 +232,19 @@ function FinestraAgente({ apparati, chiudi }: { apparati: ApparatoElenco[]; chiu
   const [comandi, setComandi] = useState<Array<{ titolo: string; comando: string; file: string }> | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [lavoro, setLavoro] = useState(false);
+  // Se il centro non sa dove l'agente deve mandare i dati (cliente senza proxy), lo si scrive qui una volta.
+  const [indirizzo, setIndirizzo] = useState("");
+  const [chiediIndirizzo, setChiediIndirizzo] = useState(false);
 
   async function prepara() {
     setLavoro(true);
     setErrore(null);
     const fuori: Array<{ titolo: string; comando: string; file: string }> = [];
-    const chiedi = async (sistema: "windows" | "linux", hostname: string | null) =>
-      postaConAttesa<EsitoAgente>("/api/zabbix/apparati/agente", { sistema, hostname });
+    const chiedi = async (sistema: "windows" | "linux", hostname: string | null) => {
+      const r = await postaConAttesa<EsitoAgente>("/api/zabbix/apparati/agente", { sistema, hostname, serverActive: indirizzo.trim() || null });
+      if (!r.ok && /indirizzo/.test(r.message)) setChiediIndirizzo(true);
+      return r;
+    };
     if (modo === "una_per_una") {
       for (const a of conAgente) {
         const r = await chiedi(a.sistema!, a.hostTecnico);
@@ -252,7 +258,7 @@ function FinestraAgente({ apparati, chiudi }: { apparati: ApparatoElenco[]; chiu
       if (r.ok) fuori.push({ titolo: sistema === "windows" ? "Tutte le Windows (GPO o Intune)" : "Tutti i Linux", comando: r.data.comando, file: `agente-zabbix-tutte.${sistema === "windows" ? "ps1" : "sh"}` });
       else setErrore(r.message);
     }
-    setComandi(fuori);
+    setComandi(fuori.length ? fuori : null);
     setLavoro(false);
   }
 
@@ -291,6 +297,16 @@ function FinestraAgente({ apparati, chiudi }: { apparati: ApparatoElenco[]; chiu
             </p>
           )}
           {errore && <p className="text-sm text-[#8E1B20] dark:text-[#E8625A]">{errore}</p>}
+          {chiediIndirizzo && !comandi && (
+            <div className="space-y-1 rounded-md border p-2">
+              <label htmlFor="agente-indirizzo" className="text-sm font-semibold">A quale indirizzo l&apos;agente manda i dati</label>
+              <p className="text-[13px] text-muted-foreground">
+                Il centro non lo sa per questo cliente (nessun proxy). Scrivi l&apos;indirizzo del proxy o del server Zabbix come lo
+                raggiungono le macchine del cliente: resta salvato per le prossime volte.
+              </p>
+              <Input id="agente-indirizzo" className="h-8 max-w-xs font-mono" placeholder="192.168.4.15" value={indirizzo} onChange={(e) => setIndirizzo(e.target.value)} />
+            </div>
+          )}
           {comandi?.map((c) => <BloccoComando key={c.titolo} {...c} />)}
         </DialogScrollableArea>
         <DialogFooter className="border-t px-4 py-3">

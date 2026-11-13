@@ -120,7 +120,8 @@ async function colCentro<T>(d: DipendenzeInserimento, fai: (l: { base: URL; tras
     return { ok: true, esito: await fai({ base, trasportoPost: d.trasportoPost(base, chiave, cfg.impronta) }) };
   } catch (e) {
     const testo = e instanceof ErroreLettura ? e.message : "il centro non ha risposto";
-    const status = e instanceof ErroreLettura && e.dettagli.status === 404 ? 404 : e instanceof ErroreLettura && e.dettagli.status === 409 ? 409 : 502;
+    const s = e instanceof ErroreLettura ? e.dettagli.status : undefined;
+    const status = s === 400 || s === 404 || s === 409 ? s : 502;
     return { ok: false, status, errore: testo.charAt(0).toUpperCase() + testo.slice(1) };
   }
 }
@@ -128,6 +129,24 @@ async function colCentro<T>(d: DipendenzeInserimento, fai: (l: { base: URL; tras
 /** Aggiunge e toglie modelli a un apparato di Zabbix (13/11/2026). */
 export function cambiaModelliApparato(d: DipendenzeInserimento, c: CambioModelli): Promise<Esito<EsitoModelli>> {
   return colCentro(d, (l) => cambiaModelli(l, c));
+}
+
+const CHIAVE_SERVER_ACTIVE = "zabbix.server_active";
+
+/**
+ * L'indirizzo a cui l'agente manda i dati, se l'amministratore l'ha già scritto per questo cliente. Serve quando il
+ * centro non lo sa: un cliente «diretto», senza proxy (Domarc, 13/11/2026), dove il centro per scelta non indovina.
+ */
+export function serverActiveSalvato(db: Database.Database): string | null {
+  const r = db.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_SERVER_ACTIVE) as { value: string } | undefined;
+  return r?.value && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(r.value) ? r.value : null;
+}
+
+export function salvaServerActive(db: Database.Database, ip: string): void {
+  db.prepare(
+    `INSERT INTO tenant_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(CHIAVE_SERVER_ACTIVE, ip);
 }
 
 /** Il comando dell'agente da lanciare a mano sulla macchina (13/11/2026). */

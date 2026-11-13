@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { opzioneAcquistata } from "@/lib/modules/offerta";
-import { comandoAgenteApparato } from "@/lib/zabbix-lettura/inserimento";
+import { comandoAgenteApparato, salvaServerActive, serverActiveSalvato } from "@/lib/zabbix-lettura/inserimento";
 import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
 import { trasportoTlsPost } from "@/lib/zabbix-lettura/trasporto";
 
@@ -32,11 +32,19 @@ export async function POST(req: Request) {
   if (!p.success) return NextResponse.json({ error: "Dati non validi" }, { status: 400 });
   return withTenantFromSession(async () => {
     const d = dipendenzeReali();
+    // L'indirizzo scritto ora vince; altrimenti quello già scritto per questo cliente; altrimenti lo sceglie il centro.
+    const serverActive = p.data.serverActive ?? serverActiveSalvato(d.db);
     const r = await comandoAgenteApparato(
       { db: d.db, acquistato: () => opzioneAcquistata("zabbix"), trasportoPost: (base, chiave, impronta) => trasportoTlsPost({ base, chiave, impronta }) },
-      p.data,
+      { ...p.data, serverActive },
     );
-    if (!r.ok) return NextResponse.json({ error: r.errore }, { status: r.status, headers: { "Cache-Control": "no-store" } });
-    return NextResponse.json(r.esito, { headers: { "Cache-Control": "no-store" } });
+    if (!r.ok) {
+      return NextResponse.json(
+        { error: r.errore, chiediIndirizzo: r.status === 409 && /indirizzo/.test(r.errore) },
+        { status: r.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (p.data.serverActive) salvaServerActive(d.db, p.data.serverActive);
+    return NextResponse.json({ ...r.esito, indirizzoSalvato: serverActiveSalvato(d.db) }, { headers: { "Cache-Control": "no-store" } });
   });
 }

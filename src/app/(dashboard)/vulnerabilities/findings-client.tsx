@@ -402,16 +402,29 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
           {/* Scheletro comune (13/11/2026): la fonte è la fila di schede della pagina; i filtri rapidi stanno nel
               pannello «Filtri» e, accesi, sono etichette; «Raggruppa per» è il cambio di vista, a destra. Prima erano
               tre file di pulsanti. */}
-          <div role="tablist" aria-label="Fonte" className={FILA_SCHEDE}>
-            {MOTORI_RILIEVO.map((m) => {
-              const conteggio = m === "tutti" ? (dati?.totaleGlobale ?? 0) : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
-              return (
-                <button key={m} type="button" role="tab" aria-selected={motore === m} onClick={() => { setMotore(m); setPage(1); }} className={cn(SCHEDA_BASE, motore === m ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
-                  {MOTORI_RILIEVO_UI[m].nome}
-                  {dati ? <span className="tabular-nums opacity-80">{conteggio}</span> : null}
+          {/* Due gruppi di schede sulla stessa riga (Riccardo, 13/11/2026: «lista e griglia sono due tab per me», e
+              «sì, anche quello» per «Raggruppa per»): come si raggruppa l'elenco, poi da quale fonte. */}
+          <div className={cn(FILA_SCHEDE, "gap-3")}>
+            <div role="tablist" aria-label="Raggruppa per" className="flex shrink-0 items-center gap-2">
+              <span className="text-[13px] text-muted-foreground">Raggruppa per</span>
+              {VISTE.map(([v, nome]) => (
+                <button key={v} type="button" role="tab" aria-selected={vista === v} onClick={() => { setVista(v); setPage(1); }} className={cn(SCHEDA_BASE, vista === v ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                  {nome}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <div role="tablist" aria-label="Fonte" className="flex shrink-0 items-center gap-2 border-l pl-3">
+              <span className="text-[13px] text-muted-foreground">Fonte</span>
+            {MOTORI_RILIEVO.map((m) => {
+                const conteggio = m === "tutti" ? (dati?.totaleGlobale ?? 0) : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
+                return (
+                  <button key={m} type="button" role="tab" aria-selected={motore === m} onClick={() => { setMotore(m); setPage(1); }} className={cn(SCHEDA_BASE, motore === m ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                    {MOTORI_RILIEVO_UI[m].nome}
+                    {dati ? <span className="tabular-nums opacity-80">{conteggio}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <BarraFiltri
             accesi={filtriAccesi}
@@ -430,20 +443,6 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
                     <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
                   </button>
                 ))}
-                <span className="text-[13px] text-muted-foreground">Raggruppa per</span>
-                        <div role="group" aria-label="Raggruppa per" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
-                  {VISTE.map(([v, nome], i) => (
-                    <button
-                      key={v}
-                      type="button"
-                      aria-pressed={vista === v}
-                      onClick={() => { setVista(v); setPage(1); }}
-                      className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${vista === v ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-                    >
-                      {nome}
-                    </button>
-                  ))}
-                </div>
               </>
             }
           />

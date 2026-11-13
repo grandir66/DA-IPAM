@@ -76,8 +76,8 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
   bordo («quasi dei pulsanti da selezionare in alto», «deve essere chiaro che ci sono opzioni dentro uno stesso menù»). Le classi stanno in
   `src/components/shared/forma-scheda.ts` e le leggono tutti e tre i componenti: `SchedeSezione` (sopra il titolo: le
   pagine di una voce di menu), `SchedePagina` e `Tabs` di `ui/tabs` (sotto il titolo: le parti di una pagina). I
-  riquadri grandi del 25/10 e le pillole grigie non esistono più: non si ridisegnano. Lista/Griglia non è una scheda:
-  è un cambio di vista, a destra della barra dei filtri. Le azioni della pagina stanno su una riga, in alto a destra.
+  riquadri grandi del 25/10 e le pillole grigie non esistono più: non si ridisegnano. Anche Lista/Griglia è una coppia di schede
+  (Riccardo, 13/11: «lista e griglia sono due tab per me»), nella stessa forma. Le azioni della pagina stanno su una riga, in alto a destra.
 
 ## I mattoni (`src/components/shared/console.tsx`)
 

@@ -72,6 +72,7 @@ import { getClassificationLabel, getDeviceCategoryGroup, DEVICE_CATEGORY_GROUP_L
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { etichettaFunzione } from "@/lib/classification/funzioni";
 import { figliePresenti, PREFISSO_GRUPPO } from "@/lib/classification/scelta-categoria";
+import { SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
@@ -1512,16 +1513,6 @@ export function NetworkDetailClient({
                   </span>
                 </>
               )}
-              <div className={cn("flex items-center gap-1 shrink-0", view !== "list" && "ml-auto")} role="group" aria-label="Visualizzazione">
-                <Button variant={view === "list" ? "secondary" : "outline"} size="sm" aria-pressed={view === "list"} onClick={() => setView("list")}>
-                  <List className="h-4 w-4 mr-1" />
-                  Lista
-                </Button>
-                <Button variant={view === "grid" ? "secondary" : "outline"} size="sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
-                  <LayoutGrid className="h-4 w-4 mr-1" />
-                  Griglia IP
-                </Button>
-              </div>
               <select
                 id="auto-refresh"
                 aria-label="Aggiornamento automatico della pagina"
@@ -1549,39 +1540,53 @@ export function NetworkDetailClient({
               etichette che si tolgono; riga 2: le categorie madri, un pulsante l'una; la barra delle azioni compare solo
               con righe spuntate. Via «Spunta le righe di tipo»: si filtra e si spunta la casella in testa. */}
           <div className="rounded-lg border border-border/80 bg-muted/10 px-2.5 py-2 space-y-2">
-            {view === "list" && (
-              <div className="flex items-center gap-1.5 overflow-x-auto" role="group" aria-label="Categoria">
-                <Button variant={filterClassification === "" ? "default" : "outline"} size="sm" className="h-7 shrink-0" onClick={() => setFilterClassification("")}>
-                  Tutte <span className="ml-1.5 tabular-nums opacity-70">{hosts.length}</span>
-                </Button>
-                {categorieMadri.map((c) => (
-                  <Fragment key={c.gruppo}>
-                    <Button
-                      key={c.gruppo}
-                      variant={c.attiva ? "default" : "outline"}
-                      size="sm"
-                      className="h-7 shrink-0"
-                      title={`Tutta la categoria «${c.titolo}». Per una sola classe: Filtri → Classificazione`}
-                      onClick={() => setFilterClassification(c.attiva ? "" : c.valore)}
-                    >
-                      {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
-                    </Button>
-                    {c.gruppo === madreScelta && figlie.map((f) => (
-                  <Button
-                    key={f.slug}
-                    variant={filterClassification === f.slug ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 shrink-0 border border-dashed text-[13px]"
-                    title={`Solo «${f.etichetta}»`}
-                    onClick={() => setFilterClassification(filterClassification === f.slug ? `${PREFISSO_GRUPPO}${madreScelta}` : f.slug)}
-                  >
-                    › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
-                  </Button>
-                ))}
-                  </Fragment>
-                ))}
+            {/* Lista e Griglia sono due schede della pagina (Riccardo, 13/11/2026: «lista e griglia sono due tab per me»),
+                nella forma unica; sulla stessa riga, con la Lista, le categorie. */}
+            <div className="flex items-center gap-3">
+              <div role="tablist" aria-label="Vista" className="flex shrink-0 items-center gap-2">
+                <button type="button" role="tab" aria-selected={view === "list"} onClick={() => setView("list")} className={cn(SCHEDA_BASE, view === "list" ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                  <List className="h-4 w-4" />
+                  Lista
+                </button>
+                <button type="button" role="tab" aria-selected={view === "grid"} onClick={() => setView("grid")} className={cn(SCHEDA_BASE, view === "grid" ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                  <LayoutGrid className="h-4 w-4" />
+                  Griglia IP
+                </button>
               </div>
-            )}
+              {view === "list" && (
+                <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto border-l pl-3" role="group" aria-label="Categoria">
+                  <Button variant={filterClassification === "" ? "default" : "outline"} size="sm" className="h-7 shrink-0" onClick={() => setFilterClassification("")}>
+                    Tutte <span className="ml-1.5 tabular-nums opacity-70">{hosts.length}</span>
+                  </Button>
+                  {categorieMadri.map((c) => (
+                    <Fragment key={c.gruppo}>
+                      <Button
+                        key={c.gruppo}
+                        variant={c.attiva ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 shrink-0"
+                        title={`Tutta la categoria «${c.titolo}». Per una sola classe: Filtri → Classificazione`}
+                        onClick={() => setFilterClassification(c.attiva ? "" : c.valore)}
+                      >
+                        {c.titolo} <span className="ml-1.5 tabular-nums opacity-70">{c.quanti}</span>
+                      </Button>
+                      {c.gruppo === madreScelta && figlie.map((f) => (
+                    <Button
+                      key={f.slug}
+                      variant={filterClassification === f.slug ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 shrink-0 border border-dashed text-[13px]"
+                      title={`Solo «${f.etichetta}»`}
+                      onClick={() => setFilterClassification(filterClassification === f.slug ? `${PREFISSO_GRUPPO}${madreScelta}` : f.slug)}
+                    >
+                      › {f.etichetta} <span className="ml-1.5 tabular-nums opacity-70">{f.quanti}</span>
+                    </Button>
+                  ))}
+                    </Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {view === "list" && selectedHostIds.size > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/50 bg-primary/5 px-2 py-1.5">

@@ -15,6 +15,7 @@ import { fallitaWinrm } from "@/lib/credentials/trova";
 import type { RicordoErrate } from "@/lib/scanner/account-windows";
 import type { EsitoPassword } from "@/lib/scanner/verifica-password-run";
 import type { OpzioniWinrm } from "@/lib/devices/winrm-run";
+import { SEGNO_PROVA } from "@/lib/scanner/identita-neutra";
 
 /** Esito della prova: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
  *  sono presenti solo per failure SSH e servono al pannello "Diagnostica" in UI.
@@ -202,14 +203,14 @@ export async function provaBinding(
           binding.port ?? 5985,
           username,
           password ?? "",
-          "echo DA-IPAM-TEST",
+          `echo ${SEGNO_PROVA}`,
           false,
           realm ?? "",
           opzioni
         );
         // Il logon è riuscito, anche se la risposta è inattesa: non è un rifiuto.
         chiudiLogon(false);
-        return String(out).includes("DA-IPAM-TEST")
+        return String(out).includes(SEGNO_PROVA)
           ? { success: true, message: "WinRM funzionante" }
           : { success: false, message: "WinRM: risposta inattesa" };
       } catch (err: unknown) {

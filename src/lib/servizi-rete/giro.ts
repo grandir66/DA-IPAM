@@ -156,6 +156,40 @@ export function smbProvatoDiRecente(tenant: string, hostId: number, porta: numbe
   }
 }
 
+/**
+ * Ogni quanti giorni si ripete, per host, la prova SSH senza credenziali (Riccardo, 13/11/2026: «ridurre moltissimo il
+ * test, se non gira una scansione attiva»). La prova chiede al server quali accessi offre presentandosi con un utente
+ * che non esiste: su DTS aveva lasciato 7.720 righe «utente inesistente» nel registro del server Wazuh e altrettanti
+ * allarmi. La risposta non cambia da un giro all'altro: nei giri automatici una volta al mese basta; un giro lanciato
+ * da una persona (`attiva`) la rifà.
+ */
+export const SSH_SENZA_CREDENZIALI_OGNI_GIORNI = 30;
+
+export function sshProvatoDiRecente(tenant: string, hostId: number, porta: number, adesso: number = Date.now()): boolean {
+  try {
+    const r = getTenantDb(tenant)
+      .prepare("SELECT json_extract(NULLIF(controllo_json, ''), '$._ssh_provato_il') AS quando FROM servizi_rete WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'")
+      .get(hostId, porta) as { quando: string | null } | undefined;
+    const t = r?.quando ? Date.parse(r.quando) : NaN;
+    return !Number.isNaN(t) && adesso - t < SSH_SENZA_CREDENZIALI_OGNI_GIORNI * 86_400_000;
+  } catch {
+    return false;
+  }
+}
+
+function segnaSshProvato(tenant: string, hostId: number, porta: number): void {
+  try {
+    getTenantDb(tenant)
+      .prepare(
+        `UPDATE servizi_rete SET controllo_json = json_set(COALESCE(NULLIF(controllo_json, ''), '{}'), '$._ssh_provato_il', ?)
+          WHERE host_id = ? AND porta = ? AND protocollo = 'tcp'`,
+      )
+      .run(new Date().toISOString(), hostId, porta);
+  } catch (e) {
+    console.warn(`[servizi-rete] host #${hostId}: segno della prova SSH non scritto: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 /** Segna la prova fatta, senza toccare `ultimo_visto` né il resto dell'esito. */
 function segnaSmbProvato(tenant: string, hostId: number, porta: number): void {
   try {
@@ -204,6 +238,8 @@ export function avviaGiro(
     porte?: number[];
     /** Login di fabbrica: solo da `/scans`, mai dai giri automatici. */
     proveFabbrica?: boolean;
+    /** Giro lanciato da una persona: rifà anche le prove che i giri automatici fanno di rado. */
+    attiva?: boolean;
     /** Timeout per bersaglio/sonda di questo giro (ms). Assente = default della sonda. */
     timeoutMs?: number;
     /** Worker in parallelo di questo giro. Assente = 32 sonde / 256 prove porte. */
@@ -231,6 +267,8 @@ export function avviaGiro(
       }
     : STRUMENTI);
   const proveFabbrica = opzioni.proveFabbrica === true;
+  /** Giro lanciato da una persona da `/scans`: le prove rade dei giri automatici si rifanno. */
+  const attiva = opzioni.attiva === true || proveFabbrica;
   const stato: StatoGiro = { inCorso: true, networkId, fase: null, totale: 0, fatte: 0, iniziato: new Date().toISOString(), finito: null, errore: null };
   giri.set(tenant, stato);
   void withTenant(tenant, async () => {
@@ -316,6 +354,12 @@ export function avviaGiro(
             stato.fatte += 1;
             return;
           }
+          // Stesso freno per la prova SSH senza credenziali: nei giri automatici una volta al mese per host.
+          const eSsh = p.porta === 22;
+          if (eSsh && !attiva && sshProvatoDiRecente(tenant, p.host_id, p.porta)) {
+            stato.fatte += 1;
+            return;
+          }
           try {
             esito = await controllo(p.ip, p.porta, {
               proveFabbrica,
@@ -332,6 +376,7 @@ export function avviaGiro(
           }
           if (esito.info) salvaControlloServizioRete(p.host_id, p.porta, p.protocollo, esito.info);
           if (eSmb) segnaSmbProvato(tenant, p.host_id, p.porta);
+          if (eSsh) segnaSshProvato(tenant, p.host_id, p.porta);
           stato.fatte += 1;
         });
       }

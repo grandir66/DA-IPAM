@@ -5,6 +5,7 @@
 import dgram from "node:dgram";
 import net from "node:net";
 import { Client as SshClient, type ConnectConfig } from "ssh2";
+import { NOME_HOST_NEUTRO, UTENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 function rpcCall(xid: number, prog: number, vers: number, proc: number): Buffer {
   const b = Buffer.alloc(40);
@@ -242,7 +243,7 @@ export async function provaSmtpVrfy(ip: string, porta: number, ms: number): Prom
     const risposta = (b: Buffer) => /^\d{3} [^\r\n]*\r\n/m.test(b.toString("latin1"));
     const banner = await leggi(s, ms, risposta);
     if (!/^220 [^\r\n]*\r\n/m.test(banner.toString("latin1"))) return false;
-    s.write("EHLO da-ipam.local\r\n");
+    s.write(`EHLO ${NOME_HOST_NEUTRO}\r\n`);
     const saluto = await leggi(s, ms, risposta);
     if (!/^250 [^\r\n]*\r\n/m.test(saluto.toString("latin1"))) return false;
     s.write("VRFY postmaster\r\n");
@@ -349,7 +350,7 @@ export async function provaSshPasswordOfferta(ip: string, porta: number, ms: num
     const cfg: ConnectConfig = {
       host: ip,
       port: porta,
-      username: "da-ipam",
+      username: UTENTE_NEUTRO,
       readyTimeout: ms,
       algorithms: {
         kex: [
@@ -365,7 +366,7 @@ export async function provaSshPasswordOfferta(ip: string, porta: number, ms: num
       authHandler: ((methodsLeft, _p, cb) => {
         if (Array.isArray(methodsLeft)) metodi = methodsLeft.map(String);
         if (methodsLeft == null) {
-          cb({ type: "none", username: "da-ipam" });
+          cb({ type: "none", username: UTENTE_NEUTRO });
           return;
         }
         (cb as unknown as (v: false) => void)(false);

@@ -11,6 +11,7 @@
 import net from "net";
 import dgram from "dgram";
 import { XMLParser } from "fast-xml-parser";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 export interface SsdpFinding {
   st: string | null;
@@ -172,7 +173,7 @@ function requestXmlOverSocket(socket: net.Socket, host: string, path: string, ti
     });
     try {
       socket.write(
-        `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\nUser-Agent: DA-INVENT-probe/1.0\r\nAccept: text/xml\r\n\r\n`
+        `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\nUser-Agent: ${AGENTE_NEUTRO}\r\nAccept: text/xml\r\n\r\n`
       );
     } catch {
       finish();

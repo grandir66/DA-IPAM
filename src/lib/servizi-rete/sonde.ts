@@ -22,6 +22,7 @@ import {
 import { PORTE_STAMPA_RAW } from "@/lib/scanner/ports";
 import { probeRdpNtlm } from "@/lib/scanner/probes/rdp-ntlm";
 import { ntlmDaGssORaw, wrapNtlmInSpnego } from "./ntlm-spnego";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 export interface InfoTls {
   version: string | null;
@@ -398,7 +399,7 @@ async function improntaSshDaSocket(sock: net.Socket, kex: string[], ms: number):
 }
 
 const RICHIESTA_HTTP = (ip: string) =>
-  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: DA-IPAM\r\nAccept: */*\r\nConnection: close\r\n\r\n`;
+  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: ${AGENTE_NEUTRO}\r\nAccept: */*\r\nConnection: close\r\n\r\n`;
 
 const finitaTestaHttp = (b: Buffer) => b.includes("</title>") || b.includes("</head>");
 
@@ -484,7 +485,7 @@ export function ntlmChallengeDaWwwAuthenticate(headers: Record<string, string>):
 }
 
 const RICHIESTA_HTTP_AUTH = (ip: string, schema: string, token: string) =>
-  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: DA-IPAM\r\nAccept: */*\r\nAuthorization: ${schema} ${token}\r\nConnection: close\r\n\r\n`;
+  `GET / HTTP/1.1\r\nHost: ${ip}\r\nUser-Agent: ${AGENTE_NEUTRO}\r\nAccept: */*\r\nAuthorization: ${schema} ${token}\r\nConnection: close\r\n\r\n`;
 
 /** Seconda richiesta HTTP: Type 1 NTLM (o SPNEGO se c'è solo Negotiate). Nessun Type 3, nessuna password. */
 export async function ntlmDaHttp(

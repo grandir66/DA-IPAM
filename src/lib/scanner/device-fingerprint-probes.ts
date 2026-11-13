@@ -8,6 +8,7 @@ import { promisify } from "util";
 import http from "http";
 import https from "https";
 import net from "net";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 const execFileAsync = promisify(execFile);
 
@@ -92,7 +93,7 @@ function httpGet(url: string, timeoutMs: number): Promise<{ status: number; head
       {
         timeout: timeoutMs,
         rejectUnauthorized: false,
-        headers: { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", "User-Agent": "DA-INVENT/1.0" },
+        headers: { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", "User-Agent": AGENTE_NEUTRO },
       },
       (res) => {
         let body = "";

@@ -344,7 +344,7 @@ async function lanciaGiroInterno(corpo: LancioGiro, dip: Partial<DipendenzeLanci
 
   const proveFabbrica = corpo.prove_fabbrica === true;
   const conCredenziali = corpo.con_credenziali === true;
-  const opzioniSonde = { proveFabbrica, conCredenziali, timeoutMs, concorrenza };
+  const opzioniSonde = { proveFabbrica, conCredenziali, timeoutMs, concorrenza, attiva: true };
 
   const vuoleSonde = fasi.includes("sonde");
   const soloSonde = profilo === "su_misura" && !fasi.includes("porte") && vuoleSonde;

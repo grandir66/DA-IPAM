@@ -57,7 +57,7 @@ describe("il limite conta solo i logon rifiutati", () => {
   });
 
   it("10 prove riuscite di fila non bloccano", async () => {
-    const b = banco(async () => "DA-IPAM-TEST");
+    const b = banco(async () => "probe-ok");
     for (let i = 0; i < 10; i++) {
       const e = await withTenant(T, () => provaBinding("10.0.0.1", legame("RIUSCITE\\mario"), "1", b.deps));
       assert.equal(e.success, true, `prova ${i + 1}`);
@@ -89,7 +89,7 @@ describe("il limite conta solo i logon rifiutati", () => {
   it("un successo non azzera i rifiuti di un'altra password dello stesso utente", async () => {
     const b = banco(rifiuto);
     for (let i = 0; i < 2; i++) await withTenant(T, () => provaBinding("10.0.0.4", legame("ALTRA\\mario"), "1", b.deps));
-    const ok = banco(async () => "DA-IPAM-TEST");
+    const ok = banco(async () => "probe-ok");
     await withTenant(T, () => provaBinding("10.0.0.4", legame("ALTRA\\mario"), "1", ok.deps));
     for (let i = 0; i < 3; i++) await withTenant(T, () => provaBinding("10.0.0.4", legame("ALTRA\\mario"), "1", b.deps));
     assert.equal(b.logon(), 3, "2 rifiuti prima + 1 dopo il successo, poi il limite");

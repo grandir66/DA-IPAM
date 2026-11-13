@@ -60,6 +60,28 @@ const NOME_365: Record<string, string> = {
   BrowserType: "Browser",
   CreationTime: "Ora dell'evento",
 };
+/** Identificativi interni di Microsoft 365: non aiutano a capire, allungano solo l'elenco (visto su DTS il 13/11/2026). */
+const INUTILI_365 = new Set([
+  "UserKey", "OrganizationId", "IntraSystemId", "InterSystemsId", "RecordType", "Version", "Subscription", "ActorContextId",
+  "TargetContextId", "ObjectId", "Id", "UserType", "AzureActiveDirectoryEventType", "ActorIpAddress", "ExtendedProperties",
+  "DeviceProperties", "Actor", "Target", "ModifiedProperties", "SupportTicketId", "ErrorNumber",
+]);
+/** I codici d'errore di accesso più comuni di Entra ID, detti in chiaro. */
+const SIGNIFICATO_ERRORE_365: Record<string, string> = {
+  "50053": "account bloccato per troppi tentativi sbagliati (blocco automatico di Microsoft)",
+  "50126": "nome utente o password sbagliati",
+  "50055": "password scaduta",
+  "50056": "password non valida o assente",
+  "50057": "account disabilitato",
+  "50034": "l'account non esiste in questo tenant",
+  "50074": "serve l'autenticazione a più fattori",
+  "50076": "serve l'autenticazione a più fattori",
+  "50079": "l'utente deve registrare l'autenticazione a più fattori",
+  "50158": "richiesta una verifica di sicurezza esterna",
+  "53003": "accesso bloccato da una regola di accesso condizionale",
+  "53004": "l'utente deve completare la registrazione della sicurezza",
+  "700016": "applicazione non trovata nel tenant",
+};
 /** Valori che in un evento Windows vogliono dire «niente»: non si mostrano. */
 const VUOTI = new Set(["", "-", "%%1793", "%%1794", "0x0", "(null)", "null", "NULL SID", "S-1-0-0"]);
 
@@ -103,7 +125,9 @@ export function dettagliAlert(doc: unknown): DettaglioAlert[] {
   // Microsoft 365: i campi semplici, poi le proprietà estese (programma del client, dettaglio dell'esito).
   const o = oggetto(d.office365);
   if (o) {
-    for (const k of Object.keys(NOME_365)) if (k in o) metti(NOME_365[k], o[k]);
+    const codice = testo(o.ErrorNumber);
+    if (codice) metti("Codice d'errore", SIGNIFICATO_ERRORE_365[codice] ? `${codice}: ${SIGNIFICATO_ERRORE_365[codice]}` : codice);
+    for (const k of Object.keys(NOME_365)) if (k in o && k !== "ErrorNumber") metti(NOME_365[k], o[k]);
     for (const lista of [o.ExtendedProperties, o.DeviceProperties]) {
       if (!Array.isArray(lista)) continue;
       for (const voce of lista) {
@@ -111,7 +135,7 @@ export function dettagliAlert(doc: unknown): DettaglioAlert[] {
         if (p && typeof p.Name === "string") metti(NOME_365[p.Name] ?? p.Name, p.Value);
       }
     }
-    for (const [k, v] of Object.entries(o)) if (!(k in NOME_365)) metti(k, v);
+    for (const [k, v] of Object.entries(o)) if (!(k in NOME_365) && !INUTILI_365.has(k)) metti(k, v);
   }
 
   // Decoder generici (sshd, sudo, apparati).

@@ -29,6 +29,7 @@ import * as http from "node:http";
 import * as tls from "node:tls";
 import { isIP } from "node:net";
 import { htmlConLogin, percorsoDiLogin } from "@/lib/integrations/pagina-login";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 export type EsitoApertura =
   | "ok"
@@ -274,7 +275,7 @@ function richiesta(u: URL, opts: OpzioniApertura, socket: tls.TLSSocket | null):
   const headers: Record<string, string> = {
     Host: u.host,
     Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-    "User-Agent": "DA-IPAM (verifica apertura per il browser)",
+    "User-Agent": AGENTE_NEUTRO,
   };
   if (opts.cookie) headers.Cookie = opts.cookie;
   return new Promise((resolve, reject) => {

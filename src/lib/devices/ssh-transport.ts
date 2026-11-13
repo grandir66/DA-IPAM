@@ -30,6 +30,7 @@
  */
 
 import type { Client as SshClient, ConnectConfig, ParsedKey } from "ssh2";
+import { SEGNO_PROVA } from "@/lib/scanner/identita-neutra";
 
 const DEFAULT_KEX_ALGORITHMS = [
   "curve25519-sha256",
@@ -576,7 +577,7 @@ export function mapSshError(err: unknown, ctx: MapSshErrorContext = {}): SshErro
  * Utile per route di "test credenziale" che vogliono comunque restituire 200 con
  * l'esito strutturato all'UI.
  */
-export async function sshTryConnect(opts: SshOptions, probeCommand = "echo da-ipam-probe"): Promise<{ ok: true; result: SshResult; methodsOffered?: string[]; methodsTried?: string[] } | { ok: false; error: SshErrorInfo }> {
+export async function sshTryConnect(opts: SshOptions, probeCommand = `echo ${SEGNO_PROVA}`): Promise<{ ok: true; result: SshResult; methodsOffered?: string[]; methodsTried?: string[] } | { ok: false; error: SshErrorInfo }> {
   try {
     const result = await sshExec(opts, probeCommand);
     return { ok: true, result };

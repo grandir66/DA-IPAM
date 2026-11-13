@@ -24,6 +24,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getCredential, getCredentialSecrets, logCredentialEvent, recordTestResult } from "@/lib/credentials-vault";
 import { getSharedAgent } from "@/lib/integrations/http-pool";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 const PROBE_PATHS: Record<string, string> = {
   wazuh: "/security/user/authenticate",          // Wazuh Manager API (port 55000)
@@ -119,7 +120,7 @@ function probeRequest(
       path: (url.pathname || "/") + (url.search || ""),
       headers: {
         Accept: "*/*",
-        "User-Agent": "DA-IPAM/launchpad-test",
+        "User-Agent": AGENTE_NEUTRO,
         ...headers,
       },
       agent,

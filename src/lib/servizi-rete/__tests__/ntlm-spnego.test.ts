@@ -27,7 +27,7 @@ test("Connection Request RDP: TPKT + negoziazione SSL/HYBRID", () => {
   const cr = rdpConnectionRequest();
   assert.equal(cr[0], 0x03);
   assert.equal(cr.readUInt16BE(2), cr.length);
-  assert.ok(cr.includes(Buffer.from("Cookie: mstshash=DA-IPAM\r\n", "ascii")));
+  assert.ok(cr.includes(Buffer.from("Cookie: mstshash=netcheck\r\n", "ascii")));
   const i = cr.indexOf(Buffer.from([0x01, 0x00, 0x08, 0x00]));
   assert.ok(i >= 0);
   assert.equal(cr.readUInt32LE(i + 4), 0x00000003);

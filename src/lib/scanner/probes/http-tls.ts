@@ -7,6 +7,7 @@
  */
 import net from "net";
 import tls from "tls";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 export interface HttpTlsFinding {
   port: number;
@@ -123,7 +124,7 @@ function requestOverSocket(socket: net.Socket, host: string, timeoutMs: number):
     });
     try {
       socket.write(
-        `GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\nUser-Agent: DA-INVENT-probe/1.0\r\nAccept: */*\r\n\r\n`
+        `GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\nUser-Agent: ${AGENTE_NEUTRO}\r\nAccept: */*\r\n\r\n`
       );
     } catch {
       finish();

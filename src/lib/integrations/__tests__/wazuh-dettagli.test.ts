@@ -22,7 +22,7 @@ test("4738: chi ha fatto la modifica e che cosa è cambiato, senza i campi vuoti
 test("Microsoft 365: esito, codice d'errore e programma del client", () => {
   const m = mappa({ data: { office365: { Operation: "UserLoginFailed", ResultStatus: "Failed", ErrorNumber: "50126", ClientIP: "38.114.120.157",
     ExtendedProperties: [{ Name: "UserAgent", Value: "BAV2ROPC" }, { Name: "ResultStatusDetail", Value: "Redirect" }] } } });
-  assert.equal(m.get("Codice d'errore"), "50126");
+  assert.equal(m.get("Codice d'errore"), "50126: nome utente o password sbagliati");
   assert.equal(m.get("Programma del client"), "BAV2ROPC");
   assert.equal(m.get("Dettaglio dell'esito"), "Redirect");
 });
@@ -38,4 +38,12 @@ test("un evento vuoto o strano non rompe niente e i valori lunghi si accorciano"
   assert.deepEqual(dettagliAlert({ data: "x" }), []);
   const lungo = dettagliAlert({ data: { srcuser: "a".repeat(1000) } })[0].valore;
   assert.ok(lungo.length <= 241);
+});
+
+test("Microsoft 365: gli identificativi interni non si mostrano e il blocco per troppi tentativi è detto in chiaro", () => {
+  const m = mappa({ data: { office365: { Operation: "UserLoginFailed", ErrorNumber: "50053", UserKey: "29e2", OrganizationId: "42ba", RecordType: 15, ActorIpAddress: "2602::1", ClientIP: "2602::1" } } });
+  assert.match(m.get("Codice d'errore") ?? "", /^50053: account bloccato/);
+  assert.equal(m.has("UserKey"), false);
+  assert.equal(m.has("OrganizationId"), false);
+  assert.equal(m.has("ActorIpAddress"), false);
 });

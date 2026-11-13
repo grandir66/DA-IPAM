@@ -12,6 +12,7 @@ import { apriSessioneCommunity, provaVersioniSnmp } from "@/lib/protocols/snmp-s
 import type { InfoControllo } from "./controlli";
 import { sondaSmb } from "./smb-controlli";
 import { provaTlsAttivo } from "./tls-attivo";
+import { AGENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 import {
   provaDnsAxfr,
   provaIpmiRakp,
@@ -357,7 +358,7 @@ function httpGet(
 ): Promise<{ code: number; corpo: string; challenge: string } | null> {
   return new Promise((resolve) => {
     const request = https ? richiestaHttps : richiestaHttp;
-    const headers = { "User-Agent": "DA-IPAM", ...(authorization ? { Authorization: authorization } : {}) };
+    const headers = { "User-Agent": AGENTE_NEUTRO, ...(authorization ? { Authorization: authorization } : {}) };
     const req = request({ hostname: ip, port: porta, path: percorso, headers, agent: false, rejectUnauthorized: false }, (res) => {
       const code = res.statusCode ?? 0;
       const challenge = res.headers["www-authenticate"] ?? "";
@@ -648,7 +649,8 @@ function tdsPassword(s: string): Buffer {
 
 /** LOGIN7 sa / password vuota (TDS 7.1). */
 export function pacchettoLogin7Sa(): Buffer {
-  const host = Buffer.from("DA-IPAM", "utf16le");
+  // Nome della postazione dichiarato nella prova: neutro, non il nome del programma (identita-neutra.ts).
+  const host = Buffer.from("CLIENT", "utf16le");
   const user = Buffer.from("sa", "utf16le");
   const pass = tdsPassword("");
   const app = Buffer.from("DA-IPAM", "utf16le");

@@ -9,6 +9,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { buildNtlmNegotiateMessage, parseNtlmChallenge, type NtlmChallengeInfo } from "./smb2";
 import { credsspTsRequest, ntlmDaGssORaw, wrapNtlmInSpnego } from "@/lib/servizi-rete/ntlm-spnego";
+import { UTENTE_NEUTRO } from "@/lib/scanner/identita-neutra";
 
 const PROTOCOL_SSL = 0x00000001;
 const PROTOCOL_HYBRID = 0x00000002;
@@ -17,7 +18,7 @@ const TETTO = 64 * 1024;
 
 /** Connection Request X.224 + RDP_NEG_REQ (SSL e CredSSP). Esportata per le prove. */
 export function rdpConnectionRequest(): Buffer {
-  const cookie = Buffer.from("Cookie: mstshash=DA-IPAM\r\n", "ascii");
+  const cookie = Buffer.from(`Cookie: mstshash=${UTENTE_NEUTRO}\r\n`, "ascii");
   const neg = Buffer.alloc(8);
   neg[0] = 0x01; // TYPE_RDP_NEG_REQ
   neg.writeUInt16LE(8, 2);

@@ -1,5 +1,17 @@
 # TASKS — DA-IPAM
 
+## 2026-11-13 — Alert di sicurezza di DTS: eventi ripetuti senza i dettagli veri (Riccardo)
+
+Riccardo, 13/11: «vorrei anche analizzare gli alert di sicurezza di dts, ci sono eventi ripetuti… che però non hanno sufficienti dettagli per capire se possono essere un reale problema»; «non vengono visualizzati i dettagli reali».
+
+- [x] Causa: `upsertAlertEvent` salvava dell'evento di Wazuh solo `{ groups }` in `raw_json`. Utente e IP sì, ma non chi ha fatto la modifica, che cosa è cambiato, il codice d'errore. Sul DB di DTS il `raw_json` dei tre casi è lungo 55-68 caratteri.
+- [x] **0.9.1237**: `integrations/wazuh-dettagli.ts` sceglie i campi dell'evento (Windows: chi l'ha fatto, account toccato, postazione, codici, opzioni dell'account prima e dopo, password impostata il…; Microsoft 365: operazione, esito, codice d'errore, programma del client, proprietà estese; generici: utente usato, provenienza, riga del registro), senza i valori vuoti, al massimo 32. Salvati in `raw_json.dettagli` alla creazione e **aggiornati a ogni ripetizione**, così gli eventi già aperti li prendono al prossimo giro. Nella pagina, sotto ogni evento, «Tutti i dettagli (N)» apribile. 4 prove nuove.
+- [ ] I tre casi di DTS, letti dal DB prima della correzione (conteggi dal 1° settembre, non dei soli 7 giorni):
+  - **«User account changed» 4738 su Administrator**: circa 1.000 volte per server (SRV-DC, SRV-MES, SRV-SQL, SRV-PDM, SRV-WIN2025, SRV-GEST), meno sui PC che si spengono. Circa 14 al giorno per macchina, quindi un automatismo e non una persona. Chi lo fa e che cosa cambia lo diranno i dettagli.
+  - **sshd «utente inesistente» `da-ipam` da 172.16.0.2 su srv-wazuh, 7.720 volte**: 172.16.0.2 è la nostra appliance. È DA-IPAM che prova a entrare via SSH sul server Wazuh con un utente che là non esiste: rumore nostro, da trovare e spegnere.
+  - **Microsoft 365, accessi falliti di un utente da 38.114.120.157, 3.562 volte**: indirizzo esterno, un solo account, da settembre. Da guardare col codice d'errore e il programma del client: tentativo continuo dall'esterno o un client rimasto con la password vecchia.
+- [ ] Da rileggere dopo il primo giro degli alert sulla 0.9.1237, coi dettagli veri.
+
 ## 2026-11-13 — Seconda scheda di rete per le matrici di segmentazione (Riccardo, da decidere)
 
 Riccardo, 13/11: «potresti montare la seconda scheda di rete sia sulla macchina dts che su da-ipam per vedere le matrici di segmentazione».

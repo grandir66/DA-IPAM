@@ -239,6 +239,8 @@ export function categoryById(id: string): AlertCategory | undefined {
   return ALERT_CATEGORIES.find((c) => c.id === id);
 }
 
+import { dettagliAlert, type DettaglioAlert } from "./wazuh-dettagli";
+
 export interface WazuhAlertDoc {
   "@timestamp": string;
   agent?: { id?: string; name?: string };
@@ -296,6 +298,8 @@ export interface NormalizedAlert {
   workstation: string | null;
   sourceSystem: SourceSystem;
   accountKind: "utente" | "computer";
+  /** I campi dell'evento originale da mostrare (wazuh-dettagli.ts). Assenti negli alert costruiti a mano. */
+  dettagli?: DettaglioAlert[];
 }
 
 export function normalizeAlert(
@@ -364,6 +368,7 @@ export function normalizeAlert(
     workstation,
     sourceSystem,
     accountKind: accountKind(targetUser),
+    dettagli: dettagliAlert(doc),
   };
 }
 

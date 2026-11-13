@@ -6,7 +6,7 @@ import { FilaNumeri } from "@/components/shared/console";
 import { cn } from "@/lib/utils";
 import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +61,19 @@ interface AlertEventDto {
   last_seen_at: string;
   acknowledged: number;
   acknowledged_by: string | null;
+  /** `{ groups, dettagli }`: i campi dell'evento originale (lib/integrations/wazuh-dettagli.ts). */
+  raw_json?: string | null;
+}
+
+/** I dettagli veri dell'evento, se l'alert li ha (quelli nati prima del 13/11/2026 li prendono alla prossima ripetizione). */
+function dettagliDi(e: AlertEventDto): Array<{ nome: string; valore: string }> {
+  if (!e.raw_json) return [];
+  try {
+    const d = (JSON.parse(e.raw_json) as { dettagli?: unknown }).dettagli;
+    return Array.isArray(d) ? d.filter((x): x is { nome: string; valore: string } => !!x && typeof (x as { nome?: unknown }).nome === "string" && typeof (x as { valore?: unknown }).valore === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 const ALERTS_LIMIT = 200;
@@ -453,6 +466,25 @@ export function SecurityAlertsClient() {
                           {e.event_id ? <div>Event ID {e.event_id}</div> : null}
                           {e.target_user ? <div>Utente: {e.target_user}</div> : null}
                           {e.source_ip ? <div>IP: {e.source_ip}</div> : null}
+                          {(() => {
+                            /* I dettagli veri (Riccardo, 13/11/2026: «non vengono visualizzati i dettagli reali»):
+                               chi l'ha fatto, che cosa è cambiato, il codice d'errore. Chiusi di serie, si aprono con un clic. */
+                            const dett = dettagliDi(e);
+                            if (dett.length === 0) return null;
+                            return (
+                              <details className="mt-1">
+                                <summary className="cursor-pointer text-[13px] underline decoration-dotted underline-offset-2">Tutti i dettagli ({dett.length})</summary>
+                                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[13px]">
+                                  {dett.map((d) => (
+                                    <Fragment key={d.nome}>
+                                      <dt className="text-muted-foreground">{d.nome}</dt>
+                                      <dd className="break-words">{d.valore}</dd>
+                                    </Fragment>
+                                  ))}
+                                </dl>
+                              </details>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{numero(e.occurrence_count)}</TableCell>
                         <TableCell className="text-[13px]">{formatDate(e.last_seen_at)}</TableCell>

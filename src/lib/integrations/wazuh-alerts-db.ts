@@ -132,7 +132,8 @@ export function upsertAlertEvent(db: Database, a: NormalizedAlert): UpsertResult
              rule_level = ?,
              event_id = COALESCE(?, event_id),
              target_user = COALESCE(?, target_user),
-             source_ip = COALESCE(?, source_ip)
+             source_ip = COALESCE(?, source_ip),
+             raw_json = COALESCE(?, raw_json)
        WHERE id = ?`,
     ).run(
       a.timestamp,
@@ -141,6 +142,9 @@ export function upsertAlertEvent(db: Database, a: NormalizedAlert): UpsertResult
       a.eventId,
       a.targetUser,
       a.sourceIp,
+      // I dettagli sono quelli dell'ultima occorrenza: è la più utile da leggere, e chi è nato prima del 13/11/2026
+      // senza dettagli li prende alla prossima ripetizione.
+      a.dettagli && a.dettagli.length > 0 ? JSON.stringify({ groups: a.groups, dettagli: a.dettagli }) : null,
       open.id,
     );
     return { created: false };
@@ -166,7 +170,7 @@ export function upsertAlertEvent(db: Database, a: NormalizedAlert): UpsertResult
     a.sourceIp,
     a.timestamp,
     a.timestamp,
-    JSON.stringify({ groups: a.groups }),
+    JSON.stringify(a.dettagli && a.dettagli.length > 0 ? { groups: a.groups, dettagli: a.dettagli } : { groups: a.groups }),
   );
   return { created: true };
 }

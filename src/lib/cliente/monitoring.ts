@@ -54,6 +54,8 @@ export interface ProblemaMostrato {
   frase: string;
   dal: string | null;
   presoInCarico: boolean;
+  /** Quante volte lo stesso problema è aperto su quell'oggetto (nodi o macchine diverse). */
+  quante: number;
 }
 
 export interface OggettoMostrato {
@@ -92,6 +94,8 @@ export interface Monitoring {
   problemi: ProblemaMostrato[];
   /** Problemi sotto la soglia o oltre il taglio del centro, non mostrati. */
   problemiNascosti: number;
+  /** Righe tolte perché uguali a una già in elenco, sullo stesso oggetto. */
+  problemiRaggruppati: number;
   giorni: string[];
   totali: Record<StatoOggetto, number>;
 }
@@ -104,7 +108,11 @@ const FRASI: ReadonlyArray<[RegExp, string | ((m: RegExpMatchArray) => string)]>
   [/icmp .*response time|high ping/i, "risponde lentamente"],
   [/interface (.+?)(?:\(.*?\))?: link down/i, (m) => `una porta di rete è scollegata (${m[1]!.trim()})`],
   [/link down/i, "una porta di rete è scollegata"],
-  [/(?:fs|disk|volume|storage) \[?\(?([^\]:)]+)\)?\]?:.*(?:space is (?:critically )?low|running out)/i, (m) => `spazio quasi finito su ${m[1]!.trim()}`],
+  [/interface (.+?)(?:\(.*?\))?: .*(?:lower speed|has changed to lower)/i, (m) => `una porta di rete va più lenta del solito (${m[1]!.trim()})`],
+  [/lower speed|speed has changed/i, "una porta di rete va più lenta del solito"],
+  [/interface .*(?:changed to|state)/i, "una porta di rete è cambiata di stato"],
+  // «FS [User Disk(C:)]: Space is low»: il nome utile è la lettera fra parentesi, non l'etichetta.
+  [/(?:fs|disk|volume|storage)\s*\[([^\]]+)\]:.*(?:space is (?:critically )?low|running out)/i, (m) => `spazio quasi finito su ${nomeDisco(m[1]!)}`],
   [/space is (?:critically )?low|running out of free|low free disk|free space/i, "spazio su disco quasi finito"],
   [/inodes/i, "il disco ha quasi finito i file che può contenere"],
   [/high cpu|cpu utilization|processor load|load average/i, "il processore è molto occupato"],
@@ -121,6 +129,13 @@ const FRASI: ReadonlyArray<[RegExp, string | ((m: RegExpMatchArray) => string)]>
   [/battery|on battery|ups/i, "problema di alimentazione"],
   [/time is out of sync|system time/i, "l'orologio non è allineato"],
 ];
+
+/** «User Disk(C:)» → «C:», «(E:)» → «E:», «/volume1» resta com'è. */
+function nomeDisco(grezzo: string): string {
+  const t = grezzo.trim();
+  const dentro = t.match(/\(([^)]+)\)/);
+  return (dentro ? dentro[1]! : t).replace(/[:\\/]+$/, "").trim() || t;
+}
 
 /** La frase da cliente per il nome di un problema di Zabbix; se non si riconosce, il nome ripulito. */
 export function fraseProblema(nome: string): string {
@@ -271,16 +286,36 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
     nomeDi.set(o.hostid, o.nome);
   }
   const visibili = i.problemi.filter((p) => p.gravita >= SOGLIA_CLIENTE && nomeDi.has(p.hostid));
-  const problemi: ProblemaMostrato[] = visibili.map((p) => ({
-    eventid: p.eventid,
-    hostid: p.hostid,
-    nomeOggetto: nomeDi.get(p.hostid)!,
-    famiglia: famigliaDi.get(p.hostid)!,
-    grave: p.gravita >= SOGLIA_GRAVE,
-    frase: fraseProblema(p.nome),
-    dal: p.dal ?? null,
-    presoInCarico: p.preso_in_carico,
-  }));
+  // Lo stesso problema su più nodi o macchine di un host (su Proxmox «è stato riavviato»
+  // esce quattro volte) si dice una volta sola, col conto: quattro righe uguali non
+  // aiutano il cliente. Resta il più vecchio, e «in carico» solo se lo sono tutti.
+  const problemi: ProblemaMostrato[] = [];
+  const indice = new Map<string, number>();
+  for (const p of visibili) {
+    const frase = fraseProblema(p.nome);
+    const chiave = `${p.hostid}|${frase}`;
+    const gia = indice.get(chiave);
+    if (gia !== undefined) {
+      const r = problemi[gia]!;
+      r.quante += 1;
+      r.grave = r.grave || p.gravita >= SOGLIA_GRAVE;
+      r.presoInCarico = r.presoInCarico && p.preso_in_carico;
+      if (p.dal && (!r.dal || p.dal < r.dal)) r.dal = p.dal;
+      continue;
+    }
+    indice.set(chiave, problemi.length);
+    problemi.push({
+      eventid: p.eventid,
+      hostid: p.hostid,
+      nomeOggetto: nomeDi.get(p.hostid)!,
+      famiglia: famigliaDi.get(p.hostid)!,
+      grave: p.gravita >= SOGLIA_GRAVE,
+      frase,
+      dal: p.dal ?? null,
+      presoInCarico: p.preso_in_carico,
+      quante: 1,
+    });
+  }
 
   const quanti = (n: number, uno: string, tanti: string) => `${n} ${n === 1 ? uno : tanti}`;
   let frase: string;
@@ -321,6 +356,7 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
     famiglie,
     problemi,
     problemiNascosti: i.problemi.length - visibili.length + i.problemiTroncati,
+    problemiRaggruppati: visibili.length - problemi.length,
     giorni: i.storico?.giorni ?? [],
     totali,
   };

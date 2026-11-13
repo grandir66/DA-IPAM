@@ -139,7 +139,32 @@ test("frasi dei problemi: quelle note in italiano, le altre restano com'erano", 
   assert.equal(fraseProblema("Zabbix agent is not available (for 3m)"), "l'agente di controllo non manda dati");
   assert.equal(fraseProblema("High memory utilization (>90% for 5m)"), "poca memoria libera");
   assert.equal(fraseProblema("  Qualcosa   di mai visto  "), "Qualcosa di mai visto");
+  // Casi veri di Domarc del 13/11 che prima uscivano in inglese o col nome del disco tagliato.
+  assert.equal(
+    fraseProblema("Network Generic Device: Interface 0/11(Port 11): Ethernet has changed to lower speed than it was before"),
+    "una porta di rete va più lenta del solito (0/11)",
+  );
+  assert.equal(fraseProblema("FS [User Disk(C:)]: Space is critically low (used > 90%)"), "spazio quasi finito su C");
+  assert.equal(fraseProblema("FS [GESTIONALE(E:)]: Space is low"), "spazio quasi finito su E");
   assert.equal(fraseProblema(""), "problema segnalato");
+});
+
+test("lo stesso problema ripetuto sull'oggetto si dice una volta, col conto", () => {
+  // Su DA-PX05 (Domarc, 13/11) «has been restarted» usciva quattro volte, una per macchina.
+  const m = componiMonitoring({
+    ...BASE,
+    famiglie: famiglie([oggetto("1", "px-05", "altro")]),
+    problemi: [
+      problema("1", "Host has been restarted (uptime < 10m)", 3, true),
+      { ...problema("1", "Host has been restarted (uptime < 10m)", 3), dal: "2026-11-13T06:00:00Z" },
+      problema("1", "Lack of available memory", 3),
+    ],
+  });
+  assert.deepEqual(m.problemi.map((p) => [p.frase, p.quante, p.presoInCarico, p.dal]), [
+    ["è stato riavviato", 2, false, "2026-11-13T06:00:00Z"],
+    ["poca memoria libera", 1, false, "2026-11-13T08:00:00Z"],
+  ]);
+  assert.equal(m.problemiRaggruppati, 1);
 });
 
 test("una famiglia che il centro non elenca finisce in Altro, non sparisce", () => {

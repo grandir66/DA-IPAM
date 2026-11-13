@@ -224,6 +224,7 @@ export default async function PaginaMonitoring() {
                   <span className="min-w-0 flex-1">
                     <span className="text-muted-foreground">{p.famiglia} · </span>
                     <span className="font-medium">{p.nomeOggetto}</span>: {p.frase}
+                    {p.quante > 1 && <span className="text-muted-foreground"> · {p.quante} volte</span>}
                   </span>
                   <span className="text-[13px] text-muted-foreground">{p.dal ? daQuanto(new Date(p.dal), c.ora) : ""}</span>
                   {p.presoInCarico ? (

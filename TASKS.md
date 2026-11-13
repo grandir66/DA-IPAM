@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-13 — Metalrota (73322): installazione, Zabbix, aggiornatore ingannato dalla riconfigura
+
+- [x] `dev` promosso su `main` alla 0.9.1252 col sì di Riccardo (cancello: lint 0, tipi puliti, 8228 prove verdi; una rossa era un falso allarme su un'etichetta in `wazuh-dettagli.ts`, corretta).
+- [x] Zabbix di Metalrota: `proxy-metalrota` in linea con `73322-ipam` e `SW-MODULA`; chiave di lettura `8f83f511` usata, pannello in DA-IPAM «configurato e acceso» (`da-appliance verifica`). Il collegamento l'ha rifatto la riconfigura di Riccardo.
+- [x] Accesso: chiave del Mac fra quelle di root dell'appliance (messa da Riccardo via `qm guest exec 122` su `PXRPL`), `ssh root@100.107.42.30` via NetBird. Su un'appliance da immagine il comando di stato è `da-appliance verifica`, non `connect` (che esiste solo sulle classiche).
+- [ ] **Difetto: dopo una riconfigura l'aggiornatore dice «già aggiornato» ma gira la build dell'immagine.** La riconfigura toglie `.next-a`/`.next-b`/`.next-attiva` e lascia `.next` dell'immagine; `auto-update.sh` confronta solo `commit_avviato` con `origin` ed esce. Visto su 73322: codice 0.9.1252, `/api/health` 0.9.1219. Rimediato a mano con `scripts/update.sh --restart`. Correzione proposta: in `auto-update.sh`, se la cartella di build attiva manca o la sua versione non è quella di `package.json`, ricostruire. Da vedere anche in Deploy-Appliance cosa cancella le cartelle (riga gemella nel suo `TASKS.md`).
+- [ ] «Chocolatey automatico» risulta spento su 73322 (la verifica lo vuole acceso di serie): decidere con Riccardo se a Metalrota serve.
+- [ ] Riccardo: l'appliance «andrà leggermente riconfigurata» (trunk separato dal management): da finire.
+
 ## 2026-11-13 — DATIA MONITORING: lo stato dei servizi per il cliente, dai dati di Zabbix (Riccardo)
 
 Riccardo: «una dashboard dentro da-ipam per i rilievi di zabbix per una singola installazione, per chi ha l'integrazione; i clienti devono vedere lo stato dei servizi da quella UI senza avere accesso al sistema; si chiamerà DATIA MONITORING». Solo ragionamento, niente codice ancora.

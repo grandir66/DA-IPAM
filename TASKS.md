@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-13 — Seconda scheda di rete per le matrici di segmentazione (Riccardo, da decidere)
+
+Riccardo, 13/11: «potresti montare la seconda scheda di rete sia sulla macchina dts che su da-ipam per vedere le matrici di segmentazione».
+
+- [x] Letto in sola lettura. La segmentazione non parte dalle interfacce di DA-IPAM: la fa la **sonda trunk** (`segmentazione/giro.ts` → `sonda.avvia(vlan, cidr, gateway, bersagli)`), che dalla sua scheda trunk si mette nella VLAN sorgente e prova i servizi noti delle altre reti.
+  - **Hub (VM 533)**: la seconda scheda **c'è già**, `enp6s19`, nello spazio di rete `trunk` della sonda, accesa e in ascolto. La matrice è vuota perché non è mai stato lanciato un giro di segmentazione (`segmentazione_prove`: 0 righe).
+  - **DTS (VM 116 «DTS-Inventory» su DTS-PX-UP)**: una scheda sola, `eth0`, che la sonda usa «condivisa» in ascolto (vede 11 VLAN). Nessuna seconda scheda; `segmentazione_prove`: 0 righe. Reti con VLAN in archivio: 1, 10, 11, 12, 13, 16, 40, 80, 102, 192.
+- [ ] Da decidere con Riccardo: (a) sull'hub lanciare un giro di segmentazione (è una scansione attiva dalle VLAN verso i servizi noti, 192.168.4.42 compresa se è fra i bersagli); (b) su DTS aggiungere `net1` alla VM 116 sul Proxmox del cliente, su un bridge che porti tutte le VLAN senza tag: serve sapere il bridge e avere l'accesso a DTS-PX-UP, ed è un sistema del cliente.
+
 ## 2026-11-13 — Uniformità: schede, cambio di vista e azioni della pagina (Riccardo, tavola proposta)
 
 Riccardo, 13/11: «vorrei chiederti uno sforzo di uniformità: i tab per selezionare le schede di diverse parti di software dovrebbero essere organizzati in modo coerente». Esempi suoi: Patch Management (Panoramica), subnet (Lista o Griglia), Apparati (schede in alto), Active Directory (Computer, Utenti, Gruppi, DHCP, e i comandi in alto a destra su due righe).

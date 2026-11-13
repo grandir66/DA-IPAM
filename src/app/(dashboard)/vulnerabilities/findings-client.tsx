@@ -55,13 +55,8 @@ export function FindingsClient() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold tracking-tight">Findings</h1>
-        <span className="flex-1" />
-        <Button variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
-          Lancia un giro
-        </Button>
-      </div>
+      {/* Il titolo sta nella barra unica dell'elenco (13/11/2026); qui solo finché l'elenco non è montato. */}
+      {!vistaIniziale && <h1 className="text-xl font-bold tracking-tight">Findings</h1>}
       {vistaIniziale && <ElencoFindings vistaIniziale={vistaIniziale} />}
       <CvePotenziali />
     </div>
@@ -333,16 +328,23 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
-      {/* Una riga sola sotto il titolo (Riccardo, 13/11/2026: «intestazione enorme con testo»): la nota su cosa compare
-          si legge passando sopra alla prima voce. */}
+      {/* Una barra sola divisa in aree (Riccardo, 13/11/2026: «intestazione enorme con testo», poi «dividere la barra
+          superiore in aree»): titolo · cosa compare (la nota intera al passaggio del mouse) · stato dei dati sugli
+          exploit · e a destra l'azione della pagina. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <h1 className="text-xl font-bold tracking-tight">Findings</h1>
         <span
-          className="cursor-help text-[13px] text-muted-foreground underline decoration-dotted underline-offset-2"
+          className="cursor-help border-l pl-4 text-[13px] text-muted-foreground underline decoration-dotted underline-offset-2"
           title="Solo rilievi critici, alti e medi di scansioni degli ultimi 30 giorni: i bassi, gli informativi e gli host non scansionati di recente non compaiono."
         >
           Critici, alti e medi degli ultimi 30 giorni
         </span>
-        <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
+        <div className="border-l pl-4">
+          <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
+        </div>
+        <Button className="ml-auto" variant="default" size="sm" nativeButton={false} render={<Link href="/scans" />}>
+          Lancia un giro
+        </Button>
       </div>
 
       <FasciaIndicatori

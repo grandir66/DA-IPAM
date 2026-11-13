@@ -294,6 +294,24 @@ export function SecurityAlertsClient() {
           Alert sicurezza
         </h1>
         {daDc ? <FonteDc letture={stats?.letture ?? []} /> : <WazuhHealthBand refreshKey={refreshTick} compatta />}
+        {/* Una barra sola divisa in aree (13/11/2026): numeri e filtri stanno qui, non su righe loro. */}
+        <div className="border-l pl-3">
+          <FilaNumeri
+            voci={[
+              { titolo: "Alert nel periodo", valore: statsAssenti ? null : split.attackTotal, qualifica: windowLabel.toLowerCase(), aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${split.diagnosticTotal} non ostili esclusi` : undefined },
+              { titolo: "Eventi aperti", valore: stats ? stats.openTotal : null, aiuto: "Da prendere in carico. Un clic mostra solo gli aperti, un altro tutti gli stati", onClick: () => setOnlyOpen((v) => !v), acceso: onlyOpen },
+              { titolo: daDc ? "DC coinvolti" : "Agent coinvolti", valore: statsAssenti ? null : totals?.agents ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+              { titolo: daDc ? "Tipi di evento" : "Regole distinte", valore: statsAssenti ? null : totals?.rules ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+            ]}
+          />
+        </div>
+        <div className="min-w-0 border-l pl-3">
+          <BarraFiltri
+            accesi={filtriAccesi}
+            onApri={() => setFiltriAperti(true)}
+            onTogliTutti={() => { setWindowId("24h"); setSystem(null); setOnlyOpen(false); setCategory(null); }}
+          />
+        </div>
         <div className="ml-auto flex items-center gap-2">
           {lastRefresh ? (
             <span className="text-[13px] text-muted-foreground">
@@ -318,15 +336,6 @@ export function SecurityAlertsClient() {
 
       {/* Scheletro comune (Riccardo, 13/11/2026: «molti livelli di pulsanti sovrapposti»): fila dei numeri, barra dei
           filtri col pannello a destra, poi una sola fila di categorie. Prima erano cinque livelli. */}
-      <FilaNumeri
-        className="shrink-0"
-        voci={[
-          { titolo: "Alert nel periodo", valore: statsAssenti ? null : split.attackTotal, qualifica: windowLabel.toLowerCase(), aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${split.diagnosticTotal} non ostili esclusi` : undefined },
-          { titolo: "Eventi aperti", valore: stats ? stats.openTotal : null, aiuto: "Da prendere in carico. Un clic mostra solo gli aperti, un altro tutti gli stati", onClick: () => setOnlyOpen((v) => !v), acceso: onlyOpen },
-          { titolo: daDc ? "DC coinvolti" : "Agent coinvolti", valore: statsAssenti ? null : totals?.agents ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
-          { titolo: daDc ? "Tipi di evento" : "Regole distinte", valore: statsAssenti ? null : totals?.rules ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
-        ]}
-      />
       {(stats?.unavailable || stats?.syncState.lastError) && (
         <div className="flex flex-wrap items-center gap-2 shrink-0">
         {stats?.unavailable ? (
@@ -342,13 +351,6 @@ export function SecurityAlertsClient() {
         </div>
       )}
 
-      <div className="shrink-0">
-        <BarraFiltri
-          accesi={filtriAccesi}
-          onApri={() => setFiltriAperti(true)}
-          onTogliTutti={() => { setWindowId("24h"); setSystem(null); setOnlyOpen(false); setCategory(null); }}
-        />
-      </div>
       <PannelloFiltri aperto={filtriAperti} onAperto={setFiltriAperti} chiudi="Chiudi">
         <VoceFiltro etichetta="Periodo">
           <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">

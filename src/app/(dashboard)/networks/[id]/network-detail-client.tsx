@@ -1481,15 +1481,9 @@ export function NetworkDetailClient({
             <div>
               <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
             </div>
-          </div>
-
-
-          {/* Barra dei filtri compatta (Riccardo, 12/11/2026: «non usare tutto lo schermo per i filtri… un pannello che
-              si apre a destra»; «i pulsanti diretti sono comodi»). Riga 1: «Filtri» apre il pannello, i filtri accesi sono
-              etichette che si tolgono; riga 2: le categorie madri, un pulsante l'una; la barra delle azioni compare solo
-              con righe spuntate. Via «Spunta le righe di tipo»: si filtra e si spunta la casella in testa. */}
-          <div className="rounded-lg border border-border/80 bg-muted/10 px-2.5 py-2 space-y-2">
-            <div className="flex items-center gap-2 min-w-0">
+            {/* Una barra sola divisa in aree (13/11/2026): a sinistra le azioni sulla rete, a destra filtri, conteggio e
+                cambio di vista. Prima stavano su una riga loro, sotto. */}
+            <div className="ml-auto flex min-w-0 items-center gap-2 border-l pl-3">
               {view === "list" && (
                 <>
                   <Button variant="outline" size="sm" className="shrink-0" onClick={() => setFiltriAperti(true)}>
@@ -1547,7 +1541,14 @@ export function NetworkDetailClient({
                 </div>
               )}
             </div>
+          </div>
 
+
+          {/* Barra dei filtri compatta (Riccardo, 12/11/2026: «non usare tutto lo schermo per i filtri… un pannello che
+              si apre a destra»; «i pulsanti diretti sono comodi»). Riga 1: «Filtri» apre il pannello, i filtri accesi sono
+              etichette che si tolgono; riga 2: le categorie madri, un pulsante l'una; la barra delle azioni compare solo
+              con righe spuntate. Via «Spunta le righe di tipo»: si filtra e si spunta la casella in testa. */}
+          <div className="rounded-lg border border-border/80 bg-muted/10 px-2.5 py-2 space-y-2">
             {view === "list" && (
               <div className="flex items-center gap-1.5 overflow-x-auto" role="group" aria-label="Categoria">
                 <Button variant={filterClassification === "" ? "default" : "outline"} size="sm" className="h-7 shrink-0" onClick={() => setFilterClassification("")}>

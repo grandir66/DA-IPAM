@@ -16,12 +16,13 @@
  * prove girano con un centro finto e contano le chiamate.
  */
 import type Database from "better-sqlite3";
-import type { HostDelCentro, RispostaFamiglie, RispostaStorico, RispostaValori } from "./api";
+import type { HostDelCentro, RispostaFamiglie, RispostaModelli, RispostaStorico, RispostaValori } from "./api";
 import { abbina, type EsitoAbbinamento, type RisultatoAbbinamento } from "./abbinamento";
 import { abbinamentiSalvati, hostIpamPerIp, salvaAbbinamento } from "./abbinamenti-db";
 import {
   leggiCentro,
   leggiFamiglie,
+  leggiModelli,
   leggiStorico,
   leggiValori,
   normalizzaBase,
@@ -417,4 +418,32 @@ export async function leggiMonitoringCentro(d: DipendenzePannello): Promise<Lett
     }
   }
   return { stato: "ok", centro: esito.lettura, famiglie: fam.dati, storico: sto?.dati ?? null };
+}
+
+const cacheModelli = new Map<string, { dati: RispostaModelli; quando: number; firma: string }>();
+
+/**
+ * I modelli adatti a ogni famiglia, dal centro (13/11/2026). Cambiano solo con un rilascio del centro:
+ * si tengono dieci minuti. Un errore dà un elenco vuoto **detto**: chi chiama mostra «elenco non disponibile».
+ */
+export async function leggiModelliCentro(d: DipendenzePannello): Promise<RispostaModelli | null> {
+  const p = prepara(d);
+  if (p.tipo === "fermo") return null;
+  const f = firma(p.cfg);
+  const ora = d.adesso().getTime();
+  const c = cacheModelli.get(d.tenant);
+  if (c && c.firma === f && ora - c.quando < DURATA_STORICO_MS) return c.dati;
+  try {
+    const dati = await leggiModelli(lettore(d, p.cfg, p.chiave));
+    cacheModelli.set(d.tenant, { dati, quando: ora, firma: f });
+    return dati;
+  } catch {
+    return null;
+  }
+}
+
+/** Dopo un cambio di modelli o un apparato aggiunto: la prossima lettura chiede di nuovo al centro. */
+export function dimenticaFamiglie(tenant: string): void {
+  cacheFamiglie.delete(tenant);
+  cacheLetture.delete(tenant);
 }

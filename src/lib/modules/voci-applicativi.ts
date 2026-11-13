@@ -71,10 +71,10 @@ export function vociApplicativi(moduli: readonly ModuloPerMenu[], pannelloZabbix
 export function vociDatiaMon(pannelloZabbix: boolean, amministratore: boolean): VoceApplicativo[] {
   const configurazione: VoceApplicativo = { href: "/settings?tab=moduli#module-zabbix", label: "Configurazione", icona: "Settings" };
   if (!pannelloZabbix) return amministratore ? [configurazione] : [];
-  const v: VoceApplicativo[] = [
-    { href: "/cliente/monitoring", label: "Pagina del cliente", icona: "LayoutDashboard" },
-    { href: "/zabbix", label: "Apparati monitorati", icona: "Activity" },
-  ];
-  if (amministratore) v.push({ href: "/zabbix/aggiungi", label: "Aggiungi apparati", icona: "PlusCircle" }, configurazione);
+  // Dal 13/11/2026 (sera) una pagina sola «Apparati» per chi gestisce: in monitoraggio e da aggiungere, con modelli e
+  // agente. Il pannello tecnico di prima (/zabbix) resta raggiungibile da lì; chi non gestisce vede quello.
+  const v: VoceApplicativo[] = [{ href: "/cliente/monitoring", label: "Pagina del cliente", icona: "LayoutDashboard" }];
+  if (amministratore) v.push({ href: "/zabbix/apparati", label: "Apparati", icona: "Activity" }, configurazione);
+  else v.push({ href: "/zabbix", label: "Apparati monitorati", icona: "Activity" });
   return v;
 }

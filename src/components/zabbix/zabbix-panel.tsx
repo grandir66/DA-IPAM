@@ -321,7 +321,7 @@ export function ZabbixPanel() {
         )}
         {/* «Aggiungi a Zabbix» (13/11/2026): la pagina dice da sé se manca la chiave di scrittura. */}
         {isAdmin && pannello?.stato === "ok" && (
-          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/zabbix/aggiungi" />}>
+          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/zabbix/apparati" />}>
             Aggiungi apparati
           </Button>
         )}

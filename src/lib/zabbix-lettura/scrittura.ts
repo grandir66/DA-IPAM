@@ -107,8 +107,13 @@ export async function mettiInMonitoraggio(
   o: OggettoDaMettere,
   op: OpzioniScrittura = {},
 ): Promise<EsitoScrittura> {
+  return posta(l, PERCORSO_SCRITTURA, corpoScrittura(o, op), EsitoScrittura);
+}
+
+/** Una POST al centro con la chiave di scrittura, letta col suo schema; errori col testo nostro. */
+async function posta<S extends z.ZodType>(l: { base: URL; trasportoPost: TrasportoPost }, percorso: string, corpoInviato: unknown, schema: S): Promise<z.infer<S>> {
   const radice = l.base.pathname.replace(/\/+$/, "");
-  const r = await l.trasportoPost(`${radice}${PERCORSO_SCRITTURA}`, corpoScrittura(o, op));
+  const r = await l.trasportoPost(`${radice}${percorso}`, corpoInviato);
   let corpo: unknown = null;
   try {
     corpo = r.body ? JSON.parse(r.body) : null;
@@ -124,9 +129,58 @@ export async function mettiInMonitoraggio(
       `il centro ha rifiutato l'inserimento (HTTP ${r.status})`;
     throw new ErroreLettura("http", testo, { status: r.status, codice });
   }
-  const p = EsitoScrittura.safeParse(corpo);
+  const p = schema.safeParse(corpo);
   if (!p.success) throw new ErroreLettura("risposta", "risposta del centro di forma inattesa (scrittura)");
   return p.data;
+}
+
+// ── Modelli e agente (13/11/2026, Riccardo: «sì, solo modelli») ──
+
+export const EsitoModelli = z.object({
+  esito: z.enum(["prova", "cambiato", "invariato"]),
+  hostid: z.string(),
+  nome: z.string().catch(""),
+  prima: z.array(z.string()).catch([]),
+  dopo: z.array(z.string()).catch([]),
+  aggiunti: z.array(z.string()).catch([]),
+  tolti: z.array(z.string()).catch([]),
+});
+export type EsitoModelli = z.infer<typeof EsitoModelli>;
+
+export interface CambioModelli {
+  hostid: string;
+  aggiungi?: string[];
+  togli?: string[];
+  prova?: boolean;
+}
+
+/** Aggiunge e toglie modelli a un apparato del cliente. Togliere cancella le misure di quel modello. */
+export async function cambiaModelli(l: { base: URL; trasportoPost: TrasportoPost }, c: CambioModelli): Promise<EsitoModelli> {
+  const corpo: Record<string, unknown> = { hostid: c.hostid };
+  if (c.aggiungi?.length) corpo.aggiungi = c.aggiungi;
+  if (c.togli?.length) corpo.togli = c.togli;
+  if (c.prova) corpo.prova = true;
+  return posta(l, "/api/scrittura/v1/modelli", corpo, EsitoModelli);
+}
+
+export const EsitoAgente = z.object({
+  sistema: z.enum(["windows", "linux"]),
+  hostname: z.string().catch(""),
+  per_tutte: z.boolean().catch(false),
+  server_active: z.string().catch(""),
+  comando: z.string(),
+});
+export type EsitoAgente = z.infer<typeof EsitoAgente>;
+
+/** Il comando dell'agente. Senza `hostname`: uno solo per tutte le macchine (usa il loro nome). */
+export async function comandoAgente(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  a: { sistema: "windows" | "linux"; hostname?: string | null; serverActive?: string | null },
+): Promise<EsitoAgente> {
+  const corpo: Record<string, unknown> = { sistema: a.sistema };
+  if (a.hostname && a.hostname.trim()) corpo.hostname = a.hostname.trim();
+  if (a.serverActive && a.serverActive.trim()) corpo.server_active = a.serverActive.trim();
+  return posta(l, "/api/scrittura/v1/agente", corpo, EsitoAgente);
 }
 
 /** I testi nostri per i codici che solo la scrittura può dare. */
@@ -136,4 +190,9 @@ export const TESTO_SCRITTURA: Readonly<Record<string, string>> = {
   tetto_giornaliero: "il centro ha già accettato il massimo di oggetti per oggi: riprova domani",
   troppe_richieste: "troppe richieste al centro: aspetta qualche secondo",
   parametri: "il centro ha rifiutato i dati dell'oggetto",
+  apparato_sconosciuto: "il centro non trova questo apparato fra quelli del cliente",
+  senza_modelli: "un apparato deve restare con almeno un modello",
+  modello_assente: "in Zabbix non c'è questo modello",
+  zabbix_rifiuta: "Zabbix ha rifiutato il cambio",
+  proxy_sconosciuto: "il centro non sa a quale indirizzo l'agente deve mandare i dati",
 };

@@ -15,7 +15,7 @@ import { z } from "zod";
  * Le rotte della v1, una per una: nessun prefisso libero. `famiglie` e `storico` sono
  * del 13/11/2026, per la pagina DATIA MONITORING della vista cliente.
  */
-export const ROTTE_LETTURA = ["cliente", "host", "problemi", "valori", "famiglie", "storico"] as const;
+export const ROTTE_LETTURA = ["cliente", "host", "problemi", "valori", "famiglie", "storico", "modelli"] as const;
 export type RottaLettura = (typeof ROTTE_LETTURA)[number];
 
 /** Le sette chiavi ammesse dall'API (`CHIAVI_LETTURA` lato DA-Zabbix): niente altro in v1. */
@@ -150,6 +150,9 @@ export const OggettoDiFamiglia = z.object({
   misure_configurate: z.number().int().nonnegative().catch(0),
   misure_vive: z.number().int().nonnegative().catch(0),
   misure: z.array(MisuraDelCentro).catch([]),
+  /** I modelli collegati e lo stato dell'agente (13/11/2026). Assenti su un centro vecchio. */
+  modelli: z.array(z.string()).catch([]),
+  agente: z.enum(["si", "no", "non_so", "non_serve"]).catch("non_so"),
 });
 export type OggettoDiFamiglia = z.infer<typeof OggettoDiFamiglia>;
 
@@ -190,6 +193,12 @@ export const RispostaStorico = Testa.extend({
   tronca: z.boolean().catch(false),
 });
 export type RispostaStorico = z.infer<typeof RispostaStorico>;
+
+/** I modelli che la chiave di scrittura può collegare, per famiglia (13/11/2026). */
+export const RispostaModelli = Testa.extend({
+  famiglie: z.record(z.string(), z.array(z.string())).catch({}),
+});
+export type RispostaModelli = z.infer<typeof RispostaModelli>;
 
 /** Corpo d'errore dell'API (§3): `{"errore": "...", "codice": "..."}`. */
 export const ErroreApi = z.object({

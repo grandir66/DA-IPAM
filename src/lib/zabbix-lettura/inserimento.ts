@@ -6,7 +6,17 @@
 import type Database from "better-sqlite3";
 import { normalizzaBase } from "./client";
 import { chiaveScrittura, leggiConfigLettura } from "./config";
-import { mettiInMonitoraggio, type EsitoScrittura, type OggettoDaMettere, type OpzioniScrittura } from "./scrittura";
+import {
+  cambiaModelli,
+  comandoAgente,
+  mettiInMonitoraggio,
+  type CambioModelli,
+  type EsitoAgente,
+  type EsitoModelli,
+  type EsitoScrittura,
+  type OggettoDaMettere,
+  type OpzioniScrittura,
+} from "./scrittura";
 import { ErroreLettura, type TrasportoPost } from "./trasporto";
 
 export type EsitoInserimento =
@@ -95,4 +105,35 @@ export async function inserisciHost(
     const testo = e instanceof ErroreLettura ? e.message : "il centro non ha risposto";
     return { ok: false, status: 502, errore: testo.charAt(0).toUpperCase() + testo.slice(1) };
   }
+}
+
+type Esito<T> = { ok: true; esito: T } | { ok: false; status: 400 | 404 | 409 | 502; errore: string };
+
+/** Chiama il centro con la chiave di scrittura; i guasti diventano un testo da mostrare. */
+async function colCentro<T>(d: DipendenzeInserimento, fai: (l: { base: URL; trasportoPost: TrasportoPost }) => Promise<T>): Promise<Esito<T>> {
+  const motivo = perchéNonSiPuò(d);
+  if (motivo) return { ok: false, status: 409, errore: motivo };
+  const cfg = leggiConfigLettura(d.db)!;
+  const chiave = chiaveScrittura(d.db)!;
+  const base = new URL(normalizzaBase(cfg.baseUrl));
+  try {
+    return { ok: true, esito: await fai({ base, trasportoPost: d.trasportoPost(base, chiave, cfg.impronta) }) };
+  } catch (e) {
+    const testo = e instanceof ErroreLettura ? e.message : "il centro non ha risposto";
+    const status = e instanceof ErroreLettura && e.dettagli.status === 404 ? 404 : e instanceof ErroreLettura && e.dettagli.status === 409 ? 409 : 502;
+    return { ok: false, status, errore: testo.charAt(0).toUpperCase() + testo.slice(1) };
+  }
+}
+
+/** Aggiunge e toglie modelli a un apparato di Zabbix (13/11/2026). */
+export function cambiaModelliApparato(d: DipendenzeInserimento, c: CambioModelli): Promise<Esito<EsitoModelli>> {
+  return colCentro(d, (l) => cambiaModelli(l, c));
+}
+
+/** Il comando dell'agente da lanciare a mano sulla macchina (13/11/2026). */
+export function comandoAgenteApparato(
+  d: DipendenzeInserimento,
+  a: { sistema: "windows" | "linux"; hostname?: string | null; serverActive?: string | null },
+): Promise<Esito<EsitoAgente>> {
+  return colCentro(d, (l) => comandoAgente(l, a));
 }

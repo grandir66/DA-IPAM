@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — DatIA Mon: pagina «Apparati» con modelli e agente
+
+### Aggiunto
+- **Una pagina sola «Apparati»** (DatIA Mon → Apparati, solo amministratori), al posto di «Apparati monitorati» e «Aggiungi apparati». Perché: Riccardo vuole «gestire in modo accorpato i device, il template o i template associati, e per Windows e Linux la modalità di installazione dell'agent». Elenco unico per famiglia, con gli apparati in Zabbix e quelli che DA-IPAM conosce e Zabbix no; schede per stato, filtro, selezione multipla.
+- **Modelli**: per ogni apparato quelli collegati; su più apparati insieme «Aggiungi un modello» e «Togli un modello», scegliendo fra quelli adatti alla famiglia. Sempre prova e poi conferma; togliere cancella le misure di quel modello e lo si dice. Il centro accetta solo modelli del suo elenco e solo sugli apparati del cliente (Riccardo, 13/11: «sì, solo modelli»).
+- **Agente**: stato per apparato (attivo, non manda dati, da installare) e «Prepara l'agente» con tre modi: un comando per macchina; un comando solo per tutte le Windows del dominio (GPO o Intune); un comando solo per tutti i Linux. Il comando unico usa il nome della macchina: la finestra elenca i nomi in Zabbix da controllare. L'installazione la fa sempre una persona.
+- Il pannello tecnico di prima resta, raggiungibile da «Vista tecnica e abbinamenti».
+
 ## 2026-11-13 — Tempo di soluzione: la mediana
 
 ### Cambiato

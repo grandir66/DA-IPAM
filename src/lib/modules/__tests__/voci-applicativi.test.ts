@@ -47,7 +47,9 @@ test("un modulo spento non porta la sua console anche se l'indirizzo c'è", () =
 
 test("DATIA MON (13/11/2026): il monitoraggio ha il suo gruppo, e Zabbix non sta più in Applicativi", () => {
   assert.ok(!vociApplicativi([], true).some((v) => v.href === "/zabbix"));
-  assert.deepEqual(vociDatiaMon(true, true).map((v) => v.label), ["Pagina del cliente", "Apparati monitorati", "Aggiungi apparati", "Configurazione"]);
+  assert.deepEqual(vociDatiaMon(true, true).map((v) => [v.label, v.href]), [
+    ["Pagina del cliente", "/cliente/monitoring"], ["Apparati", "/zabbix/apparati"], ["Configurazione", "/settings?tab=moduli#module-zabbix"],
+  ]);
   assert.deepEqual(vociDatiaMon(true, false).map((v) => v.href), ["/cliente/monitoring", "/zabbix"]);
   // Spento o non configurato: all'amministratore resta la configurazione, agli altri niente.
   assert.deepEqual(vociDatiaMon(false, true).map((v) => v.label), ["Configurazione"]);

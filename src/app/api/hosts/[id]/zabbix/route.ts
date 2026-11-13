@@ -10,6 +10,7 @@ import { leggiConfigLettura } from "@/lib/zabbix-lettura/config";
 import { inserisciHost, perchéNonSiPuò } from "@/lib/zabbix-lettura/inserimento";
 import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
 import { trasportoTlsPost } from "@/lib/zabbix-lettura/trasporto";
+import { dimenticaFamiglie } from "@/lib/zabbix-lettura/servizio";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const authCheck = await requireAuth();
@@ -73,6 +74,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       { prova: corpo.prova === true, forza: corpo.forza === true, serverActive },
     );
     if (!r.ok) return NextResponse.json({ error: r.errore }, { status: r.status, headers: { "Cache-Control": "no-store" } });
+    if (r.esito.esito === "inserito" || r.esito.esito === "serve_agente") dimenticaFamiglie(dipendenzeReali().tenant);
     return NextResponse.json(r.esito, { headers: { "Cache-Control": "no-store" } });
   });
 }

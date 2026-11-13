@@ -17,6 +17,7 @@ import {
   RispostaCliente,
   RispostaFamiglie,
   RispostaHost,
+  RispostaModelli,
   RispostaProblemi,
   RispostaStorico,
   RispostaValori,
@@ -152,4 +153,9 @@ export async function leggiFamiglie(l: Lettore): Promise<RispostaFamiglie> {
 /** Gli ultimi 30 giorni per famiglia; `gravitaMin` è la soglia dei problemi contati in `minuti`. */
 export async function leggiStorico(l: Lettore, gravitaMin: number): Promise<RispostaStorico> {
   return leggiRotta(l, "storico", { gravita_min: String(Math.max(0, Math.min(5, Math.floor(gravitaMin)))) }, RispostaStorico);
+}
+
+/** I modelli adatti a ogni famiglia (13/11/2026). */
+export async function leggiModelli(l: Lettore): Promise<RispostaModelli> {
+  return leggiRotta(l, "modelli", {}, RispostaModelli);
 }

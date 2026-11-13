@@ -1,6 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 import { LoadError } from "@/components/shared/load-error";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { BarraFiltri, PannelloFiltri, VoceFiltro, type FiltroAcceso } from "@/components/shared/barra-filtri";
 import type { NumeroFila } from "@/components/shared/console";
 import { cn } from "@/lib/utils";
@@ -155,6 +156,8 @@ export function SecurityAlertsClient() {
   const [system, setSystem] = useState<string | null>(null);
   const [filtriAperti, setFiltriAperti] = useState(false);
   const [mostraVuote, setMostraVuote] = useState(false);
+  /** L'evento aperto nel pannello di dettaglio (Riccardo, 13/11/2026: «la maschera degli alert dovrebbe fornire più dettagli cliccando»). */
+  const [aperto, setAperto] = useState<AlertEventDto | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [classifica, setClassifica] = useState<Classifica>("account");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -396,6 +399,56 @@ export function SecurityAlertsClient() {
         </div>
       )}
 
+      <Sheet open={aperto !== null} onOpenChange={(o) => { if (!o) setAperto(null); }}>
+        <SheetContent side="right" className="overflow-y-auto sm:max-w-xl" showCloseButton>
+          {aperto && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{aperto.rule_description ?? "Evento"}</SheetTitle>
+              </SheetHeader>
+              <div className="flex flex-col gap-4 px-4 pb-4 text-sm">
+                <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1">
+                  <dt className="text-muted-foreground">Categoria</dt>
+                  <dd>{categories.find((c) => c.id === aperto.category)?.labelIt ?? aperto.category}{aperto.diagnostic ? " · diagnostica" : ""}</dd>
+                  <dt className="text-muted-foreground">Regola</dt>
+                  <dd>{aperto.rule_id ?? "—"} · livello {aperto.rule_level}</dd>
+                  <dt className="text-muted-foreground">Dove</dt>
+                  <dd>{aperto.agent_name ?? "—"}</dd>
+                  {aperto.event_id && (<><dt className="text-muted-foreground">Event ID</dt><dd>{aperto.event_id}</dd></>)}
+                  {aperto.target_user && (<><dt className="text-muted-foreground">Utente</dt><dd className="break-words">{aperto.target_user}</dd></>)}
+                  {aperto.source_ip && (<><dt className="text-muted-foreground">Provenienza</dt><dd className="break-words font-mono">{aperto.source_ip}</dd></>)}
+                  <dt className="text-muted-foreground">Quante volte</dt>
+                  <dd className="tabular-nums">{numero(aperto.occurrence_count)}</dd>
+                  <dt className="text-muted-foreground">Prima volta</dt>
+                  <dd>{formatDate(aperto.first_seen_at)}</dd>
+                  <dt className="text-muted-foreground">Ultima volta</dt>
+                  <dd>{formatDate(aperto.last_seen_at)}</dd>
+                  <dt className="text-muted-foreground">Stato</dt>
+                  <dd>{aperto.acknowledged ? `preso in carico${aperto.acknowledged_by ? ` da ${aperto.acknowledged_by}` : ""}` : "aperto"}</dd>
+                </dl>
+                <div>
+                  <p className="mb-1 font-semibold">Dall&apos;evento originale</p>
+                  {dettagliDi(aperto).length === 0 ? (
+                    <p className="text-[13px] text-muted-foreground">
+                      Questo evento non ha ancora i dettagli: è nato prima che DA-IPAM li salvasse. Li prende da solo alla sua prossima ripetizione (gli alert si rileggono ogni 15 minuti).
+                    </p>
+                  ) : (
+                    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-[13px]">
+                      {dettagliDi(aperto).map((d) => (
+                        <Fragment key={d.nome}>
+                          <dt className="text-muted-foreground">{d.nome}</dt>
+                          <dd className="break-words">{d.valore}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
+                  )}
+                  <p className="mt-2 text-[13px] text-muted-foreground">Sono i dati dell&apos;ultima volta che l&apos;evento si è ripetuto.</p>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
       <PannelloFiltri aperto={filtriAperti} onAperto={setFiltriAperti} chiudi="Chiudi">
         <VoceFiltro etichetta="Periodo">
           <select value={windowId} onChange={(e) => setWindowId(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">
@@ -480,7 +533,16 @@ export function SecurityAlertsClient() {
                   {events.map((e) => {
                     const lv = STILE_STATO[tonoLivello(e.rule_level)];
                     return (
-                      <TableRow key={e.id} className={e.acknowledged ? "opacity-60" : ""}>
+                      <TableRow
+                        key={e.id}
+                        className={cn("cursor-pointer hover:bg-muted/50", e.acknowledged && "opacity-60")}
+                        title="Clic per vedere tutti i dettagli dell'evento"
+                        onClick={(ev) => {
+                          // Un clic su un pulsante della riga (presa in carico) non apre il dettaglio.
+                          if ((ev.target as HTMLElement).closest("button, a")) return;
+                          setAperto(e);
+                        }}
+                      >
                         <TableCell>
                           <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 text-[13px] font-semibold tabular-nums ${lv.classi}`}>
                             <span aria-hidden>{lv.segno}</span>
@@ -503,25 +565,9 @@ export function SecurityAlertsClient() {
                           {e.event_id ? <div>Event ID {e.event_id}</div> : null}
                           {e.target_user ? <div>Utente: {e.target_user}</div> : null}
                           {e.source_ip ? <div>IP: {e.source_ip}</div> : null}
-                          {(() => {
-                            /* I dettagli veri (Riccardo, 13/11/2026: «non vengono visualizzati i dettagli reali»):
-                               chi l'ha fatto, che cosa è cambiato, il codice d'errore. Chiusi di serie, si aprono con un clic. */
-                            const dett = dettagliDi(e);
-                            if (dett.length === 0) return null;
-                            return (
-                              <details className="mt-1">
-                                <summary className="cursor-pointer text-[13px] underline decoration-dotted underline-offset-2">Tutti i dettagli ({dett.length})</summary>
-                                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[13px]">
-                                  {dett.map((d) => (
-                                    <Fragment key={d.nome}>
-                                      <dt className="text-muted-foreground">{d.nome}</dt>
-                                      <dd className="break-words">{d.valore}</dd>
-                                    </Fragment>
-                                  ))}
-                                </dl>
-                              </details>
-                            );
-                          })()}
+                          <div className="text-muted-foreground underline decoration-dotted underline-offset-2">
+                            {dettagliDi(e).length > 0 ? `Altri ${dettagliDi(e).length} dettagli ›` : "Dettagli ›"}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{numero(e.occurrence_count)}</TableCell>
                         <TableCell className="text-[13px]">{formatDate(e.last_seen_at)}</TableCell>

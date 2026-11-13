@@ -21,7 +21,8 @@ export interface ModuloPerMenu {
 
 export type IconaVoce =
   | "ShieldCheck" | "Bug" | "History"
-  | "MonitorSmartphone" | "Activity" | "ExternalLink";
+  | "MonitorSmartphone" | "Activity" | "ExternalLink"
+  | "Settings" | "LayoutDashboard" | "PlusCircle";
 
 export interface VoceApplicativo {
   href: string;
@@ -46,10 +47,9 @@ export function vociApplicativi(moduli: readonly ModuloPerMenu[], pannelloZabbix
   const v: VoceApplicativo[] = [];
   if (acceso("patch_management")) v.push({ href: "/patch-management", label: "Patch Management", icona: "ShieldCheck" });
   if (acceso("meshcentral")) v.push({ href: "/rmm", label: "Controllo remoto", icona: "MonitorSmartphone" });
-  if (pannelloZabbix) v.push({ href: "/zabbix", label: "Zabbix", icona: "Activity" });
-  // DATIA MONITORING (13/11/2026): la pagina del cliente sui dati di Zabbix. Sta nella vista cliente, ma senza
-  // una voce qui l'amministratore non la trovava (Riccardo: «non ci sono UI dedicate al monitoraggio»).
-  if (pannelloZabbix) v.push({ href: "/cliente/monitoring", label: "DATIA MONITORING", icona: "Activity" });
+  // Zabbix non sta più qui: dal 13/11/2026 ha il suo gruppo «DATIA MON» (`vociDatiaMon`). Il parametro resta per
+  // non cambiare chi chiama.
+  void pannelloZabbix;
 
   const esterne = [
     ...console("meshcentral", "MeshCentral"),
@@ -58,4 +58,23 @@ export function vociApplicativi(moduli: readonly ModuloPerMenu[], pannelloZabbix
   ];
   if (esterne.length > 0) esterne[0] = { ...esterne[0], divider: "Console esterne" };
   return [...v, ...esterne];
+}
+
+/**
+ * Il gruppo «DATIA MON» del menu (Riccardo, 13/11/2026: «una voce di menu dedicata al monitoraggio, al posto
+ * di Zabbix dentro Applicativi, con le impostazioni, la pagina di configurazione e la dashboard per il cliente»).
+ *
+ * Con il pannello acceso: la pagina che vede il cliente, gli apparati letti da Zabbix, l'aggiunta di apparati e
+ * la configurazione. Senza (non configurato o spento) resta la sola configurazione, e solo per chi la può fare:
+ * così il monitoraggio si trova anche prima di averlo acceso.
+ */
+export function vociDatiaMon(pannelloZabbix: boolean, amministratore: boolean): VoceApplicativo[] {
+  const configurazione: VoceApplicativo = { href: "/settings?tab=moduli#module-zabbix", label: "Configurazione", icona: "Settings" };
+  if (!pannelloZabbix) return amministratore ? [configurazione] : [];
+  const v: VoceApplicativo[] = [
+    { href: "/cliente/monitoring", label: "Pagina del cliente", icona: "LayoutDashboard" },
+    { href: "/zabbix", label: "Apparati monitorati", icona: "Activity" },
+  ];
+  if (amministratore) v.push({ href: "/zabbix/aggiungi", label: "Aggiungi apparati", icona: "PlusCircle" }, configurazione);
+  return v;
 }

@@ -52,12 +52,13 @@ import {
   type LucideIcon,
   SlidersHorizontal, CalendarClock, FileCode2,
   Plug,
+  PlusCircle, Settings as IconaImpostazioni,
 } from "lucide-react";
 import { voceAccesaDallaSezione } from "@/lib/menu/sezioni";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
-import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
+import { vociApplicativi, vociDatiaMon, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
 import { motivoBlocco, presenzeDaModuli, type Presenze, type VoceCondizionata } from "@/lib/modules/voci-condizionate";
 import { Button } from "@/components/ui/button";
 
@@ -79,6 +80,7 @@ type SubItem = {
 
 const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
   ShieldCheck, Bug, History, MonitorSmartphone, Activity, ExternalLink,
+  Settings: IconaImpostazioni, LayoutDashboard, PlusCircle,
 };
 
 const inventorySubItems: readonly SubItem[] = [
@@ -472,8 +474,14 @@ export function Sidebar() {
     () => vociApplicativi(moduliMenu, pannelloZabbix).map((v) => ({ href: v.href, label: v.label, icon: ICONE_APPLICATIVI[v.icona], divider: v.divider, esterno: v.esterno })),
     [moduliMenu, pannelloZabbix],
   );
+  // DATIA MON (Riccardo, 13/11/2026): il monitoraggio ha il suo gruppo, al posto di Zabbix dentro Applicativi.
+  const datiaMonItems = useMemo<SubItem[]>(
+    () => vociDatiaMon(pannelloZabbix, isAdmin).map((v) => ({ href: v.href, label: v.label, icon: ICONE_APPLICATIVI[v.icona] })),
+    [pannelloZabbix, isAdmin],
+  );
+  const [datiaMonOpen, setDatiaMonOpen] = useState(() => ["/zabbix", "/cliente/monitoring"].some((h) => pathname.startsWith(h)));
   const [applicativiOpen, setApplicativiOpen] = useState(() =>
-    ["/patch-management", "/rmm", "/zabbix"].some((h) => pathname.startsWith(h))
+    ["/patch-management", "/rmm"].some((h) => pathname.startsWith(h))
   );
 
   useEffect(() => {
@@ -617,6 +625,10 @@ export function Sidebar() {
 
         {/* Sicurezza (Riccardo, 19/10 sera): Vulnerabilità, Alert sicurezza, Health AD */}
         <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        {/* DATIA MON: monitoraggio (Zabbix), pagina del cliente, aggiunta apparati e configurazione. */}
+        {datiaMonItems.length > 0 && (
+          <NavGroup icon={Activity} label="DATIA MON" items={datiaMonItems} open={datiaMonOpen} setOpen={setDatiaMonOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        )}
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
         <NavGroup icon={Package} label="Inventario" bloccato={motivoBlocco("inventario", presenze)} items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 

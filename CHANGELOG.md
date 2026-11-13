@@ -7,7 +7,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## 2026-11-13 — DATIA MONITORING raggiungibile dal menu
 
 ### Corretto
-- **DATIA MONITORING ha una voce nel menu** (Applicativi, sotto Zabbix) e un pulsante nella pagina Zabbix. Perché: la pagina stava solo nella vista cliente, e Riccardo dall'interfaccia normale non la trovava («non ci sono UI dedicate al monitoraggio»). Compare alle stesse condizioni della voce Zabbix: pannello acquistato, configurato e acceso.
+- **Gruppo di menu «DATIA MON»** al posto di Zabbix dentro Applicativi (Riccardo, 13/11: «una voce di menu dedicata al monitoraggio… con le impostazioni di Zabbix, la pagina di configurazione e anche la dashboard per il cliente»). Dentro: Pagina del cliente, Apparati monitorati (il pannello Zabbix), Aggiungi apparati, Configurazione. Con il pannello spento o non configurato all'amministratore resta la sola Configurazione, così il monitoraggio si trova anche prima di accenderlo.
+- Nella pagina Zabbix c'è anche il pulsante «DATIA MONITORING» verso la pagina del cliente. Perché: la pagina stava solo nella vista cliente, e Riccardo dall'interfaccia normale non la trovava («non ci sono UI dedicate al monitoraggio»). Compare alle stesse condizioni della voce Zabbix: pannello acquistato, configurato e acceso.
 
 ## 2026-11-13 — «Metti in monitoraggio»: apparati in Zabbix da DA-IPAM
 

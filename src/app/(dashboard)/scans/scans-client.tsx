@@ -14,6 +14,7 @@ import {
   Vuoto,
   InCorso,
   Etichetta,
+  SchedePagina,
 } from "@/components/shared/console";
 import type { CautelaRete } from "@/lib/vuln/cautela-interna";
 import { fetchJson } from "@/lib/fetch-json";
@@ -312,21 +313,17 @@ export function ScansClient() {
         }
       />
 
-      <div>
-        <Pannello numero={1} titolo="Tipo" sottotitolo="Cosa fa questo giro">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {TIPI_GIRO.map((t) => (
-              <VoceSelezionabile key={t} scelta={tipo === t} onScegli={() => setTipo(t)}>
-                <p className="font-semibold">{TIPI_GIRO_UI[t].nome}</p>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">{TIPI_GIRO_UI[t].riga}</p>
-              </VoceSelezionabile>
-            ))}
-          </div>
-        </Pannello>
-      </div>
+      {/* Il tipo di giro: schede nella forma unica, non più un pannello di riquadri (Riccardo, 13/11/2026: «menù in
+          alto e pulsanti sotto»). La riga che dice cosa fa il tipo scelto sta sotto la fila. */}
+      <SchedePagina
+        etichetta="Tipo di giro"
+        scelta={tipo}
+        onScegli={setTipo}
+        voci={TIPI_GIRO.map((t) => ({ valore: t, titolo: TIPI_GIRO_UI[t].nome, descrizione: TIPI_GIRO_UI[t].riga }))}
+      />
 
       {serveRete && (
-        <Pannello numero={2} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
+        <Pannello numero={1} titolo="Reti" conteggio={reti.length} sottotitolo="Solo le reti già in inventario">
           {loading ? (
             <p className="p-3 text-[13px] text-muted-foreground">Caricamento…</p>
           ) : reti.length === 0 ? (
@@ -375,7 +372,7 @@ export function ScansClient() {
       )}
 
       {haProfilo && (
-          <Pannello numero={3} titolo="Profilo" sottotitolo="Quante porte e a che ritmo">
+          <Pannello numero={2} titolo="Profilo" sottotitolo="Quante porte e a che ritmo">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               {PROFILI_GIRO.map((p) => (
                 <VoceSelezionabile
@@ -408,7 +405,7 @@ export function ScansClient() {
       {/* Discovery «Su misura»: targets e parametri (il motore li accetta dalla v0.9.1079). */}
       {haProfilo && (
         <Pannello
-          numero={4}
+          numero={3}
           titolo="Targets e parametri"
           sottotitolo={suMisura ? "Tutti i parametri sono tuoi. Vuoto = valore del motore" : "Porte e ritmo vengono dal profilo. Scegli «Su misura» per cambiarli"}
         >
@@ -559,7 +556,7 @@ export function ScansClient() {
       )}
 
       {tipo === "controlli" && (
-        <Pannello numero={3} titolo="Solo controlli" sottotitolo="Lavora sugli host e sui servizi già in inventario per la rete">
+        <Pannello numero={2} titolo="Solo controlli" sottotitolo="Lavora sugli host e sui servizi già in inventario per la rete">
           <div className="space-y-3 p-1 text-[13px]">
             <p>
               Non scopre host e non cerca porte: ripassa i servizi già noti e rifà riconoscimento, identità e controlli.
@@ -620,7 +617,7 @@ export function ScansClient() {
       {/* Segmentazione: da quale rete si manda e quali raggiungere, più le tecniche (ancora off). */}
       {tipo === "segmentazione" && (
         <>
-          <Pannello numero={2} titolo="Da" sottotitolo="La rete da cui mandi: ogni prova esce da questa interfaccia">
+          <Pannello numero={1} titolo="Da" sottotitolo="La rete da cui mandi: ogni prova esce da questa interfaccia">
             <div className="grid gap-2 p-1 sm:grid-cols-2 xl:grid-cols-3">
               {reti.map((r) => (
                 <VoceSelezionabile key={r.id} scelta={sourceNet === r.id} onScegli={() => setSourceNet(r.id)}>
@@ -631,7 +628,7 @@ export function ScansClient() {
             </div>
           </Pannello>
           <Pannello
-            numero={3}
+            numero={2}
             titolo="Reti da raggiungere"
             conteggio={retiBersaglio.length}
             sottotitolo="Vuoto = tutte le altre. Rigioca i servizi già noti, nessuna nuova scansione"

@@ -18,21 +18,22 @@ import {
   Link,
   Monitor,
   Shield,
-  Clock,
   CheckCircle,
   XCircle,
   Loader2,
   Wifi,
   Pencil,
+  MoreHorizontal,
 } from "lucide-react";
-import NextLink from "next/link";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { FilaNumeri } from "@/components/shared/console";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ScorrimentoTabella } from "@/components/ui/table";
@@ -569,29 +570,22 @@ function PaginaActiveDirectory() {
           Active Directory
         </h1>
         <div className="flex items-center gap-2">
-          {/* 04/11/2026: tutto ciò che serve in una pagina sola, diritti, script e configurazione degli eventi */}
-          <Button render={<NextLink href="/active-directory/cosa-serve" />} nativeButton={false}>
-            <ListChecks className="w-4 h-4 mr-2" />
-            Cosa serve
-          </Button>
-          {/* v0.2.657: guida configurazione DC (LDAPS, WinRM, DHCP, svc account) */}
-          <Button
-            variant="outline"
-            onClick={() => { setAdGuideTab("prereq"); setAdGuideOpen(true); }}
-            title="Guida configurazione Domain Controller (LDAPS, WinRM, DHCP, service account)"
-          >
-            <BookOpen className="w-4 h-4 mr-2" />
-            Guida DC
-          </Button>
-          {/* 29/10/2026: audit dei DC per «Sicurezza del dominio», con lo script che lo applica */}
-          <Button
-            variant="outline"
-            onClick={() => { setAdGuideTab("audit"); setAdGuideOpen(true); }}
-            title="Voci della GPO di audit in inglese e italiano, e lo script Configura-Audit-DC.ps1"
-          >
-            <ShieldCheck className="w-4 h-4 mr-2" />
-            Audit dei DC
-          </Button>
+          {/* Una riga di azioni (Riccardo, 13/11/2026): le tre guide stanno in un menu solo. «Cosa serve» è la pagina
+              con diritti, script e configurazione degli eventi (04/11); «Guida DC» e «Audit dei DC» aprono la finestra. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline"><BookOpen className="w-4 h-4 mr-2" />Guide</Button>} />
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => { window.location.href = "/active-directory/cosa-serve"; }}>
+                <ListChecks className="w-4 h-4 mr-2" />Cosa serve
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setAdGuideTab("prereq"); setAdGuideOpen(true); }}>
+                <BookOpen className="w-4 h-4 mr-2" />Guida DC (LDAPS, WinRM, DHCP)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setAdGuideTab("audit"); setAdGuideOpen(true); }}>
+                <ShieldCheck className="w-4 h-4 mr-2" />Audit dei DC
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button><Plus className="w-4 h-4 mr-2" />Nuova integrazione</Button>} />
           <DialogContent className="sm:max-w-[540px]">
@@ -881,27 +875,6 @@ function PaginaActiveDirectory() {
                   {selectedIntegration.enabled ? "✓ Abilitata" : "– Disabilitata"}
                 </label>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openEditDialog(selectedIntegration)}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Modifica
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleTest(selectedIntegration.id)}
-                  disabled={testing === selectedIntegration.id}
-                >
-                  {testing === selectedIntegration.id ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <TestTube className="w-4 h-4 mr-2" />
-                  )}
-                  Test
-                </Button>
-                <Button
                   size="sm"
                   onClick={() => handleSync(selectedIntegration.id)}
                   disabled={syncing === selectedIntegration.id}
@@ -913,84 +886,37 @@ function PaginaActiveDirectory() {
                   )}
                   Sincronizza
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDelete(selectedIntegration.id)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Altre azioni sull'integrazione" title="Modifica, prova, elimina"><MoreHorizontal className="w-4 h-4" /></Button>} />
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => openEditDialog(selectedIntegration)}>
+                      <Pencil className="w-4 h-4 mr-2" />Modifica
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={testing === selectedIntegration.id} onClick={() => handleTest(selectedIntegration.id)}>
+                      <TestTube className="w-4 h-4 mr-2" />{testing === selectedIntegration.id ? "Prova in corso…" : "Prova la connessione"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleDelete(selectedIntegration.id)}>
+                      <Trash2 className="w-4 h-4 mr-2" />Elimina l&apos;integrazione
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </div>
 
           {selectedIntegration && (
             <>
-              <div className="grid grid-cols-5 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Computer</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold flex items-center gap-2">
-                      <Monitor className="w-5 h-5 text-blue-500" />
-                      {selectedIntegration.computers_count}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Utenti</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold flex items-center gap-2">
-                      <Users className="w-5 h-5 text-green-500" />
-                      {selectedIntegration.users_count}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Gruppi</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-amber-500" />
-                      {selectedIntegration.groups_count}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">DHCP Lease</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold flex items-center gap-2">
-                      <Wifi className="w-5 h-5 text-purple-500" />
-                      {selectedIntegration.dhcp_leases_count ?? 0}
-                    </div>
-                    {!selectedIntegration.winrm_credential_id && (
-                      <p className="text-[10px] text-muted-foreground mt-1">WinRM non configurato</p>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Ultima sync</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-sm font-medium flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      {formatDate(selectedIntegration.last_sync_at)}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 truncate" title={selectedIntegration.last_sync_status ?? ""}>
-                      {selectedIntegration.last_sync_status ?? "—"}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* I conteggi di computer, utenti, gruppi e lease stanno sulle schede qui sotto: una cosa si dice una volta.
+                  Qui resta quello che le schede non dicono (13/11/2026). */}
+              <FilaNumeri
+                voci={[
+                  { titolo: "Ultima sincronizzazione", valore: formatDate(selectedIntegration.last_sync_at), aiuto: selectedIntegration.last_sync_status ?? undefined },
+                  ...(!selectedIntegration.winrm_credential_id ? [{ titolo: "Lease DHCP", valore: null, qualifica: "WinRM non configurato" }] : []),
+                ]}
+              />
 
-              <Tabs value={scheda} onValueChange={(v) => setScheda(String(v))} className="mt-6">
+              <Tabs value={scheda} onValueChange={(v) => setScheda(String(v))} className="mt-3">
                 <TabsList>
                   <TabsTrigger value="computers" className="flex items-center gap-2">
                     <Monitor className="w-4 h-4" />

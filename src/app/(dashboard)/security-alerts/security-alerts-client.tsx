@@ -2,9 +2,9 @@
 import { parseDbDate } from "@/lib/db-date";
 import { LoadError } from "@/components/shared/load-error";
 import { BarraFiltri, PannelloFiltri, VoceFiltro, type FiltroAcceso } from "@/components/shared/barra-filtri";
-import { FilaNumeri } from "@/components/shared/console";
+import type { NumeroFila } from "@/components/shared/console";
 import { cn } from "@/lib/utils";
-import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
+import { SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -76,6 +76,20 @@ function dettagliDi(e: AlertEventDto): Array<{ nome: string; valore: string }> {
   }
 }
 
+/** Nomi corti delle categorie per le schede (13/11/2026: quelli interi facevano scorrere la fila); l'intero resta nel `title`. */
+const NOME_CORTO: Record<string, string> = {
+  ransomware: "Ransomware",
+  auth_failure: "Autenticazione",
+  privileged_change: "Account privilegiati",
+  cloud_auth_failure: "Cloud M365",
+  network_auth_failure: "Apparati e VPN",
+  log_tampering: "Registri manomessi",
+  domain_attack: "Attacchi al dominio",
+  malware: "Malware sui DC",
+  agent_health: "Agent",
+  self_probe: "Nostre sonde",
+};
+
 const ALERTS_LIMIT = 200;
 
 interface AlertsResponse {
@@ -140,6 +154,7 @@ export function SecurityAlertsClient() {
   const [windowId, setWindowId] = useState("24h");
   const [system, setSystem] = useState<string | null>(null);
   const [filtriAperti, setFiltriAperti] = useState(false);
+  const [mostraVuote, setMostraVuote] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [classifica, setClassifica] = useState<Classifica>("account");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -295,6 +310,14 @@ export function SecurityAlertsClient() {
   const motivoAssenti = statsError ?? stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
   // Senza Wazuh i dati vengono dal registro Sicurezza dei DC (29/10): la pagina lo dice e chiama le cose col loro nome.
   const daDc = stats?.fonte === "dc";
+  const NUMERI: NumeroFila[] = [
+      { titolo: "Alert nel periodo", valore: statsAssenti ? null : split.attackTotal, qualifica: windowLabel.toLowerCase(), aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${split.diagnosticTotal} non ostili esclusi` : undefined },
+      { titolo: "Eventi aperti", valore: stats ? stats.openTotal : null, aiuto: "Da prendere in carico. Un clic mostra solo gli aperti, un altro tutti gli stati", onClick: () => setOnlyOpen((v) => !v), acceso: onlyOpen },
+      { titolo: daDc ? "DC coinvolti" : "Agent coinvolti", valore: statsAssenti ? null : totals?.agents ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+      { titolo: daDc ? "Tipi di evento" : "Regole distinte", valore: statsAssenti ? null : totals?.rules ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
+    ];
+  const conEventi = categories.filter((c) => (openCounts[c.id] ?? 0) > 0 || category === c.id);
+  const senzaEventi = categories.filter((c) => !conEventi.includes(c));
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
       {/* ── Testata: titolo, stato di Wazuh, aggiornamento ───────────── */}
@@ -306,25 +329,7 @@ export function SecurityAlertsClient() {
           <Siren className="h-5 w-5" />
           Alert sicurezza
         </h1>
-        {daDc ? <FonteDc letture={stats?.letture ?? []} /> : <WazuhHealthBand refreshKey={refreshTick} compatta />}
-        {/* Una barra sola divisa in aree (13/11/2026): numeri e filtri stanno qui, non su righe loro. */}
-        <div className="border-l pl-3">
-          <FilaNumeri
-            voci={[
-              { titolo: "Alert nel periodo", valore: statsAssenti ? null : split.attackTotal, qualifica: windowLabel.toLowerCase(), aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${split.diagnosticTotal} non ostili esclusi` : undefined },
-              { titolo: "Eventi aperti", valore: stats ? stats.openTotal : null, aiuto: "Da prendere in carico. Un clic mostra solo gli aperti, un altro tutti gli stati", onClick: () => setOnlyOpen((v) => !v), acceso: onlyOpen },
-              { titolo: daDc ? "DC coinvolti" : "Agent coinvolti", valore: statsAssenti ? null : totals?.agents ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
-              { titolo: daDc ? "Tipi di evento" : "Regole distinte", valore: statsAssenti ? null : totals?.rules ?? 0, aiuto: statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined },
-            ]}
-          />
-        </div>
-        <div className="min-w-0 border-l pl-3">
-          <BarraFiltri
-            accesi={filtriAccesi}
-            onApri={() => setFiltriAperti(true)}
-            onTogliTutti={() => { setWindowId("24h"); setSystem(null); setOnlyOpen(false); setCategory(null); }}
-          />
-        </div>
+        {daDc ? <FonteDc letture={stats?.letture ?? []} /> : <WazuhHealthBand refreshKey={refreshTick} compatta unica />}
         <div className="ml-auto flex items-center gap-2">
           {lastRefresh ? (
             <span className="text-[13px] text-muted-foreground">
@@ -344,6 +349,33 @@ export function SecurityAlertsClient() {
             <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Aggiornamento…" : "Aggiorna ora"}
           </Button>
+        </div>
+      </div>
+
+      {/* Fascia in due aree (Riccardo, 13/11/2026: la testata tutta su una riga «è l'unica che davvero non mi convince»):
+          a sinistra i numeri separati da righe sottili, a destra i filtri con le etichette. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-3.5 py-2">
+        <div className="flex">
+          {NUMERI.map((n) => {
+            const testo = n.valore == null ? "—" : typeof n.valore === "number" ? n.valore.toLocaleString("it-IT") : n.valore;
+            const dentro = (
+              <>
+                <span className="text-[13px] text-muted-foreground">{n.titolo}{n.qualifica ? `, ${n.qualifica}` : ""}</span>
+                <span className={cn("text-lg font-bold tabular-nums leading-tight", n.acceso && "underline decoration-primary decoration-[3px] underline-offset-4")}>{testo}</span>
+              </>
+            );
+            const classi = "flex flex-col border-l px-3.5 text-left first:border-l-0 first:pl-0";
+            return n.onClick
+              ? <button key={n.titolo} type="button" title={n.aiuto} aria-pressed={n.acceso === true} onClick={n.onClick} className={cn(classi, "hover:bg-muted/50")}>{dentro}</button>
+              : <div key={n.titolo} title={n.aiuto} className={classi}>{dentro}</div>;
+          })}
+        </div>
+        <div className="ml-auto min-w-0 border-l pl-4">
+          <BarraFiltri
+            accesi={filtriAccesi}
+            onApri={() => setFiltriAperti(true)}
+            onTogliTutti={() => { setWindowId("24h"); setSystem(null); setOnlyOpen(false); setCategory(null); }}
+          />
         </div>
       </div>
 
@@ -387,18 +419,23 @@ export function SecurityAlertsClient() {
       {/* Le categorie sono le schede della pagina, nella forma unica (`forma-scheda.ts`). Riccardo, 13/11/2026: «alert
           sicurezza non ha dei TAB di selezione, solo KPI»: erano pulsantini piccoli, e con «solo quelle con eventi
           aperti» su DTS ne restava uno. Ora si vedono sempre tutte, col numero quando c'è. */}
-      <div role="tablist" aria-label="Categoria" className={cn(FILA_SCHEDE, "shrink-0")}>
+      <div role="tablist" aria-label="Categoria" className="flex shrink-0 flex-wrap items-center gap-2 border-b pb-2">
         <button type="button" role="tab" aria-selected={category === null} onClick={() => setCategory(null)} className={cn(SCHEDA_BASE, category === null ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
           Tutte
           <span className="tabular-nums opacity-80">{Object.values(openCounts).reduce((a, b) => a + b, 0)}</span>
         </button>
-        {categories.map((c) => (
-          <button key={c.id} type="button" role="tab" aria-selected={category === c.id} onClick={() => setCategory(c.id)} className={cn(SCHEDA_BASE, category === c.id ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+        {[...conEventi, ...(mostraVuote ? senzaEventi : [])].map((c) => (
+          <button key={c.id} type="button" role="tab" aria-selected={category === c.id} title={c.labelIt} onClick={() => setCategory(c.id)} className={cn(SCHEDA_BASE, category === c.id ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
-            {c.labelIt}
+            {NOME_CORTO[c.id] ?? c.labelIt}
             {openCounts[c.id] ? <span className="tabular-nums opacity-80">{openCounts[c.id]}</span> : null}
           </button>
         ))}
+        {senzaEventi.length > 0 && (
+          <button type="button" onClick={() => setMostraVuote((v) => !v)} className="inline-flex h-10 shrink-0 items-center rounded-lg border-2 border-dashed px-3 text-[13px] text-muted-foreground hover:text-foreground">
+            {mostraVuote ? "Nascondi quelle senza eventi" : `Senza eventi · ${senzaEventi.length}`}
+          </button>
+        )}
       </div>
 
       {/* ── Corpo: coda a sinistra, analisi a destra ──────────────────── */}

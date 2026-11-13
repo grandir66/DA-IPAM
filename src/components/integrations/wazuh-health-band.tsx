@@ -41,12 +41,14 @@ interface WazuhHealthBandProps {
   refreshKey: number;
   /** Una riga di pastiglie sulla testata (Alert sicurezza, 20/10): il dettaglio sta nel `title`. */
   compatta?: boolean;
+  /** Con `compatta`: un segno solo col caso peggiore, i quattro blocchi nel `title` (Alert sicurezza, 13/11/2026). */
+  unica?: boolean;
 }
 
 /** Tono dei token per le pastiglie compatte: simbolo e luminanza, non solo colore. */
 const TONO_VERDETTO: Record<HealthVerdict, ToniStato> = { ok: "ok", degraded: "attenzione", fail: "guasto" };
 
-export function WazuhHealthBand({ refreshKey, compatta = false }: WazuhHealthBandProps) {
+export function WazuhHealthBand({ refreshKey, compatta = false, unica = false }: WazuhHealthBandProps) {
   const [blocks, setBlocks] = useState<BlockHealth[] | null>(null);
   const [expanded, setExpanded] = useState<Set<BlockHealth["key"]>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
@@ -74,6 +76,26 @@ export function WazuhHealthBand({ refreshKey, compatta = false }: WazuhHealthBan
       else next.add(key);
       return next;
     });
+  }
+
+  if (compatta && unica && blocks !== null) {
+    const daConfigurare = blocks.filter((b) => !b.configured);
+    const guasti = blocks.filter((b) => b.configured && b.verdict === "fail");
+    const degradati = blocks.filter((b) => b.configured && b.verdict === "degraded");
+    const tono: ToniStato = guasti.length > 0 ? "guasto" : degradati.length > 0 ? "attenzione" : daConfigurare.length === blocks.length ? "grigio" : "ok";
+    const st = STILE_STATO[tono];
+    const nomi = (l: BlockHealth[]) => l.map((b) => BLOCK_LABEL[b.key]).join(", ");
+    const testo = guasti.length > 0 ? `Wazuh: ${nomi(guasti)} in errore`
+      : degradati.length > 0 ? `Wazuh: ${nomi(degradati)} da guardare`
+      : tono === "grigio" ? "Wazuh da configurare" : "Wazuh a posto";
+    const titolo = blocks.map((b) => `${BLOCK_LABEL[b.key]}: ${b.configured ? b.headline : "da configurare"}`).join("\n");
+    const corpo = (
+      <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[13px] leading-tight ${st.classi}`} title={titolo} aria-label="Stato di Wazuh">
+        <span aria-hidden className="font-bold">{st.segno}</span>
+        {testo}
+      </span>
+    );
+    return tono === "grigio" ? <Link href={WAZUH_SETTINGS_HREF}>{corpo}</Link> : corpo;
   }
 
   if (compatta) {

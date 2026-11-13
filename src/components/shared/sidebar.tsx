@@ -627,7 +627,7 @@ export function Sidebar() {
         <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         {/* DATIA MON: monitoraggio (Zabbix), pagina del cliente, aggiunta apparati e configurazione. */}
         {datiaMonItems.length > 0 && (
-          <NavGroup icon={Activity} label="DATIA MON" items={datiaMonItems} open={datiaMonOpen} setOpen={setDatiaMonOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+          <NavGroup icon={Activity} label="DatIA Mon" items={datiaMonItems} open={datiaMonOpen} setOpen={setDatiaMonOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         )}
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
         <NavGroup icon={Package} label="Inventario" bloccato={motivoBlocco("inventario", presenze)} items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />

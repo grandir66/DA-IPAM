@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — Il gruppo di menu si chiama «DatIA Mon»
+
+### Cambiato
+- Il gruppo del monitoraggio nel menu si chiama «DatIA Mon» (Riccardo, 13/11).
+
 ## 2026-11-13 — DATIA MONITORING componibile, con KPI e cosa vede il cliente
 
 ### Aggiunto

@@ -23,6 +23,7 @@ import type {
   RispostaFamiglie,
   RispostaStorico,
 } from "@/lib/zabbix-lettura/api";
+import { IMPOSTAZIONI_VUOTE, type ImpostazioniMonitoring } from "./monitoring-impostazioni";
 
 export type StatoOggetto = "funziona" | "attenzione" | "fermo" | "non_so";
 
@@ -82,7 +83,46 @@ export interface FamigliaMostrata {
   disponibilita30: number | null;
 }
 
+/** Un numero del mese e lo stesso del mese prima; `precedente` null se il centro non ha 60 giorni. */
+export interface Confronto {
+  corrente: number;
+  precedente: number | null;
+}
+
+export interface KpiMonitoring {
+  /** Percentuale di tempo senza fermi, in media sugli apparati che il cliente vede. */
+  disponibilita: Confronto | null;
+  /** Problemi da «Media» in su aperti nei 30 giorni. */
+  incidenti: Confronto | null;
+  /** Minuti medi fra apertura e chiusura dei problemi chiusi nei 30 giorni. */
+  soluzioneMin: Confronto | null;
+  /** Il certificato che scade per primo fra quelli visibili. */
+  scadenza: { giorni: number; oggetto: string } | null;
+}
+
+export interface SerieMonitoring {
+  /** Le 30 date, dalla più vecchia a oggi. */
+  giorni: string[];
+  /** Disponibilità per giorno (0-100), sugli apparati visibili. */
+  disponibilita: number[];
+  /** Le ultime 4 settimane (28 giorni), la più vecchia prima. */
+  settimane: Array<{ etichetta: string; gravi: number; medi: number }>;
+}
+
+/** Per il pannello di gestione: tutto, anche ciò che è nascosto, col nome di Zabbix e quello per il cliente. */
+export interface FamigliaGestita {
+  codice: string;
+  etichetta: string;
+  visibile: boolean;
+  oggetti: Array<{ hostid: string; nomeZabbix: string; nomeCliente: string | null; visibile: boolean }>;
+}
+
 export interface Monitoring {
+  kpi: KpiMonitoring;
+  serie: SerieMonitoring | null;
+  /** I dischi e i volumi più pieni fra gli apparati visibili, al più 5. */
+  spazio: Array<{ nome: string; dettaglio: string; valore: number }>;
+  gestione: FamigliaGestita[];
   /** La frase della fascia in alto. */
   frase: string;
   sottofrase: string | null;
@@ -218,9 +258,29 @@ function sintesiFamiglia(oggetti: readonly OggettoDiFamiglia[]): Array<{ etichet
 }
 
 const MINUTI_GIORNO = 1440;
+const GIORNI = 30;
+const GIORNI_LUNGHI = 60;
+const ZERI: number[] = Array.from({ length: GIORNI_LUNGHI }, () => 0);
+type ChiaveSerie = "fermo" | "minuti" | "aperti" | "gravi" | "chiusi" | "durata_chiusi";
+
+/** Percentuale di tempo senza fermi fra i giorni `da` e `a` (esclusivo), in media sugli apparati; una cifra decimale. */
+function disponibilitaDi(ids: readonly string[], serieDi: (h: string, k: ChiaveSerie) => number[], da: number, a: number): number {
+  const totale = ids.length * (a - da) * MINUTI_GIORNO;
+  if (totale <= 0) return 100;
+  const fermi = ids.reduce((s, h) => s + serieDi(h, "fermo").slice(da, a).reduce((x, m) => x + Math.min(m, MINUTI_GIORNO), 0), 0);
+  return Math.max(0, Math.round((1 - fermi / totale) * 1000) / 10);
+}
+
+/** «2026-11-06» → «06/11». */
+function etichettaGiorno(g: string): string {
+  const [, m, d] = g.split("-");
+  return d && m ? `${d}/${m}` : g;
+}
 
 export interface IngressoMonitoring {
   famiglie: RispostaFamiglie;
+  /** Cosa l'amministratore ha nascosto o rinominato; assente = tutto visibile. */
+  impostazioni?: ImpostazioniMonitoring;
   problemi: readonly ProblemaDelCentro[];
   problemiTroncati: number;
   storico: RispostaStorico | null;
@@ -232,7 +292,33 @@ export interface IngressoMonitoring {
 
 /** Dalla lettura del centro alla pagina. */
 export function componiMonitoring(i: IngressoMonitoring): Monitoring {
+  const imp = i.impostazioni ?? IMPOSTAZIONI_VUOTE;
   const vecchio = i.vecchio || i.famiglie.vecchio;
+  const etichetteTutte = new Map(i.famiglie.famiglie.map((f) => [f.codice, f.etichetta]));
+  const famigliaVera = (o: OggettoDiFamiglia) => (etichetteTutte.has(o.famiglia) ? o.famiglia : "altro");
+  // Il pannello di gestione vede tutto; il resto della pagina solo ciò che il cliente può vedere.
+  const gestione: FamigliaGestita[] = i.famiglie.famiglie
+    .map((f) => ({
+      codice: f.codice,
+      etichetta: f.etichetta,
+      visibile: !imp.famiglieNascoste.has(f.codice),
+      oggetti: i.famiglie.host
+        .filter((o) => famigliaVera(o) === f.codice)
+        .map((o) => ({ hostid: o.hostid, nomeZabbix: o.nome, nomeCliente: imp.nomi.get(o.hostid) ?? null, visibile: !imp.hostNascosti.has(o.hostid) }))
+        .sort((a, b) => a.nomeZabbix.localeCompare(b.nomeZabbix, "it")),
+    }))
+    .filter((f) => f.oggetti.length > 0);
+  const oggettiVisibili = i.famiglie.host
+    .filter((o) => !imp.hostNascosti.has(o.hostid) && !imp.famiglieNascoste.has(famigliaVera(o)))
+    .map((o) => ({ ...o, nome: imp.nomi.get(o.hostid) ?? o.nome }));
+  const idVisibili = new Set(oggettiVisibili.map((o) => o.hostid));
+  i = { ...i, famiglie: { ...i.famiglie, host: oggettiVisibili }, problemi: i.problemi.filter((p) => idVisibili.has(p.hostid)) };
+  // I conti per apparato del centro (60 giorni): solo così si tolgono dai conti gli apparati nascosti.
+  const perHost = i.storico && i.storico.giorni_lunghi.length === GIORNI_LUNGHI ? i.storico.per_host : null;
+  const serieDi = (hid: string, k: ChiaveSerie): number[] => {
+    const v = perHost?.[hid]?.[k];
+    return v && v.length === GIORNI_LUNGHI ? v : ZERI;
+  };
   const problemiDi = new Map<string, ProblemaDelCentro[]>();
   for (const p of i.problemi) problemiDi.set(p.hostid, [...(problemiDi.get(p.hostid) ?? []), p]);
   const etichette = new Map(i.famiglie.famiglie.map((f) => [f.codice, f.etichetta]));
@@ -263,8 +349,15 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
       };
     });
     oggetti.sort((a, b) => PESO[a.stato] - PESO[b.stato] || a.nome.localeCompare(b.nome, "it"));
-    const fermo = i.storico ? (i.storico.minuti_fermo[codice] ?? i.storico.giorni.map(() => 0)) : null;
+    // Con i conti per apparato: il giorno è «fermo» se almeno un apparato visibile della famiglia lo era,
+    // e la disponibilità è la media sugli apparati. Senza (centro vecchio): il conto per famiglia di prima.
+    const fermo = perHost
+      ? Array.from({ length: GIORNI }, (_, d) => Math.max(0, ...lista.map((o) => serieDi(o.hostid, "fermo")[GIORNI + d] ?? 0)))
+      : i.storico
+        ? (i.storico.minuti_fermo[codice] ?? i.storico.giorni.map(() => 0))
+        : null;
     const giorni = i.storico?.giorni.length ?? 0;
+    const disponibilitaFamiglia = perHost && lista.length > 0 ? disponibilitaDi(lista.map((o) => o.hostid), serieDi, GIORNI, GIORNI_LUNGHI) : null;
     famiglie.push({
       codice,
       etichetta: etichette.get(codice) ?? codice,
@@ -273,10 +366,10 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
       conta,
       sintesi: sintesiFamiglia(lista),
       fermoPerGiorno: fermo,
-      disponibilita30:
+      disponibilita30: disponibilitaFamiglia ?? (
         fermo && giorni > 0
           ? Math.max(0, Math.round((1 - fermo.reduce((s, m) => s + Math.min(m, MINUTI_GIORNO), 0) / (giorni * MINUTI_GIORNO)) * 1000) / 10)
-          : null,
+          : null),
     });
   }
   const famigliaDi = new Map<string, string>();
@@ -346,7 +439,51 @@ export function componiMonitoring(i: IngressoMonitoring): Monitoring {
     stato = "funziona";
     frase = tutti === 1 ? "Tutto funziona: 1 apparato sotto controllo" : `Tutto funziona: ${tutti} apparati sotto controllo`;
   }
+  // ── KPI e serie, sugli apparati che il cliente vede ──
+  const ids = [...idVisibili];
+  const somma = (k: ChiaveSerie, da: number, a: number) => ids.reduce((s, h) => s + serieDi(h, k).slice(da, a).reduce((x, y) => x + y, 0), 0);
+  const confronto = (corrente: number | null, precedente: number | null): Confronto | null =>
+    corrente === null ? null : { corrente, precedente };
+  const media = (da: number, a: number): number | null => {
+    const chiusi = somma("chiusi", da, a);
+    return chiusi > 0 ? Math.round(somma("durata_chiusi", da, a) / chiusi) : null;
+  };
+  let scadenza: KpiMonitoring["scadenza"] = null;
+  const spazio: Monitoring["spazio"] = [];
+  for (const o of oggettiVisibili) {
+    for (const m of o.misure) {
+      if (typeof m.valore !== "number") continue;
+      if (m.codice === "scadenza" && (!scadenza || m.valore < scadenza.giorni)) scadenza = { giorni: m.valore, oggetto: o.nome };
+      if (m.codice === "disco" || m.codice === "volume" || m.codice === "spazio") spazio.push({ nome: o.nome, dettaglio: m.dettaglio ?? "", valore: m.valore });
+    }
+  }
+  spazio.sort((a, b) => b.valore - a.valore);
+  const kpi: KpiMonitoring = {
+    disponibilita: perHost && ids.length
+      ? confronto(disponibilitaDi(ids, serieDi, GIORNI, GIORNI_LUNGHI), disponibilitaDi(ids, serieDi, 0, GIORNI))
+      : null,
+    incidenti: perHost ? confronto(somma("aperti", GIORNI, GIORNI_LUNGHI), somma("aperti", 0, GIORNI)) : null,
+    soluzioneMin: perHost ? confronto(media(GIORNI, GIORNI_LUNGHI), media(0, GIORNI)) : null,
+    scadenza,
+  };
+  const serie: SerieMonitoring | null =
+    perHost && i.storico && ids.length
+      ? {
+          giorni: i.storico.giorni_lunghi.slice(GIORNI),
+          disponibilita: Array.from({ length: GIORNI }, (_, d) => disponibilitaDi(ids, serieDi, GIORNI + d, GIORNI + d + 1)),
+          settimane: [0, 1, 2, 3].map((w) => {
+            const da = GIORNI_LUNGHI - 28 + w * 7;
+            const gravi = somma("gravi", da, da + 7);
+            return { etichetta: etichettaGiorno(i.storico!.giorni_lunghi[da] ?? ""), gravi, medi: somma("aperti", da, da + 7) - gravi };
+          }),
+        }
+      : null;
+
   return {
+    kpi,
+    serie,
+    spazio: spazio.slice(0, 5),
+    gestione,
     frase,
     sottofrase,
     stato,

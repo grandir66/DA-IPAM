@@ -1,5 +1,14 @@
 import { Check, CircleHelp, TriangleAlert, Wrench, X } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { GrigliaCasa, type ContenutoRiquadro } from "@/components/cliente/griglia-casa";
+import { GestioneVisibilita } from "@/components/cliente/monitoring/gestione-visibilita";
+import {
+  ApparatiPerStato, GraficoDisponibilita, GraficoIncidenti, KpiDisponibilita, KpiIncidenti, KpiScadenza, KpiSoluzione, SpazioPiuPieno,
+} from "@/components/cliente/monitoring/kpi";
+import { leggiDisposizione, disposizionePredefinita, type VoceDisposizione } from "@/lib/cliente/casa";
+import { CHIAVE_MONITORING, RIQUADRI_MONITORING } from "@/lib/cliente/monitoring-riquadri";
+import { nelCliente } from "@/lib/cliente/contesto";
 import { PaginaModulo } from "@/components/cliente/pagina-modulo";
 import { Pannello, Vuoto } from "@/components/shared/console";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
@@ -48,7 +57,7 @@ function eta(s: number): string {
 function Fascia({ m }: { m: Monitoring }) {
   const Icona = ICONA[m.stato];
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3">
+    <section className="flex h-full flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3">
       <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg border ${STILE_STATO[TONO[m.stato]].classi}`}>
         <Icona className="size-5" aria-hidden />
       </span>
@@ -184,7 +193,44 @@ function Storico({ m }: { m: Monitoring }) {
   );
 }
 
-export default async function PaginaMonitoring() {
+function Famiglie({ m }: { m: Monitoring }) {
+  if (m.famiglie.length === 0) return null;
+  return (
+    <div className="grid h-full gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+      {m.famiglie.map((f) => <RiquadroFamiglia key={f.codice} f={f} />)}
+    </div>
+  );
+}
+
+function Problemi({ m, ora }: { m: Monitoring; ora: Date }) {
+  if (m.problemi.length === 0) return <p className="text-sm">Nessun problema aperto.</p>;
+  return (
+    <div>
+      {m.problemi.map((p) => (
+        <div key={p.eventid} className="flex flex-wrap items-center gap-2 border-b py-2 text-sm last:border-b-0">
+          <Stato stato={p.grave ? "fermo" : "attenzione"} testo={p.grave ? "Grave" : "Medio"} />
+          <span className="min-w-0 flex-1">
+            <span className="text-muted-foreground">{p.famiglia} · </span>
+            <span className="font-medium">{p.nomeOggetto}</span>: {p.frase}
+            {p.quante > 1 && <span className="text-muted-foreground"> · {p.quante} volte</span>}
+          </span>
+          <span className="text-[13px] text-muted-foreground">{p.dal ? daQuanto(new Date(p.dal), ora) : ""}</span>
+          {p.presoInCarico ? (
+            <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] ${STILE_STATO.da_verificare.classi}`}>
+              <Wrench className="size-3.5" aria-hidden />
+              Domarc ci sta lavorando
+            </span>
+          ) : (
+            <span className="text-[13px] text-muted-foreground">Non ancora preso in carico</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default async function PaginaMonitoring({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const componi = (await searchParams).componi === "1";
   const c = await contestoCliente();
   if (!(await schedaMonitoring.attiva(c))) redirect("/cliente");
   let esito: Awaited<ReturnType<typeof leggiMonitoring>>;
@@ -206,45 +252,50 @@ export default async function PaginaMonitoring() {
   }
   const m = esito.dati;
   const tutti = m.famiglie.reduce((s, f) => s + f.oggetti.length, 0);
+  let disposizione: VoceDisposizione[] = disposizionePredefinita(RIQUADRI_MONITORING);
+  try {
+    disposizione = nelCliente(c, (db) => leggiDisposizione(db, CHIAVE_MONITORING, RIQUADRI_MONITORING));
+  } catch (e) {
+    console.error("[cliente] disposizione di monitoring:", e instanceof Error ? e.message : String(e));
+  }
+  const inModifica = c.amministratore && componi;
+  // Cosa disegna ogni riquadro della libreria (`monitoring-riquadri.ts`); null = oggi non c'è niente da dire.
+  const contenuti: ContenutoRiquadro[] = [
+    { id: "fascia", titolo: "Stato in una frase", azioni: null, nudo: true, contenuto: <Fascia m={m} /> },
+    { id: "kpi-disponibilita", titolo: "Disponibilità 30 giorni", azioni: null, nudo: true, contenuto: m.kpi.disponibilita ? <KpiDisponibilita m={m} /> : null },
+    { id: "kpi-incidenti", titolo: "Incidenti 30 giorni", azioni: null, nudo: true, contenuto: m.kpi.incidenti ? <KpiIncidenti m={m} /> : null },
+    { id: "kpi-soluzione", titolo: "Tempo medio di soluzione", azioni: null, nudo: true, contenuto: m.kpi.soluzioneMin ? <KpiSoluzione m={m} /> : null },
+    { id: "kpi-scadenza", titolo: "Prima scadenza", azioni: null, nudo: true, contenuto: m.kpi.scadenza ? <KpiScadenza m={m} /> : null },
+    { id: "famiglie", titolo: "Famiglie", azioni: null, nudo: true, contenuto: m.famiglie.length ? <Famiglie m={m} /> : null },
+    { id: "grafico-disponibilita", titolo: "Disponibilità per giorno", azioni: null, contenuto: m.serie ? <GraficoDisponibilita serie={m.serie} /> : null },
+    { id: "grafico-incidenti", titolo: "Incidenti per settimana", azioni: null, contenuto: m.serie ? <GraficoIncidenti serie={m.serie} /> : null },
+    { id: "stati", titolo: "Apparati per stato", azioni: null, contenuto: tutti ? <ApparatiPerStato m={m} /> : null },
+    { id: "spazio", titolo: "Spazio più pieno", azioni: null, contenuto: m.spazio.length ? <SpazioPiuPieno m={m} /> : null },
+    { id: "problemi", titolo: `Problemi aperti · ${m.problemi.length}`, azioni: null, contenuto: <Problemi m={m} ora={c.ora} /> },
+    { id: "storico", titolo: "Ultimi 30 giorni per famiglia", azioni: null, contenuto: m.famiglie.some((f) => f.fermoPerGiorno) ? <Storico m={m} /> : null },
+  ];
+  const uscita = "/cliente/monitoring";
   return (
     <PaginaModulo titolo={TITOLO_MONITORING} contesto={`${tutti} apparati sotto controllo`}>
-      <Fascia m={m} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
-        {m.famiglie.map((f) => <RiquadroFamiglia key={f.codice} f={f} />)}
-      </div>
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <Pannello titolo="Problemi aperti" conteggio={m.problemi.length} sottotitolo="Solo quelli che contano: i minori non sono in elenco.">
-          {m.problemi.length === 0 ? (
-            <Vuoto titolo="Nessun problema aperto" />
-          ) : (
-            <div>
-              {m.problemi.map((p) => (
-                <div key={p.eventid} className="flex flex-wrap items-center gap-2 border-b py-2 text-sm last:border-b-0">
-                  <Stato stato={p.grave ? "fermo" : "attenzione"} testo={p.grave ? "Grave" : "Medio"} />
-                  <span className="min-w-0 flex-1">
-                    <span className="text-muted-foreground">{p.famiglia} · </span>
-                    <span className="font-medium">{p.nomeOggetto}</span>: {p.frase}
-                    {p.quante > 1 && <span className="text-muted-foreground"> · {p.quante} volte</span>}
-                  </span>
-                  <span className="text-[13px] text-muted-foreground">{p.dal ? daQuanto(new Date(p.dal), c.ora) : ""}</span>
-                  {p.presoInCarico ? (
-                    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[13px] ${STILE_STATO.da_verificare.classi}`}>
-                      <Wrench className="size-3.5" aria-hidden />
-                      Domarc ci sta lavorando
-                    </span>
-                  ) : (
-                    <span className="text-[13px] text-muted-foreground">Non ancora preso in carico</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Pannello>
-        <Pannello titolo="Ultimi 30 giorni">
-          <Storico m={m} />
-        </Pannello>
-      </div>
-      {m.famiglie.map((f) => <SchedaFamiglia key={f.codice} f={f} />)}
+      <GrigliaCasa
+        key={inModifica ? "modifica" : "vista"}
+        iniziale={disposizione}
+        riquadri={contenuti}
+        libreria={RIQUADRI_MONITORING}
+        modifica={inModifica}
+        endpoint="/api/vista-cliente/monitoring"
+        uscita={uscita}
+      />
+      {inModifica && <GestioneVisibilita famiglie={m.gestione} />}
+      {c.amministratore && !componi && (
+        <p className="nascosto-stampa text-[13px]">
+          <Link href={`${uscita}?componi=1`} className="font-medium text-cian-testo hover:underline">
+            Componi questa pagina
+          </Link>
+          <span className="ml-2 text-muted-foreground">Sposta, ridimensiona, nascondi i riquadri e scegli famiglie e apparati che vede il cliente. Lo vedi solo tu.</span>
+        </p>
+      )}
+      {!inModifica && m.famiglie.map((f) => <SchedaFamiglia key={f.codice} f={f} />)}
     </PaginaModulo>
   );
 }

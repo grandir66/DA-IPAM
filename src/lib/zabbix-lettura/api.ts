@@ -169,6 +169,22 @@ export const RispostaStorico = Testa.extend({
   minuti: GiorniDiMinuti,
   /** Minuti con un problema di disponibilità: la barra «era fermo». */
   minuti_fermo: GiorniDiMinuti,
+  /** 60 date UTC (13/11/2026): i conti per apparato coprono anche il mese prima. Assente su un centro vecchio. */
+  giorni_lunghi: z.array(z.string()).catch([]),
+  /** Per apparato, 60 voci per serie. Un apparato senza eventi non c'è: vale zero. */
+  per_host: z
+    .record(
+      z.string(),
+      z.object({
+        fermo: z.array(z.number().nonnegative()).catch([]),
+        minuti: z.array(z.number().nonnegative()).catch([]),
+        aperti: z.array(z.number().nonnegative()).catch([]),
+        gravi: z.array(z.number().nonnegative()).catch([]),
+        chiusi: z.array(z.number().nonnegative()).catch([]),
+        durata_chiusi: z.array(z.number().nonnegative()).catch([]),
+      }),
+    )
+    .catch({}),
   tronca: z.boolean().catch(false),
 });
 export type RispostaStorico = z.infer<typeof RispostaStorico>;

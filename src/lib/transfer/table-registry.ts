@@ -187,6 +187,9 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Chiave di scrittura (13/11/2026): come quella di lettura, una per istanza. Copiarla darebbe a un'altra
   // installazione il diritto di aggiungere apparati in Zabbix a nome di questa.
   "zabbix_scrittura_config",
+  // Cosa vede il cliente in DATIA MONITORING (13/11/2026): le chiavi sono hostid del centro Zabbix di questa
+  // istanza. Su un'altra installazione gli stessi numeri possono essere altri apparati.
+  "monitoring_visibilita",
   // Snapshot dei collector (payload gzip in BLOB) e le modifiche che hanno fatto: storia di questa istanza, si rifà con
   // un'acquisizione. I dati che hanno scritto viaggiano già con l'apparato (porte, vicini, identità).
   "acquisition_snapshots",

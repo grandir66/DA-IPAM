@@ -34,11 +34,17 @@ export function GrigliaCasa({
   riquadri,
   libreria,
   modifica,
+  endpoint = "/api/vista-cliente/casa",
+  uscita = "/cliente",
 }: {
   iniziale: VoceDisposizione[];
   riquadri: ContenutoRiquadro[];
   libreria: readonly RiquadroCasa[];
   modifica: boolean;
+  /** Dove si salva la disposizione (13/11/2026: anche DATIA MONITORING è componibile). */
+  endpoint?: string;
+  /** Dove si torna dopo «Salva» o «Annulla». */
+  uscita?: string;
 }) {
   const router = useRouter();
   const [voci, setVoci] = useState<VoceDisposizione[]>(iniziale);
@@ -57,7 +63,7 @@ export function GrigliaCasa({
     setSalvo(true);
     setErrore(null);
     try {
-      const res = await fetch("/api/vista-cliente/casa", {
+      const res = await fetch(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ voci }),
@@ -67,7 +73,7 @@ export function GrigliaCasa({
         setErrore(dati?.error ?? "Disposizione non salvata");
         return;
       }
-      router.push("/cliente");
+      router.push(uscita);
       router.refresh();
     } catch {
       setErrore("Disposizione non salvata: il server non risponde");
@@ -87,10 +93,10 @@ export function GrigliaCasa({
           <Button type="button" disabled={salvo} onClick={() => void salva()}>
             {salvo ? "Salvo…" : "Salva la disposizione"}
           </Button>
-          <Button type="button" variant="outline" disabled={salvo} onClick={() => setVoci(disposizionePredefinita())}>
+          <Button type="button" variant="outline" disabled={salvo} onClick={() => setVoci(disposizionePredefinita(libreria))}>
             Torna a quella predefinita
           </Button>
-          <Button type="button" variant="outline" disabled={salvo} onClick={() => router.push("/cliente")}>
+          <Button type="button" variant="outline" disabled={salvo} onClick={() => router.push(uscita)}>
             Annulla
           </Button>
           {errore && <p role="alert" className="w-full text-sm font-semibold">{errore}</p>}

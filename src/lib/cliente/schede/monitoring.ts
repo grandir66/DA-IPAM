@@ -13,6 +13,7 @@ import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
 import { leggiMonitoringCentro, pannelloNelMenu } from "@/lib/zabbix-lettura/servizio";
 import type { ContestoCliente } from "../contesto";
 import { componiMonitoring, type Monitoring } from "../monitoring";
+import { leggiImpostazioniMonitoring } from "../monitoring-impostazioni";
 import type { RiquadroCliente, SchedaCliente, VoceAttenzione } from "../registro";
 
 export const TITOLO_MONITORING = "DATIA MONITORING";
@@ -27,7 +28,8 @@ export type EsitoMonitoring =
 /** La lettura per la pagina e per la casa. Mai un'eccezione verso chi disegna. */
 export async function leggiMonitoring(c: ContestoCliente): Promise<EsitoMonitoring> {
   return withTenant(c.tenantCode, async () => {
-    const l = await leggiMonitoringCentro(dipendenzeReali());
+    const dip = dipendenzeReali();
+    const l = await leggiMonitoringCentro(dip);
     if (l.stato === "fermo") {
       return {
         ok: false as const,
@@ -39,6 +41,7 @@ export async function leggiMonitoring(c: ContestoCliente): Promise<EsitoMonitori
       ok: true as const,
       dati: componiMonitoring({
         famiglie: l.famiglie,
+        impostazioni: leggiImpostazioniMonitoring(dip.db),
         problemi: l.centro.problemi.problemi,
         problemiTroncati: l.centro.problemi.troncati,
         storico: l.storico,

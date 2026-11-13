@@ -1238,6 +1238,17 @@ export const DDL_ZABBIX_LETTURA: ReadonlyArray<readonly [string, string]> = [
   aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
   aggiornato_da TEXT
 )`],
+  // Cosa vede il cliente in DATIA MONITORING (Riccardo, 13/11/2026): famiglie e apparati nascosti, e il nome che
+  // il cliente legge per un apparato. `chiave` è il codice della famiglia o l'hostid di Zabbix. Senza riga: visibile.
+  ["monitoring_visibilita", `CREATE TABLE IF NOT EXISTS monitoring_visibilita (
+  tipo TEXT NOT NULL CHECK (tipo IN ('famiglia', 'host')),
+  chiave TEXT NOT NULL,
+  visibile INTEGER NOT NULL DEFAULT 1,
+  nome_cliente TEXT,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  aggiornato_da TEXT,
+  PRIMARY KEY (tipo, chiave)
+)`],
   ["zabbix_abbinamenti", `CREATE TABLE IF NOT EXISTS zabbix_abbinamenti (
   hostid TEXT PRIMARY KEY,
   host_id INTEGER NOT NULL,

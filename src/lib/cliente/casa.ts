@@ -66,8 +66,13 @@ export interface VoceDisposizione {
 
 export const CHIAVE_CASA = "cliente.casa";
 
-export function disposizionePredefinita(): VoceDisposizione[] {
-  return RIQUADRI_CASA.map((r) => ({ id: r.id, l: r.l, a: r.a, visibile: true }));
+/**
+ * Dal 13/11/2026 le funzioni della disposizione prendono anche la libreria e la chiave, con quelle della
+ * casa come valore predefinito: la pagina DATIA MONITORING è componibile allo stesso modo, coi suoi riquadri
+ * e la sua riga in `tenant_settings`. La casa non cambia.
+ */
+export function disposizionePredefinita(libreria: readonly RiquadroCasa[] = RIQUADRI_CASA): VoceDisposizione[] {
+  return libreria.map((r) => ({ id: r.id, l: r.l, a: r.a, visibile: true }));
 }
 
 /** Gli identificativi di una disposizione salvata prima che gli accessi fossero divisi in tre riquadri. */
@@ -92,8 +97,8 @@ function altezzaDa(v: { a?: unknown }, predefinita: number): number {
  * libreria che mancano si aggiungono in coda, visibili (così uno nuovo compare a tutti); quelli segnati
  * `inTesta` entrano in testa.
  */
-export function normalizza(salvata: unknown): VoceDisposizione[] {
-  const noti = new Map(RIQUADRI_CASA.map((r) => [r.id, r]));
+export function normalizza(salvata: unknown, libreria: readonly RiquadroCasa[] = RIQUADRI_CASA): VoceDisposizione[] {
+  const noti = new Map(libreria.map((r) => [r.id, r]));
   const visti = new Set<string>();
   const voci: VoceDisposizione[] = [];
   if (Array.isArray(salvata)) {
@@ -109,30 +114,39 @@ export function normalizza(salvata: unknown): VoceDisposizione[] {
     }
   }
   const inTesta: VoceDisposizione[] = [];
-  for (const r of RIQUADRI_CASA) {
+  for (const r of libreria) {
     if (!visti.has(r.id)) (r.inTesta ? inTesta : voci).push({ id: r.id, l: r.l, a: r.a, visibile: true });
   }
   return [...inTesta, ...voci];
 }
 
 /** La disposizione del cliente; senza niente di salvato, o con un valore illeggibile, quella predefinita. */
-export function leggiDisposizione(db: Database.Database): VoceDisposizione[] {
-  const riga = db.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_CASA) as { value: string } | undefined;
-  if (!riga?.value) return disposizionePredefinita();
+export function leggiDisposizione(
+  db: Database.Database,
+  chiave: string = CHIAVE_CASA,
+  libreria: readonly RiquadroCasa[] = RIQUADRI_CASA,
+): VoceDisposizione[] {
+  const riga = db.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(chiave) as { value: string } | undefined;
+  if (!riga?.value) return disposizionePredefinita(libreria);
   try {
-    return normalizza(JSON.parse(riga.value));
+    return normalizza(JSON.parse(riga.value), libreria);
   } catch {
-    return disposizionePredefinita();
+    return disposizionePredefinita(libreria);
   }
 }
 
 /** Salva la disposizione già normalizzata. Rende ciò che ha scritto. */
-export function salvaDisposizione(db: Database.Database, voci: unknown): VoceDisposizione[] {
-  const pulite = normalizza(voci);
+export function salvaDisposizione(
+  db: Database.Database,
+  voci: unknown,
+  chiave: string = CHIAVE_CASA,
+  libreria: readonly RiquadroCasa[] = RIQUADRI_CASA,
+): VoceDisposizione[] {
+  const pulite = normalizza(voci, libreria);
   db.prepare(
     `INSERT INTO tenant_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  ).run(CHIAVE_CASA, JSON.stringify(pulite));
+  ).run(chiave, JSON.stringify(pulite));
   return pulite;
 }
 

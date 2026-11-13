@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — DATIA MONITORING componibile, con KPI e cosa vede il cliente
+
+### Aggiunto
+- **La pagina del cliente si compone come la casa** («Componi questa pagina», solo amministratori): i riquadri si spostano, si allargano, si nascondono e si salvano per cliente. Perché: Riccardo vuole una dashboard «organizzabile con possibilità di nascondere e visualizzare oggetti». La griglia e la disposizione sono quelle della casa, con una libreria di riquadri sua (`monitoring-riquadri.ts`, riga `cliente.monitoring` in `tenant_settings`).
+- **KPI e grafici**: disponibilità e incidenti degli ultimi 30 giorni col mese prima, tempo medio di soluzione, prima scadenza di un certificato, disponibilità per giorno, incidenti per settimana (gravi e medi), apparati per stato, spazio più pieno. «Meglio» e «peggio» si scrivono, non si colorano.
+- **Cosa vede il cliente**: in «Componi» l'amministratore nasconde famiglie e apparati e dà agli apparati il nome che legge il cliente (tabella `monitoring_visibilita`, non viaggia nei trasferimenti). Un apparato nascosto sparisce del tutto: elenco, conti, frase, problemi, KPI. Per poterlo togliere anche dai conti dello storico, il centro ora li dà per apparato (DA-Zabbix, `per_host`, 60 giorni).
+- La disponibilità di una famiglia ora è la media sugli apparati, non più l'unione dei fermi della famiglia: un fermo su uno di dieci apparati pesa un decimo.
+
 ## 2026-11-13 — DATIA MONITORING raggiungibile dal menu
 
 ### Corretto

@@ -171,3 +171,75 @@ test("una famiglia che il centro non elenca finisce in Altro, non sparisce", () 
   const m = componiMonitoring({ ...BASE, famiglie: famiglie([oggetto("1", "x", "famiglia-nuova")]), problemi: [] });
   assert.deepEqual(m.famiglie.map((f) => [f.codice, f.oggetti.length]), [["altro", 1]]);
 });
+
+// ── 13/11/2026: apparati e famiglie nascosti, nomi per il cliente, KPI ──
+
+function storicoLungo(perHost: Record<string, Partial<Record<"fermo" | "minuti" | "aperti" | "gravi" | "chiusi" | "durata_chiusi", number[]>>>) {
+  const giorni_lunghi = Array.from({ length: 60 }, (_, i) => `2026-${String(9 + Math.floor(i / 30)).padStart(2, "0")}-${String((i % 30) + 1).padStart(2, "0")}`);
+  const zero = () => Array.from({ length: 60 }, () => 0);
+  const per_host = Object.fromEntries(
+    Object.entries(perHost).map(([h, v]) => [h, { fermo: zero(), minuti: zero(), aperti: zero(), gravi: zero(), chiusi: zero(), durata_chiusi: zero(), ...v }]),
+  );
+  return RispostaStorico.parse({ ...TESTA, giorni: giorni_lunghi.slice(30), famiglie: {}, minuti: {}, minuti_fermo: {}, giorni_lunghi, per_host, tronca: false });
+}
+const ad = (giorno: number, valore: number) => Array.from({ length: 60 }, (_, i) => (i === giorno ? valore : 0));
+
+test("un apparato nascosto sparisce del tutto: elenco, conti, frase, problemi, KPI", () => {
+  const impostazioni = { famiglieNascoste: new Set<string>(), hostNascosti: new Set(["2"]), nomi: new Map([["1", "Router principale"]]) };
+  const m = componiMonitoring({
+    ...BASE,
+    impostazioni,
+    storico: storicoLungo({ "2": { aperti: ad(59, 9), fermo: ad(59, 600) } }),
+    famiglie: famiglie([oggetto("1", "DA-RT-CORE", "rete"), oggetto("2", "srv-nascosto", "windows", { ping: "no" })]),
+    problemi: [problema("2", "Unavailable by ICMP ping", 4)],
+  });
+  assert.deepEqual(m.famiglie.map((f) => f.oggetti.map((o) => o.nome)), [["Router principale"]]);
+  assert.equal(m.frase, "Tutto funziona: 1 apparato sotto controllo");
+  assert.deepEqual([m.problemi.length, m.problemiNascosti], [0, 0]);
+  assert.deepEqual(m.kpi.incidenti, { corrente: 0, precedente: 0 });
+  assert.equal(m.kpi.disponibilita?.corrente, 100);
+  // Il pannello di gestione invece vede tutto, col nome di Zabbix e quello per il cliente.
+  const tutti = m.gestione.flatMap((f) => f.oggetti);
+  assert.deepEqual(tutti.map((o) => [o.hostid, o.nomeZabbix, o.nomeCliente, o.visibile]), [
+    ["1", "DA-RT-CORE", "Router principale", true],
+    ["2", "srv-nascosto", null, false],
+  ]);
+});
+
+test("una famiglia nascosta toglie i suoi apparati, e resta nel pannello di gestione", () => {
+  const impostazioni = { famiglieNascoste: new Set(["altro"]), hostNascosti: new Set<string>(), nomi: new Map<string, string>() };
+  const m = componiMonitoring({ ...BASE, impostazioni, famiglie: famiglie([oggetto("1", "sw", "rete"), oggetto("9", "cam", "altro")]), problemi: [] });
+  assert.deepEqual(m.famiglie.map((f) => f.codice), ["rete"]);
+  assert.deepEqual(m.gestione.map((f) => [f.codice, f.visibile]), [["rete", true], ["altro", false]]);
+});
+
+test("KPI: mese contro mese prima, tempo medio di soluzione, settimane, spazio e scadenza", () => {
+  const m = componiMonitoring({
+    ...BASE,
+    storico: storicoLungo({
+      "1": { aperti: ad(45, 3), gravi: ad(45, 1), chiusi: ad(45, 2), durata_chiusi: ad(45, 200), fermo: ad(59, 1440) },
+      "2": { aperti: ad(10, 5), chiusi: ad(10, 4), durata_chiusi: ad(10, 120) },
+    }),
+    famiglie: famiglie([
+      oggetto("1", "srv-a", "windows", { misure: [{ codice: "disco", etichetta: "Disco più pieno", valore: 93.7, unita: "%", dettaglio: "C:", vecchio: false }] }),
+      oggetto("2", "nas", "storage", { misure: [{ codice: "volume", etichetta: "Volume più pieno", valore: 61, unita: "%", dettaglio: "/volume1", vecchio: false }] }),
+      oggetto("3", "cert", "altro", { misure: [{ codice: "scadenza", etichetta: "Giorni alla scadenza", valore: 44, unita: "giorni", vecchio: false }] }),
+    ]),
+    problemi: [],
+  });
+  assert.deepEqual(m.kpi.incidenti, { corrente: 3, precedente: 5 });
+  assert.deepEqual(m.kpi.soluzioneMin, { corrente: 100, precedente: 30 });
+  // Un giorno intero di fermo su un apparato, su 3 apparati e 30 giorni: 1 su 90 giorni-apparato.
+  assert.equal(m.kpi.disponibilita?.corrente, 98.9);
+  assert.equal(m.kpi.disponibilita?.precedente, 100);
+  assert.deepEqual(m.kpi.scadenza, { giorni: 44, oggetto: "cert" });
+  assert.deepEqual(m.spazio.map((x) => [x.nome, x.valore]), [["srv-a", 93.7], ["nas", 61]]);
+  assert.equal(m.serie?.giorni.length, 30);
+  assert.equal(m.serie?.disponibilita[29], 66.7);
+  assert.deepEqual(m.serie?.settimane.map((w) => [w.gravi, w.medi]), [[0, 0], [1, 2], [0, 0], [0, 0]]);
+});
+
+test("senza i conti per apparato (centro vecchio) i KPI dello storico non si inventano", () => {
+  const m = componiMonitoring({ ...BASE, famiglie: famiglie([oggetto("1", "sw", "rete")]), problemi: [] });
+  assert.deepEqual([m.kpi.disponibilita, m.kpi.incidenti, m.kpi.soluzioneMin, m.serie], [null, null, null, null]);
+});

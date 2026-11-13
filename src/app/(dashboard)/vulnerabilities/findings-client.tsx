@@ -31,6 +31,9 @@ import { EpssCell } from "@/components/shared/vuln-badges";
 import { SortableTableHead, type SortDirection } from "@/components/shared/sortable-table-head";
 import { CvePotenziali } from "./cve-potenziali";
 import { StatoFeedExploit } from "./stato-feed-exploit";
+import { cn } from "@/lib/utils";
+import { BarraFiltri, PannelloFiltri, type FiltroAcceso } from "@/components/shared/barra-filtri";
+import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 
 type Vista = "cve" | Raggruppamento;
 
@@ -106,6 +109,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const [ordina, setOrdina] = useState<OrdineElenco>("gravita");
   const [verso, setVerso] = useState<SortDirection>("desc");
   const [fasciaChiusa, setFasciaChiusa] = useState(false);
+  const [filtriAperti, setFiltriAperti] = useState(false);
   useEffect(() => {
     try {
       setFasciaChiusa(window.localStorage.getItem(FASCIA_CHIUSA) === "1");
@@ -311,6 +315,15 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const triRivisti = conteggiTriage.fatto + conteggiTriage.ignorato;
   const triPct = triTot > 0 ? Math.round((triRivisti / triTot) * 100) : 0;
 
+  /** I filtri accesi, come etichette che si tolgono una per una (barra dei filtri comune). */
+  const filtriAccesi: FiltroAcceso[] = [
+    ...([["kev", "Sfruttate attivamente"], ["edb", "Exploit pubblico"]] as const).filter(([v]) => exploit.has(v)).map(([v, nome]) => ({ chiave: `exploit:${v}`, testo: nome, togli: () => alterna(setExploit, v) })),
+    ...STATI_TRIAGE.filter((v) => stato.has(v)).map((v) => ({ chiave: `stato:${v}`, testo: TRIAGE_UI[v].parola, togli: () => alterna(setStato, v) })),
+    ...OS_FAMIGLIE.filter((v) => os.has(v)).map((v) => ({ chiave: `os:${v}`, testo: NOME_OS[v], togli: () => alterna(setOs, v) })),
+    ...(rete ? [{ chiave: "rete", testo: `Rete ${rete.nome}`, togli: () => { setRete(null); setPage(1); } }] : []),
+    ...(ospite ? [{ chiave: "host", testo: `Host ${ospite.nome}`, togli: () => { setOspite(null); setPage(1); } }] : []),
+  ];
+
   return (
     <div className="space-y-4">
       {!!dati?.nonDisponibili.length && (
@@ -320,10 +333,17 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
 
-      <p className="text-[13px] text-muted-foreground">
-        Solo rilievi critici, alti e medi di scansioni degli ultimi 30 giorni: i bassi, gli informativi e gli host non scansionati di recente non compaiono.
-      </p>
-      <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
+      {/* Una riga sola sotto il titolo (Riccardo, 13/11/2026: «intestazione enorme con testo»): la nota su cosa compare
+          si legge passando sopra alla prima voce. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span
+          className="cursor-help text-[13px] text-muted-foreground underline decoration-dotted underline-offset-2"
+          title="Solo rilievi critici, alti e medi di scansioni degli ultimi 30 giorni: i bassi, gli informativi e gli host non scansionati di recente non compaiono."
+        >
+          Critici, alti e medi degli ultimi 30 giorni
+        </span>
+        <StatoFeedExploit errorePagina={null} onAggiornato={() => void load()} />
+      </div>
 
       <FasciaIndicatori
         chiusa={fasciaChiusa}
@@ -377,87 +397,75 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
         <div className="space-y-3">
           {/* Fonte come tab segmentati su una riga sua (Riccardo, 10/11): «Tutti» è la vista
               comune, gli altri separano per motore (Trunk e Giri sono IPAM/Nety; CVE è Edge+Wazuh). */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
-          <div className="flex flex-wrap items-center gap-2 text-[13px]">
-            <span className="text-muted-foreground">Raggruppa per</span>
-            <div role="group" aria-label="Raggruppa per" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
-              {VISTE.map(([v, nome], i) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={vista === v}
-                  onClick={() => { setVista(v); setPage(1); }}
-                  className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${vista === v ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-                >
-                  {nome}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div role="group" aria-label="Motore" className="inline-flex flex-wrap overflow-hidden rounded-lg border border-foreground/70">
-            {MOTORI_RILIEVO.map((m, i) => {
+          {/* Scheletro comune (13/11/2026): la fonte è la fila di schede della pagina; i filtri rapidi stanno nel
+              pannello «Filtri» e, accesi, sono etichette; «Raggruppa per» è il cambio di vista, a destra. Prima erano
+              tre file di pulsanti. */}
+          <div role="tablist" aria-label="Fonte" className={FILA_SCHEDE}>
+            {MOTORI_RILIEVO.map((m) => {
               const conteggio = m === "tutti" ? (dati?.totaleGlobale ?? 0) : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
               return (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={motore === m}
-                  onClick={() => { setMotore(m); setPage(1); }}
-                  className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${motore === m ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
-                >
-                  {MOTORI_RILIEVO_UI[m].nome}{dati ? ` ${conteggio}` : ""}
+                <button key={m} type="button" role="tab" aria-selected={motore === m} onClick={() => { setMotore(m); setPage(1); }} className={cn(SCHEDA_BASE, motore === m ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                  {MOTORI_RILIEVO_UI[m].nome}
+                  {dati ? <span className="tabular-nums opacity-80">{conteggio}</span> : null}
                 </button>
               );
             })}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <BarraFiltri
+            accesi={filtriAccesi}
+            onApri={() => setFiltriAperti(true)}
+            onTogliTutti={azzeraFiltri}
+            destra={
+              <>
             {SEVERITIES.filter((s) => s !== "Low").map((s) => (
-              <button
-                key={`f-${s}`}
-                type="button"
-                aria-pressed={gravita.has(s)}
-                onClick={() => alternaGravita(s)}
-                className={`rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${gravita.has(s) ? "ring-2 ring-foreground" : "opacity-70 hover:opacity-100"}`}
-              >
-                <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    key={`f-${s}`}
+                    type="button"
+                    aria-pressed={gravita.has(s)}
+                    onClick={() => alternaGravita(s)}
+                    className={`rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${gravita.has(s) ? "ring-2 ring-foreground" : "opacity-70 hover:opacity-100"}`}
+                  >
+                    <BadgeGravita gravita={s} conteggio={dati ? rollup[s] : undefined} />
+                  </button>
+                ))}
+                <span className="text-[13px] text-muted-foreground">Raggruppa per</span>
+                        <div role="group" aria-label="Raggruppa per" className="inline-flex overflow-hidden rounded-lg border border-foreground/70">
+                  {VISTE.map(([v, nome], i) => (
+                    <button
+                      key={v}
+                      type="button"
+                      aria-pressed={vista === v}
+                      onClick={() => { setVista(v); setPage(1); }}
+                      className={`h-8 px-3 text-sm ${i > 0 ? "border-l border-foreground/70" : ""} ${vista === v ? "bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}
+                    >
+                      {nome}
+                    </button>
+                  ))}
+                </div>
+              </>
+            }
+          />
+          <PannelloFiltri aperto={filtriAperti} onAperto={setFiltriAperti} onTogliTutti={azzeraFiltri} nessunFiltro={filtriAttivi === 0} chiudi={`Mostra ${totale.toLocaleString("it-IT")} rilievi`}>
+            <p className="text-[13px] font-semibold">Exploit</p>
             {([["kev", "Sfruttate attivamente"], ["edb", "Exploit pubblico"]] as const).map(([v, nome]) => (
-              <button key={v} type="button" aria-pressed={exploit.has(v)} onClick={() => alterna(setExploit, v)}
-                className={`h-7 rounded-md border px-2 text-[13px] ${exploit.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
-                {nome}
-              </button>
+              <label key={v} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={exploit.has(v)} onChange={() => alterna(setExploit, v)} /> {nome}
+              </label>
             ))}
+            <p className="pt-1 text-[13px] font-semibold">Stato</p>
             {STATI_TRIAGE.map((v) => (
-              <button key={v} type="button" aria-pressed={stato.has(v)} onClick={() => alterna(setStato, v)}
-                className={`h-7 rounded-md border px-2 text-[13px] ${stato.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
-                {TRIAGE_UI[v].parola}
-              </button>
+              <label key={v} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={stato.has(v)} onChange={() => alterna(setStato, v)} /> {TRIAGE_UI[v].parola}
+              </label>
             ))}
+            <p className="pt-1 text-[13px] font-semibold">Sistema</p>
             {OS_FAMIGLIE.map((v) => (
-              <button key={v} type="button" aria-pressed={os.has(v)} onClick={() => alterna(setOs, v)}
-                className={`h-7 rounded-md border px-2 text-[13px] ${os.has(v) ? "border-foreground bg-foreground text-background font-medium" : "bg-card hover:bg-muted"}`}>
-                {NOME_OS[v]}
-              </button>
+              <label key={v} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={os.has(v)} onChange={() => alterna(setOs, v)} /> {NOME_OS[v]}
+              </label>
             ))}
-            {rete && (
-              <button type="button" onClick={() => { setRete(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per rete">
-                Rete {rete.nome} ✕
-              </button>
-            )}
-            {ospite && (
-              <button type="button" onClick={() => { setOspite(null); setPage(1); }} className="h-7 rounded-md border border-foreground bg-foreground px-2 text-[13px] font-medium text-background" title="Togli il filtro per host">
-                Host {ospite.nome} ✕
-              </button>
-            )}
-            {filtriAttivi > 0 && (
-              <button type="button" onClick={azzeraFiltri} className="h-7 px-1 text-[13px] underline underline-offset-2">
-                Togli i filtri
-              </button>
-            )}
-          </div>
+          </PannelloFiltri>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
           {dati && triTot > 0 && (
             <span className="ml-auto flex items-center gap-2" title={`Da rivedere ${conteggiTriage.da_fare} · in corso ${conteggiTriage.in_corso} · rivisti ${conteggiTriage.fatto} · ignorati ${conteggiTriage.ignorato}`}>
               <span>

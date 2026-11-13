@@ -52,6 +52,12 @@ export interface RispostaGrezza {
 /** Una GET verso un percorso del centro (già con la query). */
 export type Trasporto = (percorso: string) => Promise<RispostaGrezza>;
 
+/**
+ * Una POST con corpo JSON (13/11/2026): la usa solo «Metti in monitoraggio», con la chiave
+ * di **scrittura**. Stesso socket verificato, stessi tempi, stesso tetto di risposta.
+ */
+export type TrasportoPost = (percorso: string, corpo: unknown) => Promise<RispostaGrezza>;
+
 export interface ConnessioneCentro {
   base: URL;
   chiave: string;
@@ -156,6 +162,17 @@ function apriSocket(c: ConnessioneCentro, host: string, porta: number, limiteMs:
 
 /** Il trasporto TLS vero verso il centro. */
 export function trasportoTls(c: ConnessioneCentro): Trasporto {
+  const invia = inviaTls(c);
+  return (percorso) => invia(percorso, undefined);
+}
+
+/** Come `trasportoTls`, ma POST con corpo JSON. `c.chiave` qui è la chiave di scrittura. */
+export function trasportoTlsPost(c: ConnessioneCentro): TrasportoPost {
+  const invia = inviaTls(c);
+  return (percorso, corpo) => invia(percorso, JSON.stringify(corpo ?? {}));
+}
+
+function inviaTls(c: ConnessioneCentro): (percorso: string, corpo: string | undefined) => Promise<RispostaGrezza> {
   const tempoConnessione = c.tempoConnessioneMs ?? TEMPO_CONNESSIONE_MS;
   const tempoTotale = c.tempoTotaleMs ?? TEMPO_TOTALE_MS;
   if (c.base.protocol !== "https:") {
@@ -165,7 +182,7 @@ export function trasportoTls(c: ConnessioneCentro): Trasporto {
   const host = c.base.hostname.replace(/^\[(.*)\]$/, "$1");
   const porta = c.base.port ? Number(c.base.port) : 443;
 
-  return (percorso) =>
+  return (percorso, corpo) =>
     new Promise<RispostaGrezza>((resolve, reject) => {
       let finito = false;
       let sock: TLSSocket | null = null;
@@ -193,12 +210,15 @@ export function trasportoTls(c: ConnessioneCentro): Trasporto {
             {
               host,
               port: porta,
-              method: "GET",
+              method: corpo === undefined ? "GET" : "POST",
               path: percorso,
               headers: {
                 Accept: "application/json",
                 Authorization: `Bearer ${c.chiave}`,
                 Connection: "close",
+                ...(corpo === undefined
+                  ? {}
+                  : { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(corpo)) }),
               },
               // Il socket già verificato: niente agent, niente secondo handshake.
               createConnection: () => s,
@@ -228,7 +248,7 @@ export function trasportoTls(c: ConnessioneCentro): Trasporto {
             },
           );
           req.on("error", (e: NodeJS.ErrnoException) => chiudi(erroreDiRete(e)));
-          req.end();
+          req.end(corpo);
         })
         .catch((e: unknown) => chiudi(e instanceof ErroreLettura ? e : new ErroreLettura("rete", "centro non raggiungibile")));
     });

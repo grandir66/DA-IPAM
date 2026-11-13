@@ -1,0 +1,86 @@
+/**
+ * «Metti in monitoraggio» lato server: dall'host di DA-IPAM all'esito del centro
+ * (13/11/2026, tappa C di DATIA MONITORING). Funzioni su un `Database` passato: le rotte
+ * danno quello del tenant della sessione, le prove uno in memoria.
+ */
+import type Database from "better-sqlite3";
+import { normalizzaBase } from "./client";
+import { chiaveScrittura, leggiConfigLettura } from "./config";
+import { mettiInMonitoraggio, type EsitoScrittura, type OggettoDaMettere, type OpzioniScrittura } from "./scrittura";
+import { ErroreLettura, type TrasportoPost } from "./trasporto";
+
+export type EsitoInserimento =
+  | { ok: true; esito: EsitoScrittura }
+  | { ok: false; status: 400 | 404 | 409 | 502; errore: string };
+
+interface RigaHost {
+  ip: string;
+  mac: string | null;
+  hostname: string | null;
+  custom_name: string | null;
+  classification: string | null;
+  vendor: string | null;
+  os_info: string | null;
+  model: string | null;
+  open_ports: string | null;
+  snmp_data: string | null;
+}
+
+/** L'host come lo vuole il centro, o null se non esiste. */
+export function oggettoDaHost(db: Database.Database, hostId: number): OggettoDaMettere | null {
+  const r = db
+    .prepare(
+      `SELECT ip, mac, hostname, custom_name, classification, vendor, os_info, model, open_ports, snmp_data
+       FROM hosts WHERE id = ?`,
+    )
+    .get(hostId) as RigaHost | undefined;
+  if (!r || !r.ip) return null;
+  return {
+    ip: r.ip,
+    mac: r.mac,
+    hostname: r.hostname,
+    customName: r.custom_name,
+    classification: r.classification,
+    vendor: r.vendor,
+    osInfo: r.os_info,
+    model: r.model,
+    openPorts: r.open_ports,
+    snmpData: r.snmp_data,
+  };
+}
+
+export interface DipendenzeInserimento {
+  db: Database.Database;
+  acquistato: () => boolean;
+  trasportoPost: (base: URL, chiave: string, impronta: string | null) => TrasportoPost;
+}
+
+/** Perché non si può: il testo è già quello da mostrare. null = si può. */
+export function perchéNonSiPuò(d: Pick<DipendenzeInserimento, "db" | "acquistato">): string | null {
+  if (!d.acquistato()) return "Il modulo Zabbix non è compreso in questa installazione.";
+  const cfg = leggiConfigLettura(d.db);
+  if (!cfg) return "Manca la configurazione del centro: si fa in Impostazioni → Moduli.";
+  if (!chiaveScrittura(d.db)) return "Manca la chiave di scrittura: la emette DA-Link e si inserisce in Impostazioni → Moduli.";
+  return null;
+}
+
+export async function inserisciHost(
+  d: DipendenzeInserimento,
+  hostId: number,
+  op: OpzioniScrittura = {},
+): Promise<EsitoInserimento> {
+  const motivo = perchéNonSiPuò(d);
+  if (motivo) return { ok: false, status: 409, errore: motivo };
+  const oggetto = oggettoDaHost(d.db, hostId);
+  if (!oggetto) return { ok: false, status: 404, errore: "Host non trovato" };
+  const cfg = leggiConfigLettura(d.db)!;
+  const chiave = chiaveScrittura(d.db)!;
+  const base = new URL(normalizzaBase(cfg.baseUrl));
+  try {
+    const esito = await mettiInMonitoraggio({ base, trasportoPost: d.trasportoPost(base, chiave, cfg.impronta) }, oggetto, op);
+    return { ok: true, esito };
+  } catch (e) {
+    const testo = e instanceof ErroreLettura ? e.message : "il centro non ha risposto";
+    return { ok: false, status: 502, errore: testo.charAt(0).toUpperCase() + testo.slice(1) };
+  }
+}

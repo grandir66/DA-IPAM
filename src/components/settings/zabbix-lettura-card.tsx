@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RigheRimando } from "@/components/opzioni/riga-rimando";
+import { ZabbixScritturaRiga } from "@/components/settings/zabbix-scrittura-riga";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
@@ -205,6 +206,7 @@ export function ZabbixLetturaCard({ isAdmin }: { isAdmin: boolean }) {
             {c.ultimoErrore && <p>Ultimo errore: {c.ultimoErrore}</p>}
           </div>
         )}
+        {c && isAdmin && <ZabbixScritturaRiga />}
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void salva()} disabled={salvo || !baseUrl || !codcli || (!c && !chiave)}>
             {salvo && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}

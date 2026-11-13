@@ -1,6 +1,6 @@
 # DATIA MONITORING — la pagina del cliente sui dati di Zabbix, e l'inserimento degli oggetti da DA-IPAM
 
-> Piano del 13/11/2026 (Riccardo). Stato: **approvato da Riccardo il 13/11 («Sì a tutto»), D1-D4 secondo la proposta; A e B fatte, C da fare**. Storia e misure: `TASKS.md`,
+> Piano del 13/11/2026 (Riccardo). Stato: **approvato da Riccardo il 13/11 («Sì a tutto»), D1-D4 secondo la proposta; A, B e C scritte; C1-C2 in produzione sul `.15` spente di serie**. Storia e misure: `TASKS.md`,
 > sezione «2026-11-13 — DATIA MONITORING». Tocca due repo: DA-IPAM (questo) e DA-Zabbix
 > (`/Users/riccardo/Progetti/DA-Zabbix`, ramo `revisione/20260830`, live `192.168.4.15`).
 
@@ -66,20 +66,21 @@ Ogni tappa si chiude da sola e si può rilasciare senza la successiva. Tutto nas
 
 ### Tappa C — inserimento degli oggetti (zona rossa: è una chiave che scrive)
 
-- [ ] C1. DA-Zabbix: chiave di scrittura (D1), emissione e revoca da DA-Link sul modello di
+- [x] C1. DA-Zabbix: chiave di scrittura (D1), emissione e revoca da DA-Link sul modello di
   `/api/dalink/chiave-lettura`. Prova vista fallire: chiave di lettura rifiutata, chiave di un altro
   cliente rifiutata, tetto giornaliero rispettato.
-- [ ] C2. DA-Zabbix: `POST /api/scrittura/v1/oggetto`. Riceve indirizzo, nome, tipo, sistema, se c'è
+- [x] C2. DA-Zabbix: `POST /api/scrittura/v1/oggetto`. Riceve indirizzo, nome, tipo, sistema, se c'è
   SNMP; passa da `mapping.py` (la regola che c'è già) e risponde con una di tre cose: inserito,
   serve l'agente (con lo script di `comando_linux` o `comando_windows`), fuori perimetro (col motivo).
   Modo `prova` a vuoto, come le rotte di DA-Link. Mai cancellazioni.
-- [ ] C3. DA-IPAM: configurazione della chiave di scrittura accanto a quella di lettura
+- [x] C3. DA-IPAM: configurazione della chiave di scrittura accanto a quella di lettura
   (`src/lib/zabbix-lettura/config.ts`, cifrata a riposo, mai mostrata).
-- [ ] C4. DA-IPAM: sulla scheda dell'oggetto, accanto ad «Abbina», «Metti in monitoraggio»; finestra con
+- [x] C4. DA-IPAM: sulla scheda dell'oggetto, accanto ad «Abbina», «Metti in monitoraggio»; finestra con
   l'esito, e per Windows e Linux lo script con «Copia» e «Scarica». Stato «in attesa dell'agente»
   finché l'oggetto non compare nella lettura, poi abbinamento da solo.
-- [ ] C5. DA-IPAM: pagina per inserirne molti insieme (solo amministratore), prima a vuoto con l'elenco
+- [x] C5. DA-IPAM: pagina per inserirne molti insieme (solo amministratore), prima a vuoto con l'elenco
   di cosa succederebbe a ogni oggetto, poi la conferma.
+- Fatto (13/11): DA-Zabbix `fb2e2143` sul `.15` dopo lo snapshot `pre-scrittura-oggetti-20261113` della VM 107 su DA-PX-01; 16 prove (chiave di lettura che non scrive, tetto, nessuna cancellazione, prova a vuoto), cancello completo verde; API spenta senza `ZBX_SCRITTURA_CLIENTI=si` (503 verificato). DA-IPAM: 5 prove mirate, pagina e pulsante non ancora visti resi.
 - Verifica: sul live, su DTS e Domarc (Riccardo, 13/11: «abbiamo tutti i diritti per farlo»): prima a
   vuoto, poi un oggetto vero per tipo (uno SNMP, un Windows, un Linux).
 

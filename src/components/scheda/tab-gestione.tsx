@@ -19,6 +19,7 @@ import { ClassificationEvidencePanel } from "@/components/shared/classification-
 import { ClassificazioneApparato, CredenzialiAssegnate } from "@/components/devices/credenziali-assegnate";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import { HostMeshcentralCard } from "@/components/hosts/host-meshcentral-card";
+import { MettiInMonitoraggio } from "@/components/zabbix/metti-in-monitoraggio";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
@@ -69,15 +70,16 @@ function RigaCollegamento({ ok, nome, stato, azione }: { ok: boolean; nome: stri
 }
 
 function CollegamentiEsterni({ ctx }: { ctx: ContestoScheda }) {
-  const { host, librenms, displayName, ricarica } = ctx;
+  const { host, librenms, displayName, ricarica, isAdmin } = ctx;
   const perBrowser = useUrlPerBrowser();
-  const [zabbix, setZabbix] = useState<{ configurato: boolean; abbinato: boolean } | null>(null);
+  type StatoZabbix = { configurato: boolean; abbinato: boolean; inserimento?: { possibile: boolean; motivo?: string } };
+  const [zabbix, setZabbix] = useState<StatoZabbix | null>(null);
   const [erroreZabbix, setErroreZabbix] = useState<string | null>(null);
   const [giro, setGiro] = useState(0);
 
   useEffect(() => {
     let vivo = true;
-    void fetchJson<{ configurato: boolean; abbinato: boolean }>(`/api/hosts/${host.id}/zabbix`, { cache: "no-store" }).then((r) => {
+    void fetchJson<StatoZabbix>(`/api/hosts/${host.id}/zabbix`, { cache: "no-store" }).then((r) => {
       if (!vivo) return;
       if (r.ok) { setZabbix(r.data); setErroreZabbix(null); } else setErroreZabbix(r.message);
     });
@@ -105,7 +107,18 @@ function CollegamentiEsterni({ ctx }: { ctx: ContestoScheda }) {
           zabbix.abbinato ? (
             <RigaCollegamento ok nome="Zabbix" stato="abbinato" azione={<Link href="/zabbix" className={legame}>apri il pannello ›</Link>} />
           ) : (
-            <RigaCollegamento ok={false} nome="Zabbix" stato="non abbinato" azione={<Link href="/zabbix" className={legame}>Abbina ›</Link>} />
+            <RigaCollegamento
+              ok={false} nome="Zabbix" stato="non abbinato"
+              azione={
+                <>
+                  <Link href="/zabbix" className={legame}>Abbina ›</Link>
+                  {/* Solo admin, e solo se l'appliance ha la chiave di scrittura (13/11/2026). */}
+                  {isAdmin && zabbix.inserimento?.possibile && (
+                    <MettiInMonitoraggio hostId={host.id} nome={displayName} alFatto={() => setGiro((g) => g + 1)} />
+                  )}
+                </>
+              }
+            />
           )
         )}
         {erroreZabbix && <li><LoadError what="lo stato di Zabbix" message={erroreZabbix} onRetry={() => setGiro((g) => g + 1)} /></li>}

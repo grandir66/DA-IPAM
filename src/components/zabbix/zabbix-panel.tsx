@@ -313,6 +313,12 @@ export function ZabbixPanel() {
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {/* «Aggiungi a Zabbix» (13/11/2026): la pagina dice da sé se manca la chiave di scrittura. */}
+        {isAdmin && pannello?.stato === "ok" && (
+          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/zabbix/aggiungi" />}>
+            Aggiungi apparati
+          </Button>
+        )}
         {isAdmin && (
           <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/settings?tab=moduli#module-zabbix" />}>
             <Settings className="h-4 w-4 mr-1.5" />

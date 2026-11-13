@@ -1228,6 +1228,16 @@ export const DDL_ZABBIX_LETTURA: ReadonlyArray<readonly [string, string]> = [
   aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
   aggiornato_da TEXT
 )`],
+  // La chiave di **scrittura** (13/11/2026, tappa C di DATIA MONITORING): tabella a parte
+  // dalla configurazione di lettura, così si mette e si toglie senza toccarla, e chi non
+  // mette in monitoraggio da qui non ha nessuna chiave che scrive.
+  ["zabbix_scrittura_config", `CREATE TABLE IF NOT EXISTS zabbix_scrittura_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  chiave_enc TEXT NOT NULL,
+  chiave_id TEXT NOT NULL,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  aggiornato_da TEXT
+)`],
   ["zabbix_abbinamenti", `CREATE TABLE IF NOT EXISTS zabbix_abbinamenti (
   hostid TEXT PRIMARY KEY,
   host_id INTEGER NOT NULL,

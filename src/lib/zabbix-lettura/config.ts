@@ -20,6 +20,8 @@ import { normalizzaImprontaLettura } from "./trasporto";
 /** `zl1.<id 8 esadecimali>.<segreto base64url di 43 caratteri>` (§2 del design). */
 export const FORMA_CHIAVE = /^zl1\.([0-9a-f]{8})\.([A-Za-z0-9_-]{43})$/;
 export const FORMA_CODCLI = /^[0-9]{3,8}$/;
+/** La chiave di **scrittura** (13/11/2026): altra forma, altra riga, altro uso. */
+export const FORMA_CHIAVE_SCRITTURA = /^zs1\.([0-9a-f]{8})\.([A-Za-z0-9_-]{43})$/;
 
 const pronti = new WeakSet<Database.Database>();
 function pronto(db: Database.Database): Database.Database {
@@ -229,4 +231,61 @@ export function registraFallimento(
     )
     .run(fallimenti, prossimo, errore.slice(0, 500));
   return { fallimenti, prossimo };
+}
+
+// --- la chiave di scrittura (13/11/2026, tappa C di DATIA MONITORING) ------------------
+//
+// Sta a parte da quella di lettura: si mette e si toglie da sola, e un'appliance che non
+// deve mettere oggetti in monitoraggio semplicemente non ce l'ha. Cifrata a riposo come
+// l'altra; verso la pagina esce solo la parte pubblica (`zs1.<id>`), mai il segreto.
+
+interface RigaScrittura {
+  chiave_enc: string;
+  chiave_id: string;
+  aggiornato_il: string;
+  aggiornato_da: string | null;
+}
+
+export interface ConfigScrittura {
+  chiaveId: string;
+  aggiornatoIl: string;
+  aggiornatoDa: string | null;
+}
+
+function rigaScrittura(db: Database.Database): RigaScrittura | undefined {
+  return pronto(db).prepare("SELECT * FROM zabbix_scrittura_config WHERE id = 1").get() as RigaScrittura | undefined;
+}
+
+/** La parte pubblica della chiave di scrittura, o null se non c'è. */
+export function leggiConfigScrittura(db: Database.Database): ConfigScrittura | null {
+  const r = rigaScrittura(db);
+  return r ? { chiaveId: r.chiave_id, aggiornatoIl: r.aggiornato_il, aggiornatoDa: r.aggiornato_da } : null;
+}
+
+/** La chiave decifrata, o null se manca o non si decifra. */
+export function chiaveScrittura(db: Database.Database): string | null {
+  const r = rigaScrittura(db);
+  if (!r) return null;
+  const k = safeDecrypt(r.chiave_enc);
+  return k && FORMA_CHIAVE_SCRITTURA.test(k) ? k : null;
+}
+
+export function salvaChiaveScrittura(db: Database.Database, chiave: string, chi: string): { ok: true } | { ok: false; errore: string } {
+  const k = chiave.trim();
+  const m = FORMA_CHIAVE_SCRITTURA.exec(k);
+  if (!m) return { ok: false, errore: "Chiave di scrittura non valida: deve essere nella forma zs1.…" };
+  pronto(db)
+    .prepare(
+      `INSERT INTO zabbix_scrittura_config (id, chiave_enc, chiave_id, aggiornato_il, aggiornato_da)
+       VALUES (1, ?, ?, datetime('now'), ?)
+       ON CONFLICT(id) DO UPDATE SET chiave_enc = excluded.chiave_enc, chiave_id = excluded.chiave_id,
+         aggiornato_il = excluded.aggiornato_il, aggiornato_da = excluded.aggiornato_da`,
+    )
+    .run(encrypt(k), m[1], chi);
+  return { ok: true };
+}
+
+/** Toglie la chiave di scrittura: da lì in poi l'appliance non mette più oggetti. */
+export function togliChiaveScrittura(db: Database.Database): boolean {
+  return pronto(db).prepare("DELETE FROM zabbix_scrittura_config WHERE id = 1").run().changes > 0;
 }

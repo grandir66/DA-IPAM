@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## 2026-11-13 — «Metti in monitoraggio»: apparati in Zabbix da DA-IPAM
+
+### Aggiunto
+- **Pulsante «Metti in monitoraggio» sulla scheda dell'apparato** (Gestione → Collegamenti esterni, solo amministratori) e **pagina «Aggiungi a Zabbix»** (`/zabbix/aggiungi`) per più apparati insieme. Perché: Riccardo vuole aggiungere gli oggetti in Zabbix da qui, su richiesta, e per Windows e Linux avere lo script dell'agente. Il centro DA-Zabbix decide modello e perimetro con la sua regola di sempre; DA-IPAM manda quello che sa dell'apparato.
+- **Sempre due passi**: prima il centro dice cosa farebbe (prova a vuoto, niente scritto), poi si conferma. Nella pagina a gruppi si aggiunge solo ciò che la prova ha accettato.
+- **Lo script dell'agente si copia o si scarica (.ps1, .sh) e lo lancia una persona sulla macchina**: DA-IPAM non lo esegue (Riccardo, 13/11: «l'install sarà sempre manuale, solo verso i sistemi monitorati»).
+- **Chiave di scrittura a parte** (`zs1.…`, Impostazioni → Moduli → Zabbix), emessa da DA-Link e diversa da quella di lettura: senza, il pulsante non compare. Tabella sua (`zabbix_scrittura_config`), cifrata, non viaggia nei trasferimenti fra installazioni.
+
 ## 2026-11-13 — DATIA MONITORING nella vista cliente
 
 ### Aggiunto

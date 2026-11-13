@@ -184,6 +184,9 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra
   // installazione riceve la sua dal kit di DA-Link; copiarla farebbe parlare due istanze con la stessa chiave.
   "zabbix_lettura_config",
+  // Chiave di scrittura (13/11/2026): come quella di lettura, una per istanza. Copiarla darebbe a un'altra
+  // installazione il diritto di aggiungere apparati in Zabbix a nome di questa.
+  "zabbix_scrittura_config",
   // Snapshot dei collector (payload gzip in BLOB) e le modifiche che hanno fatto: storia di questa istanza, si rifà con
   // un'acquisizione. I dati che hanno scritto viaggiano già con l'apparato (porte, vicini, identità).
   "acquisition_snapshots",

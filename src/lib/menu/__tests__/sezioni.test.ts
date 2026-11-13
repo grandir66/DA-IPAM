@@ -24,7 +24,15 @@ test("nel menu si accende la prima pagina della sezione, non le altre voci", () 
 });
 
 test("un indirizzo sta in una sezione sola e nessuna scheda è doppia", () => {
-  const tutte = SEZIONI.flatMap((s) => s.schede.map((x) => x.href));
+  const tutte = SEZIONI.flatMap((s) => s.schede.map((x) => `${x.href}#${x.ancora ?? ""}`));
   assert.equal(new Set(tutte).size, tutte.length);
   assert.equal(sezioneDelPercorso("/discoveryx"), null);
+});
+
+test("le tre parti passive stanno nella fila in alto e si scelgono con l'àncora", () => {
+  assert.equal(sezioneDelPercorso("/arp-table/trunk")?.scheda.etichetta, "Passiva · Sicurezza");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "reti")?.scheda.etichetta, "Passiva · VLAN e apparati");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "annunci")?.scheda.etichetta, "Passiva · Annunci");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "boh")?.scheda.etichetta, "Passiva · Sicurezza");
+  assert.equal(voceAccesaDallaSezione("/arp-table/trunk", "/servizi-rete"), true);
 });

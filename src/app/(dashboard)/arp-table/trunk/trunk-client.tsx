@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import {
-  BarraStato, Etichetta, Legenda, Pannello, SchedePagina, TesseraNumero, VoceSelezionabile, Vuoto,
+  BarraStato, Etichetta, Legenda, Pannello, TesseraNumero, VoceSelezionabile, Vuoto,
 } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
@@ -156,13 +156,16 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   // Due schede (Riccardo, 25/10: in una pagina sola diventava troppo lunga). La scheda sta nell'indirizzo
   // (#sicurezza, #reti), così il badge del menu e un collegamento aprono quella giusta.
   const [scheda, setScheda] = useState<Scheda>("sicurezza");
+  // Dal 13/11/2026 le tre parti si scelgono dalla fila di schede in cima (components/shared/schede-sezione.tsx), che
+  // cambia l'àncora: qui la si segue.
   useEffect(() => {
-    const h = window.location.hash.slice(1);
-    if (h === "reti" || h === "sicurezza" || h === "annunci") setScheda(h);
-  }, []);
-  const scegliScheda = useCallback((v: Scheda) => {
-    setScheda(v);
-    window.history.replaceState(null, "", `#${v}`);
+    const leggi = () => {
+      const h = window.location.hash.slice(1);
+      setScheda(h === "reti" || h === "annunci" ? h : "sicurezza");
+    };
+    leggi();
+    window.addEventListener("hashchange", leggi);
+    return () => window.removeEventListener("hashchange", leggi);
   }, []);
 
   const retiPerVid = useMemo(() => {
@@ -303,33 +306,6 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
       />
       <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
 
-      <SchedePagina
-        etichetta="Parti della pagina"
-        scelta={scheda}
-        onScegli={scegliScheda}
-        voci={[
-          {
-            valore: "sicurezza",
-            titolo: "Sicurezza della rete",
-            descrizione: `${ril.allarmi} allarmi · ${ril.esposizioni} esposizioni · ${ril.novita} novità`,
-            segnale: ril.allarmiAlti > 0 ? (
-              <span className="rounded-full bg-[#8E1B20] px-2 font-mono text-[13px] font-bold text-white" title="Allarmi gravi da prendere in carico">
-                ✕ {ril.allarmiAlti}
-              </span>
-            ) : undefined,
-          },
-          {
-            valore: "reti",
-            titolo: "VLAN e reti",
-            descrizione: `${iniziale.vlan.filter((v) => v.vista).length} VLAN viste · ${r.ip} indirizzi IP`,
-          },
-          {
-            valore: "annunci",
-            titolo: "Annunci",
-            descrizione: "Chi si presenta da solo: MikroTik, Ubiquiti, Cisco",
-          },
-        ]}
-      />
 
       {scheda === "sicurezza" && (
         <div className="space-y-4">

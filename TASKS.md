@@ -79,6 +79,9 @@ Riccardo, 14/11: «uniformare i tab della pagina allo standard già impostato ne
 - [ ] Da confermare con Riccardo: Notifiche in Impostazioni e Opzioni in Impostazioni (Opzioni ha anche parametri tecnici). Chi non è admin non vede più Scansione, Identificazione, Alert sicurezza e HTTPS nel menu (prima le vedeva in sola lettura; l'indirizzo diretto risponde ancora).
 - [ ] «Job pianificati» era già in Schedulazioni dall'11/11 (0.9.1182): niente da fare. Il titolo di «Cosa esce» è rimasto (è una frase, non il nome della scheda).
 
+- [x] Riccardo, 14/11: «la voce di menù Anomalie doveva essere integrata in Apparati/Cambiamenti». Primo pezzo: Anomalie tolta dal menù, è una scheda di Apparati accanto a Cambiamenti. Perso il numerino delle anomalie aperte nel menù (resta nella pagina).
+- [ ] Riccardo, 14/11: in quell'area devono comparire **tutte le voci che cambiano nel tempo** — nuovi oggetti, nuovi apparati, spostamenti di porta, cambi di IP, nuove porte rilevate — in un elenco solo. Oggi sono due pagine con fonti diverse: Cambiamenti (Network Changes, con baseline) e Anomalie (`mac_flip`, `new_unknown_host`, `port_change`, disponibilità, latenza). Da proporre oggetto per oggetto prima di scrivere; si aggancia al punto «usare gli eventi di Network Changes come evidenze per Anomalie» dell'11/11. Attenzione al rumore misurato l'11/11 (649 spostamenti di porta in 7 giorni, 39 «MAC cambiato»).
+
 ## 2026-11-09 — Spunti da Nety per Discovery e Reti
 
 Riccardo: valutare Nety anche solo per visualizzare meglio i dati di IPAM.

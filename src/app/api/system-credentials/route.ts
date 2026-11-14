@@ -6,6 +6,7 @@ import {
   createCredential,
   logCredentialEvent,
 } from "@/lib/credentials-vault";
+import { ruoloAdmin, senzaNote } from "@/lib/networks/senza-segreti";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 
 export async function GET() {
@@ -13,7 +14,8 @@ export async function GET() {
   if (session instanceof NextResponse) return session;
   // Il vault tiene l'URL diretto di LibreNMS; «Apri» usa l'URL scelto col
   // ruolo, così l'admin entra con l'accesso automatico e gli altri no (T3-26).
-  const items = listCredentials().map((c) =>
+  const admin = ruoloAdmin(session.user.role);
+  const items = listCredentials().map((c) => senzaNote(c, admin)).map((c) =>
     c.kind === "librenms" && c.url ? { ...c, open_url: resolveLibreNMSOperatorUrl(c.url, session.user.role) } : c,
   );
   return NextResponse.json({ items });

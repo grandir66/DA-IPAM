@@ -28,6 +28,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - I gettoni dell'agente non escono più dalle API dei profili cliente, e il dettaglio di un profilo lo legge solo chi ci appartiene (o un admin). Sul profilo tecnico il database intero lo scarica solo il superadmin; scarichi di backup ed export lasciano il nome nel journal.
 - «Backup database» chiede il codice della verifica in due passaggi prima di scaricare (stessa conferma di «Mostra password», 5 minuti). Chi non ha la verifica attiva non scarica.
 - Gli scarichi del database e dei pacchetti di trasferimento restano in un registro su tabella (chi, quando, cosa): il journal si perde con la rotazione. Il dialogo del backup mostra l'ultimo scarico.
+- Le note delle credenziali di sistema e la scheda cliente le leggono solo gli admin: sono campi liberi, dove può essere finita una password.
 
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.

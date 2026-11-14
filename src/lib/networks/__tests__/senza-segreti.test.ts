@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reteSenzaSegreti, ruoloAdmin, communityPerLog } from "../senza-segreti";
+import { reteSenzaSegreti, senzaNote, ruoloAdmin, communityPerLog } from "../senza-segreti";
 
 const rete = { id: 1, name: "LAN", cidr: "10.0.0.0/24", snmp_community: "segreta-finta" };
 
@@ -36,4 +36,9 @@ test("il log dice quante community, mai quali", () => {
   assert.equal(riga, "2 community");
   assert.ok(!riga.includes("segreta-finta"));
   assert.equal(communityPerLog(["x"]), "1 community");
+});
+
+test("le note arrivano solo agli admin", () => {
+  assert.equal(senzaNote({ id: 1, notes: "pw: x" }, false).notes, null);
+  assert.equal(senzaNote({ id: 1, notes: "pw: x" }, true).notes, "pw: x");
 });

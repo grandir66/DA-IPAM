@@ -22,3 +22,8 @@ export function reteSenzaSegreti<T extends Record<string, unknown>>(
 export function communityPerLog(communities: readonly string[]): string {
   return communities.length === 1 ? "1 community" : `${communities.length} community`;
 }
+
+/** Le note sono un campo libero, dove può esserci finita una password: a chi non è admin non arrivano (Riccardo, 14/11). */
+export function senzaNote<T extends { notes?: string | null }>(riga: T, admin: boolean): T {
+  return admin ? riga : { ...riga, notes: null };
+}

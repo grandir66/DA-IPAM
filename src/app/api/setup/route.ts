@@ -5,6 +5,8 @@ import { SetupSchema } from "@/lib/validators";
 import { ensureEnvSecrets } from "@/lib/env-secrets";
 import { urlDaAuth } from "@/lib/daauth";
 import { impostaLivello } from "@/lib/dalink/stato";
+import { codicePrimoAvvioRichiesto, consumaCodicePrimoAvvio, verificaCodicePrimoAvvio } from "@/lib/accesso/primo-avvio";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function GET() {
   const count = getUserCount();
@@ -15,6 +17,8 @@ export async function GET() {
     // pagina di accesso mostra il bottone solo se arriva valorizzato: la
     // variabile vive sul server, e il browser non può leggerla da sé.
     daauthUrl: urlDaAuth(),
+    // L'installatore ha lasciato il codice di primo avvio: la pagina lo chiede (P0-2, 14/11).
+    serveCodice: count === 0 && codicePrimoAvvioRichiesto(),
   });
 }
 
@@ -27,6 +31,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    // Codice di primo avvio: senza, chi raggiunge l'appliance per primo diventava amministratore (P0-2, 14/11).
+    if (codicePrimoAvvioRichiesto()) {
+      if (!checkRateLimit("primo-avvio", 5)) {
+        return NextResponse.json({ error: "Troppi tentativi col codice di primo avvio: riprova fra qualche minuto" }, { status: 429 });
+      }
+      if (!verificaCodicePrimoAvvio(typeof body?.codice_primo_avvio === "string" ? body.codice_primo_avvio : null)) {
+        console.warn("[setup] primo avvio rifiutato: codice mancante o sbagliato");
+        return NextResponse.json({ error: "Codice di primo avvio mancante o non valido" }, { status: 403 });
+      }
+    }
     const parsed = SetupSchema.safeParse({ ...body, confirm_password: body.password });
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
@@ -74,6 +88,8 @@ export async function POST(request: Request) {
     if (livello_uscita) {
       impostaLivello(livello_uscita, `setup: ${username}`);
     }
+
+    consumaCodicePrimoAvvio();
 
     // Allinea chiavi segrete (runtime → .env.local) prima di cifrare credenziali in UI
     ensureEnvSecrets();

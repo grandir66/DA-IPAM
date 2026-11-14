@@ -800,7 +800,7 @@ export function NetworkDetailClient({
       gateway: (form.elements.namedItem("gateway") as HTMLInputElement).value?.trim() || null,
       vlan_id: (form.elements.namedItem("vlan_id") as HTMLInputElement).value ? Number((form.elements.namedItem("vlan_id") as HTMLInputElement).value) : null,
       location: (form.elements.namedItem("location") as HTMLInputElement).value || "",
-      snmp_community: (form.elements.namedItem("snmp_community") as HTMLInputElement).value?.trim() || null,
+      snmp_community: (form.elements.namedItem("snmp_community") as HTMLInputElement | null)?.value?.trim() || null,
       dns_server: (form.elements.namedItem("dns_server") as HTMLInputElement).value?.trim() || null,
       router_id: (form.elements.namedItem("router_id") as HTMLSelectElement).value ? Number((form.elements.namedItem("router_id") as HTMLSelectElement).value) : null,
       // Un PUT solo, con la lista: rete e credenziali si salvano insieme o per

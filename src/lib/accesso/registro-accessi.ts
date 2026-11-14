@@ -12,7 +12,8 @@ export const GIORNI_REGISTRO_ACCESSI = 400;
 
 export interface RigaRegistroAccessi {
   /** `password_reimposta`: la scrive `scripts/reset-admin-password.cjs`, il recupero dal server (14/11). */
-  azione: "seconda_verifica_richiedi" | "seconda_verifica_azzera" | "seconda_verifica_togli" | "password_reimposta" | "codice_recupero_usato" | "codici_recupero_generati";
+  azione: "seconda_verifica_richiedi" | "seconda_verifica_azzera" | "seconda_verifica_togli" | "password_reimposta" | "codice_recupero_usato" | "codici_recupero_generati"
+    | "accesso_riuscito" | "accesso_rifiutato" | "accesso_bloccato";
   utente: string;
   utenteId: number;
   da: string;
@@ -41,5 +42,18 @@ export function scriviRegistroAccessi(riga: RigaRegistroAccessi, adesso = new Da
     }
   } catch (e) {
     console.warn("[registro-accessi] pulizia dei file vecchi fallita, si riprova domani:", e);
+  }
+}
+
+/**
+ * Una riga per ogni accesso riuscito, rifiutato o bloccato (piano di sicurezza 14/11): prima restavano solo nel
+ * journal, che ruota. Non lancia: un disco pieno non deve chiudere fuori tutti, ma si vede nel journal.
+ * Il nome è quello scritto da chi prova, tagliato a 64 caratteri; mai la password, mai il codice.
+ */
+export function registraAccesso(azione: "accesso_riuscito" | "accesso_rifiutato" | "accesso_bloccato", nome: string, utenteId = 0, via = "password"): void {
+  try {
+    scriviRegistroAccessi({ azione, utente: nome.trim().slice(0, 64), utenteId, da: via });
+  } catch (e) {
+    console.error("[registro-accessi] accesso non registrato:", e);
   }
 }

@@ -13,6 +13,7 @@
  * utenti, anche con la sessione vecchia ancora aperta. Fa eccezione solo l'utenza
  * di servizio Domarc (id "0"), che una riga nel database non ce l'ha.
  */
+import { motivoPasswordDebole } from "@/lib/accesso/password-debole";
 import bcrypt from "bcrypt";
 import {
   createUser,
@@ -223,7 +224,8 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
   if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
     return fail(400, "Lo username può contenere solo lettere, numeri, punti, trattini e underscore");
   }
-  if (password.length < 8) return fail(400, "La password deve avere almeno 8 caratteri");
+  const debole = motivoPasswordDebole(password, username);
+  if (debole) return fail(400, debole);
   if (isServiceUsername(username)) return fail(409, "Username riservato all'utenza di servizio Domarc");
 
   // Assente = false. Solo il booleano true accende la vista cliente.
@@ -425,6 +427,8 @@ export async function resetPasswordAs(session: SessionLike, rawId: string, reque
 
   const user = getUserById(userId);
   if (!user) return fail(404, "Utente non trovato");
+  const debole = motivoPasswordDebole(newPassword, user.username);
+  if (debole) return fail(400, debole);
 
   const decision = decideResetPassword(who.actor, managedUser(user));
   if (!decision.ok) return fromDenial(decision);

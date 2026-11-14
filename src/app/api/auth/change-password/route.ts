@@ -1,3 +1,4 @@
+import { motivoPasswordDebole } from "@/lib/accesso/password-debole";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUserByUsername, updateUserPassword } from "@/lib/db";
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Utente non trovato" }, { status: 404 });
     }
+    const debole = motivoPasswordDebole(new_password, user.username);
+    if (debole) return NextResponse.json({ error: debole }, { status: 400 });
 
     const isValid = await bcrypt.compare(current_password, user.password_hash);
     if (!isValid) {

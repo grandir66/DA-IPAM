@@ -264,6 +264,17 @@ CREATE TABLE IF NOT EXISTS system_credential_events (
   ts             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Registro degli scarichi di dati dall'istanza (piano di sicurezza 14/11, P0-1): chi, quando, cosa.
+CREATE TABLE IF NOT EXISTS scarichi_dati (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  cosa        TEXT NOT NULL,
+  utente_id   TEXT,
+  utente_nome TEXT,
+  ruolo       TEXT,
+  dettaglio   TEXT,
+  quando      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Token Bearer per POST /api/inventory/ingest (sha256 → tenant_code)
 CREATE TABLE IF NOT EXISTS inventory_ingest_tokens (
   token_sha256 TEXT PRIMARY KEY,

@@ -6,6 +6,8 @@ import { unisci } from "@/lib/percorsi";
 import { isTecnico } from "@/lib/profilo";
 import { puoScaricareHub } from "@/lib/accesso/profilo-pubblico";
 import { confermaValida, utenteDaSessione } from "@/lib/vault/mostra";
+import { getHubDb } from "@/lib/db-hub";
+import { registraScarico } from "@/lib/accesso/registro-scarichi";
 
 export async function GET() {
   const adminCheck = await requireAdmin();
@@ -24,8 +26,6 @@ export async function GET() {
       { status: 403, headers: { "Cache-Control": "no-store" } },
     );
   }
-  // Chi e quando: resta nel journal.
-  console.info(`[backup] hub.db scaricato da ${adminCheck.user.name ?? "?"} (${adminCheck.user.role ?? "?"})`);
   // Multi-tenant: il DB legacy `ipam.db` non esiste più. Il backup raw a file
   // singolo è `hub.db`; per un backup completo (hub + tutti i tenant) usare
   // l'export per-tenant `/api/tenant/export`. Path via resolveDataDir() per
@@ -37,6 +37,15 @@ export async function GET() {
   }
 
   const buffer = fs.readFileSync(dbPath);
+  // Chi e quando: nel journal e nel registro degli scarichi. Si scrive dopo la lettura, così il file
+  // scaricato non contiene la riga del proprio scarico.
+  console.info(`[backup] hub.db scaricato da ${adminCheck.user.name ?? "?"} (${adminCheck.user.role ?? "?"})`);
+  registraScarico(getHubDb(), {
+    cosa: "hub_db",
+    utenteId: String(utenteDaSessione(adminCheck).id),
+    utenteNome: adminCheck.user.name ?? null,
+    ruolo: adminCheck.user.role ?? null,
+  });
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/x-sqlite3",

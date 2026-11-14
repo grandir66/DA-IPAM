@@ -6,6 +6,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getHubDb } from "@/lib/db-hub";
 import { exportTenant } from "@/lib/transfer/export";
+import { registraScarico } from "@/lib/accesso/registro-scarichi";
 import type { Tier } from "@/lib/transfer/types";
 import pkg from "../../../../../package.json";
 
@@ -43,6 +44,13 @@ export async function POST(req: Request) {
     });
 
     console.info(`[export] ${tenantCode}: pacchetto scaricato da ${auth.user.name ?? "?"} (vault ${parsed.data.includeVault ? "compreso" : "escluso"})`);
+    registraScarico(getHubDb(), {
+      cosa: "pacchetto",
+      utenteId: auth.user.id != null ? String(auth.user.id) : null,
+      utenteNome: auth.user.name ?? null,
+      ruolo: auth.user.role ?? null,
+      dettaglio: `${tenantCode}, vault ${parsed.data.includeVault ? "compreso" : "escluso"}`,
+    });
     const fname = `${tenantCode}-${exportedAt.replace(/[:.]/g, "-")}.dab`;
     return new NextResponse(new Uint8Array(bundle), {
       status: 200,

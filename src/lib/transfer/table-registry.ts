@@ -230,6 +230,8 @@ export const EXCLUDED_HUB_TABLES: string[] = [
   "inventory_ingest_tokens",
   "tenant_agents",
   "system_credential_events",
+  // Registro degli scarichi (14/11): racconta cosa è uscito da QUESTA istanza.
+  "scarichi_dati",
   // DA-Link (tappa C1): la scelta di cosa esce è di questa istanza, non dei dati
   // del cliente; un'altra istanza la dichiara da sé.
   "dalink_livello_registro",

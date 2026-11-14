@@ -145,8 +145,6 @@ setup_env() {
     echo ">>> Generazione .env.local..."
     local key=$(openssl rand -hex 32)
     local secret=$(openssl rand -hex 32)
-    # Password Domarc: 20 caratteri alfanumerici casuali
-    local domarc_pass=$(openssl rand -base64 20 | tr -dc 'A-Za-z0-9' | head -c 20)
     {
       echo "# DA-INVENT — generato dall'installer"
       echo "# ENCRYPTION_KEY: NON duplicare con valore diverso in Docker/env esterno."
@@ -158,23 +156,18 @@ setup_env() {
       echo ""
       echo "# Auth.js: accesso da qualsiasi IP/hostname (LAN, container DHCP). Opzionale URL fisso: DA_INVENT_AUTH_URL=..."
       echo "AUTH_TRUST_HOST=true"
-      echo ""
-      echo "# Utente di servizio Domarc (accesso superadmin incondizionato)"
-      echo "DOMARC_USERNAME=domarc"
-      echo "DOMARC_PASSWORD=$domarc_pass"
+      # Dal 14/11/2026 (piano di sicurezza, P0-2; Riccardo: «utente vero», «solo sulle nuove») le installazioni
+      # nuove non hanno più l'utenza di servizio nel file: entrava come superadmin senza codice e il cliente non
+      # la vedeva. L'assistenza Domarc è un utente come gli altri, creato dalla pagina Utenti con la verifica in
+      # due passaggi. Le installazioni già fatte tengono le loro righe DOMARC_* finché qualcuno non le toglie.
       if [ -n "$auth_url" ]; then
         echo "AUTH_URL=$auth_url"
       fi
     } > "$env_file"
     chmod 600 "$env_file"
     echo ""
-    echo "    ╔══════════════════════════════════════════════════════════════╗"
-    echo "    ║  UTENTE DI SERVIZIO DOMARC                                 ║"
-    echo "    ║  Username: domarc                                          ║"
-    echo "    ║  Password: $domarc_pass                     ║"
-    echo "    ║                                                            ║"
-    echo "    ║  ANNOTARE QUESTA PASSWORD — non sarà più visualizzata.     ║"
-    echo "    ╚══════════════════════════════════════════════════════════════╝"
+    echo "    Assistenza Domarc: nessuna utenza di servizio nel file. Dopo il setup, se serve, crearla da"
+    echo "    Impostazioni › Utenti come utente con la verifica in due passaggi richiesta."
     echo ""
     if [ -n "$auth_url" ]; then
       echo "    .env.local creato (AUTH_TRUST_HOST=true, AUTH_URL=$auth_url da DA_INVENT_AUTH_URL). Completare il setup dalla UI al primo avvio."

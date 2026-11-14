@@ -152,7 +152,6 @@ export const ATTESI: Atteso[] = [
 
 const PROVA_MASCHERATE = "src/lib/permessi/__tests__/letture-mascherate.test.ts";
 const MOTIVO_LETTURA_POST = "lettura in blocco con l'elenco nel corpo (POST per la lunghezza): non scrive";
-const MOTIVO_ESPORTA = "esporta gli stessi dati che l'utente vede nelle pagine, senza segreti";
 
 export const ECCEZIONI: Eccezione[] = [
   // --- pubbliche: coincidono con l'elenco consentito di src/lib/auth.config.ts
@@ -174,7 +173,6 @@ export const ECCEZIONI: Eccezione[] = [
   { rotta: "/api/user/preferences", metodi: ["PUT"], tipo: "motivata", guardia: "auth", motivo: "preferenze del proprio utente" },
   { rotta: "/api/integrations/meshcentral/host-status", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: MOTIVO_LETTURA_POST },
   { rotta: "/api/integrations/wazuh/host-status", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: MOTIVO_LETTURA_POST },
-  { rotta: "/api/networks/export-csv", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: "esportazione con l'elenco delle reti nel corpo: non scrive" },
   {
     rotta: "/api/integrations/proxy/librenms/[[...path]]",
     metodi: ["POST", "PUT", "PATCH", "DELETE"],
@@ -186,9 +184,6 @@ export const ECCEZIONI: Eccezione[] = [
   },
 
   // --- letture col nome sensibile che non restituiscono segreti
-  { rotta: "/api/export", metodi: ["GET"], tipo: "motivata", guardia: "sessione", motivo: MOTIVO_ESPORTA },
-  { rotta: "/api/inventory/export", metodi: ["GET"], tipo: "motivata", guardia: "sessione", motivo: MOTIVO_ESPORTA },
-  { rotta: "/api/ad/healthcheck/export", metodi: ["GET"], tipo: "motivata", guardia: "sessione", motivo: MOTIVO_ESPORTA },
   {
     rotta: "/api/integrations/[component]/test-connection",
     metodi: ["GET"],

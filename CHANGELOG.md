@@ -14,6 +14,14 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Le nostre sonde non finiscono più dentro la riga d'attacco**: la riga si riconosceva per agente e regola, così un accesso fallito dell'appliance si sommava alla riga dei tentativi veri già aperta e le riscriveva utente e indirizzo (DTS: «angelo.doko da 172.16.0.2», 16872 volte). Ora le sonde hanno una riga loro; le righe già mescolate restano com'erano finché non si prendono in carico.
 - **«User account changed» (4738) scritto dal sistema senza cambiare nulla non si archivia più**: a DTS erano ~1000 righe per server su 25 macchine, a livello 8, e coprivano i cambi veri. Resta archiviato se lo fa un utente o se le opzioni dell'account cambiano.
 
+## Non rilasciato — Apparati: tutti i cambiamenti in un elenco solo (14/11/2026)
+
+### Cambiato
+- **Apparati → Cambiamenti** raccoglie tutto ciò che cambia nel tempo: oggetti nuovi, apparati nuovi, cambi di IP, MAC cambiato, spostamenti di porta, porte nuove. Prima erano due pagine (Cambiamenti e Anomalie) con fonti diverse, e sull'hub la prima era vuota perché viveva solo del confronto fra due giri uguali.
+- Il rumore (indirizzi dati dal DHCP, porte di collegamento fra switch, MAC con molti indirizzi) è nascosto di serie col suo numero in vista: senza, 85 MAC su 91 risultavano «con IP cambiato» in una settimana.
+- «Visto» per riga o per tutto l'elenco filtrato; il numero dei cambiamenti da vedere sta accanto ad «Apparati» nel menù.
+- La voce di menù «Anomalie» non c'è più; disponibilità e latenza anomale restano sulla loro pagina, raggiungibile da Cambiamenti.
+
 ## Non rilasciato — Impostazioni: una voce di menu, una fila di schede (14/11/2026)
 
 ### Cambiato

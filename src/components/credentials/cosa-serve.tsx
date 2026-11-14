@@ -7,7 +7,7 @@
  */
 
 import Link from "next/link";
-import { ArrowLeft, ClipboardCopy } from "lucide-react";
+import { ArrowLeft, BookOpen, ClipboardCopy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Etichetta, IntestazionePagina, Pannello } from "@/components/shared/console";
 import { GuidaAuditDc } from "@/components/shared/guida-audit-dc";
@@ -22,6 +22,11 @@ import {
   type FamigliaDiritti,
 } from "@/lib/credentials/diritti";
 import { copiaTesto } from "./diritti-account";
+
+const COMANDO_PREPARA_DOMINIO = `# Sul DC, PowerShell come amministratore, utente Domain Admins. Prima la prova:
+.\\Prepara-Dominio-DA-IPAM.ps1 -OuComputer "OU=Computer,DC=ditta,DC=local" -AllowFromIP <IP dell'appliance>
+# Poi, con gli stessi parametri, si applica:
+.\\Prepara-Dominio-DA-IPAM.ps1 -OuComputer "OU=Computer,DC=ditta,DC=local" -AllowFromIP <IP dell'appliance> -Applica`;
 
 async function copia(testo: string) {
   if (await copiaTesto(testo)) toast.success("Copiato");
@@ -85,6 +90,33 @@ export function CosaServe() {
           </Button>
         }
       />
+
+      {/* 08/11/2026 (Riccardo): uno script che costruisce tutto, col documento di cosa fa e dei passi a mano. */}
+      <Pannello
+        titolo="Preparare il dominio in un colpo solo"
+        sottotitolo="Due account, gruppi, audit dei DC e la GPO che apre WMI e WinRM sui PC e server. Su un DC, PowerShell come amministratore, utente Domain Admins."
+        corpoClassName="p-4 space-y-4"
+      >
+        <div className="flex flex-wrap gap-2">
+          <Button render={<a href="/api/ad-setup/script-dominio" download />} nativeButton={false}>
+            <Download className="h-4 w-4 mr-2" />
+            Prepara-Dominio-DA-IPAM.ps1
+          </Button>
+          <Button variant="outline" render={<a href="/api/ad-setup/script-audit" download />} nativeButton={false}>
+            <Download className="h-4 w-4 mr-2" />
+            Configura-Audit-DC.ps1
+          </Button>
+          <Button variant="outline" render={<Link href="/manual?doc=prepara-dominio" />} nativeButton={false}>
+            <BookOpen className="h-4 w-4 mr-2" />
+            Cosa fa e passi a mano
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          I due script nella stessa cartella. Senza <code>-Applica</code> lo script dice cosa farebbe e non cambia niente;
+          le OU sono quelle dei PC e dei server, mai Domain Controllers.
+        </p>
+        <Comando testo={COMANDO_PREPARA_DOMINIO} />
+      </Pannello>
 
       <Pannello titolo="Regole" conteggio={REGOLE_DIRITTI.length + 1} corpoClassName="p-4">
         <ul className="list-disc space-y-1.5 pl-5 text-sm">

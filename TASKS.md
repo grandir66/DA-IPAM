@@ -1,6 +1,14 @@
 # TASKS — DA-IPAM
 
 
+## 2026-11-08 — Script che prepara il dominio (Riccardo)
+
+Riccardo, 08/11: «è scomparsa la pagina su come configurare i diritti di utenti di Active Directory e gli script dedicati; dovresti generare uno script completo che eseguito con privilegi elevati costruisce il necessario, oltre al documento di cosa fa e i passi per farlo a mano». La pagina c'era (`/active-directory/cosa-serve`), ma si raggiungeva solo dalla testata di Active Directory.
+- [x] `scripts/Prepara-Dominio-DA-IPAM.ps1` (di serie prova, `-Applica` per applicare) e `docs/PREPARA-DOMINIO.md`
+- [x] Download `/api/ad-setup/script-dominio`, pannello in «Cosa serve», collegamento da «Sicurezza del dominio»; prova `prepara-dominio.test.ts` vista fallire
+- [ ] **Provare lo script su un dominio di prova** (prima senza `-Applica`, poi con): sul Mac non c'è PowerShell, quindi non l'ha nemmeno controllato un parser. Punti da guardare: la scrittura di `GptTmpl.inf` e di `gPCMachineExtensionNames` (Gruppi con restrizioni), le regole firewall nella GPO con `-PolicyStore`, e `gpresult` su un PC
+- [ ] Gruppo «DHCP Administrators» cercato per nome: su un dominio in un'altra lingua va aggiunto a mano (lo script lo dice)
+
 ## 2026-11-08 — Menu: voci grigie senza i loro moduli, Sicurezza del dominio unita (Riccardo)
 
 Viste sulla ridotta `79993-ipam-7`. Riccardo, 08/11: Vulnerabilità, Scansioni VA, Inventario e Applicativi grigie senza Edge e senza NIS2; Alert sicurezza grigia senza Wazuh; «Sicurezza del Dominio» e «Health Active Directory» unite su tutte le installazioni, senza perdere informazioni. Livello leggero.

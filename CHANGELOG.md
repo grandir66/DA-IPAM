@@ -23,6 +23,18 @@ Riccardo, sulla LAN Base dell'hub: «con l'autorizzazione di un operatore devono
 - **«Forza come…»** sulle righe «Da chiarire» della scheda «Per device»: una persona sceglie la famiglia e il device entra in quel gruppo, confermato e segnato come forzato (chi, quando, nota). Resta valido finché la proposta lo vede ancora «da chiarire»; se il tipo cambia esce dal lancio e torna da rivedere. «Togli» lo rimette com'era. Un impianto non si forza da qui.
 - Conteggio dei forzati nella tabella delle famiglie e nell'esito del lancio. Rotta `proposte-va/forza` (solo amministratore, non lancia niente); due colonne additive in `va_proposte`.
 
+## [Non rilasciato] — 2026-11-08 · Script che prepara il dominio per DA-IPAM
+
+### Aggiunto
+- **`scripts/Prepara-Dominio-DA-IPAM.ps1`: uno script che costruisce in AD tutto quello che serve, col documento `docs/PREPARA-DOMINIO.md`** (cosa fa, passi a mano, come tornare indietro). Riccardo (08/11): «è scomparsa la pagina su come configurare i diritti … dovresti generare uno script completo che eseguito con privilegi elevati costruisce il necessario, oltre al documento di cosa fa e i passi per farlo a mano». Su un DC, come Domain Admin, lo script:
+  - crea o riusa `svc-ipam-dc` e lo mette in Event Log Readers, Remote Management Users e, se c'è, DHCP Administrators;
+  - lancia `Configura-Audit-DC.ps1`;
+  - crea o riusa `svc-ipam` col gruppo «DA-IPAM Scansioni»;
+  - crea la GPO «DA-IPAM - Scansioni PC e server», con Administrators locale (Gruppi con restrizioni, solo «Membro di»), WinRM e regole firewall per WinRM e WMI dai soli IP dell'appliance, collegata solo alle OU date con `-OuComputer`.
+
+  **Di serie non cambia niente** e dice cosa farebbe; si applica con `-Applica`. Si ferma se le OU sono Domain Controllers, la radice del dominio o contengono un DC, e se un account è in Domain Admins. I gruppi predefiniti si cercano per SID, così vale anche con un dominio in un'altra lingua. Diritti presi da `credentials/diritti.ts`, la fonte unica. **Non ancora provato su un dominio vero.**
+- **«Cosa serve» si trova di nuovo.** La pagina c'era, ma si apriva solo dal pulsante della testata di Active Directory. Ora ha in cima il pannello «Preparare il dominio in un colpo solo», con i due script da scaricare (`/api/ad-setup/script-dominio`, `/api/ad-setup/script-audit`) e il documento, e si raggiunge anche da tutte e due le schede di «Sicurezza del dominio». Prova `src/lib/credentials/__tests__/prepara-dominio.test.ts`: cade se lo script scrive fuori dal blocco che senza `-Applica` si limita a descrivere (verificato su uno script finto), se gruppi e account si staccano da `diritti.ts` o se i collegamenti spariscono.
+
 ## [Non rilasciato] — 2026-11-08 · NIS2 spento di serie sulla ridotta
 
 ### Modificato

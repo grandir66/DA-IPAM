@@ -40,7 +40,15 @@ function Schede({ admin }: { admin: boolean }) {
   const scheda = schedaSicurezzaDominio(searchParams.get("tab"));
   const scegli = (v: SchedaSicurezzaDominio) => router.replace(`${pathname}?tab=${v}`, { scroll: false });
 
+  // «Cosa serve» (diritti, script, passi a mano) anche da qui (08/11/2026, Riccardo: «è scomparsa la pagina»).
+  const cosaServe = (
+    <p className="text-[13px]">
+      Diritti degli account, script per preparare il dominio e passi a mano:{" "}
+      <Link href="/active-directory/cosa-serve" className="text-cian-testo hover:underline">Cosa serve ›</Link>
+    </p>
+  );
   const schede = (
+    <>
     <SchedePagina<SchedaSicurezzaDominio>
       etichetta="Sicurezza del dominio"
       scelta={scheda}
@@ -50,6 +58,8 @@ function Schede({ admin }: { admin: boolean }) {
         { valore: "health", titolo: "Health AD", descrizione: "Punteggio, findings, privilegi, ACL e ADCS, letti via LDAP" },
       ]}
     />
+    {cosaServe}
+    </>
   );
 
   if (scheda === "eventi") return <SicurezzaDominioClient admin={admin} schede={schede} />;

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { Network, Shield, Activity, PlugZap } from "lucide-react";
+import { Network, Shield, Activity, PlugZap, Eye, Wand2, Eraser } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
@@ -20,6 +20,9 @@ import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 /** Riga «Stato moduli»: le righe dei moduli portano anche dove aprono (UI-20). */
 
 export const dynamic = "force-dynamic";
+
+const PULSANTE_TESTATA =
+  "inline-flex items-center gap-1.5 self-center rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm hover:bg-muted";
 
 export default async function DashboardPage() {
   // Redirect to setup if no users exist (hub DB, no tenant context needed)
@@ -46,20 +49,21 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
       {/* ── Riga 1: titolo e indicatori ───────────────────────────────── */}
       <div className="flex flex-wrap items-stretch gap-2 shrink-0">
-        <h1 className="text-xl font-bold tracking-tight mr-2 self-center">Dashboard</h1>
-        {(ruolo === "admin" || ruolo === "superadmin") && (
-          <Link href="/cliente" className="self-center text-sm font-medium text-cian-testo hover:underline">
-            Vista cliente
-          </Link>
-        )}
-        {/* Riccardo, 14/11/2026: «wizard e pulizia host devono essere visibili anche dalla dashboard». Sono rimandi alle
-            loro card in Config → Sistema: l'azione resta in un posto solo. */}
+        {/* Riccardo, 14/11/2026: niente scritta «Dashboard» (la dice già il menù); le tre azioni dell'amministratore
+            sono pulsanti con icona. Wizard e pulizia host rimandano alle loro card in Config → Sistema. */}
+        <h1 className="sr-only">Dashboard</h1>
         {(ruolo === "admin" || ruolo === "superadmin") && (
           <>
-            <Link href="/settings?tab=sistema#configurazione-guidata" className="self-center text-sm font-medium text-cian-testo hover:underline">
+            <Link href="/cliente" className={PULSANTE_TESTATA}>
+              <Eye className="h-4 w-4" aria-hidden />
+              Vista cliente
+            </Link>
+            <Link href="/settings?tab=sistema#configurazione-guidata" className={PULSANTE_TESTATA}>
+              <Wand2 className="h-4 w-4" aria-hidden />
               Configurazione guidata
             </Link>
-            <Link href="/settings?tab=sistema#pulizia-host" className="self-center text-sm font-medium text-cian-testo hover:underline">
+            <Link href="/settings?tab=sistema#pulizia-host" className={PULSANTE_TESTATA}>
+              <Eraser className="h-4 w-4" aria-hidden />
               Pulizia host
             </Link>
           </>

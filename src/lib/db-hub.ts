@@ -889,7 +889,8 @@ export function updateUserLastLogin(userId: number): void {
 }
 
 export function updateUserPassword(userId: number, passwordHash: string): void {
-  getHubDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+  // Con la password cambiano anche le sessioni: i token emessi prima non valgono più (P0-2, 14/11).
+  getHubDb().prepare("UPDATE users SET password_hash = ?, sessioni_valide_da = ? WHERE id = ?").run(passwordHash, Date.now(), userId);
 }
 
 /** Elenco utenti senza hash né segreti: della verifica in due passaggi solo se è richiesta e se è attiva. */

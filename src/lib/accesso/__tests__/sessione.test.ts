@@ -73,6 +73,7 @@ before(async () => {
 
 test("dopo «Esci» il token d'accesso precedente non vale più, anche se rinnovato da una richiesta in ritardo", async () => {
   const u = utente("admin");
+  H.setUserTenantAccess(u.id, A.id, "admin"); // dal 14/11 il token vale solo sull'istanza dell'utente, come all'accesso vero
   const token = await accesso(u, A.code);
   assert.ok(await jwt({ token }), "prima dell'uscita il token vale");
 
@@ -83,6 +84,7 @@ test("dopo «Esci» il token d'accesso precedente non vale più, anche se rinnov
 
 test("un accesso nuovo dopo l'uscita vale", async () => {
   const u = utente("admin");
+  H.setUserTenantAccess(u.id, A.id, "admin");
   const vecchio = await accesso(u, A.code);
   await C.authConfig.events!.signOut!({ token: vecchio } as never);
   await new Promise((r) => setTimeout(r, 5));
@@ -136,4 +138,55 @@ test("tolto l'accesso all'ultima istanza, si entra come prima", async () => {
   assert.equal(S.istanzaIniziale(H.getUserById(s.id)!, lista), "__ALL__", "superadmin mai scelto o istanza sparita: vista «tutte»");
   S.segnaUltimaIstanza(s.id, B.code);
   assert.equal(S.istanzaIniziale(H.getUserById(s.id)!, lista), B.code);
+});
+
+// --- Piano di sicurezza 14/11, P0-2: un token già emesso perde i diritti alla richiesta dopo la revoca. ---
+// Incidente (revisione del 14/11): la revoca scattava solo su «Esci». Un utente cancellato, declassato o senza
+// più l'istanza continuava a lavorare col token vecchio fino a 8 ore, col ruolo scritto nel token.
+
+test("un utente cancellato non ha più sessione alla richiesta dopo", async () => {
+  const u = utente("viewer");
+  H.setUserTenantAccess(u.id, A.id, "viewer");
+  const token = await accesso(u, A.code);
+  assert.ok(await jwt({ token: { ...token } }));
+  H.deleteUser(u.id);
+  assert.equal(await jwt({ token: { ...token } }), null);
+});
+
+test("un admin declassato a viewer perde il ruolo alla richiesta dopo, senza rientrare", async () => {
+  utente("admin"); // un altro amministratore resta
+  const u = utente("admin");
+  H.setUserTenantAccess(u.id, A.id, "admin");
+  const token = await accesso(u, A.code);
+  assert.equal(((await jwt({ token: { ...token } })) as JWT).role, "admin");
+  H.updateUserRole(u.id, "viewer");
+  assert.equal(((await jwt({ token: { ...token } })) as JWT).role, "viewer");
+});
+
+test("tolto l'accesso all'istanza, il token che la porta non vale più", async () => {
+  const u = utente("viewer");
+  H.setUserTenantAccess(u.id, A.id, "viewer");
+  const token = await accesso(u, A.code);
+  assert.ok(await jwt({ token: { ...token } }));
+  H.removeUserTenantAccess(u.id, A.id);
+  assert.equal(await jwt({ token: { ...token } }), null);
+});
+
+test("cambiata la password, i token emessi prima non valgono più; un accesso nuovo sì", async () => {
+  const u = utente("admin");
+  H.setUserTenantAccess(u.id, A.id, "admin");
+  const token = await accesso(u, A.code);
+  await new Promise((r) => setTimeout(r, 5));
+  H.updateUserPassword(u.id, "hash-nuovo");
+  assert.equal(await jwt({ token: { ...token } }), null);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(await jwt({ token: await accesso(u, A.code) }));
+});
+
+test("il superadmin sulla vista «tutte» e l'utente di servizio (id 0) non sono toccati", async () => {
+  const s = utente("superadmin");
+  const token = await accesso(s, "__ALL__");
+  assert.equal(((await jwt({ token: { ...token } })) as JWT).role, "superadmin");
+  const servizio = await jwt({ token: { sub: "0", userId: "0", role: "superadmin", tenantCode: "__ALL__" } as JWT });
+  assert.equal((servizio as JWT).role, "superadmin");
 });

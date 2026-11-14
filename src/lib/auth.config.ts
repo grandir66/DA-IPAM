@@ -78,8 +78,13 @@ export const authConfig: NextAuthConfig = {
       } else if (token.userId && token.userId !== "0") {
         // Dopo «Esci» un token di un accesso precedente non vale più, anche se una richiesta
         // partita prima dell'uscita lo rinnova: null fa cancellare il cookie ad Auth.js.
-        const { sessioneRevocata } = await import("./accesso/sessione");
-        if (sessioneRevocata(Number(token.userId), token.accessoAt as number | undefined)) return null;
+        // Dal 14/11 (P0-2) si guarda lo stato vero dell'utente a ogni richiesta: cancellato, declassato, senza più
+        // l'istanza o con la password cambiata, il token perde i diritti subito e non fra 8 ore.
+        const { statoSessione } = await import("./accesso/sessione");
+        const stato = statoSessione(Number(token.userId), token.accessoAt as number | undefined, token.tenantCode as string | null | undefined);
+        if (!stato) return null;
+        token.role = stato.role;
+        token.vistaCliente = stato.vistaCliente;
       }
       // Cambio d'istanza dal browser: solo verso le istanze dell'utente, «tutte» solo al
       // superadmin (prima passava qualsiasi codice, 23/10). Rifiutato = resta dov'era.

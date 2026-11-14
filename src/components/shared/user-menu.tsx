@@ -71,11 +71,13 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
       if (res.ok) {
-        toast.success("Password modificata con successo");
+        // Con la password cambiano anche le sessioni (P0-2, 14/11): si rientra con quella nuova, e lo si dice.
+        toast.success("Password modificata: rientra con la nuova password");
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
         setPwOpen(false);
+        setTimeout(() => { window.location.href = "/login"; }, 1500);
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || "Errore nel cambio password");

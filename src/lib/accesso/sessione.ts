@@ -78,3 +78,25 @@ export function sessioneRevocata(userId: number, accessoAt: number | undefined):
   if (!riga?.sessioni_valide_da) return false;
   return (accessoAt ?? 0) <= riga.sessioni_valide_da;
 }
+
+/**
+ * Lo stato vero dell'utente a ogni richiesta (piano di sicurezza 14/11, P0-2). `null` = il token non vale più:
+ * utente cancellato, uscita o cambio password dopo l'accesso, istanza del token non più sua. Altrimenti il
+ * ruolo e il segno della vista cliente come sono ORA nel database, non come li ricorda il token.
+ * Incidente: la revoca scattava solo su «Esci»; un utente cancellato o declassato lavorava col token vecchio
+ * fino a 8 ore.
+ */
+export function statoSessione(
+  userId: number,
+  accessoAt: number | undefined,
+  tenantCode: string | null | undefined,
+): { role: string; vistaCliente: boolean } | null {
+  const riga = getHubDb().prepare("SELECT role, vista_cliente, sessioni_valide_da FROM users WHERE id = ?").get(userId) as
+    | { role: string; vista_cliente: number | null; sessioni_valide_da: number | null }
+    | undefined;
+  if (!riga) return null;
+  if (riga.sessioni_valide_da && (accessoAt ?? 0) <= riga.sessioni_valide_da) return null;
+  // Il superadmin apre ogni istanza; un'istanza spenta gli risponde la pagina, non gli chiude la sessione.
+  if (tenantCode && riga.role !== "superadmin" && !istanzaAmmessa(userId, riga.role, tenantCode)) return null;
+  return { role: riga.role, vistaCliente: riga.vista_cliente === 1 };
+}

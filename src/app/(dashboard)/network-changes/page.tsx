@@ -5,9 +5,11 @@ import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/compon
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PulsanteVisto } from "@/components/cambiamenti/pulsante-visto";
+import { InterruttoreGiro } from "@/components/cambiamenti/interruttore-giro";
+import { reteDellaNotte } from "@/lib/cambiamenti/giro-notturno";
 import { auth } from "@/lib/auth";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { getTenantDb } from "@/lib/db-tenant";
+import { getGiroCambiamentiSchedule, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
 import { leggiCambiamenti, TIPI_CAMBIAMENTO, type TipoCambiamento } from "@/lib/cambiamenti/elenco";
@@ -53,7 +55,9 @@ export default async function CambiamentiPage({
   const session = await auth();
   const ruolo = (session?.user as { role?: string } | undefined)?.role;
   const puoSegnare = ruolo === "admin" || ruolo === "superadmin";
-  const db = getTenantDb(await getServerTenantCode());
+  const tenant = await getServerTenantCode();
+  const db = getTenantDb(tenant);
+  const giro = withTenant(tenant, () => getGiroCambiamentiSchedule());
   const reti = db.prepare("SELECT id, name, cidr FROM networks ORDER BY name, id").all() as
     Array<{ id: number; name: string; cidr: string }>;
   const nomeRete = new Map(reti.map((r) => [r.id, r.name]));
@@ -96,6 +100,13 @@ export default async function CambiamentiPage({
         })}
       </nav>
 
+      {tipo === "porta_nuova" && puoSegnare && (
+        <InterruttoreGiro
+          acceso={giro.enabled}
+          ultimo={giro.lastRun ? dataOra.format(parseDbDate(giro.lastRun)) : null}
+          reteStanotte={reteDellaNotte(reti).rete?.name ?? null}
+        />
+      )}
       <Pannello
         titolo={tipo ? TIPI[tipo].plurale : "Tutti i cambiamenti"}
         conteggio={scelti.length}

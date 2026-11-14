@@ -20,6 +20,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Apparati → Cambiamenti** raccoglie tutto ciò che cambia nel tempo: oggetti nuovi, apparati nuovi, cambi di IP, MAC cambiato, spostamenti di porta, porte nuove. Prima erano due pagine (Cambiamenti e Anomalie) con fonti diverse, e sull'hub la prima era vuota perché viveva solo del confronto fra due giri uguali.
 - Il rumore (indirizzi dati dal DHCP, porte di collegamento fra switch, MAC con molti indirizzi) è nascosto di serie col suo numero in vista: senza, 85 MAC su 91 risultavano «con IP cambiato» in una settimana.
 - «Visto» per riga o per tutto l'elenco filtrato; il numero dei cambiamenti da vedere sta accanto ad «Apparati» nel menù.
+- Entrano nell'elenco anche le novità e gli allarmi della sonda trunk (MAC non in inventario, VLAN inattese, IP contesi, apparati fuori rete).
+- **Giro notturno delle porte**, spento di serie: una subnet per notte, due host alla volta e un tetto di 100 pacchetti al secondo, perché «Porte nuove» si vede solo confrontando due scansioni uguali e il giro rapido lanciato a mano è troppo aggressivo per ripeterlo ogni notte. Si accende per cliente dalla scheda «Porte nuove».
 - La voce di menù «Anomalie» non c'è più; disponibilità e latenza anomale restano sulla loro pagina, raggiungibile da Cambiamenti.
 
 ## Non rilasciato — Impostazioni: una voce di menu, una fila di schede (14/11/2026)

@@ -12,10 +12,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { resolveEnvSecretsPath } from "@/lib/env-secrets";
+import { risolvi, unisci } from "@/lib/percorsi";
 
 export function percorsoCodicePrimoAvvio(): string {
   const esplicito = process.env.DA_INVENT_PRIMO_AVVIO_FILE?.trim();
-  return esplicito ? path.resolve(esplicito) : path.join(path.dirname(resolveEnvSecretsPath()), "primo-avvio.codice");
+  return esplicito ? risolvi(esplicito) : unisci(path.dirname(resolveEnvSecretsPath()), "primo-avvio.codice");
 }
 
 const normalizza = (v: string): string => v.replace(/[\s-]/g, "").toUpperCase();

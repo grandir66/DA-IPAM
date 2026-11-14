@@ -489,6 +489,8 @@ function initializeHubDb(db: Database.Database): void {
       ["ultima_istanza", "TEXT"],
       // Vista cliente (11/11): sola lettura chiusa in /cliente. Il ruolo resta viewer.
       ["vista_cliente", "INTEGER NOT NULL DEFAULT 0"],
+      // Accesso d'emergenza del cliente (14/11, lib/accesso/emergenza.ts).
+      ["emergenza", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [nome, tipo] of nuove) {
       if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
@@ -613,6 +615,8 @@ export interface HubUser {
   tenant_id: number | null;
   created_at: string;
   last_login: string | null;
+  /** 1 = accesso d'emergenza del cliente (lib/accesso/emergenza.ts). */
+  emergenza?: number;
   /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin. */
   totp_richiesta?: number;
   /** Ora dell'ultimo «Esci» (ms): i token di accessi precedenti non valgono (lib/accesso/sessione.ts). */
@@ -929,7 +933,7 @@ export function updateUserRole(
 
 export function deleteUser(userId: number): boolean {
   // Non permettere eliminazione dell'ultimo admin
-  const admins = getHubDb().prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin')").get() as { c: number };
+  const admins = getHubDb().prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin') AND emergenza = 0").get() as { c: number };
   const user = getHubDb().prepare("SELECT role FROM users WHERE id = ?").get(userId) as { role: string } | undefined;
   if ((user?.role === "admin" || user?.role === "superadmin") && admins.c <= 1) {
     throw new Error("Impossibile eliminare l'ultimo amministratore");

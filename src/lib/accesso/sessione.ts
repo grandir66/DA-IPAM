@@ -17,6 +17,9 @@
 import { getActiveTenants, getHubDb, getTenantByCode, getUserTenantAccess, type HubUser } from "@/lib/db-hub";
 import { isTecnico } from "@/lib/profilo";
 
+/** Quanto dura una sessione nata dall'accesso d'emergenza (uguale a `DURATA_EMERGENZA_MS`: qui per non importare bcrypt). */
+const DURATA_EMERGENZA_SESSIONE_MS = 60 * 60_000;
+
 /** La vista aggregata del superadmin: non è un'istanza. */
 export const VISTA_TUTTE = "__ALL__";
 
@@ -90,12 +93,15 @@ export function statoSessione(
   userId: number,
   accessoAt: number | undefined,
   tenantCode: string | null | undefined,
+  ora: number = Date.now(),
 ): { role: string; vistaCliente: boolean } | null {
-  const riga = getHubDb().prepare("SELECT role, vista_cliente, sessioni_valide_da FROM users WHERE id = ?").get(userId) as
-    | { role: string; vista_cliente: number | null; sessioni_valide_da: number | null }
+  const riga = getHubDb().prepare("SELECT role, vista_cliente, sessioni_valide_da, emergenza FROM users WHERE id = ?").get(userId) as
+    | { role: string; vista_cliente: number | null; sessioni_valide_da: number | null; emergenza: number | null }
     | undefined;
   if (!riga) return null;
   if (riga.sessioni_valide_da && (accessoAt ?? 0) <= riga.sessioni_valide_da) return null;
+  // Accesso d'emergenza: la sessione dura 60 minuti dall'ingresso, poi cade (lib/accesso/emergenza.ts).
+  if (riga.emergenza === 1 && ora - (accessoAt ?? 0) > DURATA_EMERGENZA_SESSIONE_MS) return null;
   // Il superadmin apre ogni istanza; un'istanza spenta gli risponde la pagina, non gli chiude la sessione.
   if (tenantCode && riga.role !== "superadmin" && !istanzaAmmessa(userId, riga.role, tenantCode)) return null;
   return { role: riga.role, vistaCliente: riga.vista_cliente === 1 };

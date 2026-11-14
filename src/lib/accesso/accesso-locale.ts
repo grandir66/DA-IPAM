@@ -27,6 +27,7 @@ import { nuovoSegreto, uriOtpauth, verificaTotp } from "./totp";
 import { serveSecondaVerifica } from "./due-passaggi-admin";
 import { codiciRecuperoRimasti, sembraCodiceRecupero, usaCodiceRecupero } from "./codici-recupero";
 import { scriviRegistroAccessi } from "./registro-accessi";
+import { consumaAccessoEmergenza } from "./emergenza";
 
 export type EsitoAccesso =
   | { esito: "entra"; utente: HubUser }
@@ -115,6 +116,13 @@ async function verifica(
   if (!(await bcrypt.compare(password, utente.password_hash))) return rifiuta();
 
   const entra = (): EsitoAccesso => buono({ esito: "entra", utente });
+
+  // Accesso d'emergenza del cliente (P0-2, 14/11): la frase vale una volta, senza codice dell'app.
+  if (utente.emergenza === 1) {
+    if (opzioni.fase === "passo_uno") return entra();
+    await consumaAccessoEmergenza(utente.id);
+    return entra();
+  }
 
   // Richiesta a lui, oppure a tutti gli amministratori dall'opzione dell'installazione (P0-2, 14/11).
   if (!serveSecondaVerifica(utente)) return entra();

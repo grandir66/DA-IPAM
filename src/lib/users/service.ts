@@ -310,7 +310,7 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
     if (supers.c <= 1) return fail(400, "Impossibile modificare il ruolo dell'ultimo super amministratore");
   }
   if (user.role === "admin" && role === "viewer") {
-    const admins = hub.prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin')").get() as { c: number };
+    const admins = hub.prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin') AND emergenza = 0").get() as { c: number };
     if (admins.c <= 1) return fail(400, "Impossibile rimuovere il ruolo admin dall'ultimo amministratore");
   }
 

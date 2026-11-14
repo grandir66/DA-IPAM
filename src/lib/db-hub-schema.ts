@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS users (
   sessioni_valide_da INTEGER,
   ultima_istanza TEXT,
   -- Vista cliente (11/11): 1 = sola lettura chiusa in /cliente. Il ruolo resta viewer.
-  vista_cliente INTEGER NOT NULL DEFAULT 0
+  vista_cliente INTEGER NOT NULL DEFAULT 0,
+  -- Accesso d'emergenza del cliente (14/11, lib/accesso/emergenza.ts): 1 = frase monouso, sessione di 60 minuti.
+  emergenza INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS user_tenant_access (

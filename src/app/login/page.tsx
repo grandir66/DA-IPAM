@@ -25,6 +25,8 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [codice, setCodice] = useState("");
+  // Telefono perso: al posto del codice dell'app si scrive un codice di recupero (P0-2, 14/11; tavola, oggetto 4).
+  const [conRecupero, setConRecupero] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -165,7 +167,11 @@ export default function LoginPage() {
     });
     if (result?.error || result?.ok === false) {
       if (await leggiBlocco(username)) return "bloccato";
-      setError(conCodice ? "Codice non valido o già usato: scrivi quello nuovo che mostra l'app." : "Nome o password non validi.");
+      setError(
+        !conCodice ? "Nome o password non validi."
+          : conRecupero ? "Codice di recupero non valido o già usato: prova il successivo del foglio."
+            : "Codice non valido o già usato: scrivi quello nuovo che mostra l'app.",
+      );
       return "rifiuta";
     }
     // Navigazione completa: i cookie di sessione arrivano al middleware (evita il giro sul login).
@@ -245,6 +251,7 @@ export default function LoginPage() {
   function indietro() {
     setFase({ tipo: "credenziali" });
     setCodice("");
+    setConRecupero(false);
     setError("");
   }
 
@@ -315,11 +322,48 @@ export default function LoginPage() {
           {fase.tipo === "codice" && (
             <form onSubmit={passoCodice} className="space-y-4">
               <h2 className="text-2xl font-bold tracking-tight">Verifica in due passaggi</h2>
-              <p className="text-sm text-muted-foreground">Scrivi il codice a 6 cifre che mostra l&apos;app di autenticazione per <b className="text-foreground">{username}</b>.</p>
-              <CampoCodice valore={codice} onCambia={setCodice} />
+              {conRecupero ? (
+                <>
+                  <p className="text-sm text-muted-foreground">Scrivi uno dei codici di recupero stampati per <b className="text-foreground">{username}</b>. Ognuno vale una volta.</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="codice-recupero">Codice di recupero</Label>
+                    <Input
+                      id="codice-recupero"
+                      name="codice"
+                      autoFocus
+                      required
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      maxLength={24}
+                      placeholder="XXXX-XXXX-XXXX-XXXX"
+                      className="text-center font-mono text-lg"
+                      value={codice}
+                      onChange={(e) => setCodice(e.target.value.toUpperCase().replace(/[^A-Z0-9 -]/g, ""))}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">Scrivi il codice a 6 cifre che mostra l&apos;app di autenticazione per <b className="text-foreground">{username}</b>.</p>
+                  <CampoCodice valore={codice} onCambia={setCodice} />
+                </>
+              )}
               <Messaggi bloccato={bloccato} lockSec={lockSec} sbloccoAlle={sbloccoAlle} error={error} />
-              <Button type="submit" className="w-full" disabled={loading || bloccato || codice.replace(/\s/g, "").length !== 6}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || bloccato || codice.replace(/[\s-]/g, "").length !== (conRecupero ? 16 : 6)}
+              >
                 {loading ? "Verifica in corso…" : "Accedi"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => { setConRecupero((v) => !v); setCodice(""); setError(""); }}
+              >
+                {conRecupero ? "Usa il codice dell'app" : "Non hai il telefono? Usa un codice di recupero"}
               </Button>
               <Button type="button" variant="ghost" className="w-full" onClick={indietro}>← Indietro</Button>
             </form>

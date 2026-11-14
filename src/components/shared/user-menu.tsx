@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-import { User as UserIcon, KeyRound, Loader2, LogOut, MoreHorizontal, Moon, Sun } from "lucide-react";
+import { User as UserIcon, KeyRound, Loader2, LogOut, MoreHorizontal, Moon, Printer, Sun } from "lucide-react";
+import { CodiciRecupero, useCodiciRecupero } from "./codici-recupero";
 import { cn } from "@/lib/utils";
 import { useTema } from "./theme-toggle";
 import {
@@ -48,6 +49,10 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
     window.location.href = "/login";
   }
   const [pwOpen, setPwOpen] = useState(false);
+  // Codici di recupero (P0-2, 14/11): la voce c'è solo per chi ha la verifica in due passaggi attiva.
+  const [recuperoOpen, setRecuperoOpen] = useState(false);
+  const [segnoRecupero, setSegnoRecupero] = useState(0);
+  const recupero = useCodiciRecupero(segnoRecupero);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -138,6 +143,13 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
             <KeyRound className="h-4 w-4 mr-2" />
             Cambia password
           </DropdownMenuItem>
+          {recupero?.attiva && (
+            <DropdownMenuItem onClick={() => setRecuperoOpen(true)}>
+              <Printer className="h-4 w-4 mr-2" />
+              Codici di recupero…
+              <span className="ml-auto text-[13px] text-muted-foreground">{recupero.rimasti === 0 ? "nessuno" : `${recupero.rimasti} rimasti`}</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={tema.toggle} disabled={!tema.mounted}>
             {tema.dark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
             {tema.etichetta}
@@ -149,6 +161,12 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <CodiciRecupero
+        aperto={recuperoOpen}
+        utente={username}
+        onChiudi={() => { setRecuperoOpen(false); setSegnoRecupero((n) => n + 1); }}
+      />
 
       <Dialog open={pwOpen} onOpenChange={setPwOpen}>
         <DialogContent>

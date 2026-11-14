@@ -21,6 +21,7 @@ export default function TransferPage() {
   const [expPass, setExpPass] = useState("");
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
   const [includeVault, setIncludeVault] = useState(false);
+  const [codice, setCodice] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean; righe?: RigaConversione[] } | null>(null);
 
@@ -40,6 +41,23 @@ export default function TransferPage() {
     setBusy(true);
     setMsg(null);
     try {
+      // Col vault dentro escono segreti: serve la conferma in due passaggi (P0-1, Riccardo 14/11).
+      if (includeVault) {
+        const valida = await fetch("/api/vault/conferma").then((r) => r.json()).catch(() => null);
+        if (!valida?.scade) {
+          const c = await fetch("/api/vault/conferma", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ codice, scopo: "backup" }),
+          });
+          setCodice("");
+          if (!c.ok) {
+            const e = await c.json().catch(() => null);
+            setMsg({ text: e?.error ?? "Conferma non riuscita", ok: false });
+            return;
+          }
+        }
+      }
       const res = await fetch("/api/tenant/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,6 +195,23 @@ export default function TransferPage() {
                 Includi vault credenziali di sistema (credenziali scan, API key, segreti moduli)
               </span>
             </label>
+            {includeVault && (
+              <div className="pl-1 space-y-1">
+                <Label htmlFor="codice-2fa-export">Codice della verifica in due passaggi</Label>
+                <Input
+                  id="codice-2fa-export"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  className="w-40 font-mono"
+                  value={codice}
+                  onChange={(e) => setCodice(e.target.value.replace(/\D/g, ""))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Il pacchetto col vault contiene segreti: serve la conferma, valida 5 minuti. Se l&apos;hai appena data, lascia vuoto.
+                </p>
+              </div>
+            )}
           </div>
 
           <Button

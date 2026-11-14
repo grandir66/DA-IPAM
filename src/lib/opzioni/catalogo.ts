@@ -6,6 +6,7 @@
  * `leggi` e `cambia` chiamano le funzioni che esistono già (letture, job, moduli, notifiche, DA-Link…): qui non si
  * riscrive la logica, la si indicizza. Si chiama nel contesto del tenant (rotte: `withTenantFromSession`).
  */
+import { duePassaggiAdminAccesi, impostaDuePassaggiAdmin } from "@/lib/accesso/due-passaggi-admin";
 import { CHIAVE_NIS2, leggiNis2, nis2DiSerie, varianteImmagine } from "@/lib/modules/nis2";
 import {
   acquisizioneModulareAccesa, getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
@@ -753,6 +754,26 @@ function opzioniAutomatismi(): Opzione[] {
       },
       cambia(r) {
         impostaApparatiAutomatici(getTenantDb(tenant()), soloAcceso(r));
+      },
+    },
+    {
+      id: "accesso.due_passaggi_admin",
+      gruppo: "automatismi",
+      nome: "Due passaggi per gli amministratori",
+      cosa: "ogni amministratore entra con la password e il codice dell'app; chi non l'ha ancora attivata vede il QR al prossimo accesso",
+      valePer: "hub",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: {
+        siFerma: "l'obbligo del codice per tutti gli amministratori.",
+        resta: "la verifica già attivata da ciascuno e quella richiesta utente per utente in Impostazioni › Utenti.",
+      },
+      leggi() {
+        const acceso = duePassaggiAdminAccesi();
+        return diSerieStato(acceso, esito(acceso ? "ok" : "neutro", acceso ? "obbligatoria per gli amministratori" : "spenta: la decide l'admin utente per utente"));
+      },
+      cambia(r) {
+        impostaDuePassaggiAdmin(soloAcceso(r));
       },
     },
     {

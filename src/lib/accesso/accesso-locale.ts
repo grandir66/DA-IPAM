@@ -24,6 +24,7 @@ import {
   type HubUser,
 } from "@/lib/db-hub";
 import { nuovoSegreto, uriOtpauth, verificaTotp } from "./totp";
+import { serveSecondaVerifica } from "./due-passaggi-admin";
 
 export type EsitoAccesso =
   | { esito: "entra"; utente: HubUser }
@@ -113,7 +114,8 @@ async function verifica(
 
   const entra = (): EsitoAccesso => buono({ esito: "entra", utente });
 
-  if (utente.totp_richiesta !== 1) return entra();
+  // Richiesta a lui, oppure a tutti gli amministratori dall'opzione dell'installazione (P0-2, 14/11).
+  if (!serveSecondaVerifica(utente)) return entra();
 
   // ── 2FA attiva: serve il codice ─────────────────────────────────────────
   if (utente.totp_segreto) {

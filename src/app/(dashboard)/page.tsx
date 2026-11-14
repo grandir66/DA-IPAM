@@ -52,6 +52,18 @@ export default async function DashboardPage() {
             Vista cliente
           </Link>
         )}
+        {/* Riccardo, 14/11/2026: «wizard e pulizia host devono essere visibili anche dalla dashboard». Sono rimandi alle
+            loro card in Config → Sistema: l'azione resta in un posto solo. */}
+        {(ruolo === "admin" || ruolo === "superadmin") && (
+          <>
+            <Link href="/settings?tab=sistema#configurazione-guidata" className="self-center text-sm font-medium text-cian-testo hover:underline">
+              Configurazione guidata
+            </Link>
+            <Link href="/settings?tab=sistema#pulizia-host" className="self-center text-sm font-medium text-cian-testo hover:underline">
+              Pulizia host
+            </Link>
+          </>
+        )}
         <FilaIndicatori dati={dati} />
       </div>
 

@@ -1,5 +1,24 @@
 # TASKS — DA-IPAM
 
+## 2026-11-09 — Spunti da Nety per Discovery e Reti
+
+Riccardo: valutare Nety anche solo per visualizzare meglio i dati di IPAM.
+- [x] Confronto tra Nety `a4f76f9` e IPAM `origin/dev` `f97ead85` in [TASKS della root](../../TASKS.md#2026-11-09--nety-e-visualizzazioni-per-ipam), senza scansioni.
+- [x] Provato Nety v1.0.0 nella rete di casa. Matrice in entrambi i versi su due reti, origini verificate sul traffico. Se la sonda ha più interfacce, la prova diretta va legata alla sorgente e al suo gateway: il risultato di Nety `direct` dipende dalle rotte correnti. Dettaglio nel TASKS della root.
+- [ ] Riccardo (09/11): il rilevamento senza credenziali sembra più rapido su Nety. Proposta da decidere: confronto dalla stessa interfaccia con stesso insieme di porte e senza credenziali, misurando primo host e primo servizio visibile, durata, indirizzi trovati e prodotti/versioni corretti. Isolare il contributo di ARP locale, sonde di protocollo e pubblicazione progressiva. Misure di Nety nel TASKS della root.
+- [ ] Da decidere: confronto tra rilevazioni per subnet, con host nuovi, non rivisti o spostati e variazioni di porte; mostrare profilo, data e copertura del confronto. Partire da `scan_history`, Storico e Anomalie. La matrice di raggiungibilità richiederebbe invece misure per sorgente.
+
+### 09/11 — Acquisizione e rappresentazione nel codice in uso
+
+- Riccardo (10/11): il fork Nety è sospeso. Conservare le prove per decidere quali funzioni integrare direttamente in IPAM. Passaggio di consegne in [CONTEXT di Nety](../nety/CONTEXT.md).
+
+Riccardo: riesaminare il codice attuale e valutare cosa acquisire da Nety nella compilazione degli host, nel rilevamento e nella vista dei servizi di rete e nella classifica delle vulnerabilità, rispettando l'impianto esistente.
+
+- [x] Verificati `/api/version`, commit sui sistemi in uso e impronte a campione. Hub e `79993-ipam-2`: `0.9.1037`, `8c6fb068`. `79993-ipam-5`: `0.9.1035`, `e099d45e`. Confrontati Nety `77ef0dd` v1.0.0, il codice, le schermate Servizi e Rilievi e il report di casa.
+- [x] Individuato il delta: IPAM ha già Ricognizione senza credenziali, fusione dell'attribuzione, Trunk, porte/versioni/CPE e CVE potenziali separate. Da Nety: ARP locale come primo passo da misurare, ripieghi instradati, fingerprint con metodo e confidenza per endpoint, cronologia e provenienza dell'identità, salvataggio progressivo e controlli dimostrabili per servizio.
+- [ ] Da decidere: vista «Servizi di rete» in Discovery e dettaglio nella scheda host, partendo dalle `open_ports` esistenti. «Servizi» resta il catalogo aziendale. In Vulnerabilità, collegamento a porta/protocollo quando la fonte lo fornisce e vista distinta per i problemi di configurazione con prova, rimedio e stato della verifica. Conservare il ranking, le fonti e la distinzione tra rilevato e potenziale.
+- [ ] Prima di allargare l'acquisizione: confronto senza credenziali a parità di sorgente e copertura, confronto in parallelo senza scritture sugli host, poi scelta delle sole sonde mancanti. Verificare isolamento tenant, freni per impianti, dati manuali e osservazioni incomplete. Nety è GPL-3.0, valutare la licenza prima di riusare sorgenti. Nessuna modifica applicativa o scansione in questa valutazione.
+
 ## 2026-11-13 — Metalrota (73322): installazione, Zabbix, aggiornatore ingannato dalla riconfigura
 
 - [x] `dev` promosso su `main` alla 0.9.1252 col sì di Riccardo (cancello: lint 0, tipi puliti, 8228 prove verdi; una rossa era un falso allarme su un'etichetta in `wazuh-dettagli.ts`, corretta).

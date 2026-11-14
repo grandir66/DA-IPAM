@@ -9,6 +9,7 @@
  * Functions that reference hub settings (getSetting) import from db-hub.ts.
  */
 
+import { CONFIG_ANOMALIE_DEL_GIRO, CONFIG_GIRO_CAMBIAMENTI } from "@/lib/cambiamenti/giro-notturno";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
@@ -11952,6 +11953,44 @@ export function setPuliziaHostSchedule(on: boolean): void {
       d.prepare(
         "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'pulizia_host', ?, 1, '{}')",
       ).run(PULIZIA_HOST_MINUTES);
+    }
+  });
+}
+
+/** Il giro notturno delle porte per «Cambiamenti» (14/11/2026): un `nmap_scan` con `config.cosa = "cambiamenti"`. */
+export function getGiroCambiamentiSchedule(): PuliziaHostState {
+  const job = db()
+    .prepare("SELECT id, enabled, last_run FROM scheduled_jobs WHERE job_type = 'nmap_scan' AND config = ? ORDER BY id LIMIT 1")
+    .get(CONFIG_GIRO_CAMBIAMENTI) as { id: number; enabled: number; last_run: string | null } | undefined;
+  return { enabled: !!job && job.enabled === 1, jobId: job?.id ?? null, lastRun: job?.last_run ?? null };
+}
+
+/**
+ * Accende o spegne il giro notturno delle porte. Nasce spento: nessuna migrazione e nessun tenant nuovo lo hanno, lo
+ * crea solo questo interruttore. Insieme accende il controllo giornaliero delle anomalie se il cliente non ne ha già
+ * uno (non scansiona: legge quello che c'è), marcato per poterlo togliere allo spegnimento senza toccare quello di un
+ * amministratore. Chi chiama ricarica lo scheduler del tenant.
+ */
+export function setGiroCambiamentiSchedule(on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d.prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'nmap_scan' AND config = ? ORDER BY id")
+      .all(CONFIG_GIRO_CAMBIAMENTI) as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    for (const j of on ? extra : existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) {
+      d.prepare("DELETE FROM scheduled_jobs WHERE job_type = 'anomaly_check' AND config = ?").run(CONFIG_ANOMALIE_DEL_GIRO);
+      return;
+    }
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = 1440, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(keep.id);
+    } else {
+      d.prepare("INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'nmap_scan', 1440, 1, ?)")
+        .run(CONFIG_GIRO_CAMBIAMENTI);
+    }
+    if (!d.prepare("SELECT 1 FROM scheduled_jobs WHERE job_type = 'anomaly_check'").get()) {
+      d.prepare("INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'anomaly_check', 1440, 1, ?)")
+        .run(CONFIG_ANOMALIE_DEL_GIRO);
     }
   });
 }

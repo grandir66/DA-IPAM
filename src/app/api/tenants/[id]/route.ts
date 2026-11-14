@@ -3,6 +3,7 @@ import { getTenantById, updateTenant, deleteTenant } from "@/lib/db-hub";
 import { deleteTenantDatabase } from "@/lib/db-tenant";
 import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
+import { profiloSenzaSegreti, puoVedereProfilo } from "@/lib/accesso/profilo-pubblico";
 
 const TenantUpdateSchema = z.object({
   codice_cliente: z.string().min(1).optional(),
@@ -33,8 +34,12 @@ export async function GET(
     if (!tenant) {
       return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
     }
+    // Un profilo non suo, per chi non è admin, è come se non ci fosse (P0-1, 14/11).
+    if (!puoVedereProfilo(session.user, tenant.codice_cliente)) {
+      return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
+    }
 
-    return NextResponse.json(tenant);
+    return NextResponse.json(profiloSenzaSegreti(tenant));
   } catch (error) {
     console.error("Errore nel recupero del tenant:", error);
     return NextResponse.json({ error: "Errore nel recupero del cliente" }, { status: 500 });
@@ -82,7 +87,7 @@ export async function PUT(
       return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
     }
 
-    return NextResponse.json(updated);
+    return NextResponse.json(profiloSenzaSegreti(updated));
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return NextResponse.json({ error: "Codice cliente già esistente" }, { status: 409 });

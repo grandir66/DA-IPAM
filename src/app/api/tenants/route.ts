@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getTenants, createTenant, getUserTenantAccess } from "@/lib/db-hub";
 import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
+import { profiloSenzaSegreti } from "@/lib/accesso/profilo-pubblico";
 import { profilo } from "@/lib/profilo";
 import { preparaProfilo, regolaCreazioneProfilo } from "@/lib/profili/nuovo-profilo";
 
@@ -30,7 +31,7 @@ export async function GET() {
     // Superadmin vede tutti i tenant
     if (role === "admin" || role === "superadmin") {
       const tenants = getTenants();
-      return NextResponse.json(tenants);
+      return NextResponse.json(tenants.map(profiloSenzaSegreti));
     }
 
     // Utente normale: solo tenant a cui ha accesso
@@ -97,18 +98,18 @@ export async function POST(request: Request) {
     if (regola.prepara) {
       try {
         const preparazione = preparaProfilo(codice);
-        return NextResponse.json({ ...tenant, preparazione }, { status: 201 });
+        return NextResponse.json({ ...profiloSenzaSegreti(tenant), preparazione }, { status: 201 });
       } catch (e) {
         // Il profilo c'è: lo dice, insieme al perché non è pronto (al riavvio l'avvio lo prepara comunque).
         console.error(`[Profili] ${codice}: preparazione fallita:`, e instanceof Error ? e.message : e);
         return NextResponse.json(
-          { ...tenant, avviso: "Profilo creato, ma i job di serie partiranno solo al prossimo riavvio del servizio." },
+          { ...profiloSenzaSegreti(tenant), avviso: "Profilo creato, ma i job di serie partiranno solo al prossimo riavvio del servizio." },
           { status: 201 },
         );
       }
     }
 
-    return NextResponse.json(tenant, { status: 201 });
+    return NextResponse.json(profiloSenzaSegreti(tenant), { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return NextResponse.json({ error: "Codice cliente già esistente" }, { status: 409 });

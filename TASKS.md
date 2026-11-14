@@ -33,7 +33,12 @@ Avanzamento P0-1 (ramo `macbook/sicurezza-p0-1-uscite`, non ancora in `dev`: zon
 - [x] `GET /api/backup`: `Cache-Control: no-store`.
 - [x] Modifica rete per chi non è admin: campo spento con «Configurata: la leggono gli amministratori» (senza `name`, quindi non parte nel salvataggio).
 - [ ] Non visto a schermo con un utente non admin. Non provato su un'installazione.
-- [ ] Resto di P0-1: censimento delle altre righe DB intere (profili Nmap con `snmp_community`, impostazioni, credenziali, schede cliente), tre permessi distinti per export/trasferimento/backup, conferma recente e audit sul backup, perimetro dell'import.
+- [x] Censimento (14/11): 81 `GET` non riservate agli admin che rispondono righe intere, lette contro le colonne segrete dei due schemi. Già a posto: credenziali (`mascheraCredenziale`), dispositivi (`senzaColonneVecchie`), binding degli apparati, scanner Edge (select senza gettone), profilo Nmap (solo admin). **Trovato e chiuso**: `GET /api/tenants` e `/api/tenants/[id]` mandavano `agent_token_hash` e `agent_token_encrypted`, e il dettaglio a qualunque utente autenticato anche per un profilo non suo → `lib/accesso/profilo-pubblico.ts` (`profiloSenzaSegreti`, `puoVedereProfilo`), anche sulle risposte di creazione e modifica.
+- [x] `GET /api/backup`: sul profilo tecnico `hub.db` lo scarica solo il superadmin (`puoScaricareHub`); chi scarica resta nel journal. `POST /api/tenant/export`: `no-store` e riga nel journal. Prove `profilo-pubblico.test.ts` + `senza-segreti.test.ts` 8/8, `tsc` 0.
+- [ ] Non guardati nel censimento: `system-credentials` (`rowToPublic`), `client-config` (campi liberi delle schede cliente), `integrations/active`, impostazioni (`settings` con `integration_*_password`), dati che le pagine server passano al browser fuori da `/networks`, errori e report.
+- [ ] **Conferma recente sullo scarico di `hub.db`**: oggi è un link (`window.location.href`); la conferma con la seconda verifica (`/api/vault/conferma`, 5 minuti) vuole un passaggio a schermo → oggetto di interfaccia da proporre a Riccardo prima di scriverlo.
+- [ ] Tre permessi distinti (export ordinario, trasferimento credenziali, backup dell'istanza): oggi tutti `requireAdmin`. Serve decidere i nomi dei permessi e a chi vanno.
+- [ ] Perimetro dell'import (`/api/tenant/import`, tabelle globali comprese) e audit su tabella al posto del journal.
 
 ## 2026-11-14 — Impostazioni: tab e riordino (Riccardo, base)
 

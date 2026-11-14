@@ -42,12 +42,14 @@ export async function POST(req: Request) {
       },
     });
 
+    console.info(`[export] ${tenantCode}: pacchetto scaricato da ${auth.user.name ?? "?"} (vault ${parsed.data.includeVault ? "compreso" : "escluso"})`);
     const fname = `${tenantCode}-${exportedAt.replace(/[:.]/g, "-")}.dab`;
     return new NextResponse(new Uint8Array(bundle), {
       status: 200,
       headers: {
         "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename="${fname}"`,
+        "Cache-Control": "no-store",
       },
     });
   });

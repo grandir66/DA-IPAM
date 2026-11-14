@@ -302,6 +302,14 @@ export interface NormalizedAlert {
   dettagli?: DettaglioAlert[];
 }
 
+/** Evento 4738 scritto da SYSTEM (S-1-5-18) con le opzioni dell'account uguali prima e dopo. */
+export function isModificaAccountAVuoto(doc: WazuhAlertDoc): boolean {
+  if (doc.data?.win?.system?.eventID !== "4738") return false;
+  const ed = doc.data?.win?.eventdata;
+  if (!ed || ed.subjectUserSid !== "S-1-5-18") return false;
+  return ed.oldUacValue != null && ed.oldUacValue === ed.newUacValue;
+}
+
 export function normalizeAlert(
   doc: WazuhAlertDoc,
   hitId: string,
@@ -345,6 +353,11 @@ export function normalizeAlert(
   if (matched === "cloud_auth_failure" && !O365_FAILURE_OPS.has(o365?.Operation ?? "")) {
     matched = null;
   }
+  // 4738 fatto dal sistema stesso senza toccare le opzioni dell'account: Windows lo scrive a ogni
+  // aggiornamento dei criteri, ~1000 volte per server (DTS 14/11/2026). Non è un cambio: non si archivia.
+  if (matched === "privileged_change" && isModificaAccountAVuoto(doc)) {
+    matched = null;
+  }
   // Riclassifica solo cio' che sarebbe finito fra i fallimenti di
   // autenticazione: un ransomware non diventa "nostra sonda" per via dell'IP.
   const category =
@@ -377,7 +390,11 @@ export function normalizeAlert(
  * becomes one open event instead of hundreds.
  */
 export function dedupKey(a: NormalizedAlert): string {
-  return `${a.agentId ?? "?"}|${a.ruleId ?? "?"}`;
+  // Le nostre sonde hanno una riga loro: con la stessa chiave finivano dentro la riga d'attacco già aperta
+  // per quella regola, e le riscrivevano utente e indirizzo (DTS 14/11/2026: «angelo.doko da 172.16.0.2»,
+  // 16872 volte fra «tentativi di accesso»). Le altre categorie tengono la chiave di prima.
+  const base = `${a.agentId ?? "?"}|${a.ruleId ?? "?"}`;
+  return a.category === "self_probe" ? `${base}|self` : base;
 }
 
 /** Esiti da non scaricare affatto. */

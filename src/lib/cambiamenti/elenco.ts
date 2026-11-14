@@ -146,10 +146,16 @@ export function leggiCambiamenti(
       }
       if (!ultimo) continue;
       const indirizzi = new Set(righe.map((r) => r.ip)).size;
+      // Visto sull'hub il 14/11: nodi con due indirizzi sulla stessa scheda rimbalzano fra i due a ogni giro ARP.
+      let passaggi = 0;
+      for (let i = 1; i < righe.length; i++) if (righe[i].ip !== righe[i - 1].ip) passaggi++;
+      const automatico = [ultimo.prima, ultimo.dopo].some((ip) => ip.startsWith("169.254."));
       const host = hostPerMac.get(mac) ?? hostPerIp.get(ultimo.dopo);
       const rumore =
         /^0+$/.test(mac) || mac.length !== 12 ? "MAC non valido" :
         dinamici.has(mac) ? "indirizzo dato dal DHCP" :
+        automatico ? "indirizzo automatico 169.254, senza rete" :
+        passaggi > 1 ? "due indirizzi sullo stesso MAC, si alternano" :
         indirizzi > IP_MASSIMI_PER_UN_CAMBIO ? `${indirizzi} indirizzi sullo stesso MAC` : null;
       esito.push({
         chiave: `ip:${mac}:${ultimo.quando}`, tipo: "cambio_ip", quandoMs: ultimo.t,

@@ -9,7 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ### Cambiato
 - **Impostazioni ha le schede nella forma di tutte le altre pagine**, in una fila sola in cima: Utenti, Aggiornamenti, Moduli e Istanza in testa (Riccardo: «sono fondamentali»), poi Opzioni e Schedulazioni, poi rete, avvisi e appliance, separati da una riga verticale. Prima la barra era fatta a mano e la scheda scelta si riconosceva solo dal colore del testo.
 - **Opzioni, Schedulazioni e Cosa esce non sono più voci del menu**: sono schede di Impostazioni (ADR 0038, al posto della scelta del 22/10). Gli indirizzi restano gli stessi, quindi i rimandi continuano a funzionare.
-- La card MDM sta in Moduli e non più in Sistema: è un modulo.
+- La card MDM non sta più in Sistema: l'MDM si apre dalla sua riga in Moduli, come gli altri.
 
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.

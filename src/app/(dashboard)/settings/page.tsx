@@ -36,7 +36,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ETICHETTA_OPZIONE } from "@/lib/modules/offerta";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus,
@@ -50,7 +49,6 @@ import {
   ArrowUpCircle,
   Sparkles,
   KeyRound,
-  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
@@ -918,38 +916,8 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Moduli === */}
-      {activeTab === "moduli" && (
-        <div className="space-y-6">
-          <ModulesTab isAdmin={isAdmin} />
-          {/* MDM è un modulo: stava in Sistema, dal 14/11 sta qui con gli altri. */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Smartphone className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">MDM (Headwind)</CardTitle>
-                {/* Passo 4c: l'MDM è un modulo opzionale; non ha una voce nel catalogo dei moduli. */}
-                <Badge variant="secondary" title="Modulo opzionale, potenzialmente a pagamento">
-                  {ETICHETTA_OPZIONE}
-                </Badge>
-              </div>
-              <CardDescription>
-                Configura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l&apos;inventario.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push("/settings/mdm")}
-                className="gap-2"
-              >
-                <Smartphone className="h-4 w-4" />
-                Configura MDM
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* L'MDM stava in una card di Sistema: nell'elenco dei moduli ha già la sua riga con «Apri» (14/11). */}
+      {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
       {activeTab === "alert-sicurezza" && <SecurityAlertsTab />}

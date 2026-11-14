@@ -8,9 +8,9 @@ Riccardo, 14/11: «uniformare i tab della pagina allo standard già impostato ne
 - [x] `settings/page.tsx`: tolta la barra fatta a mano e il sottotitolo; titolo e versione su una riga. Un nome vecchio (`?tab=users`) diventa quello vero nell'indirizzo. Chi non è admin si apre su Aggiornamenti (prima Scansione).
 - [x] Menu: tolte «Opzioni», «Schedulazioni», «Cosa esce»; resta «Impostazioni». Gli indirizzi non cambiano.
 - [x] Titoli grandi di Opzioni e Schedulazioni tolti (restano per i lettori di schermo): il nome lo dice la scheda accesa.
-- [x] Card MDM da Sistema a Moduli; rimandi nuovi: «Classificazioni del cliente ›» in Identificazione, «Trasferimento configurazione ›» e «Vault ›» in Sistema → Dati e manutenzione (`/settings/transfer` non aveva nessun ingresso).
+- [x] Card MDM tolta da Sistema: in Moduli l'MDM ha già la sua riga con «Apri» (visto a schermo, la card spostata era un doppione). Rimandi nuovi: «Classificazioni del cliente ›» in Identificazione, «Trasferimento configurazione ›» e «Vault ›» in Sistema → Dati e manutenzione (`/settings/transfer` non aveva nessun ingresso).
 - [x] Prove: `sezioni.test.ts` 6/6 (una nuova; nella prova dei doppioni la chiave ora comprende il `tab`), ancore e menu 12/12, `tsc` 0, lint senza avvisi nuovi.
-- [ ] **Non visto a schermo.** Da aprire a 1920: se le 13 schede stanno su una riga (la fila scorre, non va a capo), e Opzioni/Schedulazioni senza titolo.
+- [x] Visto a 1920 sull'hub 533 con `prova-claude-admin` (14/11, `85d06af3`): 12 schede su una riga senza scorrere (1640 px; con «Istanza» sarebbero 13, non visto), scheda accesa giusta su Moduli, Opzioni, Schedulazioni; `?tab=users` diventa `?tab=utenti`; nel menu resta solo «Impostazioni». Non visti: tema scuro, utente non admin.
 - [ ] «Job pianificati» era già in Schedulazioni dall'11/11 (0.9.1182): niente da fare. Il titolo di «Cosa esce» è rimasto (è una frase, non il nome della scheda).
 
 ## 2026-11-09 — Spunti da Nety per Discovery e Reti

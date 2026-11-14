@@ -134,6 +134,8 @@ test("scheda principale (14/11): la VLAN senza tag si deduce dalle reti dichiara
   const reti = [{ cidr: "10.0.5.0/24", vlan_id: 5 }, { cidr: "10.0.30.0/24", vlan_id: 30 }, { cidr: "172.16.0.0/24", vlan_id: null }];
   assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["10.0.5.7", "10.0.5.8", "10.0.30.2"] }, reti), 5);
   assert.equal(vlanPrincipaleDa({ vlan: 7, ip_in_attesa: ["10.0.5.7"] }, reti), null, "già nota: non si tocca");
-  assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["172.16.0.4"] }, reti), null, "rete senza VLAN: non si indovina");
+  assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["172.16.0.4", "172.16.0.9"] }, reti), 0, "rete senza VLAN: restano senza tag (0)");
+  assert.equal(vlanPrincipaleDa({ vlan: 0, ip_in_attesa: ["172.16.0.4"] }, reti), null, "0 già detto: non si ripete");
+  assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["192.168.77.4"] }, reti), null, "in nessuna rete: non si indovina");
   assert.equal(vlanPrincipaleDa(null, reti), null, "niente trunk dedicata: niente da dire");
 });

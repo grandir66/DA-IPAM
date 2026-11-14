@@ -596,11 +596,19 @@ export interface TrunkStatoPrincipale {
  * trunk la principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN»).
  * I suoi pacchetti senza tag non sono la nativa del trunk: il sensore li tiene da parte finché non
  * sa la loro VLAN. Gliela dice DA-IPAM, con la stessa regola della nativa: la rete dichiarata che
- * contiene almeno metà di quegli IP, se ha una VLAN. Già nota, o non deducibile → null.
+ * contiene almeno metà di quegli IP, se ha una VLAN. Se invece quella metà sta in reti dichiarate
+ * SENZA VLAN (la LAN senza tag, «VLAN nativa») → 0: restano senza tag, come la nativa del trunk
+ * (79993-ipam-2, 14/11: `192.168.99.0/24` senza VLAN, 1322 pacchetti fermi in attesa).
+ * Già nota, o non deducibile → null.
  */
 export function vlanPrincipaleDa(principale: TrunkStatoPrincipale | null | undefined, reti: readonly ReteDichiarata[]): number | null {
   if (!principale || principale.vlan != null) return null;
-  return deduciVlanNativa(principale.ip_in_attesa ?? [], reti)?.vid ?? null;
+  const ip = (principale.ip_in_attesa ?? []).filter((x) => x && !x.startsWith("169.254."));
+  const dedotta = deduciVlanNativa(ip, reti);
+  if (dedotta) return dedotta.vid;
+  const senzaVlan = reti.filter((r) => r.vlan_id == null || r.vlan_id === 0);
+  const dentro = ip.filter((x) => senzaVlan.some((r) => isIpInCidr(x, r.cidr))).length;
+  return ip.length > 0 && dentro * 2 >= ip.length ? 0 : null;
 }
 
 async function allineaVlanPrincipale(l: { fonte: string; leggi: Lettore }): Promise<void> {

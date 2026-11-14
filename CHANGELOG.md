@@ -6,7 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Sonda trunk: VLAN della scheda principale (14/11/2026)
 
-- **La lettura del trunk dice al sensore la VLAN dei pacchetti senza tag della scheda principale.** Riccardo (14/11): «se viene inserita la seconda scheda di trunk, la scheda principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN». Il sensore (DA-Vul-can) ora legge anche la principale, ma i suoi pacchetti senza tag non sono la nativa del trunk. DA-IPAM deduce la loro VLAN con la stessa regola della nativa (la rete dichiarata che contiene almeno metà di quegli IP, se ha una VLAN) e la passa solo quando il sensore non la conosce già. Con una rete senza VLAN non si indovina: i pacchetti restano in attesa sul sensore.
+- **La lettura del trunk dice al sensore la VLAN dei pacchetti senza tag della scheda principale.** Riccardo (14/11): «se viene inserita la seconda scheda di trunk, la scheda principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN». Il sensore (DA-Vul-can) ora legge anche la principale, ma i suoi pacchetti senza tag non sono la nativa del trunk. DA-IPAM deduce la loro VLAN con la stessa regola della nativa (la rete dichiarata che contiene almeno metà di quegli IP, se ha una VLAN) e la passa solo quando il sensore non la conosce già. Se quegli IP stanno in una rete dichiarata senza VLAN (la LAN senza tag) DA-IPAM dice 0 e restano senza tag, come la nativa del trunk: su 79993-ipam-2 `192.168.99.0/24` è dichiarata così, e 1322 pacchetti erano fermi in attesa. In nessuna rete dichiarata: non si indovina.
 
 ## Non rilasciato — Alert Wazuh: via il rumore che copriva gli attacchi (14/11/2026)
 

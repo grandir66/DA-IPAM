@@ -21,6 +21,7 @@ import {
   leggiDalSocket,
   SensoreTrunkAssente,
   sincronizzaTrunk,
+  vlanPrincipaleDa,
 } from "@/lib/trunk/sensore-trunk";
 
 const T = "TRUNK2410";
@@ -127,4 +128,12 @@ test("giro ARP: parte sul socket locale con vid e subnet", async () => {
     assert.deepEqual(g, { id: 7, fonte: "socket" });
     assert.ok(richieste.includes('POST /giri {"vid":10,"cidr":"192.168.10.0/24","tipo":"arp"}'));
   });
+});
+
+test("scheda principale (14/11): la VLAN senza tag si deduce dalle reti dichiarate, solo se manca", () => {
+  const reti = [{ cidr: "10.0.5.0/24", vlan_id: 5 }, { cidr: "10.0.30.0/24", vlan_id: 30 }, { cidr: "172.16.0.0/24", vlan_id: null }];
+  assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["10.0.5.7", "10.0.5.8", "10.0.30.2"] }, reti), 5);
+  assert.equal(vlanPrincipaleDa({ vlan: 7, ip_in_attesa: ["10.0.5.7"] }, reti), null, "già nota: non si tocca");
+  assert.equal(vlanPrincipaleDa({ vlan: null, ip_in_attesa: ["172.16.0.4"] }, reti), null, "rete senza VLAN: non si indovina");
+  assert.equal(vlanPrincipaleDa(null, reti), null, "niente trunk dedicata: niente da dire");
 });

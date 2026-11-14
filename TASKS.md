@@ -1,5 +1,12 @@
 # TASKS — DA-IPAM
 
+## 2026-11-14 — Sonda trunk: si legge anche la scheda principale (Riccardo, base)
+
+Sensore e specchio stanno in DA-Vul-can (`TASKS.md` del 14/11, commit aa9f136a). Qui: IPAM deduce la VLAN dei pacchetti senza tag della principale e la passa al sensore.
+- [x] `vlanPrincipaleDa` + `allineaVlanPrincipale` nella lettura del trunk — prova in `sensore-trunk.test.ts` verde, tsc pulito
+- [ ] prova sulla sonda vera (con DA-Vul-can)
+- [ ] da decidere: se la rete della principale non ha VLAN in IPAM la VLAN non si deduce; mostrarlo nella pagina del trunk?
+
 ## 2026-11-14 — Piano di sicurezza: appliance autonoma (Riccardo, da approvare; zona rossa → livello completo)
 
 Riccardo, 14/11: ha consegnato una revisione di sicurezza fatta su `dev` 0.9.1254 (`a7d9b2da`) e DA-Link `fe2095b`. Obiettivo: ogni appliance custodisce, usa e recupera i dati del proprio cliente **senza dipendere da DA-Link**; si installa già scollegata, riparte dopo un guasto, si ripristina su un'altra macchina col materiale di recupero del cliente. Strada: volume LUKS2 (ADR 0037, già scelto per il profilo tecnico) + vault locale già presente + backup cifrato verso una chiave di recupero separata. KeePass resta solo esportazione. **Niente codice finché Riccardo non approva** piano e risposte qui sotto.

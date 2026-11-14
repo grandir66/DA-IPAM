@@ -574,8 +574,47 @@ async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise
   } catch (e) {
     console.warn(`[trunk] dichiarazioni non portate: ${e instanceof Error ? e.message : String(e)}`);
   }
+  try {
+    await allineaVlanPrincipale(l);
+  } catch (e) {
+    console.warn(`[trunk] VLAN della scheda principale non passata al sensore: ${e instanceof Error ? e.message : String(e)}`);
+  }
   valutaRilievi();
   return { fonte: l.fonte, osservazioni: totale, vlan: vlan.length };
+}
+
+/** Come il sensore racconta la scheda principale (solo con la trunk dedicata, dal 14/11). */
+export interface TrunkStatoPrincipale {
+  nic?: string | null;
+  vlan?: number | null;
+  in_attesa?: number;
+  ip_in_attesa?: string[];
+}
+
+/**
+ * Scheda principale con la trunk dedicata (14/11, Riccardo: «se viene inserita la seconda scheda di
+ * trunk la principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN»).
+ * I suoi pacchetti senza tag non sono la nativa del trunk: il sensore li tiene da parte finché non
+ * sa la loro VLAN. Gliela dice DA-IPAM, con la stessa regola della nativa: la rete dichiarata che
+ * contiene almeno metà di quegli IP, se ha una VLAN. Già nota, o non deducibile → null.
+ */
+export function vlanPrincipaleDa(principale: TrunkStatoPrincipale | null | undefined, reti: readonly ReteDichiarata[]): number | null {
+  if (!principale || principale.vlan != null) return null;
+  return deduciVlanNativa(principale.ip_in_attesa ?? [], reti)?.vid ?? null;
+}
+
+async function allineaVlanPrincipale(l: { fonte: string; leggi: Lettore }): Promise<void> {
+  const s = await l.leggi<{ principale?: TrunkStatoPrincipale | null }>("/stato");
+  const vlan = vlanPrincipaleDa(s.principale, retiDichiarate());
+  if (vlan == null) return;
+  if (l.fonte === "socket") {
+    await scriviSulSocket("/principale", { vlan });
+  } else {
+    const scanner = getActiveEdgeScanner();
+    if (!scanner) return;
+    await edgeApiPost(scanner, "/api/v1/trunk/principale", { vlan }, { timeoutMs: 15_000 });
+  }
+  console.info(`[trunk] scheda principale: i pacchetti senza tag sono la VLAN ${vlan}`);
 }
 
 export interface TrunkVlanRiga {

@@ -249,8 +249,9 @@ export function PuliziaHostCard() {
           </section>
         )}
 
-        <section className="space-y-3" aria-label="Archivio">
-          <h3 className="text-sm font-semibold border-b pb-1">Archivio ({archivio?.totale ?? "…"})</h3>
+        {/* Chiuso finché non serve (Riccardo, 14/11): decine di righe spingevano fuori schermo il resto di Sistema. */}
+        <details className="space-y-3" aria-label="Archivio">
+          <summary className="cursor-pointer border-b pb-1 text-sm font-semibold">Archivio ({archivio?.totale ?? "…"}) ›</summary>
           {erroreArchivio !== null ? (
             <LoadError what="l'archivio degli host" message={erroreArchivio} onRetry={() => void caricaArchivio()} />
           ) : archivio === null ? (
@@ -293,7 +294,7 @@ export function PuliziaHostCard() {
               )}
             </>
           )}
-        </section>
+        </details>
       </CardContent>
 
       <Dialog open={confermaAperta} onOpenChange={(o) => { if (!inCorso) setConfermaAperta(o); }}>

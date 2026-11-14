@@ -179,16 +179,8 @@ export function UpdatesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <ArrowUpCircle className="h-5 w-5 text-sky-500" />
-            Aggiornamenti
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Stato versione installata, canale di aggiornamento e applicazione manuale.
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-3">
+        <h2 className="sr-only">Aggiornamenti</h2>
         <Button variant="outline" size="sm" onClick={() => void handleCheckNow()} disabled={checking}>
           {checking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
           Ricontrolla
@@ -232,6 +224,8 @@ export function UpdatesTab() {
         </Card>
       )}
 
+      {/* Versione a sinistra, changelog a destra (14/11): erano riquadri impilati a tutta larghezza. */}
+      <div className="grid items-start gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -324,7 +318,7 @@ export function UpdatesTab() {
           <CardContent>
             <ul className="space-y-1.5 text-sm">
               {info.changelog.map((line, i) => (
-                <li key={i} className="font-mono text-xs text-muted-foreground border-l-2 border-border pl-3">
+                <li key={i} className="font-mono text-[13px] text-muted-foreground border-l-2 border-border pl-3">
                   {line}
                 </li>
               ))}
@@ -332,6 +326,7 @@ export function UpdatesTab() {
           </CardContent>
         </Card>
       )}
+      </div>
 
       <StatoAggiornamentoCard
         richiestoIl={richiestoIl}

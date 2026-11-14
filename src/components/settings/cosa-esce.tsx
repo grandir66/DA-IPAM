@@ -302,7 +302,7 @@ export function CosaEsce() {
   const attuale = quadro.livello?.livello ?? null;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Cosa esce da questa istanza verso Domarc</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -310,6 +310,8 @@ export function CosaEsce() {
         </p>
       </div>
 
+      {/* I primi due riquadri affiancati a 1920 (14/11): la pagina era stretta a 1152 px, le altre schede a 1640. */}
+      <div className="grid items-start gap-6 xl:grid-cols-2">
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
@@ -478,6 +480,7 @@ export function CosaEsce() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       <SchedaVulcan v={quadro.vulcan} invio={invioVulcan} onInvia={() => void inviaOraVulcan()} />
 

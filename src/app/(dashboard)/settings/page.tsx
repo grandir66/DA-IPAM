@@ -578,19 +578,17 @@ function SettingsPageInner() {
 
   return (
     <div className="space-y-6">
-      {/* Le schede stanno nella fila in cima (`lib/menu/sezioni.ts`, 14/11): qui resta una riga sola, titolo e versione. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-bold tracking-tight">Impostazioni</h1>
-        {appVersion && <Badge variant="outline" className="text-xs">v{appVersion}</Badge>}
-        {appVersion && updateAvailable && (
-          <button type="button" onClick={() => selectTab("aggiornamenti")} className="inline-flex items-center" title="Vai alla scheda Aggiornamenti">
-            <Badge variant="default" className="text-xs gap-1 animate-pulse cursor-pointer">
-              <ArrowUpCircle className="h-3 w-3" />
-              v{updateAvailable.version} disponibile
-            </Badge>
-          </button>
-        )}
-      </div>
+      {/* Niente riga del titolo (Riccardo, 14/11): il nome lo dice la scheda accesa, la versione sta in Aggiornamenti.
+          Resta, solo quando c'è, l'avviso della versione nuova. */}
+      <h1 className="sr-only">Impostazioni</h1>
+      {appVersion && updateAvailable && activeTab !== "aggiornamenti" && (
+        <button type="button" onClick={() => selectTab("aggiornamenti")} className="inline-flex items-center" title="Vai alla scheda Aggiornamenti">
+          <Badge variant="default" className="gap-1 text-[13px] cursor-pointer">
+            <ArrowUpCircle className="h-3.5 w-3.5" />
+            v{updateAvailable.version} disponibile (installata v{appVersion})
+          </Badge>
+        </button>
+      )}
 
       {/* === Tab: Istanza === */}
       {activeTab === "istanza" && istanzeUtente > 1 && (
@@ -932,47 +930,13 @@ function SettingsPageInner() {
           liste delle reti dove valevano. */}
       {activeTab === "sistema" && (
         <div className="space-y-6">
-          {/* URL pubblico dell'hub: tolto dal menu a sinistra il 23/10 (Riccardo), prima stava in /agents. */}
-          {isSuperAdmin && <HubUrlCard />}
-          {isAdmin && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-base">Configurazione guidata</CardTitle>
-                </div>
-                <CardDescription>
-                  Riapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleOpenOnboardingWizard()}
-                  disabled={openingWizard}
-                  className="gap-2"
-                >
-                  <Sparkles className={`h-4 w-4 ${openingWizard ? "animate-pulse" : ""}`} />
-                  {openingWizard ? "Apertura in corso…" : "Apri wizard di configurazione"}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {isAdmin && <PuliziaHostCard />}
-
-          {isAdmin && <InterruttoreAcquisizioneModulare />}
-
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">Dati e manutenzione</CardTitle>
               </div>
-              <CardDescription>
-                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella i dati del cliente (reti, host, apparati, credenziali, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario, job); restano le impostazioni, la configurazione dei moduli e gli utenti.
-              </CardDescription>
+              <CardDescription>Esporta, copia e trasferisci i dati di questa istanza.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
               <Button
@@ -999,18 +963,61 @@ function SettingsPageInner() {
                   Vault ›
                 </Button>
               )}
-              <Button
-                variant="destructive"
-                onClick={handleResetConfiguration}
-                disabled={resetting}
-              >
-                <RotateCcw className={`h-4 w-4 mr-2 ${resetting ? "animate-spin" : ""}`} />
-                Reset per nuovo cliente
-              </Button>
             </CardContent>
           </Card>
 
-          <AzzeraAppliance />
+          {isAdmin && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-base">Configurazione guidata</CardTitle>
+                </div>
+                <CardDescription>
+                  Riapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleOpenOnboardingWizard()}
+                  disabled={openingWizard}
+                  className="gap-2"
+                >
+                  <Sparkles className={`h-4 w-4 ${openingWizard ? "animate-pulse" : ""}`} />
+                  {openingWizard ? "Apertura in corso…" : "Apri wizard di configurazione"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* URL pubblico dell'hub: tolto dal menu a sinistra il 23/10 (Riccardo), prima stava in /agents. */}
+          {isSuperAdmin && <HubUrlCard />}
+
+          {isAdmin && <InterruttoreAcquisizioneModulare />}
+
+          {isAdmin && <PuliziaHostCard />}
+
+          {/* Le azioni che cancellano stanno insieme, in fondo, dentro un bordo spesso (Riccardo, 14/11): prima il
+              «Reset» era in fila con «Esporta» e «Backup», e «Azzera» sotto una tabella di 58 righe. */}
+          <section aria-label="Azioni che cancellano" className="space-y-4 rounded-xl border-4 border-destructive/60 p-4">
+            <h2 className="text-base font-semibold">⚠ Azioni che cancellano</h2>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground" title="Cancella reti, host, apparati, credenziali, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario, job.">
+                «Reset per nuovo cliente» cancella i dati del cliente; restano le impostazioni, la configurazione dei moduli e gli utenti.
+              </p>
+            <Button
+              variant="destructive"
+              onClick={handleResetConfiguration}
+              disabled={resetting}
+            >
+              <RotateCcw className={`h-4 w-4 mr-2 ${resetting ? "animate-spin" : ""}`} />
+              Reset per nuovo cliente
+            </Button>
+            </div>
+            <AzzeraAppliance />
+          </section>
         </div>
       )}
     </div>

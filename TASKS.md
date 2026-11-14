@@ -11,6 +11,14 @@ Riccardo, 14/11: «uniformare i tab della pagina allo standard già impostato ne
 - [x] Card MDM tolta da Sistema: in Moduli l'MDM ha già la sua riga con «Apri» (visto a schermo, la card spostata era un doppione). Rimandi nuovi: «Classificazioni del cliente ›» in Identificazione, «Trasferimento configurazione ›» e «Vault ›» in Sistema → Dati e manutenzione (`/settings/transfer` non aveva nessun ingresso).
 - [x] Prove: `sezioni.test.ts` 6/6 (una nuova; nella prova dei doppioni la chiave ora comprende il `tab`), ancore e menu 12/12, `tsc` 0, lint senza avvisi nuovi.
 - [x] Visto a 1920 sull'hub 533 con `prova-claude-admin` (14/11, `85d06af3`): 12 schede su una riga senza scorrere (1640 px; con «Istanza» sarebbero 13, non visto), scheda accesa giusta su Moduli, Opzioni, Schedulazioni; `?tab=users` diventa `?tab=utenti`; nel menu resta solo «Impostazioni». Non visti: tema scuro, utente non admin.
+- [x] **Dentro le schede** (Riccardo, 14/11: «verifica anche come migliorare le schede dei singoli tab», poi «Sì a tutto» ai sette oggetti). Misurate a 1920 sull'hub: riquadri larghi 1640 px con moduli che ne usavano 670, Identificazione ~6000 px in otto riquadri, Opzioni 6913 px.
+  - Via la riga «Impostazioni vX» da tutte le schede; resta solo l'avviso quando c'è una versione nuova. La versione sta in Aggiornamenti.
+  - **Identificazione**: seconda fila (`SchedePagina`) Pipeline · sysObjectID · MAC → prodotto · Firme · Regole fingerprint · Copertura credenziali, col numero su Firme e Regole; la pipeline è una griglia di sei fasi che portano alla loro parte. Le àncore di prima (`#firme`…) aprono la parte. Le parti restano montate (`hidden`), quindi lo stato dei moduli non si perde cambiando parte.
+  - **Opzioni**: i gruppi sono schede col numero, più «Tutte»; un rimando con l'àncora torna a «Tutte».
+  - **Sistema**: ordine Dati e manutenzione · Configurazione guidata · URL dell'hub · acquisizione · Pulizia host (archivio chiuso in «Archivio (N) ›»); «Reset per nuovo cliente» e «Azzera appliance» in un riquadro «Azioni che cancellano» col bordo spesso, in fondo.
+  - **Due colonne a 1920**: Scansione (modulo Nmap; Quick Scan e Port discovery affiancati), Notifiche (Email | Webhook; lo stato in una riga senza riquadro), Alert sicurezza, Aggiornamenti (versione | changelog), Cosa esce (non più stretta a 1152 px).
+  - Titoli doppi tolti in Aggiornamenti e Moduli; aiuti dei campi di Scansione e pipeline a 13 px; i rimandi della pipeline non sono più in ciano chiaro.
+  - Non toccate: Utenti, HTTPS, Schedulazioni. `tsc` 0, lint senza avvisi nuovi, prove 56/56 (opzioni, menu, impostazioni, trasferimento).
 - [ ] «Job pianificati» era già in Schedulazioni dall'11/11 (0.9.1182): niente da fare. Il titolo di «Cosa esce» è rimasto (è una frase, non il nome della scheda).
 
 ## 2026-11-09 — Spunti da Nety per Discovery e Reti

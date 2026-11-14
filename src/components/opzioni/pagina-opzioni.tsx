@@ -10,6 +10,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { toast } from "sonner";
 import { LoadError } from "@/components/shared/load-error";
+import { SchedePagina } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,7 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
   const [dati, setDati] = useState<Dati | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("tutte");
+  const [gruppoScelto, setGruppoScelto] = useState<string>("tutti");
   const [cerca, setCerca] = useState("");
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [daSpegnere, setDaSpegnere] = useState<VoceOpzione | null>(null);
@@ -113,6 +115,7 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
       const el = document.getElementById(id);
       if (!el) return;
       setFiltro("tutte");
+      setGruppoScelto("tutti");
       setCerca("");
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setEvidenziata(id);
@@ -175,6 +178,9 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
     })).filter((g) => g.righe.length > 0);
   }, [dati, filtro, cerca]);
 
+  // I gruppi come schede (Riccardo, 14/11/2026: 6900 px da scorrere): «Tutte» o un gruppo alla volta, col numero.
+  const gruppiVisti = gruppoScelto === "tutti" ? gruppi : gruppi.filter((g) => g.gruppo === gruppoScelto);
+
   if (errore && !dati) return <LoadError what="le opzioni" message={errore} onRetry={() => void carica()} />;
 
   return (
@@ -215,6 +221,23 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
         )}
       </div>
 
+      {dati && (
+        <SchedePagina<string>
+          etichetta="Gruppi di opzioni"
+          scelta={gruppoScelto}
+          onScegli={setGruppoScelto}
+          voci={[
+            { valore: "tutti", titolo: "Tutte", segnale: <span className="ml-1 text-[13px] font-normal opacity-80">{gruppi.reduce((n, g) => n + g.righe.length, 0)}</span> },
+            ...gruppi.map((g) => ({
+              valore: g.gruppo as string,
+              titolo: TITOLI_GRUPPI[g.gruppo].titolo,
+              descrizione: TITOLI_GRUPPI[g.gruppo].nota,
+              segnale: <span className="ml-1 text-[13px] font-normal opacity-80">{g.righe.length}</span>,
+            })),
+          ]}
+        />
+      )}
+
       {errore && dati && (
         <p className="text-[14px] font-semibold text-[#8E1B20] dark:text-[#E8625A]">Ultimo aggiornamento non riuscito: {errore}</p>
       )}
@@ -231,8 +254,8 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
             <div>Cosa è successo</div>
             <div>Ritmo / azione</div>
           </div>
-          {gruppi.length === 0 && <p className="px-4 text-[14px]">Nessuna opzione con questo filtro.</p>}
-          {gruppi.map(({ gruppo, righe }) => (
+          {gruppiVisti.length === 0 && <p className="px-4 text-[14px]">Nessuna opzione con questo filtro.</p>}
+          {gruppiVisti.map(({ gruppo, righe }) => (
             <section key={gruppo} className="overflow-hidden rounded-xl border border-[#D0D8DC] bg-white dark:border-[#3A4A57] dark:bg-[#13222E]">
               <h2 className="flex flex-wrap items-baseline gap-3 border-b border-[#D0D8DC] px-4 py-3 text-[15px] font-semibold uppercase dark:border-[#3A4A57]">
                 {TITOLI_GRUPPI[gruppo].titolo}

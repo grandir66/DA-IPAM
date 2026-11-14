@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Pencil, RotateCcw, Monitor, Tags, Wifi, ArrowRight, Radar } from "lucide-react";
+import { Plus, Trash2, Pencil, RotateCcw, Monitor, Tags, ArrowRight, Radar } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
@@ -36,6 +36,7 @@ import {
   DEVICE_CLASSIFICATIONS_ORDERED,
   sortClassificationsByDisplayLabel,
 } from "@/lib/device-classifications";
+import { SchedePagina } from "@/components/shared/console";
 import { SysObjLookupTab } from "@/components/settings/sysobj-lookup-tab";
 import { MacProductMapTab } from "@/components/settings/mac-product-map-tab";
 import { CredentialCoverageTab } from "@/components/settings/credential-coverage-tab";
@@ -95,6 +96,12 @@ const emptyFpRuleForm = {
 };
 
 /* ── Component ─────────────────────────────────────────────── */
+
+type Parte = "pipeline" | "sysobj" | "mac" | "credenziali" | "firme" | "regole";
+const PARTE_DA_ANCORA: Record<string, Parte> = {
+  "sysobj-lookup": "sysobj", "mac-product-map": "mac", "credential-coverage": "credenziali", firme: "firme", classificazione: "regole",
+};
+const numero = (n: number) => <span className="ml-1 text-[13px] font-normal opacity-80">{n}</span>;
 
 export function DeviceIdentificationTab() {
   /* ── Fingerprint rules state ── */
@@ -336,6 +343,14 @@ export function DeviceIdentificationTab() {
     }
   }
 
+  /* ── Parti della scheda (Riccardo, 14/11/2026: otto riquadri in fila, 6000 px da scorrere) ── */
+  // Una parte alla volta, scelta dalla seconda fila di schede. Le àncore di prima (`#firme`…) aprono la loro parte.
+  const [parte, setParte] = useState<Parte>("pipeline");
+  useEffect(() => {
+    const daAncora = PARTE_DA_ANCORA[window.location.hash.slice(1)];
+    if (daAncora) setParte(daAncora);
+  }, []);
+
   /* ── Pipeline steps ── */
 
   const pipelineSteps = [
@@ -345,7 +360,7 @@ export function DeviceIdentificationTab() {
       desc: "Match OID enterprise \u2192 vendor profile (confidenza \u2265 90%)",
       href: "/settings/snmp-profiles",
       linkLabel: "Gestisci profili",
-      anchor: null,
+      parte: null,
     },
     {
       step: 2,
@@ -353,7 +368,7 @@ export function DeviceIdentificationTab() {
       desc: 'Pattern hostname admin (es. "SW-" \u2192 switch, "AP-" \u2192 access point)',
       href: null,
       linkLabel: null,
-      anchor: null,
+      parte: null,
     },
     {
       step: 3,
@@ -361,7 +376,7 @@ export function DeviceIdentificationTab() {
       desc: "Match per prefisso pi\u00f9 lungo nella tabella sysObjectID \u2192 vendor/prodotto",
       href: null,
       linkLabel: "Vai alla tabella",
-      anchor: "#sysobj-lookup",
+      parte: "sysobj" as Parte,
     },
     {
       step: 4,
@@ -369,7 +384,7 @@ export function DeviceIdentificationTab() {
       desc: "SNMP GETNEXT su prefissi OID per confermare tipo device (regole DB)",
       href: null,
       linkLabel: "Vai alle firme",
-      anchor: "#firme",
+      parte: "firme" as Parte,
     },
     {
       step: 5,
@@ -377,7 +392,7 @@ export function DeviceIdentificationTab() {
       desc: "Mappa final_device del fingerprint \u2192 classificazione",
       href: null,
       linkLabel: "Vai alla classificazione",
-      anchor: "#classificazione",
+      parte: "regole" as Parte,
     },
     {
       step: 6,
@@ -385,89 +400,84 @@ export function DeviceIdentificationTab() {
       desc: "Regole su sysDescr, OID, porte, hostname, MAC vendor",
       href: null,
       linkLabel: null,
-      anchor: null,
+      parte: null,
     },
   ];
 
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <div className="space-y-6">
-      {/* ═══ Section 1: Pipeline overview ═══ */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Wifi className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">Pipeline identificazione SNMP</CardTitle>
-          </div>
-          <CardDescription>
-            Come vengono classificati i dispositivi durante la scoperta rete. Ogni fase ha priorit&agrave; decrescente:
-            la prima che matcha determina la classificazione.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
+    <div className="space-y-4">
+      <SchedePagina<Parte>
+        etichetta="Parti di Identificazione"
+        scelta={parte}
+        onScegli={setParte}
+        voci={[
+          { valore: "pipeline", titolo: "Pipeline", descrizione: "Le sei fasi con cui un dispositivo viene classificato durante la scoperta: la prima che riconosce decide." },
+          { valore: "sysobj", titolo: "sysObjectID", descrizione: "Tabella sysObjectID SNMP → vendor, prodotto, categoria (fase 3)." },
+          { valore: "mac", titolo: "MAC → prodotto", descrizione: "Prefissi MAC che indicano una linea di prodotto, e le correzioni di classificazione recenti." },
+          { valore: "firme", titolo: "Firme", segnale: numero(fpRules.length), descrizione: "Firme di riconoscimento dei dispositivi: prefissi OID provati con SNMP (fase 4)." },
+          { valore: "regole", titolo: "Regole fingerprint", segnale: numero(fpMapRows.length), descrizione: "Dal dispositivo riconosciuto dal fingerprint alla classificazione (fase 5)." },
+          { valore: "credenziali", titolo: "Copertura credenziali", descrizione: "Per ogni categoria, quanti dispositivi hanno una credenziale che funziona." },
+        ]}
+      />
+
+      {/* ═══ Pipeline: sei fasi su tre colonne; ogni fase porta alla sua parte o alla sua pagina ═══ */}
+      {parte === "pipeline" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {pipelineSteps.map((s) => (
-              <div key={s.step} className="flex items-start gap-3 rounded-md border p-3">
-                <Badge variant="outline" className="mt-0.5 shrink-0">{s.step}</Badge>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{s.name}</div>
-                  <div className="text-xs text-muted-foreground">{s.desc}</div>
+              <div key={s.step} className="flex items-start gap-3 rounded-md border bg-card p-3">
+                <Badge variant="outline" className="mt-0.5 shrink-0 text-[13px]">{s.step}</Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{s.name}</div>
+                  <div className="text-[13px] text-muted-foreground">{s.desc}</div>
+                  {s.href && (
+                    <Link href={s.href} className="mt-1 inline-flex items-center gap-1 text-[13px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
+                      {s.linkLabel} <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  )}
+                  {!s.href && s.parte && (
+                    <button type="button" onClick={() => setParte(s.parte)} className="mt-1 inline-flex items-center gap-1 text-[13px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
+                      {s.linkLabel} <ArrowRight className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
-                {s.href && (
-                  <Link href={s.href} className="text-xs text-primary hover:underline shrink-0 flex items-center gap-1">
-                    {s.linkLabel} <ArrowRight className="h-3 w-3" />
-                  </Link>
-                )}
-                {!s.href && s.anchor && (
-                  <a href={s.anchor} className="text-xs text-primary hover:underline shrink-0 flex items-center gap-1">
-                    {s.linkLabel} <ArrowRight className="h-3 w-3" />
-                  </a>
-                )}
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* ═══ Section 2: Link to SNMP Vendor Profiles ═══ */}
-      <Card className="bg-muted/30">
-        <CardContent className="py-4 flex items-center justify-between">
-          <div>
-            <p className="font-medium">Profili SNMP Vendor</p>
-            <p className="text-sm text-muted-foreground">
-              Gestisci i profili OID per la classificazione automatica dei dispositivi via SNMP (Synology, QNAP, MikroTik, etc.)
-            </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-muted-foreground">Altre pagine:</span>
+            <Link href="/settings/snmp-profiles">
+              <Button variant="outline" size="sm">
+                <Radar className="h-4 w-4 mr-2" />
+                Profili SNMP dei vendor ›
+              </Button>
+            </Link>
+            <Link href="/settings/classifications">
+              <Button variant="outline" size="sm">Classificazioni del cliente ›</Button>
+            </Link>
           </div>
-          <Link href="/settings/snmp-profiles">
-            <Button variant="outline" size="sm">
-              <Radar className="h-4 w-4 mr-2" />
-              Gestisci profili SNMP
-            </Button>
-          </Link>
-          <Link href="/settings/classifications">
-            <Button variant="outline" size="sm">Classificazioni del cliente ›</Button>
-          </Link>
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
       {/* ═══ Section 3: sysObjectID Lookup ═══ */}
-      <div id="sysobj-lookup">
+      <div id="sysobj-lookup" hidden={parte !== "sysobj"}>
         <SysObjLookupTab />
       </div>
 
       {/* ═══ Section 3b: MAC → linea di prodotto (Attribution v2 Fase 2) ═══ */}
-      <div id="mac-product-map">
+      <div id="mac-product-map" hidden={parte !== "mac"}>
         <MacProductMapTab />
       </div>
 
       {/* ═══ Section 3c: Copertura credenziali per categoria (Attribution v2 Fase 4b) ═══ */}
-      <div id="credential-coverage">
+      <div id="credential-coverage" hidden={parte !== "credenziali"}>
         <CredentialCoverageTab />
       </div>
 
       {/* ═══ Section 4: Firme riconoscimento dispositivi ═══ */}
-      <div id="firme">
+      <div id="firme" hidden={parte !== "firme"}>
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>
@@ -684,7 +694,7 @@ export function DeviceIdentificationTab() {
       </div>
 
       {/* ═══ Section 5: Regole classificazione fingerprint ═══ */}
-      <div id="classificazione">
+      <div id="classificazione" hidden={parte !== "regole"}>
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>

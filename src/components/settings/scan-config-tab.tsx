@@ -119,7 +119,7 @@ function EnvRow({ name, value, defaultValue, description }: { name: string; valu
           <span className="text-muted-foreground text-xs">{defaultValue}</span>
         )}
       </td>
-      <td className="py-2 text-xs text-muted-foreground">{description}</td>
+      <td className="py-2 text-[13px] text-muted-foreground">{description}</td>
     </tr>
   );
 }
@@ -269,7 +269,7 @@ export function ScanConfigTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSaveProfile} className="space-y-4 max-w-2xl">
+          <form onSubmit={handleSaveProfile} className="grid items-start gap-x-8 gap-y-4 xl:grid-cols-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nome</Label>
@@ -290,6 +290,18 @@ export function ScanConfigTab() {
               </div>
             </div>
             <div className="space-y-2">
+              <Label>Community SNMP (opzionale)</Label>
+              <Input
+                value={profileForm.snmp_community}
+                onChange={(e) => setProfileForm((f) => ({ ...f, snmp_community: e.target.value }))}
+                placeholder="es. public"
+                className="font-mono text-sm"
+              />
+              <p className="text-[13px] text-muted-foreground">
+                Usata in sessione con Nmap per walk SNMP e rilevamento dispositivi (oltre alle community configurate per rete/credenziali).
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label>Porte TCP da testare</Label>
               <Textarea
                 value={profileForm.tcp_ports}
@@ -298,7 +310,7 @@ export function ScanConfigTab() {
                 className="font-mono text-sm min-h-[88px]"
                 required
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 Elenco separato da virgole. Solo queste porte TCP vengono usate nello scan con questo profilo (nessun elenco predefinito aggiunto dal sistema).
               </p>
             </div>
@@ -310,29 +322,17 @@ export function ScanConfigTab() {
                 placeholder="es. 53,123,161,500 oppure lascia vuoto per non fare scan UDP"
                 className="font-mono text-sm min-h-[88px]"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 Se lasci vuoto, <strong>non</strong> viene eseguita la fase UDP (solo TCP). La scansione UDP richiede spesso privilegi root sul server.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label>Community SNMP (opzionale)</Label>
-              <Input
-                value={profileForm.snmp_community}
-                onChange={(e) => setProfileForm((f) => ({ ...f, snmp_community: e.target.value }))}
-                placeholder="es. public"
-                className="font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Usata in sessione con Nmap per walk SNMP e rilevamento dispositivi (oltre alle community configurate per rete/credenziali).
-              </p>
-            </div>
-            <div className="space-y-2">
+            <div className="space-y-2 xl:col-span-2">
               <Label>Anteprima (comandi effettivi)</Label>
               <code className="block text-xs font-mono break-all bg-muted/50 px-2 py-1.5 rounded overflow-x-auto whitespace-pre-wrap">
                 {getNmapCommandForForm(profileForm)}
               </code>
             </div>
-            <Button type="submit" disabled={savingProfile}>
+            <Button type="submit" className="justify-self-start xl:col-span-2" disabled={savingProfile}>
               <Save className="h-4 w-4 mr-2" />
               {savingProfile ? "Salvataggio..." : "Salva Profilo"}
             </Button>
@@ -343,6 +343,8 @@ export function ScanConfigTab() {
       {/* ================================================================= */}
       {/* Card 2 — Scoperta rete veloce (Quick Scan) */}
       {/* ================================================================= */}
+      {/* Quick Scan e Port discovery affiancati a 1920 (14/11): prima erano due riquadri larghi mezzi vuoti. */}
+      <div className="grid items-start gap-6 xl:grid-cols-2">
       {config && (
         <Card>
           <CardHeader>
@@ -386,13 +388,13 @@ export function ScanConfigTab() {
             Opzionale: pre-pass Naabu prima di Nmap mirato (-sV). Se Naabu non è installato, lo scan continua con Nmap only (fail-soft).
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 max-w-2xl">
+        <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-md border p-3">
             <div className="space-y-1">
               <Label htmlFor="port-discovery-naabu" className="text-sm font-medium">
                 Naabu + Nmap
               </Label>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 Off = solo Nmap (default). On = Naabu TCP poi Nmap -sV sulle porte trovate + porte sempre utili.
               </p>
               <RigheRimando ids={["automatismo.naabu"]} mostraEsito={false} />
@@ -423,6 +425,7 @@ export function ScanConfigTab() {
 
         </CardContent>
       </Card>
+      </div>
 
       {/* ================================================================= */}
       {/* Card 4 — Variabili ambiente (collapsible) */}
@@ -449,7 +452,7 @@ export function ScanConfigTab() {
             <CardContent>
               <table className="w-full">
                 <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
+                  <tr className="border-b text-[13px] text-muted-foreground">
                     <th className="text-left py-2 pr-3">Variabile</th>
                     <th className="text-left py-2 pr-3">Valore</th>
                     <th className="text-left py-2">Descrizione</th>

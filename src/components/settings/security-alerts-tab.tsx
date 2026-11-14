@@ -86,6 +86,8 @@ export function SecurityAlertsTab() {
         webhook, riepiloghi) stanno nel tab Notifiche.
       </p>
 
+      {/* Due colonne a 1920 (14/11): reti e account a sinistra, regole e conservazione a destra. */}
+      <div className="grid items-start gap-6 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -130,6 +132,7 @@ export function SecurityAlertsTab() {
         </CardContent>
       </Card>
 
+      <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Regole degli apparati di rete</CardTitle>
@@ -175,6 +178,8 @@ export function SecurityAlertsTab() {
           </div>
         </CardContent>
       </Card>
+      </div>
+      </div>
 
       <Button onClick={handleSave} disabled={saving}>
         {saving ? "Salvataggio…" : "Salva"}

@@ -116,20 +116,13 @@ export function NotificationsTab() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
-        Invio degli alert di sicurezza via email e webhook. Le categorie gravi
-        partono subito; tutto il resto viene raggruppato in un riepilogo periodico.
-      </p>
+      {/* Lo stato generale in una riga, senza riquadro suo (14/11): «SPENTA» compariva tre volte in tre riquadri. */}
+      <div title="Invio degli alert di sicurezza via email e webhook. Le categorie gravi partono subito; il resto in un riepilogo periodico.">
+        <RigheRimando ids={["notifiche.attive"]} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Stato</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RigheRimando ids={["notifiche.attive"]} />
-        </CardContent>
-      </Card>
-
+      {/* Email e Webhook affiancati a 1920 (14/11): i campi erano stirati su 800 px l'uno. */}
+      <div className="grid items-start gap-6 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -235,6 +228,7 @@ export function NotificationsTab() {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       <Card>
         <CardHeader>

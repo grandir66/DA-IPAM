@@ -11,6 +11,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Opzioni, Schedulazioni e Cosa esce non sono più voci del menu**: sono schede di Impostazioni (ADR 0038, al posto della scelta del 22/10). Gli indirizzi restano gli stessi, quindi i rimandi continuano a funzionare.
 - La card MDM non sta più in Sistema: l'MDM si apre dalla sua riga in Moduli, come gli altri.
 
+- **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.
+
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.
 

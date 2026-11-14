@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Loader2,
-  PackageOpen,
   CheckCircle2,
   AlertTriangle,
   ServerCog,
@@ -308,14 +307,8 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
         <>
       <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <PackageOpen className="h-5 w-5" />
-                Moduli
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-                Ogni modulo si configura e si verifica nella sua pagina («Apri»). Il JSON
-                dell&apos;installer di un modulo si importa qui a destra.
-              </p>
+              <h2 className="sr-only">Moduli</h2>
+              <p className="text-sm text-muted-foreground">Ogni modulo si configura e si verifica nella sua pagina («Apri»).</p>
             </div>
             <div className="shrink-0">
               <ModuleJsonImport />

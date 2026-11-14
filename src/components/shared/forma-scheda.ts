@@ -11,7 +11,9 @@
  * E ancora: «quasi dei pulsanti da selezionare in alto»: quindi pulsanti veri, arrotondati su tutti i lati, in fila
  * sopra una riga che li separa dal contenuto.
  */
-export const FILA_SCHEDE = "flex items-center gap-2 overflow-x-auto border-b border-border pb-2";
+// Riccardo, 14/11/2026: «la barra che compare quando ci sono troppi tab è orribile». Quando non stanno su una riga
+// le schede vanno a capo: niente barra di scorrimento sotto la fila.
+export const FILA_SCHEDE = "flex flex-wrap items-center gap-2 border-b border-border pb-2";
 export const SCHEDA_BASE = "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border-2 px-4 text-[15px] whitespace-nowrap outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50";
 export const SCHEDA_ACCESA = "border-primary bg-primary font-semibold text-primary-foreground";
 export const SCHEDA_SPENTA = "border-border bg-muted/50 font-medium text-foreground/80 hover:border-foreground/40 hover:bg-muted hover:text-foreground";

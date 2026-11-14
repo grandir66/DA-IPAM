@@ -19,6 +19,7 @@ Riccardo, 14/11: «uniformare i tab della pagina allo standard già impostato ne
   - **Due colonne a 1920**: Scansione (modulo Nmap; Quick Scan e Port discovery affiancati), Notifiche (Email | Webhook; lo stato in una riga senza riquadro), Alert sicurezza, Aggiornamenti (versione | changelog), Cosa esce (non più stretta a 1152 px).
   - Titoli doppi tolti in Aggiornamenti e Moduli; aiuti dei campi di Scansione e pipeline a 13 px; i rimandi della pipeline non sono più in ciano chiaro.
   - Non toccate: Utenti, HTTPS, Schedulazioni. `tsc` 0, lint senza avvisi nuovi, prove 56/56 (opzioni, menu, impostazioni, trasferimento).
+- [x] Riccardo, 14/11: «la barra che compare quando ci sono troppi tab è orribile». `FILA_SCHEDE` va a capo invece di scorrere: vale per tutte le file di schede (sezioni, `SchedePagina`, `ui/tabs`).
 - [ ] «Job pianificati» era già in Schedulazioni dall'11/11 (0.9.1182): niente da fare. Il titolo di «Cosa esce» è rimasto (è una frase, non il nome della scheda).
 
 ## 2026-11-09 — Spunti da Nety per Discovery e Reti

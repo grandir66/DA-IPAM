@@ -1,4 +1,5 @@
 "use client";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { parseDbDate } from "@/lib/db-date";
 
 import { Fragment, useState, useCallback, useEffect, useRef, useMemo } from "react";
@@ -179,6 +180,7 @@ export function NetworkDetailClient({
   initialAvailableSources,
   initialHostValidatedProtocols,
 }: NetworkDetailClientProps) {
+  const eAdmin = useEAdmin();
   const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
   const [routerId, setRouterId] = useState<number | null>(initialRouterId);
@@ -1236,6 +1238,8 @@ export function NetworkDetailClient({
               variant="outline"
               size="sm"
               onClick={() => { window.location.href = `/api/export?network_id=${network.id}`; }}
+              disabled={!eAdmin}
+              title={eAdmin ? undefined : "Le esportazioni le scarica solo un amministratore"}
             >
               <Download className="h-4 w-4 mr-2" />
               CSV

@@ -943,6 +943,8 @@ function SettingsPageInner() {
               <Button
                 variant="outline"
                 onClick={() => { window.location.href = "/api/export"; }}
+                disabled={!isAdmin}
+                title={isAdmin ? undefined : "Le esportazioni le scarica solo un amministratore"}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Esporta host (CSV)

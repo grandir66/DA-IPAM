@@ -1,4 +1,5 @@
 "use client";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 
@@ -81,6 +82,7 @@ const ROUTER_PROTOCOL_OPTIONS = [
 ] as const;
 
 export function NetworksListClient({ initialNetworks, routers: initialRouters, sottoIntestazione }: NetworksListClientProps) {
+  const eAdmin = useEAdmin();
   const router = useRouter();
   const [networks, setNetworks] = useState<NetworkWithRouter[]>((initialNetworks ?? []) as NetworkWithRouter[]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -531,7 +533,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
                 <Scan className="h-4 w-4 mr-2" />
                 {scanning ? "Scansione..." : "Scansiona dispositivi"}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exportingCsv}>
+              <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exportingCsv || !eAdmin} title={eAdmin ? undefined : "Le esportazioni le scarica solo un amministratore"}>
                 <Download className="h-4 w-4 mr-2" />
                 {exportingCsv ? "Export…" : "Esporta CSV host"}
               </Button>

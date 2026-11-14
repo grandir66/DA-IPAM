@@ -40,6 +40,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - Il pacchetto di trasferimento che comprende il vault chiede il codice della verifica in due passaggi, come il backup del database.
 - L'import di un pacchetto controlla tutto prima di scrivere: rifiuta intero un pacchetto che porta utenti o impostazioni dell'installazione, dice a schermo le tabelle che non ha importato, e sul profilo tecnico lascia al superadmin le risorse comuni a tutti i clienti.
 - L'import «con svuotamento», che cancella i dati esistenti del cliente, chiede il codice della verifica in due passaggi.
+- Le esportazioni CSV (host, subnet, inventario, Health AD) le scarica solo l'admin; per gli altri i pulsanti sono spenti e dicono perché. Le diagnostiche SNMP non accettano più la community nell'indirizzo e non la riscrivono nella risposta. La Scheda cliente dice a chi non è admin perché è vuota.
 
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.

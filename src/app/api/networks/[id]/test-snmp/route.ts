@@ -5,7 +5,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 /**
- * GET /api/networks/[id]/test-snmp?ip=192.168.1.1&community=public
+ * GET /api/networks/[id]/test-snmp?ip=192.168.1.1
  *
  * Diagnostica SNMP dettagliata: mostra varbinds raw, tipi, errori.
  * Senza ?ip= testa i primi 5 host della rete.
@@ -22,7 +22,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const ip = request.nextUrl.searchParams.get("ip");
-    const community = request.nextUrl.searchParams.get("community") || network.snmp_community || "public";
+    // La community non si passa nell'indirizzo (finirebbe nel registro degli accessi): si usa quella della rete,
+    // o un'altra nell'intestazione `x-snmp-community` (piano di sicurezza 14/11).
+    if (request.nextUrl.searchParams.has("community")) {
+      return NextResponse.json(
+        { error: "La community non si passa nell'indirizzo: usa l'intestazione x-snmp-community, o quella configurata nella rete." },
+        { status: 400 },
+      );
+    }
+    const altra = request.headers.get("x-snmp-community");
+    const community = altra || network.snmp_community || "public";
+    const quale = altra ? "quella passata nell'intestazione" : network.snmp_community ? "quella della rete" : "public";
     const port = parseInt(request.nextUrl.searchParams.get("port") || "161");
 
     let ipsToTest: string[];
@@ -48,18 +58,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({
       config: {
-        network_snmp_community: network.snmp_community || "(non configurata nella rete)",
-        tested_community: community,
+        network_snmp_community: network.snmp_community ? "(configurata)" : "(non configurata nella rete)",
+        tested_community: quale,
         port,
       },
       results,
       ...(publicFallback ? { fallback_public: publicFallback } : {}),
       help: noResponse ? [
         "Nessuna risposta SNMP. Possibili cause:",
-        `1. La community '${community}' non è corretta per questi device`,
+        `1. La community provata (${quale}) non è corretta per questi device`,
         "2. SNMP non è abilitato sui device (verificare configurazione device)",
         "3. Firewall blocca UDP 161 tra questo server e i device",
-        `4. Testa da terminale: snmpget -v2c -c ${community} ${ipsToTest[0]} 1.3.6.1.2.1.1.1.0`,
+        `4. Testa da terminale: snmpget -v2c -c <community> ${ipsToTest[0]} 1.3.6.1.2.1.1.1.0`,
         "5. Se il test da terminale funziona ma qui no, potrebbe essere un problema di routing/binding di net-snmp",
       ] : undefined,
     });

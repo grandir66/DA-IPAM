@@ -4,7 +4,7 @@ import { provaVersioniSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessi
 
 /**
  * Test SNMP connectivity on a host.
- * GET /api/test-snmp?host=192.168.1.1&community=public
+ * GET /api/test-snmp?host=192.168.1.1 (community nell'intestazione x-snmp-community)
  * Probe SNMP verso host arbitrario (audit SEC-9): solo admin.
  */
 export async function GET(request: Request) {
@@ -12,7 +12,11 @@ export async function GET(request: Request) {
   if (isAuthError(authCheck)) return authCheck;
   const { searchParams } = new URL(request.url);
   const host = searchParams.get("host");
-  const community = searchParams.get("community") || "public";
+  // La community non si passa nell'indirizzo (finirebbe nel registro degli accessi): intestazione `x-snmp-community` (14/11).
+  if (searchParams.has("community")) {
+    return NextResponse.json({ error: "La community non si passa nell'indirizzo: usa l'intestazione x-snmp-community." }, { status: 400 });
+  }
+  const community = request.headers.get("x-snmp-community") || "public";
   const port = parseInt(searchParams.get("port") || "161", 10);
 
   if (!host) {

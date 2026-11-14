@@ -25,6 +25,7 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/discovery", etichetta: "Elenco" },
     { href: "/controllo-classificazione", etichetta: "Attribuzione" },
     { href: "/network-changes", etichetta: "Cambiamenti" },
+    { href: "/analytics", etichetta: "Anomalie" },
     { href: "/excluded-ips", etichetta: "IP esclusi" },
   ] },
   { nome: "Topologia", schede: [

@@ -30,7 +30,6 @@ import {
   ClipboardList,
   Radar,
   Router,
-  AlertTriangle,
   ShieldAlert,
   Siren,
   KeyRound,
@@ -94,7 +93,7 @@ const inventorySubItems: readonly SubItem[] = [
 // Network (Riccardo, 19/10 sera): «Credenziali» con i controller di rete sotto la sua
 // intestazione; Vulnerabilità e Alert sicurezza nel gruppo «Sicurezza».
 // Dal 12/11/2026 (Riccardo: «troppo ricco di opzioni») nel menu resta la prima pagina di ogni sezione; le altre sono
-// schede in cima alla pagina (`lib/menu/sezioni.ts`): Attribuzione, Cambiamenti e IP esclusi sotto Discovery; Mappa
+// schede in cima alla pagina (`lib/menu/sezioni.ts`): Attribuzione, Cambiamenti, Anomalie e IP esclusi sotto Discovery; Mappa
 // porte e Tabella ARP sotto Topologia; Controller di rete sotto Credenziali; Sorgenti DHCP sotto DHCP.
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
@@ -468,7 +467,6 @@ export function Sidebar() {
   const [networkServicesOpen, setNetworkServicesOpen] = useState(() =>
     networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
-  const [unackedAnomalies, setUnackedAnomalies] = useState(0);
   const [allarmiRete, setAllarmiRete] = useState(0);
   // Edge, NIS2 e Wazuh per le voci grigie (08/11); null = non ancora letti: niente grigio.
   const [presenze, setPresenze] = useState<Presenze | null>(null);
@@ -523,12 +521,6 @@ export function Sidebar() {
 
   useEffect(() => {
     const fetchUnacked = () => {
-      fetch("/api/analytics/anomalies?acknowledged=false&limit=1")
-        .then((r) => r.ok ? r.json() : null)
-        .then((data: { unacked?: number } | null) => {
-          if (data?.unacked != null) setUnackedAnomalies(data.unacked);
-        })
-        .catch(() => { /* non critico */ });
       fetch("/api/trunk/rilievi?conteggio=1")
         .then((r) => r.ok ? r.json() : null)
         .then((data: { allarmiAlti?: number } | null) => {
@@ -658,8 +650,7 @@ export function Sidebar() {
         <NavGroup icon={LayoutGrid} label="Applicativi" bloccato={motivoBlocco("applicativi", presenze)} items={applicativiItems} open={applicativiOpen} setOpen={setApplicativiOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
 
-        {/* Anomalie */}
-        <NavItem href="/analytics" icon={AlertTriangle} label="Anomalie" active={isActive("/analytics")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={unackedAnomalies} />
+        {/* Anomalie: dal 14/11/2026 (Riccardo) è una scheda di Apparati, accanto a Cambiamenti (`lib/menu/sezioni.ts`). */}
 
         {/* Active Directory: spostato come voce di Network */}
 

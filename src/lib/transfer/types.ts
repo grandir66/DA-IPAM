@@ -63,6 +63,12 @@ export interface ImportOptions {
   passphrase: string;
   /** se true, svuota le tabelle del tenant prima di caricare */
   wipe: boolean;
+  /**
+   * false = il pacchetto non scrive nelle risorse comuni a tutti i profili dell'installazione (profili Nmap e
+   * SNMP, regole di riconoscimento, vault di sistema). Sul profilo tecnico le tocca solo il superadmin (P0-1, 14/11).
+   * Se manca vale true.
+   */
+  risorseGlobali?: boolean;
 }
 
 export interface ImportResult {
@@ -81,6 +87,8 @@ export interface ImportResult {
    * a chiave naturale, le chiavi del bundle già presenti e quindi saltate.
    */
   saltate: Record<string, string[]>;
+  /** Tabelle del pacchetto non scritte, col motivo: sconosciute a questa versione, o risorse comuni non permesse. */
+  ignorate?: Record<string, string>;
 }
 
 export const BUNDLE_FORMAT = "da-ipam-tenant-bundle" as const;

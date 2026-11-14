@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Upload, Database, AlertTriangle } from "lucide-react";
-import { righeConversioni, righeSaltate, type RigaConversione } from "@/lib/transfer/esito-import";
+import { righeConversioni, righeSaltate, righeIgnorate, type RigaConversione } from "@/lib/transfer/esito-import";
 
 const TIER_OPTIONS: { value: string; label: string }[] = [
   { value: "config", label: "Configurazione (reti, impostazioni)" },
@@ -116,7 +116,7 @@ export default function TransferPage() {
       // Esito delle conversioni rilanciate dall'import (dalla 2c): un parziale o
       // una voce divisa dopo un'unione si devono vedere, non solo stare nella risposta.
       // Unione (19/10): vince la destinazione, e le chiavi rimaste quelle di prima si elencano.
-      const righe = [...righeConversioni(r?.conversioni), ...righeSaltate(r?.saltate)];
+      const righe = [...righeConversioni(r?.conversioni), ...righeSaltate(r?.saltate), ...righeIgnorate(r?.ignorate)];
       setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti, ${r?.fkViolations ?? 0} riferimenti orfani preservati.`, ok: true, righe });
     } catch (e) {
       setMsg({ text: "Errore di rete: " + (e instanceof Error ? e.message : String(e)), ok: false });

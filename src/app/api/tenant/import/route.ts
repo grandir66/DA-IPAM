@@ -5,6 +5,8 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getHubDb } from "@/lib/db-hub";
 import { importTenant } from "@/lib/transfer/import";
+import { isTecnico } from "@/lib/profilo";
+import { puoScaricareHub } from "@/lib/accesso/profilo-pubblico";
 
 export async function POST(req: Request) {
   return withTenantFromSession(async () => {
@@ -29,8 +31,10 @@ export async function POST(req: Request) {
     try {
       const res = importTenant({
         bundle, tenantDb: getTenantDb(tenantCode), hubDb: getHubDb(),
-        options: { tenantCode, passphrase, wipe },
+        // Sul profilo tecnico le risorse comuni a tutti i clienti le tocca solo il superadmin (P0-1, 14/11).
+        options: { tenantCode, passphrase, wipe, risorseGlobali: puoScaricareHub(auth.user.role, isTecnico()) },
       });
+      console.info(`[import] ${tenantCode}: pacchetto importato da ${auth.user.name ?? "?"} (${wipe ? "con svuotamento" : "unione"})`);
       return NextResponse.json({ ok: true, result: res });
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 400 });

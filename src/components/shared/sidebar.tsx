@@ -11,7 +11,6 @@ import { useGiri } from "./giri-context";
 import {
   Activity,
   LayoutDashboard,
-  ArrowUpFromLine,
   Network,
   Scan,
   Key,
@@ -50,7 +49,7 @@ import {
   PanelLeftOpen,
   Lock,
   type LucideIcon,
-  SlidersHorizontal, CalendarClock, FileCode2,
+  FileCode2,
   Plug,
   PlusCircle, Settings as IconaImpostazioni,
 } from "lucide-react";
@@ -674,18 +673,8 @@ export function Sidebar() {
         <NavItem href="/in-esecuzione" icon={Activity} label="In esecuzione" active={isActive("/in-esecuzione")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={inCorso} />
 
         {/* Impostazioni (globale) */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce") && !pathname.startsWith("/settings/opzioni") && !pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
-
-        {/* Opzioni (22/10): ogni funzione che si accende o si spegne, in un posto solo; chi non è admin la vede ferma */}
-        <NavItem href="/settings/opzioni" icon={SlidersHorizontal} label="Opzioni" active={pathname.startsWith("/settings/opzioni")} collapsed={collapsed} onNavigate={closeMobile} />
-
-        {/* Schedulazioni (23/10): tutto ciò che parte da solo, in un elenco; chi non è admin lo vede fermo */}
-        <NavItem href="/settings/schedulazioni" icon={CalendarClock} label="Schedulazioni" active={pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
-
-        {/* Cosa esce verso Domarc (DA-Link, tappa C1): solo gli amministratori dell'istanza */}
-        {isAdmin && (
-          <NavItem href="/settings/cosa-esce" icon={ArrowUpFromLine} label="Cosa esce" active={pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
-        )}
+        {/* Opzioni, Schedulazioni e Cosa esce erano voci qui sotto: dal 14/11 sono schede di Impostazioni (ADR 0038). */}
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings")} collapsed={collapsed} onNavigate={closeMobile} />
 
       </nav>
 

@@ -857,7 +857,7 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 
 ### Opzioni — tutto quello che si accende o si spegne
 
-`Opzioni` (sotto `Impostazioni` nel menu) è il posto unico dove si vede e si cambia ogni funzione che si accende o si
+`Opzioni` (scheda di `Impostazioni`, nella fila in cima alla pagina; fino al 14/11/2026 era una voce del menu, come `Schedulazioni` e `Cosa esce`) è il posto unico dove si vede e si cambia ogni funzione che si accende o si
 spegne (dal 22/10/2026). Sei gruppi: letture degli apparati, job pianificati, moduli, automatismi, notifiche e uscite,
 voci da file dell'appliance. Per ogni riga: lo stato (**ACCESA** scuro pieno, **SPENTA** chiaro col bordo, **○ DA
 CONFIGURARE** bordo tratteggiato, **DA FILE** col lucchetto), per chi vale (questo cliente o tutti), il valore di serie o

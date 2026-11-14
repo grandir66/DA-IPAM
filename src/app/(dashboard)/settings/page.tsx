@@ -43,20 +43,13 @@ import {
   Trash2,
   Download,
   Database,
-  Radar,
   Pencil,
   RotateCcw,
   Users,
-  Building2,
   Shield,
   ArrowUpCircle,
-  Bell,
-  Siren,
   Sparkles,
-  Fingerprint,
   KeyRound,
-  PackageOpen,
-  Wrench,
   Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -232,13 +225,21 @@ function SettingsPageInner() {
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
-    return TAB_ALIASES[raw] ?? (isViewer ? "scansione" : "utenti");
+    return TAB_ALIASES[raw] ?? (isViewer ? "aggiornamenti" : "utenti");
   }, [searchParams, isViewer]);
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  // Un nome vecchio o inglese (`?tab=users`, `?tab=integrazioni`) diventa quello vero nell'indirizzo, àncora compresa:
+  // la fila delle schede in cima accende la scheda leggendo `?tab=`.
+  useEffect(() => {
+    const raw = (searchParams?.get("tab") ?? "").toLowerCase();
+    const vero = TAB_ALIASES[raw];
+    if (vero && vero !== searchParams?.get("tab")) router.replace(`/settings?tab=${vero}${window.location.hash}`, { scroll: false });
+  }, [searchParams, router]);
 
   function selectTab(key: TabKey) {
     setActiveTab(key);
@@ -577,66 +578,20 @@ function SettingsPageInner() {
 
   // ============ RENDER ============
 
-  const allTabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-    // Istanza (Riccardo, 23/10): la scelta del tenant, tolta dalla barra; solo con più istanze.
-    ...(istanzeUtente > 1 ? [{ key: "istanza" as const, label: "Istanza", icon: Building2 }] : []),
-    { key: "utenti", label: "Utenti", icon: Users },
-    { key: "scansione", label: "Scansione", icon: Radar },
-    { key: "identificazione", label: "Identificazione", icon: Fingerprint },
-    { key: "https", label: "HTTPS", icon: Shield },
-    { key: "moduli", label: "Moduli", icon: PackageOpen },
-    { key: "alert-sicurezza", label: "Alert sicurezza", icon: Siren },
-    { key: "notifiche", label: "Notifiche", icon: Bell },
-    { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
-    { key: "sistema", label: "Sistema", icon: Wrench },
-  ];
-  const tabs = isViewer ? allTabs.filter((tab) => tab.key !== "utenti") : allTabs;
-
   return (
     <div className="space-y-6">
-      <div>
+      {/* Le schede stanno nella fila in cima (`lib/menu/sezioni.ts`, 14/11): qui resta una riga sola, titolo e versione. */}
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-bold tracking-tight">Impostazioni</h1>
-        <p className="text-muted-foreground mt-1">Configurazione sistema, sicurezza e profili di scansione</p>
-        {appVersion && (
-          <div className="flex items-center gap-3 mt-2">
-            <Badge variant="outline" className="text-xs">v{appVersion}</Badge>
-            {updateAvailable && (
-              <button
-                type="button"
-                onClick={() => selectTab("aggiornamenti")}
-                className="inline-flex items-center"
-                title="Vai alla tab Aggiornamenti"
-              >
-                <Badge variant="default" className="text-xs gap-1 animate-pulse cursor-pointer">
-                  <ArrowUpCircle className="h-3 w-3" />
-                  v{updateAvailable.version} disponibile
-                </Badge>
-              </button>
-            )}
-          </div>
+        {appVersion && <Badge variant="outline" className="text-xs">v{appVersion}</Badge>}
+        {appVersion && updateAvailable && (
+          <button type="button" onClick={() => selectTab("aggiornamenti")} className="inline-flex items-center" title="Vai alla scheda Aggiornamenti">
+            <Badge variant="default" className="text-xs gap-1 animate-pulse cursor-pointer">
+              <ArrowUpCircle className="h-3 w-3" />
+              v{updateAvailable.version} disponibile
+            </Badge>
+          </button>
         )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border pb-0 overflow-x-auto">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => selectTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors -mb-px border border-transparent whitespace-nowrap ${
-                isActive
-                  ? "bg-background border-border border-b-background text-[#00A7E7]"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          );
-        })}
       </div>
 
       {/* === Tab: Istanza === */}
@@ -963,7 +918,38 @@ function SettingsPageInner() {
       )}
 
       {/* === Tab: Moduli === */}
-      {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
+      {activeTab === "moduli" && (
+        <div className="space-y-6">
+          <ModulesTab isAdmin={isAdmin} />
+          {/* MDM è un modulo: stava in Sistema, dal 14/11 sta qui con gli altri. */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">MDM (Headwind)</CardTitle>
+                {/* Passo 4c: l'MDM è un modulo opzionale; non ha una voce nel catalogo dei moduli. */}
+                <Badge variant="secondary" title="Modulo opzionale, potenzialmente a pagamento">
+                  {ETICHETTA_OPZIONE}
+                </Badge>
+              </div>
+              <CardDescription>
+                Configura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l&apos;inventario.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push("/settings/mdm")}
+                className="gap-2"
+              >
+                <Smartphone className="h-4 w-4" />
+                Configura MDM
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* === Tab: Aggiornamenti === */}
       {activeTab === "alert-sicurezza" && <SecurityAlertsTab />}
@@ -1013,33 +999,6 @@ function SettingsPageInner() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <Smartphone className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">MDM (Headwind)</CardTitle>
-                {/* Passo 4c: l'MDM è un modulo opzionale; non ha una voce nel catalogo dei moduli. */}
-                <Badge variant="secondary" title="Modulo opzionale, potenzialmente a pagamento">
-                  {ETICHETTA_OPZIONE}
-                </Badge>
-              </div>
-              <CardDescription>
-                Configura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l&apos;inventario.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push("/settings/mdm")}
-                className="gap-2"
-              >
-                <Smartphone className="h-4 w-4" />
-                Configura MDM
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">Dati e manutenzione</CardTitle>
               </div>
@@ -1062,6 +1021,16 @@ function SettingsPageInner() {
                 <Database className="h-4 w-4 mr-2" />
                 Backup database
               </Button>
+              {isAdmin && (
+                <Button variant="outline" onClick={() => router.push("/settings/transfer")}>
+                  Trasferimento configurazione ›
+                </Button>
+              )}
+              {isAdmin && (
+                <Button variant="outline" onClick={() => router.push("/settings/vault")}>
+                  Vault ›
+                </Button>
+              )}
               <Button
                 variant="destructive"
                 onClick={handleResetConfiguration}

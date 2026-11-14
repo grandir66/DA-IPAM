@@ -24,7 +24,7 @@ test("nel menu si accende la prima pagina della sezione, non le altre voci", () 
 });
 
 test("un indirizzo sta in una sezione sola e nessuna scheda è doppia", () => {
-  const tutte = SEZIONI.flatMap((s) => s.schede.map((x) => `${x.href}#${x.ancora ?? ""}`));
+  const tutte = SEZIONI.flatMap((s) => s.schede.map((x) => `${x.href}#${x.ancora ?? ""}?${x.tab ?? ""}`));
   assert.equal(new Set(tutte).size, tutte.length);
   assert.equal(sezioneDelPercorso("/discoveryx"), null);
 });
@@ -35,4 +35,16 @@ test("le tre parti passive stanno nella fila in alto e si scelgono con l'àncora
   assert.equal(sezioneDelPercorso("/arp-table/trunk", "annunci")?.scheda.etichetta, "Passiva · Annunci");
   assert.equal(sezioneDelPercorso("/arp-table/trunk", "boh")?.scheda.etichetta, "Passiva · Sicurezza");
   assert.equal(voceAccesaDallaSezione("/arp-table/trunk", "/servizi-rete"), true);
+});
+
+test("Impostazioni: una fila sola, le fondamentali in testa, Opzioni e Schedulazioni dentro", () => {
+  const imp = SEZIONI.find((s) => s.nome === "Impostazioni");
+  assert.deepEqual(imp?.schede.slice(0, 6).map((x) => x.etichetta), ["Utenti", "Aggiornamenti", "Moduli", "Istanza", "Opzioni", "Schedulazioni"]);
+  assert.equal(sezioneDelPercorso("/settings", null, "moduli")?.scheda.etichetta, "Moduli");
+  assert.equal(sezioneDelPercorso("/settings")?.scheda.etichetta, "Utenti");
+  assert.equal(sezioneDelPercorso("/settings/opzioni")?.scheda.etichetta, "Opzioni");
+  assert.equal(sezioneDelPercorso("/settings/schedulazioni", null, "moduli")?.scheda.etichetta, "Schedulazioni");
+  // Le pagine sotto Impostazioni senza una scheda loro (MDM, Vault, un modulo) tengono la fila, senza cambiare scheda.
+  assert.equal(sezioneDelPercorso("/settings/mdm")?.sezione.nome, "Impostazioni");
+  assert.equal(voceAccesaDallaSezione("/settings/cosa-esce", "/settings"), true);
 });

@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Impostazioni: una voce di menu, una fila di schede (14/11/2026)
+
+### Cambiato
+- **Impostazioni ha le schede nella forma di tutte le altre pagine**, in una fila sola in cima: Utenti, Aggiornamenti, Moduli e Istanza in testa (Riccardo: «sono fondamentali»), poi Opzioni e Schedulazioni, poi rete, avvisi e appliance, separati da una riga verticale. Prima la barra era fatta a mano e la scheda scelta si riconosceva solo dal colore del testo.
+- **Opzioni, Schedulazioni e Cosa esce non sono più voci del menu**: sono schede di Impostazioni (ADR 0038, al posto della scelta del 22/10). Gli indirizzi restano gli stessi, quindi i rimandi continuano a funzionare.
+- La card MDM sta in Moduli e non più in Sistema: è un modulo.
+
+### Aggiunto
+- Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.
+
 ## Non rilasciato — famiglie di DatIA Mon dalla tabella di Riccardo (13/11/2026)
 
 ### Cambiato

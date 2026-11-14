@@ -6,16 +6,33 @@
  *
  * Dal 13/11 una scheda può aprire una parte della pagina (l'àncora dopo `#`): le tre parti di «Reti dal trunk» stanno
  * in questa fila. L'àncora si legge dall'indirizzo e si segue con `hashchange`; la pagina fa lo stesso.
+ *
+ * Dal 14/11 anche Impostazioni: le sue schede si scelgono con `?tab=`, alcune le vede solo chi può (`per`), e una
+ * riga verticale separa i gruppi (`stacco`).
  */
-import { useEffect, useState } from "react";
+import { Fragment, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { indirizzoScheda, sezioneDelPercorso } from "@/lib/menu/sezioni";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { indirizzoScheda, sezioneDelPercorso, type SchedaSezione } from "@/lib/menu/sezioni";
+import { eAdmin } from "@/lib/permessi/ruolo";
 import { cn } from "@/lib/utils";
 import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "./forma-scheda";
 
+/** `useSearchParams` vuole un confine `Suspense`: sta qui, così il layout non cambia. */
 export function SchedeSezione() {
+  return (
+    <Suspense fallback={null}>
+      <Fila />
+    </Suspense>
+  );
+}
+
+function Fila() {
   const percorso = usePathname();
+  const tab = useSearchParams()?.get("tab") ?? "";
+  const { data } = useSession();
+  const utente = data?.user as { role?: string; tenants?: unknown[] } | undefined;
   const [ancora, setAncora] = useState("");
   useEffect(() => {
     const leggi = () => setAncora(window.location.hash.slice(1));
@@ -23,31 +40,43 @@ export function SchedeSezione() {
     window.addEventListener("hashchange", leggi);
     return () => window.removeEventListener("hashchange", leggi);
   }, [percorso]);
-  const trovata = sezioneDelPercorso(percorso, ancora);
+  const trovata = sezioneDelPercorso(percorso, ancora, tab);
   if (!trovata) return null;
+  const siVede = (s: SchedaSezione): boolean =>
+    s.per === "admin" ? eAdmin(utente?.role) : s.per === "piu-istanze" ? (utente?.tenants ?? []).length > 1 : true;
+  const schede = trovata.sezione.schede.filter(siVede);
+  // La scheda dell'indirizzo può essere una che questo utente non vede (Utenti per chi non è admin): si accende la
+  // prima che vede della stessa pagina, che è quella che la pagina gli mostra.
+  const accesa = siVede(trovata.scheda) ? trovata.scheda : schede.find((s) => s.href === trovata.scheda.href);
   return (
     <nav aria-label={`Schede di ${trovata.sezione.nome}`} className={cn("mb-3", FILA_SCHEDE)}>
-      {trovata.sezione.schede.map((s) => {
-        const attiva = s === trovata.scheda;
+      {schede.map((s, i) => {
+        const attiva = s === accesa;
         const classi = cn(SCHEDA_BASE, attiva ? SCHEDA_ACCESA : SCHEDA_SPENTA);
+        const stacco = s.stacco && i > 0 ? <span aria-hidden className="mx-1 h-7 w-0.5 shrink-0 bg-border" /> : null;
         // Stessa pagina, altra parte: si cambia solo l'àncora, così parte `hashchange` e la pagina si sposta senza ricaricarsi.
         if (s.ancora && s.href === trovata.scheda.href) {
           return (
-            <a
-              key={indirizzoScheda(s)}
-              href={`#${s.ancora}`}
-              aria-current={attiva ? "page" : undefined}
-              className={classi}
-              onClick={(e) => { e.preventDefault(); window.location.hash = s.ancora ?? ""; }}
-            >
-              {s.etichetta}
-            </a>
+            <Fragment key={indirizzoScheda(s)}>
+              {stacco}
+              <a
+                href={`#${s.ancora}`}
+                aria-current={attiva ? "page" : undefined}
+                className={classi}
+                onClick={(e) => { e.preventDefault(); window.location.hash = s.ancora ?? ""; }}
+              >
+                {s.etichetta}
+              </a>
+            </Fragment>
           );
         }
         return (
-          <Link key={indirizzoScheda(s)} href={indirizzoScheda(s)} aria-current={attiva ? "page" : undefined} className={classi}>
-            {s.etichetta}
-          </Link>
+          <Fragment key={indirizzoScheda(s)}>
+            {stacco}
+            <Link href={indirizzoScheda(s)} aria-current={attiva ? "page" : undefined} className={classi}>
+              {s.etichetta}
+            </Link>
+          </Fragment>
         );
       })}
     </nav>

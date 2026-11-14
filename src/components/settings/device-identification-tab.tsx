@@ -445,6 +445,9 @@ export function DeviceIdentificationTab() {
               Gestisci profili SNMP
             </Button>
           </Link>
+          <Link href="/settings/classifications">
+            <Button variant="outline" size="sm">Classificazioni del cliente ›</Button>
+          </Link>
         </CardContent>
       </Card>
 

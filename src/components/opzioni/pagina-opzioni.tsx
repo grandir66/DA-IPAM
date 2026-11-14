@@ -180,7 +180,7 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
   return (
     <div className="space-y-4 text-[#0D2537] dark:text-[#E6EEF4]">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <h1 className="text-[26px] font-bold uppercase tracking-tight">Opzioni</h1>
+        <h1 className="sr-only">Opzioni</h1>
         <span className="text-[15px]">Cliente <b className="font-semibold">{cliente}</b></span>
         <div role="group" aria-label="Filtro" className="flex flex-wrap gap-1.5">
           {FILTRI.map((f) => (

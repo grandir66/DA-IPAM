@@ -1,4 +1,4 @@
-# ADR 0038 — Impostazioni: una voce di menu, una fila di schede
+# ADR 0038 — Impostazioni e Config: due voci di menu, una fila di schede ciascuna
 
 **Stato:** Accepted
 **Data:** 2026-11-14
@@ -13,10 +13,15 @@ Riccardo, 14/11: «utenti, aggiornamenti, moduli, istanza sono fondamentali»; �
 
 ## Decisione
 
-Impostazioni è una sezione di `sezioni.ts` con una fila sola: le quattro fondamentali, poi Opzioni e Schedulazioni, poi i gruppi rete, avvisi, appliance, con Cosa esce in fondo. Nel menu resta la sola voce «Impostazioni». Le schede della pagina `/settings` si scelgono con `?tab=`, non con l'àncora, perché l'àncora lì porta già a un modulo (`#module-wazuh`). Gli indirizzi non cambiano.
+Due sezioni di `sezioni.ts`, due voci di menu, una fila di schede ciascuna:
+
+- **Impostazioni**, per tutti: Utenti, Aggiornamenti, Moduli, Istanza, poi Opzioni e Schedulazioni, poi Notifiche.
+- **Config**, solo amministratori: Scansione, Identificazione, Alert sicurezza, HTTPS, Sistema, Cosa esce. Riccardo, 14/11: «un config dove ci sono davvero le cose che solo un admin può conoscere, come porte, config particolari». Prende il posto del segnaposto spento «Config istanza».
+
+Le due sezioni stanno sulla stessa pagina `/settings` e si distinguono dal `?tab=` (non dall'àncora, che lì porta già a un modulo: `#module-wazuh`). Gli indirizzi non cambiano. Scartata nello stesso giorno la via di mezzo, una scheda «Avanzate» con una seconda fila: nascondeva le voci tecniche senza dire per chi sono.
 
 ## Conseguenze
 
 - Una scheda può essere riservata (`per`): la fila legge la sessione. È solo vista: i permessi li decidono le API, come prima.
-- **Cosa diventa difficile**: la fila è lunga (13 schede per un admin con più istanze). Una scheda in più va pesata; se non sta a 1920 si passa a due livelli, come scritto in `docs/STILE-UI.md`.
+- **Cosa diventa difficile**: ogni scheda nuova va messa di qua o di là, e alcune stanno a metà (Opzioni ha parametri tecnici, Notifiche ha il server SMTP). Il menu non conosce il `tab` senza leggere l'indirizzo completo: la voce accesa si decide con `nomeSezione`.
 - Opzioni e Schedulazioni sono a un clic in più dal menu.

@@ -53,8 +53,8 @@ import {
   Plug,
   PlusCircle, Settings as IconaImpostazioni,
 } from "lucide-react";
-import { voceAccesaDallaSezione } from "@/lib/menu/sezioni";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { nomeSezione, voceAccesaDallaSezione } from "@/lib/menu/sezioni";
+import { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
 import { vociApplicativi, vociDatiaMon, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
@@ -191,6 +191,24 @@ function NavItem({
  * Voce grigia (08/11, Riccardo): manca il modulo che la alimenta. Doppio segnale, testo spento e
  * lucchetto; non si clicca; il motivo nel suggerimento e per i lettori di schermo.
  */
+interface PropVociImpostazioni { pathname: string; isAdmin: boolean; collapsed: boolean; onNavigate: () => void }
+
+function VociImpostazioni({ tab, pathname, isAdmin, collapsed, onNavigate }: PropVociImpostazioni & { tab: string | null }) {
+  const sezione = pathname.startsWith("/settings") ? nomeSezione(pathname, tab) ?? "Impostazioni" : null;
+  return (
+    <>
+      <NavItem href="/settings" icon={Settings} label="Impostazioni" active={sezione === "Impostazioni"} collapsed={collapsed} onNavigate={onNavigate} />
+      {isAdmin && (
+        <NavItem href="/settings?tab=scansione" icon={ClipboardList} label="Config" active={sezione === "Config"} collapsed={collapsed} onNavigate={onNavigate} />
+      )}
+    </>
+  );
+}
+
+function VociImpostazioniConTab(p: PropVociImpostazioni) {
+  return <VociImpostazioni {...p} tab={useSearchParams()?.get("tab") ?? null} />;
+}
+
 function VoceBloccata({ label, icon: Icon, motivo }: { label: string; icon: LucideIcon; motivo: string }) {
   return (
     <div
@@ -645,18 +663,6 @@ export function Sidebar() {
 
         {/* Active Directory: spostato come voce di Network */}
 
-        {/* Config istanza — disabilitato, da rifare con UX guidata */}
-        <div
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed",
-            collapsed && "md:justify-center md:px-0"
-          )}
-          title="In arrivo"
-        >
-          <ClipboardList className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Config istanza</span>
-        </div>
-
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
         <NavItem href="/manual" icon={BookOpen} label="Manuale" active={isActive("/manual")} collapsed={collapsed} onNavigate={closeMobile} />
 
@@ -673,8 +679,11 @@ export function Sidebar() {
         <NavItem href="/in-esecuzione" icon={Activity} label="In esecuzione" active={isActive("/in-esecuzione")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={inCorso} />
 
         {/* Impostazioni (globale) */}
-        {/* Opzioni, Schedulazioni e Cosa esce erano voci qui sotto: dal 14/11 sono schede di Impostazioni (ADR 0038). */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings")} collapsed={collapsed} onNavigate={closeMobile} />
+        {/* Impostazioni e Config (Riccardo, 14/11, ADR 0038): le generali per tutti, la configurazione tecnica solo per
+            gli admin. Stanno sulla stessa pagina e si distinguono dal `?tab=`, che vuole un confine Suspense. */}
+        <Suspense fallback={<VociImpostazioni tab={null} pathname={pathname} isAdmin={isAdmin} collapsed={collapsed} onNavigate={closeMobile} />}>
+          <VociImpostazioniConTab pathname={pathname} isAdmin={isAdmin} collapsed={collapsed} onNavigate={closeMobile} />
+        </Suspense>
 
       </nav>
 

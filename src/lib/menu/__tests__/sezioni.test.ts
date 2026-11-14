@@ -1,7 +1,7 @@
 // Sezioni del menu: l'indirizzo più lungo vince, e nel menu si accende la prima pagina della sezione.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SEZIONI, sezioneDelPercorso, voceAccesaDallaSezione } from "../sezioni";
+import { SEZIONI, nomeSezione, sezioneDelPercorso, voceAccesaDallaSezione } from "../sezioni";
 
 test("«Reti dal trunk» è della sezione Rete, «Tabella ARP» di Topologia", () => {
   assert.equal(sezioneDelPercorso("/arp-table/trunk")?.sezione.nome, "Rete");
@@ -37,24 +37,25 @@ test("le tre parti passive stanno nella fila in alto e si scelgono con l'àncora
   assert.equal(voceAccesaDallaSezione("/arp-table/trunk", "/servizi-rete"), true);
 });
 
-test("Impostazioni: una fila sola, le fondamentali in testa, Opzioni e Schedulazioni dentro", () => {
-  const imp = SEZIONI.find((s) => s.nome === "Impostazioni");
-  assert.deepEqual(imp?.schede.slice(0, 6).map((x) => x.etichetta), ["Utenti", "Aggiornamenti", "Moduli", "Istanza", "Opzioni", "Schedulazioni"]);
-  assert.equal(sezioneDelPercorso("/settings", null, "moduli")?.scheda.etichetta, "Moduli");
+test("Impostazioni e Config: due sezioni sulla stessa pagina, scelte dal tab", () => {
+  const nomi = (n: string) => SEZIONI.find((s) => s.nome === n)?.schede.map((x) => x.etichetta);
+  assert.deepEqual(nomi("Impostazioni"), ["Utenti", "Aggiornamenti", "Moduli", "Istanza", "Opzioni", "Schedulazioni", "Notifiche"]);
+  assert.deepEqual(nomi("Config"), ["Scansione", "Identificazione", "Alert sicurezza", "HTTPS", "Sistema", "Cosa esce"]);
+  assert.equal(nomeSezione("/settings"), "Impostazioni");
   assert.equal(sezioneDelPercorso("/settings")?.scheda.etichetta, "Utenti");
-  assert.equal(sezioneDelPercorso("/settings/opzioni")?.scheda.etichetta, "Opzioni");
-  assert.equal(sezioneDelPercorso("/settings/schedulazioni", null, "moduli")?.scheda.etichetta, "Schedulazioni");
-  // Le pagine sotto Impostazioni senza una scheda loro (MDM, Vault, un modulo) tengono la fila, senza cambiare scheda.
-  assert.equal(sezioneDelPercorso("/settings/mdm")?.sezione.nome, "Impostazioni");
-  assert.equal(voceAccesaDallaSezione("/settings/cosa-esce", "/settings"), true);
+  assert.equal(nomeSezione("/settings", "moduli"), "Impostazioni");
+  assert.equal(nomeSezione("/settings", "sistema"), "Config");
+  assert.equal(sezioneDelPercorso("/settings", null, "sistema")?.scheda.etichetta, "Sistema");
+  assert.equal(nomeSezione("/settings/opzioni", "sistema"), "Impostazioni");
+  assert.equal(nomeSezione("/settings/cosa-esce"), "Config");
+  // Solo gli amministratori vedono Config: ogni sua scheda è riservata.
+  assert.ok(SEZIONI.find((s) => s.nome === "Config")?.schede.every((x) => x.per === "admin"));
 });
 
-test("Impostazioni: le secondarie stanno sotto «Avanzate», che si accende quando ne è aperta una", () => {
-  const imp = SEZIONI.find((s) => s.nome === "Impostazioni");
-  assert.deepEqual(imp?.schede.map((x) => x.etichetta), ["Utenti", "Aggiornamenti", "Moduli", "Istanza", "Opzioni", "Schedulazioni", "Avanzate"]);
-  const sistema = sezioneDelPercorso("/settings", null, "sistema");
-  assert.equal(sistema?.scheda.etichetta, "Avanzate");
-  assert.equal(sistema?.figlia?.etichetta, "Sistema");
-  assert.equal(sezioneDelPercorso("/settings/cosa-esce")?.figlia?.etichetta, "Cosa esce");
-  assert.equal(sezioneDelPercorso("/settings", null, "moduli")?.figlia, undefined);
+test("le pagine sotto Impostazioni senza una scheda loro accendono quella da cui ci si arriva", () => {
+  assert.equal(sezioneDelPercorso("/settings/mdm")?.scheda.etichetta, "Moduli");
+  assert.equal(sezioneDelPercorso("/settings/moduli/wazuh", null, "sistema")?.scheda.etichetta, "Moduli");
+  assert.equal(sezioneDelPercorso("/settings/snmp-profiles")?.scheda.etichetta, "Identificazione");
+  assert.equal(sezioneDelPercorso("/settings/vault")?.sezione.nome, "Config");
+  assert.equal(sezioneDelPercorso("/settings/updates")?.sezione.nome, "Impostazioni");
 });

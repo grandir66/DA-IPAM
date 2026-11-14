@@ -8,7 +8,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Cambiato
 - **Impostazioni ha le schede nella forma di tutte le altre pagine**, in una fila sola in cima: Utenti, Aggiornamenti, Moduli e Istanza in testa (Riccardo: «sono fondamentali»), poi Opzioni e Schedulazioni, poi rete, avvisi e appliance, separati da una riga verticale. Prima la barra era fatta a mano e la scheda scelta si riconosceva solo dal colore del testo.
-- **Opzioni, Schedulazioni e Cosa esce non sono più voci del menu**: sono schede di Impostazioni (ADR 0038, al posto della scelta del 22/10). Gli indirizzi restano gli stessi, quindi i rimandi continuano a funzionare.
+- **Due voci nel menu al posto di quattro** (ADR 0038, al posto della scelta del 22/10): «Impostazioni» per tutti (utenti, aggiornamenti, moduli, istanza, opzioni, schedulazioni, notifiche) e «Config» solo per gli amministratori (scansione, identificazione, alert sicurezza, HTTPS, sistema, cosa esce). Opzioni, Schedulazioni e Cosa esce non sono più voci a sé. Gli indirizzi restano gli stessi, quindi i rimandi continuano a funzionare.
 - La card MDM non sta più in Sistema: l'MDM si apre dalla sua riga in Moduli, come gli altri.
 
 - **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.

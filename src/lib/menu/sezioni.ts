@@ -15,8 +15,8 @@ export interface SchedaSezione {
   stacco?: boolean;
   /** Chi la vede: solo gli amministratori, o solo chi ha più di un'istanza. Senza, tutti. */
   per?: "admin" | "piu-istanze";
-  /** Schede di secondo livello: questa voce le raccoglie (es. «Avanzate») e si accende quando ne è aperta una. */
-  sotto?: readonly SchedaSezione[];
+  /** Altri indirizzi che stanno sotto questa scheda senza averne una loro (es. `/settings/mdm` sotto «Moduli»). */
+  anche?: readonly string[];
 }
 export interface Sezione { nome: string; schede: readonly SchedaSezione[] }
 
@@ -59,28 +59,27 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/arp-table/trunk", etichetta: "Passiva · VLAN e apparati", ancora: "reti" },
     { href: "/arp-table/trunk", etichetta: "Passiva · Annunci", ancora: "annunci" },
   ] },
-  // Impostazioni (Riccardo, 14/11/2026: «uniformare i tab… utenti, aggiornamenti, moduli, istanza sono fondamentali»,
-  // «inserendo in modo chiaro dentro impostazioni anche le voci di menù opzioni e schedulazioni»). Una fila sola: in
-  // testa le quattro fondamentali, poi Opzioni e Schedulazioni (prima voci di menu, ADR 0038), poi rete, avvisi,
-  // appliance. Le schede di `/settings` si scelgono con `?tab=`; la prima è quella che si apre senza parametro.
+  // Impostazioni e Config (Riccardo, 14/11/2026). Prima: «uniformare i tab… utenti, aggiornamenti, moduli, istanza sono
+  // fondamentali», «inserendo dentro impostazioni anche le voci di menù opzioni e schedulazioni». Poi: «avere un menù
+  // impostazioni per le voci ad uso anche clienti o più generali, e un config dove ci sono davvero le cose che solo un
+  // admin può conoscere, come porte, config particolari» → «Due voci» (ADR 0038). Le schede di `/settings` si scelgono
+  // con `?tab=`; la prima di Impostazioni è quella che si apre senza parametro.
   { nome: "Impostazioni", schede: [
     { href: "/settings", etichetta: "Utenti", tab: "utenti", per: "admin" },
     { href: "/settings", etichetta: "Aggiornamenti", tab: "aggiornamenti" },
-    { href: "/settings", etichetta: "Moduli", tab: "moduli" },
+    { href: "/settings", etichetta: "Moduli", tab: "moduli", anche: ["/settings/moduli", "/settings/mdm"] },
     { href: "/settings", etichetta: "Istanza", tab: "istanza", per: "piu-istanze" },
     { href: "/settings/opzioni", etichetta: "Opzioni", stacco: true },
     { href: "/settings/schedulazioni", etichetta: "Schedulazioni" },
-    // Riccardo, 14/11/2026: «le voci secondarie si potrebbero collassare in Avanzate». Stanno in una seconda fila,
-    // che compare solo quando si è dentro Avanzate.
-    { href: "/settings", etichetta: "Avanzate", tab: "scansione", stacco: true, sotto: [
-      { href: "/settings", etichetta: "Scansione", tab: "scansione" },
-      { href: "/settings", etichetta: "Identificazione", tab: "identificazione" },
-      { href: "/settings", etichetta: "Alert sicurezza", tab: "alert-sicurezza" },
-      { href: "/settings", etichetta: "Notifiche", tab: "notifiche" },
-      { href: "/settings", etichetta: "HTTPS", tab: "https" },
-      { href: "/settings", etichetta: "Sistema", tab: "sistema" },
-      { href: "/settings/cosa-esce", etichetta: "Cosa esce", per: "admin" },
-    ] },
+    { href: "/settings", etichetta: "Notifiche", tab: "notifiche", stacco: true },
+  ] },
+  { nome: "Config", schede: [
+    { href: "/settings", etichetta: "Scansione", tab: "scansione", per: "admin" },
+    { href: "/settings", etichetta: "Identificazione", tab: "identificazione", per: "admin", anche: ["/settings/snmp-profiles", "/settings/classifications"] },
+    { href: "/settings", etichetta: "Alert sicurezza", tab: "alert-sicurezza", per: "admin" },
+    { href: "/settings", etichetta: "HTTPS", tab: "https", per: "admin", stacco: true },
+    { href: "/settings", etichetta: "Sistema", tab: "sistema", per: "admin", anche: ["/settings/transfer", "/settings/vault"] },
+    { href: "/settings/cosa-esce", etichetta: "Cosa esce", per: "admin" },
   ] },
 ];
 
@@ -90,21 +89,22 @@ const sta = (percorso: string, href: string): boolean => percorso === href || pe
  * La sezione e la scheda di un indirizzo: vince l'indirizzo più lungo (`/arp-table/trunk` non è «Tabella ARP»). Fra le
  * schede della stessa pagina sceglie quella con l'àncora data; senza àncora, o con una sconosciuta, la prima.
  */
-export function sezioneDelPercorso(percorso: string, ancora?: string | null, tab?: string | null): { sezione: Sezione; scheda: SchedaSezione; figlia?: SchedaSezione } | null {
-  // Una scheda che ne raccoglie altre (`sotto`) non è una pagina: contano le sue figlie, e si accende lei.
-  type Candidata = { sezione: Sezione; scheda: SchedaSezione; foglia: SchedaSezione };
-  const tutte: Candidata[] = SEZIONI.flatMap((sezione) =>
-    sezione.schede.flatMap((scheda) => (scheda.sotto ? scheda.sotto.map((foglia) => ({ sezione, scheda, foglia })) : [{ sezione, scheda, foglia: scheda }])),
-  );
-  let migliore: Candidata | null = null;
+export function sezioneDelPercorso(percorso: string, ancora?: string | null, tab?: string | null): { sezione: Sezione; scheda: SchedaSezione } | null {
+  const tutte = SEZIONI.flatMap((sezione) => sezione.schede.map((scheda) => ({ sezione, scheda })));
+  // Quanto è lungo l'indirizzo della scheda che contiene questo percorso (0 = non lo contiene): il suo o uno di `anche`.
+  const lungo = (x: SchedaSezione): number => Math.max(0, ...[x.href, ...(x.anche ?? [])].filter((h) => sta(percorso, h)).map((h) => h.length));
+  let migliore: { sezione: Sezione; scheda: SchedaSezione } | null = null;
+  let record = 0;
   for (const c of tutte) {
-    if (sta(percorso, c.foglia.href) && (!migliore || c.foglia.href.length > migliore.foglia.href.length)) migliore = c;
+    const n = lungo(c.scheda);
+    if (n > record) { migliore = c; record = n; }
   }
   if (!migliore) return null;
-  const pagina = migliore.foglia.href;
-  const stessaPagina = tutte.filter((c) => c.sezione === migliore.sezione && c.foglia.href === pagina);
-  const scelta = stessaPagina.find((c) => (c.foglia.ancora && c.foglia.ancora === ancora) || (c.foglia.tab && c.foglia.tab === tab)) ?? stessaPagina[0];
-  return { sezione: scelta.sezione, scheda: scelta.scheda, figlia: scelta.foglia === scelta.scheda ? undefined : scelta.foglia };
+  // Più schede sulla stessa pagina, anche di sezioni diverse (Impostazioni e Config stanno tutte e due su `/settings`):
+  // sceglie l'àncora o il `tab`. Vale solo se il percorso è proprio quella pagina, non un indirizzo di `anche`.
+  if (record !== migliore.scheda.href.length) return migliore;
+  const stessaPagina = tutte.filter((c) => c.scheda.href === migliore.scheda.href);
+  return stessaPagina.find((c) => (c.scheda.ancora && c.scheda.ancora === ancora) || (c.scheda.tab && c.scheda.tab === tab)) ?? stessaPagina[0];
 }
 
 /** Indirizzo completo di una scheda, àncora compresa. */
@@ -120,4 +120,9 @@ export function indirizzoScheda(s: SchedaSezione): string {
 export function voceAccesaDallaSezione(percorso: string, href: string): boolean | null {
   const s = sezioneDelPercorso(percorso);
   return s ? s.sezione.schede[0].href === href : null;
+}
+
+/** Il nome della sezione di un indirizzo, col `tab`: al menu serve per accendere «Impostazioni» o «Config», che stanno sulla stessa pagina. */
+export function nomeSezione(percorso: string, tab?: string | null): string | null {
+  return sezioneDelPercorso(percorso, null, tab)?.sezione.nome ?? null;
 }

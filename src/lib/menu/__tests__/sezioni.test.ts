@@ -48,3 +48,13 @@ test("Impostazioni: una fila sola, le fondamentali in testa, Opzioni e Schedulaz
   assert.equal(sezioneDelPercorso("/settings/mdm")?.sezione.nome, "Impostazioni");
   assert.equal(voceAccesaDallaSezione("/settings/cosa-esce", "/settings"), true);
 });
+
+test("Impostazioni: le secondarie stanno sotto «Avanzate», che si accende quando ne è aperta una", () => {
+  const imp = SEZIONI.find((s) => s.nome === "Impostazioni");
+  assert.deepEqual(imp?.schede.map((x) => x.etichetta), ["Utenti", "Aggiornamenti", "Moduli", "Istanza", "Opzioni", "Schedulazioni", "Avanzate"]);
+  const sistema = sezioneDelPercorso("/settings", null, "sistema");
+  assert.equal(sistema?.scheda.etichetta, "Avanzate");
+  assert.equal(sistema?.figlia?.etichetta, "Sistema");
+  assert.equal(sezioneDelPercorso("/settings/cosa-esce")?.figlia?.etichetta, "Cosa esce");
+  assert.equal(sezioneDelPercorso("/settings", null, "moduli")?.figlia, undefined);
+});

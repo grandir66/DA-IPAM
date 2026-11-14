@@ -48,6 +48,30 @@ function Fila() {
   // La scheda dell'indirizzo può essere una che questo utente non vede (Utenti per chi non è admin): si accende la
   // prima che vede della stessa pagina, che è quella che la pagina gli mostra.
   const accesa = siVede(trovata.scheda) ? trovata.scheda : schede.find((s) => s.href === trovata.scheda.href);
+  // Una scheda che ne raccoglie altre («Avanzate») porta alla prima delle sue che l'utente vede; le sue stanno nella
+  // seconda fila, che c'è solo quando si è lì dentro.
+  const destinazione = (s: SchedaSezione): string => indirizzoScheda(s.sotto?.find(siVede) ?? s);
+  const figlie = (accesa?.sotto ?? []).filter(siVede);
+  if (figlie.length > 0) {
+    const fila = (voci: readonly SchedaSezione[], attivaE: (s: SchedaSezione) => boolean, nome: string, classe: string) => (
+      <nav aria-label={nome} className={cn(classe, FILA_SCHEDE)}>
+        {voci.map((s, i) => (
+          <Fragment key={`${s.etichetta}-${indirizzoScheda(s)}`}>
+            {s.stacco && i > 0 ? <span aria-hidden className="mx-1 h-7 w-0.5 shrink-0 bg-border" /> : null}
+            <Link href={destinazione(s)} aria-current={attivaE(s) ? "page" : undefined} className={cn(SCHEDA_BASE, attivaE(s) ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+              {s.etichetta}
+            </Link>
+          </Fragment>
+        ))}
+      </nav>
+    );
+    return (
+      <>
+        {fila(schede, (s) => s === accesa, `Schede di ${trovata.sezione.nome}`, "mb-2")}
+        {fila(figlie, (s) => s === trovata.figlia, `Schede di ${accesa?.etichetta}`, "mb-3")}
+      </>
+    );
+  }
   return (
     <nav aria-label={`Schede di ${trovata.sezione.nome}`} className={cn("mb-3", FILA_SCHEDE)}>
       {schede.map((s, i) => {
@@ -57,7 +81,7 @@ function Fila() {
         // Stessa pagina, altra parte: si cambia solo l'àncora, così parte `hashchange` e la pagina si sposta senza ricaricarsi.
         if (s.ancora && s.href === trovata.scheda.href) {
           return (
-            <Fragment key={indirizzoScheda(s)}>
+            <Fragment key={`${s.etichetta}-${indirizzoScheda(s)}`}>
               {stacco}
               <a
                 href={`#${s.ancora}`}
@@ -71,9 +95,9 @@ function Fila() {
           );
         }
         return (
-          <Fragment key={indirizzoScheda(s)}>
+          <Fragment key={`${s.etichetta}-${indirizzoScheda(s)}`}>
             {stacco}
-            <Link href={indirizzoScheda(s)} aria-current={attiva ? "page" : undefined} className={classi}>
+            <Link href={destinazione(s)} aria-current={attiva ? "page" : undefined} className={classi}>
               {s.etichetta}
             </Link>
           </Fragment>

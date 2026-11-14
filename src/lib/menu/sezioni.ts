@@ -15,6 +15,8 @@ export interface SchedaSezione {
   stacco?: boolean;
   /** Chi la vede: solo gli amministratori, o solo chi ha più di un'istanza. Senza, tutti. */
   per?: "admin" | "piu-istanze";
+  /** Schede di secondo livello: questa voce le raccoglie (es. «Avanzate») e si accende quando ne è aperta una. */
+  sotto?: readonly SchedaSezione[];
 }
 export interface Sezione { nome: string; schede: readonly SchedaSezione[] }
 
@@ -68,13 +70,17 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/settings", etichetta: "Istanza", tab: "istanza", per: "piu-istanze" },
     { href: "/settings/opzioni", etichetta: "Opzioni", stacco: true },
     { href: "/settings/schedulazioni", etichetta: "Schedulazioni" },
-    { href: "/settings", etichetta: "Scansione", tab: "scansione", stacco: true },
-    { href: "/settings", etichetta: "Identificazione", tab: "identificazione" },
-    { href: "/settings", etichetta: "Alert sicurezza", tab: "alert-sicurezza", stacco: true },
-    { href: "/settings", etichetta: "Notifiche", tab: "notifiche" },
-    { href: "/settings", etichetta: "HTTPS", tab: "https", stacco: true },
-    { href: "/settings", etichetta: "Sistema", tab: "sistema" },
-    { href: "/settings/cosa-esce", etichetta: "Cosa esce", per: "admin" },
+    // Riccardo, 14/11/2026: «le voci secondarie si potrebbero collassare in Avanzate». Stanno in una seconda fila,
+    // che compare solo quando si è dentro Avanzate.
+    { href: "/settings", etichetta: "Avanzate", tab: "scansione", stacco: true, sotto: [
+      { href: "/settings", etichetta: "Scansione", tab: "scansione" },
+      { href: "/settings", etichetta: "Identificazione", tab: "identificazione" },
+      { href: "/settings", etichetta: "Alert sicurezza", tab: "alert-sicurezza" },
+      { href: "/settings", etichetta: "Notifiche", tab: "notifiche" },
+      { href: "/settings", etichetta: "HTTPS", tab: "https" },
+      { href: "/settings", etichetta: "Sistema", tab: "sistema" },
+      { href: "/settings/cosa-esce", etichetta: "Cosa esce", per: "admin" },
+    ] },
   ] },
 ];
 
@@ -84,18 +90,21 @@ const sta = (percorso: string, href: string): boolean => percorso === href || pe
  * La sezione e la scheda di un indirizzo: vince l'indirizzo più lungo (`/arp-table/trunk` non è «Tabella ARP»). Fra le
  * schede della stessa pagina sceglie quella con l'àncora data; senza àncora, o con una sconosciuta, la prima.
  */
-export function sezioneDelPercorso(percorso: string, ancora?: string | null, tab?: string | null): { sezione: Sezione; scheda: SchedaSezione } | null {
-  let migliore: { sezione: Sezione; scheda: SchedaSezione } | null = null;
-  for (const sezione of SEZIONI) {
-    for (const scheda of sezione.schede) {
-      if (sta(percorso, scheda.href) && (!migliore || scheda.href.length > migliore.scheda.href.length)) migliore = { sezione, scheda };
-    }
+export function sezioneDelPercorso(percorso: string, ancora?: string | null, tab?: string | null): { sezione: Sezione; scheda: SchedaSezione; figlia?: SchedaSezione } | null {
+  // Una scheda che ne raccoglie altre (`sotto`) non è una pagina: contano le sue figlie, e si accende lei.
+  type Candidata = { sezione: Sezione; scheda: SchedaSezione; foglia: SchedaSezione };
+  const tutte: Candidata[] = SEZIONI.flatMap((sezione) =>
+    sezione.schede.flatMap((scheda) => (scheda.sotto ? scheda.sotto.map((foglia) => ({ sezione, scheda, foglia })) : [{ sezione, scheda, foglia: scheda }])),
+  );
+  let migliore: Candidata | null = null;
+  for (const c of tutte) {
+    if (sta(percorso, c.foglia.href) && (!migliore || c.foglia.href.length > migliore.foglia.href.length)) migliore = c;
   }
   if (!migliore) return null;
-  const { sezione, scheda } = migliore;
-  const stessaPagina = sezione.schede.filter((x) => x.href === scheda.href);
-  const scelta = stessaPagina.find((x) => (x.ancora && x.ancora === ancora) || (x.tab && x.tab === tab));
-  return { sezione, scheda: scelta ?? stessaPagina[0] };
+  const pagina = migliore.foglia.href;
+  const stessaPagina = tutte.filter((c) => c.sezione === migliore.sezione && c.foglia.href === pagina);
+  const scelta = stessaPagina.find((c) => (c.foglia.ancora && c.foglia.ancora === ancora) || (c.foglia.tab && c.foglia.tab === tab)) ?? stessaPagina[0];
+  return { sezione: scelta.sezione, scheda: scelta.scheda, figlia: scelta.foglia === scelta.scheda ? undefined : scelta.foglia };
 }
 
 /** Indirizzo completo di una scheda, àncora compresa. */

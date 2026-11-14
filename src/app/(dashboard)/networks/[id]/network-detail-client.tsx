@@ -1288,7 +1288,12 @@ export function NetworkDetailClient({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-snmp">Community SNMP (default)</Label>
-                    <Input id="edit-snmp" name="snmp_community" defaultValue={network.snmp_community || ""} placeholder="es. public, privata" className="font-mono" />
+                    {/* A chi non è admin la community non arriva (P0-1, 14/11): si dice che c'è, non si mostra un campo vuoto. */}
+                    {(network as { snmp_community_configurata?: boolean }).snmp_community_configurata && !network.snmp_community ? (
+                      <Input id="edit-snmp" disabled value="" placeholder="Configurata: la leggono gli amministratori" />
+                    ) : (
+                      <Input id="edit-snmp" name="snmp_community" defaultValue={network.snmp_community || ""} placeholder="es. public, privata" className="font-mono" />
+                    )}
                     <p className="text-xs text-muted-foreground">Usata per scansioni nmap su questa rete se il profilo non ne specifica una</p>
                   </div>
                   <div className="space-y-2">

@@ -11,6 +11,8 @@ import { NetworkUpdateSchema } from "@/lib/validators";
 import { aggiornaRete, CredenzialiReteNonValide } from "@/lib/networks/salva-rete";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { auth } from "@/lib/auth";
+import { reteSenzaSegreti, ruoloAdmin } from "@/lib/networks/senza-segreti";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
@@ -30,8 +32,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     for (const [hostId, protocols] of validatedMap) {
       host_validated_protocols[hostId] = protocols;
     }
+    // La community SNMP la legge solo chi la può scrivere (P0-1, 14/11).
+    const admin = ruoloAdmin(((await auth())?.user as { role?: string } | undefined)?.role);
     return NextResponse.json({
-      ...network,
+      ...reteSenzaSegreti(network as unknown as Record<string, unknown>, admin),
       hosts,
       router_id,
       network_credentials,

@@ -1,3 +1,4 @@
+import { communityPerLog } from "@/lib/networks/senza-segreti";
 import { createHash } from "node:crypto";
 import { getAllHostIps } from "@/lib/utils";
 import { avviaSondeDopoDiscovery } from "@/lib/servizi-rete/giro";
@@ -1502,7 +1503,7 @@ async function runDiscovery(
     const offlineDbIps = ips.filter((ip) => !onlineDbIps.includes(ip));
 
     const communities = buildSnmpCommunitiesForHost(networkId, null, snmpCommunity ?? null);
-    log(`SNMP verify — community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
+    log(`SNMP verify — ${communityPerLog(communities)}`);
 
     // Probe sysObjectID su host online DB
     if (onlineDbIps.length > 0) {
@@ -1878,7 +1879,7 @@ async function runDiscovery(
         const SNMP_BATCH = 24;
         let identified = 0;
         progress.phase = `SNMP sysObjectID — 0/${onlineIps.length}`;
-        log(`SNMP sysObjectID probe: ${onlineIps.length} host, community: ${communities.slice(0, 3).join(", ")}${communities.length > 3 ? "…" : ""}`);
+        log(`SNMP sysObjectID probe: ${onlineIps.length} host, ${communityPerLog(communities)}`);
 
         for (let si = 0; si < onlineIps.length; si += SNMP_BATCH) {
           controllaFermo();
@@ -1946,7 +1947,7 @@ async function runDiscovery(
       const offlineIps = ips.filter((ip) => !onlineIps.includes(ip));
       if (hasCustomCommunity && offlineIps.length > 0 && offlineIps.length <= 512) {
         progress.phase = `SNMP discovery (no-ICMP) — 0/${offlineIps.length}`;
-        log(`SNMP discovery su ${offlineIps.length} IP non rispondenti a ICMP (community: ${communities[0]}…)`);
+        log(`SNMP discovery su ${offlineIps.length} IP non rispondenti a ICMP (${communityPerLog(communities)})`);
         const SNMP_PROBE_BATCH = 32;
         let snmpDiscovered = 0;
         for (let si = 0; si < offlineIps.length; si += SNMP_PROBE_BATCH) {

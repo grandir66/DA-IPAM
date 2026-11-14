@@ -5,6 +5,8 @@ import { creaRete, CredenzialiReteNonValide } from "@/lib/networks/salva-rete";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
 import { queryAllTenants } from "@/lib/db-tenant";
+import { auth } from "@/lib/auth";
+import { reteSenzaSegreti, ruoloAdmin } from "@/lib/networks/senza-segreti";
 
 export async function GET(request: Request) {
   const mode = await getTenantMode();
@@ -12,12 +14,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
   }
 
+  // La community SNMP la legge solo chi la può scrivere (P0-1, 14/11).
+  const admin = ruoloAdmin(((await auth())?.user as { role?: string } | undefined)?.role);
+  const pulite = <T,>(righe: T[]): T[] =>
+    righe.map((r) => reteSenzaSegreti(r as unknown as Record<string, unknown>, admin) as unknown as T);
+
   if (mode.mode === "all") {
     try {
       const allNetworks = queryAllTenants(() => {
         return getNetworks() as unknown as Record<string, unknown>[];
       });
-      return NextResponse.json(allNetworks);
+      return NextResponse.json(pulite(allNetworks));
     } catch (error) {
       console.error("Error fetching networks (all tenants):", error);
       return NextResponse.json({ error: "Errore nel recupero delle reti" }, { status: 500 });
@@ -40,11 +47,11 @@ export async function GET(request: Request) {
           dir: sortOrder,
         });
         const totalPages = Math.ceil(total / pageSize);
-        return NextResponse.json({ data, total, page, pageSize, totalPages });
+        return NextResponse.json({ data: pulite(data), total, page, pageSize, totalPages });
       }
 
       const networks = getNetworks();
-      return NextResponse.json(networks);
+      return NextResponse.json(pulite(networks));
     } catch (error) {
       console.error("Error fetching networks:", error);
       return NextResponse.json({ error: "Errore nel recupero delle reti" }, { status: 500 });

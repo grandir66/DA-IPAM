@@ -21,6 +21,7 @@ export async function GET() {
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/x-sqlite3",
+      "Cache-Control": "no-store",
       "Content-Disposition": `attachment; filename="hub-backup-${new Date().toISOString().slice(0, 10)}.db"`,
     },
   });

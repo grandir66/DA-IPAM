@@ -13,6 +13,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.
 
+### Sicurezza
+- La community SNMP di una rete non esce più verso chi non è admin (API delle reti e pagine Subnet) e non si scrive più nel log delle scansioni: prima la riceveva qualunque utente autenticato. Lo scarico di `hub.db` non resta in cache. Primo pezzo del piano di sicurezza del 14/11.
+
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.
 

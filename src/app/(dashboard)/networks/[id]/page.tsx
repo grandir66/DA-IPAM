@@ -11,6 +11,8 @@ import {
 import { NetworkDetailClient } from "./network-detail-client";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
+import { auth } from "@/lib/auth";
+import { reteSenzaSegreti, ruoloAdmin } from "@/lib/networks/senza-segreti";
 
 export default async function NetworkDetailPage({
   params,
@@ -19,11 +21,14 @@ export default async function NetworkDetailPage({
 }) {
   const { id } = await params;
   const tenantCode = await getServerTenantCode();
-  const network = withTenant(tenantCode, () => getNetworkById(Number(id)));
+  const grezza = withTenant(tenantCode, () => getNetworkById(Number(id)));
 
-  if (!network) {
+  if (!grezza) {
     notFound();
   }
+  // La community SNMP non arriva al browser di chi non è admin (P0-1, 14/11).
+  const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
+  const network = reteSenzaSegreti(grezza as unknown as Record<string, unknown>, ruoloAdmin(ruolo)) as unknown as typeof grezza;
 
   const nid = Number(id);
   const hosts = withTenant(tenantCode, () => getHostsByNetworkWithDevices(nid));

@@ -21,11 +21,18 @@ Passi (ordine di consegna della revisione):
 - [ ] **Pilota**: installazione nuova, volume cifrato, vault locale, recupero del cliente; riavvio a freddo senza rete e ripristino su una seconda macchina.
 - [ ] **Migrazione delle appliance esistenti**: inventario in sola lettura, prova su copia, backup verificato, migrazione esplicita; compatibilità con la vecchia chiave tolta solo dopo; rilascio del codice separato dall'attivazione sulle singole appliance.
 
-Da confermare con Riccardo prima di partire:
-- [ ] Il criterio «l'admin A non legge B» tratta il cliente come confine di sicurezza dentro un'installazione; la decisione del 12/10 dice «un'installazione = un cliente, il tenant non è un confine di sicurezza». Quale vale per questo lavoro (hub multi-cliente compreso)?
-- [ ] P0-1 toglie la community SNMP dalla risposta della rete: la pagina di modifica della rete oggi la mostra. Va bene «configurata» + riscrittura, senza rilettura?
-- [ ] Pilota: quale macchina (una delle sonde libere 533 / 79993, o una VM nuova sul PX-NAS) e TPM o sblocco manuale?
-- [ ] Chi custodisce la chiave di recupero nel pilota (in produzione: il cliente).
+Risposte di Riccardo (14/11):
+- [x] **Le installazioni dai clienti sono singole, senza tenant; solo la versione del tecnico può essere multi-cliente.** Quindi il criterio «l'admin A non legge B» vale solo sul profilo tecnico; sulle appliance dei clienti resta la decisione del 12/10 (un'installazione = un cliente).
+- [x] **La community SNMP può restare leggibile dalla UI.** Lettura mia, da confermare: la legge chi la può scrivere (admin, superadmin); agli altri ruoli arriva solo «configurata».
+- [x] **Il pilota si fa su un'installazione di prova** (quale macchina e TPM/sblocco manuale: da dire quando si arriva a P0-3).
+- [x] **La chiave di recupero sta su DA-Link.** Fatto da tenere presente: l'obiettivo dice «senza dipendere da DA-Link», quindi per il ripristino serve averla estratta da DA-Link prima (dal Vault, da una persona); per i clienti veri la revisione la vuole in mano al cliente. Da riconfermare a P0-4.
+
+Avanzamento P0-1 (ramo `macbook/sicurezza-p0-1-uscite`, non ancora in `dev`: zona rossa, entra dopo il cancello):
+- [x] `lib/networks/senza-segreti.ts`: la rete esce senza `snmp_community` per chi non è admin, con `snmp_community_configurata`. Applicata a `GET /api/networks`, `GET /api/networks/[id]` e alle due pagine server `/networks` e `/networks/[id]` (il dato arrivava al browser anche da lì). Prova `senza-segreti.test.ts` 5/5, `tsc` 0 (14/11).
+- [x] `scanner/discovery.ts`: i tre log dicono «N community», non i valori.
+- [x] `GET /api/backup`: `Cache-Control: no-store`.
+- [ ] Non visto a schermo con un utente non admin (la pagina di modifica rete mostra il campo vuoto: va nascosto o reso di sola lettura?). Non provato su un'installazione.
+- [ ] Resto di P0-1: censimento delle altre righe DB intere (profili Nmap con `snmp_community`, impostazioni, credenziali, schede cliente), tre permessi distinti per export/trasferimento/backup, conferma recente e audit sul backup, perimetro dell'import.
 
 ## 2026-11-14 — Impostazioni: tab e riordino (Riccardo, base)
 

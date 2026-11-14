@@ -21,6 +21,10 @@ function banco() {
     CREATE TABLE anomaly_events (id INTEGER PRIMARY KEY, host_id INTEGER, network_id INTEGER, anomaly_type TEXT,
       description TEXT, detail_json TEXT, acknowledged INTEGER DEFAULT 0, acknowledged_at TEXT, acknowledged_by TEXT,
       detected_at TEXT);
+    CREATE TABLE rete_rilievi (id INTEGER PRIMARY KEY, tipo TEXT, categoria TEXT, vid INTEGER, mac TEXT, ip TEXT,
+      descrizione TEXT, rilevato_il TEXT, chiuso_il TEXT, preso_in_carico INTEGER DEFAULT 0, preso_da TEXT, preso_il TEXT);
+    INSERT INTO rete_rilievi VALUES (1, 'non_in_inventario', 'novita', 20, 'AA:BB:CC:00:00:77', NULL, 'MAC non in inventario', '2026-11-13T08:00:00Z', NULL, 0, NULL, NULL);
+    INSERT INTO rete_rilievi VALUES (2, 'nomi_insicuri', 'esposizione', 20, 'AA:BB:CC:00:00:78', NULL, 'LLMNR', '2026-11-13T08:00:00Z', NULL, 0, NULL, NULL);
     INSERT INTO networks VALUES (1, 'Uffici', '10.0.0.0/24');
     -- un host nuovo (data con la T, come la scrive una parte del codice) e uno vecchio
     INSERT INTO hosts VALUES (1, 1, '10.0.0.5', 'AA:BB:CC:00:00:01', 'pc-nuovo', NULL, 'Dell', '2026-11-13T09:00:00');
@@ -54,6 +58,8 @@ test("un elenco solo, con il rumore marcato e non buttato", () => {
   assert.deepEqual(di("oggetto_nuovo").map((c) => c.oggetto), ["pc-nuovo"]);
   assert.deepEqual(di("apparato_nuovo").map((c) => c.oggetto), ["SW-1"]);
   assert.equal(di("mac_cambiato").length, 1);
+  // della sonda trunk entrano novità e allarmi, non le esposizioni
+  assert.deepEqual(di("sonda_trunk").map((c) => c.chiave), ["trunk:1"]);
   // disponibilità e latenza restano fuori
   assert.equal(tutti.some((c) => c.chiave === "anomalia:2"), false);
 
@@ -71,8 +77,8 @@ test("un elenco solo, con il rumore marcato e non buttato", () => {
 
 test("«Visto» toglie dal conto e chiude l'anomalia", () => {
   const db = banco();
-  assert.equal(contaDaVedere(db, 7, ADESSO), 5);
-  segnaVisti(db, ["host:1", "anomalia:1", "robaccia"], "rg");
+  assert.equal(contaDaVedere(db, 7, ADESSO), 6);
+  segnaVisti(db, ["host:1", "anomalia:1", "trunk:1", "robaccia"], "rg");
   assert.equal(contaDaVedere(db, 7, ADESSO), 3);
   assert.equal((db.prepare("SELECT acknowledged FROM anomaly_events WHERE id = 1").get() as { acknowledged: number }).acknowledged, 1);
   const visto = leggiCambiamenti(db, { giorni: 7, adesso: ADESSO }).find((c) => c.chiave === "host:1")!;

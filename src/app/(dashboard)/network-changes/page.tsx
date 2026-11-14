@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, DoorOpen, Fingerprint, Plug, Plus, Server, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, DoorOpen, Fingerprint, Plug, Plus, Radio, Server, type LucideIcon } from "lucide-react";
 import { Pannello, Vuoto } from "@/components/shared/console";
 import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "@/components/shared/forma-scheda";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ const TIPI: Record<TipoCambiamento, { nome: string; plurale: string; icona: Luci
   mac_cambiato: { nome: "MAC cambiato", plurale: "MAC cambiato", icona: Fingerprint },
   spostamento_porta: { nome: "Spostamento di porta", plurale: "Spostamenti di porta", icona: Plug },
   porta_nuova: { nome: "Porta nuova", plurale: "Porte nuove", icona: DoorOpen },
+  sonda_trunk: { nome: "Dalla sonda trunk", plurale: "Dalla sonda trunk", icona: Radio },
 };
 const PERIODI = [1, 7, 30, 90] as const;
 const STATI = { "da-vedere": "Da vedere", visti: "Visti", tutti: "Tutti" } as const;

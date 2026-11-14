@@ -14,7 +14,7 @@ import type Database from "better-sqlite3";
 import { parseDbDate } from "@/lib/db-date";
 
 export const TIPI_CAMBIAMENTO = [
-  "oggetto_nuovo", "apparato_nuovo", "cambio_ip", "mac_cambiato", "spostamento_porta", "porta_nuova",
+  "oggetto_nuovo", "apparato_nuovo", "cambio_ip", "mac_cambiato", "spostamento_porta", "porta_nuova", "sonda_trunk",
 ] as const;
 export type TipoCambiamento = (typeof TIPI_CAMBIAMENTO)[number];
 
@@ -271,6 +271,32 @@ export function leggiCambiamenti(
     }
   }
 
+  // ── Sonda trunk (Riccardo, 14/11: «anche la sonda trunk ha sicuramente dati utili di cambi e modifiche») ───
+  // Dei suoi rilievi contano qui le novità e gli allarmi (MAC non in inventario, VLAN inattesa, IP conteso,
+  // apparato fuori dalla sua rete); le esposizioni sono uno stato, non un cambiamento, e restano in Sicurezza.
+  if (haTabella(db, "rete_rilievi")) {
+    const rilievi = db.prepare(`
+      SELECT id, tipo, vid, mac, ip, descrizione, rilevato_il, chiuso_il, preso_in_carico, preso_da
+      FROM rete_rilievi WHERE categoria IN ('novita', 'allarme')
+    `).all() as Array<{
+      id: number; tipo: string; vid: number | null; mac: string | null; ip: string | null; descrizione: string;
+      rilevato_il: string; chiuso_il: string | null; preso_in_carico: number; preso_da: string | null;
+    }>;
+    for (const r of rilievi) {
+      const t = ms(r.rilevato_il);
+      if (!nelPeriodo(t)) continue;
+      const host = hostPerMac.get(macNudo(r.mac)) ?? (r.ip ? hostPerIp.get(r.ip) : undefined);
+      esito.push({
+        chiave: `trunk:${r.id}`, tipo: "sonda_trunk", quandoMs: t,
+        oggetto: host ? nomeHost(host) : r.mac || r.ip || `VLAN ${r.vid ?? "?"}`, ip: r.ip || host?.ip || null,
+        hostId: host?.id ?? null, reteId: host?.network_id ?? null,
+        prima: r.vid != null ? `VLAN ${r.vid}` : null, dopo: r.descrizione,
+        rumore: r.chiuso_il ? "la sonda non lo vede più così" : null,
+        visto: r.preso_in_carico ? { da: r.preso_da, il: r.rilevato_il } : null,
+      });
+    }
+  }
+
   if (haTabella(db, "cambiamenti_visti")) {
     const visti = new Map((db.prepare("SELECT chiave, visto_il, visto_da FROM cambiamenti_visti").all() as
       Array<{ chiave: string; visto_il: string; visto_da: string | null }>).map((v) => [v.chiave, v]));
@@ -291,7 +317,7 @@ export function contaDaVedere(db: Database.Database, giorni = 7, adesso = Date.n
 
 /** Segna come visti; le anomalie si chiudono anche nella loro tabella, così il controllo periodico non le riapre. */
 export function segnaVisti(db: Database.Database, chiavi: readonly string[], utente: string | null): number {
-  const valide = [...new Set(chiavi)].filter((c) => /^(host|apparato|ip|porta|anomalia|giro):.{1,200}$/.test(c));
+  const valide = [...new Set(chiavi)].filter((c) => /^(host|apparato|ip|porta|anomalia|giro|trunk):.{1,200}$/.test(c));
   if (valide.length === 0) return 0;
   db.transaction(() => {
     db.exec(DDL_CAMBIAMENTI_VISTI);
@@ -300,9 +326,13 @@ export function segnaVisti(db: Database.Database, chiavi: readonly string[], ute
       UPDATE anomaly_events SET acknowledged = 1, acknowledged_at = datetime('now'), acknowledged_by = ?
       WHERE id = ? AND acknowledged = 0
     `) : null;
+    const prendi = haTabella(db, "rete_rilievi") ? db.prepare(
+      "UPDATE rete_rilievi SET preso_in_carico = 1, preso_da = ?, preso_il = datetime('now') WHERE id = ? AND preso_in_carico = 0",
+    ) : null;
     for (const c of valide) {
       metti.run(c, utente);
       if (chiudi && c.startsWith("anomalia:")) chiudi.run(utente, Number(c.slice(9)));
+      if (prendi && c.startsWith("trunk:")) prendi.run(utente, Number(c.slice(6)));
     }
     // Le chiavi di cambiamenti ormai fuori da ogni periodo mostrato non servono più.
     db.prepare("DELETE FROM cambiamenti_visti WHERE visto_il < datetime('now', '-120 days')").run();

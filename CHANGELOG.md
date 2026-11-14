@@ -34,6 +34,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.
 
 ### Sicurezza
+- Il recupero della password dal server (`scripts/reset-admin-password.cjs`) legge la password dallo stdin, lascia una riga nel registro degli accessi e chiude le sessioni di quell'utente.
 - Il gettone che apre il terminale SSH si firma solo con la chiave delle sessioni: prima, se mancava, ripiegava sulla chiave dei dati e poi su una chiave vuota.
 - Nuova opzione «Due passaggi per gli amministratori» (Opzioni › Automatismi), spenta di serie: accesa, ogni amministratore entra con password e codice dell'app.
 - Un utente cancellato, declassato, senza più la sua istanza o con la password cambiata perde l'accesso alla richiesta successiva: prima il token già emesso valeva fino a 8 ore, col ruolo di quando era entrato. Chi cambia la propria password rientra con quella nuova.

@@ -11,7 +11,8 @@ import { unisci } from "../percorsi";
 export const GIORNI_REGISTRO_ACCESSI = 400;
 
 export interface RigaRegistroAccessi {
-  azione: "seconda_verifica_richiedi" | "seconda_verifica_azzera" | "seconda_verifica_togli";
+  /** `password_reimposta`: la scrive `scripts/reset-admin-password.cjs`, il recupero dal server (14/11). */
+  azione: "seconda_verifica_richiedi" | "seconda_verifica_azzera" | "seconda_verifica_togli" | "password_reimposta";
   utente: string;
   utenteId: number;
   da: string;

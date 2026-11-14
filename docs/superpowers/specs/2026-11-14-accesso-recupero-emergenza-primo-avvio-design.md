@@ -97,7 +97,7 @@ Tre strade, da scegliere:
 
 ## Domande per Riccardo
 
-1. Utenza di servizio Domarc: strada A, B o C?
+1. Utenza di servizio Domarc: strada A, B o C? **Riccardo, 14/11: B, «utente vero».**
 2. Accesso d'emergenza: 60 minuti e ruolo admin vanno bene, o lo vuoi in sola lettura?
 3. Codici di recupero: 8 monouso stampabili, sì o no?
 4. Codice di primo avvio: va bene che lo generi Deploy-Appliance e lo mostri al tecnico a fine installazione?

@@ -6,6 +6,7 @@ Sensore e specchio stanno in DA-Vul-can (`TASKS.md` del 14/11, commit aa9f136a).
 - [x] `vlanPrincipaleDa` + `allineaVlanPrincipale` nella lettura del trunk — prova in `sensore-trunk.test.ts` verde, tsc pulito
 - [ ] prova sulla sonda vera (con DA-Vul-can)
 - [x] rete della principale senza VLAN in IPAM: DA-IPAM dice 0 al sensore, i pacchetti restano senza tag (visto su 79993-ipam-2 il 14/11: `192.168.99.0/24` senza VLAN, 1322 fermi in attesa). Resta in attesa solo un IP fuori da ogni rete dichiarata
+- [ ] promozione su `main` della 0.9.1257 (VLAN 0 per la principale): Riccardo, 14/11, «Aspetta». La 0.9.1257 porta anche quattro pezzi di Sicurezza P0-1 (`macbook/sicurezza-p0-1-uscite`), Menù e Dashboard di altre sessioni: si promuove quando P0-1 è chiusa. Serve alle sonde dei clienti solo quando DA-Link fissa loro la 0.8.311 di Vulcan
 
 ## 2026-11-14 — Piano di sicurezza: appliance autonoma (Riccardo, da approvare; zona rossa → livello completo)
 

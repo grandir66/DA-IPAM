@@ -5,7 +5,7 @@
 Sensore e specchio stanno in DA-Vul-can (`TASKS.md` del 14/11, commit aa9f136a). Qui: IPAM deduce la VLAN dei pacchetti senza tag della principale e la passa al sensore.
 - [x] `vlanPrincipaleDa` + `allineaVlanPrincipale` nella lettura del trunk — prova in `sensore-trunk.test.ts` verde, tsc pulito
 - [ ] prova sulla sonda vera (con DA-Vul-can)
-- [ ] da decidere: se la rete della principale non ha VLAN in IPAM la VLAN non si deduce; mostrarlo nella pagina del trunk?
+- [x] rete della principale senza VLAN in IPAM: DA-IPAM dice 0 al sensore, i pacchetti restano senza tag (visto su 79993-ipam-2 il 14/11: `192.168.99.0/24` senza VLAN, 1322 fermi in attesa). Resta in attesa solo un IP fuori da ogni rete dichiarata
 
 ## 2026-11-14 — Piano di sicurezza: appliance autonoma (Riccardo, da approvare; zona rossa → livello completo)
 

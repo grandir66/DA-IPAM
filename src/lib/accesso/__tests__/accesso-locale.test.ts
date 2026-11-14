@@ -222,3 +222,41 @@ test("opzione «due passaggi per gli amministratori»: spenta non cambia niente,
     D.impostaDuePassaggiAdmin(false);
   }
 });
+
+// --- Piano di sicurezza 14/11, P0-2 tappa D: codici di recupero (Riccardo: «Sì, falli»). ---
+// Telefono perso: oggi l'unica via è una shell sul server, che ha Domarc e non il cliente. Otto codici monouso,
+// stampati, valgono al posto del codice dell'app. Nel database sta solo l'impronta.
+
+test("codici di recupero: otto, monouso, valgono al posto del codice dell'app; azzerare la verifica li cancella", async () => {
+  const R = await import("../codici-recupero");
+  const u = await utente(true);
+  const ora = Date.UTC(2026, 10, 14, 13, 0, 0);
+  await attiva(u.username, ora);
+
+  const codici = R.generaCodiciRecupero(u.id);
+  assert.equal(codici.length, 8);
+  assert.equal(new Set(codici).size, 8);
+  assert.equal(R.codiciRecuperoRimasti(u.id), 8);
+  // Nel database non c'è nessun codice in chiaro.
+  const righe = H.getHubDb().prepare("SELECT * FROM codici_recupero WHERE user_id = ?").all(u.id);
+  for (const c of codici) assert.ok(!JSON.stringify(righe).includes(c.replace(/-/g, "")) && !JSON.stringify(righe).includes(c));
+
+  const entra = (codice: string) => A.verificaAccessoLocale({ username: u.username, password: "giusta", codice }, { fase: "accesso", ora });
+  // Scritto come lo scrive una persona: minuscolo, con spazi.
+  assert.equal((await entra(` ${codici[0].toLowerCase().replace(/-/g, " ")} `)).esito, "entra");
+  assert.equal(R.codiciRecuperoRimasti(u.id), 7);
+  assert.equal((await entra(codici[0])).esito, "rifiuta", "un codice usato non vale più");
+  assert.equal((await entra("AAAA-AAAA-AAAA-AAAA")).esito, "rifiuta");
+  // Il codice di un altro utente non vale.
+  const altro = await utente(true);
+  await attiva(altro.username, ora);
+  const suoi = R.generaCodiciRecupero(altro.id);
+  assert.equal((await entra(suoi[0])).esito, "rifiuta");
+  // Rigenerare annulla i vecchi.
+  const nuovi = R.generaCodiciRecupero(u.id);
+  assert.equal((await entra(codici[1])).esito, "rifiuta");
+  assert.equal((await entra(nuovi[0])).esito, "entra");
+  // Azzerare la verifica in due passaggi cancella i codici.
+  H.impostaSecondaVerifica(u.id, "azzera");
+  assert.equal(R.codiciRecuperoRimasti(u.id), 0);
+});

@@ -881,6 +881,8 @@ export function impostaSecondaVerifica(userId: number, azione: "richiedi" | "azz
     azione === "richiedi" ? "UPDATE users SET totp_richiesta = 1 WHERE id = ?"
       : azione === "azzera" ? `UPDATE users SET ${pulisci} WHERE id = ?`
         : `UPDATE users SET totp_richiesta = 0, ${pulisci} WHERE id = ?`;
+  // Azzerata o tolta la verifica, i codici di recupero di prima non valgono più (P0-2, 14/11).
+  if (azione !== "richiedi") getHubDb().prepare("DELETE FROM codici_recupero WHERE user_id = ?").run(userId);
   return getHubDb().prepare(sql).run(userId).changes === 1;
 }
 

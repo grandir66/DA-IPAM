@@ -25,6 +25,8 @@ import {
 } from "@/lib/db-hub";
 import { nuovoSegreto, uriOtpauth, verificaTotp } from "./totp";
 import { serveSecondaVerifica } from "./due-passaggi-admin";
+import { codiciRecuperoRimasti, sembraCodiceRecupero, usaCodiceRecupero } from "./codici-recupero";
+import { scriviRegistroAccessi } from "./registro-accessi";
 
 export type EsitoAccesso =
   | { esito: "entra"; utente: HubUser }
@@ -121,6 +123,18 @@ async function verifica(
   if (utente.totp_segreto) {
     if (opzioni.fase === "passo_uno") return buono({ esito: "serve_codice" });
     if (!input.codice) return rifiuta();
+    // Telefono perso: un codice di recupero vale al posto del codice dell'app, una volta sola (P0-2, 14/11).
+    if (sembraCodiceRecupero(input.codice)) {
+      if (!usaCodiceRecupero(utente.id, input.codice)) return rifiuta();
+      const rimasti = codiciRecuperoRimasti(utente.id);
+      console.warn(`[Auth] ${username}: entrato con un codice di recupero (ne restano ${rimasti})`);
+      try {
+        scriviRegistroAccessi({ azione: "codice_recupero_usato", utente: utente.username, utenteId: utente.id, da: utente.username });
+      } catch (e) {
+        console.error("[Auth] registro degli accessi non scritto per il codice di recupero:", e);
+      }
+      return entra();
+    }
     const segreto = safeDecifraAccesso(utente.totp_segreto);
     if (!segreto) {
       console.error(`[Auth] ${username}: segreto della verifica in due passaggi non leggibile (chiave cambiata?)`);

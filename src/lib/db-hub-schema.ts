@@ -264,6 +264,15 @@ CREATE TABLE IF NOT EXISTS system_credential_events (
   ts             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Codici di recupero della verifica in due passaggi (P0-2, 14/11): solo l'impronta, monouso.
+CREATE TABLE IF NOT EXISTS codici_recupero (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  impronta  TEXT NOT NULL,
+  creato_at TEXT NOT NULL DEFAULT (datetime('now')),
+  usato_at  TEXT
+);
+
 -- Registro degli scarichi di dati dall'istanza (piano di sicurezza 14/11, P0-1): chi, quando, cosa.
 CREATE TABLE IF NOT EXISTS scarichi_dati (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

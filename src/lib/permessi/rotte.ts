@@ -156,6 +156,7 @@ const MOTIVO_LETTURA_POST = "lettura in blocco con l'elenco nel corpo (POST per 
 export const ECCEZIONI: Eccezione[] = [
   // --- pubbliche: coincidono con l'elenco consentito di src/lib/auth.config.ts
   { rotta: "/api/auth/[...nextauth]", metodi: ["GET", "POST"], tipo: "pubblica", guardia: "esterna", motivo: "gestori di NextAuth: accesso e uscita" },
+  { rotta: "/api/auth/codici-recupero", metodi: ["POST"], tipo: "motivata", guardia: "auth", motivo: "ogni utente genera i PROPRI codici di recupero, e solo col codice dell'app: non tocca altri utenti" },
   { rotta: "/api/auth/lock-state", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "la pagina di accesso la interroga prima che esista una sessione" },
   { rotta: "/api/auth/passo-uno", metodi: ["POST"], tipo: "pubblica", guardia: "nessuna", motivo: "passo 1 della pagina d'accesso, prima che esista una sessione; protetta dallo stesso blocco dei tentativi del login (ADR 0023)" },
   { rotta: "/api/health", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "controllo di salute per il monitoraggio" },

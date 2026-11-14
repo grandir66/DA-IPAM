@@ -197,6 +197,8 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Network Changes è legato ai giri e alla copertura di questa installazione.
   "network_change_baselines",
   "network_changes",
+  // «Visto» sui cambiamenti (14/11/2026): le chiavi puntano a id di questa installazione.
+  "cambiamenti_visti",
   // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
   // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
   "vulcan_coda",

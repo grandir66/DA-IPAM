@@ -24,8 +24,9 @@ export const SEZIONI: readonly Sezione[] = [
   { nome: "Apparati", schede: [
     { href: "/discovery", etichetta: "Elenco" },
     { href: "/controllo-classificazione", etichetta: "Attribuzione" },
-    { href: "/network-changes", etichetta: "Cambiamenti" },
-    { href: "/analytics", etichetta: "Anomalie" },
+    // Dal 14/11/2026 (Riccardo) qui sta tutto ciò che cambia nel tempo; «Anomalie» ci è confluita e la sua pagina
+    // (disponibilità e latenza) resta raggiungibile da qui.
+    { href: "/network-changes", etichetta: "Cambiamenti", anche: ["/analytics"] },
     { href: "/excluded-ips", etichetta: "IP esclusi" },
   ] },
   { nome: "Topologia", schede: [

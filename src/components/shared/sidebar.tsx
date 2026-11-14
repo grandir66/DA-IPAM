@@ -70,6 +70,8 @@ type SubItem = {
   esterno?: boolean;
   /** Numero rosso accanto alla voce (es. allarmi gravi della rete osservata). */
   badge?: number;
+  /** Cosa conta il numero, per chi ci passa sopra; senza, «allarmi gravi da prendere in carico». */
+  badgeTitolo?: string;
   /** Voce che dipende da un modulo (08/11): la regola sta in `voci-condizionate.ts`. */
   condizione?: VoceCondizionata;
   /** Motivo per cui la voce è grigia e non si apre; lo mette il menu dalla condizione. */
@@ -278,7 +280,7 @@ function SubList({
               <span className="flex-1">{item.label}</span>
               {item.badge != null && item.badge > 0 && (
                 <span
-                  title={`${item.badge} allarmi gravi da prendere in carico`}
+                  title={`${item.badge} ${item.badgeTitolo ?? "allarmi gravi da prendere in carico"}`}
                   className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#8E1B20] px-1 text-[13px] font-bold leading-none text-white"
                 >
                   {item.badge > 99 ? "99+" : item.badge}
@@ -468,6 +470,12 @@ export function Sidebar() {
     networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [allarmiRete, setAllarmiRete] = useState(0);
+  // Cambiamenti da vedere (14/11/2026): il numero accanto ad «Apparati», al posto di quello della vecchia voce Anomalie.
+  const [cambiamenti, setCambiamenti] = useState(0);
+  const networkItems = useMemo<SubItem[]>(
+    () => networkSubItems.map((v) => (v.href === "/discovery" ? { ...v, badge: cambiamenti, badgeTitolo: "cambiamenti da vedere" } : v)),
+    [cambiamenti],
+  );
   // Edge, NIS2 e Wazuh per le voci grigie (08/11); null = non ancora letti: niente grigio.
   const [presenze, setPresenze] = useState<Presenze | null>(null);
   const sicurezzaItems = useMemo<SubItem[]>(
@@ -521,6 +529,12 @@ export function Sidebar() {
 
   useEffect(() => {
     const fetchUnacked = () => {
+      fetch("/api/cambiamenti")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { daVedere?: number } | null) => {
+          if (data?.daVedere != null) setCambiamenti(data.daVedere);
+        })
+        .catch(() => { /* non critico */ });
       fetch("/api/trunk/rilievi?conteggio=1")
         .then((r) => r.ok ? r.json() : null)
         .then((data: { allarmiAlti?: number } | null) => {
@@ -623,7 +637,7 @@ export function Sidebar() {
         <NavItem href="/" icon={LayoutDashboard} label="Dashboard" active={pathname === "/"} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Network */}
-        <NavGroup icon={Network} label="Network" items={networkSubItems} open={networkOpen} setOpen={setNetworkOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        <NavGroup icon={Network} label="Network" items={networkItems} open={networkOpen} setOpen={setNetworkOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
         {/*
           Voce "Dispositivi" non in sidebar: l'entrypoint unico per host/device

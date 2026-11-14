@@ -37,7 +37,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - Le password più deboli (le più comuni, ripetute, in sequenza, col nome utente dentro) sono rifiutate alla creazione, al cambio e alla reimpostazione.
 - Ogni accesso riuscito, rifiutato o bloccato lascia una riga nel registro degli accessi, conservato 400 giorni.
 - Opzioni › «Utenza di servizio nel file» dice se l'installazione ha ancora l'accesso di servizio senza codice.
-- Accesso d'emergenza del cliente, lato server: frase monouso, sessione di 60 minuti, tracciata. Non ancora usabile: manca la pagina.
+- Accesso d'emergenza del cliente: un amministratore prepara da Impostazioni › Utenti una frase da tenere in busta; vale una volta, per 60 minuti, senza codice dell'app, e ogni uso resta nel registro. Dopo un uso tutti gli amministratori vedono un avviso finché uno non rigenera la frase o toglie l'accesso. Perché: il cliente deve poter rientrare senza una shell sul server.
 - Il primo avvio può chiedere un codice monouso lasciato dall'installatore (`primo-avvio.codice`): creato il primo utente il codice sparisce. Senza quel file non cambia niente.
 - Codici di recupero per la verifica in due passaggi: otto codici monouso da stampare (menu utente › «Codici di recupero…»), che valgono al posto del codice dell'app se si perde il telefono. Prima l'unica via era una riga di comando sul server.
 - Le installazioni nuove fatte con `scripts/install.sh` non hanno più l'utenza di servizio Domarc nel file delle chiavi (superadmin senza codice, invisibile al cliente): l'assistenza è un utente come gli altri, con la verifica in due passaggi. Le installazioni esistenti non cambiano.

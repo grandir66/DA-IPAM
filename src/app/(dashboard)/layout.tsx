@@ -4,6 +4,7 @@ import { HostApplianceProvider } from "@/components/shared/url-per-browser";
 import { hostDellAppliance } from "@/lib/integrations/host-appliance-server";
 import { hostDellaRichiesta } from "@/lib/integrations/librenms-accesso";
 import { BannerVault } from "@/components/vault/banner-vault";
+import { AvvisoEmergenzaUsata } from "@/components/settings/accesso-emergenza";
 import { SchedeSezione } from "@/components/shared/schede-sezione";
 import { testoBannerVault } from "@/lib/vault/appliance";
 import { isTecnico } from "@/lib/profilo";
@@ -26,6 +27,7 @@ export default async function DashboardLayout({
       <ProfiloInstallazioneProvider tecnico={tecnico}>
         <AppShell fascia={tecnico ? <FasciaProfilo /> : null}>
           {bannerVault && <BannerVault testo={bannerVault} />}
+          <AvvisoEmergenzaUsata />
           <SchedeSezione />
           {children}
         </AppShell>

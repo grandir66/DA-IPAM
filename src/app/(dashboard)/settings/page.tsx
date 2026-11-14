@@ -1,6 +1,7 @@
 "use client";
 
 import { ScaricaDatabase } from "@/components/settings/scarica-database";
+import { AccessoEmergenza } from "@/components/settings/accesso-emergenza";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -839,6 +840,7 @@ function SettingsPageInner() {
           </CardContent>
         </Card>
       )}
+      {activeTab === "utenti" && !isViewer && <AccessoEmergenza onCambio={() => void loadUsers()} />}
 
       {/* === Tab: Scansione === */}
       {activeTab === "scansione" && <ScanConfigTab />}

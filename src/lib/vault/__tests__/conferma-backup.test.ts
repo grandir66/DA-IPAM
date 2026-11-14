@@ -14,7 +14,7 @@ test("vault spento: la conferma per le password non c'è, quella per il backup a
     const bk = confermaConSecondaVerifica({ utente, codice: "000000", scopo: "backup" });
     assert.ok(!bk.ok && bk.stato === 403 && /utenza di servizio/.test(bk.errore), !bk.ok ? bk.errore : "");
     const nonAdmin = confermaConSecondaVerifica({ utente: { id: "5", nome: "x", ruolo: "viewer" }, codice: "000000", scopo: "backup" });
-    assert.ok(!nonAdmin.ok && nonAdmin.stato === 403 && /scaricare il database/.test(nonAdmin.errore));
+    assert.ok(!nonAdmin.ok && nonAdmin.stato === 403 && /questa operazione/.test(nonAdmin.errore));
   } finally {
     if (prima.l !== undefined) process.env.DA_VAULT_LOCALE = prima.l;
     if (prima.d !== undefined) process.env.DA_VAULT_DALINK = prima.d;

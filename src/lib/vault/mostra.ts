@@ -56,14 +56,14 @@ export function confermaConSecondaVerifica(op: { utente: UtenteSessione; codice:
   const ora = op.ora ?? Date.now();
   const backup = op.scopo === "backup";
   if (!backup && !mostraPasswordAttiva()) return rifiuto(404, "Funzione non attiva su questa installazione");
-  if (!eAdmin(op.utente)) return rifiuto(403, backup ? "Solo un amministratore può scaricare il database" : "Solo un amministratore può vedere le password");
+  if (!eAdmin(op.utente)) return rifiuto(403, backup ? "Solo un amministratore può fare questa operazione" : "Solo un amministratore può vedere le password");
   const id = Number(op.utente.id);
   if (!Number.isInteger(id) || id <= 0) return rifiuto(403, "L'utenza di servizio non ha la verifica in due passaggi: entra col tuo utente");
   const chiave = `vault-conferma:${id}`;
   if (isRateLimited(chiave, TENTATIVI, FINESTRA_TENTATIVI_MS)) return rifiuto(429, "Troppi codici sbagliati: riprova fra qualche minuto");
   const u = getUserById(id);
   if (!u || u.totp_richiesta !== 1 || !u.totp_segreto) {
-    return rifiuto(403, `${backup ? "Per scaricare il database" : "Per vedere le password"} serve la verifica in due passaggi attiva sul tuo utente (Impostazioni › Utenti)`);
+    return rifiuto(403, `${backup ? "Per questa operazione" : "Per vedere le password"} serve la verifica in due passaggi attiva sul tuo utente (Impostazioni › Utenti)`);
   }
   const segreto = safeDecifraAccesso(u.totp_segreto);
   const passo = segreto ? verificaTotp(segreto, op.codice ?? "", ora, u.totp_ultimo_passo ?? null) : null;

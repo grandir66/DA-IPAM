@@ -22,6 +22,7 @@ export default function TransferPage() {
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
   const [includeVault, setIncludeVault] = useState(false);
   const [codice, setCodice] = useState("");
+  const [codiceImp, setCodiceImp] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean; righe?: RigaConversione[] } | null>(null);
 
@@ -37,25 +38,31 @@ export default function TransferPage() {
     );
   }
 
+  /** Conferma in due passaggi (5 minuti): se è ancora valida non si richiede. Torna il messaggio d'errore, o null. */
+  async function confermaDuePassaggi(cod: string): Promise<string | null> {
+    const valida = await fetch("/api/vault/conferma").then((r) => r.json()).catch(() => null);
+    if (valida?.scade) return null;
+    const c = await fetch("/api/vault/conferma", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codice: cod, scopo: "backup" }),
+    });
+    if (c.ok) return null;
+    const e = await c.json().catch(() => null);
+    return e?.error ?? "Conferma non riuscita";
+  }
+
   async function doExport() {
     setBusy(true);
     setMsg(null);
     try {
       // Col vault dentro escono segreti: serve la conferma in due passaggi (P0-1, Riccardo 14/11).
       if (includeVault) {
-        const valida = await fetch("/api/vault/conferma").then((r) => r.json()).catch(() => null);
-        if (!valida?.scade) {
-          const c = await fetch("/api/vault/conferma", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ codice, scopo: "backup" }),
-          });
-          setCodice("");
-          if (!c.ok) {
-            const e = await c.json().catch(() => null);
-            setMsg({ text: e?.error ?? "Conferma non riuscita", ok: false });
-            return;
-          }
+        const errore = await confermaDuePassaggi(codice);
+        setCodice("");
+        if (errore) {
+          setMsg({ text: errore, ok: false });
+          return;
         }
       }
       const res = await fetch("/api/tenant/export", {
@@ -93,6 +100,15 @@ export default function TransferPage() {
     setBusy(true);
     setMsg(null);
     try {
+      // Lo svuotamento cancella tutti i dati del cliente: serve la conferma in due passaggi (Riccardo, 14/11).
+      if (wipe) {
+        const errore = await confermaDuePassaggi(codiceImp);
+        setCodiceImp("");
+        if (errore) {
+          setMsg({ text: errore, ok: false });
+          return;
+        }
+      }
       const fd = new FormData();
       fd.set("bundle", impFile);
       fd.set("passphrase", impPass);
@@ -297,6 +313,23 @@ export default function TransferPage() {
                 </p>
               </div>
             </label>
+            {wipe && (
+              <div className="pl-7 space-y-1">
+                <Label htmlFor="codice-2fa-import">Codice della verifica in due passaggi</Label>
+                <Input
+                  id="codice-2fa-import"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  className="w-40 font-mono"
+                  value={codiceImp}
+                  onChange={(e) => setCodiceImp(e.target.value.replace(/\D/g, ""))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lo svuotamento cancella i dati esistenti: serve la conferma, valida 5 minuti. Se l&apos;hai appena data, lascia vuoto.
+                </p>
+              </div>
+            )}
             {!wipe && (
               <p className="text-xs text-muted-foreground">
                 Senza svuotare si aggiungono solo le righe nuove: dove una chiave c&apos;è già resta il valore attuale.

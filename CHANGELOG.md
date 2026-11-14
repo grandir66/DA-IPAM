@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Alert Wazuh: via il rumore che copriva gli attacchi (14/11/2026)
+
+### Corretto
+- **Le nostre sonde non finiscono più dentro la riga d'attacco**: la riga si riconosceva per agente e regola, così un accesso fallito dell'appliance si sommava alla riga dei tentativi veri già aperta e le riscriveva utente e indirizzo (DTS: «angelo.doko da 172.16.0.2», 16872 volte). Ora le sonde hanno una riga loro; le righe già mescolate restano com'erano finché non si prendono in carico.
+- **«User account changed» (4738) scritto dal sistema senza cambiare nulla non si archivia più**: a DTS erano ~1000 righe per server su 25 macchine, a livello 8, e coprivano i cambi veri. Resta archiviato se lo fa un utente o se le opzioni dell'account cambiano.
+
 ## Non rilasciato — Impostazioni: una voce di menu, una fila di schede (14/11/2026)
 
 ### Cambiato

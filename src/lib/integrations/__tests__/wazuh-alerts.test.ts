@@ -420,3 +420,28 @@ test("a whole network can be declared as ours, not just single addresses", () =>
   // fuori dalla rete resta un estraneo
   assert.equal(isSelfOrigin({ sourceIp: "95.230.196.200", targetUser: null }, self), false);
 });
+
+test("le nostre sonde non finiscono nella riga d'attacco della stessa regola (DTS 14/11/2026)", () => {
+  const base = { ...normalizeAlert(doc(), "hit-1"), category: "auth_failure" };
+  const sonda = { ...base, category: "self_probe" };
+  assert.notEqual(dedupKey(base), dedupKey(sonda));
+});
+
+test("4738 scritto dal sistema senza cambi non è un cambio di privilegi (DTS 14/11/2026)", () => {
+  const vuoto = (uacDopo: string, sid: string) =>
+    normalizeAlert(
+      doc({
+        rule: { id: "60110", level: 8, description: "User account changed", groups: ["windows", "account_changed"] },
+        data: {
+          win: {
+            system: { eventID: "4738" },
+            eventdata: { targetUserName: "Administrator", subjectUserSid: sid, oldUacValue: "0x210", newUacValue: uacDopo },
+          },
+        },
+      }),
+      "hit-4738",
+    );
+  assert.equal(vuoto("0x210", "S-1-5-18").category, null);
+  assert.equal(vuoto("0x211", "S-1-5-18").category, "privileged_change");
+  assert.equal(vuoto("0x210", "S-1-5-21-1-2-3-1104").category, "privileged_change");
+});

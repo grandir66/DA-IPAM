@@ -46,18 +46,24 @@ function eAdmin(u: UtenteSessione): boolean {
   return u.ruolo === "admin" || u.ruolo === "superadmin";
 }
 
-/** Conferma con la 2FA dell'utente collegato: 5 minuti per vedere le password. */
-export function confermaConSecondaVerifica(op: { utente: UtenteSessione; codice: string; ora?: number }): { ok: true; scade: number } | Rifiuto {
+/**
+ * Conferma con la 2FA dell'utente collegato: 5 minuti per vedere le password.
+ * `scopo: "backup"` (piano di sicurezza 14/11, P0-1): la stessa conferma apre lo scarico di `hub.db`,
+ * e lì non dipende dagli interruttori del vault. Riccardo, 14/11: senza la verifica in due passaggi
+ * attiva lo scarico «si blocca», niente ripiego sulla password.
+ */
+export function confermaConSecondaVerifica(op: { utente: UtenteSessione; codice: string; ora?: number; scopo?: "password" | "backup" }): { ok: true; scade: number } | Rifiuto {
   const ora = op.ora ?? Date.now();
-  if (!mostraPasswordAttiva()) return rifiuto(404, "Funzione non attiva su questa installazione");
-  if (!eAdmin(op.utente)) return rifiuto(403, "Solo un amministratore può vedere le password");
+  const backup = op.scopo === "backup";
+  if (!backup && !mostraPasswordAttiva()) return rifiuto(404, "Funzione non attiva su questa installazione");
+  if (!eAdmin(op.utente)) return rifiuto(403, backup ? "Solo un amministratore può scaricare il database" : "Solo un amministratore può vedere le password");
   const id = Number(op.utente.id);
   if (!Number.isInteger(id) || id <= 0) return rifiuto(403, "L'utenza di servizio non ha la verifica in due passaggi: entra col tuo utente");
   const chiave = `vault-conferma:${id}`;
   if (isRateLimited(chiave, TENTATIVI, FINESTRA_TENTATIVI_MS)) return rifiuto(429, "Troppi codici sbagliati: riprova fra qualche minuto");
   const u = getUserById(id);
   if (!u || u.totp_richiesta !== 1 || !u.totp_segreto) {
-    return rifiuto(403, "Per vedere le password serve la verifica in due passaggi attiva sul tuo utente (Impostazioni › Utenti)");
+    return rifiuto(403, `${backup ? "Per scaricare il database" : "Per vedere le password"} serve la verifica in due passaggi attiva sul tuo utente (Impostazioni › Utenti)`);
   }
   const segreto = safeDecifraAccesso(u.totp_segreto);
   const passo = segreto ? verificaTotp(segreto, op.codice ?? "", ora, u.totp_ultimo_passo ?? null) : null;

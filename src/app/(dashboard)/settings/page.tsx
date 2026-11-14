@@ -1,5 +1,6 @@
 "use client";
 
+import { ScaricaDatabase } from "@/components/settings/scarica-database";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -946,13 +947,7 @@ function SettingsPageInner() {
                 <Download className="h-4 w-4 mr-2" />
                 Esporta host (CSV)
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => { window.location.href = "/api/backup"; }}
-              >
-                <Database className="h-4 w-4 mr-2" />
-                Backup database
-              </Button>
+              <ScaricaDatabase />
               {isAdmin && (
                 <Button variant="outline" onClick={() => router.push("/settings/transfer")}>
                   Trasferimento configurazione ›

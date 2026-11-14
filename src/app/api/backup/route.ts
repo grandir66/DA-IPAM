@@ -5,6 +5,7 @@ import { resolveDataDir } from "@/lib/data-dir";
 import { unisci } from "@/lib/percorsi";
 import { isTecnico } from "@/lib/profilo";
 import { puoScaricareHub } from "@/lib/accesso/profilo-pubblico";
+import { confermaValida, utenteDaSessione } from "@/lib/vault/mostra";
 
 export async function GET() {
   const adminCheck = await requireAdmin();
@@ -14,6 +15,13 @@ export async function GET() {
     return NextResponse.json(
       { error: "Su questa installazione il database intero lo scarica solo il superadmin." },
       { status: 403 },
+    );
+  }
+  // Conferma recente con la verifica in due passaggi (5 minuti): senza, lo scarico si blocca (Riccardo, 14/11).
+  if (confermaValida(utenteDaSessione(adminCheck).id) === null) {
+    return NextResponse.json(
+      { error: "Serve la conferma con la verifica in due passaggi: usa «Backup database…» in Impostazioni › Sistema." },
+      { status: 403, headers: { "Cache-Control": "no-store" } },
     );
   }
   // Chi e quando: resta nel journal.

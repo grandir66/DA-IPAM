@@ -34,6 +34,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.
 
 ### Sicurezza
+- La ricifra del vault (`scripts/da-vault.ts ricifra`) si fermava con «no such table» sui database che hanno ancora tabelle figlie di una tabella tolta (resti del vecchio agente): trovato accendendo il vault sulla VM di laboratorio. L'UPDATE si prepara solo dove c'è un valore da riscrivere.
 - Le password più deboli (le più comuni, ripetute, in sequenza, col nome utente dentro) sono rifiutate alla creazione, al cambio e alla reimpostazione.
 - Ogni accesso riuscito, rifiutato o bloccato lascia una riga nel registro degli accessi, conservato 400 giorni.
 - Opzioni › «Utenza di servizio nel file» dice se l'installazione ha ancora l'accesso di servizio senza codice.

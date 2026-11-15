@@ -72,6 +72,17 @@ if [ "${COMANDO}" = apri ]; then
     printf '%s' "${PASSPHRASE}" | cryptsetup open --key-file - "${CONTENITORE}" "${NOME}" || no "passphrase errata o contenitore rovinato"
   fi
   mount "/dev/mapper/${NOME}" "${DATA_DIR}" || no "il volume si è aperto ma non si monta su ${DATA_DIR}"
+  # Se il TPM non c'è più o non è quello di prima, la serratura TPM del vault non si apre e systemd non avvia
+  # nemmeno il servizio (LoadCredentialEncrypted è obbligatoria): la riga si mette da parte, il vault si sblocca
+  # con la passphrase da Impostazioni › Vault. Trovato togliendo il TPM all'appliance di laboratorio (15/11/2026).
+  SLOT_TPM="${DATA_DIR}/vault/slot-tpm.cred"
+  if [ -f "${SLOT_TPM}" ] && ! systemd-creds decrypt --name=vault-key "${SLOT_TPM}" - >/dev/null 2>&1; then
+    for f in "/etc/systemd/system/${SERVIZIO}.service.d"/*.conf; do
+      [ -f "$f" ] && grep -q '^LoadCredentialEncrypted=vault-key' "$f" || continue
+      mv "$f" "$f.senza-tpm" && echo "Il TPM non apre più la serratura del vault: messa da parte $f (il vault si sblocca con la passphrase dalla pagina)."
+    done
+    systemctl daemon-reload
+  fi
   systemctl start "${SERVIZIO}" || no "volume aperto, ma il servizio ${SERVIZIO} non parte: journalctl -u ${SERVIZIO}"
   echo "Volume aperto, servizio ${SERVIZIO} avviato."
   exit 0
@@ -115,9 +126,8 @@ if [ "${SBLOCCO}" = chiave ]; then
   [ -d "$(dirname "${CHIAVE_ESTERNA}")" ] || no "la cartella di ${CHIAVE_ESTERNA} non c'è (supporto non montato?)"
   [ "$(stat -c %d "$(dirname "${CHIAVE_ESTERNA}")")" != "$(stat -c %d /)" ] || no "${CHIAVE_ESTERNA} sta sullo stesso disco del sistema: non è un supporto esterno"
 fi
-mkdir -p "${DIR_VOLUME}" && chmod 700 "${DIR_VOLUME}"
 DATI_KB="$(du -sk "${DATA_DIR}" | cut -f1)"
-LIBERI_KB="$(df -k --output=avail "${DIR_VOLUME}" | tail -1 | tr -d ' ')"
+LIBERI_KB="$(df -k --output=avail "$(dirname "${DIR_VOLUME}")" | tail -1 | tr -d ' ')"
 [ "${LIBERI_KB}" -gt $((DATI_KB * 2 + 1048576)) ] || no "spazio insufficiente: servono due volte i dati ($((DATI_KB / 1024)) MiB) più 1 GiB"
 
 echo "Cartella dati: ${DATA_DIR} ($((DATI_KB / 1024)) MiB)  →  contenitore ${CONTENITORE} (${DIMENSIONE}, occupa solo quel che contiene)"
@@ -147,6 +157,7 @@ pulizia() {
 trap pulizia EXIT
 set -e
 systemctl stop "${SERVIZIO}"
+mkdir -p "${DIR_VOLUME}"; chmod 700 "${DIR_VOLUME}"
 truncate -s "${DIMENSIONE}" "${CONTENITORE}"; chmod 600 "${CONTENITORE}"
 printf '%s' "${PASSPHRASE}" | cryptsetup luksFormat --type luks2 --batch-mode --key-file - "${CONTENITORE}"
 ( umask 077; printf '%s' "$(openssl rand -hex 32)" > "${CHIAVE_TMP}" )
@@ -190,6 +201,11 @@ grep -q "^${NOME} " /etc/crypttab || echo "${RIGA}" >> /etc/crypttab
 grep -q "^/dev/mapper/${NOME} " /etc/fstab || echo "/dev/mapper/${NOME} ${DATA_DIR} ext4 ${OPZ} 0 2" >> /etc/fstab
 mkdir -p "$(dirname "${DROPIN}")"
 printf '[Unit]\nRequiresMountsFor=%s\nAssertPathIsMountPoint=%s\n' "${DATA_DIR}" "${DATA_DIR}" > "${DROPIN}"
+# Anche l'aggiornamento automatico scrive nella cartella dati: a volume chiuso non deve girare.
+if systemctl cat "${SERVIZIO}-update.service" >/dev/null 2>&1; then
+  mkdir -p "/etc/systemd/system/${SERVIZIO}-update.service.d"
+  cp "${DROPIN}" "/etc/systemd/system/${SERVIZIO}-update.service.d/volume-cifrato.conf"
+fi
 date -u +%Y-%m-%dT%H:%M:%SZ > "${SEGNO}"
 systemctl daemon-reload
 FASE=avvio

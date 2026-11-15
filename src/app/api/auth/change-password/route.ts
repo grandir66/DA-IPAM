@@ -5,6 +5,7 @@ import { updateUserPassword } from "@/lib/db";
 // Dall'hub, non dalla facciata: serve il segno `emergenza` della riga.
 import { getUserByUsername } from "@/lib/db-hub";
 import bcrypt from "bcrypt";
+import { provaPasswordCorrente } from "@/lib/accesso/cambio-password";
 
 export async function POST(request: Request) {
   try {
@@ -35,8 +36,12 @@ export async function POST(request: Request) {
     const debole = motivoPasswordDebole(new_password, user.username);
     if (debole) return NextResponse.json({ error: debole }, { status: 400 });
 
-    const isValid = await bcrypt.compare(current_password, user.password_hash);
-    if (!isValid) {
+    // Stesso freno della conferma sugli utenti: senza, da qui la password si provava senza limite (16/11/2026).
+    const esito = await provaPasswordCorrente(user.id, user.password_hash, String(current_password));
+    if (esito === "fermo") {
+      return NextResponse.json({ error: "Troppe password sbagliate: riprova fra qualche minuto" }, { status: 429 });
+    }
+    if (esito === "sbagliata") {
       return NextResponse.json({ error: "Password corrente non corretta" }, { status: 403 });
     }
 

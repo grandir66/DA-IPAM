@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { XMLParser } from "fast-xml-parser";
 import type { NmapResult, NmapPort, NmapScriptOutput } from "@/types";
 import { stripUdpFromArgs, buildUdpScanArgs, buildTcpScanArgs } from "./ports";
+import { motivoArgomentiRifiutati } from "./argomenti-nmap-ammessi";
 
 /** Argomenti profilo utente: la fase TCP non deve mai includere -sU (UDP è una seconda invocazione). */
 function tcpProfileArgs(customArgs: string | undefined): string {
@@ -65,9 +66,17 @@ export async function nmapPortScan(
   timeout: number = 280_000,
   opts?: { skipUdp?: boolean; onLog?: (msg: string) => void; udpPorts?: string | null; osservaTcp?: boolean }
 ): Promise<NmapResult | null> {
-  const tcpArgs = ensureTcpOnly(tcpProfileArgs(customArgs));
   const skipUdp = opts?.skipUdp === true;
   const emitLog = opts?.onLog ?? (() => {});
+  let tcpArgs = ensureTcpOnly(tcpProfileArgs(customArgs));
+  // nmap gira da root: del testo libero del profilo passano solo le opzioni di scansione (16/11/2026).
+  // Rifiutato = si dice e si usano gli argomenti di serie, non si salta la scansione.
+  const rifiuto = motivoArgomentiRifiutati(tcpArgs);
+  if (rifiuto) {
+    console.warn(`[Nmap] argomenti del profilo rifiutati (${rifiuto}): uso quelli di serie`);
+    emitLog(`✗ argomenti del profilo rifiutati (${rifiuto}): uso quelli di serie`);
+    tcpArgs = ensureTcpOnly(buildTcpScanArgs(null));
+  }
 
   // --- Fase 1/2: TCP (-sT), processo dedicato ---
   let tcpResult: NmapResult | null = null;

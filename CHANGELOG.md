@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Sicurezza: secondo giro (16/11/2026)
+
+### Corretto
+- **Profilo nmap: del testo libero degli argomenti passano solo le opzioni di scansione** (`scanner/argomenti-nmap-ammessi.ts`). nmap gira da root e gli argomenti arrivavano così com'erano: con `--script`, `-oN`, `-iL` chi amministrava l'interfaccia scriveva file o eseguiva codice sul sistema. La rotta rifiuta (400), e un profilo già salvato con argomenti non ammessi gira con quelli di serie, dicendolo nel registro del giro.
+- **Passaggio verso LibreNMS e Wazuh: l'indirizzo chiesto resta sul sistema configurato** anche con una barra doppia nel percorso (oggi la fermava solo Next), e il sistema di là non può scrivere nel browser un cookie col nome di quelli di sessione di DA-IPAM.
+- **Cambio password: stesso freno della conferma sugli utenti** (5 password sbagliate in 15 minuti, stesso conto): da lì la password corrente si provava senza limite.
+
 ## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)
 
 ### Aggiunto

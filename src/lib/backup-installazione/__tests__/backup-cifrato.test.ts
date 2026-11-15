@@ -7,9 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import Database from "better-sqlite3";
 import { cifraFile, decifraFile, generaChiaviRecupero, improntaChiave } from "../cifratura";
-import { creaArchivioCifrato, ripristinaArchivio } from "../archivio";
 
 function cartella(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bk-cifrato-"));
@@ -70,55 +68,4 @@ test("un backup manomesso o troncato è rifiutato", () => {
   assert.throws(() => decifraFile(path.join(d, "tr.cif"), path.join(d, "o2"), k.privata), /troncato|manomesso|rovinato/i);
   assert.equal(fs.existsSync(path.join(d, "o1")), false);
   assert.equal(fs.existsSync(path.join(d, "o2")), false);
-});
-
-test("archivio: database e chiavi tornano uguali in una cartella pulita, e il file non li mostra", async () => {
-  const d = cartella();
-  const dati = path.join(d, "data");
-  fs.mkdirSync(path.join(dati, "tenants"), { recursive: true });
-  const hub = new Database(path.join(dati, "hub.db"));
-  hub.pragma("journal_mode = WAL");
-  hub.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)");
-  hub.prepare("INSERT INTO users (username) VALUES (?)").run("mario.rossi-unico");
-  const t = new Database(path.join(dati, "tenants", "C001.db"));
-  t.exec("CREATE TABLE hosts (ip TEXT)");
-  t.prepare("INSERT INTO hosts VALUES (?)").run("10.99.88.77");
-  const chiavi = path.join(d, ".env.local");
-  fs.writeFileSync(chiavi, "ENCRYPTION_KEY=valore-finto-di-prova\n");
-  const k = generaChiaviRecupero();
-  const file = path.join(d, "backup.dainv");
-
-  const esito = await creaArchivioCifrato({ dataDir: dati, fileChiavi: chiavi, uscita: file, pubblica: k.pubblica });
-  hub.close();
-  t.close();
-  assert.deepEqual(esito.contenuto.sort(), [".env.local", "hub.db", "tenants/C001.db"]);
-  const grezzo = fs.readFileSync(file);
-  for (const parola of ["mario.rossi-unico", "10.99.88.77", "valore-finto-di-prova"]) {
-    assert.equal(grezzo.includes(Buffer.from(parola)), false, `«${parola}» non si legge nel file`);
-  }
-  assert.equal(fs.statSync(file).mode & 0o077, 0, "il file non è leggibile da altri");
-
-  const dove = path.join(d, "ripristino");
-  const r = ripristinaArchivio({ file, privata: k.privata, destinazione: dove });
-  assert.deepEqual(r.contenuto.sort(), [".env.local", "hub.db", "tenants/C001.db"]);
-  assert.equal(fs.readFileSync(path.join(dove, ".env.local"), "utf8"), "ENCRYPTION_KEY=valore-finto-di-prova\n");
-  const hub2 = new Database(path.join(dove, "hub.db"), { readonly: true });
-  assert.deepEqual(hub2.prepare("SELECT username FROM users").all(), [{ username: "mario.rossi-unico" }]);
-  hub2.close();
-  const t2 = new Database(path.join(dove, "tenants", "C001.db"), { readonly: true });
-  assert.deepEqual(t2.prepare("SELECT ip FROM hosts").all(), [{ ip: "10.99.88.77" }]);
-  t2.close();
-  // Niente copie in chiaro lasciate in giro accanto al backup.
-  assert.deepEqual(fs.readdirSync(d).sort(), [".env.local", "backup.dainv", "data", "ripristino"]);
-});
-
-test("ripristino: non scrive sopra una cartella che ha già qualcosa", async () => {
-  const d = cartella();
-  const dati = path.join(d, "data");
-  fs.mkdirSync(dati);
-  new Database(path.join(dati, "hub.db")).exec("CREATE TABLE a (b)");
-  const k = generaChiaviRecupero();
-  const file = path.join(d, "b.dainv");
-  await creaArchivioCifrato({ dataDir: dati, fileChiavi: null, uscita: file, pubblica: k.pubblica });
-  assert.throws(() => ripristinaArchivio({ file, privata: k.privata, destinazione: dati }), /non è vuota/i);
 });

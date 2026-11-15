@@ -23,7 +23,9 @@ import fs from "fs";
 import { resolveDataDir } from "../data-dir";
 import { cartellaVault } from "../vault/appliance";
 import { copiaArchivioVault } from "../vault/backup";
-import { vaultLocaleAcceso } from "../vault/stato";
+import { chiaveDatiAttiva, vaultLocaleAcceso } from "../vault/stato";
+import { chiavePubblicaBackup, cifraCartellaBackup } from "../backup-installazione/col-vault";
+import { resolveEnvSecretsPath } from "../env-secrets";
 import os from "os";
 import zlib from "zlib";
 import crypto from "crypto";
@@ -51,6 +53,8 @@ export interface BackupManifest {
   hostname: string;
   files: BackupFileEntry[];
   errors: string[];
+  /** Col vault acceso: l'impronta della chiave che apre `installazione.dainv`; null = backup in chiaro. */
+  cifrato?: string | null;
 }
 
 const DEFAULT_BACKUP_ROOT = "/var/backups/da-invent";
@@ -240,7 +244,38 @@ export async function runHubBackup(tenantCodes: string[] = []): Promise<BackupMa
 
   // da-vault: dopo la ricifra i database si aprono solo con gli slot; col vault acceso l'archivio va nello stesso
   // backup (file già cifrati). Spento: nessun cambiamento.
-  if (vaultLocaleAcceso()) manifest.files.push(...copiaArchivioVault(cartellaVault(), outDir));
+  // Backup unificato (Riccardo, 15/11/2026): col vault acceso database e file delle chiavi finiscono in un file
+  // solo, cifrato verso la chiave dei backup che il vault custodisce. La chiave si chiede PRIMA di copiare
+  // l'archivio: la prima volta la genera e la scrive lì dentro, e la copia deve averla.
+  if (vaultLocaleAcceso()) {
+    let pubblica: string | null = null;
+    try {
+      pubblica = await chiavePubblicaBackup(cartellaVault(), chiaveDatiAttiva);
+    } catch (e) {
+      manifest.files.push({ source: "chiave dei backup", output: "", size_bytes: 0, sha256: "", ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+    const copieVault = copiaArchivioVault(cartellaVault(), outDir);
+    if (pubblica && manifest.files.every((f) => f.ok)) {
+      try {
+        const e = await cifraCartellaBackup({ cartella: outDir, pubblica, fileChiavi: resolveEnvSecretsPath() });
+        manifest.files = [{
+          source: `database e file delle chiavi (${e.dentro.join(", ")})`,
+          output: e.file,
+          size_bytes: fs.statSync(e.file).size,
+          sha256: await sha256File(e.file),
+          ok: true,
+        }];
+        manifest.cifrato = e.impronta;
+      } catch (e) {
+        manifest.files.push({ source: "cifratura del backup", output: "", size_bytes: 0, sha256: "", ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    } else if (!pubblica) {
+      // Niente ripiego muto: un backup rimasto in chiaro col vault acceso è un errore che si vede.
+      manifest.cifrato = null;
+      manifest.files.push({ source: "cifratura del backup", output: "", size_bytes: 0, sha256: "", ok: false, error: "backup NON cifrato: il vault è bloccato e la chiave dei backup non è mai stata generata (sblocca il vault una volta)" });
+    }
+    manifest.files.push(...copieVault);
+  }
 
   // Manifest
   const finished = new Date();

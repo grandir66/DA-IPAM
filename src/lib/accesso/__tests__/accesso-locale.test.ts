@@ -195,3 +195,68 @@ test("il passo 1 riuscito non consuma tentativi: 10 rientri di fila non bloccano
     assert.equal(e.esito, "serve_attivazione", `giro ${i}`);
   }
 });
+
+// --- Piano di sicurezza 14/11, P0-2 tappa B: verifica in due passaggi per tutti gli amministratori. ---
+// Un'opzione dell'installazione, spenta di serie: accesa, admin e superadmin passano dal codice anche se
+// nessuno gliel'ha richiesta uno per uno; chi è in sola lettura resta com'era.
+
+test("opzione «due passaggi per gli amministratori»: spenta non cambia niente, accesa li chiede agli admin e non ai viewer", async () => {
+  const D = await import("../due-passaggi-admin");
+  const admin = await utente(false);
+  const viewer = H.createUser(`lettore${++n}`, await bcrypt.hash("giusta", 4), "viewer", null);
+
+  assert.equal(D.duePassaggiAdminAccesi(), false, "spenta di serie");
+  assert.equal((await A.verificaAccessoLocale({ username: admin.username, password: "giusta" }, { fase: "accesso" })).esito, "entra");
+
+  D.impostaDuePassaggiAdmin(true);
+  try {
+    // L'admin senza codice non entra più, e il passo 1 gli propone il QR.
+    assert.equal((await A.verificaAccessoLocale({ username: admin.username, password: "giusta" }, { fase: "accesso" })).esito, "rifiuta");
+    const ora = Date.UTC(2026, 10, 14, 12, 0, 0);
+    await attiva(admin.username, ora);
+    // Il viewer entra come prima.
+    assert.equal((await A.verificaAccessoLocale({ username: viewer.username, password: "giusta" }, { fase: "accesso" })).esito, "entra");
+    // L'utenza di servizio resta com'è (scelta di Riccardo del 20/10).
+    assert.equal((await A.verificaAccessoLocale({ username: "domarc", password: "servizio-segreto" }, { fase: "accesso" })).esito, "servizio");
+  } finally {
+    D.impostaDuePassaggiAdmin(false);
+  }
+});
+
+// --- Piano di sicurezza 14/11, P0-2 tappa D: codici di recupero (Riccardo: «Sì, falli»). ---
+// Telefono perso: oggi l'unica via è una shell sul server, che ha Domarc e non il cliente. Otto codici monouso,
+// stampati, valgono al posto del codice dell'app. Nel database sta solo l'impronta.
+
+test("codici di recupero: otto, monouso, valgono al posto del codice dell'app; azzerare la verifica li cancella", async () => {
+  const R = await import("../codici-recupero");
+  const u = await utente(true);
+  const ora = Date.UTC(2026, 10, 14, 13, 0, 0);
+  await attiva(u.username, ora);
+
+  const codici = R.generaCodiciRecupero(u.id);
+  assert.equal(codici.length, 8);
+  assert.equal(new Set(codici).size, 8);
+  assert.equal(R.codiciRecuperoRimasti(u.id), 8);
+  // Nel database non c'è nessun codice in chiaro.
+  const righe = H.getHubDb().prepare("SELECT * FROM codici_recupero WHERE user_id = ?").all(u.id);
+  for (const c of codici) assert.ok(!JSON.stringify(righe).includes(c.replace(/-/g, "")) && !JSON.stringify(righe).includes(c));
+
+  const entra = (codice: string) => A.verificaAccessoLocale({ username: u.username, password: "giusta", codice }, { fase: "accesso", ora });
+  // Scritto come lo scrive una persona: minuscolo, con spazi.
+  assert.equal((await entra(` ${codici[0].toLowerCase().replace(/-/g, " ")} `)).esito, "entra");
+  assert.equal(R.codiciRecuperoRimasti(u.id), 7);
+  assert.equal((await entra(codici[0])).esito, "rifiuta", "un codice usato non vale più");
+  assert.equal((await entra("AAAA-AAAA-AAAA-AAAA")).esito, "rifiuta");
+  // Il codice di un altro utente non vale.
+  const altro = await utente(true);
+  await attiva(altro.username, ora);
+  const suoi = R.generaCodiciRecupero(altro.id);
+  assert.equal((await entra(suoi[0])).esito, "rifiuta");
+  // Rigenerare annulla i vecchi.
+  const nuovi = R.generaCodiciRecupero(u.id);
+  assert.equal((await entra(codici[1])).esito, "rifiuta");
+  assert.equal((await entra(nuovi[0])).esito, "entra");
+  // Azzerare la verifica in due passaggi cancella i codici.
+  H.impostaSecondaVerifica(u.id, "azzera");
+  assert.equal(R.codiciRecuperoRimasti(u.id), 0);
+});

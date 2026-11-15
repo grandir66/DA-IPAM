@@ -66,3 +66,9 @@ export function righeSaltate(saltate: Readonly<Record<string, readonly string[]>
       daControllare: false,
     }));
 }
+
+/** Tabelle del pacchetto non scritte (perimetro dell'import, 14/11): si dicono a schermo, non passano in silenzio. */
+export function righeIgnorate(ignorate: Readonly<Record<string, string>> | null | undefined): RigaConversione[] {
+  if (!ignorate) return [];
+  return Object.entries(ignorate).map(([tabella, motivo]) => ({ testo: `${tabella}: non importata (${motivo})`, daControllare: true }));
+}

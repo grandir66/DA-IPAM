@@ -24,6 +24,10 @@ import {
   type HubUser,
 } from "@/lib/db-hub";
 import { nuovoSegreto, uriOtpauth, verificaTotp } from "./totp";
+import { serveSecondaVerifica } from "./due-passaggi-admin";
+import { codiciRecuperoRimasti, sembraCodiceRecupero, usaCodiceRecupero } from "./codici-recupero";
+import { scriviRegistroAccessi } from "./registro-accessi";
+import { consumaAccessoEmergenza } from "./emergenza";
 
 export type EsitoAccesso =
   | { esito: "entra"; utente: HubUser }
@@ -113,12 +117,32 @@ async function verifica(
 
   const entra = (): EsitoAccesso => buono({ esito: "entra", utente });
 
-  if (utente.totp_richiesta !== 1) return entra();
+  // Accesso d'emergenza del cliente (P0-2, 14/11): la frase vale una volta, senza codice dell'app.
+  if (utente.emergenza === 1) {
+    if (opzioni.fase === "passo_uno") return entra();
+    if (!(await consumaAccessoEmergenza(utente.id, utente.password_hash))) return rifiuta();
+    return entra();
+  }
+
+  // Richiesta a lui, oppure a tutti gli amministratori dall'opzione dell'installazione (P0-2, 14/11).
+  if (!serveSecondaVerifica(utente)) return entra();
 
   // ── 2FA attiva: serve il codice ─────────────────────────────────────────
   if (utente.totp_segreto) {
     if (opzioni.fase === "passo_uno") return buono({ esito: "serve_codice" });
     if (!input.codice) return rifiuta();
+    // Telefono perso: un codice di recupero vale al posto del codice dell'app, una volta sola (P0-2, 14/11).
+    if (sembraCodiceRecupero(input.codice)) {
+      if (!usaCodiceRecupero(utente.id, input.codice)) return rifiuta();
+      const rimasti = codiciRecuperoRimasti(utente.id);
+      console.warn(`[Auth] ${username}: entrato con un codice di recupero (ne restano ${rimasti})`);
+      try {
+        scriviRegistroAccessi({ azione: "codice_recupero_usato", utente: utente.username, utenteId: utente.id, da: utente.username });
+      } catch (e) {
+        console.error("[Auth] registro degli accessi non scritto per il codice di recupero:", e);
+      }
+      return entra();
+    }
     const segreto = safeDecifraAccesso(utente.totp_segreto);
     if (!segreto) {
       console.error(`[Auth] ${username}: segreto della verifica in due passaggi non leggibile (chiave cambiata?)`);

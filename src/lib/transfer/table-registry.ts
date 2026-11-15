@@ -197,6 +197,8 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Network Changes è legato ai giri e alla copertura di questa installazione.
   "network_change_baselines",
   "network_changes",
+  // «Visto» sui cambiamenti (14/11/2026): le chiavi puntano a id di questa installazione.
+  "cambiamenti_visti",
   // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
   // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
   "vulcan_coda",
@@ -230,6 +232,10 @@ export const EXCLUDED_HUB_TABLES: string[] = [
   "inventory_ingest_tokens",
   "tenant_agents",
   "system_credential_events",
+  // Codici di recupero (14/11): sono dell'utente di QUESTA installazione, come la sua verifica in due passaggi.
+  "codici_recupero",
+  // Registro degli scarichi (14/11): racconta cosa è uscito da QUESTA istanza.
+  "scarichi_dati",
   // DA-Link (tappa C1): la scelta di cosa esce è di questa istanza, non dei dati
   // del cliente; un'altra istanza la dichiara da sé.
   "dalink_livello_registro",

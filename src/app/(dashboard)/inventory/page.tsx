@@ -1,4 +1,5 @@
 "use client";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
@@ -97,6 +98,7 @@ const INVENTORY_LIMIT_GAPS = 1000;
 type InventoryRow = InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string };
 
 export default function InventoryPage() {
+  const eAdmin = useEAdmin();
   const { viewMode, setViewMode, isNis2View, hydrated } = useInventoryViewMode();
   const [assets, setAssets] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -373,7 +375,7 @@ export default function InventoryPage() {
               params.set("in_scope_nis2", "1");
               params.set("limit", "2000");
               window.open(`/api/inventory/export?${params}`, "_blank");
-            }}>
+            }} disabled={!eAdmin} title={eAdmin ? undefined : "Le esportazioni le scarica solo un amministratore"}>
               Export audit
             </Button>
           </div>
@@ -407,7 +409,7 @@ export default function InventoryPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button variant="outline" size="icon" onClick={handleExport} title={isNis2View ? "Esporta CSV NIS2" : "Esporta CSV ITAM"}>
+              <Button variant="outline" size="icon" onClick={handleExport} disabled={!eAdmin} title={!eAdmin ? "Le esportazioni le scarica solo un amministratore" : isNis2View ? "Esporta CSV NIS2" : "Esporta CSV ITAM"}>
                 <Download className="h-4 w-4" />
               </Button>
               <div className="relative">

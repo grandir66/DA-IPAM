@@ -91,3 +91,9 @@ wazuh-hosts-pwd*.txt
 wazuh-hosts*.csv
 # Eccezione: il template d'esempio sì
 !wazuh-hosts-pwd*.example.txt
+
+# Volume cifrato (P0-3): il segno e le copie in chiaro lasciate da scripts/volume-cifrato.sh.
+# Ignorati apposta: l aggiornamento automatico mette da parte i file non tracciati (git stash -u).
+.volume-cifrato
+data.in-chiaro-*
+.env.local.in-chiaro-*

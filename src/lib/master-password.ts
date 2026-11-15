@@ -11,8 +11,8 @@
  * tutta l'appliance), NON in una tabella nuova — cifrata at-rest con
  * ENCRYPTION_KEY come ogni altro segreto, con audit in `system_credential_events`.
  * Il plaintext non esce mai da `listCredentials`/`getCredential`: si legge solo
- * con `getCredentialSecrets`, e le rotte che lo espongono sono protette da
- * `requireAdmin` (/api/system-credentials/[id]/reveal).
+ * con `getCredentialSecrets`, dal codice che installa i moduli. Nessuna rotta lo
+ * rimanda al browser: «reveal» è stata tolta il 15/11/2026 (le password non escono).
  *
  * ATTENZIONE — cosa NON fa: cambiare la master NON riscrive all'indietro la
  * password dei moduli GIÀ installati. Propagare richiede, per ogni modulo, una

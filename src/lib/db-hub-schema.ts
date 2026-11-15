@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS users (
   sessioni_valide_da INTEGER,
   ultima_istanza TEXT,
   -- Vista cliente (11/11): 1 = sola lettura chiusa in /cliente. Il ruolo resta viewer.
-  vista_cliente INTEGER NOT NULL DEFAULT 0
+  vista_cliente INTEGER NOT NULL DEFAULT 0,
+  -- Accesso d'emergenza del cliente (14/11, lib/accesso/emergenza.ts): 1 = frase monouso, sessione di 60 minuti.
+  emergenza INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS user_tenant_access (
@@ -262,6 +264,26 @@ CREATE TABLE IF NOT EXISTS system_credential_events (
   result         TEXT,
   details_json   TEXT,
   ts             TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Codici di recupero della verifica in due passaggi (P0-2, 14/11): solo l'impronta, monouso.
+CREATE TABLE IF NOT EXISTS codici_recupero (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  impronta  TEXT NOT NULL,
+  creato_at TEXT NOT NULL DEFAULT (datetime('now')),
+  usato_at  TEXT
+);
+
+-- Registro degli scarichi di dati dall'istanza (piano di sicurezza 14/11, P0-1): chi, quando, cosa.
+CREATE TABLE IF NOT EXISTS scarichi_dati (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  cosa        TEXT NOT NULL,
+  utente_id   TEXT,
+  utente_nome TEXT,
+  ruolo       TEXT,
+  dettaglio   TEXT,
+  quando      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Token Bearer per POST /api/inventory/ingest (sha256 → tenant_code)

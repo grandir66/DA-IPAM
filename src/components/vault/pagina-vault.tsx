@@ -14,7 +14,7 @@ import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import type { StatoVaultPubblico } from "@/lib/vault/appliance";
 import type { RigaRegistro } from "@/lib/vault/mostra";
 
-type Stato = StatoVaultPubblico & { mostraPassword: boolean };
+type Stato = StatoVaultPubblico;
 
 const PER_PAGINA = 50;
 

@@ -4,15 +4,51 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)
+
+### Aggiunto
+- **Le appliance controllano la firma del rilascio prima di aggiornarsi** (`scripts/lib/guardia-firma.sh`, ADR 0039): firma SSH del commit in punta a `main` contro i firmatari della copia installata (`deploy/firmatari-rilasci`). Di serie in modo «avvisa»: una firma mancante si scrive nel journal e nella scheda del canale, e l'aggiornamento procede; con `DA_INVENT_FIRMA_RILASCI=blocca` non parte. Senza firma, chi riusciva a scrivere su `main` comandava da root tutte le appliance.
+- **`scripts/rilascia-main.sh`**: il rilascio firmato, dal Mac di chi rilascia; a vuoto di serie.
+
+### Tolto
+- **«Promuovi dev → main» dall'installazione centrale** (pulsante, rotta che pubblicava, modulo del gettone GitHub): il rilascio non può più partire da un server. Resta l'anteprima dei commit in attesa.
+
+## Non rilasciato — Sicurezza: le password non si rileggono, conferma sugli utenti (15/11/2026)
+
+### Tolto
+- **«Mostra» delle credenziali di sistema nel Launchpad** (rotta `system-credentials/[id]/reveal` e pulsante): Riccardo, 15/11, «Toglila». Era il gemello di «Mostra password» tolta lo stesso giorno: rimandava al browser password e gettoni dei moduli, «Password master moduli» compresa. Per cambiarne una si riscrive.
+
+### Corretto
+- **Creare o promuovere un amministratore, reimpostare una password, azzerare o togliere la verifica in due passaggi chiedono una conferma**: il codice dell'app a chi ha la verifica attiva, la propria password agli altri (Riccardo, 15/11). Prima bastava una sessione admin aperta, e con un admin creato così si passava ogni altra conferma. `users/conferma.ts`, dialogo `components/settings/conferma-identita.tsx`.
+- **L'accesso d'emergenza è monouso davvero**: chi è entrato con la frase non può darsi una password (prima rientrava ogni volta per altri 60 minuti), l'utente d'emergenza non si modifica né si reimposta dalla pagina Utenti, e due accessi insieme con la stessa frase non passano più entrambi.
+
+## Non rilasciato — Sicurezza: primo gruppo dopo l'analisi del 15/11 (15/11/2026)
+
+### Corretto
+- **Il passaggio verso le dashboard di Wazuh e LibreNMS non porta più di là il cookie di sessione di DA-IPAM** né l'intestazione `Authorization`: prima partivano a ogni richiesta (`integrations/reverse-proxy.ts`, `cookieSenzaSessione`).
+- **«Promuovi dev → main» è del solo superadmin, solo sull'installazione centrale, col codice in due passaggi e una riga nel registro degli accessi** (`promozione_main`). Un push su `main` è un rilascio a tutte le appliance: prima bastava un admin, su qualunque installazione. L'anteprima resta agli admin.
+- **Il gettone GitHub va a git dall'ambiente e non più dentro l'indirizzo del push**, dove lo leggeva chi vedeva i processi della macchina.
+- **Il freno ai tentativi d'accesso tiene la storia per 30 minuti come dichiarato**: la pulizia periodica la accorciava a 15.
+
 ## Non rilasciato — Sonda trunk: VLAN della scheda principale (14/11/2026)
 
-- **La lettura del trunk dice al sensore la VLAN dei pacchetti senza tag della scheda principale.** Riccardo (14/11): «se viene inserita la seconda scheda di trunk, la scheda principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN». Il sensore (DA-Vul-can) ora legge anche la principale, ma i suoi pacchetti senza tag non sono la nativa del trunk. DA-IPAM deduce la loro VLAN con la stessa regola della nativa (la rete dichiarata che contiene almeno metà di quegli IP, se ha una VLAN) e la passa solo quando il sensore non la conosce già. Con una rete senza VLAN non si indovina: i pacchetti restano in attesa sul sensore.
+- **La lettura del trunk dice al sensore la VLAN dei pacchetti senza tag della scheda principale.** Riccardo (14/11): «se viene inserita la seconda scheda di trunk, la scheda principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN». Il sensore (DA-Vul-can) ora legge anche la principale, ma i suoi pacchetti senza tag non sono la nativa del trunk. DA-IPAM deduce la loro VLAN con la stessa regola della nativa (la rete dichiarata che contiene almeno metà di quegli IP, se ha una VLAN) e la passa solo quando il sensore non la conosce già. Se quegli IP stanno in una rete dichiarata senza VLAN (la LAN senza tag) DA-IPAM dice 0 e restano senza tag, come la nativa del trunk: su 79993-ipam-2 `192.168.99.0/24` è dichiarata così, e 1322 pacchetti erano fermi in attesa. In nessuna rete dichiarata: non si indovina.
 
 ## Non rilasciato — Alert Wazuh: via il rumore che copriva gli attacchi (14/11/2026)
 
 ### Corretto
 - **Le nostre sonde non finiscono più dentro la riga d'attacco**: la riga si riconosceva per agente e regola, così un accesso fallito dell'appliance si sommava alla riga dei tentativi veri già aperta e le riscriveva utente e indirizzo (DTS: «angelo.doko da 172.16.0.2», 16872 volte). Ora le sonde hanno una riga loro; le righe già mescolate restano com'erano finché non si prendono in carico.
 - **«User account changed» (4738) scritto dal sistema senza cambiare nulla non si archivia più**: a DTS erano ~1000 righe per server su 25 macchine, a livello 8, e coprivano i cambi veri. Resta archiviato se lo fa un utente o se le opzioni dell'account cambiano.
+
+## Non rilasciato — Apparati: tutti i cambiamenti in un elenco solo (14/11/2026)
+
+### Cambiato
+- **Apparati → Cambiamenti** raccoglie tutto ciò che cambia nel tempo: oggetti nuovi, apparati nuovi, cambi di IP, MAC cambiato, spostamenti di porta, porte nuove. Prima erano due pagine (Cambiamenti e Anomalie) con fonti diverse, e sull'hub la prima era vuota perché viveva solo del confronto fra due giri uguali.
+- Il rumore (indirizzi dati dal DHCP, porte di collegamento fra switch, MAC con molti indirizzi) è nascosto di serie col suo numero in vista: senza, 85 MAC su 91 risultavano «con IP cambiato» in una settimana.
+- «Visto» per riga o per tutto l'elenco filtrato; il numero dei cambiamenti da vedere sta accanto ad «Apparati» nel menù.
+- Entrano nell'elenco anche le novità e gli allarmi della sonda trunk (MAC non in inventario, VLAN inattese, IP contesi, apparati fuori rete).
+- **Giro notturno delle porte**, spento di serie: una subnet per notte, due host alla volta e un tetto di 100 pacchetti al secondo, perché «Porte nuove» si vede solo confrontando due scansioni uguali e il giro rapido lanciato a mano è troppo aggressivo per ripeterlo ogni notte. Si accende per cliente dalla scheda «Porte nuove».
+- La voce di menù «Anomalie» non c'è più; disponibilità e latenza anomale restano sulla loro pagina, raggiungibile da Cambiamenti.
 
 ## Non rilasciato — Impostazioni: una voce di menu, una fila di schede (14/11/2026)
 
@@ -24,9 +60,30 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Dentro le schede di Impostazioni**: Identificazione è divisa in sei parti con una seconda fila di schede (prima otto riquadri uno sotto l'altro, circa 6000 px); in Opzioni i gruppi sono schede col numero; Scansione, Notifiche, Alert sicurezza, Aggiornamenti e Cosa esce usano due colonne invece di lasciare mezza pagina vuota; in Sistema le azioni che cancellano stanno in un riquadro a parte in fondo e l'archivio della pulizia host si apre a richiesta. La riga «Impostazioni vX» non c'è più: la versione si legge in Aggiornamenti.
 
 ### Sicurezza
+- Volume cifrato per la cartella dati (`scripts/volume-cifrato.sh`): database, vault e file delle chiavi stanno in un contenitore LUKS2; si apre da solo col TPM, con una chiave su supporto esterno o a mano con la passphrase del vault, secondo quanto vuole il cliente. A volume chiuso l'app non parte, così non nasce un database vuoto sul disco in chiaro. Facoltativo: le installazioni esistenti non cambiano finché non lo si crea.
+- La ricifra del vault (`scripts/da-vault.ts ricifra`) si fermava con «no such table» sui database che hanno ancora tabelle figlie di una tabella tolta (resti del vecchio agente): trovato accendendo il vault sulla VM di laboratorio. L'UPDATE si prepara solo dove c'è un valore da riscrivere.
+- Le password più deboli (le più comuni, ripetute, in sequenza, col nome utente dentro) sono rifiutate alla creazione, al cambio e alla reimpostazione.
+- Ogni accesso riuscito, rifiutato o bloccato lascia una riga nel registro degli accessi, conservato 400 giorni.
+- Opzioni › «Utenza di servizio nel file» dice se l'installazione ha ancora l'accesso di servizio senza codice.
+- Le password non escono più dall'applicazione: tolta «Mostra password», e il pacchetto di trasferimento porta la configurazione senza segreti (password, chiavi e token vanno reinseriti sulla destinazione). Resta «Esporta in KeePass». Perché (Riccardo, 15/11): le password non devono uscire neppure se una sessione di amministratore è compromessa.
+- Backup notturno cifrato col vault acceso: database e file delle chiavi finiscono in un file solo, cifrato verso una chiave che il vault custodisce. Si apre con la passphrase del cliente o con la chiave Domarc di recupero, senza buste a parte; `scripts/backup-installazione.ts ripristina` lo ricostruisce in una cartella vuota. Col vault spento il backup resta com'era; col vault acceso ma bloccato e senza chiave, il manifesto lo segnala come errore. Perché: un backup portato via non deve aprirsi, e il cliente deve poter ripristinare con quello che ha già.
+- Accesso d'emergenza del cliente: un amministratore prepara da Impostazioni › Utenti una frase da tenere in busta; vale una volta, per 60 minuti, senza codice dell'app, e ogni uso resta nel registro. Dopo un uso tutti gli amministratori vedono un avviso finché uno non rigenera la frase o toglie l'accesso. Perché: il cliente deve poter rientrare senza una shell sul server.
+- Il primo avvio può chiedere un codice monouso lasciato dall'installatore (`primo-avvio.codice`): creato il primo utente il codice sparisce. Senza quel file non cambia niente.
+- Codici di recupero per la verifica in due passaggi: otto codici monouso da stampare (menu utente › «Codici di recupero…»), che valgono al posto del codice dell'app se si perde il telefono. Prima l'unica via era una riga di comando sul server.
+- Le installazioni nuove fatte con `scripts/install.sh` non hanno più l'utenza di servizio Domarc nel file delle chiavi (superadmin senza codice, invisibile al cliente): l'assistenza è un utente come gli altri, con la verifica in due passaggi. Le installazioni esistenti non cambiano.
+- Il recupero della password dal server (`scripts/reset-admin-password.cjs`) legge la password dallo stdin, lascia una riga nel registro degli accessi e chiude le sessioni di quell'utente.
+- Il gettone che apre il terminale SSH si firma solo con la chiave delle sessioni: prima, se mancava, ripiegava sulla chiave dei dati e poi su una chiave vuota.
+- Nuova opzione «Due passaggi per gli amministratori» (Opzioni › Automatismi), spenta di serie: accesa, ogni amministratore entra con password e codice dell'app.
+- Un utente cancellato, declassato, senza più la sua istanza o con la password cambiata perde l'accesso alla richiesta successiva: prima il token già emesso valeva fino a 8 ore, col ruolo di quando era entrato. Chi cambia la propria password rientra con quella nuova.
 - La community SNMP di una rete non esce più verso chi non è admin (API delle reti e pagine Subnet) e non si scrive più nel log delle scansioni: prima la riceveva qualunque utente autenticato. Lo scarico di `hub.db` non resta in cache. Primo pezzo del piano di sicurezza del 14/11.
 - I gettoni dell'agente non escono più dalle API dei profili cliente, e il dettaglio di un profilo lo legge solo chi ci appartiene (o un admin). Sul profilo tecnico il database intero lo scarica solo il superadmin; scarichi di backup ed export lasciano il nome nel journal.
 - «Backup database» chiede il codice della verifica in due passaggi prima di scaricare (stessa conferma di «Mostra password», 5 minuti). Chi non ha la verifica attiva non scarica.
+- Gli scarichi del database e dei pacchetti di trasferimento restano in un registro su tabella (chi, quando, cosa): il journal si perde con la rotazione. Il dialogo del backup mostra l'ultimo scarico.
+- Le note delle credenziali di sistema e la scheda cliente le leggono solo gli admin: sono campi liberi, dove può essere finita una password.
+- Il pacchetto di trasferimento che comprende il vault chiede il codice della verifica in due passaggi, come il backup del database.
+- L'import di un pacchetto controlla tutto prima di scrivere: rifiuta intero un pacchetto che porta utenti o impostazioni dell'installazione, dice a schermo le tabelle che non ha importato, e sul profilo tecnico lascia al superadmin le risorse comuni a tutti i clienti.
+- L'import «con svuotamento», che cancella i dati esistenti del cliente, chiede il codice della verifica in due passaggi.
+- Le esportazioni CSV (host, subnet, inventario, Health AD) le scarica solo l'admin; per gli altri i pulsanti sono spenti e dicono perché. Le diagnostiche SNMP non accettano più la community nell'indirizzo e non la riscrivono nella risposta. La Scheda cliente dice a chi non è admin perché è vuota.
 
 ### Aggiunto
 - Rimandi a pagine che non avevano un ingresso: «Trasferimento configurazione» e «Vault» in Sistema, «Classificazioni del cliente» in Identificazione.

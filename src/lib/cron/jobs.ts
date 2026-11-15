@@ -45,6 +45,7 @@ import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { apparatiAutomaticiDopoScansione } from "@/lib/devices/apparato-automatico";
 import { funzioniDopoScansione } from "@/lib/classification/funzioni-giro";
 import { reloadTenantScheduler } from "./scheduler";
+import { eGiroCambiamenti, FRENO_GIRO_CAMBIAMENTI, INDIRIZZI_MASSIMI_GIRO_CAMBIAMENTI, reteDellaNotte } from "@/lib/cambiamenti/giro-notturno";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
@@ -348,6 +349,8 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       return r;
     }
     case "nmap_scan": {
+      // Il giro notturno delle porte per «Cambiamenti» (14/11/2026): stesso tipo di job, altro giro.
+      if (eGiroCambiamenti(job.config)) return runGiroCambiamenti(opzioni);
       const r = await runNmapScan(job.network_id, opzioni);
       apparatiCreatiESubitoLetti();
       funzioniDopoScansione();
@@ -754,6 +757,26 @@ async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): P
     const snmpCommunity = network.snmp_community ?? null;
     return giroCompleto(nid, () => discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni, attendi);
   });
+}
+
+/**
+ * Una subnet per notte, col freno (`cambiamenti/giro-notturno.ts`): è il giro rapido di Discovery, quindi lascia la
+ * baseline che `registraGiroRete` confronta la volta dopo. Niente apparati automatici né funzioni a fine giro: questo
+ * giro serve solo a vedere cosa è cambiato.
+ */
+async function runGiroCambiamenti(opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  const scelta = reteDellaNotte(getNetworks(), Date.now());
+  if (!scelta.rete) {
+    return { esito: "saltato", motivo: `nessuna rete fino a ${INDIRIZZI_MASSIMI_GIRO_CAMBIAMENTI} indirizzi` };
+  }
+  const rete = scelta.rete;
+  console.info(`[Scheduler] giro cambiamenti: rete #${rete.id}, una di ${scelta.ammesse}${scelta.troppoGrandi ? ` (${scelta.troppoGrandi} troppo grandi, fuori)` : ""}`);
+  return giroCompleto(
+    rete.id,
+    () => discoverNetwork(rete.id, "network_discovery", undefined, null, { ...FRENO_GIRO_CAMBIAMENTI }),
+    opzioni,
+    opzioni?.attendiReteLibera === true,
+  );
 }
 
 async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {

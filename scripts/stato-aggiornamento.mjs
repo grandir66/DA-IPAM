@@ -29,7 +29,7 @@
 //                                 gia_aggiornato | commit_fallito_attendo |
 //                                 solo_documentazione | aggiornamento_avviato |
 //                                 fetch_fallito | servizio_fermo |
-//                                 retrocessione_rifiutata; «interfaccia» se l'ha
+//                                 retrocessione_rifiutata | firma_rifiutata; «interfaccia» se l'ha
 //                                 chiesto «Aggiorna ora»
 import fs from "node:fs";
 import path from "node:path";
@@ -44,6 +44,7 @@ const ESITI_CONTROLLO = new Set([
   "fetch_fallito",
   "servizio_fermo",
   "retrocessione_rifiutata",
+  "firma_rifiutata",
 ]);
 
 export function percorsoStato(env = process.env) {

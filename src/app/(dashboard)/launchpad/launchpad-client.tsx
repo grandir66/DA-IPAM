@@ -7,8 +7,6 @@ import {
   KeyRound,
   Plus,
   ExternalLink,
-  Eye,
-  EyeOff,
   Copy,
   Pencil,
   Trash2,
@@ -115,12 +113,6 @@ const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; co
   other: { icon: KeyRound, label: "Altro", color: "text-gray-600" },
 };
 
-interface RevealedSecrets {
-  password: string | null;
-  api_token: string | null;
-  extra: Record<string, string> | null;
-}
-
 interface EditFormState {
   id?: number;
   kind: CredentialKind;
@@ -166,7 +158,6 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditFormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
-  const [revealed, setRevealed] = useState<Record<number, RevealedSecrets | undefined>>({});
   const [showInternal, setShowInternal] = useState(false);
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, "ok" | "fail">>({});
@@ -256,7 +247,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
       url: item.url ?? "",
       api_url: item.api_url ?? "",
       username: item.username ?? "",
-      password: "",        // mai pre-popolato; admin fa reveal se serve modificarlo
+      password: "",        // mai pre-popolato: per cambiarla si riscrive (15/11/2026, le password non si rileggono)
       api_token: "",
       notes: item.notes ?? "",
     });
@@ -362,36 +353,10 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
         return;
       }
       toast.success("Eliminato");
-      // Pulisci eventuali secret rivelati per quell'id
-      setRevealed((s) => {
-        const next = { ...s };
-        delete next[item.id];
-        return next;
-      });
       await refresh();
     } finally {
       setBusy(false);
     }
-  }
-
-  async function handleReveal(item: SystemCredential) {
-    if (revealed[item.id]) {
-      // toggle off
-      setRevealed((s) => {
-        const next = { ...s };
-        delete next[item.id];
-        return next;
-      });
-      return;
-    }
-    const res = await fetch(`/api/system-credentials/${item.id}/reveal`, { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.error(data.error ?? "Errore reveal");
-      return;
-    }
-    setRevealed((s) => ({ ...s, [item.id]: data }));
-    toast.info(`Reveal "${item.label}" — loggato in audit`);
   }
 
   async function copyToClipboard(text: string, label: string) {
@@ -414,7 +379,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Entry point unificato per accesso ai sistemi della stack security.
-              Le credenziali sono cifrate (AES-GCM) in DA-IPAM. Ogni reveal è loggato.
+              Le credenziali sono cifrate (AES-GCM) in DA-IPAM e non si rileggono da qui: per cambiarne una si riscrive.
             </p>
           </div>
         )}
@@ -426,7 +391,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
               Vault AES-GCM con URL, user, password/token e test connessione.
-              Reveal loggato in audit. Solo admin può modificare.
+              Le password non si rileggono. Solo admin può modificare.
             </p>
           </div>
         )}
@@ -493,7 +458,6 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
           {visibleItems.map((item) => {
             const meta = KIND_META[item.kind] ?? KIND_META.other;
             const Icon = meta.icon;
-            const rev = revealed[item.id];
             return (
               <Card key={item.id} className={item.enabled ? "" : "opacity-60"}>
                 <CardHeader className="pb-3">
@@ -533,50 +497,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                     <div className="flex items-center justify-between gap-2 text-sm">
                       <span className="text-muted-foreground">Password</span>
                       <div className="flex items-center gap-1 min-w-0">
-                        <code className="text-xs truncate font-mono">
-                          {rev?.password ?? "••••••••"}
-                        </code>
-                        {isAdmin && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleReveal(item)}
-                              title={rev ? "Nascondi" : "Mostra (audit log)"}
-                            >
-                              {rev ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </Button>
-                            {rev?.password && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => copyToClipboard(rev.password!, "Password")}
-                                title="Copia password"
-                              >
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {item.has_api_token && rev?.api_token && (
-                    <div className="flex items-center justify-between gap-2 text-sm">
-                      <span className="text-muted-foreground">API token</span>
-                      <div className="flex items-center gap-1 min-w-0">
-                        <code className="text-xs truncate font-mono">{rev.api_token}</code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => copyToClipboard(rev.api_token!, "Token")}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
+                        <code className="text-xs truncate font-mono">••••••••</code>
                       </div>
                     </div>
                   )}

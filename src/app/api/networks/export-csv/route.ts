@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildSubnetHostsExportCsv } from "@/lib/subnet-hosts-export";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 const BodySchema = z.object({
@@ -17,7 +17,8 @@ const BodySchema = z.object({
  */
 export async function POST(request: Request) {
   return withTenantFromSession(async () => {
-    const auth = await requireAuth();
+    // Solo admin (piano di sicurezza 14/11, P0-1).
+    const auth = await requireAdmin();
     if (isAuthError(auth)) return auth;
 
     let body: unknown;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getInventoryAssets } from "@/lib/db";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { joinCsvRow } from "@/lib/csv-utils";
 import { buildNis2InventoryCsv } from "@/lib/inventory/nis2-export";
@@ -38,6 +39,9 @@ const ITAM_HEADERS = [
 /** Export inventario CSV — `format=nis2` (default) o `format=itam` (completo). */
 export async function GET(request: NextRequest) {
   return withTenantFromSession(async () => {
+    // Le esportazioni in blocco le scarica solo l'admin (piano di sicurezza 14/11, P0-1: chi è in sola lettura guarda, non porta via).
+    const guardia = await requireAdmin();
+    if (isAuthError(guardia)) return guardia;
     const { searchParams } = new URL(request.url);
     const stato = searchParams.get("stato");
     const categoria = searchParams.get("categoria");

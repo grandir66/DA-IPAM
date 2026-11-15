@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AggiornaCredenzialeSchema as UpdateSchema } from "@/lib/credentials-vault-tipi";
 import { requireAuth, requireAdmin } from "@/lib/api-auth";
+import { ruoloAdmin, senzaNote } from "@/lib/networks/senza-segreti";
 import {
   getCredential,
   updateCredential,
@@ -23,7 +24,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (id === null) return NextResponse.json({ error: "id invalido" }, { status: 400 });
   const item = getCredential(id);
   if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ item });
+  return NextResponse.json({ item: senzaNote(item, ruoloAdmin(session.user.role)) });
 }
 
 export async function PUT(req: Request, ctx: Ctx) {

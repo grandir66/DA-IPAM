@@ -242,6 +242,10 @@ export default function ClientConfigPage() {
           }
           setOptEnabled(en);
         }
+      } else if (res.status === 403) {
+        // Un rifiuto voluto si dice: senza, il modulo vuoto sembra una scheda mai compilata (14/11).
+        const e = (await res.json().catch(() => null)) as { error?: string } | null;
+        toast.error(e?.error ?? "La scheda cliente la leggono solo gli amministratori.");
       }
     } catch {
       // Nessuna config esistente

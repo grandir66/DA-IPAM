@@ -99,6 +99,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           );
         }
         updateUserLastLogin(user.id);
+        (await import("./accesso/registro-accessi")).registraAccesso("accesso_riuscito", user.username, user.id, "account Domarc");
 
         // ⚠️ Ruolo e tenant vengono dalla riga LOCALE, non da DA-Auth. I due
         // sistemi parlano vocabolari diversi (DA-IPAM ha `superadmin` e
@@ -136,6 +137,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         codice: { label: "Codice", type: "text" },
       },
       async authorize(credentials) {
+        const { registraAccesso } = await import("./accesso/registro-accessi");
         // Password, blocco dei tentativi (backoff incrementale e visibile: incidenti 99.50 del
         // 17/07 e appliance cliente A) e verifica in due passaggi per chi l'admin l'ha richiesta
         // stanno in una funzione sola, la stessa del passo 1 della pagina (ADR 0023).
@@ -150,11 +152,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         );
         if (esito.esito === "bloccato") {
           console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: login bloccato ancora ${esito.secondi}s`);
+          registraAccesso("accesso_bloccato", String(credentials?.username ?? ""));
           return null;
         }
 
         // ── Utente di servizio Domarc (env var, accesso incondizionato, senza codice) ──
         if (esito.esito === "servizio") {
+          registraAccesso("accesso_riuscito", esito.username, 0, "utenza di servizio");
           const { getActiveTenants } = await import("./db-hub");
           const allTenants = getActiveTenants();
           return {
@@ -169,10 +173,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
         if (esito.esito !== "entra") {
           console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: accesso rifiutato (${esito.esito})`);
+          registraAccesso("accesso_rifiutato", String(credentials?.username ?? ""));
           return null;
         }
 
         const user = esito.utente;
+        registraAccesso("accesso_riuscito", user.username, user.id);
         const { getUserTenantAccess } = await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
         updateUserLastLogin(user.id);

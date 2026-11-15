@@ -13,6 +13,7 @@
  * utenti, anche con la sessione vecchia ancora aperta. Fa eccezione solo l'utenza
  * di servizio Domarc (id "0"), che una riga nel database non ce l'ha.
  */
+import { motivoPasswordDebole } from "@/lib/accesso/password-debole";
 import bcrypt from "bcrypt";
 import {
   createUser,
@@ -67,6 +68,12 @@ const NEED_TENANT = "Seleziona almeno un cliente per questo ruolo";
 const INVALID_ROLE = "Il ruolo deve essere 'superadmin', 'admin' o 'viewer'";
 
 const fail = (status: number, error: string): UsersResult => ({ status, body: { error } });
+
+/**
+ * L'accesso d'emergenza si prepara, si rigenera e si toglie solo dal suo riquadro: con una password scelta da
+ * qualcuno, o un altro ruolo, smetterebbe di essere monouso (analisi del 15/11/2026).
+ */
+const EMERGENZA_NON_SI_TOCCA = "L'accesso d'emergenza non si modifica da qui: si rigenera o si toglie dal suo riquadro";
 
 /** Messaggio fisso: un Cliente è un viewer di un solo cliente. */
 const VISTA_CLIENTE_VIETATA = "Un utente cliente è in sola lettura e appartiene a un solo cliente";
@@ -223,7 +230,8 @@ export async function createUserAs(session: SessionLike, request: Request): Prom
   if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
     return fail(400, "Lo username può contenere solo lettere, numeri, punti, trattini e underscore");
   }
-  if (password.length < 8) return fail(400, "La password deve avere almeno 8 caratteri");
+  const debole = motivoPasswordDebole(password, username);
+  if (debole) return fail(400, debole);
   if (isServiceUsername(username)) return fail(409, "Username riservato all'utenza di servizio Domarc");
 
   // Assente = false. Solo il booleano true accende la vista cliente.
@@ -298,6 +306,7 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
   const user = getUserById(userId);
   if (!user) return fail(404, "Utente non trovato");
 
+  if (user.emergenza === 1) return fail(400, EMERGENZA_NON_SI_TOCCA);
   const decision = decideUpdate(who.actor, managedUser(user), { role, tenantIds: tenantInput });
   if (!decision.ok) return fromDenial(decision);
 
@@ -308,7 +317,7 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
     if (supers.c <= 1) return fail(400, "Impossibile modificare il ruolo dell'ultimo super amministratore");
   }
   if (user.role === "admin" && role === "viewer") {
-    const admins = hub.prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin')").get() as { c: number };
+    const admins = hub.prepare("SELECT COUNT(*) as c FROM users WHERE role IN ('admin', 'superadmin') AND emergenza = 0").get() as { c: number };
     if (admins.c <= 1) return fail(400, "Impossibile rimuovere il ruolo admin dall'ultimo amministratore");
   }
 
@@ -425,6 +434,9 @@ export async function resetPasswordAs(session: SessionLike, rawId: string, reque
 
   const user = getUserById(userId);
   if (!user) return fail(404, "Utente non trovato");
+  if (user.emergenza === 1) return fail(400, EMERGENZA_NON_SI_TOCCA);
+  const debole = motivoPasswordDebole(newPassword, user.username);
+  if (debole) return fail(400, debole);
 
   const decision = decideResetPassword(who.actor, managedUser(user));
   if (!decision.ok) return fromDenial(decision);

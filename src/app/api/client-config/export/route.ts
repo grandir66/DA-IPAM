@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "Content-Disposition": `attachment; filename="${code}.md"`,
+      "Cache-Control": "no-store",
     },
   });
 }

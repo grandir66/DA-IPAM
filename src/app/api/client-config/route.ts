@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError, getTenantCodeFromSession } from "@/lib/api-auth";
 import { getClientConfig, saveClientConfig, deleteClientConfig, listClientConfigs } from "@/lib/client-config";
 import { denyCrossTenantConfig, isSuperadmin } from "@/lib/client-config-access";
+import { ruoloAdmin } from "@/lib/networks/senza-segreti";
 import type { ClientConfig } from "@/lib/client-config";
 
 /**
@@ -26,6 +27,10 @@ export async function GET(req: Request) {
 
   const denied = denyCrossTenantConfig(session, code);
   if (denied) return denied;
+  // La scheda è fatta di campi liberi, dove può esserci finita una password: la leggono solo gli admin (Riccardo, 14/11).
+  if (!ruoloAdmin(session.user.role)) {
+    return NextResponse.json({ error: "La scheda cliente la leggono solo gli amministratori." }, { status: 403 });
+  }
 
   const config = getClientConfig(code);
   if (!config) {

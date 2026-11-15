@@ -6,6 +6,7 @@
  * `leggi` e `cambia` chiamano le funzioni che esistono già (letture, job, moduli, notifiche, DA-Link…): qui non si
  * riscrive la logica, la si indicizza. Si chiama nel contesto del tenant (rotte: `withTenantFromSession`).
  */
+import { duePassaggiAdminAccesi, impostaDuePassaggiAdmin } from "@/lib/accesso/due-passaggi-admin";
 import { CHIAVE_NIS2, leggiNis2, nis2DiSerie, varianteImmagine } from "@/lib/modules/nis2";
 import {
   acquisizioneModulareAccesa, getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
@@ -756,6 +757,26 @@ function opzioniAutomatismi(): Opzione[] {
       },
     },
     {
+      id: "accesso.due_passaggi_admin",
+      gruppo: "automatismi",
+      nome: "Due passaggi per gli amministratori",
+      cosa: "ogni amministratore entra con la password e il codice dell'app; chi non l'ha ancora attivata vede il QR al prossimo accesso",
+      valePer: "hub",
+      forma: "levetta",
+      diSerie: "spento",
+      spegnendo: {
+        siFerma: "l'obbligo del codice per tutti gli amministratori.",
+        resta: "la verifica già attivata da ciascuno e quella richiesta utente per utente in Impostazioni › Utenti.",
+      },
+      leggi() {
+        const acceso = duePassaggiAdminAccesi();
+        return diSerieStato(acceso, esito(acceso ? "ok" : "neutro", acceso ? "obbligatoria per gli amministratori" : "spenta: la decide l'admin utente per utente"));
+      },
+      cambia(r) {
+        impostaDuePassaggiAdmin(soloAcceso(r));
+      },
+    },
+    {
       id: "automatismo.feed_exploit",
       gruppo: "automatismi",
       nome: "Dati sugli exploit",
@@ -1224,7 +1245,23 @@ function opzioniDaFile(): Opzione[] {
     dove: "Gira sempre: non ha un interruttore.",
     leggi: () => diSerieStato(true, esito("ok", "sempre acceso")),
   }));
-  return [...ambiente, ...opzioniVault(), ...sempre];
+  // Utenza di servizio nel file (piano di sicurezza 14/11): superadmin senza codice e fuori dall'elenco utenti.
+  // Le installazioni nuove non l'hanno più; dove resta, qui si vede (prima non si vedeva da nessuna parte).
+  const servizio: Opzione = {
+    id: "file.utenza_servizio",
+    gruppo: "da_file",
+    nome: "Utenza di servizio nel file",
+    cosa: "un accesso da super amministratore scritto nel file delle chiavi: entra senza il codice dell'app e non compare fra gli utenti",
+    valePer: "hub",
+    forma: "file",
+    diSerie: "spento",
+    dove: "Righe DOMARC_USERNAME e DOMARC_PASSWORD nel file .env.local dell'appliance: per toglierla si cancellano, poi riavvio del servizio. Al suo posto, un utente in Impostazioni › Utenti con la verifica in due passaggi.",
+    leggi() {
+      const presente = Boolean(process.env.DOMARC_PASSWORD?.trim());
+      return diSerieStato(presente, presente ? esito("attenzione", "presente: entra senza codice") : esito("ok", "assente"));
+    },
+  };
+  return [...ambiente, servizio, ...opzioniVault(), ...sempre];
 }
 
 /**

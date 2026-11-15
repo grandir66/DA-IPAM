@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod/v4";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getAdIntegrationById, getDb } from "@/lib/db";
 import { toHubExport } from "@/lib/ad/health/export";
@@ -32,6 +33,9 @@ function safeFilenamePart(value: string): string {
 
 export async function GET(request: Request) {
   return withTenantFromSession(async () => {
+    // Le esportazioni in blocco le scarica solo l'admin (piano di sicurezza 14/11, P0-1: chi è in sola lettura guarda, non porta via).
+    const guardia = await requireAdmin();
+    if (isAuthError(guardia)) return guardia;
     const { searchParams } = new URL(request.url);
     const parsed = QuerySchema.safeParse({
       runId: searchParams.get("runId"),

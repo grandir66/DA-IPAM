@@ -8,6 +8,7 @@ import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
 import { leggiProfilo, messaggioProfiloNonValido } from "./src/lib/profilo";
 import { cifraturaCartella } from "./src/lib/profilo-cifratura";
 import { resolveDataDir } from "./src/lib/data-dir";
+import { controlloVolume } from "./src/lib/volume-richiesto";
 import { indirizzoAscolto } from "./src/lib/ascolto";
 
 // ── Tipo d'installazione (ADR 0037): prima dei segreti, di Next e dello scheduler.
@@ -33,6 +34,16 @@ if (tipoInstallazione.profilo === "tecnico") {
     process.exit(1);
   }
   console.info(`[Profilo] cartella dati su volume cifrato: ${cifratura.come}`);
+}
+
+// Appliance col volume cifrato (P0-3): a volume chiuso non si parte, mai un database vuoto sul disco in chiaro.
+const volume = controlloVolume(process.cwd(), resolveDataDir());
+if (volume.richiesto) {
+  if (!volume.ok) {
+    console.error(`FATAL ${volume.messaggio}`);
+    process.exit(1);
+  }
+  console.info(`[Volume] cartella dati su volume cifrato: ${volume.come}`);
 }
 
 // ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──

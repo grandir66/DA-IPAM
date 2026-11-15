@@ -60,11 +60,14 @@ function skipLine(file: string, line: string): boolean {
   return !file.endsWith(".md") && isComment(line);
 }
 
-/** Etichetta del tab → chiave, dall'elenco `tabs` della pagina Impostazioni. */
+/**
+ * Etichetta del tab → chiave. Dal 14/11 (ADR 0038) le schede di `/settings` non stanno più nella pagina ma
+ * nell'elenco del menu, `lib/menu/sezioni.ts`: righe con `etichetta` e `tab`.
+ */
 function tabLabels(): Map<string, string> {
-  const src = fs.readFileSync(SETTINGS_PAGE, "utf8");
+  const src = fs.readFileSync(path.join(SRC, "lib/menu/sezioni.ts"), "utf8");
   const out = new Map<string, string>();
-  for (const m of src.matchAll(/\{\s*key:\s*"([^"]+)",\s*label:\s*"([^"]+)",\s*icon:/g)) out.set(m[2], m[1]);
+  for (const m of src.matchAll(/href:\s*"\/settings",\s*etichetta:\s*"([^"]+)",\s*tab:\s*"([^"]+)"/g)) out.set(m[1], m[2]);
   return out;
 }
 
@@ -101,7 +104,7 @@ function tabNamed(rest: string, labels: Map<string, string>): string | null {
 test("i nomi dei tab si leggono dalla pagina Impostazioni", () => {
   // Se la lettura si rompe, le prove sotto passerebbero senza controllare niente.
   const labels = tabLabels();
-  assert.ok(labels.size >= 8, `letti solo ${labels.size} tab da settings/page.tsx`);
+  assert.ok(labels.size >= 8, `letti solo ${labels.size} tab da lib/menu/sezioni.ts`);
   assert.equal(labels.get("Moduli"), "moduli");
   assert.equal(tabAliases().get("integrazioni"), "moduli");
 });

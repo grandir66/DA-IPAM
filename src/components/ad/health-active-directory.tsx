@@ -1,4 +1,5 @@
 "use client";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 /**
  * Health di Active Directory: scheda «Health AD» di «Sicurezza del dominio».
@@ -366,6 +367,7 @@ const TH = "px-3 py-2 text-left text-[13px] font-semibold text-muted-foreground"
 const TD = "px-3 py-2 align-top";
 
 export function HealthActiveDirectory({ integrazione }: { integrazione: IntegrazioneHealth | null }) {
+  const eAdmin = useEAdmin();
   const [dati, setDati] = useState<DatiHealth>(VUOTO);
   const [caricamento, setCaricamento] = useState(false);
   const [inEsecuzione, setInEsecuzione] = useState(false);
@@ -494,8 +496,8 @@ export function HealthActiveDirectory({ integrazione }: { integrazione: Integraz
             <Button
               variant="outline"
               onClick={() => run?.id && window.open(`/api/ad/healthcheck/export?runId=${run.id}`, "_blank")}
-              disabled={!run?.id || run.status !== "ok" || score == null}
-              title={run?.status === "ok" ? undefined : "Serve un'esecuzione riuscita"}
+              disabled={!eAdmin || !run?.id || run.status !== "ok" || score == null}
+              title={!eAdmin ? "Le esportazioni le scarica solo un amministratore" : run?.status === "ok" ? undefined : "Serve un'esecuzione riuscita"}
             >
               <Download className="mr-2 h-4 w-4" />
               Esporta JSON

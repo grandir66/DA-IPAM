@@ -49,6 +49,8 @@ interface UpdateChannelStatus {
   gitBranch: string | null;          // branch git effettivo
   patConfigured: boolean;            // GitHub PAT salvato (cifrato in settings)
   envFileWritable: boolean;
+  /** Firma dei rilasci: modo (avvisa, blocca, spenta) e ultimo controllo fatto dall'aggiornamento. */
+  firma: { modo: "avvisa" | "blocca" | "spenta"; esito: "buona" | "mancante" | "rifiutata" | null; commit: string | null; quando: string | null };
 }
 
 async function readEnvFile(): Promise<Record<string, string>> {
@@ -107,6 +109,26 @@ async function isEnvFileWritable(): Promise<boolean> {
   }
 }
 
+/**
+ * L'ultimo controllo della firma del rilascio, scritto da `scripts/lib/guardia-firma.sh` nella cartella dati
+ * (15/11/2026). `null` = nessun controllo ancora fatto su questa installazione.
+ */
+async function esitoFirma(modoScritto: string | undefined): Promise<UpdateChannelStatus["firma"]> {
+  const modo = modoScritto === "blocca" || modoScritto === "spenta" ? modoScritto : "avvisa";
+  try {
+    const dati = process.env.DA_INVENT_DATA_DIR ?? unisci(APP_DIR, "data");
+    const j: unknown = JSON.parse(await fs.readFile(unisci(dati, "firma-rilasci.json"), "utf8"));
+    if (j && typeof j === "object") {
+      const o = j as Record<string, unknown>;
+      const esito = o.esito === "buona" || o.esito === "mancante" || o.esito === "rifiutata" ? o.esito : null;
+      if (esito) return { modo, esito, commit: typeof o.commit === "string" ? o.commit : null, quando: typeof o.quando === "string" ? o.quando : null };
+    }
+  } catch {
+    /* nessun controllo ancora, o file illeggibile: si dice «mai controllata» */
+  }
+  return { modo, esito: null, commit: null, quando: null };
+}
+
 async function buildStatus(): Promise<UpdateChannelStatus> {
   const env = await readEnvFile();
   const configuredBranch = env.DA_INVENT_BRANCH ?? "main";
@@ -121,6 +143,7 @@ async function buildStatus(): Promise<UpdateChannelStatus> {
     gitBranch,
     patConfigured,
     envFileWritable,
+    firma: await esitoFirma(env.DA_INVENT_FIRMA_RILASCI),
   };
 }
 

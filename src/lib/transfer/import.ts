@@ -3,7 +3,7 @@ import zlib from "zlib";
 import type Database from "better-sqlite3";
 import type { ImportOptions, ImportResult } from "./types";
 import { readContainer, deriveTransportKey, decryptBuffer, decryptFieldWithKey } from "./envelope";
-import { tableSpec, TENANT_TABLES } from "./table-registry";
+import { tableSpec, TENANT_TABLES, EXCLUDED_HUB_TABLES } from "./table-registry";
 import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
@@ -47,6 +47,24 @@ export function importTenant(args: ImportArgs): ImportResult {
     byTable.get(tbl)!.push(row);
   }
 
+  // Perimetro (piano di sicurezza 14/11, P0-1): si guarda tutto il pacchetto PRIMA di scrivere. Un pacchetto che
+  // porta utenti, impostazioni o gettoni dell'installazione non è uscito da un export: si rifiuta intero.
+  const vietate = [...byTable.keys()].filter((t) => EXCLUDED_HUB_TABLES.includes(t) || t.toLowerCase().startsWith("sqlite_"));
+  if (vietate.length > 0) {
+    throw new Error(
+      `Pacchetto rifiutato: contiene tabelle dell'installazione che un trasferimento non porta (${vietate.join(", ")}). Niente è stato scritto.`,
+    );
+  }
+  const ignorate: Record<string, string> = {};
+  const globaliPermesse = options.risorseGlobali !== false;
+  for (const t of byTable.keys()) {
+    const spec = tableSpec(t);
+    if (!spec && !(TABELLE_CATENE_VECCHIE as readonly string[]).includes(t)) ignorate[t] = "tabella non conosciuta da questa versione";
+    else if (spec && !globaliPermesse && (spec.scope === "hub-global" || spec.scope === "hub-vault")) {
+      ignorate[t] = "risorsa comune a tutti i profili: la importa solo il superadmin";
+    }
+  }
+
   // Unione (revisione del 19/10): in tenant_settings vince la destinazione, quindi il
   // segno della sorgente non c'è nel DB e va letto dalle righe del bundle. Senza, una
   // sorgente già convertita si riconvertiva (binding tolti che tornano, controller
@@ -56,7 +74,7 @@ export function importTenant(args: ImportArgs): ImportResult {
     return typeof riga?.value === "string" ? riga.value : null;
   };
 
-  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {}, saltate: {} };
+  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {}, saltate: {}, ignorate };
 
   // Tappa 2g (T26): catene vecchie e pin di un bundle di prima della 2d non si
   // scrivono più nelle loro tabelle (non le legge nessuno, e dopo la pulizia
@@ -253,6 +271,7 @@ export function importTenant(args: ImportArgs): ImportResult {
       const spec = tableSpec(tbl);
       if (!spec || spec.scope === "tenant") continue;
       if (!tableExists(hubDb, tbl)) continue;
+      if (!globaliPermesse && (spec.scope === "hub-global" || spec.scope === "hub-vault")) continue;
 
       if (spec.scope === "hub-tenant" && spec.tenantColumn) {
         // riallinea il codice tenant a quello di destinazione

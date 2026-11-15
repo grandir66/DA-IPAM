@@ -1,6 +1,8 @@
 "use client";
 
 import { ScaricaDatabase } from "@/components/settings/scarica-database";
+import { useConfermaIdentita } from "@/components/settings/conferma-identita";
+import { AccessoEmergenza } from "@/components/settings/accesso-emergenza";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -205,6 +207,8 @@ function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
+  // Conferma (codice o password) sulle operazioni che creano potere: creare o promuovere admin, reimposta, azzera.
+  const { fetchConfermato, dialogo } = useConfermaIdentita();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
     || (session?.user as { role?: string } | undefined)?.role === "superadmin";
   const isSuperAdmin = (session?.user as { role?: string } | undefined)?.role === "superadmin";
@@ -397,11 +401,7 @@ function SettingsPageInner() {
       // Cliente fisso (admin di un cliente solo): lo decide il server.
       if (isSuperAdmin) payload.tenant_ids = scelto.role !== "superadmin" ? newUserTenantIds : [];
       else if (!fixedTenantName) payload.tenant_ids = newUserTenantIds;
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetchConfermato("/api/users", "POST", payload);
       if (res.ok) {
         toast.success("Utente creato");
         setNewUserOpen(false);
@@ -432,11 +432,7 @@ function SettingsPageInner() {
       // Cliente fisso: senza tenant_ids il server lascia i clienti che l'utente ha già.
       if (isSuperAdmin) payload.tenant_ids = scelto.role !== "superadmin" ? editUserTenantIds : [];
       else if (!fixedTenantName) payload.tenant_ids = editUserTenantIds;
-      const res = await fetch(`/api/users/${editUserId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetchConfermato(`/api/users/${editUserId}`, "PUT", payload);
       if (res.ok) {
         toast.success("Utente aggiornato");
         setEditUserOpen(false);
@@ -474,11 +470,7 @@ function SettingsPageInner() {
           : null;
     if (domanda && !confirm(domanda)) return;
     try {
-      const res = await fetch(`/api/users/${user.id}/seconda-verifica`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ azione }),
-      });
+      const res = await fetchConfermato(`/api/users/${user.id}/seconda-verifica`, "POST", { azione });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(data.error || "Errore nella verifica in due passaggi");
@@ -511,11 +503,7 @@ function SettingsPageInner() {
     }
     setResetPwSaving(true);
     try {
-      const res = await fetch(`/api/users/${resetPwUser.id}/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ new_password: resetPwValue }),
-      });
+      const res = await fetchConfermato(`/api/users/${resetPwUser.id}/reset-password`, "POST", { new_password: resetPwValue });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success(data.message || "Password reimpostata");
@@ -579,6 +567,7 @@ function SettingsPageInner() {
 
   return (
     <div className="space-y-6">
+      {dialogo}
       {/* Niente riga del titolo (Riccardo, 14/11): il nome lo dice la scheda accesa, la versione sta in Aggiornamenti.
           Resta, solo quando c'è, l'avviso della versione nuova. */}
       <h1 className="sr-only">Impostazioni</h1>
@@ -839,6 +828,7 @@ function SettingsPageInner() {
           </CardContent>
         </Card>
       )}
+      {activeTab === "utenti" && !isViewer && <AccessoEmergenza onCambio={() => void loadUsers()} />}
 
       {/* === Tab: Scansione === */}
       {activeTab === "scansione" && <ScanConfigTab />}
@@ -943,6 +933,8 @@ function SettingsPageInner() {
               <Button
                 variant="outline"
                 onClick={() => { window.location.href = "/api/export"; }}
+                disabled={!isAdmin}
+                title={isAdmin ? undefined : "Le esportazioni le scarica solo un amministratore"}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Esporta host (CSV)

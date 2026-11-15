@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Upload, Database, AlertTriangle } from "lucide-react";
-import { righeConversioni, righeSaltate, type RigaConversione } from "@/lib/transfer/esito-import";
+import { righeConversioni, righeSaltate, righeIgnorate, type RigaConversione } from "@/lib/transfer/esito-import";
 
 const TIER_OPTIONS: { value: string; label: string }[] = [
   { value: "config", label: "Configurazione (reti, impostazioni)" },
@@ -20,7 +20,7 @@ export default function TransferPage() {
   // --- Export state ---
   const [expPass, setExpPass] = useState("");
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
-  const [includeVault, setIncludeVault] = useState(false);
+  const [codiceImp, setCodiceImp] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean; righe?: RigaConversione[] } | null>(null);
 
@@ -36,6 +36,20 @@ export default function TransferPage() {
     );
   }
 
+  /** Conferma in due passaggi (5 minuti): se è ancora valida non si richiede. Torna il messaggio d'errore, o null. */
+  async function confermaDuePassaggi(cod: string): Promise<string | null> {
+    const valida = await fetch("/api/vault/conferma").then((r) => r.json()).catch(() => null);
+    if (valida?.scade) return null;
+    const c = await fetch("/api/vault/conferma", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codice: cod, scopo: "backup" }),
+    });
+    if (c.ok) return null;
+    const e = await c.json().catch(() => null);
+    return e?.error ?? "Conferma non riuscita";
+  }
+
   async function doExport() {
     setBusy(true);
     setMsg(null);
@@ -43,7 +57,7 @@ export default function TransferPage() {
       const res = await fetch("/api/tenant/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passphrase: expPass, tiers, includeVault }),
+        body: JSON.stringify({ passphrase: expPass, tiers }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -75,6 +89,15 @@ export default function TransferPage() {
     setBusy(true);
     setMsg(null);
     try {
+      // Lo svuotamento cancella tutti i dati del cliente: serve la conferma in due passaggi (Riccardo, 14/11).
+      if (wipe) {
+        const errore = await confermaDuePassaggi(codiceImp);
+        setCodiceImp("");
+        if (errore) {
+          setMsg({ text: errore, ok: false });
+          return;
+        }
+      }
       const fd = new FormData();
       fd.set("bundle", impFile);
       fd.set("passphrase", impPass);
@@ -98,7 +121,7 @@ export default function TransferPage() {
       // Esito delle conversioni rilanciate dall'import (dalla 2c): un parziale o
       // una voce divisa dopo un'unione si devono vedere, non solo stare nella risposta.
       // Unione (19/10): vince la destinazione, e le chiavi rimaste quelle di prima si elencano.
-      const righe = [...righeConversioni(r?.conversioni), ...righeSaltate(r?.saltate)];
+      const righe = [...righeConversioni(r?.conversioni), ...righeSaltate(r?.saltate), ...righeIgnorate(r?.ignorate)];
       setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti, ${r?.fkViolations ?? 0} riferimenti orfani preservati.`, ok: true, righe });
     } catch (e) {
       setMsg({ text: "Errore di rete: " + (e instanceof Error ? e.message : String(e)), ok: false });
@@ -166,18 +189,10 @@ export default function TransferPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Opzioni aggiuntive</Label>
-            <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-foreground text-muted-foreground pl-1">
-              <Checkbox
-                checked={includeVault}
-                onCheckedChange={(checked) => setIncludeVault(checked === true)}
-              />
-              <span className={includeVault ? "text-foreground font-medium" : ""}>
-                Includi vault credenziali di sistema (credenziali scan, API key, segreti moduli)
-              </span>
-            </label>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Il pacchetto porta la configurazione senza segreti: password, chiavi e token degli apparati non escono
+            dall&apos;installazione e sulla destinazione vanno reinseriti.
+          </p>
 
           <Button
             onClick={() => void doExport()}
@@ -262,6 +277,23 @@ export default function TransferPage() {
                 </p>
               </div>
             </label>
+            {wipe && (
+              <div className="pl-7 space-y-1">
+                <Label htmlFor="codice-2fa-import">Codice della verifica in due passaggi</Label>
+                <Input
+                  id="codice-2fa-import"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  className="w-40 font-mono"
+                  value={codiceImp}
+                  onChange={(e) => setCodiceImp(e.target.value.replace(/\D/g, ""))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lo svuotamento cancella i dati esistenti: serve la conferma, valida 5 minuti. Se l&apos;hai appena data, lascia vuoto.
+                </p>
+              </div>
+            )}
             {!wipe && (
               <p className="text-xs text-muted-foreground">
                 Senza svuotare si aggiungono solo le righe nuove: dove una chiave c&apos;è già resta il valore attuale.

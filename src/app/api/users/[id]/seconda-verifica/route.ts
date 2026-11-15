@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { secondaVerificaAs } from "@/lib/users/service";
+import { confermaPerOperazione } from "@/lib/users/conferma";
 
 /**
  * Verifica in due passaggi di un utente: richiedi, azzera, togli (Riccardo, 20/10; ADR 0023).
@@ -15,6 +16,8 @@ export async function POST(
     if (isAuthError(session)) return session;
 
     const { id } = await params;
+    const ferma = await confermaPerOperazione(session, request, "seconda_verifica", id);
+    if (ferma) return NextResponse.json(ferma.body, { status: ferma.status, headers: { "Cache-Control": "no-store" } });
     const result = await secondaVerificaAs(session, id, request);
     return NextResponse.json(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

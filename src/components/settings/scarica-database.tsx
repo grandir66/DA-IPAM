@@ -18,6 +18,7 @@ export function ScaricaDatabase() {
   const [codice, setCodice] = useState("");
   const [errore, setErrore] = useState<string | null>(null);
   const [attesa, setAttesa] = useState(false);
+  const [ultimo, setUltimo] = useState<{ quando: string; utente: string | null } | null>(null);
 
   function chiudi() {
     setAperto(false);
@@ -39,6 +40,8 @@ export function ScaricaDatabase() {
       return;
     }
     setAperto(true);
+    const u = await fetchJson<{ ultimo: { quando: string; utente: string | null } | null }>("/api/backup/ultimo");
+    setUltimo(u.ok ? u.data.ultimo : null);
   }
 
   async function conferma() {
@@ -90,6 +93,11 @@ export function ScaricaDatabase() {
               autoFocus
             />
             <p className="text-xs text-muted-foreground">La conferma vale 5 minuti.</p>
+            <p className="text-xs text-muted-foreground">
+              {ultimo
+                ? `Ultimo scarico: ${new Date(ultimo.quando).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}, ${ultimo.utente ?? "utente non registrato"}.`
+                : "Nessuno scarico registrato finora."}
+            </p>
             {errore && (
               <p className="flex items-start gap-2 rounded-md border-2 border-foreground/40 p-2 text-sm font-medium">
                 <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />

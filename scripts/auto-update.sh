@@ -90,6 +90,17 @@ if ! MOTIVO="$(guardia_versione "$BRANCH")"; then
   exit 1
 fi
 
+# Firma del rilascio (analisi del 15/11/2026): prima di ogni checkout o fusione. In modo «avvisa» (di serie) scrive
+# e procede; in «blocca» il servizio esce 1 e resta «failed», come per la retrocessione.
+# shellcheck source=lib/guardia-firma.sh
+. "$SCRIPT_DIR/lib/guardia-firma.sh"
+if ! MOTIVO="$(guardia_firma "$BRANCH")"; then
+  stato controllo firma_rifiutata $ORIGINE || true
+  echo "[auto-update] $MOTIVO"
+  exit 1
+fi
+[ -z "$MOTIVO" ] || echo "[auto-update] $MOTIVO"
+
 if [ "$CURRENT" != "$BRANCH" ]; then
   echo "[auto-update] branch corrente '$CURRENT' != target '$BRANCH': checkout in corso..."
   # Drift su tracked files: hard-reset (le appliance non devono avere mod locali;

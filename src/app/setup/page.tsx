@@ -26,6 +26,9 @@ export default function SetupPage() {
   const [ragioneSociale, setRagioneSociale] = useState("");
   // Cosa esce verso Domarc (DA-Link): nessuna scelta preselezionata (spec NetBird §5.3).
   const [livello, setLivello] = useState<Livello | null>(null);
+  // Codice di primo avvio lasciato dall'installatore (P0-2, 14/11): il campo compare solo se il server lo chiede.
+  const [serveCodice, setServeCodice] = useState(false);
+  const [codicePrimoAvvio, setCodicePrimoAvvio] = useState("");
 
   useEffect(() => {
     fetch("/api/setup")
@@ -35,6 +38,7 @@ export default function SetupPage() {
           router.push("/login");
           return;
         }
+        setServeCodice(data.serveCodice === true);
         setCheckDone(true);
       })
       .catch(() => setCheckDone(true));
@@ -84,6 +88,7 @@ export default function SetupPage() {
           codice_cliente: codiceCliente.trim().toUpperCase(),
           ragione_sociale: ragioneSociale.trim(),
           ...(livello ? { livello_uscita: livello } : {}),
+          ...(serveCodice ? { codice_primo_avvio: codicePrimoAvvio } : {}),
         }),
       });
 
@@ -167,6 +172,24 @@ export default function SetupPage() {
                 <span>Stato + numeri dell&apos;inventario (quanti dispositivi e reti, ultima scansione)</span>
               </label>
             </fieldset>
+
+            {serveCodice && (
+              <div className="space-y-2">
+                <Label htmlFor="codice_primo_avvio">Codice di primo avvio</Label>
+                <Input
+                  id="codice_primo_avvio"
+                  required
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                  value={codicePrimoAvvio}
+                  onChange={(e) => setCodicePrimoAvvio(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  È il codice mostrato a fine installazione. Serve una volta sola, per creare il primo utente.
+                </p>
+              </div>
+            )}
 
             {/* Credenziali */}
             <div className="space-y-2">

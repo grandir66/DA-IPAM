@@ -145,7 +145,10 @@ describe("avviaVault", () => {
       assert.equal(store.backend, "dalink");
       assert.match(log, /DA-Link/);
       assert.ok(!log.includes(finto.gettone));
-      await new Promise((r) => setTimeout(r, 300));
+      // Il primo giro è asincrono: si aspetta il fatto (fino a 5 s), non un tempo fisso. Con 300 ms fissi la prova
+      // cadeva a macchina carica (14/11, con il controllo dei tipi in corso).
+      const leggi = () => { try { return store.leggiSync("clienti/70001/da-ipam/router-1"); } catch { return undefined; } };
+      for (let i = 0; i < 100 && leggi() === undefined; i++) await new Promise((r) => setTimeout(r, 50));
       assert.deepEqual(store.leggiSync("clienti/70001/da-ipam/router-1"), { password: "p-avvio-1" });
       assert.equal(vaultRemotoAcceso(), true);
       assert.equal(vaultDalinkAcceso(), true);

@@ -45,6 +45,10 @@ CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 if [ "$CURRENT" != "$BRANCH" ]; then
   echo ">>> Branch corrente '$CURRENT' != target '$BRANCH': allineo..."
   git fetch origin "$BRANCH"
+  # shellcheck source=lib/guardia-firma.sh
+  . "$SCRIPT_DIR/lib/guardia-firma.sh"
+  MOTIVO_FIRMA="$(guardia_firma "$BRANCH")" || { echo "Errore: $MOTIVO_FIRMA"; exit 1; }
+  [ -z "$MOTIVO_FIRMA" ] || echo ">>> $MOTIVO_FIRMA"
   git checkout -B "$BRANCH" "origin/$BRANCH"
 fi
 echo ">>> Branch: $BRANCH"
@@ -142,6 +146,13 @@ fi
 
 echo ">>> git fetch origin $BRANCH..."
 git fetch origin "$BRANCH"
+
+# Firma del rilascio (analisi del 15/11/2026): anche quando update.sh è lanciato a mano. Qui l'albero è ancora quello
+# installato, quindi i firmatari sono quelli di prima del commit in arrivo.
+# shellcheck source=lib/guardia-firma.sh
+. "$SCRIPT_DIR/lib/guardia-firma.sh"
+MOTIVO_FIRMA="$(guardia_firma "$BRANCH")" || { echo "Errore: $MOTIVO_FIRMA"; exit 1; }
+[ -z "$MOTIVO_FIRMA" ] || echo ">>> $MOTIVO_FIRMA"
 NUOVO="$(git rev-parse "origin/$BRANCH")"
 stato inizio "$NUOVO" "$PRIMA"
 

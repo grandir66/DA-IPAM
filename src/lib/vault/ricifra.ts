@@ -146,7 +146,9 @@ function ricifraFile(
           const righe = db
             .prepare(`SELECT rowid AS r, ${c} AS v FROM ${t} WHERE typeof(${c}) = 'text' AND ${c} LIKE '%:%:%'`)
             .all() as Array<{ r: number; v: string }>;
-          const aggiorna = db.prepare(`UPDATE ${t} SET ${c} = ? WHERE rowid = ?`);
+          // Preparato solo se serve: su una tabella figlia di una tabella tolta (resti del vecchio agente) la sola
+          // preparazione dell'UPDATE fallisce con «no such table», anche senza niente da riscrivere (15/11/2026).
+          let aggiorna: Database.Statement | null = null;
           for (const { r, v } of righe) {
             let n = 0;
             const nuovo = v.replace(RE_CIFRATO, (m) => {
@@ -160,6 +162,7 @@ function ricifraFile(
               return cifraConChiave(nuova, chiaro);
             });
             if (n === 0) continue;
+            aggiorna ??= db.prepare(`UPDATE ${t} SET ${c} = ? WHERE rowid = ?`);
             aggiorna.run(nuovo, r);
             esito.perColonna[chiave] = (esito.perColonna[chiave] ?? 0) + n;
             esito.valori += n;

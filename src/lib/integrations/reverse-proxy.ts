@@ -120,6 +120,19 @@ function rewriteLocation(loc: string, opts: ReverseProxyOptions): string {
   }
 }
 
+/** Cookie di Auth.js (sessione, CSRF, callback), con o senza prefisso `__Secure-`/`__Host-`, anche a pezzi (`.0`, `.1`). */
+const COOKIE_DI_SESSIONE = /^(?:__Secure-|__Host-)?(?:authjs|next-auth)\./i;
+
+/** L'intestazione `cookie` senza i cookie di sessione di DA-IPAM: quello che può andare al sistema di là. */
+export function cookieSenzaSessione(intestazione: string | null | undefined): string {
+  if (!intestazione?.trim()) return "";
+  return intestazione
+    .split(";")
+    .map((c) => c.trim())
+    .filter((c) => c && !COOKIE_DI_SESSIONE.test(c.split("=")[0].trim()))
+    .join("; ");
+}
+
 /**
  * Forward `req` to the upstream and return a Next.js-compatible Response.
  */
@@ -137,6 +150,14 @@ export async function proxyRequest(
   req.headers.forEach((value, key) => {
     const k = key.toLowerCase();
     if (k === "host" || k === "connection" || k === "content-length") return;
+    // Le credenziali di DA-IPAM non vanno al sistema di là (analisi del 15/11/2026): il cookie di sessione
+    // arrivava a Wazuh e LibreNMS a ogni richiesta, e chi controlla quel server entrava da amministratore.
+    if (k === "authorization" || k === "proxy-authorization") return;
+    if (k === "cookie") {
+      const altri = cookieSenzaSessione(value);
+      if (altri) outHeaders[k] = altri;
+      return;
+    }
     outHeaders[k] = value;
   });
   // Rewrite Referer/Origin to look like an upstream-internal request so apps

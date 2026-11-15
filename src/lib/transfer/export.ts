@@ -22,7 +22,9 @@ export function exportTenant(args: ExportArgs): Buffer {
   const salt = randomSalt();
   const transportKey = deriveTransportKey(options.passphrase, salt);
 
-  const specs = tablesForTiers(options.tiers, options.includeVault);
+  const senzaSegreti = options.senzaSegreti === true;
+  const includeVault = options.includeVault && !senzaSegreti;
+  const specs = tablesForTiers(options.tiers, includeVault);
   const lines: string[] = [];
   const counts: Record<string, number> = {};
   let secretErrors = 0;
@@ -50,7 +52,9 @@ export function exportTenant(args: ExportArgs): Buffer {
     for (const row of rows) {
       for (const col of rekeys) {
         const v = row[col];
-        if (typeof v === "string" && v.length > 0) {
+        if (senzaSegreti) {
+          row[col] = null; // mai decifrato: nel pacchetto non entra
+        } else if (typeof v === "string" && v.length > 0) {
           const pt = safeDecrypt(v); // decifra con la chiave d'installazione sorgente
           if (pt === null) {
             secretErrors++;
@@ -76,7 +80,7 @@ export function exportTenant(args: ExportArgs): Buffer {
     appVersion: options.appVersion,
     exportedAt: options.exportedAt,
     tiers: options.tiers,
-    includeVault: options.includeVault,
+    includeVault,
     tables: counts,
     secretErrors,
     encryption: {

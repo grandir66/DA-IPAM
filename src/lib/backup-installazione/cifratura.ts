@@ -190,7 +190,7 @@ function leggiRiga(fd: number, massimo: number): Buffer {
     pezzi.push(b);
     if (b[0] === 10) return Buffer.concat(pezzi);
   }
-  throw new Error("Non è un backup di DA-INVENT");
+  throw new Error("Non è un backup di DA-IPAM");
 }
 
 /** Apre un backup con la chiave della busta. Se qualcosa non torna non lascia nessun file in `destinazione`. */
@@ -201,7 +201,7 @@ export function decifraFile(origine: string, destinazione: string, privata: stri
   const provvisorio = `${destinazione}.parziale`;
   let esce: number | null = null;
   try {
-    if (leggiRiga(entra, MAGIA.length).toString() !== MAGIA) throw new Error("Non è un backup di DA-INVENT");
+    if (leggiRiga(entra, MAGIA.length).toString() !== MAGIA) throw new Error("Non è un backup di DA-IPAM");
     const riga = leggiRiga(entra, 4096);
     let i: Intestazione;
     try {

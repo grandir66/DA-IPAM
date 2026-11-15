@@ -70,7 +70,7 @@ git --no-pager log -n 40 --pretty='    %h %s' "origin/main..origin/dev"
 git worktree add --quiet --detach "$LAVORO" origin/main
 echo ">>> fusione firmata (ssh-keygen chiede la passphrase della chiave)..."
 git -C "$LAVORO" -c gpg.format=ssh -c "user.signingkey=$CHIAVE.pub" \
-  merge --no-ff -S -m "promote: dev → main (v$VERSIONE)" "$DEV"
+  merge --no-ff --no-stat -S -m "promote: dev → main (v$VERSIONE)" "$DEV"
 
 # Controllo com'è fatto sull'appliance: stessa regola, stessi firmatari.
 if ! git -C "$LAVORO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$FIRMATARI" verify-commit HEAD >/dev/null 2>&1; then

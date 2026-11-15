@@ -59,7 +59,9 @@ if ! grep -v '^#' "$FIRMATARI" | grep -q -F "$MIA"; then
   exit 1
 fi
 
-VERSIONE="$(git show "origin/dev:package.json" | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).version)')"
+# Dal file VERSION, senza node: nel Terminale del Mac node può non essere nel percorso (prova a vuoto del 15/11/2026).
+VERSIONE="$(git show "origin/dev:VERSION" 2>/dev/null | tr -d '[:space:]')"
+[ -n "$VERSIONE" ] || { echo "Errore: versione di origin/dev illeggibile (file VERSION)." >&2; exit 1; }
 echo ">>> $AVANTI commit da rilasciare, versione $VERSIONE:"
 git log --pretty='    %h %s' "origin/main..origin/dev" | head -40
 [ "$AVANTI" -le 40 ] || echo "    … e altri $((AVANTI - 40))"

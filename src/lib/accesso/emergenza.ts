@@ -71,15 +71,21 @@ export function statoAccessoEmergenza(): { stato: "assente" | "pronto" | "usato"
 /**
  * La frase è stata usata: non vale più. Non tocca `sessioni_valide_da`, altrimenti chiuderebbe la sessione che
  * sta nascendo. Non lancia sul registro: chi è in emergenza deve entrare; l'uso resta comunque nel journal.
+ *
+ * `hashVisto` è l'impronta con cui la frase è stata appena verificata: si consuma solo se è ancora quella. Due
+ * accessi insieme con la stessa frase passavano entrambi il confronto (analisi del 15/11/2026): ora il secondo
+ * trova l'impronta già cambiata e resta fuori. `false` = già consumata da un altro.
  */
-export async function consumaAccessoEmergenza(userId: number): Promise<void> {
-  getHubDb()
-    .prepare("UPDATE users SET password_hash = ?, last_login = datetime('now') WHERE id = ? AND emergenza = 1")
-    .run(await hashChiuso(), userId);
+export async function consumaAccessoEmergenza(userId: number, hashVisto: string): Promise<boolean> {
+  const fatto = getHubDb()
+    .prepare("UPDATE users SET password_hash = ?, last_login = datetime('now') WHERE id = ? AND emergenza = 1 AND password_hash = ?")
+    .run(await hashChiuso(), userId, hashVisto).changes > 0;
+  if (!fatto) return false;
   console.warn("[Auth] ACCESSO D'EMERGENZA usato: vale 60 minuti, la frase non vale più");
   try {
     scriviRegistroAccessi({ azione: "emergenza_usata", utente: NOME_EMERGENZA, utenteId: userId, da: NOME_EMERGENZA });
   } catch (e) {
     console.error("[Auth] registro degli accessi non scritto per l'accesso d'emergenza:", e);
   }
+  return true;
 }

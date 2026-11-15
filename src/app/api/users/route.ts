@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { createUserAs, listUsersAs } from "@/lib/users/service";
+import { confermaPerOperazione } from "@/lib/users/conferma";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -30,6 +31,8 @@ export async function POST(request: Request) {
     const session = await requireAdmin();
     if (isAuthError(session)) return session;
 
+    const ferma = await confermaPerOperazione(session, request, "crea");
+    if (ferma) return NextResponse.json(ferma.body, { status: ferma.status, headers: { "Cache-Control": "no-store" } });
     const result = await createUserAs(session, request);
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {

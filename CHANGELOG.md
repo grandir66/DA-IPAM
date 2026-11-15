@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Sicurezza: le password non si rileggono, conferma sugli utenti (15/11/2026)
+
+### Tolto
+- **«Mostra» delle credenziali di sistema nel Launchpad** (rotta `system-credentials/[id]/reveal` e pulsante): Riccardo, 15/11, «Toglila». Era il gemello di «Mostra password» tolta lo stesso giorno: rimandava al browser password e gettoni dei moduli, «Password master moduli» compresa. Per cambiarne una si riscrive.
+
+### Corretto
+- **Creare o promuovere un amministratore, reimpostare una password, azzerare o togliere la verifica in due passaggi chiedono una conferma**: il codice dell'app a chi ha la verifica attiva, la propria password agli altri (Riccardo, 15/11). Prima bastava una sessione admin aperta, e con un admin creato così si passava ogni altra conferma. `users/conferma.ts`, dialogo `components/settings/conferma-identita.tsx`.
+- **L'accesso d'emergenza è monouso davvero**: chi è entrato con la frase non può darsi una password (prima rientrava ogni volta per altri 60 minuti), l'utente d'emergenza non si modifica né si reimposta dalla pagina Utenti, e due accessi insieme con la stessa frase non passano più entrambi.
+
 ## Non rilasciato — Sicurezza: primo gruppo dopo l'analisi del 15/11 (15/11/2026)
 
 ### Corretto

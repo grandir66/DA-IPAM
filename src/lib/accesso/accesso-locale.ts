@@ -120,7 +120,7 @@ async function verifica(
   // Accesso d'emergenza del cliente (P0-2, 14/11): la frase vale una volta, senza codice dell'app.
   if (utente.emergenza === 1) {
     if (opzioni.fase === "passo_uno") return entra();
-    await consumaAccessoEmergenza(utente.id);
+    if (!(await consumaAccessoEmergenza(utente.id, utente.password_hash))) return rifiuta();
     return entra();
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { deleteUserAs, updateUserAs } from "@/lib/users/service";
+import { confermaPerOperazione } from "@/lib/users/conferma";
 
 /** Modifica ed eliminazione di un utente: regole nel servizio `@/lib/users/service` (UI-18). */
 export async function PUT(
@@ -12,6 +13,8 @@ export async function PUT(
     if (isAuthError(session)) return session;
 
     const { id } = await params;
+    const ferma = await confermaPerOperazione(session, request, "modifica", id);
+    if (ferma) return NextResponse.json(ferma.body, { status: ferma.status, headers: { "Cache-Control": "no-store" } });
     const result = await updateUserAs(session, id, request);
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {

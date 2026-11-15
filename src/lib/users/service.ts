@@ -69,6 +69,12 @@ const INVALID_ROLE = "Il ruolo deve essere 'superadmin', 'admin' o 'viewer'";
 
 const fail = (status: number, error: string): UsersResult => ({ status, body: { error } });
 
+/**
+ * L'accesso d'emergenza si prepara, si rigenera e si toglie solo dal suo riquadro: con una password scelta da
+ * qualcuno, o un altro ruolo, smetterebbe di essere monouso (analisi del 15/11/2026).
+ */
+const EMERGENZA_NON_SI_TOCCA = "L'accesso d'emergenza non si modifica da qui: si rigenera o si toglie dal suo riquadro";
+
 /** Messaggio fisso: un Cliente è un viewer di un solo cliente. */
 const VISTA_CLIENTE_VIETATA = "Un utente cliente è in sola lettura e appartiene a un solo cliente";
 
@@ -300,6 +306,7 @@ export async function updateUserAs(session: SessionLike, rawId: string, request:
   const user = getUserById(userId);
   if (!user) return fail(404, "Utente non trovato");
 
+  if (user.emergenza === 1) return fail(400, EMERGENZA_NON_SI_TOCCA);
   const decision = decideUpdate(who.actor, managedUser(user), { role, tenantIds: tenantInput });
   if (!decision.ok) return fromDenial(decision);
 
@@ -427,6 +434,7 @@ export async function resetPasswordAs(session: SessionLike, rawId: string, reque
 
   const user = getUserById(userId);
   if (!user) return fail(404, "Utente non trovato");
+  if (user.emergenza === 1) return fail(400, EMERGENZA_NON_SI_TOCCA);
   const debole = motivoPasswordDebole(newPassword, user.username);
   if (debole) return fail(400, debole);
 

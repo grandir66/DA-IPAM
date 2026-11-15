@@ -1,7 +1,9 @@
 import { motivoPasswordDebole } from "@/lib/accesso/password-debole";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getUserByUsername, updateUserPassword } from "@/lib/db";
+import { updateUserPassword } from "@/lib/db";
+// Dall'hub, non dalla facciata: serve il segno `emergenza` della riga.
+import { getUserByUsername } from "@/lib/db-hub";
 import bcrypt from "bcrypt";
 
 export async function POST(request: Request) {
@@ -24,6 +26,11 @@ export async function POST(request: Request) {
     const user = getUserByUsername(session.user.name);
     if (!user) {
       return NextResponse.json({ error: "Utente non trovato" }, { status: 404 });
+    }
+    // L'accesso d'emergenza vale una volta: con una password sua diventerebbe un ingresso stabile senza codice
+    // (analisi del 15/11/2026). Chi è entrato così reimposta l'utente vero dalla pagina Utenti.
+    if (user.emergenza === 1) {
+      return NextResponse.json({ error: "L'accesso d'emergenza non ha una password da cambiare: reimposta quella del tuo utente dalla pagina Utenti" }, { status: 403 });
     }
     const debole = motivoPasswordDebole(new_password, user.username);
     if (debole) return NextResponse.json({ error: debole }, { status: 400 });

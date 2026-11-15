@@ -496,7 +496,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/system-credentials/[id]` | DELETE | `admin` | `admin` |  |
 | `/api/system-credentials/[id]` | GET | `auth` | `auth` |  |
 | `/api/system-credentials/[id]` | PUT | `admin` | `admin` |  |
-| `/api/system-credentials/[id]/reveal` | POST | `admin` | `admin` |  |
 | `/api/system-credentials/[id]/test` | POST | `admin` | `admin` |  |
 | `/api/system-credentials/bootstrap` | POST | `admin` | `admin` |  |
 | `/api/system-credentials/dedup` | POST | `admin` | `admin` |  |

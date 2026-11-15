@@ -10,6 +10,7 @@ Sensore e specchio stanno in DA-Vul-can (`TASKS.md` del 14/11, commit aa9f136a).
 
 ## 2026-11-14 — Piano di sicurezza: appliance autonoma (Riccardo, da approvare; zona rossa → livello completo)
 
+- **Principio (Riccardo, 15/11): «la logica deve essere che le password non devono uscire… neppure di fronte ad una compromissione».** Vale sopra ogni altra scelta del piano: ogni funzione che rende una password in chiaro (a schermo, in un file, in un'esportazione, in un backup apribile sull'appliance) va giustificata o tolta. Da questo principio si rifà il disegno di vault, volume e backup.
 Riccardo, 14/11: ha consegnato una revisione di sicurezza fatta su `dev` 0.9.1254 (`a7d9b2da`) e DA-Link `fe2095b`. Obiettivo: ogni appliance custodisce, usa e recupera i dati del proprio cliente **senza dipendere da DA-Link**; si installa già scollegata, riparte dopo un guasto, si ripristina su un'altra macchina col materiale di recupero del cliente. Strada: volume LUKS2 (ADR 0037, già scelto per il profilo tecnico) + vault locale già presente + backup cifrato verso una chiave di recupero separata. KeePass resta solo esportazione. **Niente codice finché Riccardo non approva** piano e risposte qui sotto.
 
 Rilievi ricontrollati sul codice di `a7d9b2da` (14/11, sola lettura):

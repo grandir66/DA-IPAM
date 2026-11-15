@@ -144,6 +144,30 @@ export function cookieSenzaSessione(intestazione: string | null | undefined): st
 }
 
 /**
+ * Le intestazioni della richiesta che possono andare al sistema di là.
+ * - `host`, `connection`, `content-length`: le rimette Node.
+ * - Le credenziali di DA-IPAM no (analisi del 15/11/2026): `authorization`, e da `cookie` i cookie di sessione.
+ * - `set-cookie` e le intestazioni interne di Next (`x-middleware-*`) no: quando il controllo d'accesso rinnova la
+ *   sessione, Next le mette sulla richiesta col cookie nuovo, e arrivavano a LibreNMS (visto dal vivo il 16/11/2026).
+ */
+export function intestazioniVersoDiLa(intestazioni: Headers): Record<string, string> {
+  const fuori: Record<string, string> = {};
+  intestazioni.forEach((value, key) => {
+    const k = key.toLowerCase();
+    if (k === "host" || k === "connection" || k === "content-length") return;
+    if (k === "authorization" || k === "proxy-authorization") return;
+    if (k === "set-cookie" || k === "set-cookie2" || k.startsWith("x-middleware-")) return;
+    if (k === "cookie") {
+      const altri = cookieSenzaSessione(value);
+      if (altri) fuori[k] = altri;
+      return;
+    }
+    fuori[k] = value;
+  });
+  return fuori;
+}
+
+/**
  * Forward `req` to the upstream and return a Next.js-compatible Response.
  */
 export async function proxyRequest(
@@ -156,20 +180,7 @@ export async function proxyRequest(
 
   // Headers to forward.  We drop `host` (will be set to upstream automatically
   // by node's http module via `hostname`+`port`), and a few that Node manages.
-  const outHeaders: Record<string, string | string[]> = {};
-  req.headers.forEach((value, key) => {
-    const k = key.toLowerCase();
-    if (k === "host" || k === "connection" || k === "content-length") return;
-    // Le credenziali di DA-IPAM non vanno al sistema di là (analisi del 15/11/2026): il cookie di sessione
-    // arrivava a Wazuh e LibreNMS a ogni richiesta, e chi controlla quel server entrava da amministratore.
-    if (k === "authorization" || k === "proxy-authorization") return;
-    if (k === "cookie") {
-      const altri = cookieSenzaSessione(value);
-      if (altri) outHeaders[k] = altri;
-      return;
-    }
-    outHeaders[k] = value;
-  });
+  const outHeaders: Record<string, string | string[]> = intestazioniVersoDiLa(req.headers);
   // Rewrite Referer/Origin to look like an upstream-internal request so apps
   // that compare these don't reject the call.
   if (outHeaders.referer) {

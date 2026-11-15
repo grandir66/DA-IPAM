@@ -9,6 +9,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ### Corretto
 - **Profilo nmap: del testo libero degli argomenti passano solo le opzioni di scansione** (`scanner/argomenti-nmap-ammessi.ts`). nmap gira da root e gli argomenti arrivavano così com'erano: con `--script`, `-oN`, `-iL` chi amministrava l'interfaccia scriveva file o eseguiva codice sul sistema. La rotta rifiuta (400), e un profilo già salvato con argomenti non ammessi gira con quelli di serie, dicendolo nel registro del giro.
 - **Passaggio verso LibreNMS e Wazuh: l'indirizzo chiesto resta sul sistema configurato** anche con una barra doppia nel percorso (oggi la fermava solo Next), e il sistema di là non può scrivere nel browser un cookie col nome di quelli di sessione di DA-IPAM.
+- **Il cookie di sessione rinnovato non arriva più a LibreNMS e Wazuh.** Quando il controllo d'accesso rinnova la sessione, Next mette il cookie nuovo sulla richiesta in un'intestazione `set-cookie`, e il passaggio la inoltrava: il taglio del 15/11 guardava solo `cookie`. Visto dal vivo sull'appliance di laboratorio catturando il traffico verso LibreNMS. Ora `set-cookie` e le intestazioni interne di Next non passano mai (`intestazioniVersoDiLa`).
 - **Cambio password: stesso freno della conferma sugli utenti** (5 password sbagliate in 15 minuti, stesso conto): da lì la password corrente si provava senza limite.
 
 ## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)

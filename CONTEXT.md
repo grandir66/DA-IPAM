@@ -111,3 +111,8 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 ## 7. Trappola: `db-tenant` e le due istanze sotto `tsx`
 
 Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `AsyncLocalStorage` vuota: il tenant si perde e si scrive in `DEFAULT.db`, in silenzio. **Import solo statico** (prova `no-dynamic-db-tenant-import.test.ts`); [ADR 0002](docs/adr/0002-static-db-tenant-import.md).
+
+## Sicurezza, secondo giro — 16/11/2026
+
+Su `dev` dalla 0.9.1262. Trappole per chi tocca queste aree: il testo libero del profilo nmap passa da un elenco di opzioni ammesse (`src/lib/scanner/argomenti-nmap-ammessi.ts`), un'opzione nuova che DA-IPAM deve poter usare va aggiunta lì o il giro ripiega sugli argomenti di serie e lo scrive nel registro; il passaggio verso LibreNMS/Wazuh scrive il percorso sull'indirizzo configurato (`buildUpstreamUrl`), non lo risolve; cambio password e conferma d'identità sugli utenti condividono lo stesso conto di tentativi. I rilievi aperti non stanno nel repo.
+

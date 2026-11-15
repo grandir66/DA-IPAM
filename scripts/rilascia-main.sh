@@ -63,7 +63,8 @@ fi
 VERSIONE="$(git show "origin/dev:VERSION" 2>/dev/null | tr -d '[:space:]')"
 [ -n "$VERSIONE" ] || { echo "Errore: versione di origin/dev illeggibile (file VERSION)." >&2; exit 1; }
 echo ">>> $AVANTI commit da rilasciare, versione $VERSIONE:"
-git log --pretty='    %h %s' "origin/main..origin/dev" | head -40
+# -n e non «| head»: con pipefail la pipe chiusa da head faceva uscire lo script in silenzio (15/11/2026).
+git log -n 40 --pretty='    %h %s' "origin/main..origin/dev"
 [ "$AVANTI" -le 40 ] || echo "    … e altri $((AVANTI - 40))"
 
 git worktree add --quiet --detach "$LAVORO" origin/main
@@ -80,7 +81,7 @@ NUOVO="$(git -C "$LAVORO" rev-parse HEAD)"
 # L'albero rilasciato dev'essere quello di dev, riga per riga: una fusione che cambia qualcosa non si pubblica.
 if [ -n "$(git diff --stat "$DEV" "$NUOVO")" ]; then
   echo "Errore: l'albero della fusione non è uguale a quello di dev (main aveva commit che dev non ha). Niente pubblicato." >&2
-  git diff --stat "$DEV" "$NUOVO" | tail -5 >&2
+  git diff --stat "$DEV" "$NUOVO" >&2
   exit 1
 fi
 echo ">>> firma buona. Commit di rilascio: $(git rev-parse --short "$NUOVO") (main era $(git rev-parse --short "$MAIN"))"

@@ -63,7 +63,10 @@ async function main(): Promise<void> {
   }
   if (comando === "ripristina" && resto.length === 2) {
     if (process.stdin.isTTY) console.error("Scrivi la chiave della busta e premi Invio, poi Ctrl-D:");
-    const privata = fs.readFileSync(0, "utf8");
+    // Lettura asincrona: `readFileSync(0)` su una pipe non bloccante di Linux dà EAGAIN (prova del 15/11 su Debian).
+    const pezzi: Buffer[] = [];
+    for await (const p of process.stdin) pezzi.push(Buffer.from(p));
+    const privata = Buffer.concat(pezzi).toString("utf8");
     const r = ripristinaArchivio({ file: path.resolve(resto[0]), privata, destinazione: path.resolve(resto[1]) });
     console.log(`Ripristinato in ${path.resolve(resto[1])} il backup del ${r.creato}: ${r.contenuto.join(", ")}`);
     console.log("Ogni database ha passato il controllo di integrità. A servizio fermo: hub.db e tenants/ nella cartella dei dati, .env.local al suo posto.");

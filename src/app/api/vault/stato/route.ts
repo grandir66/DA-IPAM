@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { mostraPasswordAttiva } from "@/lib/vault/mostra";
 import { statoVault } from "@/lib/vault/appliance";
 
 /**
@@ -12,6 +11,6 @@ export async function GET() {
   return withTenantFromSession(async () => {
     const s = await requireAuth();
     if (isAuthError(s)) return s;
-    return NextResponse.json({ ...statoVault(), mostraPassword: mostraPasswordAttiva() }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(statoVault(), { headers: { "Cache-Control": "no-store" } });
   });
 }

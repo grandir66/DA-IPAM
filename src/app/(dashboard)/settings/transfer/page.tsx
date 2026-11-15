@@ -20,8 +20,6 @@ export default function TransferPage() {
   // --- Export state ---
   const [expPass, setExpPass] = useState("");
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
-  const [includeVault, setIncludeVault] = useState(false);
-  const [codice, setCodice] = useState("");
   const [codiceImp, setCodiceImp] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean; righe?: RigaConversione[] } | null>(null);
@@ -56,19 +54,10 @@ export default function TransferPage() {
     setBusy(true);
     setMsg(null);
     try {
-      // Col vault dentro escono segreti: serve la conferma in due passaggi (P0-1, Riccardo 14/11).
-      if (includeVault) {
-        const errore = await confermaDuePassaggi(codice);
-        setCodice("");
-        if (errore) {
-          setMsg({ text: errore, ok: false });
-          return;
-        }
-      }
       const res = await fetch("/api/tenant/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passphrase: expPass, tiers, includeVault }),
+        body: JSON.stringify({ passphrase: expPass, tiers }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -200,35 +189,10 @@ export default function TransferPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Opzioni aggiuntive</Label>
-            <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-foreground text-muted-foreground pl-1">
-              <Checkbox
-                checked={includeVault}
-                onCheckedChange={(checked) => setIncludeVault(checked === true)}
-              />
-              <span className={includeVault ? "text-foreground font-medium" : ""}>
-                Includi vault credenziali di sistema (credenziali scan, API key, segreti moduli)
-              </span>
-            </label>
-            {includeVault && (
-              <div className="pl-1 space-y-1">
-                <Label htmlFor="codice-2fa-export">Codice della verifica in due passaggi</Label>
-                <Input
-                  id="codice-2fa-export"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  className="w-40 font-mono"
-                  value={codice}
-                  onChange={(e) => setCodice(e.target.value.replace(/\D/g, ""))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Il pacchetto col vault contiene segreti: serve la conferma, valida 5 minuti. Se l&apos;hai appena data, lascia vuoto.
-                </p>
-              </div>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Il pacchetto porta la configurazione senza segreti: password, chiavi e token degli apparati non escono
+            dall&apos;installazione e sulla destinazione vanno reinseriti.
+          </p>
 
           <Button
             onClick={() => void doExport()}

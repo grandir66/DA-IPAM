@@ -53,6 +53,11 @@ export interface ExportOptions {
   tenantCode: string;
   tiers: Tier[];
   includeVault: boolean;
+  /**
+   * Nessun segreto nel pacchetto (Riccardo, 15/11/2026: «le password non devono uscire»): le colonne cifrate
+   * escono vuote, senza essere decifrate, e il vault di sistema non entra. La rotta lo passa sempre.
+   */
+  senzaSegreti?: boolean;
   passphrase: string;
   exportedAt: string;
   appVersion: string;

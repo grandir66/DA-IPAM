@@ -6,7 +6,6 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { getHubDb } from "@/lib/db-hub";
 import { exportTenant } from "@/lib/transfer/export";
-import { confermaValida, utenteDaSessione } from "@/lib/vault/mostra";
 import { registraScarico } from "@/lib/accesso/registro-scarichi";
 import type { Tier } from "@/lib/transfer/types";
 import pkg from "../../../../../package.json";
@@ -27,10 +26,11 @@ export async function POST(req: Request) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
 
-    // Col vault dentro escono segreti: serve la conferma recente in due passaggi (P0-1, Riccardo 14/11).
-    if (parsed.data.includeVault && confermaValida(utenteDaSessione(auth).id) === null) {
+    // Riccardo, 15/11/2026: «le password non devono uscire… neppure di fronte ad una compromissione». Il pacchetto
+    // non porta più nessun segreto; chi chiede il vault riceve un rifiuto che lo dice, non un pacchetto più povero.
+    if (parsed.data.includeVault) {
       return NextResponse.json(
-        { error: "Per esportare il vault serve la conferma con la verifica in due passaggi." },
+        { error: "Le credenziali non si esportano più: il pacchetto porta la configurazione senza segreti." },
         { status: 403, headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -45,20 +45,21 @@ export async function POST(req: Request) {
       options: {
         tenantCode,
         tiers: parsed.data.tiers as Tier[],
-        includeVault: parsed.data.includeVault,
+        includeVault: false,
+        senzaSegreti: true,
         passphrase: parsed.data.passphrase,
         exportedAt,
         appVersion: (pkg as { version: string }).version,
       },
     });
 
-    console.info(`[export] ${tenantCode}: pacchetto scaricato da ${auth.user.name ?? "?"} (vault ${parsed.data.includeVault ? "compreso" : "escluso"})`);
+    console.info(`[export] ${tenantCode}: pacchetto scaricato da ${auth.user.name ?? "?"} (senza segreti)`);
     registraScarico(getHubDb(), {
       cosa: "pacchetto",
       utenteId: auth.user.id != null ? String(auth.user.id) : null,
       utenteNome: auth.user.name ?? null,
       ruolo: auth.user.role ?? null,
-      dettaglio: `${tenantCode}, vault ${parsed.data.includeVault ? "compreso" : "escluso"}`,
+      dettaglio: `${tenantCode}, senza segreti`,
     });
     const fname = `${tenantCode}-${exportedAt.replace(/[:.]/g, "-")}.dab`;
     return new NextResponse(new Uint8Array(bundle), {

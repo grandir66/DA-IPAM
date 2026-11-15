@@ -17,7 +17,9 @@ const store = new Map<string, RateLimitEntry>();
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of store) {
-    entry.timestamps = entry.timestamps.filter((t) => now - t < 15 * 60 * 1000);
+    // 30 minuti: la finestra più lunga fra quelle in uso (`LOGIN_WINDOW_MS`). A 15 la storia dei fallimenti
+    // dell'accesso si accorciava e l'attesa crescente ripartiva prima del dovuto (analisi del 15/11/2026).
+    entry.timestamps = entry.timestamps.filter((t) => now - t < 30 * 60 * 1000);
     if (entry.timestamps.length === 0) store.delete(key);
   }
 }, 5 * 60 * 1000);

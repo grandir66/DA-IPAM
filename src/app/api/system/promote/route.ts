@@ -8,14 +8,21 @@
  *                       per il push HTTPS quando il remote richiede auth.
  *   DELETE/github-pat — rimuove il PAT.
  *
- * Solo admin. Lavora sul repo in process.cwd() (o DA_INVENT_DIR).
+ * L'anteprima la legge un admin. Promuovere e toccare il gettone: solo un superadmin, solo
+ * sull'installazione centrale (quella con l'accesso Domarc), con la conferma in due passaggi
+ * e una riga nel registro degli accessi (analisi del 15/11/2026: un push su `main` è un
+ * rilascio a tutte le appliance, e bastava una sessione admin su qualunque installazione).
+ * Lavora sul repo in process.cwd() (o DA_INVENT_DIR).
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import path from "node:path";
 import { execFile as _execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
+import { accessoDomarcAttivo } from "@/lib/daauth";
+import { confermaValida, utenteDaSessione } from "@/lib/vault/mostra";
+import { scriviRegistroAccessi } from "@/lib/accesso/registro-accessi";
 import { getSetting, setSetting } from "@/lib/db-hub";
 import { encrypt, safeDecrypt } from "@/lib/crypto";
 
@@ -94,22 +101,40 @@ export async function GET() {
   }
 }
 
+/** Chi può rilasciare: superadmin, sull'installazione centrale. Altrove la funzione non c'è. */
+async function soloRilascio() {
+  const s = await requireSuperAdmin();
+  if (isAuthError(s)) return s;
+  if (!accessoDomarcAttivo()) {
+    return NextResponse.json({ error: "La promozione su main si fa solo dall'installazione centrale Domarc" }, { status: 404 });
+  }
+  return s;
+}
+
 const PostSchema = z.object({
   /** Conferma esplicita richiesta — la UI deve passarla per evitare promote accidentali */
   confirm: z.literal(true),
 });
 
-/** Costruisce URL HTTPS con token incorporato per autenticazione push.
- *  Es. https://github.com/owner/repo.git → https://x-access-token:TOKEN@github.com/owner/repo.git */
-function buildAuthedUrl(remoteUrl: string, pat: string): string {
-  const m = remoteUrl.match(/^https:\/\/(.*)$/);
-  if (!m) throw new Error("Push autenticato richiede remote HTTPS, trovato: " + remoteUrl);
-  return `https://x-access-token:${pat}@${m[1]}`;
+/**
+ * Il gettone va a git dall'ambiente, non dagli argomenti: prima stava nell'indirizzo del push e lo leggeva
+ * chiunque vedesse i processi della macchina. Stessa forma che usa `actions/checkout`.
+ */
+function ambienteConGettone(pat: string): Record<string, string> {
+  const base = Buffer.from(`x-access-token:${pat}`).toString("base64");
+  return { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraheader", GIT_CONFIG_VALUE_0: `Authorization: Basic ${base}` };
 }
 
 export async function POST(req: Request) {
-  const adminCheck = await requireAdmin();
+  const adminCheck = await soloRilascio();
   if (isAuthError(adminCheck)) return adminCheck;
+  const io = utenteDaSessione(adminCheck);
+  if (confermaValida(io.id) === null) {
+    return NextResponse.json(
+      { error: "Serve la conferma con la verifica in due passaggi" },
+      { status: 403, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   let body: unknown = {};
   try { body = await req.json(); } catch { /* ok, conferma è obbligatoria */ }
@@ -165,10 +190,11 @@ export async function POST(req: Request) {
     if (!remoteUrl) throw new Error("remote 'origin' non configurato");
 
     let pushRes;
+    // Prima il registro, poi il push: un registro non scrivibile ferma il rilascio invece di lasciarlo senza traccia.
+    scriviRegistroAccessi({ azione: "promozione_main", utente: io.nome, utenteId: Number(io.id) || 0, da: io.nome });
     if (pat && remoteUrl.startsWith("https://")) {
-      const authed = buildAuthedUrl(remoteUrl, pat);
-      out(">>> git push <auth> main  (token nascosto)");
-      pushRes = await git(["push", authed, "main"]);
+      out(">>> git push origin main  (col gettone, passato dall'ambiente)");
+      pushRes = await git(["push", "origin", "main"], ambienteConGettone(pat));
     } else {
       out(">>> git push origin main");
       pushRes = await git(["push", "origin", "main"]);
@@ -201,7 +227,7 @@ const PatSchema = z.object({
 });
 
 export async function PUT(req: Request) {
-  const adminCheck = await requireAdmin();
+  const adminCheck = await soloRilascio();
   if (isAuthError(adminCheck)) return adminCheck;
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }
@@ -214,7 +240,7 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE() {
-  const adminCheck = await requireAdmin();
+  const adminCheck = await soloRilascio();
   if (isAuthError(adminCheck)) return adminCheck;
   setSetting(PAT_KEY, "");
   return NextResponse.json({ ok: true, patConfigured: false });

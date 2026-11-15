@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Sicurezza: primo gruppo dopo l'analisi del 15/11 (15/11/2026)
+
+### Corretto
+- **Il passaggio verso le dashboard di Wazuh e LibreNMS non porta più di là il cookie di sessione di DA-IPAM** né l'intestazione `Authorization`: prima partivano a ogni richiesta (`integrations/reverse-proxy.ts`, `cookieSenzaSessione`).
+- **«Promuovi dev → main» è del solo superadmin, solo sull'installazione centrale, col codice in due passaggi e una riga nel registro degli accessi** (`promozione_main`). Un push su `main` è un rilascio a tutte le appliance: prima bastava un admin, su qualunque installazione. L'anteprima resta agli admin.
+- **Il gettone GitHub va a git dall'ambiente e non più dentro l'indirizzo del push**, dove lo leggeva chi vedeva i processi della macchina.
+- **Il freno ai tentativi d'accesso tiene la storia per 30 minuti come dichiarato**: la pulizia periodica la accorciava a 15.
+
 ## Non rilasciato — Sonda trunk: VLAN della scheda principale (14/11/2026)
 
 - **La lettura del trunk dice al sensore la VLAN dei pacchetti senza tag della scheda principale.** Riccardo (14/11): «se viene inserita la seconda scheda di trunk, la scheda principale non legge più nulla; anche lei dovrebbe leggere sulla sua o sue VLAN». Il sensore (DA-Vul-can) ora legge anche la principale, ma i suoi pacchetti senza tag non sono la nativa del trunk. DA-IPAM deduce la loro VLAN con la stessa regola della nativa (la rete dichiarata che contiene almeno metà di quegli IP, se ha una VLAN) e la passa solo quando il sensore non la conosce già. Se quegli IP stanno in una rete dichiarata senza VLAN (la LAN senza tag) DA-IPAM dice 0 e restano senza tag, come la nativa del trunk: su 79993-ipam-2 `192.168.99.0/24` è dichiarata così, e 1322 pacchetti erano fermi in attesa. In nessuna rete dichiarata: non si indovina.

@@ -131,6 +131,22 @@ export function UpdateChannelCard() {
       `Operazione: git merge --no-ff dev su main + push origin main.\n\n` +
       `Confermi?`,
     )) return;
+    // Un rilascio a tutte le appliance chiede il codice dell'app, come lo scarico del database (15/11/2026).
+    const valida = await fetch("/api/vault/conferma").then((x) => x.json()).catch(() => null) as { scade?: string | null } | null;
+    if (!valida?.scade) {
+      const codice = prompt("Codice della verifica in due passaggi (app Authenticator):");
+      if (!codice) return;
+      const c = await fetch("/api/vault/conferma", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codice: codice.trim(), scopo: "backup" }),
+      });
+      if (!c.ok) {
+        const e = (await c.json().catch(() => ({}))) as { error?: string };
+        toast.error(e.error ?? "Codice non valido");
+        return;
+      }
+    }
     setPromoting(true);
     setLastLog(null);
     try {

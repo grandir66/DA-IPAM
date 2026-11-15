@@ -14,7 +14,9 @@ export interface RigaRegistroAccessi {
   /** `password_reimposta`: la scrive `scripts/reset-admin-password.cjs`, il recupero dal server (14/11). */
   azione: "seconda_verifica_richiedi" | "seconda_verifica_azzera" | "seconda_verifica_togli" | "password_reimposta" | "codice_recupero_usato" | "codici_recupero_generati"
     | "accesso_riuscito" | "accesso_rifiutato" | "accesso_bloccato"
-    | "emergenza_creata" | "emergenza_usata" | "emergenza_tolta";
+    | "emergenza_creata" | "emergenza_usata" | "emergenza_tolta"
+    // Rilascio su `main` dall'installazione centrale (15/11/2026): chi l'ha fatto e quando.
+    | "promozione_main";
   utente: string;
   utenteId: number;
   da: string;

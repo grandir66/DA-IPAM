@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)
+
+### Aggiunto
+- **Le appliance controllano la firma del rilascio prima di aggiornarsi** (`scripts/lib/guardia-firma.sh`, ADR 0039): firma SSH del commit in punta a `main` contro i firmatari della copia installata (`deploy/firmatari-rilasci`). Di serie in modo «avvisa»: una firma mancante si scrive nel journal e nella scheda del canale, e l'aggiornamento procede; con `DA_INVENT_FIRMA_RILASCI=blocca` non parte. Senza firma, chi riusciva a scrivere su `main` comandava da root tutte le appliance.
+- **`scripts/rilascia-main.sh`**: il rilascio firmato, dal Mac di chi rilascia; a vuoto di serie.
+
+### Tolto
+- **«Promuovi dev → main» dall'installazione centrale** (pulsante, rotta che pubblicava, modulo del gettone GitHub): il rilascio non può più partire da un server. Resta l'anteprima dei commit in attesa.
+
 ## Non rilasciato — Sicurezza: le password non si rileggono, conferma sugli utenti (15/11/2026)
 
 ### Tolto

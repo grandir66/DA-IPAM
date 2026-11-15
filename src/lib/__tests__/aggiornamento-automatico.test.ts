@@ -101,7 +101,8 @@ function preparaAmbiente(): Ambiente {
   fs.mkdirSync(path.join(lavoro, "scripts"));
   fs.mkdirSync(path.join(lavoro, "scripts", "lib"));
   // lib/guardia-versione.sh: auto-update.sh la carica prima del checkout (niente retrocessioni, 22/10).
-  for (const f of ["auto-update.sh", "update.sh", "stato-aggiornamento.mjs", "lib/guardia-versione.sh"]) {
+  // lib/guardia-firma.sh: la firma del rilascio, in modo «avvisa» di serie (15/11): qui `main` non è firmato e si procede.
+  for (const f of ["auto-update.sh", "update.sh", "stato-aggiornamento.mjs", "lib/guardia-versione.sh", "lib/guardia-firma.sh"]) {
     fs.copyFileSync(path.join(REPO, "scripts", f), path.join(lavoro, "scripts", f));
   }
   fs.writeFileSync(path.join(lavoro, "package.json"), JSON.stringify({ name: "prova", version: "1.0.0" }));

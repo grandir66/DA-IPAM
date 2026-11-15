@@ -1,0 +1,7 @@
+# Chi può firmare un rilascio di DA-IPAM (formato «allowed signers» di ssh-keygen, una riga per chiave).
+# Lo legge scripts/lib/guardia-firma.sh DALLA COPIA INSTALLATA, prima di accettare un commit nuovo: una riga
+# aggiunta da un commit non firmato non vale, perché quel commit non viene installato (modo «blocca»).
+# Per cambiare chiave: un rilascio firmato con la vecchia che aggiunge la nuova, poi uno che toglie la vecchia.
+# Qui sta solo la parte PUBBLICA. La privata è sul Mac di chi rilascia e in copia nel suo archivio di password.
+#
+# rilasci@domarc.it namespaces="git" ssh-ed25519 AAAA...

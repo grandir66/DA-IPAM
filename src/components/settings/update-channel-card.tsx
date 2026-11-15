@@ -4,7 +4,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { GitBranch, ShieldCheck, AlertTriangle, Loader2, Rocket, Lock, ChevronDown, ChevronRight } from "lucide-react";
+import { GitBranch, ShieldCheck, AlertTriangle, Rocket, ChevronDown, ChevronRight } from "lucide-react";
 
 interface ChannelStatus {
   channel: "stable" | "dev" | "unknown";
@@ -13,6 +13,7 @@ interface ChannelStatus {
   gitBranch: string | null;
   patConfigured: boolean;
   envFileWritable: boolean;
+  firma?: { modo: "avvisa" | "blocca" | "spenta"; esito: "buona" | "mancante" | "rifiutata" | null; commit: string | null; quando: string | null };
 }
 
 interface PromotePreview {
@@ -25,25 +26,12 @@ interface PromotePreview {
   patConfigured: boolean;
 }
 
-interface PromoteResult {
-  ok: boolean;
-  newSha?: string;
-  mergedCommits?: number;
-  log?: string[];
-  error?: string;
-}
-
 export function UpdateChannelCard() {
   const [status, setStatus] = useState<ChannelStatus | null>(null);
   const [preview, setPreview] = useState<PromotePreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [promoting, setPromoting] = useState(false);
-  const [showPat, setShowPat] = useState(false);
-  const [pat, setPat] = useState("");
   const [showCommits, setShowCommits] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [lastLog, setLastLog] = useState<string[] | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -88,84 +76,12 @@ export function UpdateChannelCard() {
     }
   };
 
-  const handleSavePat = async () => {
-    if (pat.length < 20) { toast.error("Token troppo corto"); return; }
-    setSaving(true);
-    try {
-      const r = await fetch("/api/system/promote", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pat }),
-      });
-      if (r.ok) {
-        toast.success("Token GitHub salvato (cifrato AES-GCM).");
-        setPat("");
-        setShowPat(false);
-        await load();
-      } else {
-        const d = (await r.json()) as { error?: string };
-        toast.error(d.error ?? "Salvataggio fallito");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleRemovePat = async () => {
-    if (!confirm("Rimuovere il token GitHub salvato? Senza token i push autenticati non funzioneranno.")) return;
+    if (!confirm("Rimuovere il token GitHub salvato su questa installazione? Non serve più: il rilascio si fa dal Mac.")) return;
     const r = await fetch("/api/system/promote", { method: "DELETE" });
     if (r.ok) {
       toast.success("Token rimosso");
       await load();
-    }
-  };
-
-  const handlePromote = async () => {
-    if (!preview || preview.commitsAhead === 0) {
-      toast.info("Niente da promuovere: dev coincide con main.");
-      return;
-    }
-    if (!confirm(
-      `Promuovere ${preview.commitsAhead} commit da dev → main?\n\n` +
-      `Questo aggiornerà la produzione (clienti su canale Stable).\n` +
-      `Operazione: git merge --no-ff dev su main + push origin main.\n\n` +
-      `Confermi?`,
-    )) return;
-    // Un rilascio a tutte le appliance chiede il codice dell'app, come lo scarico del database (15/11/2026).
-    const valida = await fetch("/api/vault/conferma").then((x) => x.json()).catch(() => null) as { scade?: string | null } | null;
-    if (!valida?.scade) {
-      const codice = prompt("Codice della verifica in due passaggi (app Authenticator):");
-      if (!codice) return;
-      const c = await fetch("/api/vault/conferma", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codice: codice.trim(), scopo: "backup" }),
-      });
-      if (!c.ok) {
-        const e = (await c.json().catch(() => ({}))) as { error?: string };
-        toast.error(e.error ?? "Codice non valido");
-        return;
-      }
-    }
-    setPromoting(true);
-    setLastLog(null);
-    try {
-      const r = await fetch("/api/system/promote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true }),
-      });
-      const d = (await r.json()) as PromoteResult;
-      setLastLog(d.log ?? null);
-      setShowLog(true);
-      if (r.ok && d.ok) {
-        toast.success(`Promote OK: ${d.mergedCommits} commit pushati su main (HEAD ${d.newSha?.slice(0, 7)}).`);
-        await load();
-      } else {
-        toast.error(d.error ?? "Promote fallito (vedi log).");
-      }
-    } finally {
-      setPromoting(false);
     }
   };
 
@@ -227,6 +143,20 @@ export function UpdateChannelCard() {
         <div><span>Branch git locale:</span> <code className="font-mono">{status.gitBranch ?? "?"}</code></div>
         <div><span>DA_INVENT_BRANCH:</span> <code className="font-mono">{status.configuredBranch}</code></div>
         <div className="col-span-2"><span>.env.local scrivibile:</span> {status.envFileWritable ? <span className="text-green-600">sì</span> : <span className="text-red-600">no</span>}</div>
+        {status.firma && (
+          <div className="col-span-2">
+            <span>Firma dei rilasci:</span>{" "}
+            {status.firma.modo === "spenta"
+              ? "controllo spento"
+              : status.firma.esito === null
+                ? `non ancora controllata (modo «${status.firma.modo}»)`
+                : status.firma.esito === "buona"
+                  ? `buona sull'ultimo rilascio controllato (${status.firma.commit ?? "?"}), modo «${status.firma.modo}»`
+                  : status.firma.esito === "mancante"
+                    ? <strong className="text-foreground">mancante sull&apos;ultimo rilascio controllato ({status.firma.commit ?? "?"}): installato lo stesso, modo «avvisa»</strong>
+                    : <strong className="text-foreground">rifiutata ({status.firma.commit ?? "?"}): aggiornamento fermo</strong>}
+          </div>
+        )}
       </div>
 
       {!status.envFileWritable && (
@@ -241,18 +171,12 @@ export function UpdateChannelCard() {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Rocket className="h-4 w-4" /> Promuovi dev → main
+              <Rocket className="h-4 w-4" /> Rilascio su main
             </h4>
             <p className="text-xs text-muted-foreground">
-              Pubblica gli aggiornamenti di sviluppo in produzione. Tutti i clienti su canale Stable li riceveranno al prossimo auto-update.
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Token GitHub:{" "}
-              {status.patConfigured ? (
-                <span className="text-green-600">configurato</span>
-              ) : (
-                <span className="text-amber-600">non configurato — necessario per il push autenticato verso main</span>
-              )}
+              Il rilascio ai clienti (canale Stable) non parte più da qui: è un commit firmato, fatto dal Mac di chi
+              rilascia con <code className="font-mono">scripts/rilascia-main.sh</code>. La chiave di firma non sta su
+              nessun server, e le appliance la controllano prima di aggiornarsi. Qui sotto, cosa c&apos;è in attesa.
             </p>
           </div>
         </div>
@@ -301,54 +225,13 @@ export function UpdateChannelCard() {
           </>
         )}
 
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" onClick={handlePromote} disabled={promoting || preview?.commitsAhead === 0}>
-            {promoting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Rocket className="h-3.5 w-3.5 mr-1" />}
-            Promuovi dev → main
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowPat((v) => !v)}>
-            <Lock className="h-3.5 w-3.5 mr-1" />
-            {status.patConfigured ? "Aggiorna token GitHub" : "Configura token GitHub"}
-          </Button>
-          {status.patConfigured && (
-            <Button size="sm" variant="ghost" onClick={handleRemovePat}>
+        {status.patConfigured && (
+          <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+            <span>Su questa installazione c&apos;è ancora un token GitHub salvato, che non serve più.</span>
+            <Button size="sm" variant="outline" onClick={handleRemovePat}>
               Rimuovi token
             </Button>
-          )}
-        </div>
-
-        {showPat && (
-          <div className="rounded-md border bg-muted/30 p-3 space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Serve un Personal Access Token (classic) con scope <code>repo</code> per autorizzare il push verso <code>main</code> da DA-IPAM.
-              Genera su <a href="https://github.com/settings/tokens/new?scopes=repo&description=DA-IPAM-promote" target="_blank" rel="noopener noreferrer" className="underline">github.com/settings/tokens</a>.
-              Salvato cifrato AES-GCM nel hub DB.
-            </p>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="ghp_..."
-              value={pat}
-              onChange={(e) => setPat(e.target.value)}
-              className="w-full rounded border px-2 py-1 text-sm font-mono bg-background"
-            />
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleSavePat} disabled={saving || pat.length < 20}>
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-                Salva token
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setShowPat(false); setPat(""); }}>Annulla</Button>
-            </div>
           </div>
-        )}
-
-        {lastLog && (
-          <details open={showLog} onToggle={(e) => setShowLog((e.target as HTMLDetailsElement).open)} className="rounded-md border bg-muted/30">
-            <summary className="cursor-pointer text-xs px-3 py-2 hover:bg-muted/50">Log ultimo promote ({lastLog.length} righe)</summary>
-            <pre className="text-[10px] font-mono p-3 max-h-64 overflow-auto whitespace-pre-wrap">
-              {lastLog.join("\n")}
-            </pre>
-          </details>
         )}
       </div>
     </div>

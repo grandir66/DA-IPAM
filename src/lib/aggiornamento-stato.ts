@@ -17,7 +17,8 @@ export type EsitoControllo =
   | "aggiornamento_avviato"
   | "fetch_fallito"
   | "servizio_fermo"
-  | "retrocessione_rifiutata";
+  | "retrocessione_rifiutata"
+  | "firma_rifiutata";
 
 export interface TentativoAggiornamento {
   commit: string;
@@ -56,6 +57,7 @@ const ESITI_CONTROLLO: readonly EsitoControllo[] = [
   "fetch_fallito",
   "servizio_fermo",
   "retrocessione_rifiutata",
+  "firma_rifiutata",
 ];
 
 function oggetto(v: unknown): Record<string, unknown> | null {
@@ -165,6 +167,8 @@ export function valutaAvanzamento(stato: StatoAggiornamento, richiestoIl: string
         return { tipo: "in_corso", fase: "inizio" };
       case "servizio_fermo":
         return { tipo: "fallito", messaggio: NON_AVVIATA, nonAvviata: true };
+      case "firma_rifiutata":
+        return { tipo: "fallito", messaggio: "il rilascio non è firmato da chi può rilasciare: aggiornamento rifiutato (vedi il journal del servizio di aggiornamento)" };
       case "retrocessione_rifiutata":
         return { tipo: "fallito", messaggio: "il ramo scelto ha una versione più vecchia di quella installata: aggiornamento rifiutato (scegli il canale giusto)" };
     }

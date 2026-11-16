@@ -114,7 +114,8 @@ async function isEnvFileWritable(): Promise<boolean> {
  * (15/11/2026). `null` = nessun controllo ancora fatto su questa installazione.
  */
 async function esitoFirma(modoScritto: string | undefined): Promise<UpdateChannelStatus["firma"]> {
-  const modo = modoScritto === "blocca" || modoScritto === "spenta" ? modoScritto : "avvisa";
+  // Di serie «blocca» (ADR 0040), come `scripts/lib/guardia-firma.sh`.
+  const modo = modoScritto === "avvisa" || modoScritto === "spenta" ? modoScritto : "blocca";
   try {
     const dati = process.env.DA_INVENT_DATA_DIR ?? unisci(APP_DIR, "data");
     const j: unknown = JSON.parse(await fs.readFile(unisci(dati, "firma-rilasci.json"), "utf8"));

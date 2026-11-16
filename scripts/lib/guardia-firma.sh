@@ -9,8 +9,9 @@
 # di tutto l'albero, i commit sotto non devono essere firmati.
 #
 # Modo, da DA_INVENT_FIRMA_RILASCI:
-#   avvisa  (di serie) la firma mancante o sbagliata si scrive e si va avanti: serve al passaggio delle appliance in uso
-#   blocca  senza firma buona l'aggiornamento non parte (anche se la verifica stessa non si può fare: mai al buio)
+#   blocca  (di serie dal 16/11/2026, ADR 0040) senza firma buona l'aggiornamento non parte (anche se la verifica
+#           stessa non si può fare: mai al buio)
+#   avvisa  la firma mancante o sbagliata si scrive e si va avanti: va scritto nel file, per un passaggio dichiarato
 #   spenta  nessun controllo
 # Rami controllati, da DA_INVENT_FIRMA_RAMI (di serie «main»): `dev` lo seguono solo l'hub e il laboratorio.
 # Risponde 0 = si procede, 1 = fermo. Stampa una riga che comincia con «firma: ». Si usa con `source` dalla cartella
@@ -37,7 +38,7 @@ _firma_scrivi_esito() {
 }
 
 guardia_firma() {
-  local ramo="$1" modo="${DA_INVENT_FIRMA_RILASCI:-avvisa}" rami="${DA_INVENT_FIRMA_RAMI:-main}"
+  local ramo="$1" modo="${DA_INVENT_FIRMA_RILASCI:-blocca}" rami="${DA_INVENT_FIRMA_RAMI:-main}"
   local firmatari="${DA_INVENT_FIRMATARI:-deploy/firmatari-rilasci}" commit r uscita motivo=""
 
   case "$modo" in

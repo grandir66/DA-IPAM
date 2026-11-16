@@ -58,9 +58,16 @@ function guardia(ramo: string, ambiente: Record<string, string> = {}): { codice:
 // Variabili vuote = di serie: la guardia usa `${VAR:-…}`.
 const esito = () => JSON.parse(readFileSync(ESITO, "utf8")) as { esito: string; modo: string; ramo: string };
 
-test("commit non firmato su main, modo di serie (avvisa): si procede, ma lo dice e lo scrive", () => {
+test("commit non firmato su main, modo di serie: fermo (dal 16/11 di serie è «blocca», ADR 0040)", () => {
   commit("main", null);
   const r = guardia("main");
+  assert.equal(r.codice, 1);
+  assert.match(r.uscita, /firma: ERRORE: origin\/main .* aggiornamento fermo/);
+  assert.deepEqual([esito().esito, esito().modo, esito().ramo], ["rifiutata", "blocca", "main"]);
+});
+
+test("commit non firmato su main, modo avvisa scritto nel file: si procede, ma lo dice e lo scrive", () => {
+  const r = guardia("main", { DA_INVENT_FIRMA_RILASCI: "avvisa" });
   assert.equal(r.codice, 0);
   assert.match(r.uscita, /firma: AVVISO: origin\/main .* non ha una firma valida/);
   assert.deepEqual([esito().esito, esito().modo, esito().ramo], ["mancante", "avvisa", "main"]);
@@ -105,7 +112,7 @@ test("un ramo non controllato (dev) passa senza firma anche in modo blocca", () 
 test("senza firmatari nella copia installata: avvisa procede, blocca ferma (mai al buio)", () => {
   const vuoto = join(RADICE, "vuoto");
   writeFileSync(vuoto, "# nessuna chiave\n");
-  assert.equal(guardia("main", { DA_INVENT_FIRMATARI: vuoto }).codice, 0);
+  assert.equal(guardia("main", { DA_INVENT_FIRMATARI: vuoto, DA_INVENT_FIRMA_RILASCI: "avvisa" }).codice, 0);
   const r = guardia("main", { DA_INVENT_FIRMATARI: vuoto, DA_INVENT_FIRMA_RILASCI: "blocca" });
   assert.equal(r.codice, 1);
   assert.match(r.uscita, /nessun firmatario/);

@@ -90,7 +90,7 @@ if ! MOTIVO="$(guardia_versione "$BRANCH")"; then
   exit 1
 fi
 
-# Firma del rilascio (analisi del 15/11/2026): prima di ogni checkout o fusione. In modo «avvisa» (di serie) scrive
+# Firma del rilascio (analisi del 15/11/2026): prima di ogni checkout o fusione. In modo «avvisa» scrive
 # e procede; in «blocca» il servizio esce 1 e resta «failed», come per la retrocessione.
 # shellcheck source=lib/guardia-firma.sh
 . "$SCRIPT_DIR/lib/guardia-firma.sh"

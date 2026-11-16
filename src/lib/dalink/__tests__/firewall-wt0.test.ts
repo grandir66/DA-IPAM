@@ -125,3 +125,34 @@ test("la catena sta sul prerouting, mai sull'input (NetBird la scavalcherebbe)",
   assert.match(r.out, /type filter hook prerouting priority /);
   assert.doesNotMatch(r.out, /hook input/);
 });
+
+// Porte interne (16/11/2026): 3001 (DA-IPAM) e 8080 (Scanner-Edge) servono solo dentro la macchina,
+// dietro nginx; con la chiave «chiuse» la tabella le riserva alla macchina e a Docker.
+const RIGA_INTERNE = /iifname != "lo" iifname != "docker\*" iifname != "br-\*" fib daddr type local tcp dport \{ 3001, 8080 \} counter drop/;
+
+test("porte interne: senza la chiave il ruleset resta quello di prima", () => {
+  const r = lancia("DALINK_FW_EDGE=si\n");
+  assert.equal(r.codice, 0, r.err);
+  assert.doesNotMatch(r.out, /3001|8080/);
+});
+
+test("porte interne chiuse: 3001 e 8080 solo dalla macchina stessa e da Docker, prima del lasciapassare delle altre schede", () => {
+  const r = lancia("DALINK_FW_EDGE=si\nDALINK_FW_PORTE_INTERNE=chiuse\n");
+  assert.equal(r.codice, 0, r.err);
+  assert.match(r.out, RIGA_INTERNE);
+  const righe = r.out.split("\n");
+  const chiusura = righe.findIndex((x) => RIGA_INTERNE.test(x));
+  const lasciapassare = righe.findIndex((x) => /iifname != "wt0" accept/.test(x));
+  assert.ok(chiusura >= 0 && lasciapassare > chiusura, "la chiusura deve stare prima di «iifname != wt0 accept»");
+  // Su wt0 non cambia niente.
+  assert.deepEqual(porteAccettate(r.out), [22, 443, 6443]);
+});
+
+test("porte interne: «aperte» è il valore di prima, un valore strano ferma tutto", () => {
+  const aperte = lancia("DALINK_FW_EDGE=no\nDALINK_FW_PORTE_INTERNE=aperte\n");
+  assert.equal(aperte.codice, 0, aperte.err);
+  assert.doesNotMatch(aperte.out, /3001|8080/);
+  const strano = lancia("DALINK_FW_EDGE=no\nDALINK_FW_PORTE_INTERNE=forse\n");
+  assert.notEqual(strano.codice, 0);
+  assert.match(strano.err, /DALINK_FW_PORTE_INTERNE/);
+});

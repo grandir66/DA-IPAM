@@ -179,3 +179,26 @@ test("install.sh richiama la preparazione con --applica e senza chiave", () => {
   assert.match(src, /prepara-netbird\.sh" --applica --edge "\$NETBIRD_EDGE"/);
   assert.doesNotMatch(src, /--chiave-da-stdin|NETBIRD_SETUP_KEY|setup-key/);
 });
+
+// Porte interne (16/11/2026): 3001 e 8080 riservate alla macchina, vedi firewall-wt0.sh.
+test("porte interne: --porte-interne chiuse finisce in firewall.env, e una riconfigurazione senza l'opzione non le riapre", () => {
+  const a = ambiente();
+  const fw = path.join(a.dalink, "firewall.env");
+  const prima = lancia(a, ["--applica", "--edge", "si", "--porte-interne", "chiuse"]);
+  assert.equal(prima.codice, 0, prima.out);
+  assert.match(fs.readFileSync(fw, "utf8"), /^DALINK_FW_PORTE_INTERNE=chiuse$/m);
+  const dopo = lancia(a, ["--applica", "--edge", "si"]);
+  assert.equal(dopo.codice, 0, dopo.out);
+  assert.match(fs.readFileSync(fw, "utf8"), /^DALINK_FW_PORTE_INTERNE=chiuse$/m);
+  const riaperte = lancia(a, ["--applica", "--edge", "si", "--porte-interne", "aperte"]);
+  assert.equal(riaperte.codice, 0, riaperte.out);
+  assert.match(fs.readFileSync(fw, "utf8"), /^DALINK_FW_PORTE_INTERNE=aperte$/m);
+});
+
+test("porte interne: senza l'opzione e senza un file di prima, firewall.env resta com'era", () => {
+  const a = ambiente();
+  const r = lancia(a, ["--applica", "--edge", "no"]);
+  assert.equal(r.codice, 0, r.out);
+  assert.doesNotMatch(fs.readFileSync(path.join(a.dalink, "firewall.env"), "utf8"), /PORTE_INTERNE/);
+  assert.notEqual(lancia(a, ["--edge", "no", "--porte-interne", "forse"]).codice, 0);
+});

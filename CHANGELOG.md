@@ -6,12 +6,17 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Sicurezza: secondo giro (16/11/2026)
 
+### Aggiunto
+- **Firewall di DA-Link: le porte interne si possono riservare alla macchina** (`scripts/dalink/firewall-wt0.sh`, chiave `DALINK_FW_PORTE_INTERNE=chiuse`; `prepara-netbird.sh --porte-interne chiuse`). nginx termina il TLS e passa a DA-IPAM (3001) e allo Scanner-Edge (8080): quelle due porte servono solo dentro la macchina. Con «chiuse» la tabella `inet dalink` le lascia alla macchina stessa e ai container di Docker, senza dipendere da un altro firewall. **Nasce spenta** (senza la chiave non cambia niente): nelle installazioni coi nodi separati un altro nodo le chiama. Una riconfigurazione senza l'opzione tiene il valore che c'era.
+
 ### Corretto
 - **Profilo nmap: del testo libero degli argomenti passano solo le opzioni di scansione** (`scanner/argomenti-nmap-ammessi.ts`). nmap gira da root e gli argomenti arrivavano così com'erano: con `--script`, `-oN`, `-iL` chi amministrava l'interfaccia scriveva file o eseguiva codice sul sistema. La rotta rifiuta (400), e un profilo già salvato con argomenti non ammessi gira con quelli di serie, dicendolo nel registro del giro.
 - **Passaggio verso LibreNMS e Wazuh: l'indirizzo chiesto resta sul sistema configurato** anche con una barra doppia nel percorso (oggi la fermava solo Next), e il sistema di là non può scrivere nel browser un cookie col nome di quelli di sessione di DA-IPAM.
 - **Il cookie di sessione rinnovato non arriva più a LibreNMS e Wazuh.** Quando il controllo d'accesso rinnova la sessione, Next mette il cookie nuovo sulla richiesta in un'intestazione `set-cookie`, e il passaggio la inoltrava: il taglio del 15/11 guardava solo `cookie`. Visto dal vivo sull'appliance di laboratorio catturando il traffico verso LibreNMS. Ora `set-cookie` e le intestazioni interne di Next non passano mai (`intestazioniVersoDiLa`).
 - **Cambio password: stesso freno della conferma sugli utenti** (5 password sbagliate in 15 minuti, stesso conto): da lì la password corrente si provava senza limite.
 - **Terminale SSH: il gettone vale per un terminale solo, e la shell si richiude se chi l'ha aperta non è più amministratore** (`ssh-terminal/token.ts`, `ws-handler.ts`; terzo giro, 16/11). Il gettone sta nell'indirizzo del WebSocket e per 60 secondi apriva quante shell si voleva; una shell aperta restava tale dopo «Esci», dopo la cancellazione o il declassamento dell'utente. Ora si ricontrolla ogni minuto. Non provato con un terminale vero aperto.
+- **Prova di una credenziale: solo verso reti e oggetti dell'inventario** (`credentials/bersaglio-prova.ts`, rotta `credentials/[id]/test`). L'indirizzo arrivava dal corpo della richiesta senza limiti; ora deve stare in una rete dell'inventario o essere un host o un apparato già conosciuto, altrimenti 400 con la spiegazione. Non provato dall'interfaccia.
+- **Firma dei rilasci: di serie è «blocca»** (ADR 0040, `scripts/lib/guardia-firma.sh`). Il primo rilascio firmato è su `main`; in «avvisa» un commit non firmato veniva installato lo stesso. «avvisa» resta, ma va scritto nel file dell'installazione. Chi segue `dev` non cambia.
 
 ## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)
 

@@ -11,6 +11,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Passaggio verso LibreNMS e Wazuh: l'indirizzo chiesto resta sul sistema configurato** anche con una barra doppia nel percorso (oggi la fermava solo Next), e il sistema di là non può scrivere nel browser un cookie col nome di quelli di sessione di DA-IPAM.
 - **Il cookie di sessione rinnovato non arriva più a LibreNMS e Wazuh.** Quando il controllo d'accesso rinnova la sessione, Next mette il cookie nuovo sulla richiesta in un'intestazione `set-cookie`, e il passaggio la inoltrava: il taglio del 15/11 guardava solo `cookie`. Visto dal vivo sull'appliance di laboratorio catturando il traffico verso LibreNMS. Ora `set-cookie` e le intestazioni interne di Next non passano mai (`intestazioniVersoDiLa`).
 - **Cambio password: stesso freno della conferma sugli utenti** (5 password sbagliate in 15 minuti, stesso conto): da lì la password corrente si provava senza limite.
+- **Terminale SSH: il gettone vale per un terminale solo, e la shell si richiude se chi l'ha aperta non è più amministratore** (`ssh-terminal/token.ts`, `ws-handler.ts`; terzo giro, 16/11). Il gettone sta nell'indirizzo del WebSocket e per 60 secondi apriva quante shell si voleva; una shell aperta restava tale dopo «Esci», dopo la cancellazione o il declassamento dell'utente. Ora si ricontrolla ogni minuto. Non provato con un terminale vero aperto.
 
 ## Non rilasciato — Sicurezza: rilasci firmati (15/11/2026)
 

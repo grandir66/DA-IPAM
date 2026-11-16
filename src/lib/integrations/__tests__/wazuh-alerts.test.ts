@@ -475,9 +475,9 @@ test("ESET: categoria eset, macchina e utente dai campi di ESET e non dall'agent
   assert.equal(a.targetUser, "utente.prova");
 });
 
-test("ESET: soglia 8, il livello 4 resta fuori e il 13 entra", () => {
+test("ESET: soglia 7, il livello 4 resta fuori, il medio (7) e il 13 entrano", () => {
   const cat = ALERT_CATEGORIES.find((c) => c.id === "eset")!;
-  assert.ok(4 < cat.minLevel && cat.minLevel <= 8);
+  assert.ok(4 < cat.minLevel && cat.minLevel <= 7);
   assert.ok(13 >= cat.minLevel);
 });
 

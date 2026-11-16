@@ -115,12 +115,14 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
   {
     // Gli avvisi dell'app ufficiale di ESET in Wazuh (regole 420010-432600, tutte nel gruppo
     // "eset"): li scrive il Wazuh del cliente con l'utente ESET di quel cliente, DA-IPAM non ha
-    // credenziali ESET (Riccardo, 16/11/2026). Soglia 8: tiene i livelli 8, 12 e 13 (649 regole
-    // su 1.264) e lascia fuori il 3 e il 4, che sono il rumore di fondo dell'antivirus.
+    // credenziali ESET (Riccardo, 16/11/2026). Soglia 7: tiene i rilevamenti e gli incidenti di
+    // gravità media (regole 420120 e 420132, livello 7) oltre agli alti (8, 12, 13), e lascia fuori
+    // il 3 e il 4, il rumore di fondo dell'antivirus. A 8 la categoria restava vuota: misurato il
+    // 16/11 sul Wazuh di Domarc, tutti i 30 avvisi della console MDR erano di livello 7.
     id: "eset",
     labelIt: "Rilevamenti ESET",
     groups: ["eset"],
-    minLevel: 8,
+    minLevel: 7,
   },
   {
     id: "malware",

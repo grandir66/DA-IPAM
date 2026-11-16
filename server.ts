@@ -315,6 +315,14 @@ app.prepare().then(() => {
       console.error("WARNING: segnale DA-Link non avviato:", error);
     });
 
+    // Dati ESET delle postazioni letti da DA-Link (17/11/2026): rilievi e software. Spento di serie,
+    // cliente per cliente (`eset.da_dalink`); senza oggetto.env il giro non arriva alla rete.
+    import("./src/lib/integrations/eset-dalink-job").then(({ avviaLetturaEset }) => {
+      avviaLetturaEset();
+    }).catch((error) => {
+      console.error("WARNING: lettura ESET da DA-Link non avviata:", error);
+    });
+
     // Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM). Spento finché
     // /etc/dalink/oggetto.env non ha VULCAN_TOKEN: ogni tic legge il file e, senza
     // gettone, si ferma lì (niente DB, niente rete). Un secondo avvio non crea altri timer.

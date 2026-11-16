@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
+
+### Aggiunto
+- **Raccolta dei dati ESET del cliente da DA-Link** (`src/lib/integrations/eset-dalink.ts`, timer ogni 6 ore): macchine, vulnerabilità (viste da ESET e potenziali dal software) e software delle postazioni, letti con la chiave dell'oggetto dell'istanza. Perché: Riccardo, 16/11, «anche la pagina dei findings deve arricchirsi con i dati ricevuti da ESET, come l'archivio dei software». **Spento di serie**, cliente per cliente (`eset.da_dalink`); la risposta di un altro cliente non si scrive, un giro fallito tiene la copia di prima. Le pagine non li mostrano ancora.
+- **Aggancio delle macchine ESET agli host** (`eset-abbina.ts`): MAC, poi seriale, poi nome; due candidati = «da abbinare», mai a caso; l'aggancio a mano vince.
+
 ## Non rilasciato — Avvisi Wazuh: categoria ESET (16/11/2026)
 
 ### Aggiunto

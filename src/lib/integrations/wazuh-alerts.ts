@@ -113,6 +113,16 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
     assignedOnly: true,
   },
   {
+    // Gli avvisi dell'app ufficiale di ESET in Wazuh (regole 420010-432600, tutte nel gruppo
+    // "eset"): li scrive il Wazuh del cliente con l'utente ESET di quel cliente, DA-IPAM non ha
+    // credenziali ESET (Riccardo, 16/11/2026). Soglia 8: tiene i livelli 8, 12 e 13 (649 regole
+    // su 1.264) e lascia fuori il 3 e il 4, che sono il rumore di fondo dell'antivirus.
+    id: "eset",
+    labelIt: "Rilevamenti ESET",
+    groups: ["eset"],
+    minLevel: 8,
+  },
+  {
     id: "malware",
     labelIt: "Malware sui domain controller",
     groups: ["malware"],
@@ -266,6 +276,12 @@ export interface WazuhAlertDoc {
       UserId?: string;
       ClientIP?: string;
     };
+    /** Una riga dell'app ufficiale di ESET (`/var/log/eset_integration.log`). */
+    eset?: {
+      deviceDisplayName?: string;
+      deviceUuid?: string;
+      userNameBase?: string;
+    };
   };
 }
 
@@ -320,10 +336,15 @@ export function normalizeAlert(
   const groups = doc.rule?.groups ?? [];
   const ed = doc.data?.win?.eventdata;
   const o365 = doc.data?.office365;
+  // ESET: l'agente Wazuh che scrive l'avviso è il server dove gira l'app di ESET, non la macchina
+  // colpita. La macchina e l'utente stanno nei campi di ESET; se il nome manca resta l'agente.
+  const eset = groups.includes("eset") ? doc.data?.eset : undefined;
+  const macchinaEset = eset?.deviceDisplayName?.trim() || null;
 
   // Ogni sorgente usa un campo diverso: Windows targetUserName, Microsoft 365
   // UserId, i decoder generici srcuser/dstuser.
   const targetUser =
+    (eset?.userNameBase?.trim() || undefined) ??
     ed?.targetUserName ??
     o365?.UserId ??
     doc.data?.srcuser ??
@@ -368,8 +389,9 @@ export function normalizeAlert(
   return {
     id: hitId,
     timestamp: doc["@timestamp"],
-    agentId: doc.agent?.id ?? null,
-    agentName: doc.agent?.name ?? null,
+    // Per ESET l'id dell'agente sarebbe quello del server: non è la macchina, quindi non si dà.
+    agentId: macchinaEset ? null : (doc.agent?.id ?? null),
+    agentName: macchinaEset ?? doc.agent?.name ?? null,
     ruleId: doc.rule?.id ?? null,
     ruleLevel: doc.rule?.level ?? 0,
     ruleDescription: doc.rule?.description ?? "",
@@ -394,6 +416,8 @@ export function dedupKey(a: NormalizedAlert): string {
   // per quella regola, e le riscrivevano utente e indirizzo (DTS 14/11/2026: «angelo.doko da 172.16.0.2»,
   // 16872 volte fra «tentativi di accesso»). Le altre categorie tengono la chiave di prima.
   const base = `${a.agentId ?? "?"}|${a.ruleId ?? "?"}`;
+  // ESET: tutti gli avvisi arrivano dallo stesso agente (il server): la riga è per macchina colpita.
+  if (a.category === "eset") return `eset|${a.ruleId ?? "?"}|${(a.agentName ?? "?").toLowerCase()}`;
   return a.category === "self_probe" ? `${base}|self` : base;
 }
 

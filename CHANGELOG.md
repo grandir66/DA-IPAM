@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## Non rilasciato — Avvisi Wazuh: categoria ESET (16/11/2026)
+
+### Aggiunto
+- **«Rilevamenti ESET» fra gli avvisi di sicurezza** (`src/lib/integrations/wazuh-alerts.ts`): gli avvisi che l'app ufficiale di ESET scrive nel Wazuh del cliente (gruppo `eset`, livello 8 o più) entrano in `wazuh_alert_event`. DA-IPAM non ha credenziali ESET: legge dal Wazuh (Riccardo, 16/11). La macchina e l'utente vengono dai campi di ESET, perché l'agente Wazuh che scrive è il server e non la macchina colpita.
+
 ## Non rilasciato — Sicurezza: secondo giro (16/11/2026)
 
 ### Aggiunto

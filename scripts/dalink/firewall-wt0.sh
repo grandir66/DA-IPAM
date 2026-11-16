@@ -12,6 +12,11 @@
 #   DALINK_FW_SORGENTI=…        facoltativa: indirizzi o reti dentro 100.64.0.0/10
 #                               (centrali e admins) da cui accettare; separati da
 #                               spazi o virgole. Senza, la barriera è la policy NetBird.
+#   DALINK_FW_PORTE_INTERNE=chiuse|aperte
+#                               facoltativa (senza: aperte, com'era). Con «chiuse» le porte che
+#                               servono solo dentro la macchina (3001 DA-IPAM, 8080
+#                               Scanner-Edge) si raggiungono solo dalla macchina stessa e dai
+#                               container di Docker, da nessun'altra scheda.
 #
 # Cosa fa (spec NetBird §12 «DA-IPAM», §4.3 R5, rischio 10, decisione 22):
 # - una tabella propria `inet dalink`, catena sul PREROUTING (non sull'input: NetBird,
@@ -22,6 +27,11 @@
 # - Restringe soltanto: in nftables l'accept di una catena non scavalca le altre, quindi
 #   questa tabella non apre niente che UFW o NetBird chiudono, e sopravvive a
 #   `ufw --force reset`.
+# - Porte interne (16/11/2026): nginx termina il TLS su 443 e 6443 e passa a DA-IPAM (3001) e
+#   allo Scanner-Edge (8080), che servono solo dentro la macchina. Con
+#   DALINK_FW_PORTE_INTERNE=chiuse questa tabella le riserva alla macchina e a Docker da sé,
+#   senza dipendere da UFW. Nasce spenta: nelle installazioni coi nodi separati un altro nodo
+#   chiama la 8080 o la 3001, e lì si chiuderebbe una via che serve.
 # - Le porte stanno qui nel codice, non in configurazione: una porta Wazuh (1514, 1515,
 #   55000, 9200, dashboard) non si può aggiungere da un file.
 set -u
@@ -31,6 +41,7 @@ CONF="${DALINK_FW_CONF:-/etc/dalink/firewall.env}"
 IFACE="wt0"
 TABELLA="inet dalink"
 WAZUH_VIETATE="1514 1515 55000 9200 5601"
+PORTE_INTERNE="3001, 8080"
 
 errore() {
   echo "firewall-wt0: $*" >&2
@@ -100,12 +111,22 @@ genera_ruleset() {
   [ -f "$CONF" ] || errore "manca la configurazione $CONF (DALINK_FW_EDGE=si|no)"
   [ -r "$CONF" ] || errore "configurazione $CONF non leggibile"
 
-  local edge sorgenti_grezze porte s elenco="" filtro=""
+  local edge sorgenti_grezze porte s elenco="" filtro="" interne riga_interne=""
   edge="$(valore_conf DALINK_FW_EDGE)"
   case "$edge" in
     si) porte="22, 443, 6443" ;;
     no) porte="22, 443" ;;
     *) errore "DALINK_FW_EDGE deve valere si o no (l'istanza contiene lo Scanner-Edge?)" ;;
+  esac
+
+  interne="$(valore_conf DALINK_FW_PORTE_INTERNE)"
+  case "$interne" in
+    "" | aperte) ;;
+    # Solo ciò che è diretto a questa macchina (`fib daddr type local`): il traffico che la
+    # macchina inoltra non si tocca. `lo` è la macchina che chiama se stessa (DA-IPAM → Edge),
+    # `docker*` e `br-*` sono i ponti da cui arriva nginx.
+    chiuse) riga_interne="iifname != \"lo\" iifname != \"docker*\" iifname != \"br-*\" fib daddr type local tcp dport { $PORTE_INTERNE } counter drop" ;;
+    *) errore "DALINK_FW_PORTE_INTERNE deve valere chiuse o aperte" ;;
   esac
 
   sorgenti_grezze="$(valore_conf DALINK_FW_SORGENTI | tr ',' ' ')"
@@ -126,7 +147,8 @@ table $TABELLA
 delete table $TABELLA
 table $TABELLA {
 	chain ingresso_wt0 {
-		type filter hook prerouting priority mangle + 10; policy accept;
+		type filter hook prerouting priority mangle + 10; policy accept;${riga_interne:+
+		$riga_interne}
 		iifname != "$IFACE" accept
 		ct state established,related accept
 		ct state invalid drop

@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Sicurezza: secondo giro (16/11/2026)
 
+### Aggiunto
+- **Firewall di DA-Link: le porte interne si possono riservare alla macchina** (`scripts/dalink/firewall-wt0.sh`, chiave `DALINK_FW_PORTE_INTERNE=chiuse`; `prepara-netbird.sh --porte-interne chiuse`). nginx termina il TLS e passa a DA-IPAM (3001) e allo Scanner-Edge (8080): quelle due porte servono solo dentro la macchina. Con «chiuse» la tabella `inet dalink` le lascia alla macchina stessa e ai container di Docker, senza dipendere da un altro firewall. **Nasce spenta** (senza la chiave non cambia niente): nelle installazioni coi nodi separati un altro nodo le chiama. Una riconfigurazione senza l'opzione tiene il valore che c'era.
+
 ### Corretto
 - **Profilo nmap: del testo libero degli argomenti passano solo le opzioni di scansione** (`scanner/argomenti-nmap-ammessi.ts`). nmap gira da root e gli argomenti arrivavano così com'erano: con `--script`, `-oN`, `-iL` chi amministrava l'interfaccia scriveva file o eseguiva codice sul sistema. La rotta rifiuta (400), e un profilo già salvato con argomenti non ammessi gira con quelli di serie, dicendolo nel registro del giro.
 - **Passaggio verso LibreNMS e Wazuh: l'indirizzo chiesto resta sul sistema configurato** anche con una barra doppia nel percorso (oggi la fermava solo Next), e il sistema di là non può scrivere nel browser un cookie col nome di quelli di sessione di DA-IPAM.

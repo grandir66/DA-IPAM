@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-16 — Firewall: porte interne 3001 e 8080 riservate alla macchina (Riccardo, zona rossa)
+
+Dettaglio e motivazioni nel rapporto fuori dal repo: `/Users/riccardo/Progetti/Domarc/QUADRO-SICUREZZA-EDGE-20261115.md`, punto 7.5 bis.
+
+- [x] Riccardo (16/11): «Sì, preparala». Chiave `DALINK_FW_PORTE_INTERNE=chiuse` in `scripts/dalink/firewall-wt0.sh` e opzione `--porte-interne` in `prepara-netbird.sh`, sul ramo `claude/firewall-porte-interne-20261116` (solo locale, non si pubblica finché non lo dice Riccardo). Nasce spenta. Prove viste fallire prima; `firewall-wt0.test.ts` e `prepara-netbird.test.ts` verdi; la regola generata è stata data a `nft -c` (sola verifica, niente applicato) su una macchina con nftables 1.0.9: accettata.
+- [ ] Non fatto: fusione su `dev`, release, nessuna macchina toccata. Non provato sui pacchetti veri: `prova-firewall-netns.sh` va esteso alle porte interne e lanciato su una macchina Linux.
+- [ ] Da decidere (Riccardo): dove accenderla e chi la scrive nelle installazioni nuove (Deploy-Appliance, solo nel modo consolidato). Il collaudo è scritto nel rapporto.
+- [ ] Trappola: i ponti di Docker si riconoscono dal nome (`docker*`, `br-*`). Una rete di compose con un nome di ponte scelto a mano resterebbe chiusa fuori.
+
 ## 2026-11-14 — Sonda trunk: si legge anche la scheda principale (Riccardo, base)
 
 Sensore e specchio stanno in DA-Vul-can (`TASKS.md` del 14/11, commit aa9f136a). Qui: IPAM deduce la VLAN dei pacchetti senza tag della principale e la passa al sensore.

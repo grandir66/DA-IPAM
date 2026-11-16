@@ -53,3 +53,12 @@ export function reteDellaNotte<R extends { id: number; cidr: string }>(
   const numero = Math.floor(Date.parse(`${giorno}T00:00:00Z`) / 86_400_000);
   return { rete: ammesse[numero % ammesse.length], ammesse: ammesse.length, troppoGrandi };
 }
+
+/**
+ * La rete del prossimo giro, per la scritta «Stanotte» della pagina: dopo le 03:00 italiane il prossimo giro è quello
+ * di domani. Visto sull'hub il 14/11: alle 17:30 la pagina diceva «LAN Base», alle 03:00 è toccato a «LAN Client».
+ */
+export function reteDelProssimoGiro<R extends { id: number; cidr: string }>(reti: readonly R[], adessoMs: number = Date.now()): R | null {
+  const ora = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(adessoMs));
+  return reteDellaNotte(reti, ora >= 3 ? adessoMs + 86_400_000 : adessoMs).rete;
+}

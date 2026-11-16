@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eGiroCambiamenti, indirizziDelCidr, reteDellaNotte, CONFIG_GIRO_CAMBIAMENTI } from "../giro-notturno";
+import { eGiroCambiamenti, indirizziDelCidr, reteDelProssimoGiro, reteDellaNotte, CONFIG_GIRO_CAMBIAMENTI } from "../giro-notturno";
 import { scheduledJobLabel, ETICHETTE_JOB } from "@/lib/scheduled-job-types";
 
 const RETI = [
@@ -36,4 +36,12 @@ test("il giro si riconosce dalla config e ha il suo nome fra i job", () => {
   assert.equal(eGiroCambiamenti("non json"), false);
   assert.equal(scheduledJobLabel({ job_type: "nmap_scan", config: CONFIG_GIRO_CAMBIAMENTI }, ETICHETTE_JOB), "Giro notturno delle porte (cambiamenti)");
   assert.equal(scheduledJobLabel({ job_type: "nmap_scan", config: "{}" }, ETICHETTE_JOB), "Nmap Scan");
+});
+
+test("di pomeriggio la pagina annuncia la rete del giro di domani alle 03:00", () => {
+  const pomeriggio = Date.UTC(2026, 10, 14, 16, 30, 0); // 17:30 italiane del 14/11
+  const giro = Date.UTC(2026, 10, 15, 2, 0, 0); // 03:00 italiane del 15/11
+  assert.equal(reteDelProssimoGiro(RETI, pomeriggio)!.id, reteDellaNotte(RETI, giro).rete!.id);
+  // all'una di notte il prossimo giro è quello di oggi
+  assert.equal(reteDelProssimoGiro(RETI, Date.UTC(2026, 10, 15, 0, 0, 0))!.id, reteDellaNotte(RETI, giro).rete!.id);
 });

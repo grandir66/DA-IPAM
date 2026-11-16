@@ -33,7 +33,7 @@ import { Pagination } from "@/components/shared/pagination";
 import { SourcesBadges } from "@/components/shared/vuln-badges";
 import { BottoneCopia } from "@/components/shared/copia";
 
-type SoftwareSource = "Wazuh" | "Probe" | "Agent";
+type SoftwareSource = "Wazuh" | "Probe" | "Agent" | "ESET";
 
 interface SoftwareHostRef {
   host_id: number;
@@ -82,7 +82,7 @@ interface ApiResponse {
 }
 
 const PAGE_SIZE = 50;
-const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe", "Agent"];
+const SOURCE_FILTERS: SoftwareSource[] = ["Wazuh", "Probe", "Agent", "ESET"];
 type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 

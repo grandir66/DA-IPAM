@@ -23,6 +23,9 @@ export const SOURCE_BADGE_STYLE: Record<string, string> = {
   "Edge-C": "bg-emerald-700 text-white",
   Probe: "bg-sky-600 text-white",
   Agent: "bg-teal-600 text-white",
+  // ESET, letto da DA-Link (17/11/2026). La fonte si legge dal testo del badge, non dalla tinta.
+  ESET: "bg-slate-700 text-white",
+  "ESET-SW": "bg-slate-500 text-white",
 };
 
 export const SEVERITY_RANK: Record<string, number> = {

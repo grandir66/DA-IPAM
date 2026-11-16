@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EsetDaAbbinare } from "./eset-da-abbinare";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
@@ -303,7 +304,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   );
 
   const rollup = dati?.rollup ?? { Critical: 0, High: 0, Medium: 0, Low: 0 };
-  const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
+  const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, eset: 0, eset_sw: 0, trunk: 0, giro: 0 };
   const totale = dati?.total ?? 0;
   const conteggiTriage = dati?.conteggiTriage ?? { da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 };
   const triTot = conteggiTriage.da_fare + conteggiTriage.in_corso + conteggiTriage.fatto + conteggiTriage.ignorato;
@@ -327,6 +328,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
       {!!dati?.parziali.length && (
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
+      <EsetDaAbbinare alCambio={() => void load()} />
 
       {/* Una barra sola divisa in aree (Riccardo, 13/11/2026: «intestazione enorme con testo», poi «dividere la barra
           superiore in aree»): titolo · cosa compare (la nota intera al passaggio del mouse) · stato dei dati sugli

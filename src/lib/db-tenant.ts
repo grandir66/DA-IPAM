@@ -10156,7 +10156,13 @@ export interface AggregatedVulnOpts {
    * quel motore. Il filtro `sources` agisce dopo, e a una CVE vista da Edge lascerebbe la
    * gravità e gli host di Wazuh (10/11/2026).
    */
-  soloMotore?: "edge" | "wazuh";
+  soloMotore?: "edge" | "wazuh" | "eset";
+  /**
+   * Anche le vulnerabilità ESET «potenziali dal software» (fonte `ESET-SW`: calcolate da DA-Link
+   * dall'elenco dei programmi, meno certe di quelle viste dall'agente). Le chiede solo la pagina
+   * dei rilievi, che le tiene fuori dai conteggi di testa; le altre viste non le vedono.
+   */
+  conPotenzialiEset?: boolean;
   /**
    * Il punteggio proprio di ogni CVE (archivio NVD locale). Serve per gli avvisi di pacchetto di
    * Greenbone («Ubuntu: Security Advisory (USN-…)»): lì il punteggio è quello dell'avviso, cioè
@@ -10184,7 +10190,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe" | "Agent";
+export type SoftwareSource = "Wazuh" | "Probe" | "Agent" | "ESET";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -10394,9 +10400,76 @@ function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
   return r.host_id != null ? `h:${r.host_id}` : `ip:${r.ip}`;
 }
 
+/** Fonti delle vulnerabilità lette da ESET attraverso DA-Link (17/11/2026). */
+export const FONTE_ESET = "ESET";
+export const FONTE_ESET_SW = "ESET-SW";
+
+/** Il motore di una fonte: Wazuh, ESET (anche le potenziali) o Edge (Greenbone, Nuclei, controlli). */
+export function motoreDiFonte(source: string): "edge" | "wazuh" | "eset" {
+  return source === "Wazuh" ? "wazuh" : source === FONTE_ESET || source === FONTE_ESET_SW ? "eset" : "edge";
+}
+
+const GRAVITA_ESET: Record<string, Severity> = {
+  SEVERITY_LEVEL_CRITICAL: "Critical",
+  SEVERITY_LEVEL_HIGH: "High",
+  SEVERITY_LEVEL_MEDIUM: "Medium",
+  SEVERITY_LEVEL_LOW: "Low",
+};
+
+/**
+ * Le vulnerabilità delle macchine ESET AGGANCIATE a un host (copia letta da DA-Link,
+ * `integrations/eset-dalink.ts`), nella stessa forma delle righe di Edge e Wazuh. Una macchina non
+ * agganciata non dà righe: sta nell'elenco «da abbinare». Senza le tabelle (istanza che non ha mai
+ * letto ESET) non c'è niente da aggiungere. «Recente» qui è l'ultimo contatto della macchina con ESET.
+ */
+export function leggiRigheVulnEset(
+  database: Database.Database,
+  opz: { osFamilies?: OsFamily[]; soloRecentiGiorni?: number; conPotenziali?: boolean } = {},
+): RawVulnRow[] {
+  const c = database.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('eset_vuln', 'eset_macchina', 'eset_abbinamento')").get() as { n: number };
+  if (c.n < 3) return [];
+  const os = opz.osFamilies && opz.osFamilies.length > 0 && opz.osFamilies.length < OS_FAMILIES.length ? opz.osFamilies : [];
+  const righe = database
+    .prepare(
+      `SELECT v.cve, v.fonte, v.oggetto, v.versione, v.gravita, v.cvss, a.host_id, COALESCE(h.ip, m.ip_locale, '') AS ip,
+              COALESCE(m.ultimo_contatto, m.letto_il) AS visto
+         FROM eset_vuln v
+         JOIN eset_macchina m ON m.uuid = v.macchina_uuid
+         JOIN eset_abbinamento a ON a.macchina_uuid = m.uuid AND a.host_id IS NOT NULL
+         JOIN hosts h ON h.id = a.host_id
+        WHERE (? = 1 OR v.fonte = 'eset')
+          AND (? IS NULL OR julianday(COALESCE(m.ultimo_contatto, m.letto_il)) >= julianday('now') - ?)
+          ${os.length ? `AND h.os_family IN (${os.map(() => "?").join(",")})` : ""}`,
+    )
+    .all(opz.conPotenziali ? 1 : 0, opz.soloRecentiGiorni ?? null, opz.soloRecentiGiorni ?? null, ...os) as Array<{
+      cve: string; fonte: string; oggetto: string; versione: string; gravita: string | null; cvss: number | null; host_id: number; ip: string; visto: string;
+    }>;
+  const out: RawVulnRow[] = [];
+  for (const r of righe) {
+    const severity = GRAVITA_ESET[r.gravita ?? ""] ?? (r.cvss != null ? gravitaDaCvss(r.cvss) : null);
+    if (!severity) continue; // senza gravità né punteggio non si classifica: non entra
+    out.push({
+      key: r.cve,
+      cve_id: r.cve,
+      nvt_oid: null,
+      severity,
+      cvss_score: r.cvss,
+      package_label: [r.oggetto, r.versione].filter(Boolean).join(" ") || null,
+      host_id: r.host_id,
+      ip: r.ip,
+      port: null,
+      scanned_at: r.visto,
+      source: r.fonte === "software" ? FONTE_ESET_SW : FONTE_ESET,
+    });
+  }
+  return out;
+}
+
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
-  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti, opts.soloRecentiGiorni);
-  let rows = opts.soloMotore ? lette.filter((r) => (r.source === "Wazuh") === (opts.soloMotore === "wazuh")) : lette;
+  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti, opts.soloRecentiGiorni).concat(
+    leggiRigheVulnEset(db(), { osFamilies: opts.osFamilies, soloRecentiGiorni: opts.soloRecentiGiorni, conPotenziali: opts.conPotenzialiEset }),
+  );
+  let rows = opts.soloMotore ? lette.filter((r) => motoreDiFonte(r.source) === opts.soloMotore) : lette;
   if (opts.cvssDi) {
     const daAvviso = rows.filter((r) => r.source === "Edge-G" && !!r.cve_id && !!r.nvt_oid?.startsWith(OID_AVVISO_PACCHETTO));
     if (daAvviso.length > 0) {
@@ -10932,6 +11005,35 @@ function invAgentSoftwareTableExists(): boolean {
   return row?.ok === 1;
 }
 
+/**
+ * Il software che ESET elenca per le macchine AGGANCIATE a un host (copia letta da DA-Link,
+ * `integrations/eset-dalink.ts`, 17/11/2026). Si unisce in lettura: le scansioni delle sonde
+ * restano istantanee immutabili e non si toccano. Una macchina non agganciata non dà righe.
+ */
+function fetchEsetSoftwareRows(osActive: boolean, osList: OsFamily[]): Array<{
+  name: string; version: string | null; publisher: string | null; host_id: number; ip: string;
+  install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+}> {
+  const c = db().prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('eset_software', 'eset_macchina', 'eset_abbinamento')").get() as { n: number };
+  if (c.n < 3) return [];
+  const osClause = osActive ? `AND h.os_family IN (${osList.map(() => "?").join(",")})` : "";
+  return db()
+    .prepare(
+      `SELECT s.nome AS name, NULLIF(s.versione, '') AS version, NULLIF(s.editore, '') AS publisher,
+              a.host_id, COALESCE(h.ip, m.ip_locale, '') AS ip,
+              NULL AS install_date,
+              m.letto_il AS scanned_at,
+              'ESET' AS source
+         FROM eset_software s
+         JOIN eset_macchina m ON m.uuid = s.macchina_uuid
+         JOIN eset_abbinamento a ON a.macchina_uuid = m.uuid AND a.host_id IS NOT NULL
+         JOIN hosts h ON h.id = a.host_id
+        WHERE TRIM(s.nome) != ''
+          ${osClause}`,
+    )
+    .all(...(osActive ? osList : [])) as ReturnType<typeof fetchEsetSoftwareRows>;
+}
+
 function fetchInvAgentSoftwareRows(
   osActive: boolean,
   osList: OsFamily[],
@@ -11042,11 +11144,14 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
     }>;
 
   const agentRows = fetchInvAgentSoftwareRows(osActive, osList);
+  const esetRows = fetchEsetSoftwareRows(osActive, osList);
 
   const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...agentRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    // ESET per ultimo: nome ed editore di una voce già nota restano quelli delle altre fonti.
+    ...esetRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
@@ -11329,7 +11434,13 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       .all(nameLower, limit) as typeof wazuhRows;
   }
 
-  const merged = [...wazuhRows, ...probeRows, ...agentRows];
+  // ESET (17/11/2026): le macchine agganciate a un host che hanno questo programma.
+  const esetRows = fetchEsetSoftwareRows(false, [])
+    .filter((r) => r.name.toLowerCase() === nameLower)
+    .slice(0, limit)
+    .map((r) => ({ host_id: r.host_id, ip: r.ip, publisher: r.publisher, install_date: r.install_date, scanned_at: r.scanned_at, version: r.version, source: r.source }));
+
+  const merged = [...wazuhRows, ...probeRows, ...agentRows, ...esetRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 

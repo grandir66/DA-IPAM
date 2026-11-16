@@ -8,6 +8,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Aggiunto
 - **Raccolta dei dati ESET del cliente da DA-Link** (`src/lib/integrations/eset-dalink.ts`, timer ogni 6 ore): macchine, vulnerabilità (viste da ESET e potenziali dal software) e software delle postazioni, letti con la chiave dell'oggetto dell'istanza. Perché: Riccardo, 16/11, «anche la pagina dei findings deve arricchirsi con i dati ricevuti da ESET, come l'archivio dei software». **Spento di serie**, cliente per cliente (`eset.da_dalink`); la risposta di un altro cliente non si scrive, un giro fallito tiene la copia di prima. Le pagine non li mostrano ancora.
+- **Rilievi ESET nella pagina dei rilievi**: scheda «ESET» fra i motori; fonte scritta in riga («ESET», «ESET · potenziale dal software»); una CVE già vista da Edge o Wazuh resta una riga sola. Le potenziali dal software stanno nell'elenco ma fuori dai conteggi di gravità in testa, e fuori dalle altre viste. Solo le macchine agganciate a un host danno rilievi.
+- **«N macchine ESET da abbinare»** nella pagina dei rilievi, con la finestra per agganciarle a mano a un host (IP o nome) o segnarle come non presenti (`/api/eset`, scritture solo per l'amministratore).
+- **Software ESET nell'archivio del software**: fonte «ESET» accanto a Wazuh, Probe e Agent, col suo filtro; un host senza scansione ma con ESET non resta vuoto. Si unisce in lettura, le scansioni delle sonde non si toccano.
 - **Aggancio delle macchine ESET agli host** (`eset-abbina.ts`): MAC, poi seriale, poi nome; due candidati = «da abbinare», mai a caso; l'aggancio a mano vince.
 
 ## Non rilasciato — Avvisi Wazuh: categoria ESET (16/11/2026)

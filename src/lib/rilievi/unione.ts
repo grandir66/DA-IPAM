@@ -4,6 +4,8 @@
  */
 import {
   classifyOsFamily,
+  FONTE_ESET,
+  FONTE_ESET_SW,
   getAggregatedVulnerabilities,
   getCurrentTenantCode,
   getTenantDb,
@@ -17,7 +19,7 @@ import { getRilieviPaginated, TIPI_RILIEVO } from "@/lib/trunk/rilievi";
 import type { GravitaRilievo } from "@/lib/trunk/rilievi-tipi";
 import type Database from "better-sqlite3";
 import { rilieviDelServizio, type ServizioPerRilievi } from "./del-servizio";
-import { FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type OspiteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
+import { FONTI_FUORI_DAI_CONTEGGI, FONTI_RILIEVO, type ElencoRilievi, type FonteRilievo, type OspiteRilievo, type RilievoUnito, type RollupRilievi } from "./tipi";
 import { agganciaTriage } from "./triage-aggancio";
 import { barrePerRete, indicatori, raggruppa, type Raggruppamento } from "./gruppi";
 import type { ExploitInfo } from "@/lib/vuln/exploit-feed/archivio";
@@ -30,6 +32,12 @@ function gravitaDaTrunk(g: GravitaRilievo): Severity {
 }
 
 type RilievoConFonti = RilievoUnito & { fonti?: FonteRilievo[] };
+
+/** I motori che passano dalla lettura delle CVE, con le loro fonti. */
+const MOTORI_CVE = ["edge", "wazuh", "eset"] as const;
+type MotoreCve = (typeof MOTORI_CVE)[number];
+const FONTI_DEL_MOTORE: Record<MotoreCve, readonly FonteRilievo[]> = { edge: ["edge"], wazuh: ["wazuh"], eset: ["eset", "eset_sw"] };
+const nelConteggio = (x: RilievoUnito): boolean => !FONTI_FUORI_DAI_CONTEGGI.includes(x.fonte);
 
 /**
  * Cosa non entra MAI nei Findings (Riccardo, 10/11/2026: «i rilievi low, info e vecchi non
@@ -69,7 +77,7 @@ function anagraficaHost(): Map<number, OspiteRilievo & { os: OsFamily }> {
 
 function daCve(
   anagrafica: Map<number, OspiteRilievo & { os: OsFamily }>,
-  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean; soloMotore?: "edge" | "wazuh"; cvssDi?: CvssDi },
+  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean; soloMotore?: MotoreCve; cvssDi?: CvssDi },
 ): { righe: RilievoConFonti[]; parziale: boolean } {
   // Tutte, non le prime 2.000: l'aggregazione le ordina per gravità, e il taglio lasciava di Edge
   // quasi solo le critiche (47 su 290) e di Wazuh 1.970 su oltre 17.000 (Riccardo, 10/11/2026:
@@ -83,6 +91,7 @@ function daCve(
     ...(opzioni.os?.length ? { osFamilies: opzioni.os } : {}),
     soloRecentiGiorni: RILIEVO_RECENTE_GIORNI,
     senzaBassi: true,
+    conPotenzialiEset: true,
   });
   const righe = data.map((v): RilievoConFonti => {
     const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
@@ -90,6 +99,8 @@ function daCve(
     const fonti: FonteRilievo[] = [];
     if (v.sources.some((x) => x.startsWith("Edge"))) fonti.push("edge");
     if (v.sources.includes("Wazuh")) fonti.push("wazuh");
+    if (v.sources.includes(FONTE_ESET)) fonti.push("eset");
+    if (v.sources.includes(FONTE_ESET_SW)) fonti.push("eset_sw");
     const fonte = fonti[0] ?? "edge";
     const provaParti = [
       v.package_label ? `pacchetto ${v.package_label}` : null,
@@ -113,7 +124,7 @@ function daCve(
       cve_key: v.key,
       host_count: v.host_count,
       // Il pacchetto è un software da aggiornare solo se lo dice Wazuh: per Edge l'etichetta è il nome del test.
-      pacchetto: v.sources.includes("Wazuh") ? v.package_label : null,
+      pacchetto: v.sources.includes("Wazuh") || fonti[0] === "eset" || fonti[0] === "eset_sw" ? v.package_label : null,
       exploit: v.exploit ? { kev: v.exploit.kev, edb: v.exploit.edb > 0, epss: v.exploit.epss } : null,
       ospiti: (v.host_ids ?? [])
         .map((id) => anagrafica.get(id))
@@ -254,11 +265,12 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   // Tutte le famiglie scelte = nessun filtro.
   const osScelti = filtro.os?.length && filtro.os.length < OS_FAMILIES.length ? filtro.os : undefined;
   // Un motore solo fra Edge e Wazuh: gravità e host sono quelli che dice lui, non il massimo fra i due.
-  const soloMotore = setFonte.has("edge") && !setFonte.has("wazuh") ? ("edge" as const) : setFonte.has("wazuh") && !setFonte.has("edge") ? ("wazuh" as const) : undefined;
+  const motoriScelti = MOTORI_CVE.filter((m) => FONTI_DEL_MOTORE[m].some((f) => setFonte.has(f)));
+  const soloMotore = motoriScelti.length === 1 ? motoriScelti[0] : undefined;
   const nonDisponibili: FonteRilievo[] = [];
   const parziali: FonteRilievo[] = [];
   const sorgenti = [
-    { fonti: ["edge", "wazuh"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, cvssDi: filtro.cvssDi }) },
+    { fonti: ["edge", "wazuh", "eset", "eset_sw"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, cvssDi: filtro.cvssDi }) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
     { fonti: ["giro"] as const, leggi: () => daGiri(filtro.hostId) },
   ];
@@ -313,11 +325,12 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   tutti = filtra(tutti);
 
   const totaleGlobale = tutti.length;
-  const perFonte: Record<FonteRilievo, number> = { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
+  const perFonte: Record<FonteRilievo, number> = { edge: 0, wazuh: 0, eset: 0, eset_sw: 0, trunk: 0, giro: 0 };
   let selezionati: RilievoUnito[] = [];
   for (const { fonti: motori, ...x } of tutti) {
     const fontiRiga = motori ?? [x.fonte];
-    for (const fonte of fontiRiga) perFonte[fonte] += 1;
+    // Una CVE vista da ESET in tutti e due i modi conta una volta sola nella scheda «ESET».
+    for (const fonte of fontiRiga) if (fonte !== "eset_sw" || !fontiRiga.includes("eset")) perFonte[fonte] += 1;
     const fonte = fontiRiga.find((f) => setFonte.has(f));
     if (fonte) selezionati.push({ ...x, fonte });
   }
@@ -326,9 +339,10 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   if (soloMotore && !nonDisponibili.includes(soloMotore)) {
     try {
       const sole = daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, soloMotore, cvssDi: filtro.cvssDi });
-      selezionati = filtra(sole.righe).map(({ fonti: _f, ...x }) => {
-        void _f;
-        return { ...x, fonte: soloMotore };
+      selezionati = filtra(sole.righe).flatMap(({ fonti: suoi, ...x }) => {
+        // La fonte della riga è la prima del motore che è anche fra quelle chieste (per ESET sono due).
+        const fonte = (suoi ?? [x.fonte]).find((f) => setFonte.has(f));
+        return fonte ? [{ ...x, fonte }] : [];
       });
     } catch (err) {
       console.error("[findings] lettura per motore non riuscita:", soloMotore, err);
@@ -368,18 +382,18 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   // La fascia in testata segue i filtri (Riccardo, 10/11/2026: «il grafico in alto non si aggiorna in
   // base alle opzioni dei filtri»). Le barre per rete seguono tutto tranne il filtro per rete:
   // altrimenti, scelta una rete, sparirebbero le altre e non si potrebbe passare a un'altra.
-  const perRete = filtro.conIndicatori ? barrePerRete(conStato(selezionati), filtro.ospite) : undefined;
+  const perRete = filtro.conIndicatori ? barrePerRete(conStato(selezionati).filter(nelConteggio), filtro.ospite) : undefined;
 
   if (filtro.rete != null) {
     const rete = filtro.rete;
     selezionati = selezionati.filter((x) => (x.ospiti?.length ? x.ospiti.some((o) => o.network_id === rete) : x.network_id === rete));
   }
-  const rollup = rollupDi(selezionati);
+  const rollup = rollupDi(selezionati.filter(nelConteggio));
   // I conteggi di revisione restano quelli della vista prima del filtro per stato.
   const conteggiTriage: Record<StatoTriage, number> = { da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 };
   for (const x of selezionati) conteggiTriage[x.triage?.stato ?? "da_fare"] += 1;
   selezionati = conStato(selezionati);
-  const numeri = filtro.conIndicatori ? indicatori(selezionati) : undefined;
+  const numeri = filtro.conIndicatori ? indicatori(selezionati.filter(nelConteggio)) : undefined;
 
   const pageSize = Math.min(Math.max(filtro.pageSize ?? 50, 1), 200);
   const page = Math.max(filtro.page ?? 1, 1);

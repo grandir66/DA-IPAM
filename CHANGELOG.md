@@ -12,6 +12,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **«N macchine ESET da abbinare»** nella pagina dei rilievi, con la finestra per agganciarle a mano a un host (IP o nome) o segnarle come non presenti (`/api/eset`, scritture solo per l'amministratore).
 - **Software ESET nell'archivio del software**: fonte «ESET» accanto a Wazuh, Probe e Agent, col suo filtro; un host senza scansione ma con ESET non resta vuoto. Si unisce in lettura, le scansioni delle sonde non si toccano.
 - **Aggancio delle macchine ESET agli host** (`eset-abbina.ts`): MAC, poi seriale, poi nome; due candidati = «da abbinare», mai a caso; l'aggancio a mano vince.
+- **Stesso MAC (o seriale) su due host**: la macchina ESET va all'host visto più di recente, invece di restare «da abbinare» (Riccardo, 17/11: sulla 533 erano 6 macchine su 31, la stessa censita due volte). Due host con lo stesso nome restano da abbinare a mano.
 
 ## Non rilasciato — Avvisi Wazuh: categoria ESET (16/11/2026)
 

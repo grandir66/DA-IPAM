@@ -31,6 +31,21 @@ test("due candidati non si scelgono a caso; i seriali segnaposto e gli IP non ag
   assert.equal(nomeCorto("10.0.0.1"), null);
 });
 
+test("stesso MAC o seriale su due host: va a quello visto più di recente; senza date resta ambigua", () => {
+  const doppi = [
+    { id: 10, mac: "aa:bb:cc:00:00:10", nome: "pc-cavo", nome2: null, seriale: null, visto: "2026-11-09 10:30:00" },
+    { id: 11, mac: "aa:bb:cc:00:00:10", nome: "pc-wifi", nome2: null, seriale: null, visto: "2026-11-16T23:45:00.000Z" },
+    { id: 12, mac: "aa:bb:cc:00:00:12", nome: "x", nome2: null, seriale: "SER-DOPPIO", visto: null },
+    { id: 13, mac: "aa:bb:cc:00:00:13", nome: "y", nome2: null, seriale: "ser-doppio", visto: "2026-10-01 08:00:00" },
+    { id: 14, mac: "aa:bb:cc:00:00:14", nome: "z", nome2: null, seriale: null },
+    { id: 15, mac: "aa:bb:cc:00:00:14", nome: "w", nome2: null, seriale: null },
+  ];
+  const i = indiciHost(doppi);
+  assert.deepEqual(abbina(m({ mac: ["aa:bb:cc:00:00:10"] }), i), { host_id: 11, per: "mac" });
+  assert.deepEqual(abbina(m({ seriale: "SER-DOPPIO" }), i), { host_id: 13, per: "seriale" });
+  assert.deepEqual(abbina(m({ mac: ["aa:bb:cc:00:00:14"] }), i), { host_id: null, per: "ambiguo" });
+});
+
 test("il MAC noto dall'agente Wazuh aggancia anche se l'host non ha MAC", () => {
   const i = indiciHost(HOSTS, [{ host_id: 3, mac: "aa:bb:cc:00:00:33" }]);
   assert.deepEqual(abbina(m({ mac: ["aa:bb:cc:00:00:33"] }), i), { host_id: 3, per: "mac" });
@@ -38,7 +53,7 @@ test("il MAC noto dall'agente Wazuh aggancia anche se l'host non ha MAC", () => 
 
 function banco(): Database.Database {
   const db = new Database(":memory:");
-  db.exec("CREATE TABLE hosts (id INTEGER PRIMARY KEY, mac TEXT, hostname TEXT, custom_name TEXT, serial_number TEXT)");
+  db.exec("CREATE TABLE hosts (id INTEGER PRIMARY KEY, mac TEXT, hostname TEXT, custom_name TEXT, serial_number TEXT, last_seen TEXT)");
   assicuraSchemaEset(db);
   const h = db.prepare("INSERT INTO hosts (id, mac, hostname, custom_name, serial_number) VALUES (?,?,?,?,?)");
   for (const x of HOSTS) h.run(x.id, x.mac, x.nome, x.nome2, x.seriale);

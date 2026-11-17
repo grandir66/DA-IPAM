@@ -2,16 +2,18 @@
  * Agganciare le macchine ESET agli host di DA-IPAM (17/11/2026; piano DA-Link
  * `2026-11-16-eset-verso-da-ipam.md`, Task 3; scelta di Riccardo del 16/11).
  *
- * Nell'ordine: MAC di una scheda vera, poi seriale, poi nome senza dominio. A ogni passo serve UN
- * solo candidato: zero = si prova il passo dopo, più di uno = «da abbinare» (non si sceglie a
- * caso fra due host). Una macchina che non si aggancia resta nell'elenco «da abbinare» e non crea
+ * Nell'ordine: MAC di una scheda vera, poi seriale, poi nome senza dominio. Zero candidati = si
+ * prova il passo dopo. Più candidati per NOME = «da abbinare» (non si sceglie a caso fra due host).
+ * Più candidati con lo stesso MAC o lo stesso seriale sono la stessa macchina censita più volte
+ * (cavo e wifi, un indirizzo vecchio): va all'host visto più di recente (Riccardo, 17/11/2026,
+ * «Sì, al più recente»; sulla 533 erano 6 macchine su 31). Senza una data su nessuno resta ambigua. Una macchina che non si aggancia resta nell'elenco «da abbinare» e non crea
  * host. L'aggancio fatto a mano vince e il giro non lo tocca.
  */
 import type Database from "better-sqlite3";
 
 export type MotivoAbbinamento = "mac" | "seriale" | "nome" | "nessuno" | "ambiguo" | "mano";
 
-export interface HostPerAbbinare { id: number; mac: string | null; nome: string | null; nome2: string | null; seriale: string | null }
+export interface HostPerAbbinare { id: number; mac: string | null; nome: string | null; nome2: string | null; seriale: string | null; visto?: string | null }
 export interface MacchinaPerAbbinare { uuid: string; nome: string; hostname: string | null; mac: string[]; seriale: string | null }
 export interface Abbinamento { host_id: number | null; per: MotivoAbbinamento }
 
@@ -36,7 +38,7 @@ const macNorm = (m: string | null | undefined): string | null => {
   return /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/.test(v) && v !== "00:00:00:00:00:00" ? v : null;
 };
 
-interface Indici { perMac: Map<string, Set<number>>; perSeriale: Map<string, Set<number>>; perNome: Map<string, Set<number>> }
+interface Indici { perMac: Map<string, Set<number>>; perSeriale: Map<string, Set<number>>; perNome: Map<string, Set<number>>; visto: Map<number, string> }
 
 function metti(m: Map<string, Set<number>>, k: string | null, id: number): void {
   if (!k) return;
@@ -47,8 +49,9 @@ function metti(m: Map<string, Set<number>>, k: string | null, id: number): void 
 
 /** `macInPiu`: MAC noti per un host da altre fonti (l'agente Wazuh), stesso formato. */
 export function indiciHost(hosts: HostPerAbbinare[], macInPiu: Array<{ host_id: number; mac: string | null }> = []): Indici {
-  const i: Indici = { perMac: new Map(), perSeriale: new Map(), perNome: new Map() };
+  const i: Indici = { perMac: new Map(), perSeriale: new Map(), perNome: new Map(), visto: new Map() };
   for (const h of hosts) {
+    if (h.visto) i.visto.set(h.id, h.visto.replace(" ", "T"));
     metti(i.perMac, macNorm(h.mac), h.id);
     metti(i.perSeriale, serialeUtile(h.seriale), h.id);
     metti(i.perNome, nomeCorto(h.nome), h.id);
@@ -69,7 +72,14 @@ export function abbina(m: MacchinaPerAbbinare, i: Indici): Abbinamento {
     const candidati = new Set<number>();
     for (const k of chiavi) for (const id of (k ? indice.get(k) : undefined) ?? []) candidati.add(id);
     if (candidati.size === 1) return { host_id: [...candidati][0], per };
-    if (candidati.size > 1) return { host_id: null, per: "ambiguo" };
+    if (candidati.size > 1) {
+      // Stesso MAC o stesso seriale = stessa macchina: vale l'host visto più di recente.
+      if (per !== "nome") {
+        const datati = [...candidati].filter((id) => i.visto.has(id)).sort((a, b) => (i.visto.get(b) as string).localeCompare(i.visto.get(a) as string) || a - b);
+        if (datati.length > 0) return { host_id: datati[0], per };
+      }
+      return { host_id: null, per: "ambiguo" };
+    }
   }
   return { host_id: null, per: "nessuno" };
 }
@@ -78,7 +88,7 @@ export interface ContiAbbinamento { agganciate: number; da_abbinare: number; a_m
 
 /** Ricalcola gli agganci non fatti a mano. Si chiama dopo ogni copia e dopo un aggancio a mano. */
 export function riabbinaEset(db: Database.Database, ora: Date = new Date()): ContiAbbinamento {
-  const hosts = db.prepare("SELECT id, mac, hostname AS nome, custom_name AS nome2, serial_number AS seriale FROM hosts").all() as HostPerAbbinare[];
+  const hosts = db.prepare("SELECT id, mac, hostname AS nome, custom_name AS nome2, serial_number AS seriale, last_seen AS visto FROM hosts").all() as HostPerAbbinare[];
   let wazuh: Array<{ host_id: number; mac: string | null }> = [];
   try {
     wazuh = db.prepare("SELECT host_id, mac FROM wazuh_agent WHERE host_id IS NOT NULL AND mac IS NOT NULL").all() as typeof wazuh;

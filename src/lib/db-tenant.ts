@@ -34,6 +34,7 @@ import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
 import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { MOTIVI, motivoDaPosizione, type StradaAccesso } from "./credentials/motivi-accesso";
 import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_MAPPA_PORTE, INDICI_MAPPA_PORTE, SEGNO_MAPPA_PORTE, VERSIONE_MAPPA_PORTE, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
+import type { TipoRecordDns, VoceDns, ZonaDns } from "./ad/dns/record";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -9340,6 +9341,91 @@ export function upsertAdDhcpLease(integrationId: number, input: { scope_id: stri
 
 export function clearAdDhcpLeases(integrationId: number): void {
   db().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DNS DI ACTIVE DIRECTORY (sola lettura, 17/11/2026)
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface RigaZonaDnsAd { id: number; integration_id: number; nome: string; inversa: number; partizione: string; letta_il: string }
+export interface RigaRecordDnsAd {
+  id: number; integration_id: number; zona: string; nome: string; fqdn: string; tipo: TipoRecordDns;
+  dato: string; ip: string | null; statica: number; rinnovata_il: string | null; ttl: number; letta_il: string;
+}
+export interface StatoDnsAd { letto_il: string | null; provato_il: string | null; errore: string | null }
+
+/** Riscrive per intero zone e record di un'integrazione, in una transazione: o tutto o niente. */
+export function sostituisciDnsAd(integrationId: number, zone: readonly ZonaDns[], voci: readonly VoceDns[]): void {
+  const d = db();
+  const insZona = d.prepare("INSERT OR IGNORE INTO ad_dns_zone (integration_id, nome, inversa, partizione) VALUES (?, ?, ?, ?)");
+  const insVoce = d.prepare("INSERT INTO ad_dns_record (integration_id, zona, nome, fqdn, tipo, dato, ip, statica, rinnovata_il, ttl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  d.transaction(() => {
+    d.prepare("DELETE FROM ad_dns_record WHERE integration_id = ?").run(integrationId);
+    d.prepare("DELETE FROM ad_dns_zone WHERE integration_id = ?").run(integrationId);
+    for (const z of zone) insZona.run(integrationId, z.nome, z.inversa ? 1 : 0, z.partizione);
+    for (const v of voci) insVoce.run(integrationId, v.zona, v.nome, v.fqdn, v.tipo, v.dato, v.ip, v.statica ? 1 : 0, v.rinnovataIl, v.ttl);
+  })();
+}
+
+/** Esito dell'ultima lettura: `errore` null = riuscita (e `letto_il` avanza); altrimenti `letto_il` resta quello di prima. */
+export function segnaEsitoDnsAd(integrationId: number, errore: string | null): void {
+  db().prepare(`INSERT INTO ad_dns_stato (integration_id, letto_il, provato_il, errore)
+    VALUES (?, CASE WHEN ? IS NULL THEN datetime('now') END, datetime('now'), ?)
+    ON CONFLICT(integration_id) DO UPDATE SET
+      letto_il = CASE WHEN excluded.errore IS NULL THEN excluded.provato_il ELSE ad_dns_stato.letto_il END,
+      provato_il = excluded.provato_il, errore = excluded.errore`).run(integrationId, errore, errore);
+}
+
+export function getStatoDnsAd(integrationId: number): StatoDnsAd {
+  return (db().prepare("SELECT letto_il, provato_il, errore FROM ad_dns_stato WHERE integration_id = ?").get(integrationId) as StatoDnsAd | undefined)
+    ?? { letto_il: null, provato_il: null, errore: null };
+}
+
+export function getZoneDnsAd(integrationId: number): RigaZonaDnsAd[] {
+  return db().prepare("SELECT * FROM ad_dns_zone WHERE integration_id = ? ORDER BY inversa, nome").all(integrationId) as RigaZonaDnsAd[];
+}
+
+export function getRecordDnsAd(integrationId: number): RigaRecordDnsAd[] {
+  return db().prepare("SELECT * FROM ad_dns_record WHERE integration_id = ?").all(integrationId) as RigaRecordDnsAd[];
+}
+
+export function getRecordDnsAdPaginati(
+  integrationId: number, pagina: number, perPagina: number,
+  filtri: { cerca?: string; tipo?: TipoRecordDns; zona?: string } = {},
+): { rows: RigaRecordDnsAd[]; total: number } {
+  let dove = "WHERE integration_id = ?";
+  const p: unknown[] = [integrationId];
+  if (filtri.tipo) { dove += " AND tipo = ?"; p.push(filtri.tipo); }
+  if (filtri.zona) { dove += " AND zona = ?"; p.push(filtri.zona); }
+  if (filtri.cerca?.trim()) { dove += " AND (fqdn LIKE ? OR dato LIKE ? OR ip LIKE ?)"; const c = `%${filtri.cerca.trim()}%`; p.push(c, c, c); }
+  const total = (db().prepare(`SELECT COUNT(*) AS c FROM ad_dns_record ${dove}`).get(...p) as { c: number }).c;
+  const rows = db().prepare(`SELECT * FROM ad_dns_record ${dove} ORDER BY zona, nome, tipo LIMIT ? OFFSET ?`).all(...p, perPagina, (pagina - 1) * perPagina) as RigaRecordDnsAd[];
+  return { rows, total };
+}
+
+export function getVolutiDnsAd(integrationId: number): { chiave: string; nota: string | null; da: string | null; il: string }[] {
+  return db().prepare("SELECT chiave, nota, da, il FROM ad_dns_voluti WHERE integration_id = ? ORDER BY il DESC").all(integrationId) as { chiave: string; nota: string | null; da: string | null; il: string }[];
+}
+
+export function segnaVolutoDnsAd(integrationId: number, chiave: string, nota: string | null, da: string | null): void {
+  db().prepare(`INSERT INTO ad_dns_voluti (integration_id, chiave, nota, da) VALUES (?, ?, ?, ?)
+    ON CONFLICT(integration_id, chiave) DO UPDATE SET nota = excluded.nota, da = excluded.da, il = datetime('now')`).run(integrationId, chiave, nota, da);
+}
+
+/** Gli host come servono al confronto col DNS: IP, nome, stato, ultimo visto, e se sono computer del dominio. */
+export function getHostPerDnsAd(): { id: number; ip: string; hostname: string | null; status: string | null; last_seen: string | null; inAd: boolean }[] {
+  const righe = db().prepare(`SELECT h.id, h.ip, h.hostname, h.status, h.last_seen,
+      EXISTS(SELECT 1 FROM ad_computers c WHERE c.host_id = h.id) AS in_ad
+    FROM hosts h`).all() as { id: number; ip: string; hostname: string | null; status: string | null; last_seen: string | null; in_ad: number }[];
+  return righe.map(({ in_ad, ...h }) => ({ ...h, inAd: in_ad === 1 }));
+}
+
+export function getCidrReti(): string[] {
+  return (db().prepare("SELECT cidr FROM networks WHERE cidr IS NOT NULL").all() as { cidr: string }[]).map((r) => r.cidr);
+}
+
+export function togliVolutoDnsAd(integrationId: number, chiave: string): boolean {
+  return db().prepare("DELETE FROM ad_dns_voluti WHERE integration_id = ? AND chiave = ?").run(integrationId, chiave).changes > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

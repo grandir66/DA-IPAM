@@ -5,8 +5,8 @@
 **Obiettivo:** DA-IPAM legge dai DC le zone DNS forward e reverse, le tiene in archivio accanto alle concessioni DHCP di AD e mostra, coi nomi, le voci doppie, incoerenti o in disaccordo con quello che DA-IPAM vede in rete.
 **Architettura:** la lettura passa dallo stesso collegamento LDAP della sincronizzazione di AD (`connectLdap`), sulle partizioni `DomainDnsZones`, `ForestDnsZones` e `CN=MicrosoftDNS,CN=System`. I record finiscono in due tabelle del cliente, riscritte a ogni sincronizzazione riuscita. Le anomalie non si salvano: le calcola una funzione pura al momento della lettura, dai record in archivio e dagli host.
 **Spec:** nessuna a parte. Richiesta e decisioni di Riccardo in `TASKS.md`, sezione «2026-11-17 — Idea: DNS di Active Directory»; misura di partenza con `scripts/misura-dns-ad.ts`.
-**Livello di controllo:** leggero (proposto, da confermare): più tappe su un progetto in esercizio, ma solo letture verso il DC e tabelle nuove.
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-17
+**Livello di controllo:** leggero (deciso da Riccardo il 17/11/2026): più tappe su un progetto in esercizio, ma solo letture verso il DC e tabelle nuove.
+**Stato:** in corso · **Ultimo aggiornamento:** 2026-11-17
 
 ## Vincoli globali
 
@@ -36,7 +36,9 @@
 
 ---
 
-### [ ] Task 1 — Lettura e interpretazione dei record
+### [x] Task 1 — Lettura e interpretazione dei record
+
+Verifica: `node --import tsx --test src/lib/ad/dns/__tests__/record.test.ts` → 12 verdi.
 
 **File:** crea `src/lib/ad/dns/record.ts`, `src/lib/ad/dns/lettura.ts`, `src/lib/ad/dns/__tests__/record.test.ts`; modifica `scripts/misura-dns-ad.ts` perché usi queste funzioni invece delle sue copie.
 
@@ -63,7 +65,9 @@ export async function leggiDnsAd(client: Client, baseDn: string): Promise<Lettur
 
 **Commit:** «DNS di AD: lettura dei record degli host».
 
-### [ ] Task 2 — Archivio e aggancio alla sincronizzazione
+### [x] Task 2 — Archivio e aggancio alla sincronizzazione
+
+Verifica: `node --import tsx --test src/lib/ad/dns/__tests__/archivio.test.ts` → 4 verdi; `sincronizzazione.test.ts` → 2 verdi. `audit-db-drift` non lanciato.
 
 **File:** modifica `src/lib/db-tenant-schema.ts` e `src/lib/db-tenant.ts` (tabelle, migrazione idempotente, funzioni), `src/lib/db.ts` (deleghe), `src/lib/transfer/table-registry.ts` (le due tabelle, `scope: "tenant"`, `tier: "mirror"`, come `ad_dhcp_leases`), `src/lib/ad/ad-client.ts` (chiamata dopo `syncAdDhcpLeases`, riga 444); crea `src/lib/ad/dns/__tests__/archivio.test.ts`.
 
@@ -118,7 +122,9 @@ export async function syncAdDns(integration: AdIntegration, client: Client): Pro
 
 **Commit:** «DNS di AD: archivio e lettura a ogni sincronizzazione».
 
-### [ ] Task 3 — Le anomalie
+### [x] Task 3 — Le anomalie
+
+Verifica: `node --import tsx --test src/lib/ad/dns/__tests__/anomalie.test.ts` → 12 verdi.
 
 **File:** crea `src/lib/ad/dns/anomalie.ts`, `src/lib/ad/dns/__tests__/anomalie.test.ts`.
 
@@ -148,7 +154,9 @@ export function anomalieDns(dati: {
 
 **Commit:** «DNS di AD: calcolo delle anomalie».
 
-### [ ] Task 4 — Rotte e scheda «DNS» in Active Directory
+### [x] Task 4 — Rotte e scheda «DNS» in Active Directory
+
+Verifica: `npx eslint` sui file toccati → pulito; `npx tsc --noEmit -p .` → 0 errori. Pagina NON guardata resa in locale (nessun dominio di prova): si guarda su 192.168.4.8.
 
 **File:** crea `src/app/api/ad/[id]/dns/route.ts` (GET), `src/app/api/ad/[id]/dns/voluti/route.ts` (POST, DELETE), `src/app/(dashboard)/active-directory/scheda-dns.tsx`; modifica `src/app/(dashboard)/active-directory/page.tsx` (scheda dopo «DHCP», righe 936-939).
 
@@ -165,7 +173,7 @@ export function anomalieDns(dati: {
 
 **Commit:** «DNS di AD: scheda in Active Directory».
 
-### [ ] Task 5 — Rilascio su dev e riscontro sul 70791
+### [~] Task 5 — Rilascio su dev e riscontro sul 70791
 
 **Cosa fare:** `CHANGELOG.md` col perché; `CONTEXT.md` (cosa legge, la regola «lettura fallita non svuota», dove sta la scheda); `docs/scheda-mappa.md` se cambia la riga «prossimo»; `npm run version:release -- --staged-only`, `git push origin dev`. Su 192.168.4.8, dopo l'aggiornamento, «Sincronizza» sull'integrazione del 70791.
 
@@ -186,4 +194,9 @@ export function anomalieDns(dati: {
 ### Fatto
 ### Mancante
 ### Scostamenti dal piano
+- `leggiRecord(b)` non prende `adesso`: la data del rinnovo si salva com'è, i giorni li calcola chi confronta.
+- Stato dell'ultima lettura in una tabella sua, `ad_dns_stato`, invece di due colonne su `ad_integrations`: nessun `ALTER`, nessun tipo da toccare.
+- Le funzioni del database stanno solo in `db-tenant.ts`, senza deleghe in `db.ts`: fuori dal contesto del cliente lanciano, non ripiegano su DEFAULT.
+- `syncAdDns` apre un collegamento LDAP suo invece di ricevere quello della sincronizzazione.
+- In più: tipo di anomalia `ip_piu_ptr` separato, e `src/lib/ad/dns/vista.ts` che compone la risposta della rotta.
 ### Consigli di sviluppo

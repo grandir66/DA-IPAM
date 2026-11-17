@@ -3242,4 +3242,50 @@ CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_i
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL;
 -- FK su sé stessa: senza indice l'eliminazione di un host rilegge tutta la tabella per ogni evidenza (17/11/2026)
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_superseded_by ON attribution_evidence(superseded_by);
+
+-- DNS di Active Directory, sola lettura (17/11/2026): zone e record degli host (A, AAAA, CNAME, PTR)
+-- letti dai DC a ogni sincronizzazione. Si riscrivono per intero a ogni lettura riuscita; una lettura
+-- fallita non li tocca e lascia l'errore in ad_dns_stato. Le date sono nella forma di datetime('now').
+CREATE TABLE IF NOT EXISTS ad_dns_zone (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  inversa INTEGER NOT NULL DEFAULT 0,
+  partizione TEXT NOT NULL,
+  letta_il TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(integration_id, nome)
+);
+CREATE TABLE IF NOT EXISTS ad_dns_record (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  zona TEXT NOT NULL,
+  nome TEXT NOT NULL,
+  fqdn TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK(tipo IN ('A','AAAA','CNAME','PTR')),
+  dato TEXT NOT NULL,
+  ip TEXT,
+  statica INTEGER NOT NULL DEFAULT 0,
+  rinnovata_il TEXT,
+  ttl INTEGER NOT NULL DEFAULT 0,
+  letta_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_integrazione ON ad_dns_record(integration_id, tipo);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_ip ON ad_dns_record(ip);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_fqdn ON ad_dns_record(fqdn);
+-- Esito dell'ultima lettura: letto_il è l'ultima riuscita, errore quello dell'ultimo tentativo (NULL = riuscito).
+CREATE TABLE IF NOT EXISTS ad_dns_stato (
+  integration_id INTEGER PRIMARY KEY REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  letto_il TEXT,
+  provato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  errore TEXT
+);
+-- Anomalie che una persona ha segnato come volute (un alias, due server sullo stesso nome).
+CREATE TABLE IF NOT EXISTS ad_dns_voluti (
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  chiave TEXT NOT NULL,
+  nota TEXT,
+  da TEXT,
+  il TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (integration_id, chiave)
+);
 `;

@@ -23,7 +23,7 @@ import {
   Loader2,
   Wifi,
   Pencil,
-  MoreHorizontal,
+  MoreHorizontal, Globe,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ScorrimentoTabella } from "@/components/ui/table";
 import { Pagination } from "@/components/shared/pagination";
+import { SchedaDnsAd } from "./scheda-dns";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
 import {
@@ -937,6 +938,10 @@ function PaginaActiveDirectory() {
                     <Wifi className="w-4 h-4" />
                     DHCP ({selectedIntegration.dhcp_leases_count ?? 0})
                   </TabsTrigger>
+                  <TabsTrigger value="dns" className="flex items-center gap-2">
+                    <Globe className="w-4 h-4" />
+                    DNS
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="computers" className="mt-4">
@@ -1217,6 +1222,10 @@ function PaginaActiveDirectory() {
                       </ScorrimentoTabella>
                     </>
                   )}
+                </TabsContent>
+
+                <TabsContent value="dns" className="mt-4">
+                  <SchedaDnsAd integrationId={selectedIntegration.id} aggiornamento={selectedIntegration.last_sync_at} />
                 </TabsContent>
 
               </Tabs>

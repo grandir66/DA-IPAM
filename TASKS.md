@@ -11,6 +11,7 @@ scrittura tenuto, `/api/health` senza risposta, coda di ascolto piena): le richi
 - [x] Causa trovata: `attribution_evidence.superseded_by` (FK sulla stessa tabella, 184.496 righe) senza indice; ogni evidenza eliminata in cascata da un host rileggeva tutta la tabella. Verifica sul posto, host 204 (55.016 evidenze), eliminazione a vuoto con ROLLBACK: prima oltre 45 s (fermata dal tetto), dopo `CREATE INDEX idx_attr_evidence_superseded_by` 0,23 s.
 - [x] Indice creato a mano sul database del 70791 di 192.168.4.8 (lo stesso nome della migrazione, `IF NOT EXISTS`) e aggiunto in `db-tenant.ts` e `db-tenant-schema.ts`. Secondo riavvio del servizio alle 15:25 UTC. Le prime 11 eliminazioni di Riccardo (rete 3, 15:22) erano andate a buon fine.
 - [ ] Da guardare: l'host 204 ha 55.016 evidenze e il 72 ne ha 36.664, gli altri poche centinaia. Capire chi le scrive a ripetizione e se vanno sfoltite.
+- [x] Riccardo ha riprovato con più IP dopo l'indice: «ora funziona» (17/11).
 - [ ] L'indice arriva agli altri tenant e alle appliance con la prossima versione; `main` non toccato.
 
 ## 2026-11-16 — Firewall: porte interne 3001 e 8080 riservate alla macchina (Riccardo, zona rossa)

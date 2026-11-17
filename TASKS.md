@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)
+
+Riccardo: «gestire in modo integrato il DNS di Active Directory sia per le zone forward che reverse, per poter
+analizzare duplicati, doppioni, riconfigurare i record correggendo facilmente le voci, integrandole con i dati
+che arrivano anche da DA-IPAM»; e subito dopo: «oltre ad avere la parte DHCP avere la parte DNS di AD».
+
+- Cosa c'è già: lettura LDAP dei DC (`src/lib/ad/`), che per i controlli di Health AD apre già le partizioni del DNS (`DomainDnsZones`, `MicrosoftDNS` in `ad/health/infra-extras.ts`); il DHCP di AD (`ad/apparato-dhcp.ts`, `ad_dhcp_leases`); il calcolo dei PTR e la pagina dei record per PowerDNS (`network-services/dns-ptr.ts`, `dns-section.tsx`); WinRM verso Windows; `ad_computers`, host con MAC e ultimo visto.
+- [ ] Passo 1, sola lettura: leggere zone e record dal DC (forward e reverse), tenerli in archivio accanto alle concessioni DHCP e confrontarli con DA-IPAM. Da misurare prima sul 70791 quanti record e quante anomalie escono.
+- [ ] Passo 2, correzioni: scrittura sul DC una voce alla volta, con anteprima e registro di chi ha cambiato cosa. Zona rossa (apparati del cliente): livello completo, da approvare a parte.
+- [ ] Da decidere con Riccardo: via di scrittura (WinRM con i comandi DNS di Windows, oppure aggiornamento dinamico firmato) e con quale utenza; cosa fare delle voci statiche messe a mano dal cliente.
+
 ## 2026-11-17 — 192.168.4.8: DA-IPAM bloccato per 8 minuti, eliminazione host «non fa nulla» (Riccardo)
 
 Riccardo: dalla pagina della subnet l'eliminazione degli host offline non faceva nulla. Misurato sul posto:

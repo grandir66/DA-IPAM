@@ -6,7 +6,7 @@
 **Architettura:** ogni correzione è un elenco ordinato di passi elementari, solo due: «aggiungi questo record» e «togli questo record esatto». I passi diventano comandi DNS di Windows lanciati via WinRM sul DC. Prima di scrivere si rilegge dal DC il record che si sta per toccare; se non è più quello mostrato, ci si ferma. Ogni scrittura lascia il record di prima in un registro, da cui si può annullare.
 **Spec:** nessuna a parte. Decisioni di Riccardo in `TASKS.md`, sezione «2026-11-17 — Idea: DNS di Active Directory». Passo 1 chiuso: `2026-11-17-dns-active-directory-sola-lettura.md`.
 **Livello di controllo:** completo (zona rossa: si scrive su un apparato del cliente).
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-11-17
+**Stato:** in corso (approvato da Riccardo il 17/11/2026) · **Ultimo aggiornamento:** 2026-11-17
 
 ## Decisioni di Riccardo (17/11/2026)
 

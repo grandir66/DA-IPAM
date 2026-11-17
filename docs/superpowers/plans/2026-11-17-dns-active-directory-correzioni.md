@@ -45,11 +45,11 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1 | [ ] | Correzioni proposte per ogni anomalia | in linea | — | ogni tipo di anomalia ha le sue proposte, o «nessuna» motivata | prove del modulo, viste fallire |
-| S2 | [ ] | Comandi DNS di Windows e convalida | in linea | — | i due comandi e la rilettura si compongono solo da valori convalidati | prove con valori ostili, viste fallire |
-| S3 | [ ] | Esecuzione, registro, annulla | in linea | S1, S2 | un piano confermato si esegue passo per passo con rilettura, registro e tre esiti | prove con un DC finto, viste fallire |
-| S4 | [ ] | Rotte e impostazioni dell'integrazione | in linea | S3 | anteprima, applica, annulla, registro; interruttore e utenza | prove delle rotte; `tsc` e lint |
-| S5 | [ ] | Interfaccia nella scheda «DNS» | in linea | S4 | comandi, selezione, finestra di conferma, registro | schermata a 1920 e a larghezza da portatile |
+| S1 | [x] | Correzioni proposte per ogni anomalia | in linea | — | ogni tipo di anomalia ha le sue proposte, o «nessuna» motivata | prove del modulo, viste fallire |
+| S2 | [x] | Comandi DNS di Windows e convalida | in linea | — | i due comandi e la rilettura si compongono solo da valori convalidati | prove con valori ostili, viste fallire |
+| S3 | [x] | Esecuzione, registro, annulla | in linea | S1, S2 | un piano confermato si esegue passo per passo con rilettura, registro e tre esiti | prove con un DC finto, viste fallire |
+| S4 | [x] | Rotte e impostazioni dell'integrazione | in linea | S3 | anteprima, applica, annulla, registro; interruttore e utenza | prove delle rotte; `tsc` e lint |
+| S5 | [x] | Interfaccia nella scheda «DNS» | in linea | S4 | comandi, selezione, finestra di conferma, registro | schermata a 1920 e a larghezza da portatile |
 | S6 | [ ] | Prova sul dato vero (Domarc, 70791) | in linea, con Riccardo | S5 | record di prova creato, cambiato e tolto dal DA-IPAM e visto dal di fuori | elenco qui sotto |
 | S7 | [ ] | Revisione del ramo, documenti, rilascio su dev | revisore (1 subagent) + in linea | S6 | rilievi chiusi, `CHANGELOG`/`CONTEXT`/scheda-mappa, consuntivo | cancello completo |
 
@@ -57,7 +57,7 @@ S1 e S2 non hanno file in comune e potrebbero andare in parallelo; sono piccoli,
 
 ---
 
-### [ ] S1 — Correzioni proposte per ogni anomalia
+### [x] S1 — Correzioni proposte per ogni anomalia
 
 **File:** crea `src/lib/ad/dns/correzioni.ts`, `src/lib/ad/dns/__tests__/correzioni.test.ts`.
 
@@ -92,7 +92,7 @@ export function correzioniPer(anomalia: AnomaliaDns, contesto: { zone: ZonaDns[]
 
 **Verifica:** `node --import tsx --test src/lib/ad/dns/__tests__/correzioni.test.ts`: un caso per riga della tabella; ordine dei passi nei cambi; nessuna proposta per i record di un DC. Ogni prova vista fallire una volta togliendo la regola che prova.
 
-### [ ] S2 — Comandi DNS di Windows e convalida
+### [x] S2 — Comandi DNS di Windows e convalida
 
 **File:** crea `src/lib/ad/dns/comandi.ts`, `src/lib/ad/dns/__tests__/comandi.test.ts`.
 
@@ -109,7 +109,7 @@ I comandi escono in JSON con le proprietà appiattite lato PowerShell (`Select-O
 
 **Verifica:** `node --import tsx --test src/lib/ad/dns/__tests__/comandi.test.ts`: nome con apice, con `;`, con `$(`, con spazio, con `..`; zona non in archivio; nome o IP di un DC; tipo SRV; `@` e `_ldap._tcp`: tutti rifiutati. I comandi buoni confrontati carattere per carattere. `leggiRisposta` con le quattro forme. Ogni rifiuto visto passare una volta togliendo il controllo.
 
-### [ ] S3 — Esecuzione, registro, annulla
+### [x] S3 — Esecuzione, registro, annulla
 
 **File:** crea `src/lib/ad/dns/esecuzione.ts`, `src/lib/ad/dns/registro.ts`, `src/lib/ad/dns/accesso.ts`, prove in `__tests__/esecuzione.test.ts`; modifica `src/lib/db-tenant-schema.ts` e `src/lib/db-tenant.ts`.
 
@@ -154,7 +154,7 @@ Per ogni passo, nell'ordine: convalida → rilettura dal DC → riga `in_corso` 
 
 **Verifica:** `esecuzione.test.ts` con un `runWinrmCommand` finto che tiene un piccolo DNS in memoria: correzione riuscita; record cambiato prima della scrittura; comando che lancia `BRIDGE_TIMEOUT` e record poi presente (esito «riuscito» dalla rilettura) o assente («non so»); registro non scrivibile → nessun comando partito; annulla di un «togli» che ricrea il record; scrittura spenta → rifiuto senza toccare il DC. Ogni prova vista fallire.
 
-### [ ] S4 — Rotte e impostazioni dell'integrazione
+### [x] S4 — Rotte e impostazioni dell'integrazione
 
 **File:** crea `src/app/api/ad/[id]/dns/correzioni/route.ts` (POST anteprima), `…/correzioni/applica/route.ts` (POST), `…/modifiche/route.ts` (GET registro paginato), `…/modifiche/[modificaId]/annulla/route.ts` (POST); modifica `src/app/api/ad/[id]/route.ts` (i tre campi nuovi in PUT, con Zod) e `src/lib/ad/dns/vista.ts` (porta `scrittura: { accesa, fonte, motivo }` e, per ogni anomalia, le correzioni proposte).
 
@@ -162,7 +162,7 @@ Il gettone dell'anteprima è un HMAC di integrazione, utente, scadenza e passi, 
 
 **Verifica:** prove delle rotte (403 a scrittura spenta e per chi non è amministratore, 400 a gettone scaduto o passi diversi); `npx tsc --noEmit -p .` e lint sui file toccati.
 
-### [ ] S5 — Interfaccia nella scheda «DNS»
+### [x] S5 — Interfaccia nella scheda «DNS»
 
 **File:** modifica `src/app/(dashboard)/active-directory/scheda-dns.tsx` e il modulo di modifica dell'integrazione in `page.tsx`; crea `conferma-correzioni.tsx`, `registro-dns.tsx`.
 
@@ -199,9 +199,20 @@ Una revisione del ramo con il subagent `reviewer` (uno solo, sola lettura, stima
 - Riallineare il DHCP.
 
 ## Registro
+- 2026-11-17 S1 → [x] (correzioni.test.ts, 14 verdi; viste fallire togliendo il filtro dei DC e l'ordine aggiungi/togli)
+- 2026-11-17 S2 → [x] (comandi.test.ts, 12 verdi; viste fallire togliendo a turno cinque controlli della convalida e il «record solo» del togli)
+- 2026-11-17 S3 → [x] (esecuzione.test.ts, 11 verdi su un DC finto; viste fallire togliendo a turno otto protezioni)
+- 2026-11-17 S4 → [x] (conferma.test.ts, 5 verdi; `tsc` 0 errori, lint pulito). Le rotte non hanno prove loro: la logica sta nei moduli provati.
+- 2026-11-17 S5 → [x] scritta; **NON guardata resa** né a 1920 né a 1366: si guarda su 192.168.4.8 durante S6.
 
 ## Consuntivo
 ### Fatto
 ### Mancante
 ### Scostamenti dal piano
+- Il «togli» non usa `-RecordData`: rilegge il nodo, vuole esattamente un record uguale e passa quello a `Remove-DnsServerResourceRecord`. Più stretto, e non dipende dalla forma che `-RecordData` vuole per A, PTR e CNAME.
+- `ad_dns_modifiche` senza chiavi esterne (né verso l'integrazione né verso sé stessa): con i trigger che vietano il `DELETE`, una cascata avrebbe impedito di cancellare un'integrazione, e il registro deve restare comunque.
+- Le impostazioni hanno una rotta loro (`PUT /api/ad/[id]/dns/impostazioni`) e un pannello nella scheda «DNS», invece di entrare nel modulo di modifica dell'integrazione.
+- Esito in più, solo a schermo: «non eseguito» per i passi dopo uno non riuscito nella stessa correzione.
+- L'annulla chiede una conferma semplice, non il gettone dell'anteprima.
+- Nessuna prova automatica delle rotte.
 ### Consigli di sviluppo

@@ -1472,6 +1472,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
 
+  // Correzioni al DNS di AD (17/11/2026): interruttore e utenza sull'integrazione. Nascono spente (0).
+  // L'indice sulla chiave esterna si crea QUI, dopo la colonna: nello schema arriverebbe prima dell'ALTER.
+  {
+    const colonne = new Set((newDb.prepare("PRAGMA table_info(ad_integrations)").all() as Array<{ name: string }>).map((c) => c.name));
+    if (colonne.size > 0) {
+      if (!colonne.has("dns_scrittura")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_scrittura INTEGER NOT NULL DEFAULT 0");
+      if (!colonne.has("dns_usa_winrm_dc")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_usa_winrm_dc INTEGER NOT NULL DEFAULT 0");
+      if (!colonne.has("dns_credential_id")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_ad_integrations_dns_cred ON ad_integrations(dns_credential_id)");
+    }
+  }
+
   // Migrazione runtime (PRIMA degli indici): software_scans con device_id + host_id nullable.
   // Deve girare prima di TENANT_INDEXES_SQL perché tale blocco contiene
   // CREATE INDEX su software_scans(device_id, ...) e fallirebbe se la colonna manca.
@@ -8939,7 +8951,7 @@ export function deleteProxmoxHost(id: number): boolean {
 // ACTIVE DIRECTORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */ credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; }
+export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */ credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; /** Correzioni al DNS (17/11/2026): interruttore, «usa la voce WinRM del DC», voce dedicata. Assenti = spente. */ dns_scrittura?: number; dns_usa_winrm_dc?: number; dns_credential_id?: number | null; }
 export interface AdComputer { id: number; integration_id: number; object_guid: string; sam_account_name: string; dns_host_name: string | null; display_name: string | null; distinguished_name: string; operating_system: string | null; operating_system_version: string | null; last_logon_at: string | null; enabled: number; host_id: number | null; ip_address: string | null; ou: string | null; raw_data: string | null; synced_at: string; }
 export interface AdUser { id: number; integration_id: number; object_guid: string; sam_account_name: string; user_principal_name: string | null; display_name: string | null; email: string | null; department: string | null; title: string | null; phone: string | null; ou: string | null; enabled: number; last_logon_at: string | null; password_last_set_at: string | null; raw_data: string | null; synced_at: string; }
 export interface AdDhcpLease { id: number; integration_id: number; scope_id: string; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; lease_expires: string | null; address_state: string | null; description: string | null; last_synced: string; }
@@ -9410,6 +9422,51 @@ export function getVolutiDnsAd(integrationId: number): { chiave: string; nota: s
 export function segnaVolutoDnsAd(integrationId: number, chiave: string, nota: string | null, da: string | null): void {
   db().prepare(`INSERT INTO ad_dns_voluti (integration_id, chiave, nota, da) VALUES (?, ?, ?, ?)
     ON CONFLICT(integration_id, chiave) DO UPDATE SET nota = excluded.nota, da = excluded.da, il = datetime('now')`).run(integrationId, chiave, nota, da);
+}
+
+export interface RigaModificaDnsAd {
+  id: number; integration_id: number; gruppo: string; correzione: string; titolo: string;
+  azione: "aggiungi" | "togli"; zona: string; nome: string; tipo: "A" | "CNAME" | "PTR"; dato: string;
+  prima: string | null; esito: "in_corso" | "riuscito" | "rifiutato" | "cambiato" | "non_so";
+  messaggio: string | null; utenza: string | null; annulla_di: number | null; da: string; il: string;
+}
+
+/** Riga del registro PRIMA del comando sul DC: nasce `in_corso`. Lancia se non si scrive. */
+export function apriModificaDnsAd(r: Omit<RigaModificaDnsAd, "id" | "esito" | "messaggio" | "il">): number {
+  return Number(db().prepare(`INSERT INTO ad_dns_modifiche (integration_id, gruppo, correzione, titolo, azione, zona, nome, tipo, dato, prima, utenza, annulla_di, da)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(r.integration_id, r.gruppo, r.correzione, r.titolo, r.azione, r.zona, r.nome, r.tipo, r.dato, r.prima, r.utenza, r.annulla_di, r.da).lastInsertRowid);
+}
+
+/** Esito definitivo di una riga `in_corso`: dopo, il trigger non la lascia più cambiare. */
+export function chiudiModificaDnsAd(id: number, esito: Exclude<RigaModificaDnsAd["esito"], "in_corso">, messaggio: string | null): void {
+  db().prepare("UPDATE ad_dns_modifiche SET esito = ?, messaggio = ? WHERE id = ? AND esito = 'in_corso'").run(esito, messaggio, id);
+}
+
+export function getModificaDnsAd(integrationId: number, id: number): RigaModificaDnsAd | undefined {
+  return db().prepare("SELECT * FROM ad_dns_modifiche WHERE integration_id = ? AND id = ?").get(integrationId, id) as RigaModificaDnsAd | undefined;
+}
+
+export function getModificheDnsAd(integrationId: number, pagina: number, perPagina: number): { rows: (RigaModificaDnsAd & { annullata: number })[]; total: number } {
+  const total = (db().prepare("SELECT COUNT(*) AS c FROM ad_dns_modifiche WHERE integration_id = ?").get(integrationId) as { c: number }).c;
+  const rows = db().prepare(`SELECT m.*, EXISTS(SELECT 1 FROM ad_dns_modifiche a WHERE a.annulla_di = m.id AND a.esito = 'riuscito') AS annullata
+    FROM ad_dns_modifiche m WHERE m.integration_id = ? ORDER BY m.id DESC LIMIT ? OFFSET ?`).all(integrationId, perPagina, (pagina - 1) * perPagina) as (RigaModificaDnsAd & { annullata: number })[];
+  return { rows, total };
+}
+
+export function modificaDnsAdGiaAnnullata(id: number): boolean {
+  return db().prepare("SELECT 1 FROM ad_dns_modifiche WHERE annulla_di = ? AND esito IN ('riuscito','in_corso') LIMIT 1").get(id) !== undefined;
+}
+
+/** I controller di dominio di un'integrazione, come li conosce AD: nome e IP. I loro record DNS non si correggono. */
+export function getControllerDiDominio(integrationId: number): { nome: string; ip: string | null }[] {
+  const righe = db().prepare(`SELECT sam_account_name, dns_host_name, ip_address FROM ad_computers
+    WHERE integration_id = ? AND distinguished_name LIKE '%OU=Domain Controllers,%'`).all(integrationId) as { sam_account_name: string; dns_host_name: string | null; ip_address: string | null }[];
+  return righe.map((r) => ({ nome: (r.dns_host_name ?? r.sam_account_name).replace(/\$$/, "").toLowerCase().split(".")[0] ?? "", ip: r.ip_address }));
+}
+
+export function impostaCorrezioniDnsAd(integrationId: number, v: { dns_scrittura: boolean; dns_usa_winrm_dc: boolean; dns_credential_id: number | null }): void {
+  db().prepare("UPDATE ad_integrations SET dns_scrittura = ?, dns_usa_winrm_dc = ?, dns_credential_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(v.dns_scrittura ? 1 : 0, v.dns_usa_winrm_dc ? 1 : 0, v.dns_credential_id, integrationId);
 }
 
 /** Gli host come servono al confronto col DNS: IP, nome, stato, ultimo visto, e se sono computer del dominio. */

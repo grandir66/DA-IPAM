@@ -3288,4 +3288,33 @@ CREATE TABLE IF NOT EXISTS ad_dns_voluti (
   il TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (integration_id, chiave)
 );
+
+-- Registro delle correzioni al DNS di AD (passo 2, 17/11/2026): una riga per passo, scritta PRIMA
+-- del comando sul DC. Non ha chiavi esterne apposta: deve restare anche se l'integrazione sparisce.
+-- Non si cancella e, una volta scritto l'esito, non si cambia (trigger qui sotto).
+CREATE TABLE IF NOT EXISTS ad_dns_modifiche (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL,
+  gruppo TEXT NOT NULL,
+  correzione TEXT NOT NULL,
+  titolo TEXT NOT NULL,
+  azione TEXT NOT NULL CHECK(azione IN ('aggiungi','togli')),
+  zona TEXT NOT NULL,
+  nome TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK(tipo IN ('A','CNAME','PTR')),
+  dato TEXT NOT NULL,
+  prima TEXT,
+  esito TEXT NOT NULL DEFAULT 'in_corso' CHECK(esito IN ('in_corso','riuscito','rifiutato','cambiato','non_so')),
+  messaggio TEXT,
+  utenza TEXT,
+  annulla_di INTEGER,
+  da TEXT NOT NULL,
+  il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_modifiche_integrazione ON ad_dns_modifiche(integration_id, id);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_modifiche_annulla ON ad_dns_modifiche(annulla_di);
+CREATE TRIGGER IF NOT EXISTS ad_dns_modifiche_no_delete BEFORE DELETE ON ad_dns_modifiche
+BEGIN SELECT RAISE(ABORT, 'il registro delle correzioni DNS non si cancella'); END;
+CREATE TRIGGER IF NOT EXISTS ad_dns_modifiche_no_update BEFORE UPDATE ON ad_dns_modifiche WHEN OLD.esito <> 'in_corso'
+BEGIN SELECT RAISE(ABORT, 'il registro delle correzioni DNS non si cambia'); END;
 `;

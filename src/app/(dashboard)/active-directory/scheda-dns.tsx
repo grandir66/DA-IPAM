@@ -3,14 +3,15 @@
 /**
  * Scheda «DNS» di Active Directory: zone e record degli host letti dal DC, in sola lettura,
  * con le anomalie rispetto al DNS stesso e a quello che DA-IPAM vede in rete.
- * Le correzioni (via WinRM, con conferma) arrivano con il passo 2: qui non c'è nessun comando
- * che scrive sul DC. «È voluto» scrive solo in DA-IPAM.
+ * Dove un amministratore le ha accese, le anomalie si correggono sul DC via WinRM: si scelgono,
+ * si guarda l'anteprima col prima e il dopo, si conferma (`correzioni-dns.tsx`). Spente, la
+ * scheda è in sola lettura. «È voluto» scrive solo in DA-IPAM.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Globe, Loader2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScorrimentoTabella } from "@/components/ui/table";
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { ETICHETTE_ANOMALIA_DNS, TIPI_ANOMALIA_DNS, type AnomaliaDns, type TipoAnomaliaDns } from "@/lib/ad/dns/anomalie";
 import type { VistaDnsAd } from "@/lib/ad/dns/vista";
 import type { RigaRecordDnsAd } from "@/lib/db-tenant";
+import { ConfermaCorrezioni, ImpostazioniCorrezioni, RegistroDns, type Anteprima } from "./correzioni-dns";
 
 const PER_PAGINA = 25;
 const TIPI_RECORD = ["A", "AAAA", "CNAME", "PTR"] as const;
@@ -49,6 +51,11 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
   const [filtro, setFiltro] = useState<TipoAnomaliaDns | null>(null);
   const [cercaAnomalie, setCercaAnomalie] = useState("");
   const [inCorso, setInCorso] = useState<string | null>(null);
+  /** Anomalia → correzione scelta per lei. Niente scelta di serie quando le correzioni possibili sono più d'una. */
+  const [scelte, setScelte] = useState<Record<string, string>>({});
+  const [anteprima, setAnteprima] = useState<Anteprima | null>(null);
+  const [preparo, setPreparo] = useState(false);
+  const [giro, setGiro] = useState(0);
 
   const [recordAperti, setRecordAperti] = useState(false);
   const [record, setRecord] = useState<RigaRecordDnsAd[] | null>(null);
@@ -98,6 +105,31 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
       (!filtro || a.tipo === filtro) && (!c || (a.ip ?? "").includes(c) || a.nomi.some((n) => n.includes(c)) || a.dettaglio.toLowerCase().includes(c)));
   }, [vista, filtro, cercaAnomalie]);
 
+  function scegli(chiave: string, correzione: string | null) {
+    setScelte((prima) => {
+      const dopo = { ...prima };
+      if (correzione) dopo[chiave] = correzione;
+      else delete dopo[chiave];
+      return dopo;
+    });
+  }
+
+  async function apriAnteprima() {
+    const ids = Object.values(scelte);
+    if (ids.length === 0) return;
+    setPreparo(true);
+    try {
+      const r = await fetch(`/api/ad/${integrationId}/dns/correzioni`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      const dati = (await r.json()) as Anteprima & { error?: string };
+      if (r.ok) setAnteprima(dati);
+      else { toast.error(dati.error ?? "Anteprima non disponibile"); if (r.status === 409) { setScelte({}); await carica(); } }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setPreparo(false);
+    }
+  }
+
   async function segnaVoluto(a: AnomaliaDns) {
     const nota = window.prompt(`Perché va bene così? (facoltativo)\n${ETICHETTE_ANOMALIA_DNS[a.tipo]}: ${a.ip ?? a.nomi[0] ?? ""}`, "");
     if (nota === null) return;
@@ -134,13 +166,16 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
   const maiLetto = !vista.stato.letto_il;
   const zoneForward = vista.zone.filter((z) => !z.inversa).length;
   const conCasi = TIPI_ANOMALIA_DNS.filter((t) => vista.conteggi[t] > 0);
+  const correggo = amministratore && vista.scrittura.accesa;
+  const quanteScelte = Object.keys(scelte).length;
+  const colonne = 5 + (amministratore ? 1 : 0) + (correggo ? 1 : 0);
 
   return (
     <div className="space-y-4">
       <BarraStato
         acceso={!maiLetto && !vista.stato.errore}
         titolo={maiLetto ? "DNS mai letto" : `Letto il ${dataBreve(vista.stato.letto_il)}`}
-        dettagli={maiLetto ? [] : [`${zoneForward} zone forward`, `${vista.zone.length - zoneForward} zone reverse`, `${vista.record} record degli host`, "sola lettura"]}
+        dettagli={maiLetto ? [] : [`${zoneForward} zone forward`, `${vista.zone.length - zoneForward} zone reverse`, `${vista.record} record degli host`, vista.scrittura.accesa ? `correzioni accese, con ${vista.scrittura.utenza}` : "sola lettura"]}
       />
 
       {vista.stato.errore && (
@@ -197,10 +232,22 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
                     className="ml-auto h-8 max-w-xs"
                   />
                 </div>
+                {correggo && (
+                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-primary/50 bg-primary/5 px-3 py-2 text-sm">
+                    <span className="font-semibold tabular-nums">{quanteScelte} {quanteScelte === 1 ? "voce scelta" : "voci scelte"}</span>
+                    <Button size="sm" disabled={quanteScelte === 0 || preparo} onClick={() => void apriAnteprima()}>
+                      {preparo ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wrench className="mr-1.5 h-4 w-4" />}
+                      Correggi…
+                    </Button>
+                    {quanteScelte > 0 && <Button variant="ghost" size="sm" onClick={() => setScelte({})}>Togli la scelta</Button>}
+                    <span className="text-[13px] text-muted-foreground">Prima di scrivere vedi l&apos;anteprima e confermi. Al massimo 50 per volta.</span>
+                  </div>
+                )}
                 <ScorrimentoTabella className="rounded-lg border">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
                       <tr>
+                        {correggo && <th className="p-3 text-left font-medium">Correzione</th>}
                         <th className="p-3 text-left font-medium">Anomalia</th>
                         <th className="p-3 text-left font-medium">IP</th>
                         <th className="p-3 text-left font-medium">Nomi nel DNS</th>
@@ -212,6 +259,23 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
                     <tbody>
                       {visibili.map((a) => (
                         <tr key={a.chiave} className="border-t align-top hover:bg-muted/30">
+                          {correggo && (
+                            <td className="p-3">
+                              {a.correzioni.length === 0 ? (
+                                <span className="text-[13px] text-muted-foreground">nessuna</span>
+                              ) : a.correzioni.length === 1 ? (
+                                <label className="flex min-h-8 items-start gap-2">
+                                  <input type="checkbox" className="mt-0.5 h-4 w-4" checked={scelte[a.chiave] === a.correzioni[0]!.id} onChange={(e) => scegli(a.chiave, e.target.checked ? a.correzioni[0]!.id : null)} />
+                                  <span>{a.correzioni[0]!.titolo}</span>
+                                </label>
+                              ) : (
+                                <select aria-label="Correzione da applicare" className="h-9 max-w-64 rounded-md border bg-background px-2 text-sm" value={scelte[a.chiave] ?? ""} onChange={(e) => scegli(a.chiave, e.target.value || null)}>
+                                  <option value="">Non correggere</option>
+                                  {a.correzioni.map((c) => <option key={c.id} value={c.id}>{c.titolo}</option>)}
+                                </select>
+                              )}
+                            </td>
+                          )}
                           <td className="p-3 whitespace-nowrap">
                             <span aria-hidden className="mr-1.5 font-mono">{SEGNO[a.tipo]}</span>
                             {ETICHETTE_ANOMALIA_DNS[a.tipo]}
@@ -237,14 +301,14 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
                         </tr>
                       ))}
                       {visibili.length === 0 && (
-                        <tr><td colSpan={amministratore ? 6 : 5} className="p-6 text-center text-muted-foreground">Nessuna anomalia con questo filtro.</td></tr>
+                        <tr><td colSpan={colonne} className="p-6 text-center text-muted-foreground">Nessuna anomalia con questo filtro.</td></tr>
                       )}
                     </tbody>
                   </table>
                 </ScorrimentoTabella>
                 <p className="text-[13px] text-muted-foreground">
                   Segni: ⧉ doppione · ∅ manca qualcosa · ≠ non coincide · ✕ rotto · ○ spento · ? sconosciuto. «Statico» vuol dire che Windows non lo toglierà mai da solo.
-                  Le correzioni dal DA-IPAM non ci sono ancora: per ora si sistemano dalla console DNS del DC.
+                  {vista.scrittura.accesa ? "I record dei controller di dominio non si correggono da qui." : "Le correzioni da DA-IPAM sono spente su questo dominio: le accende un amministratore qui sotto."}
                 </p>
               </div>
             )}
@@ -269,6 +333,14 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
               </ul>
             </Pannello>
           )}
+
+          <RegistroDns integrationId={integrationId} amministratore={amministratore} accese={vista.scrittura.accesa} aggiornamento={giro} onCambiato={() => void carica()} />
+          {amministratore && <ImpostazioniCorrezioni key={`${vista.impostazioni.dns_scrittura}-${vista.impostazioni.dns_usa_winrm_dc}-${vista.impostazioni.dns_credential_id}`} integrationId={integrationId} vista={vista} onSalvato={() => { setScelte({}); void carica(); }} />}
+          <ConfermaCorrezioni
+            integrationId={integrationId}
+            anteprima={anteprima}
+            onChiudi={(fatto) => { setAnteprima(null); if (fatto) { setScelte({}); setGiro((n) => n + 1); void carica(); } }}
+          />
 
           <div className="rounded-xl border bg-card">
             <button

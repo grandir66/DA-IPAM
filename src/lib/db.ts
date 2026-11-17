@@ -6255,6 +6255,10 @@ export interface AdIntegration {
   groups_count: number;
   created_at: string;
   updated_at: string;
+  /** Correzioni al DNS (17/11/2026): interruttore, «usa la voce WinRM del DC», voce dedicata. Assenti = spente. */
+  dns_scrittura?: number;
+  dns_usa_winrm_dc?: number;
+  dns_credential_id?: number | null;
 }
 
 export interface AdComputer {

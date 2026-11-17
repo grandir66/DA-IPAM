@@ -180,6 +180,8 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   "va_gruppi_lanciati",
   // Copia del registro di questa sonda, che non si riscrive: un import farebbe DELETE e i trigger lo rifiutano.
   "va_registro_impianti",
+  // Registro delle correzioni al DNS di AD (17/11): come sopra, non si riscrive, e racconta cosa è stato fatto su QUESTO DC.
+  "ad_dns_modifiche",
   // Pianificazione «Per device» (08/11): copiata su un'altra installazione lancerebbe scansioni da sola, mentre un
   // automatismo nasce spento. Sull'installazione nuova la salva di nuovo un amministratore.
   "va_pianificazioni_device",

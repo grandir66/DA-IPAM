@@ -16,7 +16,8 @@
  * Lavora sul DB del tenant del contesto (`withTenant`); senza contesto lancia, mai ripieghi su DEFAULT.
  */
 import type Database from "better-sqlite3";
-import { getCurrentTenantCode, runInTenantTransaction } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantDb, runInTenantTransaction } from "@/lib/db-tenant";
+import { sfoltisciEvidenzeSuperate } from "@/lib/attribution/evidence";
 import { dbCorrente } from "@/lib/hosts/db-corrente";
 import { canonicalizza, unisciRuoli } from "@/lib/classification/canonico";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
@@ -615,4 +616,11 @@ export function runPuliziaHost(): EsitoPuliziaNotturna {
     + (esito.nonPiuArchiviabili ? `, ${esito.nonPiuArchiviabili} non più archiviabili` : "")
     + (rinviati ? `, ${rinviati} rinviati (rete in scansione)` : ""));
   return esito;
+}
+
+/** Sfoltimento notturno delle evidenze superate del cliente corrente (17/11/2026). Senza cliente lancia. */
+export function runSfoltimentoEvidenze(): number {
+  const tenant = getCurrentTenantCode();
+  if (!tenant) throw new Error("runSfoltimentoEvidenze: nessun cliente nel contesto");
+  return sfoltisciEvidenzeSuperate(getTenantDb(tenant));
 }

@@ -208,3 +208,38 @@ export function retireStaleEvidence(
   })();
   return retired;
 }
+
+/** Giorni per cui un'evidenza superata resta in archivio prima dello sfoltimento notturno. */
+export const GIORNI_EVIDENZE_SUPERATE = 30;
+
+/**
+ * Toglie le evidenze superate (`superseded_by` valorizzato) osservate da più di `giorni` giorni.
+ *
+ * 17/11/2026, 192.168.4.8: su 129.294 righe solo 1.889 erano attive. Tre host col produttore
+ * che oscillava fra due MAC ne scrivevano circa 500 al giorno e nessuno le toglieva; eliminare
+ * uno di quegli host teneva fermo il processo per minuti.
+ *
+ * `superseded_by` è una FK sulla stessa tabella con `ON DELETE SET NULL`: una superata recente
+ * che punta a una riga da togliere tornerebbe ATTIVA. Prima di cancellare la si fa quindi puntare
+ * a sé stessa: chi legge guarda solo `superseded_by IS NULL`, e resta superata.
+ */
+export function sfoltisciEvidenzeSuperate(
+  dbh: Database.Database,
+  giorni: number = GIORNI_EVIDENZE_SUPERATE
+): number {
+  if (!Number.isInteger(giorni) || giorni < 1) throw new Error(`sfoltisciEvidenzeSuperate: giorni non valido (${giorni})`);
+  const prima = `-${giorni} days`;
+  return dbh.transaction(() => {
+    dbh.prepare(
+      `UPDATE attribution_evidence SET superseded_by = id
+       WHERE superseded_by IS NOT NULL AND observed_at >= datetime('now', ?)
+         AND superseded_by IN (
+           SELECT id FROM attribution_evidence
+           WHERE superseded_by IS NOT NULL AND observed_at < datetime('now', ?))`
+    ).run(prima, prima);
+    return dbh.prepare(
+      `DELETE FROM attribution_evidence
+       WHERE superseded_by IS NOT NULL AND observed_at < datetime('now', ?)`
+    ).run(prima).changes;
+  })();
+}

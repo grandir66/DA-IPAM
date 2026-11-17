@@ -104,7 +104,7 @@ import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/let
 import { chiaveEsito, letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { leggiHost } from "@/lib/proxmox/lldp-host";
 // Statico: pulizia-archivio importa db-tenant (ADR 0002).
-import { runPuliziaHost } from "@/lib/hosts/pulizia-archivio";
+import { runPuliziaHost, runSfoltimentoEvidenze } from "@/lib/hosts/pulizia-archivio";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 import { giroLibrenms } from "@/lib/integrations/librenms-fonte";
@@ -490,7 +490,10 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       // Pulizia notturna degli host assenti (piano 2026-10-20, Task 5). Un guasto lancia (fra i falliti, niente
       // last_run); il resoconto è di soli numeri, i nomi stanno nel registro JSONL della pulizia.
       const r = runPuliziaHost();
+      // Stesso giro notturno: evidenze superate da più di GIORNI_EVIDENZE_SUPERATE giorni (17/11/2026).
+      const evidenzeTolte = runSfoltimentoEvidenze();
       const dettagli = [
+        evidenzeTolte ? `${evidenzeTolte} evidenze superate tolte` : "",
         r.nonPiuArchiviabili ? `${r.nonPiuArchiviabili} non più archiviabili` : "",
         r.rinviati ? `${r.rinviati} rinviati perché la loro rete era in scansione` : "",
       ].filter(Boolean);

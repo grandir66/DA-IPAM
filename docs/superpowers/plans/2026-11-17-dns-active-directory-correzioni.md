@@ -204,6 +204,7 @@ Una revisione del ramo con il subagent `reviewer` (uno solo, sola lettura, stima
 - 2026-11-17 S3 → [x] (esecuzione.test.ts, 11 verdi su un DC finto; viste fallire togliendo a turno otto protezioni)
 - 2026-11-17 S4 → [x] (conferma.test.ts, 5 verdi; `tsc` 0 errori, lint pulito). Le rotte non hanno prove loro: la logica sta nei moduli provati.
 - 2026-11-17 S5 → [x] scritta; **NON guardata resa** né a 1920 né a 1366: si guarda su 192.168.4.8 durante S6.
+- 2026-11-17 18:14 UTC: 0.9.1273 (`4497a163`) su 192.168.4.8. Sul 70791: colonne `dns_*` create, interruttore a 0, registro vuoto coi suoi 2 trigger, le quattro rotte nuove rimandano al login senza sessione. **Sonda di sola lettura sul DC vero** (nessun Add, nessun Remove): `comandoLeggi` risponde per un A, un PTR e un CNAME, il record in archivio c'è, statico e TTL coincidono; controller di dominio protetti trovati: 2 nomi e 2 IP; 13 zone ammesse.
 
 ## Consuntivo
 ### Fatto

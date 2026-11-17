@@ -2982,3 +2982,4 @@ Misura sulla 72729 dell'11/11 (sola lettura): rilievi del trunk aperti 52 (35 `n
 
 ## 2026-11-17 — idea: «rete OT» (solo ping)
 - [ ] Riccardo 17/11 (GAO 70151, rete 172.20.8.0/24 con MDR): una rete marcata OT riceve solo ping; niente fast_scan, credenziali, vuln, giro servizi, segmentazione. Oggi giro servizi e segmentazione sono per cliente: su 70151-ipam-2 spenti per intero. Dettaglio in ~/Progetti-Clienti/GAO-DEBUG/TASKS.md
+- [ ] Wazuh con gestione e ricezione separate (GAO 70151, 17/11): lo script agente prende il manager da `new URL(cfg.url).hostname` (API); serve un campo «indirizzo per gli agenti» (es. wazuhagent.gaoperations.it) in Integrazioni > Wazuh

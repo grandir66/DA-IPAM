@@ -56,6 +56,7 @@ export async function GET(request: Request) {
         conIndicatori: q.get("indicatori") === "1",
         os,
         precedenti: q.get("precedenti") === "1",
+        conPotenziali: q.get("potenziali") === "1",
         ordina,
         verso,
         exploitDi: exploitPerRotte().exploitDi,

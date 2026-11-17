@@ -37,8 +37,8 @@ function prepara(): { h1: number; h2: number } {
   a.run("e3", null, ora);
   a.run("e4", h2, ora);
   const v = d.prepare("INSERT INTO eset_vuln (macchina_uuid, cve, fonte, oggetto, versione, gravita, kev, exploit, cvss) VALUES (?,?,?,?,?,?,0,0,?)");
-  v.run("e1", "CVE-2026-1001", "eset", "Firefox", "120", "SEVERITY_LEVEL_HIGH", 8.1);
-  v.run("e2", "CVE-2026-1001", "eset", "Firefox", "121", "SEVERITY_LEVEL_HIGH", 8.1);
+  v.run("e1", "CVE-2026-1001", "eset", "Firefox", "120.0", "SEVERITY_LEVEL_HIGH", 8.1);
+  v.run("e2", "CVE-2026-1001", "eset", "Firefox", "121.0", "SEVERITY_LEVEL_HIGH", 8.1);
   v.run("e1", "CVE-2026-1002", "software", "Chrome", "120", "SEVERITY_LEVEL_CRITICAL", 9.8);
   v.run("e1", "CVE-2026-1003", "software", "Zip", "1", null, null); // senza gravità: non entra
   v.run("e1", "CVE-2026-1004", "eset", "Vecchio", "1", "SEVERITY_LEVEL_LOW", 2); // bassa: mai nei rilievi
@@ -52,7 +52,15 @@ function prepara(): { h1: number; h2: number } {
 
 test("ESET nei rilievi: agganciate sì, una riga per CVE, potenziali fuori dai conteggi", () => withTenant(T, () => {
   const { h1, h2 } = prepara();
-  const tutti = elencoRilievi({ fonti: ["edge", "wazuh", "eset", "eset_sw"], conIndicatori: true });
+  // di serie le potenziali dal software non ci sono: si chiedono
+  const diSerie = elencoRilievi({ fonti: ["eset", "eset_sw"] });
+  assert.deepEqual(diSerie.data.map((r) => [r.titolo, r.fonte, r.pacchetto, r.nome_host]), [["CVE-2026-1001", "eset", "Firefox 120.0", "pc-uno"]]);
+  assert.equal(diSerie.perFonte.eset_sw, 0);
+  // per «cosa aggiornare»: il software, i PC per nome e le versioni
+  const perSw = elencoRilievi({ fonti: ["eset"], raggruppa: "software" }).gruppi ?? [];
+  assert.deepEqual(perSw.map((g) => [g.nome, g.host, g.nomiHost, g.versioni]), [["Firefox", 2, ["pc-due", "pc-uno"], ["Firefox 120.0"]]]);
+
+  const tutti = elencoRilievi({ fonti: ["edge", "wazuh", "eset", "eset_sw"], conIndicatori: true, conPotenziali: true });
   const perTitolo = Object.fromEntries(tutti.data.map((r) => [r.titolo, r]));
   assert.deepEqual(Object.keys(perTitolo).sort(), ["CVE-2026-1001", "CVE-2026-1002"]);
   // la CVE vista da Wazuh ed ESET è una riga sola, su due host
@@ -63,7 +71,7 @@ test("ESET nei rilievi: agganciate sì, una riga per CVE, potenziali fuori dai c
   assert.equal(perTitolo["CVE-2026-1002"]!.gravita, "Critical");
   assert.deepEqual(tutti.rollup, { Critical: 0, High: 1, Medium: 0, Low: 0 });
 
-  const eset = elencoRilievi({ fonti: ["eset", "eset_sw"] });
+  const eset = elencoRilievi({ fonti: ["eset", "eset_sw"], conPotenziali: true });
   assert.deepEqual(eset.data.map((r) => [r.titolo, r.fonte]).sort(), [["CVE-2026-1001", "eset"], ["CVE-2026-1002", "eset_sw"]]);
   assert.match(eset.data.find((r) => r.fonte === "eset")!.prova, /Firefox/);
   const wazuh = elencoRilievi({ fonti: ["wazuh"] });
@@ -71,7 +79,7 @@ test("ESET nei rilievi: agganciate sì, una riga per CVE, potenziali fuori dai c
   // per host: pc-due ha la CVE solo da ESET
   const suDue = elencoRilievi({ ospite: h2 });
   assert.deepEqual(suDue.data.map((r) => r.titolo), ["CVE-2026-1001"]);
-  assert.equal(elencoRilievi({ ospite: h1 }).total, 2);
+  assert.equal(elencoRilievi({ ospite: h1, conPotenziali: true }).total, 2);
 }));
 
 test("fuori dalla pagina dei rilievi le potenziali non si vedono", () => withTenant(T, () => {

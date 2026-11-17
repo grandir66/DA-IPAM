@@ -77,7 +77,7 @@ function anagraficaHost(): Map<number, OspiteRilievo & { os: OsFamily }> {
 
 function daCve(
   anagrafica: Map<number, OspiteRilievo & { os: OsFamily }>,
-  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean; soloMotore?: MotoreCve; cvssDi?: CvssDi },
+  opzioni: { exploitDi?: ExploitDi; os?: OsFamily[]; precedenti?: boolean; soloMotore?: MotoreCve; cvssDi?: CvssDi; conPotenziali?: boolean },
 ): { righe: RilievoConFonti[]; parziale: boolean } {
   // Tutte, non le prime 2.000: l'aggregazione le ordina per gravità, e il taglio lasciava di Edge
   // quasi solo le critiche (47 su 290) e di Wazuh 1.970 su oltre 17.000 (Riccardo, 10/11/2026:
@@ -91,7 +91,7 @@ function daCve(
     ...(opzioni.os?.length ? { osFamilies: opzioni.os } : {}),
     soloRecentiGiorni: RILIEVO_RECENTE_GIORNI,
     senzaBassi: true,
-    conPotenzialiEset: true,
+    conPotenzialiEset: opzioni.conPotenziali === true,
   });
   const righe = data.map((v): RilievoConFonti => {
     const titolo = v.cve_id ?? v.nvt_oid ?? v.key;
@@ -117,6 +117,7 @@ function daCve(
       prova: provaParti.join(" · ") || "Rilievo della scansione di vulnerabilità",
       rimedio: "Apri il dettaglio, applica la patch sul pacchetto indicato, poi rivedi l'host.",
       ip: host?.ip ?? null,
+      nome_host: (host?.host_id != null ? anagrafica.get(host.host_id)?.nome : null) ?? null,
       host_id: host?.host_id ?? null,
       network_id: host?.network_id ?? null,
       network_name: host?.network_name ?? null,
@@ -231,6 +232,11 @@ export interface FiltroRilievi {
   exploitDi?: ExploitDi;
   /** Il punteggio proprio di ogni CVE (archivio NVD locale), per gli avvisi di pacchetto di Greenbone. */
   cvssDi?: CvssDi;
+  /**
+   * Anche le vulnerabilità ESET «potenziali dal software». Di serie no (Riccardo, 17/11/2026:
+   * la scheda ESET si riempiva di centinaia di critiche calcolate, non viste): si chiedono.
+   */
+  conPotenziali?: boolean;
 }
 
 const ROLLUP_VUOTO: RollupRilievi = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -270,7 +276,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   const nonDisponibili: FonteRilievo[] = [];
   const parziali: FonteRilievo[] = [];
   const sorgenti = [
-    { fonti: ["edge", "wazuh", "eset", "eset_sw"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, cvssDi: filtro.cvssDi }) },
+    { fonti: ["edge", "wazuh", "eset", "eset_sw"] as const, leggi: () => daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, cvssDi: filtro.cvssDi, conPotenziali: filtro.conPotenziali }) },
     { fonti: ["trunk"] as const, leggi: daTrunk },
     { fonti: ["giro"] as const, leggi: () => daGiri(filtro.hostId) },
   ];
@@ -338,7 +344,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
   // delle schede restano quelli della lettura unita (quante CVE vede ciascun motore).
   if (soloMotore && !nonDisponibili.includes(soloMotore)) {
     try {
-      const sole = daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, soloMotore, cvssDi: filtro.cvssDi });
+      const sole = daCve(anagrafica, { exploitDi: filtro.exploitDi, os: osScelti, precedenti: filtro.precedenti, soloMotore, cvssDi: filtro.cvssDi, conPotenziali: filtro.conPotenziali });
       selezionati = filtra(sole.righe).flatMap(({ fonti: suoi, ...x }) => {
         // La fonte della riga è la prima del motore che è anche fra quelle chieste (per ESET sono due).
         const fonte = (suoi ?? [x.fonte]).find((f) => setFonte.has(f));
@@ -408,7 +414,7 @@ export function elencoRilievi(filtro: FiltroRilievi = {}): ElencoRilievi {
         : filtro.rete != null ? ospiti?.find((o) => o.network_id === filtro.rete)
           : undefined;
     if (!suo) return x;
-    return { ...x, ip: suo.ip, host_id: suo.host_id, network_id: suo.network_id, network_name: suo.network_name, gravita: suo.gravita ?? x.gravita };
+    return { ...x, ip: suo.ip, nome_host: suo.nome, host_id: suo.host_id, network_id: suo.network_id, network_name: suo.network_name, gravita: suo.gravita ?? x.gravita };
   });
   const gruppi = filtro.raggruppa ? raggruppa(selezionati, filtro.raggruppa) : undefined;
   return {

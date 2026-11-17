@@ -56,6 +56,8 @@ export interface RilievoUnito {
   prova: string;
   rimedio: string;
   ip: string | null;
+  /** Il nome dell'host della riga, quando DA-IPAM lo conosce: si legge meglio dell'IP. */
+  nome_host?: string | null;
   host_id: number | null;
   network_id: number | null;
   network_name: string | null;

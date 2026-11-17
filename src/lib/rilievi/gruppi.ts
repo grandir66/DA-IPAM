@@ -37,6 +37,12 @@ export interface GruppoRilievi {
   chiaviDaFare: string[];
   /** I primi titoli, i più gravi in testa: l'anteprima del gruppo aperto. */
   anteprima: string[];
+  /**
+   * Per «cosa aggiornare»: su quali host sta il software (per nome, i primi) e in quali versioni
+   * (Riccardo, 17/11/2026: «non si capisce che software e su che pc»).
+   */
+  nomiHost?: string[];
+  versioni?: string[];
   /** Come restringere l'elenco per rilievo a questo gruppo («Apri l'elenco»). */
   filtro: { q?: string; rete?: number; ospite?: number } | null;
 }
@@ -132,8 +138,13 @@ function appartenenze(r: RilievoUnito, per: Raggruppamento): Appartenenza[] {
   return [...reti.values()];
 }
 
+const NOMI_HOST = 40;
+const VERSIONI = 8;
+
 interface InCostruzione extends GruppoRilievi {
   ordinati: RilievoUnito[];
+  nomi: Map<string, string>;
+  etichette: Set<string>;
   ospiti: Set<string>;
   hostDichiarati: number;
 }
@@ -160,6 +171,8 @@ export function raggruppa(righe: readonly RilievoUnito[], per: Raggruppamento): 
           chiaviDaFare: [],
           anteprima: [],
           ordinati: [],
+          nomi: new Map(),
+          etichette: new Set(),
           ospiti: new Set(),
           hostDichiarati: 0,
         };
@@ -179,18 +192,28 @@ export function raggruppa(righe: readonly RilievoUnito[], per: Raggruppamento): 
       else if (a.tipo === "rete") {
         for (const o of tuttiGliOspiti) if (a.filtro?.rete == null || o.network_id === a.filtro.rete) gr.ospiti.add(chiaveOspite(o));
       } else {
-        for (const o of tuttiGliOspiti) gr.ospiti.add(chiaveOspite(o));
+        for (const o of tuttiGliOspiti) {
+          gr.ospiti.add(chiaveOspite(o));
+          if (a.tipo === "software") gr.nomi.set(chiaveOspite(o), o.nome || o.ip || "host senza nome");
+        }
+        if (a.tipo === "software" && r.pacchetto) gr.etichette.add(r.pacchetto.trim());
         gr.hostDichiarati = Math.max(gr.hostDichiarati, r.host_count);
       }
     }
   }
-  const gruppi = [...mappa.values()].map(({ ordinati, ospiti, hostDichiarati, ...g }): GruppoRilievi => {
+  const gruppi = [...mappa.values()].map(({ ordinati, ospiti, hostDichiarati, nomi, etichette, ...g }): GruppoRilievi => {
     ordinati.sort((a, b) => (SEVERITY_RANK[b.gravita] ?? 0) - (SEVERITY_RANK[a.gravita] ?? 0) || a.titolo.localeCompare(b.titolo));
     return {
       ...g,
       host: Math.max(ospiti.size, hostDichiarati),
       chiaviDaFare: [...new Set(g.chiaviDaFare)],
       anteprima: ordinati.slice(0, ANTEPRIMA).map((r) => r.titolo),
+      ...(g.tipo === "software"
+        ? {
+            nomiHost: [...nomi.values()].sort((x, y) => x.localeCompare(y)).slice(0, NOMI_HOST),
+            versioni: [...etichette].sort((x, y) => x.localeCompare(y, undefined, { numeric: true })).slice(0, VERSIONI),
+          }
+        : {}),
     };
   });
   // I gruppi-contenitore stanno in fondo: non sono «una cosa da fare».

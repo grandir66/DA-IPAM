@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
+### Corretto
+- **Eliminare più host bloccava tutta l'applicazione** (Riccardo, 17/11, 192.168.4.8: «provo a eliminare oggetti ma non succede nulla»). `attribution_evidence.superseded_by` punta alla stessa tabella e non aveva indice: per ogni evidenza eliminata in cascata SQLite rileggeva tutte le 184.000 righe. Un host con 55.000 evidenze teneva il processo fermo oltre 45 secondi (0,23 con l'indice), più host per minuti, e intanto nessuna pagina rispondeva. Aggiunto `idx_attr_evidence_superseded_by` nello schema e nella migrazione.
+
 ### Aggiunto
 - **Raccolta dei dati ESET del cliente da DA-Link** (`src/lib/integrations/eset-dalink.ts`, timer ogni 6 ore): macchine, vulnerabilità (viste da ESET e potenziali dal software) e software delle postazioni, letti con la chiave dell'oggetto dell'istanza. Perché: Riccardo, 16/11, «anche la pagina dei findings deve arricchirsi con i dati ricevuti da ESET, come l'archivio dei software». **Spento di serie**, cliente per cliente (`eset.da_dalink`); la risposta di un altro cliente non si scrive, un giro fallito tiene la copia di prima. Le pagine non li mostrano ancora.
 - **Rilievi ESET nella pagina dei rilievi**: scheda «ESET» fra i motori; fonte scritta in riga («ESET», «ESET · potenziale dal software»); una CVE già vista da Edge o Wazuh resta una riga sola. Le potenziali dal software stanno nell'elenco ma fuori dai conteggi di gravità in testa, e fuori dalle altre viste. Solo le macchine agganciate a un host danno rilievi.

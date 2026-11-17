@@ -3240,4 +3240,6 @@ CREATE INDEX IF NOT EXISTS idx_cve_inferred_host ON cve_inferred(host_id);
 -- Attribution v2 (spec §4.2)
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL;
+-- FK su sé stessa: senza indice l'eliminazione di un host rilegge tutta la tabella per ogni evidenza (17/11/2026)
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_superseded_by ON attribution_evidence(superseded_by);
 `;

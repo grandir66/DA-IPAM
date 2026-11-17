@@ -2365,6 +2365,10 @@ export function getTenantDb(tenantCode: string): Database.Database {
     )`);
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
+    // 17/11/2026, 192.168.4.8: senza questo indice ogni evidenza eliminata in cascata da un host
+    // faceva rileggere tutta la tabella per azzerare `superseded_by` (FK su sé stessa): eliminare
+    // più host teneva il processo fermo per minuti e l'app non rispondeva più.
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_superseded_by ON attribution_evidence(superseded_by)");
 
     // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
     // CHECK sui protocolli (validati in TS da buildV3Options), idempotente

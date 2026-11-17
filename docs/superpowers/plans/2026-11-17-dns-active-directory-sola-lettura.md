@@ -6,7 +6,7 @@
 **Architettura:** la lettura passa dallo stesso collegamento LDAP della sincronizzazione di AD (`connectLdap`), sulle partizioni `DomainDnsZones`, `ForestDnsZones` e `CN=MicrosoftDNS,CN=System`. I record finiscono in due tabelle del cliente, riscritte a ogni sincronizzazione riuscita. Le anomalie non si salvano: le calcola una funzione pura al momento della lettura, dai record in archivio e dagli host.
 **Spec:** nessuna a parte. Richiesta e decisioni di Riccardo in `TASKS.md`, sezione «2026-11-17 — Idea: DNS di Active Directory»; misura di partenza con `scripts/misura-dns-ad.ts`.
 **Livello di controllo:** leggero (deciso da Riccardo il 17/11/2026): più tappe su un progetto in esercizio, ma solo letture verso il DC e tabelle nuove.
-**Stato:** in corso · **Ultimo aggiornamento:** 2026-11-17
+**Stato:** completato · **Ultimo aggiornamento:** 2026-11-17
 
 ## Vincoli globali
 
@@ -173,7 +173,9 @@ Verifica: `npx eslint` sui file toccati → pulito; `npx tsc --noEmit -p .` → 
 
 **Commit:** «DNS di AD: scheda in Active Directory».
 
-### [~] Task 5 — Rilascio su dev e riscontro sul 70791
+### [x] Task 5 — Rilascio su dev e riscontro sul 70791
+
+Verifica: 0.9.1272 (`f6a8ff1b`) su 192.168.4.8 dalle 17:06 UTC del 17/11, `/api/health` 200. Archivio del 70791 dopo una lettura con `syncAdDns`: A 203 (181 statici), CNAME 7, PTR 148; 13 zone di cui 9 reverse; stato senza errore. `scripts/misura-dns-ad.ts 70791` nello stesso minuto: stessi numeri, 252 anomalie, conteggi per tipo identici a quelli della scheda. `GET /api/ad/1/dns` senza sessione → 302 al login.
 
 **Cosa fare:** `CHANGELOG.md` col perché; `CONTEXT.md` (cosa legge, la regola «lettura fallita non svuota», dove sta la scheda); `docs/scheda-mappa.md` se cambia la riga «prossimo»; `npm run version:release -- --staged-only`, `git push origin dev`. Su 192.168.4.8, dopo l'aggiornamento, «Sincronizza» sull'integrazione del 70791.
 
@@ -189,10 +191,20 @@ Verifica: `npx eslint` sui file toccati → pulito; `npx tsc --noEmit -p .` → 
 - DNS non integrato in AD (zone su file) e DNS di altri prodotti.
 
 ## Registro
+- 2026-11-17 Task 1 → [x] (record.test.ts, 12 verdi)
+- 2026-11-17 Task 2 → [x] (archivio.test.ts, 4 verdi)
+- 2026-11-17 Task 3 → [x] (anomalie.test.ts, 12 verdi)
+- 2026-11-17 Task 4 → [x] (eslint pulito, tsc 0 errori; pagina non guardata resa)
+- 2026-11-17 Task 5 → [x] (0.9.1272 su 192.168.4.8, archivio e script coincidono)
 
 ## Consuntivo
 ### Fatto
+Lettura via LDAP di zone e record degli host, archivio riscritto a ogni sincronizzazione di AD, dodici tipi di anomalia calcolati a richiesta, scheda «DNS» nella pagina Active Directory con «È voluto», script di riscontro. Sul 70791: 358 record, 252 anomalie.
 ### Mancante
+- La scheda non è stata guardata resa a 1920: né in locale (nessun dominio di prova) né su 192.168.4.8 (serve l'accesso di una persona).
+- La prima lettura sul 70791 è stata fatta a mano con `syncAdDns`; il job `ad_sync` pianificato non è ancora passato con la versione nuova.
+- `scripts/audit-db-drift.ts` e il cancello completo non lanciati; `main` non toccato.
+- Numeri non confrontati con la console DNS del DC.
 ### Scostamenti dal piano
 - `leggiRecord(b)` non prende `adesso`: la data del rinnovo si salva com'è, i giorni li calcola chi confronta.
 - Stato dell'ultima lettura in una tabella sua, `ad_dns_stato`, invece di due colonne su `ad_integrations`: nessun `ALTER`, nessun tipo da toccare.
@@ -200,3 +212,6 @@ Verifica: `npx eslint` sui file toccati → pulito; `npx tsc --noEmit -p .` → 
 - `syncAdDns` apre un collegamento LDAP suo invece di ricevere quello della sincronizzazione.
 - In più: tipo di anomalia `ip_piu_ptr` separato, e `src/lib/ad/dns/vista.ts` che compone la risposta della rotta.
 ### Consigli di sviluppo
+- 252 anomalie sono tante per una prima vista: 63 «IP sconosciuti» e 69 «host senza nome» pesano più della metà. Valutare se tenerle chiuse di serie o in una seconda fila.
+- «Manca la zona reverse» andrebbe raggruppata per zona mancante (15 voci, poche zone).
+- Passo 2 (correzioni via WinRM con conferma): partire dai casi senza ambiguità, PTR mancante con A presente e PTR rimasto senza A.

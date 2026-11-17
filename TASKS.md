@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-11-17 — 192.168.4.8: DA-IPAM bloccato per 8 minuti, eliminazione host «non fa nulla» (Riccardo)
+
+Riccardo: dalla pagina della subnet l'eliminazione degli host offline non faceva nulla. Misurato sul posto:
+dalle 15:12 UTC il processo era al 100% dentro una scrittura sul database del 70791 (WAL a 542 MB, blocco in
+scrittura tenuto, `/api/health` senza risposta, coda di ascolto piena): le richieste restavano in attesa.
+
+- [x] Riavviato `da-ipam.service` alle 15:20 UTC: scrittura annullata, 388 host prima e dopo, `/api/health` 200.
+- [x] Eliminazione provata a vuoto (BEGIN…ROLLBACK, chiavi esterne accese) sull'host offline con più storico: 45.700 righe in 0,57 s. L'eliminazione in sé non è lenta.
+- [ ] Causa del blocco NON trovata. Ultima riga di log prima del blocco: `[trunk] 70791 (socket)` delle 15:12:01. Da capire se l'ha fatto partire l'eliminazione multipla (`DELETE /api/hosts/bulk`) o un job; al prossimo blocco, prima di riavviare, guardare cosa sta eseguendo il processo.
+- [ ] Nessuna eliminazione riuscita dal 22/10 in `excluded_ips`: far riprovare Riccardo e guardare l'esito.
+
 ## 2026-11-16 — Firewall: porte interne 3001 e 8080 riservate alla macchina (Riccardo, zona rossa)
 
 Dettaglio e motivazioni nel rapporto fuori dal repo: `/Users/riccardo/Progetti/Domarc/QUADRO-SICUREZZA-EDGE-20261115.md`, punto 7.5 bis.

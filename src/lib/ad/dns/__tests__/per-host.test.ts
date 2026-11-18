@@ -38,6 +38,10 @@ describe("DNS di AD visto da un host", () => {
     host.run(4, "192.168.4.30", "mobile");     // ha cambiato IP: nel DNS è ancora su .20
     host.run(5, "192.168.4.31", "conteso");    // ha cambiato IP, ma il vecchio (.13) ora è di un altro host
     host.run(6, "192.168.4.13", "altro");
+    host.run(7, "192.168.4.14", "scoperto");   // rinominato a mano in «srv-posta»: vale il nome a mano
+    host.run(8, "192.168.4.15", "pc-15");      // «Sala riunioni» a mano è una descrizione: vale il nome scoperto
+    d.prepare("UPDATE hosts SET custom_name = 'SRV-Posta' WHERE id = 7").run();
+    d.prepare("UPDATE hosts SET custom_name = 'Sala riunioni' WHERE id = 8").run();
     withTenant(T, () => sostituisciDnsAd(1, ZONE, [
       A("dc01", "192.168.4.2"),
       A("pc-01", "192.168.4.10"), PTR("192.168.4.10", "pc-01"),
@@ -45,6 +49,8 @@ describe("DNS di AD visto da un host", () => {
       A("mobile", "192.168.4.20"), PTR("192.168.4.20", "mobile"),
       A("conteso", "192.168.4.13"),
       A("sparito", "192.168.4.40"), PTR("192.168.4.40", "sparito"),
+      A("scoperto", "192.168.4.14"), PTR("192.168.4.14", "scoperto"),
+      A("pc-15", "192.168.4.15"), PTR("192.168.4.15", "pc-15"),
     ]));
   });
   after(() => deleteTenantDatabase(T));
@@ -64,6 +70,14 @@ describe("DNS di AD visto da un host", () => {
     ]);
     assert.deepEqual(breve("host:allinea:192.168.4.12"), ["+A nas.esempio.local 192.168.4.12", "+PTR 12.4.168.192.in-addr.arpa nas.esempio.local"]);
     assert.match(String(breve("host:allinea:192.168.4.10")), /niente da allineare/);
+  });
+
+  it("il nome scritto a mano vince su quello scoperto, se ha la forma di un nome DNS", () => {
+    assert.deepEqual(breve("host:allinea:192.168.4.14"), [
+      "+A srv-posta.esempio.local 192.168.4.14", "+PTR 14.4.168.192.in-addr.arpa srv-posta.esempio.local",
+      "-PTR 14.4.168.192.in-addr.arpa scoperto.esempio.local", "-A scoperto.esempio.local 192.168.4.14",
+    ]);
+    assert.deepEqual(withTenant(T, () => statoDnsDi(["192.168.4.14", "192.168.4.15"])), { "192.168.4.14": "diverso", "192.168.4.15": "ok" });
   });
 
   it("cambio di IP: il nome segue; il vecchio si toglie solo se lì non c'è più nessuno", () => {

@@ -98,6 +98,6 @@ Poi `CHANGELOG.md`, `CONTEXT.md`, `TASKS.md`, rilascio su `dev`. `main` resta di
 
 - **Fatto**: T1-T4 e T6; T5 senza l'avviso per lo spostamento di più host. Prova T6 sul DC di Domarc il 18/11 (crea, sposta, elimina: 8 passi riusciti, DNS tornato a 354 record).
 - **Mancante**: resa a schermo mai guardata; avviso dopo `hosts/bulk-update`; segno nell'elenco degli apparati; cancello completo.
-- **Da decidere (Riccardo)**: se il nome scritto a mano (`custom_name`) deve valere nel confronto col DNS.
+- **Deciso da Riccardo il 18/11**: il nome scritto a mano (`custom_name`) vale nel confronto col DNS, se ha la forma di un nome DNS; la scelta 1 qui sopra è superata.
 
 (a fine piano)

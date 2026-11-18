@@ -487,6 +487,23 @@ export function NetworkDetailClient({
           if (!patchRes.ok) toast.error("Host aggiornato, ma errore nell'aggiornamento del dispositivo");
         }
         toast.success("Salvato");
+        // Il nome a mano vale anche per il DNS di Active Directory: se ora non torna, lo si dice e si offre l'anteprima.
+        if (field === "custom_name") {
+          void leggiStatiDns();
+          if (eAdmin) {
+            try {
+              const r = await fetch(`/api/hosts/${hostId}/dns`, { cache: "no-store" });
+              const d = r.ok ? ((await r.json()) as { dns: DatiDnsHost[] }).dns.find((x) => x.allinea && x.correzioniAccese) : undefined;
+              if (d?.allinea) {
+                const { integrazione, allinea } = d;
+                toast.warning("Nel DNS di Active Directory questo host ha un altro nome", {
+                  duration: 30_000,
+                  action: { label: "Aggiorna il DNS…", onClick: () => { void anteprimaDnsHost(integrazione, allinea).then((dati) => { if (dati) setAnteprimaDns({ integrazione, dati }); }); } },
+                });
+              }
+            } catch { /* il DNS è un di più */ }
+          }
+        }
       } else {
         toast.error("Errore nel salvataggio");
       }

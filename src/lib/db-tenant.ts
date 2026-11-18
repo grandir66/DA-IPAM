@@ -9480,12 +9480,21 @@ export function impostaCorrezioniDnsAd(integrationId: number, v: { dns_scrittura
     .run(v.dns_scrittura ? 1 : 0, v.dns_usa_winrm_dc ? 1 : 0, v.dns_credential_id, integrationId);
 }
 
-/** Gli host come servono al confronto col DNS: IP, nome, stato, ultimo visto, e se sono computer del dominio. */
+/**
+ * Gli host come servono al confronto col DNS: IP, nome, stato, ultimo visto, e se sono computer del dominio.
+ * Il nome scritto a mano (`custom_name`) vince su quello trovato dalla scoperta (Riccardo, 18/11/2026:
+ * «Sì, vale quello»), ma solo se ha la forma di un nome DNS: «Sala riunioni» è una descrizione, non un nome
+ * da mettere nel DNS, e in quel caso resta il nome scoperto.
+ */
 export function getHostPerDnsAd(): { id: number; ip: string; hostname: string | null; status: string | null; last_seen: string | null; inAd: boolean }[] {
-  const righe = db().prepare(`SELECT h.id, h.ip, h.hostname, h.status, h.last_seen,
+  const righe = db().prepare(`SELECT h.id, h.ip, h.hostname, h.custom_name, h.status, h.last_seen,
       EXISTS(SELECT 1 FROM ad_computers c WHERE c.host_id = h.id) AS in_ad
-    FROM hosts h`).all() as { id: number; ip: string; hostname: string | null; status: string | null; last_seen: string | null; in_ad: number }[];
-  return righe.map(({ in_ad, ...h }) => ({ ...h, inAd: in_ad === 1 }));
+    FROM hosts h`).all() as { id: number; ip: string; hostname: string | null; custom_name: string | null; status: string | null; last_seen: string | null; in_ad: number }[];
+  const nomeDns = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+  return righe.map(({ in_ad, custom_name, ...h }) => {
+    const aMano = (custom_name ?? "").trim().toLowerCase();
+    return { ...h, hostname: aMano && nomeDns.test(aMano) ? aMano : h.hostname, inAd: in_ad === 1 };
+  });
 }
 
 export function getCidrReti(): string[] {

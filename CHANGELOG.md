@@ -85,6 +85,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Apparati: tutti i cambiamenti in un elenco solo (14/11/2026)
 
 ### Cambiato
+- **Nel confronto col DNS di Active Directory vale il nome scritto a mano sull'host** (Riccardo, 18/11: «Sì, vale quello»), quando ha la forma di un nome DNS; altrimenti resta il nome trovato dalla scoperta. Cambia l'elenco delle anomalie: un host rinominato a mano compare come «nome diverso» finché il DNS non lo segue. Dopo una rinomina nella tabella della subnet un avviso offre «Aggiorna il DNS…».
 - **Apparati → Cambiamenti** raccoglie tutto ciò che cambia nel tempo: oggetti nuovi, apparati nuovi, cambi di IP, MAC cambiato, spostamenti di porta, porte nuove. Prima erano due pagine (Cambiamenti e Anomalie) con fonti diverse, e sull'hub la prima era vuota perché viveva solo del confronto fra due giri uguali.
 - Il rumore (indirizzi dati dal DHCP, porte di collegamento fra switch, MAC con molti indirizzi) è nascosto di serie col suo numero in vista: senza, 85 MAC su 91 risultavano «con IP cambiato» in una settimana.
 - «Visto» per riga o per tutto l'elenco filtrato; il numero dei cambiamenti da vedere sta accanto ad «Apparati» nel menù.

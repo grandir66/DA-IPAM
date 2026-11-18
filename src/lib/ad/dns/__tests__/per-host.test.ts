@@ -40,6 +40,9 @@ describe("DNS di AD visto da un host", () => {
     host.run(6, "192.168.4.13", "altro");
     host.run(7, "192.168.4.14", "scoperto");   // rinominato a mano in «srv-posta»: vale il nome a mano
     host.run(8, "192.168.4.15", "pc-15");      // «Sala riunioni» a mano è una descrizione: vale il nome scoperto
+    host.run(9, "192.168.4.16", "srv-app");     // due nomi e due reverse voluti: a posto
+    host.run(10, "192.168.4.17", "nuovo-multi"); // due nomi nel DNS, nessuno è il suo
+    host.run(11, "192.168.4.32", "viaggia");     // ha cambiato IP, e sul vecchio (.21) aveva anche un secondo nome
     d.prepare("UPDATE hosts SET custom_name = 'SRV-Posta' WHERE id = 7").run();
     d.prepare("UPDATE hosts SET custom_name = 'Sala riunioni' WHERE id = 8").run();
     withTenant(T, () => sostituisciDnsAd(1, ZONE, [
@@ -51,6 +54,9 @@ describe("DNS di AD visto da un host", () => {
       A("sparito", "192.168.4.40"), PTR("192.168.4.40", "sparito"),
       A("scoperto", "192.168.4.14"), PTR("192.168.4.14", "scoperto"),
       A("pc-15", "192.168.4.15"), PTR("192.168.4.15", "pc-15"),
+      A("srv-app", "192.168.4.16"), A("intranet", "192.168.4.16"), PTR("192.168.4.16", "srv-app"), PTR("192.168.4.16", "intranet"),
+      A("uno", "192.168.4.17"), A("due", "192.168.4.17"), PTR("192.168.4.17", "uno"),
+      A("viaggia", "192.168.4.21"), A("posta", "192.168.4.21"), PTR("192.168.4.21", "viaggia"), PTR("192.168.4.21", "posta"),
     ]));
   });
   after(() => deleteTenantDatabase(T));
@@ -70,6 +76,22 @@ describe("DNS di AD visto da un host", () => {
     ]);
     assert.deepEqual(breve("host:allinea:192.168.4.12"), ["+A nas.esempio.local 192.168.4.12", "+PTR 12.4.168.192.in-addr.arpa nas.esempio.local"]);
     assert.match(String(breve("host:allinea:192.168.4.10")), /niente da allineare/);
+  });
+
+  // Riccardo, 18/11/2026: «spesso su un IP ci sono diversi record registrati per motivi reali».
+  it("più nomi sullo stesso IP: non sono un difetto dell'host, e nessuna correzione li perde", () => {
+    assert.deepEqual(withTenant(T, () => statoDnsDi(["192.168.4.16"])), { "192.168.4.16": "ok" });
+    const d = withTenant(T, () => dnsDiIp("192.168.4.16"))[0]!;
+    assert.deepEqual([d.nomi.length, d.reverse.length, d.anomalie, d.allinea], [2, 2, [], null]);
+    // Il nome di DA-IPAM si aggiunge: «uno» e «due» restano.
+    assert.deepEqual(breve("host:allinea:192.168.4.17"), ["+A nuovo-multi.esempio.local 192.168.4.17", "+PTR 17.4.168.192.in-addr.arpa nuovo-multi.esempio.local"]);
+    // Cambio di IP: il secondo nome e i reverse seguono l'host.
+    assert.deepEqual(breve("host:allinea:192.168.4.32"), [
+      "+A viaggia.esempio.local 192.168.4.32", "+PTR 32.4.168.192.in-addr.arpa viaggia.esempio.local",
+      "+A posta.esempio.local 192.168.4.32", "+PTR 32.4.168.192.in-addr.arpa posta.esempio.local",
+      "-PTR 21.4.168.192.in-addr.arpa viaggia.esempio.local", "-PTR 21.4.168.192.in-addr.arpa posta.esempio.local",
+      "-A posta.esempio.local 192.168.4.21", "-A viaggia.esempio.local 192.168.4.21",
+    ]);
   });
 
   it("il nome scritto a mano vince su quello scoperto, se ha la forma di un nome DNS", () => {

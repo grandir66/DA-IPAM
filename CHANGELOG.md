@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
+### Cambiato
+- **Più nomi sullo stesso IP non sono più un difetto dell'host** (Riccardo, 18/11: «spesso su un IP ci sono diversi record registrati per motivi reali»). Un host con più nomi o più reverse nel DNS resta «a posto» nel riquadro e nella colonna «DNS»; «Aggiorna il DNS…» aggiunge il nome di DA-IPAM e lascia gli altri; dopo un cambio di IP si spostano tutti i nomi e i reverse del vecchio indirizzo, non solo il primo. Prima un alias voluto faceva comparire «≠», e uno spostamento lasciava indietro gli altri nomi.
+
 ### Aggiunto
 - **Il DNS di Active Directory accanto a host, apparati e subnet** (Riccardo, 18/11: «sarebbe bello integrarlo con le modifiche delle voci di subnet e apparati»). Nella scheda di un host o di un apparato un riquadro dice se nel DNS il nome c'è, manca o è diverso, con «Aggiorna il DNS…» dove le correzioni sono accese; nella tabella degli host di una subnet una colonna «DNS» col segno (✓ ∅ ≠); dopo un'eliminazione un avviso offre di togliere le voci rimaste. Eliminare o salvare non scrive mai sul DC: si scrive solo dall'anteprima confermata, per la strada delle correzioni. Lo stato viene dall'ultima lettura del DNS, non dal DC.
 - **Voce nuova nel DNS di Active Directory, scritta a mano** (Riccardo, 18/11: «il sistema non permette di registrare nuove voci»). Nella scheda «DNS», dove le correzioni sono accese, «Nuova voce…» crea un nome con il suo indirizzo (e il reverse, se si vuole), un alias o un reverse da solo. Stesse garanzie delle correzioni: anteprima, conferma, registro, annulla; mai sui controller di dominio, mai fuori dalle zone lette.

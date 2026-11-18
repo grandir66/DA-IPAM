@@ -42,6 +42,12 @@ const corto = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().s
 
 /** Le anomalie che «allinea» sa sistemare: il resto (doppioni, alias) si sceglie a mano nella scheda «DNS». */
 const ALLINEABILI: ReadonlySet<TipoAnomaliaDns> = new Set(["nome_diverso", "host_senza_nome", "a_senza_ptr", "ptr_altro_nome"]);
+/**
+ * Più nomi (o più reverse) sullo stesso IP sono spesso voluti (Riccardo, 18/11/2026: «spesso su un IP ci
+ * sono diversi record registrati per motivi reali»): per un host non sono un difetto. Restano nella scheda
+ * «DNS», dove si scelgono a mano o si segnano «È voluto».
+ */
+const SOLO_NOTIZIA: ReadonlySet<TipoAnomaliaDns> = new Set(["ip_piu_nomi", "ip_piu_ptr"]);
 
 interface Quadro {
   integrazione: { id: number; domain: string };
@@ -81,13 +87,16 @@ const togliVoce = (v: { zona: string; nome: string; tipo: string; dato: string }
 
 /** I passi che portano il DNS al nome che DA-IPAM ha per quell'IP. Vuoto = niente da fare (o niente che si possa fare). */
 function passiAllinea(q: Quadro, ip: string): PassoDns[] {
+  // Con più nomi sull'IP la rinomina non toglie niente: il nome di DA-IPAM si aggiunge, gli altri restano.
+  const piuNomi = new Set(q.record.filter((r) => r.tipo === "A" && r.dato === ip).map((r) => r.fqdn)).size > 1;
   const passi = q.vista.anomalie
     .filter((a) => a.ip === ip && ALLINEABILI.has(a.tipo))
-    .flatMap((a) => a.correzioni.flatMap((c) => c.passi));
+    .flatMap((a) => a.correzioni.flatMap((c) => c.passi).filter((p) => !(piuNomi && a.tipo === "nome_diverso" && p.azione === "togli")));
   if (passi.length > 0) return ordinati(passi);
 
   // L'host ha cambiato IP: il suo nome nel DNS punta ancora al vecchio. Si aggiunge sul nuovo; il vecchio
   // si toglie solo se a quell'indirizzo DA-IPAM non ha più nessuno (potrebbe essere ormai di un altro host).
+  // In quel caso lo seguono anche gli altri nomi e i reverse registrati sul vecchio indirizzo.
   const nome = corto(q.host.find((h) => h.ip === ip)?.hostname);
   const zona = q.integrazione.domain;
   if (!ETICHETTA.test(nome) || !q.zone.some((z) => !z.inversa && z.nome === zona)) return [];
@@ -99,7 +108,15 @@ function passiAllinea(q: Quadro, ip: string): PassoDns[] {
   if (inverso && !q.record.some((r) => r.tipo === "PTR" && r.ip === ip)) esce.push({ azione: "aggiungi", zona: inverso.zona, nome: inverso.nome, tipo: "PTR", dato: fqdn });
   for (const v of vecchi) {
     if (q.host.some((h) => h.ip === v.dato)) continue;
-    esce.push(togliVoce(v), ...q.record.filter((r) => r.tipo === "PTR" && r.ip === v.dato && r.dato === fqdn).map(togliVoce));
+    const ptrVecchi = q.record.filter((r) => r.tipo === "PTR" && r.ip === v.dato);
+    for (const c of q.record.filter((r) => r.tipo === "A" && r.dato === v.dato && r.fqdn !== fqdn)) {
+      esce.push({ azione: "aggiungi", zona: c.zona, nome: c.nome, tipo: "A", dato: ip }, togliVoce(c));
+    }
+    for (const p of ptrVecchi) {
+      if (inverso && p.dato !== fqdn) esce.push({ azione: "aggiungi", zona: inverso.zona, nome: inverso.nome, tipo: "PTR", dato: p.dato });
+      esce.push(togliVoce(p));
+    }
+    esce.push(togliVoce(v));
   }
   return ordinati(esce);
 }
@@ -113,7 +130,7 @@ function passiTogli(q: Quadro, ip: string): PassoDns[] {
 function diUnIp(q: Quadro, ip: string): DnsDiHost {
   const nomi = q.record.filter((r) => r.tipo === "A" && r.dato === ip).map((r) => r.fqdn);
   const reverse = q.record.filter((r) => r.tipo === "PTR" && r.ip === ip).map((r) => r.dato);
-  const anomalie = q.vista.anomalie.filter((a) => a.ip === ip);
+  const anomalie = q.vista.anomalie.filter((a) => a.ip === ip && !SOLO_NOTIZIA.has(a.tipo));
   // Il nome dell'host nel DNS c'è, ma su un altro indirizzo: non «manca», è rimasto indietro dopo un cambio di IP.
   const nomeHost = corto(q.host.find((h) => h.ip === ip)?.hostname);
   const altrove = nomeHost !== "" && nomi.length === 0 && q.record.some((r) => r.tipo === "A" && r.fqdn === `${nomeHost}.${q.integrazione.domain}` && r.dato !== ip);

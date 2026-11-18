@@ -206,6 +206,10 @@ Una revisione del ramo con il subagent `reviewer` (uno solo, sola lettura, stima
 - 2026-11-17 S5 → [x] scritta; **NON guardata resa** né a 1920 né a 1366: si guarda su 192.168.4.8 durante S6.
 - 2026-11-17 18:14 UTC: 0.9.1273 (`4497a163`) su 192.168.4.8. Sul 70791: colonne `dns_*` create, interruttore a 0, registro vuoto coi suoi 2 trigger, le quattro rotte nuove rimandano al login senza sessione. **Sonda di sola lettura sul DC vero** (nessun Add, nessun Remove): `comandoLeggi` risponde per un A, un PTR e un CNAME, il record in archivio c'è, statico e TTL coincidono; controller di dominio protetti trovati: 2 nomi e 2 IP; 13 zone ammesse.
 
+- 2026-11-18 08:26-08:29 UTC, S6 su Domarc (70791) da 192.168.4.8, utenza: voce WinRM del DC (interruttore e «usa la voce WinRM del DC» accesi da Claude sul database, su richiesta di Riccardo). Copie: `/root/dns-ad-archivio-70791-20261118-081951.sql` su 192.168.4.8 (358 record) e, sul DC, `da-ipam-copia-domarc.it-20261118.dns` e `da-ipam-copia-15.168.192.in-addr.arpa-20261118.dns` nella cartella del DNS. Record di prova `da-ipam-prova.domarc.it`: creato su 192.168.15.249 con il reverse, spostato su .248, tolto, rimesso con «annulla», tolto di nuovo. Dopo ogni fase il nome è stato chiesto al DC con `dig` da 192.168.4.8 e la risposta coincideva. Alla fine: nessun record di prova, 358 record in archivio come prima, 11 righe nel registro e 22 nel file `audit/dns-ad-2026-11-18.jsonl`.
+- 2026-11-18 **Trovato in S6**: tolto un record A, il DNS di Windows toglie da solo anche il PTR corrispondente. Nella fase «sposta» il passo «togli il PTR» ha trovato il record già sparito e si è fermato con «cambiato», senza danni (la rilettura ha fatto il suo lavoro); quel PTR è stato tolto dal DC senza una riga sua nel registro. Corretto nella 0.9.1274: fra i passi che tolgono, i reverse vengono prima dei nomi. Prova aggiornata e vista fallire.
+- 2026-11-18 S6 resta aperto per due punti: una correzione vera scelta da Riccardo dalla scheda, e la resa dell'interfaccia che nessuno ha ancora guardato.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

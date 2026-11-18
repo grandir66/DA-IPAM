@@ -6,7 +6,7 @@
 **Architettura:** niente strada nuova verso il DC. Si riusa quella delle correzioni (`src/lib/ad/dns/`: anteprima, gettone, convalida, registro, annulla). Di nuovo ci sono solo: una lettura «com'è messo questo IP nel DNS», due richieste di correzione legate a un IP (ricostruite sul server dall'id, come `nuova.ts`), e i punti dell'interfaccia che le mostrano.
 **Spec:** nessuna a parte. Richiesta di Riccardo in `TASKS.md`, sezione «2026-11-17 — Idea: DNS di Active Directory», riga del 18/11. Piani precedenti: `2026-11-17-dns-active-directory-sola-lettura.md`, `2026-11-17-dns-active-directory-correzioni.md`.
 **Livello di controllo:** leggero per lettura e interfaccia; **completo** per il passo T2 (nasce un modo nuovo di chiedere una scrittura sul DC del cliente: prove viste fallire).
-**Stato:** proposto, in attesa dell'approvazione di Riccardo · **Ultimo aggiornamento:** 2026-11-18
+**Stato:** in corso (approvato da Riccardo il 18/11/2026) · **Ultimo aggiornamento:** 2026-11-18
 
 ## Richiesta di Riccardo (18/11/2026)
 
@@ -43,11 +43,11 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | [ ] | Stato DNS di un IP e di una subnet | in linea | — | per un IP: record, anomalie, stato (c'è · manca · diverso), ora della lettura; per una subnet: lo stato di tutti gli IP in una chiamata | prove del modulo |
-| T2 | [ ] | Richieste di correzione legate a un host | in linea | T1 | `host:allinea:<ip>` e `host:togli:<ip>` ricostruite sul server, convalidate, con i casi 4 e 5 | prove viste fallire, anche fino al DC finto |
-| T3 | [ ] | Scheda dell'host: riquadro «DNS» e avvisi dopo salva ed elimina | in linea | T2 | il riquadro mostra lo stato; dopo un cambio di nome o IP e nella conferma di eliminazione compare «Aggiorna il DNS…» | una schermata a 1920 |
-| T4 | [ ] | Scheda dell'apparato: stesso riquadro e stessi avvisi | in linea | T3 | cambiando nome o indirizzo dell'apparato compare lo stesso avviso | `tsc`, lint |
-| T5 | [ ] | Segno nella tabella degli host di una subnet; avviso riassuntivo per eliminazioni e spostamenti di gruppo | in linea | T1 | colonna col segno, e un avviso solo per le azioni su più host | una schermata a 1920 |
+| T1 | [x] | Stato DNS di un IP e di una subnet | in linea | — | per un IP: record, anomalie, stato (c'è · manca · diverso), ora della lettura; per una subnet: lo stato di tutti gli IP in una chiamata | prove del modulo |
+| T2 | [x] | Richieste di correzione legate a un host | in linea | T1 | `host:allinea:<ip>` e `host:togli:<ip>` ricostruite sul server, convalidate, con i casi 4 e 5 | prove viste fallire, anche fino al DC finto |
+| T3 | [x] | Scheda dell'host: riquadro «DNS» e avvisi dopo salva ed elimina | in linea | T2 | il riquadro mostra lo stato; dopo un cambio di nome o IP e nella conferma di eliminazione compare «Aggiorna il DNS…» | una schermata a 1920 |
+| T4 | [x] | Scheda dell'apparato: stesso riquadro e stessi avvisi | in linea | T3 | cambiando nome o indirizzo dell'apparato compare lo stesso avviso | `tsc`, lint |
+| T5 | [~] | Segno nella tabella degli host di una subnet; avviso riassuntivo per eliminazioni e spostamenti di gruppo | in linea | T1 | colonna col segno, e un avviso solo per le azioni su più host | una schermata a 1920 |
 | T6 | [ ] | Prova su 192.168.4.8 con un host di prova, documenti, rilascio su dev | in linea | T3-T5 | host di prova rinominato, spostato di IP ed eliminato, col DNS aggiornato dall'avviso e tornato com'era | elenco qui sotto |
 
 T4 e T5 non hanno file in comune e non dipendono l'uno dall'altro.
@@ -86,6 +86,13 @@ Su 192.168.4.8 (correzioni accese su Domarc), con un host di prova fuori dagli I
 - [ ] eliminazione → «Togli le voci dal DNS…» → il DNS torna al numero di record di partenza
 - [ ] ogni scrittura ha la sua riga nel registro
 Poi `CHANGELOG.md`, `CONTEXT.md`, `TASKS.md`, rilascio su `dev`. `main` resta di Riccardo.
+
+## Scostamenti (18/11)
+
+- La scheda di host e apparati è una sola (`/objects/[id]`): T3 e T4 sono lo stesso aggancio. La pagina `/devices/[id]` non è stata toccata.
+- In DA-IPAM a mano si cambia `custom_name`, non `hostname` né l'IP (li scrive la scoperta): con la scelta 1 una rinomina a mano non muove il DNS. Decisione rimessa a Riccardo, in `TASKS.md`.
+- T5: fatto il segno e l'avviso dopo l'eliminazione; non fatto l'avviso dopo lo spostamento di più host.
+- Verifiche a schermo non fatte.
 
 ## Consuntivo
 

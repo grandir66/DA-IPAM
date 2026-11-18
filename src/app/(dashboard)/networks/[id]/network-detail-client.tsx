@@ -64,6 +64,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Trash2, UserCheck, UserX, Key, Loader2, Radar, Tags, ChevronDown, Microscope, Filter, EyeOff, Copy, Tag } from "lucide-react";
 import { toast } from "sonner";
+import { ConfermaCorrezioni, type Anteprima } from "@/app/(dashboard)/active-directory/correzioni-dns";
+import { SegnoDns, anteprimaDnsHost } from "@/components/shared/dns-di-host";
+import type { DnsDiHost as DatiDnsHost, StatoDnsHost } from "@/lib/ad/dns/per-host";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
@@ -185,6 +188,16 @@ export function NetworkDetailClient({
   const [network, setNetwork] = useState(initialNetwork);
   const [routerId, setRouterId] = useState<number | null>(initialRouterId);
   const [hosts, setHosts] = useState<HostWithDevice[]>(initialHosts);
+  // Com'è messo ogni IP nel DNS di Active Directory (dall'archivio dell'ultima lettura): un segno in tabella.
+  const [statiDns, setStatiDns] = useState<Record<string, StatoDnsHost>>({});
+  const [anteprimaDns, setAnteprimaDns] = useState<{ integrazione: number; dati: Anteprima } | null>(null);
+  const leggiStatiDns = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/networks/${network.id}/dns`, { cache: "no-store" });
+      if (r.ok) setStatiDns(((await r.json()) as { stati: Record<string, StatoDnsHost> }).stati);
+    } catch { /* il DNS è un di più: senza, la colonna resta vuota */ }
+  }, [network.id]);
+  useEffect(() => { void leggiStatiDns(); }, [leggiStatiDns]);
   const [cassettoId, setCassettoId] = useState<number | null>(null);
   const [scanning, setScanning] = useState<ScanProgressType | null>(null);
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -646,6 +659,15 @@ export function NetworkDetailClient({
     const n = ids.length;
     if (!confirm(`Eliminare definitivamente ${n} host dall'inventario IP? Azione irreversibile.`)) return;
     setBulkHostBusy(true);
+    // Lo stato nel DNS si prende PRIMA: dopo, l'host non c'è più e non si saprebbe di chi erano quelle voci.
+    const conDns = hosts.filter((h) => ids.includes(h.id) && statiDns[h.ip]);
+    let dnsDelSolo: DatiDnsHost | null = null;
+    if (eAdmin && conDns.length === 1) {
+      try {
+        const r = await fetch(`/api/hosts/${conDns[0]!.id}/dns`, { cache: "no-store" });
+        if (r.ok) dnsDelSolo = ((await r.json()) as { dns: DatiDnsHost[] }).dns.find((d) => d.togli && d.correzioniAccese) ?? null;
+      } catch { /* senza stato resta l'avviso generico */ }
+    }
     try {
       const res = await fetch("/api/hosts/bulk", {
         method: "DELETE",
@@ -658,8 +680,22 @@ export function NetworkDetailClient({
       const data = (await res.json()) as { error?: string; deleted?: number };
       if (res.ok) {
         toast.success(data.deleted != null ? `${data.deleted} host eliminati` : "Host eliminati");
+        // Eliminare non tocca il DNS: lo si dice, e si offre la strada per sistemarlo (sempre con anteprima e conferma).
+        if (dnsDelSolo?.togli) {
+          const { integrazione, togli } = dnsDelSolo;
+          toast.warning("L'host eliminato ha ancora voci nel DNS di Active Directory", {
+            duration: 30_000,
+            action: { label: "Togli dal DNS…", onClick: () => { void anteprimaDnsHost(integrazione, togli).then((dati) => { if (dati) setAnteprimaDns({ integrazione, dati }); }); } },
+          });
+        } else if (conDns.length > 0) {
+          toast.warning(`${conDns.length} ${conDns.length === 1 ? "host eliminato ha" : "degli host eliminati hanno"} ancora voci nel DNS di Active Directory`, {
+            duration: 30_000,
+            action: { label: "Apri la scheda DNS", onClick: () => router.push("/active-directory?tab=dns") },
+          });
+        }
         clearHostSelection();
         await refreshHosts();
+        void leggiStatiDns();
         router.refresh();
       } else {
         toast.error(data.error || "Errore");
@@ -1789,6 +1825,11 @@ export function NetworkDetailClient({
         </Card>
       )}
 
+      <ConfermaCorrezioni
+        integrationId={anteprimaDns?.integrazione ?? 0}
+        anteprima={anteprimaDns?.dati ?? null}
+        onChiudi={(fatto) => { setAnteprimaDns(null); if (fatto) void leggiStatiDns(); }}
+      />
       {bulkAddOpen && selectedHostIds.size > 0 && (
         <RendiApparatoDialog
           hosts={hosts.filter((h) => selectedHostIds.has(h.id)).slice(0, 50)}
@@ -1855,6 +1896,7 @@ export function NetworkDetailClient({
                 <TableHead>Conosciuto</TableHead>
                 <TableHead>DHCP</TableHead>
                 <TableHead title="Presente in Active Directory" className="w-10 text-center">AD</TableHead>
+                <TableHead title="Nel DNS di Active Directory: ✓ c'è · ∅ manca · ≠ è diverso (dall'ultima lettura del DNS)" className="w-10 text-center">DNS</TableHead>
                 <SortableTableHead columnId="name" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
                   Nome
                 </SortableTableHead>
@@ -1884,7 +1926,7 @@ export function NetworkDetailClient({
             <ContextMenuTrigger render={<TableBody />}>
               {displayHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={18} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
                       ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
                       : "Nessun host corrisponde ai filtri."}
@@ -1966,6 +2008,9 @@ export function NetworkDetailClient({
                           AD
                         </Badge>
                       ) : null}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <SegnoDns stato={statiDns[host.ip]} />
                     </TableCell>
                     <TableCell
                       className="min-w-[120px] cursor-text"

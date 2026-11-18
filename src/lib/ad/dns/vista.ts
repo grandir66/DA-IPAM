@@ -12,6 +12,7 @@ import { correzioniPer, type Correzione } from "./correzioni";
 import { ammessiDi } from "./esecuzione";
 import { convalidaPasso } from "./comandi";
 import { PREFISSO_VOCE_NUOVA, voceNuovaDa } from "./nuova";
+import { PREFISSO_HOST, correzioneHostDa } from "./per-host";
 import { anomalieDns, conteggiAnomalieDns, type AnomaliaDns, type TipoAnomaliaDns } from "./anomalie";
 import type { VoceDns, ZonaDns } from "./record";
 
@@ -70,10 +71,11 @@ export function correzioniScelte(integrationId: number, ids: readonly string[]):
   const motivi: string[] = [];
   const integrazione = getAdIntegrationById(integrationId);
   for (const id of ids) {
-    if (id.startsWith(PREFISSO_VOCE_NUOVA)) {
-      // Voce scritta a mano: i passi si ricostruiscono qui dall'id e passano subito dalla convalida, così un nome non ammesso si vede prima dell'anteprima.
+    if (id.startsWith(PREFISSO_VOCE_NUOVA) || id.startsWith(PREFISSO_HOST)) {
+      // Voce scritta a mano o richiesta legata a un host: i passi si ricostruiscono qui dall'id e passano subito dalla convalida, così un nome non ammesso si vede prima dell'anteprima.
       const zone = getZoneDnsAd(integrationId).map((z) => ({ nome: z.nome, inversa: z.inversa === 1, partizione: z.partizione as ZonaDns["partizione"] }));
-      const nuova = integrazione ? voceNuovaDa(id, zone, integrazione.domain ?? "") : ({ ok: false, motivo: "Integrazione non trovata" } as const);
+      const nuova = !integrazione ? ({ ok: false, motivo: "Integrazione non trovata" } as const)
+        : id.startsWith(PREFISSO_HOST) ? correzioneHostDa(id, integrationId) : voceNuovaDa(id, zone, integrazione.domain ?? "");
       const ammessi = integrazione ? ammessiDi(integrazione) : null;
       const rifiuto = nuova.ok && ammessi ? nuova.correzione.passi.map((p) => convalidaPasso(p, ammessi)).find((v) => !v.ok) : undefined;
       if (nuova.ok && !rifiuto) trovate.push(nuova.correzione);

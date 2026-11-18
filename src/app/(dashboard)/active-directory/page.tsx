@@ -157,7 +157,7 @@ export default function ActiveDirectoryPage() {
   );
 }
 
-const SCHEDE_AD = new Set(["computers", "users", "groups", "dhcp"]);
+const SCHEDE_AD = new Set(["computers", "users", "groups", "dhcp", "dns"]);
 
 function PaginaActiveDirectory() {
   const searchParams = useSearchParams();

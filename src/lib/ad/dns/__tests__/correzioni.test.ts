@@ -66,7 +66,7 @@ describe("correzioni per tipo di anomalia", () => {
     const doppioni = r.filter((x) => x.id.startsWith("ip_piu_nomi"));
     assert.deepEqual(doppioni.map((x) => x.passi), [
       ["-A pc-01.esempio.local 192.168.4.10"],
-      ["-A vecchio.esempio.local 192.168.4.10", "-PTR 10.4.168.192.in-addr.arpa vecchio.esempio.local"],
+      ["-PTR 10.4.168.192.in-addr.arpa vecchio.esempio.local", "-A vecchio.esempio.local 192.168.4.10"],
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("correzioni per tipo di anomalia", () => {
     const voci = [A("srv", "192.168.4.20"), A("srv", "192.168.4.21"), PTR("192.168.4.20", "srv"), PTR("192.168.4.21", "srv")];
     const r = proposte(voci, [H(1, "192.168.4.20", "srv"), H(2, "192.168.4.21", "srv")]);
     assert.deepEqual(r.map((x) => x.id), ["nome_piu_ip:srv.esempio.local#togli:192.168.4.20", "nome_piu_ip:srv.esempio.local#togli:192.168.4.21"]);
-    assert.deepEqual(r[1]!.passi, ["-A srv.esempio.local 192.168.4.21", "-PTR 21.4.168.192.in-addr.arpa srv.esempio.local"]);
+    assert.deepEqual(r[1]!.passi, ["-PTR 21.4.168.192.in-addr.arpa srv.esempio.local", "-A srv.esempio.local 192.168.4.21"]);
   });
 
   it("stesso IP, più reverse: una proposta per reverse", () => {
@@ -93,8 +93,8 @@ describe("correzioni per tipo di anomalia", () => {
       id: "nome_diverso:192.168.4.10#rinomina:vecchio.esempio.local", toglie: true, passi: [
         "+A pc-nuovo.esempio.local 192.168.4.10",
         "+PTR 10.4.168.192.in-addr.arpa pc-nuovo.esempio.local",
-        "-A vecchio.esempio.local 192.168.4.10",
         "-PTR 10.4.168.192.in-addr.arpa vecchio.esempio.local",
+        "-A vecchio.esempio.local 192.168.4.10",
       ],
     }]);
   });
@@ -107,7 +107,8 @@ describe("correzioni per tipo di anomalia", () => {
 
   it("host spento e IP sconosciuto: togli nome e reverse", () => {
     const voci = [A("pc-01", "192.168.4.10"), PTR("192.168.4.10", "pc-01")];
-    const attesi = ["-A pc-01.esempio.local 192.168.4.10", "-PTR 10.4.168.192.in-addr.arpa pc-01.esempio.local"];
+    // Prima il reverse: tolto il nome, il DNS di Windows toglierebbe il reverse da solo (Domarc, 18/11/2026).
+    const attesi = ["-PTR 10.4.168.192.in-addr.arpa pc-01.esempio.local", "-A pc-01.esempio.local 192.168.4.10"];
     assert.deepEqual(proposte(voci, [H(1, "192.168.4.10", "pc-01", "offline", "2026-08-01 08:00:00")])[0]?.passi, attesi);
     assert.deepEqual(proposte(voci, [])[0]?.passi, attesi);
   });

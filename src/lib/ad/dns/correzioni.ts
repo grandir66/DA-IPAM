@@ -3,7 +3,8 @@
  *
  * Una correzione è un elenco ordinato di passi elementari, solo due: «aggiungi questo record» e
  * «togli questo record esatto». Un cambio è sempre «aggiungi il nuovo, poi togli il vecchio»: se
- * si interrompe a metà resta un doppione, mai un buco. Funzioni pure: qui non si scrive niente,
+ * si interrompe a metà resta un doppione, mai un buco. Fra i «togli» vengono prima i reverse: il DNS di
+ * Windows, tolto un record A, toglie da solo il PTR corrispondente. Funzioni pure: qui non si scrive niente,
  * e niente parte senza la conferma di una persona.
  *
  * Mai i record dei controller di dominio: una correzione che ne tocca uno non viene proposta.
@@ -74,7 +75,11 @@ export function correzioniPer(anomalia: AnomaliaDns, ctx: ContestoCorrezioni): C
   const metti = (variante: string, titolo: string, passi: (PassoDns | null)[]) => {
     const veri = passi.filter((p): p is PassoDns => p !== null);
     if (veri.length === 0) return;
-    const ordinati = [...veri.filter((p) => p.azione === "aggiungi"), ...veri.filter((p) => p.azione === "togli")];
+    // Prima gli «aggiungi». Fra i «togli», prima i reverse: togliendo un record A il DNS di Windows toglie
+    // da solo anche il PTR che gli corrisponde (visto sul DC di Domarc il 18/11/2026), e il passo dopo
+    // lo troverebbe già sparito. Così ogni record che se ne va è tolto da un passo suo, col suo registro.
+    const togli = veri.filter((p) => p.azione === "togli");
+    const ordinati = [...veri.filter((p) => p.azione === "aggiungi"), ...togli.filter((p) => p.tipo === "PTR"), ...togli.filter((p) => p.tipo !== "PTR")];
     esce.push({ id: `${anomalia.chiave}#${variante}`, chiaveAnomalia: anomalia.chiave, titolo, passi: ordinati, toglieDati: ordinati.some((p) => p.azione === "togli") });
   };
   const ip = anomalia.ip;

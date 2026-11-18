@@ -48,7 +48,7 @@
 | T3 | [x] | Scheda dell'host: riquadro «DNS» e avvisi dopo salva ed elimina | in linea | T2 | il riquadro mostra lo stato; dopo un cambio di nome o IP e nella conferma di eliminazione compare «Aggiorna il DNS…» | una schermata a 1920 |
 | T4 | [x] | Scheda dell'apparato: stesso riquadro e stessi avvisi | in linea | T3 | cambiando nome o indirizzo dell'apparato compare lo stesso avviso | `tsc`, lint |
 | T5 | [~] | Segno nella tabella degli host di una subnet; avviso riassuntivo per eliminazioni e spostamenti di gruppo | in linea | T1 | colonna col segno, e un avviso solo per le azioni su più host | una schermata a 1920 |
-| T6 | [ ] | Prova su 192.168.4.8 con un host di prova, documenti, rilascio su dev | in linea | T3-T5 | host di prova rinominato, spostato di IP ed eliminato, col DNS aggiornato dall'avviso e tornato com'era | elenco qui sotto |
+| T6 | [x] | Prova su 192.168.4.8 con un host di prova, documenti, rilascio su dev | in linea | T3-T5 | host di prova rinominato, spostato di IP ed eliminato, col DNS aggiornato dall'avviso e tornato com'era | elenco qui sotto |
 
 T4 e T5 non hanno file in comune e non dipendono l'uno dall'altro.
 
@@ -95,5 +95,9 @@ Poi `CHANGELOG.md`, `CONTEXT.md`, `TASKS.md`, rilascio su `dev`. `main` resta di
 - Verifiche a schermo non fatte.
 
 ## Consuntivo
+
+- **Fatto**: T1-T4 e T6; T5 senza l'avviso per lo spostamento di più host. Prova T6 sul DC di Domarc il 18/11 (crea, sposta, elimina: 8 passi riusciti, DNS tornato a 354 record).
+- **Mancante**: resa a schermo mai guardata; avviso dopo `hosts/bulk-update`; segno nell'elenco degli apparati; cancello completo.
+- **Da decidere (Riccardo)**: se il nome scritto a mano (`custom_name`) deve valere nel confronto col DNS.
 
 (a fine piano)

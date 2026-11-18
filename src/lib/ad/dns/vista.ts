@@ -10,6 +10,8 @@ import {
 import { statoScritturaDns, type StatoScritturaDns } from "./accesso";
 import { correzioniPer, type Correzione } from "./correzioni";
 import { ammessiDi } from "./esecuzione";
+import { convalidaPasso } from "./comandi";
+import { PREFISSO_VOCE_NUOVA, voceNuovaDa } from "./nuova";
 import { anomalieDns, conteggiAnomalieDns, type AnomaliaDns, type TipoAnomaliaDns } from "./anomalie";
 import type { VoceDns, ZonaDns } from "./record";
 
@@ -61,14 +63,26 @@ export function vistaDnsAd(integrationId: number, adesso: Date = new Date()): Vi
 }
 
 /** Le correzioni scelte per id, ricalcolate dai dati di ADESSO: quello che arriva dal browser è solo l'elenco degli id. */
-export function correzioniScelte(integrationId: number, ids: readonly string[]): { trovate: Correzione[]; mancanti: string[] } {
+export function correzioniScelte(integrationId: number, ids: readonly string[]): { trovate: Correzione[]; mancanti: string[]; motivi: string[] } {
   const tutte = new Map(vistaDnsAd(integrationId).anomalie.flatMap((a) => a.correzioni).map((c) => [c.id, c]));
   const trovate: Correzione[] = [];
   const mancanti: string[] = [];
+  const motivi: string[] = [];
+  const integrazione = getAdIntegrationById(integrationId);
   for (const id of ids) {
+    if (id.startsWith(PREFISSO_VOCE_NUOVA)) {
+      // Voce scritta a mano: i passi si ricostruiscono qui dall'id e passano subito dalla convalida, così un nome non ammesso si vede prima dell'anteprima.
+      const zone = getZoneDnsAd(integrationId).map((z) => ({ nome: z.nome, inversa: z.inversa === 1, partizione: z.partizione as ZonaDns["partizione"] }));
+      const nuova = integrazione ? voceNuovaDa(id, zone, integrazione.domain ?? "") : ({ ok: false, motivo: "Integrazione non trovata" } as const);
+      const ammessi = integrazione ? ammessiDi(integrazione) : null;
+      const rifiuto = nuova.ok && ammessi ? nuova.correzione.passi.map((p) => convalidaPasso(p, ammessi)).find((v) => !v.ok) : undefined;
+      if (nuova.ok && !rifiuto) trovate.push(nuova.correzione);
+      else { mancanti.push(id); motivi.push(!nuova.ok ? nuova.motivo : rifiuto && !rifiuto.ok ? rifiuto.motivo : "Voce non ammessa"); }
+      continue;
+    }
     const c = tutte.get(id);
     if (c) trovate.push(c);
     else mancanti.push(id);
   }
-  return { trovate, mancanti };
+  return { trovate, mancanti, motivi };
 }

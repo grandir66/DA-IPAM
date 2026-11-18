@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Globe, Loader2, Wrench } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Globe, Loader2, Plus, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScorrimentoTabella } from "@/components/ui/table";
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { ETICHETTE_ANOMALIA_DNS, TIPI_ANOMALIA_DNS, type AnomaliaDns, type TipoAnomaliaDns } from "@/lib/ad/dns/anomalie";
 import type { VistaDnsAd } from "@/lib/ad/dns/vista";
 import type { RigaRecordDnsAd } from "@/lib/db-tenant";
-import { ConfermaCorrezioni, ImpostazioniCorrezioni, RegistroDns, type Anteprima } from "./correzioni-dns";
+import { ConfermaCorrezioni, ImpostazioniCorrezioni, NuovaVoce, RegistroDns, type Anteprima } from "./correzioni-dns";
 
 const PER_PAGINA = 25;
 const TIPI_RECORD = ["A", "AAAA", "CNAME", "PTR"] as const;
@@ -55,6 +55,7 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
   const [scelte, setScelte] = useState<Record<string, string>>({});
   const [anteprima, setAnteprima] = useState<Anteprima | null>(null);
   const [preparo, setPreparo] = useState(false);
+  const [nuovaVoce, setNuovaVoce] = useState(false);
   const [giro, setGiro] = useState(0);
 
   const [recordAperti, setRecordAperti] = useState(false);
@@ -240,6 +241,10 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
                       Correggi…
                     </Button>
                     {quanteScelte > 0 && <Button variant="ghost" size="sm" onClick={() => setScelte({})}>Togli la scelta</Button>}
+                    <Button variant="outline" size="sm" onClick={() => setNuovaVoce(true)}>
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Nuova voce…
+                    </Button>
                     <span className="text-[13px] text-muted-foreground">Prima di scrivere vedi l&apos;anteprima e confermi. Al massimo 50 per volta.</span>
                   </div>
                 )}
@@ -336,6 +341,13 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
 
           <RegistroDns integrationId={integrationId} amministratore={amministratore} accese={vista.scrittura.accesa} aggiornamento={giro} onCambiato={() => void carica()} />
           {amministratore && <ImpostazioniCorrezioni key={`${vista.impostazioni.dns_scrittura}-${vista.impostazioni.dns_usa_winrm_dc}-${vista.impostazioni.dns_credential_id}`} integrationId={integrationId} vista={vista} onSalvato={() => { setScelte({}); void carica(); }} />}
+          <NuovaVoce
+            integrationId={integrationId}
+            dominio={vista.zone.find((z) => !z.inversa)?.nome ?? "dominio"}
+            aperta={nuovaVoce}
+            onChiudi={() => setNuovaVoce(false)}
+            onAnteprima={(a) => { setNuovaVoce(false); setAnteprima(a); }}
+          />
           <ConfermaCorrezioni
             integrationId={integrationId}
             anteprima={anteprima}

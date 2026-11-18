@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { withTenant, getTenantDb, deleteTenantDatabase, sostituisciDnsAd, getModificheDnsAd, type AdIntegration } from "@/lib/db-tenant";
 import { annullaModifica, eseguiCorrezioni, type DipendenzeEsecuzione } from "../esecuzione";
 import type { Correzione, PassoDns } from "../correzioni";
+import { correzioniScelte } from "../vista";
 import type { RigaRegistroDns } from "../registro";
 import type { VoceDns, ZonaDns } from "../record";
 
@@ -205,6 +206,19 @@ describe("esecuzione delle correzioni al DNS di AD", () => {
     const a = await withTenant(T, () => annullaModifica(accesa, id, "riccardo", deps));
     assert.equal(a.esiti[0]!.esito, "riuscito");
     assert.equal(registro().find((x) => x.id === orfana)!.esito, "non_so");
+  });
+
+  it("voce nuova scritta a mano: dall'id al DC, e mai sul nome di un controller di dominio", async () => {
+    const scelta = withTenant(T, () => correzioniScelte(1, ["nuova:A:pc-60:192.168.4.60:ptr"]));
+    assert.deepEqual([scelta.trovate.length, scelta.motivi], [1, []]);
+    const r = await esegui(scelta.trovate);
+    assert.deepEqual(r.esiti.map((e) => e.esito), ["riuscito", "riuscito"]);
+    assert.equal(dc.ha("esempio.local", "pc-60", "A", "192.168.4.60"), true);
+    assert.equal(dc.ha("4.168.192.in-addr.arpa", "60", "PTR", "pc-60.esempio.local"), true);
+    const vietata = withTenant(T, () => correzioniScelte(1, ["nuova:A:dc01:192.168.4.61:solo", "nuova:A:wpad:192.168.4.62:solo"]));
+    assert.equal(vietata.trovate.length, 0);
+    assert.match(vietata.motivi[0]!, /controller di dominio/);
+    assert.match(vietata.motivi[1]!, /riservato/);
   });
 
   it("annulla: un «togli» riuscito si rimette, e non si annulla due volte", async () => {

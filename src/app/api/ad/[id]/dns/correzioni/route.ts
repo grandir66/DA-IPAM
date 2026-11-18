@@ -24,7 +24,8 @@ export async function POST(request: Request, { params }: Params) {
     const segreto = segretoConferma();
     if (!segreto) return NextResponse.json({ error: "Segreto del servizio assente: correzioni non disponibili" }, { status: 500 });
 
-    const { trovate, mancanti } = correzioniScelte(integrazione.id, [...new Set(dati.data.ids)]);
+    const { trovate, mancanti, motivi } = correzioniScelte(integrazione.id, [...new Set(dati.data.ids)]);
+    if (motivi.length > 0) return NextResponse.json({ error: motivi[0] }, { status: 400 });
     if (mancanti.length > 0) return NextResponse.json({ error: "Alcune correzioni non valgono più: il DNS è cambiato, ricarica la scheda", mancanti }, { status: 409 });
     const scade = Date.now() + DURATA_CONFERMA_MS;
     return NextResponse.json({

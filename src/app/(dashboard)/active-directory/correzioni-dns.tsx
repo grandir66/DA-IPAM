@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, ChevronDown, ChevronRight, History, Loader2, Minus, Plus, Settings2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DIALOG_PANEL_WIDE_CLASS } from "@/components/ui/dialog";
 import { ScorrimentoTabella } from "@/components/ui/table";
 import { Pagination } from "@/components/shared/pagination";
@@ -49,6 +50,86 @@ function RigaPasso({ p }: { p: Pick<PassoDns, "azione" | "zona" | "nome" | "tipo
       <td className="p-2 font-mono break-all">{p.nome}.{p.zona}</td>
       <td className="p-2 font-mono break-all">{p.dato}</td>
     </>
+  );
+}
+
+/**
+ * Voce nuova scritta a mano (Riccardo, 18/11/2026). Qui si compila soltanto: da «Anteprima» in poi
+ * è la stessa strada delle correzioni, con la conferma e il registro.
+ */
+export function NuovaVoce({ integrationId, dominio, aperta, onChiudi, onAnteprima }: { integrationId: number; dominio: string; aperta: boolean; onChiudi: () => void; onAnteprima: (a: Anteprima) => void }) {
+  const [tipo, setTipo] = useState<"A" | "CNAME" | "PTR">("A");
+  const [nome, setNome] = useState("");
+  const [dato, setDato] = useState("");
+  const [reverse, setReverse] = useState(true);
+  const [preparo, setPreparo] = useState(false);
+
+  useEffect(() => { if (aperta) { setNome(""); setDato(""); setTipo("A"); setReverse(true); } }, [aperta]);
+
+  const campi = {
+    A: { nome: "Nome", esNome: `pc-01 oppure pc-01.${dominio}`, dato: "Indirizzo IP", esDato: "192.168.4.10" },
+    CNAME: { nome: "Alias", esNome: `intranet oppure intranet.${dominio}`, dato: "Punta al nome", esDato: `srv-web.${dominio}` },
+    PTR: { nome: "Indirizzo IP", esNome: "192.168.4.10", dato: "Nome", esDato: `pc-01.${dominio}` },
+  }[tipo];
+
+  async function anteprima() {
+    const n = nome.trim().toLowerCase();
+    const d = dato.trim().toLowerCase();
+    if (!n || !d || n.includes(":") || d.includes(":")) { toast.error("Compila i due campi (solo nomi e indirizzi IPv4)"); return; }
+    const id = tipo === "A" ? `nuova:A:${n}:${d}:${reverse ? "ptr" : "solo"}` : `nuova:${tipo}:${n}:${d}`;
+    setPreparo(true);
+    try {
+      const r = await fetch(`/api/ad/${integrationId}/dns/correzioni`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }) });
+      const dati = (await r.json()) as Anteprima & { error?: string };
+      if (r.ok) onAnteprima(dati);
+      else toast.error(dati.error ?? "Anteprima non disponibile");
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setPreparo(false);
+    }
+  }
+
+  return (
+    <Dialog open={aperta} onOpenChange={(v) => { if (!v) onChiudi(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Nuova voce nel DNS</DialogTitle>
+          <DialogDescription>Compili la voce, poi vedi l&apos;anteprima e confermi: fino ad allora sul DC non si scrive niente.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <label className="block space-y-1">
+            <span className="font-medium">Tipo</span>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value as typeof tipo)} className="h-9 w-full rounded-md border bg-background px-2">
+              <option value="A">Nome → indirizzo (A)</option>
+              <option value="CNAME">Alias → nome (CNAME)</option>
+              <option value="PTR">Indirizzo → nome (reverse, PTR)</option>
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="font-medium">{campi.nome}</span>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder={campi.esNome} autoFocus />
+          </label>
+          <label className="block space-y-1">
+            <span className="font-medium">{campi.dato}</span>
+            <Input value={dato} onChange={(e) => setDato(e.target.value)} placeholder={campi.esDato} onKeyDown={(e) => { if (e.key === "Enter") void anteprima(); }} />
+          </label>
+          {tipo === "A" && (
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="h-4 w-4" checked={reverse} onChange={(e) => setReverse(e.target.checked)} />
+              <span>Crea anche il reverse (indirizzo → nome)</span>
+            </label>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onChiudi}>Annulla</Button>
+          <Button disabled={preparo} onClick={() => void anteprima()}>
+            {preparo ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
+            Anteprima…
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

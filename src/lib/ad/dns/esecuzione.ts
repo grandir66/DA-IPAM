@@ -141,8 +141,10 @@ async function eseguiPasso(c: ContestoPasso, p: PassoDns): Promise<EsitoPasso> {
     else if (presente === voluto) esito = "riuscito";
     else { esito = "non_so"; messaggio = "Il DC ha confermato, ma rileggendo il record non è come atteso"; }
   } else if (risposta) {
-    esito = presente === voluto ? "riuscito" : "rifiutato";
-    messaggio = presente === voluto ? `Il DC ha segnalato un errore ma il record è come atteso: ${risposta.motivo}` : risposta.motivo;
+    // Senza rilettura non si sa se il comando ha scritto: un «no» non confermato è un «non so» (revisione del 18/11).
+    if (presente === null) { esito = "non_so"; messaggio = `${risposta.motivo}; e la rilettura di controllo non è riuscita`; }
+    else if (presente === voluto) { esito = "riuscito"; messaggio = `Il DC ha segnalato un errore ma il record è come atteso: ${risposta.motivo}`; }
+    else { esito = "rifiutato"; messaggio = risposta.motivo; }
   } else if (presente === voluto) {
     esito = "riuscito";
     messaggio = `${messaggio}; rileggendo, il record è come atteso`;
@@ -158,7 +160,23 @@ async function eseguiPasso(c: ContestoPasso, p: PassoDns): Promise<EsitoPasso> {
 export interface EsitoGruppo { gruppo: string; esiti: EsitoPasso[]; riletto: boolean }
 
 /** Esegue le correzioni confermate. Va chiamata dentro il contesto del cliente. Lancia se la scrittura è spenta o manca l'utenza. */
-export async function eseguiCorrezioni(integrazione: AdIntegration, correzioni: readonly Correzione[], da: string, deps: DipendenzeEsecuzione = {}): Promise<EsitoGruppo> {
+export function eseguiCorrezioni(integrazione: AdIntegration, correzioni: readonly Correzione[], da: string, deps: DipendenzeEsecuzione = {}): Promise<EsitoGruppo> {
+  return inFila(integrazione.id, () => eseguiCorrezioniInFila(integrazione, correzioni, da, deps));
+}
+
+/**
+ * Una scrittura alla volta per integrazione: due richieste insieme (doppio clic su «Applica» o su
+ * «Annulla») leggerebbero il DC prima che l'altra scriva, e il registro segnerebbe due modifiche
+ * riuscite per una sola (revisione del 18/11). Il servizio è un processo solo: basta la memoria.
+ */
+const file = new Map<number, Promise<unknown>>();
+function inFila<T>(integrazioneId: number, lavoro: () => Promise<T>): Promise<T> {
+  const prossimo = (file.get(integrazioneId) ?? Promise.resolve()).then(lavoro, lavoro);
+  file.set(integrazioneId, prossimo.catch(() => undefined));
+  return prossimo;
+}
+
+async function eseguiCorrezioniInFila(integrazione: AdIntegration, correzioni: readonly Correzione[], da: string, deps: DipendenzeEsecuzione): Promise<EsitoGruppo> {
   const accesso = accessoDnsDiOLancia(integrazione, deps);
   const lancia = deps.lancia ?? (await lanciatoreVero(integrazione, accesso as Extract<AccessoDns, { ok: true }>));
   const base = {
@@ -167,6 +185,12 @@ export async function eseguiCorrezioni(integrazione: AdIntegration, correzioni: 
   };
   const esiti: EsitoPasso[] = [];
   for (const cor of correzioni) {
+    // Tutti i passi si convalidano PRIMA del primo comando: una correzione non si applica a metà perché l'ultimo passo non è ammesso.
+    const nonAmmesso = cor.passi.map((p) => convalidaPasso(p, base.ammessi)).find((v) => !v.ok);
+    if (nonAmmesso && !nonAmmesso.ok) {
+      for (const p of cor.passi) esiti.push({ correzione: cor.id, passo: p, esito: "rifiutato", messaggio: `Correzione non eseguita, un suo passo non è ammesso: ${nonAmmesso.motivo}`, modificaId: null });
+      continue;
+    }
     let fermo = false;
     for (const p of cor.passi) {
       if (fermo) { esiti.push({ correzione: cor.id, passo: p, esito: "saltato", messaggio: "Non eseguito: un passo precedente della stessa correzione non è riuscito", modificaId: null }); continue; }
@@ -190,7 +214,8 @@ async function rileggi(integrazione: AdIntegration, deps: DipendenzeEsecuzione):
     await (deps.rileggi ?? (async (i) => (await import("@/lib/ad/ad-client")).syncAdDns(i)))(integrazione);
     return true;
   } catch (e) {
-    console.warn("[dns-ad] rilettura del DNS dopo le correzioni non riuscita:", testo(e));
+    // Solo il tipo dell'errore: il messaggio di WinRM o LDAP può portare il nome del DC.
+    console.warn("[dns-ad] rilettura del DNS dopo le correzioni non riuscita:", e instanceof Error ? e.name : "errore");
     return false;
   }
 }
@@ -201,7 +226,11 @@ export function passoInverso(m: Pick<RigaModificaDnsAd, "azione" | "zona" | "nom
 }
 
 /** Annulla una modifica riuscita, con le stesse garanzie di una correzione. */
-export async function annullaModifica(integrazione: AdIntegration, modificaId: number, da: string, deps: DipendenzeEsecuzione = {}): Promise<EsitoGruppo> {
+export function annullaModifica(integrazione: AdIntegration, modificaId: number, da: string, deps: DipendenzeEsecuzione = {}): Promise<EsitoGruppo> {
+  return inFila(integrazione.id, async () => annullaModificaInFila(integrazione, modificaId, da, deps));
+}
+
+async function annullaModificaInFila(integrazione: AdIntegration, modificaId: number, da: string, deps: DipendenzeEsecuzione): Promise<EsitoGruppo> {
   const m = getModificaDnsAd(integrazione.id, modificaId);
   if (!m) throw new Error("Modifica non trovata");
   if (m.esito !== "riuscito") throw new Error("Si annulla solo una modifica riuscita");

@@ -101,6 +101,34 @@ describe("esecuzione delle correzioni al DNS di AD", () => {
     assert.deepEqual(file.map((f) => [f.fase, f.esito]), [["prima", "in_corso"], ["dopo", "riuscito"]]);
   });
 
+  it("il DC segnala un errore e la rilettura non riesce: non so, non «rifiutato»", async () => {
+    dc.metti("4.168.192.in-addr.arpa", "51", "PTR", "pc-51.esempio.local");
+    dc.guasto = { tipo: "errore" };
+    let letture = 0;
+    const lancia = async (c: string) => {
+      if (c.includes("ESITO_LETTO") && ++letture === 2) throw new Error("BRIDGE_TIMEOUT");
+      return dc.lancia(c);
+    };
+    const r = await esegui([cor("r1", PTR("togli", "51", "pc-51"))], { ...deps, lancia });
+    assert.equal(r.esiti[0]!.esito, "non_so");
+  });
+
+  it("un passo non ammesso ferma tutta la correzione prima del primo comando", async () => {
+    dc.metti("4.168.192.in-addr.arpa", "52", "PTR", "pc-52.esempio.local");
+    const nonAmmesso: PassoDns = { azione: "togli", zona: "esempio.local", nome: "pc_52", tipo: "A", dato: "192.168.4.52" };
+    const r = await esegui([cor("r2", PTR("togli", "52", "pc-52"), nonAmmesso)]);
+    assert.deepEqual(r.esiti.map((e) => e.esito), ["rifiutato", "rifiutato"]);
+    assert.equal(dc.scritture.length, 0);
+    assert.equal(dc.ha("4.168.192.in-addr.arpa", "52", "PTR", "pc-52.esempio.local"), true);
+  });
+
+  it("due richieste insieme sulla stessa correzione: una scrive, l'altra trova il record cambiato", async () => {
+    const c = () => [cor("r3", PTR("aggiungi", "53", "pc-53"))];
+    const [a, b] = await Promise.all([esegui(c()), esegui(c())]);
+    assert.deepEqual([a.esiti[0]!.esito, b.esiti[0]!.esito].sort(), ["cambiato", "riuscito"]);
+    assert.equal(dc.scritture.length, 1);
+  });
+
   it("togli riuscito: nel registro resta il record com'era", async () => {
     dc.metti("4.168.192.in-addr.arpa", "50", "PTR", "sparito.esempio.local");
     const r = await esegui([cor("c2", PTR("togli", "50", "sparito"))]);

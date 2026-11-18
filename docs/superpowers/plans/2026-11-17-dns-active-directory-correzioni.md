@@ -190,7 +190,7 @@ Con Riccardo presente. Nel resoconto: ora, utenza usata, record toccati.
 
 ### [ ] S7 — Revisione, documenti, rilascio
 
-Una revisione del ramo con il subagent `reviewer` (uno solo, sola lettura, stima 15 minuti): parte al sì di Riccardo. Poi `CHANGELOG.md`, `CONTEXT.md`, `docs/scheda-mappa.md`, un ADR sulla scrittura verso il DC (`docs/adr/`), consuntivo qui sotto, `scripts/controlla.sh` una volta, rilascio su `dev`. La promozione su `main` resta di Riccardo: le appliance dei clienti la ricevono spenta.
+Una revisione del ramo con il subagent `reviewer` (uno solo, sola lettura, stima 15 minuti): parte al sì di Riccardo. **Fatta il 18/11**: nessun rilievo grave; corretti in `esecuzione.ts` l'esito «non so» quando il DC segnala un errore e la rilettura fallisce, la convalida di tutti i passi prima del primo comando, la fila per integrazione e il log senza messaggio (prove: `esecuzione.test.ts` 14 verdi, le 3 nuove viste fallire sul codice di prima). Restano aperti, in `TASKS.md`: righe `in_corso` orfane e nomi riservati. Poi `CHANGELOG.md`, `CONTEXT.md`, `docs/scheda-mappa.md`, un ADR sulla scrittura verso il DC (`docs/adr/`), consuntivo qui sotto, `scripts/controlla.sh` una volta, rilascio su `dev`. La promozione su `main` resta di Riccardo: le appliance dei clienti la ricevono spenta.
 
 ## Fuori da questo piano
 

@@ -14,7 +14,7 @@
  */
 import crypto from "node:crypto";
 import {
-  apriModificaDnsAd, chiudiModificaDnsAd, getControllerDiDominio, getModificaDnsAd, getRecordDnsAd, getZoneDnsAd, modificaDnsAdGiaAnnullata,
+  apriModificaDnsAd, chiudiModificaDnsAd, chiudiModificheDnsAdOrfane, getControllerDiDominio, getModificaDnsAd, getRecordDnsAd, getZoneDnsAd, modificaDnsAdGiaAnnullata,
   getCurrentTenantCode, type AdIntegration, type RigaModificaDnsAd,
 } from "@/lib/db-tenant";
 import { accessoDnsDi, type AccessoDns } from "./accesso";
@@ -231,6 +231,7 @@ export function annullaModifica(integrazione: AdIntegration, modificaId: number,
 }
 
 async function annullaModificaInFila(integrazione: AdIntegration, modificaId: number, da: string, deps: DipendenzeEsecuzione): Promise<EsitoGruppo> {
+  chiudiModificheDnsAdOrfane(integrazione.id);
   const m = getModificaDnsAd(integrazione.id, modificaId);
   if (!m) throw new Error("Modifica non trovata");
   if (m.esito !== "riuscito") throw new Error("Si annulla solo una modifica riuscita");

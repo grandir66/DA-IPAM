@@ -38,12 +38,20 @@ function ipv4(ip: string): boolean {
 
 const corto = (s: string) => s.split(".")[0] ?? "";
 
+/**
+ * Nomi che i client Windows cercano da soli (proxy, tunnel IPv6): chi li registra si mette in mezzo
+ * al traffico. Il nome di «crea» e «rinomina» viene da quello che l'host dichiara in rete, quindi
+ * non si creano da qui (revisione del 18/11). Toglierli resta ammesso.
+ */
+const NOMI_RISERVATI = new Set(["wpad", "isatap"]);
+
 export function convalidaPasso(p: PassoDns, ammessi: AmmessiDns): EsitoConvalida {
   if (p.azione !== "aggiungi" && p.azione !== "togli") return { ok: false, motivo: "Azione non prevista" };
   if (!TIPI.includes(p.tipo)) return { ok: false, motivo: `Tipo di record non correggibile: ${String(p.tipo)}` };
   if (!ammessi.zone.has(p.zona)) return { ok: false, motivo: "La zona non è fra quelle lette da questo dominio" };
   if (!nomeValido(p.zona) || /^_msdcs/.test(p.zona)) return { ok: false, motivo: "Zona non ammessa" };
   if (!nomeValido(p.nome)) return { ok: false, motivo: "Il nome del record non è un nome DNS di host" };
+  if (p.azione === "aggiungi" && p.tipo !== "PTR" && NOMI_RISERVATI.has(corto(p.nome))) return { ok: false, motivo: "È un nome riservato (wpad, isatap): non si crea da qui" };
   const inversa = p.zona.endsWith(".in-addr.arpa");
   if ((p.tipo === "PTR") !== inversa) return { ok: false, motivo: p.tipo === "PTR" ? "Un reverse sta solo in una zona reverse" : "In una zona reverse stanno solo i reverse" };
   if (p.tipo === "PTR" && !p.nome.split(".").every((e) => /^\d{1,3}$/.test(e))) return { ok: false, motivo: "Il nodo di un reverse è fatto di soli numeri" };

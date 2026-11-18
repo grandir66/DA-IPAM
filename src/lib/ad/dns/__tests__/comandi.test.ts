@@ -20,6 +20,12 @@ const PTR = (nome: string, dato = "pc-01.esempio.local", azione: PassoDns["azion
 const rifiutato = (p: PassoDns) => convalidaPasso(p, AMMESSI).ok === false;
 
 describe("convalidaPasso", () => {
+  it("nomi riservati: non si creano, si possono togliere", () => {
+    assert.equal(rifiutato(A("wpad")), true);
+    assert.equal(rifiutato({ azione: "aggiungi", zona: "esempio.local", nome: "isatap", tipo: "CNAME", dato: "pc-01.esempio.local" }), true);
+    assert.deepEqual(convalidaPasso(A("wpad", "192.168.4.10", "togli"), AMMESSI), { ok: true });
+  });
+
   it("un A, un PTR e un CNAME normali passano", () => {
     assert.deepEqual(convalidaPasso(A("pc-01"), AMMESSI), { ok: true });
     assert.deepEqual(convalidaPasso(PTR("10"), AMMESSI), { ok: true });

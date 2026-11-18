@@ -25,8 +25,8 @@ che arrivano anche da DA-IPAM»; e subito dopo: «oltre ad avere la parte DHCP a
   - [ ] S6, resta: una correzione vera fatta dalla scheda «DNS» (serve una persona davanti alla pagina: l'anteprima e «Applica sul DC» non li ho mai visti resi); il pannello «Correzioni del DNS» non l'ha mai salvato nessuno dalla pagina. Sul DC restano due file di copia `da-ipam-copia-*-20261118.dns` nella cartella del DNS: innocui, si possono togliere.
   - [ ] S7: ADR sulla scrittura verso il DC, `scripts/controlla.sh`, consuntivo. `main` resta di Riccardo.
     - [x] Revisione con un subagent revisore (18/11, sì di Riccardo): nessuna iniezione né scrittura fuori perimetro. Corretti quattro rilievi in `esecuzione.ts`, con tre prove viste fallire sul codice di prima: «errore del DC + rilettura fallita» ora è «non so» (era «rifiutato»); tutti i passi di una correzione si convalidano prima del primo comando; una scrittura alla volta per integrazione (doppio clic su Applica/Annulla); nel log della rilettura solo il tipo dell'errore, non il messaggio (può portare il nome del DC).
-    - [ ] Dalla revisione, non fatto: una riga del registro rimasta `in_corso` (processo morto a metà) non la chiude nessuno e, se è di un annulla, blocca ogni altro annulla di quella modifica. Proposta: segnarla «non so» dopo 10 minuti quando si mostra il registro.
-    - [ ] Dalla revisione, non fatto: il nome di «crea nome» e «rinomina» viene da `hosts.hostname` (arriva dalla rete); valutare un elenco di nomi riservati (`wpad`, `isatap`) rifiutati da `convalidaPasso`. Rischio basso: Windows li blocca di serie e il nome si vede in anteprima.
+    - [x] Dalla revisione (Riccardo, 18/11: «Sì, chiudili»): una riga del registro rimasta `in_corso` oltre 10 minuti diventa «non so» quando si mostra il registro e prima di un annulla (`chiudiModificheDnsAdOrfane`); prova vista fallire.
+    - [x] Dalla revisione (Riccardo, 18/11: «Sì, chiudili»): `convalidaPasso` rifiuta di creare `wpad` e `isatap` (A e CNAME); toglierli resta ammesso; prova vista fallire.
 
 ## 2026-11-17 — 192.168.4.8: DA-IPAM bloccato per 8 minuti, eliminazione host «non fa nulla» (Riccardo)
 

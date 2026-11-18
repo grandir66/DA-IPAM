@@ -197,6 +197,16 @@ describe("esecuzione delle correzioni al DNS di AD", () => {
     assert.equal(chiamate, 0);
   });
 
+  it("una riga di annulla rimasta «in corso» da più di 10 minuti diventa «non so» e non blocca l'annulla", async () => {
+    dc.metti("4.168.192.in-addr.arpa", "54", "PTR", "pc-54.esempio.local");
+    const id = (await esegui([cor("o1", PTR("togli", "54", "pc-54"))])).esiti[0]!.modificaId!;
+    const orfana = Number(getTenantDb(T).prepare(`INSERT INTO ad_dns_modifiche (integration_id, gruppo, correzione, titolo, azione, zona, nome, tipo, dato, annulla_di, da, il)
+      VALUES (1, 'g', 'annulla', 'Annulla', 'aggiungi', '4.168.192.in-addr.arpa', '54', 'PTR', 'pc-54.esempio.local', ?, 'riccardo', datetime('now', '-11 minutes'))`).run(id).lastInsertRowid);
+    const a = await withTenant(T, () => annullaModifica(accesa, id, "riccardo", deps));
+    assert.equal(a.esiti[0]!.esito, "riuscito");
+    assert.equal(registro().find((x) => x.id === orfana)!.esito, "non_so");
+  });
+
   it("annulla: un «togli» riuscito si rimette, e non si annulla due volte", async () => {
     dc.metti("4.168.192.in-addr.arpa", "95", "PTR", "tolto.esempio.local");
     const r = await esegui([cor("c10", PTR("togli", "95", "tolto"))]);

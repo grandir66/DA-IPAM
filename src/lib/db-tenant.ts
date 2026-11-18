@@ -9442,11 +9442,22 @@ export function chiudiModificaDnsAd(id: number, esito: Exclude<RigaModificaDnsAd
   db().prepare("UPDATE ad_dns_modifiche SET esito = ?, messaggio = ? WHERE id = ? AND esito = 'in_corso'").run(esito, messaggio, id);
 }
 
+/**
+ * Una riga rimasta `in_corso` oltre 10 minuti è di un processo morto a metà del passo (un comando
+ * dura al più un minuto): non si sa se il DC ha scritto, quindi diventa «non so». Senza, una riga
+ * di annulla orfana bloccherebbe per sempre ogni altro annulla della stessa modifica (revisione del 18/11).
+ */
+export function chiudiModificheDnsAdOrfane(integrationId: number): number {
+  return db().prepare(`UPDATE ad_dns_modifiche SET esito = 'non_so', messaggio = 'Passo interrotto a metà: controlla il record sul DC'
+    WHERE integration_id = ? AND esito = 'in_corso' AND il < datetime('now', '-10 minutes')`).run(integrationId).changes;
+}
+
 export function getModificaDnsAd(integrationId: number, id: number): RigaModificaDnsAd | undefined {
   return db().prepare("SELECT * FROM ad_dns_modifiche WHERE integration_id = ? AND id = ?").get(integrationId, id) as RigaModificaDnsAd | undefined;
 }
 
 export function getModificheDnsAd(integrationId: number, pagina: number, perPagina: number): { rows: (RigaModificaDnsAd & { annullata: number })[]; total: number } {
+  chiudiModificheDnsAdOrfane(integrationId);
   const total = (db().prepare("SELECT COUNT(*) AS c FROM ad_dns_modifiche WHERE integration_id = ?").get(integrationId) as { c: number }).c;
   const rows = db().prepare(`SELECT m.*, EXISTS(SELECT 1 FROM ad_dns_modifiche a WHERE a.annulla_di = m.id AND a.esito = 'riuscito') AS annullata
     FROM ad_dns_modifiche m WHERE m.integration_id = ? ORDER BY m.id DESC LIMIT ? OFFSET ?`).all(integrationId, perPagina, (pagina - 1) * perPagina) as (RigaModificaDnsAd & { annullata: number })[];

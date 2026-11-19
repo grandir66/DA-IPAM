@@ -130,7 +130,9 @@ function passiTogli(q: Quadro, ip: string): PassoDns[] {
 function diUnIp(q: Quadro, ip: string): DnsDiHost {
   const nomi = q.record.filter((r) => r.tipo === "A" && r.dato === ip).map((r) => r.fqdn);
   const reverse = q.record.filter((r) => r.tipo === "PTR" && r.ip === ip).map((r) => r.dato);
-  const anomalie = q.vista.anomalie.filter((a) => a.ip === ip && !SOLO_NOTIZIA.has(a.tipo));
+  // Nel riquadro si vedono tutte; sullo stato pesano solo le discrepanze vere, non «più nomi» da solo.
+  const tutte = q.vista.anomalie.filter((a) => a.ip === ip);
+  const anomalie = tutte.filter((a) => !SOLO_NOTIZIA.has(a.tipo));
   // Il nome dell'host nel DNS c'è, ma su un altro indirizzo: non «manca», è rimasto indietro dopo un cambio di IP.
   const nomeHost = corto(q.host.find((h) => h.ip === ip)?.hostname);
   const altrove = nomeHost !== "" && nomi.length === 0 && q.record.some((r) => r.tipo === "A" && r.fqdn === `${nomeHost}.${q.integrazione.domain}` && r.dato !== ip);
@@ -142,7 +144,7 @@ function diUnIp(q: Quadro, ip: string): DnsDiHost {
   return {
     integrazione: q.integrazione.id, dominio: q.integrazione.domain, lettoIl: getStatoDnsAd(q.integrazione.id).letto_il,
     correzioniAccese: q.vista.scrittura.accesa, stato, nomi, reverse,
-    anomalie: anomalie.map((a) => ({ tipo: a.tipo, etichetta: ETICHETTE_ANOMALIA_DNS[a.tipo], dettaglio: a.dettaglio })),
+    anomalie: tutte.map((a) => ({ tipo: a.tipo, etichetta: ETICHETTE_ANOMALIA_DNS[a.tipo], dettaglio: a.dettaglio })),
     allinea: passiAllinea(q, ip).length > 0 ? `${PREFISSO_HOST}allinea:${ip}` : null,
     togli: nomi.length + reverse.length > 0 ? `${PREFISSO_HOST}togli:${ip}` : null,
   };

@@ -32,9 +32,12 @@ describe("anomalie dentro il DNS", () => {
     assert.deepEqual(tipi({ voci: [A("pc-01", "192.168.4.10"), PTR("192.168.4.10", "pc-01")], host: [H(1, "192.168.4.10", "PC-01")] }), []);
   });
 
-  it("stesso IP con più nomi, e il reverse che ne porta uno solo va bene", () => {
+  // Dal 19/11/2026 (Riccardo: «segnalare se ci sono discrepanze anche se talvolta sono previste») il nome
+  // rimasto senza il suo reverse si segnala anche se un altro nome dello stesso IP ce l'ha.
+  it("stesso IP con più nomi: si segnala anche il nome senza il suo reverse", () => {
     const r = calcola({ voci: [A("pc-01", "192.168.4.10"), A("vecchio", "192.168.4.10", false), PTR("192.168.4.10", "pc-01")], host: [H(1, "192.168.4.10", "pc-01")] });
-    assert.deepEqual(r.map((x) => x.chiave), ["ip_piu_nomi:192.168.4.10"]);
+    assert.deepEqual(r.map((x) => x.chiave), ["ip_piu_nomi:192.168.4.10", "a_senza_ptr:192.168.4.10"]);
+    assert.deepEqual(r[1]!.nomi, ["vecchio.esempio.local"]);
     assert.deepEqual(r[0]!.nomi, ["pc-01.esempio.local", "vecchio.esempio.local"]);
     assert.equal(r[0]!.tuttoStatico, false);
     assert.equal(r[0]!.hostId, 1);

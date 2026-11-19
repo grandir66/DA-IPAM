@@ -90,7 +90,7 @@ export function correzioniPer(anomalia: AnomaliaDns, ctx: ContestoCorrezioni): C
       break;
 
     case "ptr_senza_a":
-      if (ip) metti("togli", "Togli il reverse rimasto senza nome", ptrDi(ip).map((v) => passoDa(v, "togli")));
+      if (ip) metti("togli", "Togli il reverse rimasto senza nome", ptrDi(ip).filter((v) => anomalia.nomi.includes(v.dato)).map((v) => passoDa(v, "togli")));
       break;
 
     case "ptr_altro_nome":

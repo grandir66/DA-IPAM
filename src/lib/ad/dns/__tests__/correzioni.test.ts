@@ -80,7 +80,15 @@ describe("correzioni per tipo di anomalia", () => {
   it("stesso IP, più reverse: una proposta per reverse", () => {
     const voci = [A("pc-01", "192.168.4.10"), PTR("192.168.4.10", "pc-01"), PTR("192.168.4.10", "vecchio")];
     const r = proposte(voci, [H(1, "192.168.4.10", "pc-01")]);
-    assert.deepEqual(r.map((x) => x.id), ["ip_piu_ptr:192.168.4.10#togli:pc-01.esempio.local", "ip_piu_ptr:192.168.4.10#togli:vecchio.esempio.local"]);
+    assert.deepEqual(r.filter((x) => x.id.startsWith("ip_piu_ptr")).map((x) => x.id), ["ip_piu_ptr:192.168.4.10#togli:pc-01.esempio.local", "ip_piu_ptr:192.168.4.10#togli:vecchio.esempio.local"]);
+  });
+
+  // Riccardo, 19/11/2026: «segnalare se ci sono discrepanze anche se talvolta sono previste».
+  it("più nomi e più reverse: si segnala il nome senza il suo reverse e il reverse rimasto indietro, e solo quelli si toccano", () => {
+    const voci = [A("pc-01", "192.168.4.10"), A("alias", "192.168.4.10"), PTR("192.168.4.10", "pc-01"), PTR("192.168.4.10", "vecchio")];
+    const r = proposte(voci, [H(1, "192.168.4.10", "pc-01")]);
+    assert.deepEqual(r.find((x) => x.id.startsWith("a_senza_ptr"))?.passi, ["+PTR 10.4.168.192.in-addr.arpa alias.esempio.local"]);
+    assert.deepEqual(r.find((x) => x.id.startsWith("ptr_senza_a"))?.passi, ["-PTR 10.4.168.192.in-addr.arpa vecchio.esempio.local"]);
   });
 
   it("alias rotto: togli il CNAME", () => {

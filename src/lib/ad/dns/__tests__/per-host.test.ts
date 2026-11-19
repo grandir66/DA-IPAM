@@ -82,9 +82,10 @@ describe("DNS di AD visto da un host", () => {
   it("più nomi sullo stesso IP: non sono un difetto dell'host, e nessuna correzione li perde", () => {
     assert.deepEqual(withTenant(T, () => statoDnsDi(["192.168.4.16"])), { "192.168.4.16": "ok" });
     const d = withTenant(T, () => dnsDiIp("192.168.4.16"))[0]!;
-    assert.deepEqual([d.nomi.length, d.reverse.length, d.anomalie, d.allinea], [2, 2, [], null]);
+    assert.deepEqual([d.nomi.length, d.reverse.length, d.anomalie.map((a) => a.tipo), d.allinea], [2, 2, ["ip_piu_nomi", "ip_piu_ptr"], null]);
     // Il nome di DA-IPAM si aggiunge: «uno» e «due» restano.
-    assert.deepEqual(breve("host:allinea:192.168.4.17"), ["+A nuovo-multi.esempio.local 192.168.4.17", "+PTR 17.4.168.192.in-addr.arpa nuovo-multi.esempio.local"]);
+    assert.deepEqual(breve("host:allinea:192.168.4.17"), ["+PTR 17.4.168.192.in-addr.arpa due.esempio.local", "+A nuovo-multi.esempio.local 192.168.4.17", "+PTR 17.4.168.192.in-addr.arpa nuovo-multi.esempio.local"]);
+    assert.deepEqual(withTenant(T, () => statoDnsDi(["192.168.4.17"])), { "192.168.4.17": "diverso" });
     // Cambio di IP: il secondo nome e i reverse seguono l'host.
     assert.deepEqual(breve("host:allinea:192.168.4.32"), [
       "+A viaggia.esempio.local 192.168.4.32", "+PTR 32.4.168.192.in-addr.arpa viaggia.esempio.local",

@@ -139,6 +139,11 @@ export function anomalieDns(dati: DatiAnomalieDns): AnomaliaDns[] {
       else metti("a_senza_zona_inversa", ip, ip, nomi, record, "Nessuna zona reverse copre questo IP");
     } else if (!ptr.some((p) => nomi.includes(p.dato))) {
       metti("ptr_altro_nome", ip, ip, nomi, [...record, ...ptr], `Il reverse dice ${[...new Set(ptr.map((p) => p.dato))].join(", ")}`);
+    } else {
+      // Più nomi sullo stesso IP: si segnala ogni nome che non ha il suo reverse, anche se un altro ce l'ha
+      // (Riccardo, 19/11/2026: «segnalare se ci sono discrepanze anche se talvolta sono previste»).
+      const senza = nomi.filter((n) => !ptr.some((p) => p.dato === n));
+      if (senza.length > 0) metti("a_senza_ptr", ip, ip, senza, record.filter((r) => senza.includes(r.fqdn)), `${senza.length} nomi su ${nomi.length} senza il loro reverse`);
     }
 
     const h = hostPerIp.get(ip);
@@ -164,8 +169,12 @@ export function anomalieDns(dati: DatiAnomalieDns): AnomaliaDns[] {
   for (const [ip, record] of ptrPerIp) {
     const nomi = [...new Set(record.map((r) => r.dato))];
     if (nomi.length > 1) metti("ip_piu_ptr", ip, ip, nomi, record, `${nomi.length} reverse per lo stesso IP`);
-    if (!nomi.some((n) => aPerNome.get(n)?.some((a) => a.dato === ip))) {
+    const orfani = nomi.filter((n) => !aPerNome.get(n)?.some((a) => a.dato === ip));
+    if (orfani.length === nomi.length) {
       metti("ptr_senza_a", ip, ip, nomi, record, "Il reverse c'è, ma nessun nome porta a questo IP");
+    } else if (orfani.length > 0) {
+      // Un reverse giusto non copre quello sbagliato accanto: si segnala il solo reverse rimasto indietro.
+      metti("ptr_senza_a", ip, ip, orfani, record.filter((r) => orfani.includes(r.dato)), `Un reverse porta a ${orfani.join(", ")}, che non punta a questo IP`);
     }
   }
 

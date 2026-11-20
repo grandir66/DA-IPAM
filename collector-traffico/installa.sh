@@ -31,7 +31,7 @@ install -d -m 750 -o collector -g collector "$DATI" "$DATI/in"
 if [ "$QUI" != "$APP" ]; then
   install -d "$APP"
   cp -R "$QUI/collector" "$APP/"
-  cp "$QUI/pmacctd.conf" "$QUI"/*.service "$QUI/installa.sh" "$APP/"
+  cp "$QUI"/*.conf "$QUI"/*.service "$QUI/installa.sh" "$APP/"
 fi
 find "$APP" -name __pycache__ -type d -prune -exec rm -rf {} +
 install -m 644 "$APP/pmacctd.conf" "$APP/nfacctd.conf" "$APP/sfacctd.conf" "$CONF/"

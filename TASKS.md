@@ -15,9 +15,15 @@
   - [ ] Non fatto, caso 5 del piano: agganciare la coppia all'host che aveva quell'IP nella finestra (mappa MAC-IP). Oggi le coppie restano per IP.
   - [ ] Da decidere con Riccardo: come si prende il mirror quando lo switch copia due volte (`MIRROR_DOPPIO` dimezza tutto, giusto solo se ogni pacchetto arriva doppio; meglio la copia in una sola direzione). Scritto nel README, «I casi del piano».
   - [ ] Da provare prima di una sede vera: migliaia di flussi insieme (il costo di `pmacctd` cresce coi flussi, non coi byte) e una giornata intera.
-  - [ ] Trovato il 20/11 e non toccato: il DNS del PX-NAS (`192.168.6.254`) non risponde, il nodo non risolve i nomi. Decide Riccardo.
+  - [x] DNS del PX-NAS: era `192.168.6.254`, un relitto del 15/05 (Riccardo, 20/11: «un relitto»). Messo `192.168.99.254` con `pvesh`, copia del file sul nodo.
   - [ ] Banco da tenere o buttare (Riccardo): VM 109 e contenitore 110 sul PX-NAS, comandi nel README.
 - Riccardo (20/11): «questo servizio deve rimanere separato e distribuito e alternativo alla sonda pesante». Scritto nella spec (decisione 6) e nei vincoli del piano. Esecuzione avviata da lui il 20/11 in una sessione nuova.
+- Riccardo (20/11): collector sui 4 nodi Proxmox dell'ufficio, letti dall'IPAM `192.168.4.8`; «parti dal px-04, dhcp, copia dell'uplink».
+  - [x] DA-PX-04: VM 113 `DA-COLLECTOR-PX04` (192.168.4.185 in DHCP), copia di `bond10` con hookscript, VLAN 16 di storage esclusa. Verifica: filtri presenti dopo il riavvio della VM, in 5 s 9216 pacchetti sulla scheda in copia e 0 della VLAN 16, `/v1/stato` copertura 1.0. Dettaglio in `collector-traffico/README.md`.
+  - [x] Trovato installando: `installa.sh` lanciato da fuori `/opt` non copiava `nfacctd.conf` e `sfacctd.conf` e si fermava. Corretto.
+  - [ ] Registrare `DA-COLLECTOR-PX04` nell'IPAM `192.168.4.8` (pagina Traffico, «Collector e controlli»): lo fa Riccardo, il gettone non passa dalla chat.
+  - [ ] Guardare dopo un giorno memoria e copertura della VM 113 e il carico del PX-04, poi DA-PX-01, 02, 03 (sul 01 gira la 423: sì esplicito di Riccardo).
+  - [ ] L'indirizzo della VM 113 è in DHCP: se cambia, IPAM non la trova più. Serve una prenotazione sul DHCP o un indirizzo fisso.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).
 
 ## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)

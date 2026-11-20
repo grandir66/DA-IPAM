@@ -100,6 +100,32 @@ prende il massimo fra le fonti, come fra due collector.
 **Da fare con Riccardo**: i comandi per accendere l'esportazione su uno switch e su un firewall che Domarc
 usa davvero, e la prova con un apparato vero. Finora il percorso è provato solo con un file di esempio.
 
+## Su un nodo Proxmox: copia dell'uplink (DA-PX-04, 20/11/2026)
+
+Una VM collector per nodo; la copia la fa `tc` sull'uplink delle VM e la rimette uno hookscript a ogni avvio
+della VM (quindi anche dopo un riavvio del nodo). File in `proxmox/`.
+
+| Cosa | Dov'è |
+|---|---|
+| `DA-COLLECTOR-PX04` | VM 113 su DA-PX-04, Debian 12 (immagine cloud), 2 vCPU, 1 GB, 8 GB su `zfs`, parte col nodo. `net0` di gestione su `vmbr_int` VLAN 4 in DHCP (il 20/11: 192.168.4.185); `net1` su `vmbr0`, un bridge senza porte, così riceve solo la copia |
+| `proxmox/collector-mirror.sh` | hookscript, sul nodo in `/var/lib/vz/snippets/`. In `post-start` copia entrata e uscita di `bond10` verso `tap<vmid>i1`; in `pre-stop`/`post-stop` toglie i suoi filtri. Usa solo le priorità 4476 e 4477 |
+| `proxmox/collector-vendor.yaml` | cloud-init: installa l'agente QEMU, che serve a leggere l'indirizzo preso in DHCP |
+
+```bash
+qm set 113 --hookscript local:snippets/collector-mirror.sh
+tc filter show dev bond10 ingress        # si vede la copia
+journalctl -t collector-mirror           # cosa ha fatto lo script
+```
+
+Cose da sapere:
+
+- **La VLAN 16 (storage: NFS e backup) non si copia**: da sola è l'80% dei byte dell'uplink. Su un altro nodo
+  `UPLINK` e `VLAN_FUORI` in testa allo script vanno guardati prima (`/etc/network/interfaces`, `storage.cfg`).
+- La copia dell'uplink **non vede il traffico fra due VM dello stesso nodo**, che non esce dal bridge.
+- Due VM dello stesso nodo su VLAN diverse, instradate dal firewall fuori: il pacchetto esce e rientra, si conta due volte.
+- Sul nodo il GRO resta acceso (è in produzione): i byte sono giusti, i pacchetti contati sono meno di quelli veri.
+- Per toglierla: `qm set 113 --delete hookscript`, poi `qm stop 113 && qm destroy 113`; il `clsact` vuoto su `bond10` si toglie con `tc qdisc del dev bond10 clsact`.
+
 ## Banco su PX-NAS (20/11/2026)
 
 Tutto sul PX-NAS (`192.168.99.1`), rete 99, bridge `vmbr0`. Mai su reti di clienti.
@@ -110,8 +136,8 @@ Tutto sul PX-NAS (`192.168.99.1`), rete 99, bridge `vmbr0`. Mai su reti di clien
 | `banco-carico` | contenitore 110, Debian 12 (il 20/11: 192.168.99.88): fa il traffico di prova verso `banco-sim` e l'`iperf3` verso il nodo |
 | `banco-sim` | contenitore 103, c'era già: Modbus su `192.168.99.221:502`, HTTP su `192.168.99.222:80`. Non è stato toccato |
 
-Il DNS del nodo (`192.168.6.254`) non risponde: per scaricare l'immagine i nomi sono stati chiesti al router
-della rete 99, senza cambiare la configurazione del nodo. VM e contenitore hanno `192.168.99.254` come DNS.
+Il nodo aveva come DNS `192.168.6.254`, un relitto del 15/05 (rete del laboratorio Domarc): il 20/11 è stato
+messo `192.168.99.254` con `pvesh` (copia in `/etc/resolv.conf.bak-20261120`). VM e contenitore usano lo stesso.
 
 ### Mirror dentro Proxmox
 

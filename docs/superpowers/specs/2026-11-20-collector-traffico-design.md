@@ -44,8 +44,11 @@ switch/firewall ──NetFlow/sFlow▶│ conteggio ▶ SQLite ▶ API    │◀
 
 ### La VM collector
 
-- **Obiettivo di risorse**: 1 vCPU, 512 MB di RAM, 8 GB di disco, fino a circa 200 Mbit/s
-  di mirror. Da misurare alla tappa 1: il numero è un obiettivo, non un dato.
+- **Risorse, misurate sul banco il 20/11/2026** (PX-NAS, VM `collector-banco`, 1 vCPU, 512 MB,
+  8 GB): a 200 Mbit/s di mirror (22.000 pacchetti al secondo) nessun pacchetto scartato, byte
+  contati pari a quelli mandati, circa il 7% della vCPU e 153 MB di RAM usati, con conteggio e
+  controlli sul contenuto accesi. Non misurati: migliaia di flussi insieme, una porta SPAN
+  fisica, più di 200 Mbit/s. Tabella e metodo in `collector-traffico/README.md`.
 - **Due schede**: una di gestione con indirizzo, una in mirror senza indirizzo.
 - **Conteggio**: lo fa un programma già pronto e leggero, non codice nostro pacchetto per
   pacchetto. Proposta: `pmacct` (pacchetto Debian; `pmacctd` per il mirror, `nfacctd` e
@@ -153,8 +156,8 @@ rossa). Zona gialla: le migrazioni SQLite e le rotte nuove, che passano da
 - **Nome**: qui è «collector di traffico»; il nome vero lo dà Riccardo.
 - **Sedi che IPAM non raggiunge**: spinta dal collector, oppure NetBird. Da decidere alla tappa 6.
 - **Mail e Wazuh** per le anomalie gravi: dopo la pagina, se servono.
-- **`pmacct`**: scelta da confermare alla tappa 1; l'alternativa è un contatore nel kernel
-  (eBPF), più leggero ma più lungo da scrivere.
+- **`pmacct`**: confermato dalla misura del 20/11 (a 200 Mbit/s conta tutto col 7% della vCPU):
+  il contatore nel kernel (eBPF) non serve. Da rivedere solo se la prova con molti flussi va male.
 - **Dove si prende il mirror** sulla rete Domarc e dai clienti: quali switch hanno la porta SPAN.
 - **Mirror dentro Proxmox** (traffico fra VM dello stesso nodo): si copia dal bridge con
   `tc mirred`, come fa già il sensore trunk. Da provare sul banco.

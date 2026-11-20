@@ -11,6 +11,10 @@ ExecStartPre=/bin/sh -c 'test -n "${MIRROR_IF}"'
 ExecStartPre=/sbin/sysctl -q -w net.ipv6.conf.${MIRROR_IF}.disable_ipv6=1
 ExecStartPre=/sbin/ip link set dev ${MIRROR_IF} arp off promisc on up
 ExecStart=/usr/sbin/pmacctd -f /etc/collector-traffico/pmacctd.conf -i ${MIRROR_IF}
+# Con SIGTERM pmacctd esce senza scrivere la finestra in corso (visto sul banco il 20/11: un riavvio
+# ha perso 4 minuti di conteggio). Con SIGINT il plugin scrive quello che ha contato e poi esce.
+KillSignal=SIGINT
+TimeoutStopSec=30
 Restart=on-failure
 RestartSec=10
 MemoryMax=256M

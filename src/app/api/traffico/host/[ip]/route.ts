@@ -4,6 +4,7 @@ import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
 import { coppieDiHost, nomiDiHost } from "@/lib/traffico/lettura";
+import { nomiDegliIp } from "@/lib/traffico/quadro";
 
 /** GET /api/traffico/host/[ip]?giorni=7 — con chi parla un host e chi parla a lui, dai collector. */
 export async function GET(req: Request, { params }: { params: Promise<{ ip: string }> }) {
@@ -15,7 +16,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ ip: stri
     const giorni = Number(new URL(req.url).searchParams.get("giorni") ?? 7);
     try {
       const g = Number.isFinite(giorni) ? giorni : 7;
-      return NextResponse.json({ ip, ...coppieDiHost(ip, g), nomi: nomiDiHost(ip, g) }, { headers: NO_STORE });
+      const coppie = coppieDiHost(ip, g);
+      const host = nomiDegliIp([...coppie.parlaCon, ...coppie.gliParlano].map((c) => c.altro));
+      return NextResponse.json({ ip, ...coppie, nomi: nomiDiHost(ip, g), host }, { headers: NO_STORE });
     } catch (e) {
       console.error("[traffico] coppie dell'host:", e instanceof Error ? e.message : e);
       return NextResponse.json({ error: "Errore nel recupero del traffico dell'host" }, { status: 500 });

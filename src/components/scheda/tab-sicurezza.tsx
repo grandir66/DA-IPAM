@@ -2,10 +2,12 @@
 
 /**
  * Tab «Sicurezza» (comune): vulnerabilità dell'host e, se c'è un agente, Wazuh (prima visibile solo in Discovery).
- * Wazuh si auto-nasconde senza agente: l'assenza si dice nella riga delle fonti della Panoramica.
+ * In fondo «Con chi parla», dai collector di traffico.
+ * Wazuh e traffico si auto-nascondono senza dati: l'assenza si dice nella riga delle fonti della Panoramica.
  */
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { HostWazuhCard } from "@/components/hosts/host-wazuh-card";
+import { TrafficoHost } from "./traffico-host";
 import type { ContestoScheda } from "./contesto";
 
 export function TabSicurezza({ ctx }: { ctx: ContestoScheda }) {
@@ -16,6 +18,7 @@ export function TabSicurezza({ ctx }: { ctx: ContestoScheda }) {
         <HostVulnerabilitiesCard hostId={ctx.host.id} />
       </div>
       <HostWazuhCard hostId={ctx.host.id} />
+      <TrafficoHost ip={ctx.host.ip} />
     </div>
   );
 }

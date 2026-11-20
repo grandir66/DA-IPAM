@@ -54,6 +54,7 @@ export const SEZIONI: readonly Sezione[] = [
   { nome: "Rete", schede: [
     { href: "/servizi-rete", etichetta: "Servizi di rete" },
     { href: "/segmentazione", etichetta: "Segmentazione" },
+    { href: "/traffico", etichetta: "Traffico" },
     // Le tre parti di «Reti dal trunk» stanno qui, non in una seconda fila dentro la pagina (Riccardo, 13/11/2026:
     // «le metterei direttamente nel tab superiore indicando Passive Net Security, Passive Vlan and Devices, Passive
     // Announce, messo in italiano e più contratto»). La prima è quella che si apre senza àncora.

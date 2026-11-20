@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { TIPI_ANOMALIA } from "../anomalie";
+import { fraseAnomalia, formattaByte, NOME_TIPO, protoPorta, TIPI } from "../frasi";
+
+describe("parole dell'interfaccia del traffico", () => {
+  it("ogni tipo di anomalia ha un nome e una frase (un tipo nuovo in anomalie.ts non resta muto)", () => {
+    assert.deepEqual([...TIPI].sort(), [...TIPI_ANOMALIA].sort());
+    for (const t of TIPI_ANOMALIA) {
+      assert.ok(NOME_TIPO[t].length > 0, t);
+      assert.ok(fraseAnomalia({ tipo: t, client: "10.0.0.1", server: "10.0.0.2", dettaglio: {} }).length > 0, t);
+    }
+  });
+  it("l'impianto che parla fuori ha la sua frase; il volume dice quanto e quanto di solito", () => {
+    assert.match(fraseAnomalia({ tipo: "impianto", client: "10.0.0.1", server: "esterno", dettaglio: {} }), /esterno/);
+    assert.equal(fraseAnomalia({ tipo: "volume", client: "10.0.0.1", server: "", dettaglio: { byte: 2 * 1024 ** 3, mediana: 100 * 1024 ** 2 } }), "2,0 GB in un giorno, di solito 100 MB");
+  });
+  it("porta e byte come si leggono", () => {
+    assert.equal(protoPorta(6, 502), "tcp/502");
+    assert.equal(protoPorta(0, 23), "23");
+    assert.equal(protoPorta(0, 0), "—");
+    assert.equal(formattaByte(900), "900 B");
+  });
+});

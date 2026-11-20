@@ -461,7 +461,7 @@ export function Sidebar() {
     networkSubItems.some((d) => voceAccesaDallaSezione(pathname, d.href) ?? pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/servizi-rete", "/scans"].some((h) => pathname.startsWith(h))
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/traffico", "/servizi-rete", "/scans"].some((h) => pathname.startsWith(h))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))

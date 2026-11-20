@@ -9,7 +9,7 @@
   - [x] Task 2, banco su PX-NAS (VM 109 `collector-banco`, contenitore 110 `banco-carico`): a 200 Mbit/s conta tutto, CPU circa 7%, RAM 153 MB. Non misurato: migliaia di flussi insieme, porta SPAN fisica. Tabella in `collector-traffico/README.md`. 20/11.
   - [x] Task 3, IPAM legge il collector col cursore (`src/lib/traffico/`), job ogni 5 minuti, rotte `/api/traffico/collector` e `/api/traffico/host/[ip]`. 20/11.
   - [x] Task 4, abitudini e anomalie, rotte `/api/traffico/anomalie`. 20/11.
-  - [!] Task 5, interfaccia: **aspetta il sì di Riccardo alla proposta** (pagina `/traffico`, scheda «Con chi parla» nell'host, riga dei collector, riga «in apprendimento»). Con l'interfaccia va provata anche una rotta su un'installazione vera, con una sessione.
+  - [x] Task 5, interfaccia (Riccardo, 20/11: «Sì, scrivila»): pagina `/traffico` nella sezione «Rete» (anomalie con filtri, «Vista», «È normale», riga dei collector, riga «in apprendimento», scheda «Collector e controlli» per gli amministratori) e riquadro «Con chi parla» nella tab «Sicurezza» dell'host. Guardata resa a 1920 su `localhost` con dati di prova. Non provata su un'installazione vera coi dati del banco.
   - [x] Task 6, nomi DNS e TLS e 12 controlli sul contenuto; sul banco 11 su 12 dal traffico vero, la password di prova in nessun file. Secondo gruppo solo misurato, spento. 20/11.
   - [!] Task 7, NetFlow e sFlow: codice fatto e provato con un file di esempio; **mancano uno switch e un firewall veri** che esportino verso `collector-banco`.
   - [ ] Non fatto, caso 5 del piano: agganciare la coppia all'host che aveva quell'IP nella finestra (mappa MAC-IP). Oggi le coppie restano per IP.

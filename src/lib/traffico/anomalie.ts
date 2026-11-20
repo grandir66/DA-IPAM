@@ -321,10 +321,11 @@ export const ANOMALIE_PER_PAGINA = 50;
 
 export function elencoAnomalie(
   d: Database.Database,
-  filtro: { stato?: StatoAnomalia; tipo?: TipoAnomalia; pagina?: number },
+  filtro: { stato?: StatoAnomalia; tipo?: TipoAnomalia; gravita?: number; pagina?: number },
 ): { anomalie: AnomaliaTraffico[]; totale: number; pagina: number; perPagina: number } {
   const dove: string[] = [];
-  const valori: string[] = [];
+  const valori: (string | number)[] = [];
+  if (filtro.gravita) { dove.push("gravita = ?"); valori.push(filtro.gravita); }
   if (filtro.stato) { dove.push("stato = ?"); valori.push(filtro.stato); }
   if (filtro.tipo) { dove.push("tipo = ?"); valori.push(filtro.tipo); }
   const where = dove.length ? `WHERE ${dove.join(" AND ")}` : "";

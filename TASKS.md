@@ -5,6 +5,7 @@
 - [ ] Riccardo (20/11), idea, non da fare ora: VM collector distribuite (una per sede o cliente) che analizzano il traffico in mirror e mandano a IPAM le anomalie fra gli host; IPAM le aggancia agli host che conosce già. Lato sonda e rapporto con l'NDR di Codex: `TASKS.md` di DA-Vul-can, sezione del 14/11.
 - [x] 20/11: spec scritta, `docs/superpowers/specs/2026-11-20-collector-traffico-design.md` (VM a sé e leggera, IPAM legge col cursore come dal sensore trunk, sei tappe). Approvata da Riccardo il 20/11, con i controlli sul contenuto per le anomalie conclamate.
 - [ ] Piano `docs/superpowers/plans/2026-11-20-collector-traffico.md`, 7 task, livello leggero. Si avvia solo quando lo dice Riccardo. Fuori dal piano: installazione in Deploy-Appliance e prima sede di un cliente.
+- Riccardo (20/11): «questo servizio deve rimanere separato e distribuito e alternativo alla sonda pesante». Scritto nella spec (decisione 6) e nei vincoli del piano. Esecuzione avviata da lui il 20/11 in una sessione nuova.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).
 
 ## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)

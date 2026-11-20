@@ -28,6 +28,10 @@ Manda i conteggi a IPAM, che conosce gli host e segnala i comportamenti insoliti
 4. I risultati vanno a IPAM.
 5. Confermate col «sì, scrivi la spec»: codice dentro DA-IPAM, mirror più NetFlow/sFlow,
    anomalie in una pagina di IPAM, prima prova su PX-NAS accanto a `banco-sim`.
+6. **Separato, distribuito e alternativo alla sonda pesante** (Riccardo, 20/11, all'avvio
+   dell'esecuzione): il collector resta un servizio a sé, non si fonde né con Edge né con
+   l'NDR di Codex e non dipende da loro. In un punto di ascolto si mette **o** il collector
+   leggero **o** la sonda pesante con Suricata e Zeek, non tutti e due.
 
 ## Come è fatto
 

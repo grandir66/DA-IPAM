@@ -11,6 +11,8 @@
 
 ## Vincoli globali
 
+- **Separato, distribuito e alternativo alla sonda pesante (Riccardo, 20/11).** Il collector è un servizio a sé: nessun codice in comune con Edge o con l'NDR di Codex (ramo `codex/edge-va-gemella` di DA-Vul-can, che non si tocca), nessuna dipendenza da loro, si installa e si aggiorna da solo. In un punto di ascolto va o lui o la sonda pesante. Più collector per cliente sono il caso normale.
+
 - Repo DA-IPAM, ramo `dev`. **Mai push su `main`.** Rilascio a fine tappa con `npm run version:release -- --staged-only`, poi `git push origin dev`.
 - Il collector vive in `collector-traffico/` nella radice di DA-IPAM. Python 3.11, **solo libreria standard** (niente FastAPI: deve stare in 512 MB).
 - Obiettivo della VM: 1 vCPU, 512 MB di RAM, 8 GB di disco, 200 Mbit/s di mirror. Si misura al Task 2 e il numero vero si scrive nella spec.

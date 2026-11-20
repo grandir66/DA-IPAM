@@ -7,6 +7,7 @@ import { useGiri } from "@/components/shared/giri-context";
 import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
+import { DnsDiHost } from "@/components/shared/dns-di-host";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -959,6 +960,9 @@ function DeviceDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Il DNS di Active Directory per l'indirizzo dell'apparato (Riccardo, 20/11/2026: qui non si vedeva niente). */}
+      <DnsDiHost fonte={`/api/devices/${device.id}/dns`} />
 
       {/* Device Info Card */}
       <Card>

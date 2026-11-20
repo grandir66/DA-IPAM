@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Globe, Loader2, Plus, Wrench } from "lucide-react";
@@ -49,7 +50,9 @@ export function SchedaDnsAd({ integrationId, aggiornamento }: { integrationId: n
   const [vista, setVista] = useState<VistaDnsAd | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<TipoAnomaliaDns | null>(null);
-  const [cercaAnomalie, setCercaAnomalie] = useState("");
+  // `?cerca=<ip>`: ci si arriva dal riquadro «DNS» di un host o di un apparato, con le sue anomalie già filtrate.
+  const cercaRichiesta = useSearchParams().get("cerca") ?? "";
+  const [cercaAnomalie, setCercaAnomalie] = useState(cercaRichiesta);
   const [inCorso, setInCorso] = useState<string | null>(null);
   /** Anomalia → correzione scelta per lei. Niente scelta di serie quando le correzioni possibili sono più d'una. */
   const [scelte, setScelte] = useState<Record<string, string>>({});

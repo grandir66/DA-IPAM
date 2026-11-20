@@ -30,6 +30,8 @@ export interface DnsDiHost {
   nomi: string[];
   reverse: string[];
   anomalie: { tipo: TipoAnomaliaDns; etichetta: string; dettaglio: string }[];
+  /** Cosa non torna quando nessuna anomalia lo dice (il nome dell'host è nel DNS su un altro indirizzo). */
+  nota: string | null;
   /** Id della correzione da chiedere, se ce n'è una: porta il DNS al nome che DA-IPAM ha per questo IP. */
   allinea: string | null;
   /** Id della correzione che toglie le voci di questo IP: c'è se nel DNS ha dei record (serve dopo un'eliminazione). */
@@ -135,7 +137,8 @@ function diUnIp(q: Quadro, ip: string): DnsDiHost {
   const anomalie = tutte.filter((a) => !SOLO_NOTIZIA.has(a.tipo));
   // Il nome dell'host nel DNS c'è, ma su un altro indirizzo: non «manca», è rimasto indietro dopo un cambio di IP.
   const nomeHost = corto(q.host.find((h) => h.ip === ip)?.hostname);
-  const altrove = nomeHost !== "" && nomi.length === 0 && q.record.some((r) => r.tipo === "A" && r.fqdn === `${nomeHost}.${q.integrazione.domain}` && r.dato !== ip);
+  const vecchi = nomeHost !== "" && nomi.length === 0 ? q.record.filter((r) => r.tipo === "A" && r.fqdn === `${nomeHost}.${q.integrazione.domain}` && r.dato !== ip) : [];
+  const altrove = vecchi.length > 0;
   const stato: StatoDnsHost | null =
     altrove ? "diverso"
       : anomalie.some((a) => a.tipo === "host_senza_nome") ? "manca"
@@ -145,6 +148,7 @@ function diUnIp(q: Quadro, ip: string): DnsDiHost {
     integrazione: q.integrazione.id, dominio: q.integrazione.domain, lettoIl: getStatoDnsAd(q.integrazione.id).letto_il,
     correzioniAccese: q.vista.scrittura.accesa, stato, nomi, reverse,
     anomalie: tutte.map((a) => ({ tipo: a.tipo, etichetta: ETICHETTE_ANOMALIA_DNS[a.tipo], dettaglio: a.dettaglio })),
+    nota: altrove ? `Nel DNS ${vecchi[0]!.fqdn} punta a ${vecchi.map((r) => r.dato).join(", ")}, non a ${ip}` : null,
     allinea: passiAllinea(q, ip).length > 0 ? `${PREFISSO_HOST}allinea:${ip}` : null,
     togli: nomi.length + reverse.length > 0 ? `${PREFISSO_HOST}togli:${ip}` : null,
   };
@@ -162,6 +166,7 @@ export function statoDnsDi(ips: readonly string[]): Record<string, StatoDnsHost>
   const esce: Record<string, StatoDnsHost> = {};
   for (const q of quadri()) {
     for (const ip of ips) {
+      if (!IPV4.test(ip)) continue;
       const s = diUnIp(q, ip).stato;
       if (s && (!esce[ip] || peso[s] > peso[esce[ip]])) esce[ip] = s;
     }

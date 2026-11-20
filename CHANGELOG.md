@@ -7,6 +7,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
 ### Cambiato
+- **Il DNS di Active Directory si vede anche dagli apparati, e dice cosa non torna** (Riccardo, 20/11: «la colonna è solo sotto subnet; viene detto che qualcosa non va, aprendo la scheda non viene mostrato nulla»). Colonna «DNS» nell'elenco degli apparati, riquadro nella scheda dell'apparato, e nel riquadro il dettaglio di ogni discrepanza invece della sola etichetta; il collegamento alla scheda «DNS» porta alle anomalie di quell'indirizzo.
+
 - **Più nomi sullo stesso IP non sono più un difetto dell'host** (Riccardo, 18/11: «spesso su un IP ci sono diversi record registrati per motivi reali»). Un host con più nomi o più reverse nel DNS resta «a posto» nel riquadro e nella colonna «DNS»; «Aggiorna il DNS…» aggiunge il nome di DA-IPAM e lascia gli altri; dopo un cambio di IP si spostano tutti i nomi e i reverse del vecchio indirizzo, non solo il primo. Prima un alias voluto faceva comparire «≠», e uno spostamento lasciava indietro gli altri nomi.
 
 - **Con più nomi sullo stesso IP si segnalano le discrepanze fra nomi e reverse** (Riccardo, 19/11: «segnalare se ci sono discrepanze anche se talvolta sono previste»). Un nome senza il suo reverse e un reverse verso un nome che non punta più a quell'IP compaiono fra le anomalie anche quando un altro nome dello stesso IP è a posto: prima un reverse giusto nascondeva quello sbagliato accanto. La correzione tocca solo il record segnalato. Nel riquadro dell'host «più nomi» e «più reverse» sono scritti come notizia e non cambiano il segno.

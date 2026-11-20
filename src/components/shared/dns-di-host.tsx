@@ -52,6 +52,7 @@ export async function anteprimaDnsHost(integrazione: number, id: string): Promis
 export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number }) {
   const amministratore = useEAdmin();
   const [dns, setDns] = useState<DatiDns[]>([]);
+  const [ip, setIp] = useState("");
   const [anteprima, setAnteprima] = useState<{ integrazione: number; dati: Anteprima } | null>(null);
   const [preparo, setPreparo] = useState(false);
   const [riletture, setRiletture] = useState(0);
@@ -59,7 +60,9 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
   const carica = useCallback(async () => {
     try {
       const r = await fetch(fonte, { cache: "no-store" });
-      setDns(r.ok ? ((await r.json()) as { dns: DatiDns[] }).dns : []);
+      const dati = r.ok ? ((await r.json()) as { ip?: string; dns: DatiDns[] }) : { dns: [] };
+      setIp(dati.ip ?? "");
+      setDns(dati.dns);
     } catch {
       setDns([]); // il DNS è un di più: se non risponde la scheda resta com'è
     }
@@ -79,7 +82,6 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
           <span>{d.stato ? SEGNO_DNS[d.stato].testo : ""}</span>
           {d.nomi.length > 0 && <span className="font-mono text-[13px]">{d.nomi.join(", ")}</span>}
           {d.reverse.length > 0 && <span className="text-[13px] text-muted-foreground">reverse: <span className="font-mono">{d.reverse.join(", ")}</span></span>}
-          {d.anomalie.length > 0 && <span className="text-[13px]">{d.anomalie.map((a) => a.etichetta).join(" · ")}</span>}
           <span className="ml-auto flex items-center gap-2">
             <span className="text-[13px] text-muted-foreground">{d.lettoIl ? `letto il ${d.lettoIl.slice(0, 16)} UTC` : "mai letto"}</span>
             {amministratore && d.correzioniAccese && d.allinea && (
@@ -97,8 +99,15 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
                 Aggiorna il DNS…
               </Button>
             )}
-            {d.stato !== "ok" && <Link href="/active-directory?tab=dns" className="text-[13px] underline">Apri la scheda DNS</Link>}
+            {(d.stato !== "ok" || d.anomalie.length > 0) && <Link href={`/active-directory?tab=dns&cerca=${encodeURIComponent(ip)}`} className="text-[13px] underline">Apri la scheda DNS</Link>}
           </span>
+          {/* Cosa non torna, per esteso: senza questo il segno diceva «qualcosa non va» e basta (Riccardo, 20/11/2026). */}
+          {(d.nota || d.anomalie.length > 0) && (
+            <ul className="basis-full space-y-0.5 text-[13px]">
+              {d.nota && <li>{d.nota}</li>}
+              {d.anomalie.map((a, n) => <li key={n}><span className="font-semibold">{a.etichetta}</span>: {a.dettaglio}</li>)}
+            </ul>
+          )}
         </div>
       ))}
       <ConfermaCorrezioni

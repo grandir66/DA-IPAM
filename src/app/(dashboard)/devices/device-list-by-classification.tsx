@@ -3,6 +3,8 @@ import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { SegnoDns } from "@/components/shared/dns-di-host";
+import type { StatoDnsHost } from "@/lib/ad/dns/per-host";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -254,6 +256,19 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   }, []);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
+  // Lo stato nel DNS di Active Directory, una chiamata per tutto l'elenco: è un di più, se non risponde la colonna resta vuota.
+  const [statiDns, setStatiDns] = useState<Record<string, StatoDnsHost>>({});
+  const indirizzi = devices.map((d) => d.host).filter(Boolean).join(",");
+  useEffect(() => {
+    if (!indirizzi) return;
+    let vivo = true;
+    fetch("/api/devices/dns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ips: indirizzi.split(",") }) })
+      .then((r) => (r.ok ? r.json() : { stati: {} }))
+      .then((d: { stati: Record<string, StatoDnsHost> }) => { if (vivo) setStatiDns(d.stati ?? {}); })
+      .catch(() => { /* resta vuota */ });
+    return () => { vivo = false; };
+  }, [indirizzi]);
+  const conDns = Object.keys(statiDns).length > 0;
   useEffect(() => { fetchCredentials(); }, [fetchCredentials]);
 
   const deviceType = effectiveClassification === "router" ? "router" : effectiveClassification === "switch" ? "switch" : effectiveClassification === "hypervisor" ? "hypervisor" : "switch";
@@ -947,6 +962,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 <SortableTableHead columnId="ip" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
                   IP
                 </SortableTableHead>
+                {conDns && <TableHead className="w-14 text-center" title="Com'è messo nel DNS di Active Directory">DNS</TableHead>}
                 {(devices.some(isHostItem) || devices.some((d) => (d as { network_name?: string }).network_name)) && (
                   <SortableTableHead columnId="network" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
                     Rete
@@ -1011,6 +1027,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono">{dev.host}</TableCell>
+                  {conDns && <TableCell className="text-center"><SegnoDns stato={statiDns[dev.host]} /></TableCell>}
                   {(devices.some(isHostItem) || devices.some((d) => (d as { network_name?: string }).network_name)) && (
                     <TableCell className="text-sm">
                       {(isHostItem(dev) ? dev.network_name : (dev as { network_name?: string }).network_name) ?? "—"}

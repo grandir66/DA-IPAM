@@ -245,6 +245,14 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Collector di traffico (20/11/2026): lettura ogni 5 minuti, solo per i clienti che ne hanno uno.
+    import("./src/lib/traffico/job").then(({ avviaLetturaTraffico }) => {
+      avviaLetturaTraffico();
+      console.log("> Collector di traffico: lettura ogni 5 minuti (solo i clienti che ne hanno uno)");
+    }).catch((error) => {
+      console.error("WARNING: lettura dei collector di traffico non avviata:", error);
+    });
+
     // Servizi di rete (09/11/2026, Riccardo: «il massimo automatismo»): 3 minuti dopo l'avvio e
     // poi ogni 6 ore, porte comuni sugli host senza porte e sonde senza credenziali su tutte.
     import("./src/lib/servizi-rete/job").then(({ avviaGiroServiziAutomatico }) => {

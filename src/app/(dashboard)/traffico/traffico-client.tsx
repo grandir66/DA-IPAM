@@ -13,8 +13,10 @@ import { parseDbDate } from "@/lib/db-date";
 import type { AnomaliaTraffico, StatoAnomalia } from "@/lib/traffico/anomalie";
 import { fraseAnomalia, GRAVITA, NOME_TIPO, protoPorta, TIPI } from "@/lib/traffico/frasi";
 import type { NomeDiIp, QuadroTraffico } from "@/lib/traffico/quadro";
-import { Indirizzo, SegnoGravita } from "./pezzi";
+import { cn } from "@/lib/utils";
+import { CLASSE_GRAVITA, Indirizzo, SegnoGravita } from "./pezzi";
 import { CollectorEControlli } from "./collector-controlli";
+import { Insieme } from "./insieme";
 
 interface Dati {
   anomalie: AnomaliaTraffico[];
@@ -24,7 +26,7 @@ interface Dati {
   nomi: Record<string, NomeDiIp>;
   quadro: QuadroTraffico;
 }
-type Scheda = "anomalie" | "collector";
+type Scheda = "insieme" | "anomalie" | "collector";
 type FiltroStato = StatoAnomalia | "";
 
 const NOME_STATO: Record<StatoAnomalia, string> = { nuova: "Nuove", vista: "Viste", normale: "Normali" };
@@ -37,7 +39,7 @@ function giornoBreve(s: string): string {
 export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boolean }) {
   const [dati, setDati] = useState<Dati>(iniziale);
   const [errore, setErrore] = useState<string | null>(null);
-  const [scheda, setScheda] = useState<Scheda>("anomalie");
+  const [scheda, setScheda] = useState<Scheda>("insieme");
   const [stato, setStato] = useState<FiltroStato>("nuova");
   const [gravita, setGravita] = useState(0);
   const [tipo, setTipo] = useState<string>(TUTTI);
@@ -72,6 +74,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
   };
 
   const q = dati.quadro;
+  const daGuardare = q.nuove.alta + q.nuove.media;
   const filtro = <T,>(v: T, set: (v: T) => void) => () => { set(v); setPagina(1); };
   const pagine = Math.max(1, Math.ceil(dati.totale / dati.perPagina));
   const soloAdmin = admin ? undefined : "Serve un amministratore";
@@ -117,27 +120,31 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
-        <TesseraNumero titolo="Gravità alta" valore={q.nuove.alta} qualifica={GRAVITA[3].segno} nota="nuove, da guardare per prime" />
-        <TesseraNumero titolo="Gravità media" valore={q.nuove.media} qualifica={GRAVITA[2].segno} nota="nuove" />
-        <TesseraNumero titolo="Gravità bassa" valore={q.nuove.bassa} qualifica={GRAVITA[1].segno} nota="nuove" />
-      </div>
+      <SchedePagina<Scheda>
+        etichetta="Traffico"
+        scelta={scheda}
+        onScegli={setScheda}
+        voci={[
+          { valore: "insieme", titolo: "Chi parla con chi", descrizione: "Il traffico sulla rete intera: fra reti, per host, per coppia." },
+          {
+            valore: "anomalie", titolo: "Anomalie", descrizione: "Quello che è uscito dall'abitudine o è passato in chiaro.",
+            segnale: daGuardare > 0 ? <span className={cn("ml-1.5 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold", CLASSE_GRAVITA[q.nuove.alta > 0 ? 3 : 2])}>{GRAVITA[q.nuove.alta > 0 ? 3 : 2].segno} {daGuardare}</span> : undefined,
+          },
+          ...(admin ? [{ valore: "collector" as const, titolo: "Collector e controlli", descrizione: "Le macchine che ascoltano e i controlli accesi, rete per rete." }] : []),
+        ]}
+      />
 
-      {admin && (
-        <SchedePagina<Scheda>
-          etichetta="Traffico"
-          scelta={scheda}
-          onScegli={setScheda}
-          voci={[
-            { valore: "anomalie", titolo: "Anomalie", descrizione: "Quello che è uscito dall'abitudine o è passato in chiaro." },
-            { valore: "collector", titolo: "Collector e controlli", descrizione: "Le macchine che ascoltano e i controlli accesi, rete per rete." },
-          ]}
-        />
-      )}
-
-      {scheda === "collector" && admin ? (
+      {scheda === "insieme" ? (
+        <Insieme conCollector={q.collector.length > 0} />
+      ) : scheda === "collector" && admin ? (
         <CollectorEControlli onCambio={() => void carica()} />
       ) : (
+        <>
+        <div className="grid grid-cols-3 gap-3">
+          <TesseraNumero titolo="Gravità alta" valore={q.nuove.alta} qualifica={GRAVITA[3].segno} nota="nuove, da guardare per prime" />
+          <TesseraNumero titolo="Gravità media" valore={q.nuove.media} qualifica={GRAVITA[2].segno} nota="nuove" />
+          <TesseraNumero titolo="Gravità bassa" valore={q.nuove.bassa} qualifica={GRAVITA[1].segno} nota="nuove" />
+        </div>
         <Pannello
           titolo="Anomalie"
           conteggio={dati.totale}
@@ -226,6 +233,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
             </Table>
           )}
         </Pannello>
+        </>
       )}
     </div>
   );

@@ -21,6 +21,10 @@
 - Riccardo (20/11): collector sui 4 nodi Proxmox dell'ufficio, letti dall'IPAM `192.168.4.8`; «parti dal px-04, dhcp, copia dell'uplink».
   - [x] DA-PX-04: VM 113 `DA-COLLECTOR-PX04` (192.168.4.185 in DHCP), copia di `bond10` con hookscript, VLAN 16 di storage esclusa. Verifica: filtri presenti dopo il riavvio della VM, in 5 s 9216 pacchetti sulla scheda in copia e 0 della VLAN 16, `/v1/stato` copertura 1.0. Dettaglio in `collector-traffico/README.md`.
   - [x] Trovato installando: `installa.sh` lanciato da fuori `/opt` non copiava `nfacctd.conf` e `sfacctd.conf` e si fermava. Corretto.
+  - [x] Riccardo (20/11): «possiamo anche aggiungere un collector a px-03 e 02». DA-PX-03: VM 114 `DA-COLLECTOR-PX03` (192.168.4.186); DA-PX-02: VM 115 `DA-COLLECTOR-PX02` (192.168.4.190). Stessa copia di `bond10`, VLAN 16 esclusa. Verifica: servizi attivi, pacchetti sulla scheda in copia, 0 della VLAN 16.
+  - [x] Riccardo (20/11): «serve una pagina sempre sotto rete che mostri le informazioni insieme... la rete è un oggetto globale non un singolo host». Scheda «Chi parla con chi», la prima della pagina Traffico: fra reti, per host, per coppia; periodo, rete, ricerca; nomi più chiesti. `src/lib/traffico/insieme.ts`, rotta `/api/traffico/insieme`. Guardata a 1920 su `localhost` con dati di prova; non ancora sui dati veri dell'ufficio.
+  - [ ] Il periodo più corto è «Oggi»: le coppie sono tenute per giorno, «ultima ora» non si può fare senza cambiare come IPAM le salva.
+  - [ ] Registrare `DA-COLLECTOR-PX03` e `DA-COLLECTOR-PX02` come il PX-04. Resta fuori DA-PX-01 (c'è la 423: sì esplicito).
   - [ ] Registrare `DA-COLLECTOR-PX04` nell'IPAM `192.168.4.8` (pagina Traffico, «Collector e controlli»): lo fa Riccardo, il gettone non passa dalla chat.
   - [ ] Guardare dopo un giorno memoria e copertura della VM 113 e il carico del PX-04, poi DA-PX-01, 02, 03 (sul 01 gira la 423: sì esplicito di Riccardo).
   - [ ] L'indirizzo della VM 113 è in DHCP: se cambia, IPAM non la trova più. Serve una prenotazione sul DHCP o un indirizzo fisso.

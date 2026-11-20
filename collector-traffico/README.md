@@ -108,6 +108,8 @@ della VM (quindi anche dopo un riavvio del nodo). File in `proxmox/`.
 | Cosa | Dov'è |
 |---|---|
 | `DA-COLLECTOR-PX04` | VM 113 su DA-PX-04, Debian 12 (immagine cloud), 2 vCPU, 1 GB, 8 GB su `zfs`, parte col nodo. `net0` di gestione su `vmbr_int` VLAN 4 in DHCP (il 20/11: 192.168.4.185); `net1` su `vmbr0`, un bridge senza porte, così riceve solo la copia |
+| `DA-COLLECTOR-PX03` | VM 114 su DA-PX-03 (il 20/11: 192.168.4.186). Come la 113, ma `net1` sta su `vmbr10GB`: su quel nodo `vmbr0` è il bridge di gestione e non va usato |
+| `DA-COLLECTOR-PX02` | VM 115 su DA-PX-02 (il 20/11: 192.168.4.190), `net1` su `vmbr0` |
 | `proxmox/collector-mirror.sh` | hookscript, sul nodo in `/var/lib/vz/snippets/`. In `post-start` copia entrata e uscita di `bond10` verso `tap<vmid>i1`; in `pre-stop`/`post-stop` toglie i suoi filtri. Usa solo le priorità 4476 e 4477 |
 | `proxmox/collector-vendor.yaml` | cloud-init: installa l'agente QEMU, che serve a leggere l'indirizzo preso in DHCP |
 
@@ -121,6 +123,7 @@ Cose da sapere:
 
 - **La VLAN 16 (storage: NFS e backup) non si copia**: da sola è l'80% dei byte dell'uplink. Su un altro nodo
   `UPLINK` e `VLAN_FUORI` in testa allo script vanno guardati prima (`/etc/network/interfaces`, `storage.cfg`).
+- Sul DA-PX-03 due VM stanno su `vmbr_ext` (`nic3`): quel traffico non passa da `bond10` e non si copia.
 - La copia dell'uplink **non vede il traffico fra due VM dello stesso nodo**, che non esce dal bridge.
 - Due VM dello stesso nodo su VLAN diverse, instradate dal firewall fuori: il pacchetto esce e rientra, si conta due volte.
 - Sul nodo il GRO resta acceso (è in produzione): i byte sono giusti, i pacchetti contati sono meno di quelli veri.

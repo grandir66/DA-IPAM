@@ -79,7 +79,7 @@ export function creaRetiTrunk(
   comuni: { routerId: number | null; credentialIds: number[]; dns: string | null },
 ): EsitoRetiTrunk {
   const esiti: EsitoRetiTrunk["esiti"] = [];
-  const host: EsitoHostDalTrunk = { creati: 0, mac: 0 };
+  const host: EsitoHostDalTrunk = { creati: 0, mac: 0, rinfrescati: 0 };
   for (const s of scelte) {
     try {
       const letti = NetworkCreateSchema.safeParse({

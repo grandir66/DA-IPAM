@@ -12,7 +12,9 @@ Manda i conteggi a IPAM, che conosce gli host e segnala i comportamenti insoliti
 
 - l'NDR con Suricata e Zeek che Codex sviluppa sul ramo `codex/edge-va-gemella` di
   DA-Vul-can: quello resta il livello pesante, per le macchine che lo reggono;
-- un sistema che riconosce un attacco dalla firma: non legge il contenuto dei pacchetti;
+- un sistema che riconosce gli attacchi dalle firme: non ha le decine di migliaia di
+  regole di Suricata. Ha una lista corta e fissa di controlli sui casi conclamati (vedi
+  «Controlli sul contenuto»);
 - una sonda attiva: non manda niente sulla rete del cliente. La scheda in mirror non ha
   indirizzo e non trasmette. Dopo l'incidente del 16/11 (la VA sul router di core) è il
   punto che conta di più.
@@ -50,7 +52,41 @@ switch/firewall ──NetFlow/sFlow▶│ conteggio ▶ SQLite ▶ API    │◀
   client non si tiene.
 - **Verso internet** le destinazioni non si elencano una per una (sarebbero milioni di
   righe): per ogni host interno si tiene porta, volume e numero di destinazioni diverse.
-- **Mai**: contenuto dei pacchetti, URL, credenziali.
+- **Mai salvati**: contenuto dei pacchetti, URL, credenziali. I controlli sul contenuto
+  guardano l'inizio della connessione e salvano solo il fatto («FTP con password in
+  chiaro da A a B»), mai il valore.
+
+### Controlli sul contenuto (Riccardo, 20/11)
+
+Riccardo: «non potrebbe leggere qualcosa di più dei pacchetti: protocolli, pacchetti in
+chiaro pericolosi, solo per allertare anomalie conclamate». Sì, restando leggeri, a due
+condizioni: si guarda **solo l'inizio di ogni connessione**, e i controlli sono **una
+lista corta e fissa** scritta da noi, non un motore di firme.
+
+Primo gruppo, costo basso perché il filtro lo fa il kernel e al programma arrivano pochi
+pacchetti:
+
+| Controllo | Cosa segnala |
+|---|---|
+| Telnet, FTP, POP3, IMAP, SMTP con accesso in chiaro | credenziali che passano leggibili |
+| HTTP con accesso «Basic» | idem, su pagine senza cifratura |
+| LDAP con accesso semplice senza TLS | password di dominio leggibili |
+| SNMP v1/v2c, e comunità `public`/`private` | apparati interrogabili da chiunque |
+| SMB versione 1 | protocollo vecchio, quello di EternalBlue |
+| TLS 1.0 o più vecchio | cifratura superata |
+| NTLM versione 1 | risposte che si rompono in poco tempo |
+| LLMNR e NetBIOS con una risposta da chi non dovrebbe | tentativo di farsi passare per un altro host |
+| Scrittura verso un impianto (Modbus, S7) da un host nuovo | qualcuno comanda un PLC per la prima volta |
+| Richieste DNS lunghissime o in numero abnorme | dati fatti uscire dentro il DNS |
+
+Secondo gruppo, da misurare prima di prometterlo: riconoscere il protocollo dai primi
+byte **su qualunque porta** (SSH sulla 443, RDP su una porta alta). Qui il programma deve
+vedere il primo pacchetto di dati di ogni connessione, non solo di alcune porte: il costo
+si sa solo sul banco. Se pesa, resta spento di serie.
+
+Ogni controllo ha un interruttore e nasce **spento sugli impianti in scrittura**: il
+collector non scrive mai, ma un controllo nuovo non deve produrre cento avvisi il primo
+giorno. Le anomalie conclamate non aspettano i 14 giorni di apprendimento.
 - **Servizio nostro**, piccolo, in Python come il sensore trunk di DA-Vul-can: legge
   l'uscita del conteggio, la tiene in SQLite con un numero progressivo, la espone su
   un'API. Tetto sul disco: finite le finestre di 7 giorni si buttano le più vecchie.
@@ -101,6 +137,7 @@ contatto, copertura.
 | 2 | IPAM legge il collector e mostra «con chi parla» nella scheda dell'host | le coppie del banco compaiono agganciate ai due host finti |
 | 3 | Abitudini e anomalie 1-5 e 7, pagina delle anomalie | un host finto che ne contatta un altro per la prima volta genera un'anomalia; «è normale» la spegne |
 | 4 | Volumi (anomalia 6), nomi DNS chiesti e nome del server nel saluto TLS | l'anomalia riporta il nome oltre all'indirizzo |
+| 4 bis | Controlli sul contenuto, primo gruppo; il secondo solo dopo la misura | sul banco un accesso FTP in chiaro genera l'avviso e la password non è in nessun file |
 | 5 | NetFlow e sFlow come seconda sorgente | un apparato vero esporta e le coppie arrivano |
 | 6 | Installazione in un comando (Deploy-Appliance) e prima sede vera | una VM nuova si registra in IPAM senza mani sul database |
 

@@ -14,11 +14,17 @@ import type Database from "better-sqlite3";
 import { getAllHostsFlat, getCelleMatrice, getNetworks } from "@/lib/db-tenant";
 import { isIpInCidr } from "@/lib/utils";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
-import type { DopoFinestra, RigaCollector } from "./lettura";
+import type { DopoFinestra, FattoCollector, RigaCollector } from "./lettura";
 
+/** I controlli sul contenuto fatti dal collector (`collector-traffico/collector/controlli.py`): il tipo del fatto è il tipo dell'anomalia. */
+export const TIPI_FATTO = [
+  "chiaro_telnet", "chiaro_ftp", "chiaro_posta", "chiaro_http_basic", "chiaro_ldap", "snmp_vecchio",
+  "smb1", "tls_vecchio", "ntlm1", "nome_conteso", "impianto_scrittura", "dns_anomalo",
+] as const;
+export type TipoFatto = (typeof TIPI_FATTO)[number];
 export type TipoAnomalia = "coppia_nuova" | "porta_nuova" | "molti_contatti" | "impianto"
-  | "vlan_chiuse" | "volume" | "non_censito";
-export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito"];
+  | "vlan_chiuse" | "volume" | "non_censito" | TipoFatto;
+export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito", ...TIPI_FATTO];
 export type StatoAnomalia = "nuova" | "vista" | "normale";
 export const STATI_ANOMALIA: readonly StatoAnomalia[] = ["nuova", "vista", "normale"];
 
@@ -132,7 +138,76 @@ export function volumeAnomalo(byteDelGiorno: number, giorniPrima: number[]): { m
   return byteDelGiorno > VOLUME_VOLTE * m ? { mediana: Math.round(m) } : null;
 }
 
+/** Dai fatti del collector alle anomalie. Conclamate: non aspettano l'apprendimento. */
+export function valutaFatti(ingresso: {
+  fatti: { tipo: string; client: string; server: string; porta: number; dettaglio: unknown }[];
+  spenti: Set<string>;                   // `${network_id}|${tipo}`: controllo spento per quella rete
+  reteDi: (ip: string) => number | null;
+  confermate: Set<string>;               // abitudini confermate, chiave di `chiaveCoppia` (proto 6)
+}): AnomaliaNuova[] {
+  const uscite = new Map<string, AnomaliaNuova>();
+  for (const f of ingresso.fatti) {
+    if (!(TIPI_FATTO as readonly string[]).includes(f.tipo)) continue; // un collector più nuovo di IPAM: tipo sconosciuto, si salta
+    const tipo = f.tipo as TipoFatto;
+    const rete = ingresso.reteDi(interno(f.client) ? f.client : f.server) ?? RETE_NESSUNA;
+    if (ingresso.spenti.has(`${rete}|${tipo}`)) continue;
+    // Una scrittura verso un impianto da chi è già stato confermato (lo SCADA di sempre) non è una notizia.
+    if (tipo === "impianto_scrittura" && ingresso.confermate.has(chiaveCoppia({ client: f.client, server: f.server, proto: 6, porta: f.porta }))) continue;
+    const dettaglio: AnomaliaNuova["dettaglio"] = {};
+    if (f.dettaglio && typeof f.dettaglio === "object" && !Array.isArray(f.dettaglio)) {
+      for (const [k, v] of Object.entries(f.dettaglio as Record<string, unknown>).slice(0, 8)) {
+        if (typeof v === "number" || typeof v === "boolean") dettaglio[k.slice(0, 40)] = v;
+        else if (typeof v === "string") dettaglio[k.slice(0, 40)] = v.slice(0, 100);
+      }
+    }
+    const a: AnomaliaNuova = {
+      tipo, gravita: tipo === "tls_vecchio" || tipo === "snmp_vecchio" ? 2 : 3,
+      client: f.client, server: f.server, proto: 0, porta: f.porta, dettaglio,
+    };
+    uscite.set(`${a.tipo}|${chiaveCoppia(a)}`, a);
+  }
+  return [...uscite.values()];
+}
+
 // ── Aggancio al database del tenant ──────────────────────────────────────────
+
+function lettoreReti(): (ip: string) => number | null {
+  const reti = getNetworks().map((n) => ({ id: n.id, cidr: n.cidr }));
+  const memo = new Map<string, number | null>();
+  return (ip: string): number | null => {
+    if (!interno(ip)) return null;
+    let r = memo.get(ip);
+    if (r === undefined) {
+      r = reti.find((n) => isIpInCidr(ip, n.cidr))?.id ?? null;
+      memo.set(ip, r);
+    }
+    return r;
+  };
+}
+
+/** Scrive le anomalie dei fatti letti da un collector. Da chiamare dentro la transazione della pagina. */
+export function creaRegistratoreFatti(): (d: Database.Database, fatti: FattoCollector[]) => void {
+  const reteDi = lettoreReti();
+  return (d, fatti) => {
+    const spenti = new Set((d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0").all() as { network_id: number; tipo: string }[])
+      .map((r) => `${r.network_id}|${r.tipo}`));
+    const confermate = new Set((d.prepare("SELECT client, server, proto, porta FROM traffico_abitudini WHERE confermata = 1").all() as
+      { client: string; server: string; proto: number; porta: number }[]).map(chiaveCoppia));
+    const perMomento = new Map<string, FattoCollector[]>();
+    for (const f of fatti) perMomento.set(f.visto, [...(perMomento.get(f.visto) ?? []), f]);
+    for (const [visto, gruppo] of perMomento) scriviAnomalie(d, visto, valutaFatti({ fatti: gruppo, spenti, reteDi, confermate }));
+  };
+}
+
+/** I controlli spenti, rete per rete (assente = acceso). `network_id` 0 = fuori dalle reti censite. */
+export function controlliSpenti(d: Database.Database): { network_id: number; tipo: TipoFatto }[] {
+  return d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0 ORDER BY network_id, tipo").all() as { network_id: number; tipo: TipoFatto }[];
+}
+
+export function impostaControllo(d: Database.Database, networkId: number, tipo: TipoFatto, acceso: boolean): void {
+  d.prepare(`INSERT INTO traffico_controlli (network_id, tipo, acceso) VALUES (?, ?, ?)
+    ON CONFLICT(network_id, tipo) DO UPDATE SET acceso = excluded.acceso`).run(networkId, tipo, acceso ? 1 : 0);
+}
 
 /** `inizio` meno 14 giorni, nello stesso formato (`AAAA-MM-GG HH:MM:SS`, UTC). */
 function quattordiciGiorniPrima(inizio: string): string {
@@ -157,17 +232,7 @@ export function scriviAnomalie(d: Database.Database, quando: string, anomalie: A
  * coppie nelle abitudini. Reti, host e matrice si leggono una volta per giro, non per finestra.
  */
 export function creaRegistratore(): DopoFinestra {
-  const reti = getNetworks().map((n) => ({ id: n.id, cidr: n.cidr }));
-  const memoRete = new Map<string, number | null>();
-  const reteDi = (ip: string): number | null => {
-    if (!interno(ip)) return null;
-    let r = memoRete.get(ip);
-    if (r === undefined) {
-      r = reti.find((n) => isIpInCidr(ip, n.cidr))?.id ?? null;
-      memoRete.set(ip, r);
-    }
-    return r;
-  };
+  const reteDi = lettoreReti();
   const host = getAllHostsFlat();
   const censiti = new Set(host.map((h) => h.ip));
   const impianti = new Set(host.filter((h) => eImpianto(h)).map((h) => h.ip));
@@ -216,11 +281,11 @@ export function creaRegistratore(): DopoFinestra {
 export function calcolaVolumi(d: Database.Database, giorno: string): number {
   const righe = d.prepare(`
     SELECT giorno, ip, MAX(byte) AS byte FROM (
-      SELECT giorno, collector_id, ip, SUM(byte) AS byte FROM (
-        SELECT giorno, collector_id, client AS ip, byte FROM traffico_coppie WHERE giorno BETWEEN date(?, '-14 days') AND ?
+      SELECT giorno, collector_id, fonte, ip, SUM(byte) AS byte FROM (
+        SELECT giorno, collector_id, fonte, client AS ip, byte FROM traffico_coppie WHERE giorno BETWEEN date(?, '-14 days') AND ?
         UNION ALL
-        SELECT giorno, collector_id, server AS ip, byte FROM traffico_coppie WHERE giorno BETWEEN date(?, '-14 days') AND ?)
-      WHERE ip NOT IN ('esterno', 'diffusione') GROUP BY giorno, collector_id, ip)
+        SELECT giorno, collector_id, fonte, server AS ip, byte FROM traffico_coppie WHERE giorno BETWEEN date(?, '-14 days') AND ?)
+      WHERE ip NOT IN ('esterno', 'diffusione') GROUP BY giorno, collector_id, fonte, ip)
     GROUP BY giorno, ip`).all(giorno, giorno, giorno, giorno) as { giorno: string; ip: string; byte: number }[];
   const oggi = new Map<string, number>();
   const prima = new Map<string, number[]>();
@@ -295,9 +360,10 @@ export function segnaAnomalia(d: Database.Database, id: number, stato: "vista" |
     if (!a) return false;
     d.prepare("UPDATE traffico_anomalie SET stato = ? WHERE id = ?").run(stato, id);
     if (stato === "normale" && a.server !== "") {
+      // Le anomalie dai fatti non portano il protocollo (0): la loro abitudine è la coppia TCP su quella porta.
       d.prepare(`
         INSERT INTO traffico_abitudini (client, server, proto, porta, prima_vista, confermata) VALUES (?, ?, ?, ?, datetime('now'), 1)
-        ON CONFLICT(client, server, proto, porta) DO UPDATE SET confermata = 1`).run(a.client, a.server, a.proto, a.porta);
+        ON CONFLICT(client, server, proto, porta) DO UPDATE SET confermata = 1`).run(a.client, a.server, a.proto === 0 ? 6 : a.proto, a.porta);
     }
     return true;
   })();

@@ -1,0 +1,25 @@
+[Unit]
+Description=Collector di traffico: nomi e controlli sul contenuto (inizio delle connessioni)
+After=pmacctd-collector.service
+PartOf=collector-traffico.service
+
+[Service]
+User=collector
+Group=collector
+EnvironmentFile=/etc/collector-traffico/collector.env
+WorkingDirectory=/opt/collector-traffico
+ExecStart=/usr/bin/python3 -m collector.ascolto
+# tcpdump cattura senza essere root: solo il permesso di leggere i pacchetti.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+Restart=on-failure
+RestartSec=10
+MemoryMax=96M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/collector-traffico
+
+[Install]
+WantedBy=multi-user.target

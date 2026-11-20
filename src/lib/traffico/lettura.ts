@@ -12,12 +12,13 @@ import type Database from "better-sqlite3";
 import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { assicuraTabelleTraffico } from "./schema";
-import { collectorGet, type CollectorAccesso } from "./collector-client";
-import { calcolaVolumi, creaRegistratore } from "./anomalie";
+import { collectorGet, CollectorErrore, type CollectorAccesso } from "./collector-client";
+import { calcolaVolumi, creaRegistratore, creaRegistratoreFatti } from "./anomalie";
 
 export const PAGINA = 1000;
 export const PAGINE_PER_GIRO = 20;
 export const GIORNI_TENUTI = 90;
+const FONTI = new Set(["mirror", "netflow", "sflow"]);
 
 export interface RigaCollector {
   seq: number;
@@ -31,6 +32,8 @@ export interface RigaCollector {
   pacchetti: number;
   flussi: number;
   esterni: number;
+  /** `mirror`, `netflow` o `sflow`; un collector vecchio non la manda: mirror. */
+  fonte?: string;
 }
 export interface StatoCollector {
   versione: string;
@@ -41,11 +44,30 @@ export interface StatoCollector {
   pacchetti_persi: number;
   copertura: number;
 }
-interface PaginaCoppie {
-  righe: RigaCollector[];
+interface Pagina<T> {
+  righe: T[];
   ultimo_seq: number;
   altri: boolean;
   buco: boolean;
+}
+type PaginaCoppie = Pagina<RigaCollector>;
+/** Un fatto dei controlli sul contenuto: dice cosa è successo, mai il valore (password, comunità). */
+export interface FattoCollector {
+  seq: number;
+  visto: string;
+  tipo: string;
+  client: string;
+  server: string;
+  porta: number;
+  dettaglio: unknown;
+}
+export interface NomeCollector {
+  seq: number;
+  visto: string;
+  client: string;
+  tipo: string;
+  nome: string;
+  conteggio: number;
 }
 
 /** Un collector come lo vede l'interfaccia: senza gettone, nemmeno cifrato. */
@@ -145,9 +167,9 @@ function rigaValida(r: RigaCollector): boolean {
 /** Scrive una pagina e sposta il cursore, tutto insieme. Ritorna le righe entrate. */
 function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie, dopoFinestra?: DopoFinestra): number {
   const ins = d.prepare(`
-    INSERT INTO traffico_coppie (giorno, collector_id, client, server, proto, porta, byte, pacchetti, flussi, esterni, prima_vista, ultima_vista)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(giorno, collector_id, client, server, proto, porta) DO UPDATE SET
+    INSERT INTO traffico_coppie (giorno, collector_id, fonte, client, server, proto, porta, byte, pacchetti, flussi, esterni, prima_vista, ultima_vista)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(giorno, collector_id, fonte, client, server, proto, porta) DO UPDATE SET
       byte = traffico_coppie.byte + excluded.byte,
       pacchetti = traffico_coppie.pacchetti + excluded.pacchetti,
       flussi = traffico_coppie.flussi + excluded.flussi,
@@ -158,7 +180,7 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
     const buone = p.righe.filter(rigaValida);
     const finestre = new Map<string, RigaCollector[]>();
     for (const r of buone) {
-      ins.run(r.inizio.slice(0, 10), collectorId, r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
+      ins.run(r.inizio.slice(0, 10), collectorId, FONTI.has(r.fonte ?? "") ? r.fonte : "mirror", r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
       const f = finestre.get(r.inizio);
       if (f) f.push(r);
       else finestre.set(r.inizio, [r]);
@@ -170,10 +192,55 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
   })();
 }
 
+/**
+ * Fatti e nomi: stessa lettura a pagine delle coppie, ognuno col suo cursore. Un collector
+ * senza l'ascolto (versione vecchia) risponde 404: non è un errore, non c'è niente da leggere.
+ */
+async function leggiFattiENomi(
+  d: Database.Database, leggi: Lettore, accesso: CollectorAccesso, c: { id: number; cursore_fatti: number; cursore_nomi: number },
+  registraFatti: (d: Database.Database, fatti: FattoCollector[]) => void,
+): Promise<void> {
+  const aPagine = async <T extends { seq: number }>(percorso: string, da: number, scrivi: (p: Pagina<T>) => void) => {
+    let cursore = da;
+    for (let n = 0; n < PAGINE_PER_GIRO; n++) {
+      let p: Pagina<T>;
+      try {
+        p = await leggi<Pagina<T>>(accesso, `${percorso}?dopo=${cursore}&limite=${PAGINA}`);
+      } catch (e) {
+        if (e instanceof CollectorErrore && e.stato === 404) return;
+        throw e;
+      }
+      if (!p || !Array.isArray(p.righe) || !Number.isInteger(p.ultimo_seq)) throw new Error("Risposta del collector senza righe");
+      d.transaction(() => scrivi(p))();
+      cursore = p.ultimo_seq;
+      if (!p.altri) break;
+    }
+  };
+  const testo = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
+  await aPagine<FattoCollector>("/v1/fatti", c.cursore_fatti, (p) => {
+    registraFatti(d, p.righe.filter((f) => DATA.test(f.visto ?? "") && testo(f.tipo, 40) && testo(f.client, 64) && typeof f.server === "string" && f.server.length <= 64 && Number.isInteger(f.porta)));
+    d.prepare("UPDATE traffico_collector SET cursore_fatti = ? WHERE id = ?").run(p.ultimo_seq, c.id);
+  });
+  const ins = d.prepare(`
+    INSERT INTO traffico_nomi (giorno, client, tipo, nome, conteggio, prima_vista, ultima_vista) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(giorno, client, tipo, nome) DO UPDATE SET
+      conteggio = traffico_nomi.conteggio + excluded.conteggio,
+      prima_vista = MIN(traffico_nomi.prima_vista, excluded.prima_vista),
+      ultima_vista = MAX(traffico_nomi.ultima_vista, excluded.ultima_vista)`);
+  await aPagine<NomeCollector>("/v1/nomi", c.cursore_nomi, (p) => {
+    for (const n of p.righe) {
+      if (!DATA.test(n.visto ?? "") || !testo(n.client, 64) || (n.tipo !== "dns" && n.tipo !== "sni") || !testo(n.nome, 253) || !Number.isFinite(n.conteggio)) continue;
+      ins.run(n.visto.slice(0, 10), n.client, n.tipo, n.nome, n.conteggio, n.visto, n.visto);
+    }
+    d.prepare("UPDATE traffico_collector SET cursore_nomi = ? WHERE id = ?").run(p.ultimo_seq, c.id);
+  });
+}
+
 function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
   const oggi = new Date().toISOString().slice(0, 10);
   if (getTenantSetting("traffico_ultima_pulizia") === oggi) return;
   d.prepare("DELETE FROM traffico_coppie WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
+  d.prepare("DELETE FROM traffico_nomi WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
   // Il volume si giudica sul giorno chiuso: ieri contro i 14 giorni prima.
   calcolaVolumi(d, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
   setTenantSetting("traffico_ultima_pulizia", oggi);
@@ -190,12 +257,13 @@ export async function sincronizzaTraffico(
   dopoFinestra?: DopoFinestra,
 ): Promise<{ collector: number; righe: number; errori: number }> {
   const d = dbTraffico();
-  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
-    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number }[];
+  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
+    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number }[];
   const esito = { collector: attivi.length, righe: 0, errori: 0 };
   if (attivi.length === 0) return esito;
   // Abitudini e anomalie: reti, host e matrice si leggono una volta per giro.
   const registra = dopoFinestra ?? creaRegistratore();
+  const registraFatti = creaRegistratoreFatti();
   for (const c of attivi) {
     try {
       const gettone = safeDecrypt(c.gettone_enc);
@@ -210,6 +278,7 @@ export async function sincronizzaTraffico(
         cursore = p.ultimo_seq;
         if (!p.altri) break;
       }
+      await leggiFattiENomi(d, leggi, accesso, c, registraFatti);
       d.prepare("UPDATE traffico_collector SET ultimo_contatto = datetime('now'), ultimo_errore = NULL, copertura = ? WHERE id = ?")
         .run(typeof stato?.copertura === "number" ? stato.copertura : null, c.id);
     } catch (e) {
@@ -231,12 +300,15 @@ export interface CoppiaHost {
   esterni: number;
   prima_vista: string;
   ultima_vista: string;
+  /** Le fonti che hanno visto la coppia, separate da virgola (`mirror`, `netflow`, `sflow`). */
+  fonti: string;
 }
 
 /**
  * Con chi parla un host negli ultimi `giorni`. Per ogni coppia il totale del periodo si fa
- * collector per collector e poi si prende il massimo: due punti di ascolto sulla stessa strada
- * vedono lo stesso flusso, sommarli lo conterebbe due volte.
+ * collector per collector e fonte per fonte, e poi si prende il massimo: due punti di ascolto
+ * sulla stessa strada (o il mirror e il NetFlow dello stesso tratto) vedono lo stesso flusso,
+ * sommarli lo conterebbe due volte.
  */
 export function coppieDiHost(ip: string, giorni = 7): { parlaCon: CoppiaHost[]; gliParlano: CoppiaHost[] } {
   const d = dbTraffico();
@@ -244,12 +316,27 @@ export function coppieDiHost(ip: string, giorni = 7): { parlaCon: CoppiaHost[]; 
   const leggi = (mio: "client" | "server", altro: "client" | "server") =>
     d.prepare(`
       SELECT altro, proto, porta, MAX(byte) AS byte, MAX(pacchetti) AS pacchetti, MAX(flussi) AS flussi, MAX(esterni) AS esterni,
-             MIN(prima_vista) AS prima_vista, MAX(ultima_vista) AS ultima_vista
+             MIN(prima_vista) AS prima_vista, MAX(ultima_vista) AS ultima_vista, GROUP_CONCAT(DISTINCT fonte) AS fonti
       FROM (
-        SELECT collector_id, ${altro} AS altro, proto, porta, SUM(byte) AS byte, SUM(pacchetti) AS pacchetti, SUM(flussi) AS flussi,
+        SELECT collector_id, fonte, ${altro} AS altro, proto, porta, SUM(byte) AS byte, SUM(pacchetti) AS pacchetti, SUM(flussi) AS flussi,
                MAX(esterni) AS esterni, MIN(prima_vista) AS prima_vista, MAX(ultima_vista) AS ultima_vista
         FROM traffico_coppie WHERE ${mio} = ? AND giorno >= date('now', ?)
-        GROUP BY collector_id, ${altro}, proto, porta)
+        GROUP BY collector_id, fonte, ${altro}, proto, porta)
       GROUP BY altro, proto, porta ORDER BY byte DESC LIMIT 500`).all(ip, da) as CoppiaHost[];
   return { parlaCon: leggi("client", "server"), gliParlano: leggi("server", "client") };
+}
+
+export interface NomeHost {
+  tipo: "dns" | "sni";
+  nome: string;
+  conteggio: number;
+  ultima_vista: string;
+}
+
+/** I nomi che un host ha chiesto al DNS o a cui si è presentato in TLS, negli ultimi `giorni`. */
+export function nomiDiHost(ip: string, giorni = 7): NomeHost[] {
+  const da = `-${Math.max(1, Math.min(GIORNI_TENUTI, Math.trunc(giorni)))} days`;
+  return dbTraffico().prepare(`
+    SELECT tipo, nome, SUM(conteggio) AS conteggio, MAX(ultima_vista) AS ultima_vista FROM traffico_nomi
+    WHERE client = ? AND giorno >= date('now', ?) GROUP BY tipo, nome ORDER BY conteggio DESC LIMIT 200`).all(ip, da) as NomeHost[];
 }

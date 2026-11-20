@@ -106,7 +106,9 @@ const giorno = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString(
 function finto(righe: RigaCollector[]): Lettore {
   return (async (_c: unknown, percorso: string) => {
     if (percorso === "/v1/stato") return { copertura: 1 };
-    const dopo = Number(new URL(percorso, "https://x").searchParams.get("dopo"));
+    const u = new URL(percorso, "https://x");
+    const dopo = Number(u.searchParams.get("dopo"));
+    if (u.pathname !== "/v1/coppie") return { righe: [], ultimo_seq: dopo, altri: false, buco: false }; // niente fatti né nomi
     const pagina = righe.filter((r) => r.seq > dopo);
     return { righe: pagina, ultimo_seq: pagina.at(-1)?.seq ?? dopo, altri: false, buco: false };
   }) as Lettore;
@@ -154,5 +156,79 @@ test("volume dal database: ieri contro i 14 giorni prima", async () => {
     assert.equal(calcolaVolumi(d, giorno(1)), 1);
     const v = elencoAnomalie(d, { tipo: "volume" }).anomalie[0];
     assert.deepEqual([v.client, v.gravita, v.dettaglio.byte, v.dettaglio.mediana], ["172.20.0.5", 2, 800 * MB, 50 * MB]);
+  });
+});
+
+// ── Fatti dei controlli sul contenuto (Task 6) ───────────────────────────────
+import { controlliSpenti, impostaControllo, valutaFatti } from "@/lib/traffico/anomalie";
+import { nomiDiHost } from "@/lib/traffico/lettura";
+import { CollectorErrore } from "@/lib/traffico/collector-client";
+
+const fatto = (tipo: string, client: string, server: string, porta: number, dettaglio: unknown = {}) => ({ tipo, client, server, porta, dettaglio });
+
+test("fatti: gravità, interruttore per rete, scrittura confermata, tipo sconosciuto", () => {
+  const base = { spenti: new Set<string>(), reteDi, confermate: new Set<string>() };
+  const a = valutaFatti({ ...base, fatti: [
+    fatto("chiaro_ftp", "10.1.0.5", "10.1.0.9", 21),
+    fatto("tls_vecchio", "10.1.0.5", "esterno", 443, { versione: "TLS 1.0" }),
+    fatto("snmp_vecchio", "10.1.0.5", "10.1.0.1", 161, { versione: "2c", comunita_nota: true, annidato: { x: 1 } }),
+    fatto("del_futuro", "10.1.0.5", "10.1.0.9", 1),
+  ] });
+  assert.deepEqual(a.map((x) => [x.tipo, x.gravita]), [["chiaro_ftp", 3], ["tls_vecchio", 2], ["snmp_vecchio", 2]]);
+  assert.deepEqual(a[2].dettaglio, { versione: "2c", comunita_nota: true });
+  // spento per la rete 1: tace lì, non altrove
+  const spento = valutaFatti({ ...base, spenti: new Set(["1|snmp_vecchio"]), fatti: [fatto("snmp_vecchio", "10.1.0.5", "10.1.0.1", 161), fatto("snmp_vecchio", "10.2.0.5", "10.2.0.1", 161)] });
+  assert.deepEqual(spento.map((x) => x.client), ["10.2.0.5"]);
+  // scrittura verso un impianto: tace solo se la coppia è confermata
+  const scrive = fatto("impianto_scrittura", "10.1.0.5", "10.1.0.50", 502, { protocollo: "modbus" });
+  assert.equal(valutaFatti({ ...base, fatti: [scrive] }).length, 1);
+  assert.equal(valutaFatti({ ...base, confermate: new Set(["10.1.0.5|10.1.0.50|6|502"]), fatti: [scrive] }).length, 0);
+});
+
+test("dal collector: fatti e nomi coi loro cursori; «normale» su una scrittura la fa tacere; collector vecchio senza ascolto", async () => {
+  await withTenant(T, async () => {
+    const d = dbTraffico();
+    const oggi = giorno(0);
+    const fatti = [
+      { seq: 1, visto: `${oggi} 11:00:00`, tipo: "chiaro_ftp", client: "172.20.0.5", server: "172.20.0.9", porta: 21, dettaglio: {} },
+      { seq: 2, visto: `${oggi} 11:00:01`, tipo: "impianto_scrittura", client: "172.20.0.5", server: "172.20.0.50", porta: 502, dettaglio: { protocollo: "modbus", cosa: "registro" } },
+    ];
+    const nomi = [
+      { seq: 1, visto: `${oggi} 11:00:00`, client: "172.20.0.5", tipo: "dns", nome: "www.esempio.it", conteggio: 3 },
+      { seq: 2, visto: `${oggi} 11:05:00`, client: "172.20.0.5", tipo: "dns", nome: "www.esempio.it", conteggio: 2 },
+      { seq: 3, visto: `${oggi} 11:05:00`, client: "172.20.0.5", tipo: "sni", nome: "posta.esempio.it", conteggio: 1 },
+      { seq: 4, visto: `${oggi} 11:05:00`, client: "172.20.0.5", tipo: "altro", nome: "x", conteggio: 1 },
+    ];
+    const lettore = (conAscolto: boolean): Lettore => (async (_c: unknown, percorso: string) => {
+      if (percorso === "/v1/stato") return { copertura: 1 };
+      const u = new URL(percorso, "https://x");
+      const dopo = Number(u.searchParams.get("dopo"));
+      if (u.pathname === "/v1/coppie") return { righe: [], ultimo_seq: dopo, altri: false, buco: false };
+      if (!conAscolto) throw new CollectorErrore("Il collector risponde 404", 404);
+      const righe = (u.pathname === "/v1/fatti" ? fatti : nomi).filter((r) => r.seq > dopo);
+      return { righe, ultimo_seq: righe.at(-1)?.seq ?? dopo, altri: false, buco: false };
+    }) as Lettore;
+
+    assert.equal((await sincronizzaTraffico(lettore(false))).errori, 0); // senza ascolto: nessun errore
+    assert.equal((await sincronizzaTraffico(lettore(true))).errori, 0);
+    await sincronizzaTraffico(lettore(true)); // secondo giro: i cursori tengono, niente doppioni
+    const c = d.prepare("SELECT cursore_fatti, cursore_nomi FROM traffico_collector WHERE attivo = 1").get() as { cursore_fatti: number; cursore_nomi: number };
+    assert.deepEqual(c, { cursore_fatti: 2, cursore_nomi: 4 });
+    const a = elencoAnomalie(d, {}).anomalie.filter((x) => x.tipo === "chiaro_ftp" || x.tipo === "impianto_scrittura");
+    assert.deepEqual(a.map((x) => [x.tipo, x.gravita, x.conteggio, x.stato]).sort(), [["chiaro_ftp", 3, 1, "nuova"], ["impianto_scrittura", 3, 1, "nuova"]]);
+    assert.deepEqual(nomiDiHost("172.20.0.5").map((n) => [n.tipo, n.nome, n.conteggio]), [["dns", "www.esempio.it", 5], ["sni", "posta.esempio.it", 1]]);
+
+    // «è normale» sulla scrittura: l'abitudine è confermata e il fatto, ripetuto, non aggiunge niente
+    const scrittura = a.find((x) => x.tipo === "impianto_scrittura")!;
+    segnaAnomalia(d, scrittura.id, "normale");
+    fatti.push({ ...fatti[1], seq: 3, visto: `${oggi} 12:00:01` });
+    await sincronizzaTraffico(lettore(true));
+    const dopo = elencoAnomalie(d, { tipo: "impianto_scrittura" }).anomalie[0];
+    assert.deepEqual([dopo.stato, dopo.conteggio], ["normale", 1]);
+
+    impostaControllo(d, 0, "chiaro_ftp", false);
+    assert.deepEqual(controlliSpenti(d), [{ network_id: 0, tipo: "chiaro_ftp" }]);
+    impostaControllo(d, 0, "chiaro_ftp", true);
+    assert.deepEqual(controlliSpenti(d), []);
   });
 });

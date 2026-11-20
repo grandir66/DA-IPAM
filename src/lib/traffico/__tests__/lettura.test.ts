@@ -29,6 +29,7 @@ function finto(righe: RigaCollector[], opzioni: { buco?: boolean; rotto?: boolea
     if (opzioni.rotto) throw new Error("Collector non raggiungibile: connect ECONNREFUSED 192.168.99.89:8477");
     const u = new URL(percorso, "https://x");
     const dopo = Number(u.searchParams.get("dopo"));
+    if (u.pathname !== "/v1/coppie") return { righe: [], ultimo_seq: dopo, altri: false, buco: false }; // niente fatti né nomi
     const limite = Number(u.searchParams.get("limite"));
     const dopoIl = righe.filter((r) => r.seq > dopo);
     const pagina = dopoIl.slice(0, limite);
@@ -112,4 +113,35 @@ test("impronta e indirizzo", () => {
   assert.equal(urlCollector("http://192.168.99.89:8477"), null);
   assert.equal(urlCollector("https://utente:pw@192.168.99.89:8477"), null);
   assert.equal(urlCollector("https://192.168.99.89:8477")?.port, "8477");
+});
+
+test("fonte: il NetFlow dello stesso collector non si somma al mirror; tabella nata senza `fonte` ricostruita", async () => {
+  await withTenant(T, async () => {
+    const id = creaCollector({ nome: "misto", sede: "", url: "https://192.168.99.92:8477", gettone: "g", impronta: "EE" });
+    dbTraffico().prepare("UPDATE traffico_collector SET attivo = CASE WHEN id = ? THEN 1 ELSE 0 END").run(id);
+    await sincronizzaTraffico(finto([
+      { ...riga(1, "10.5.0.1", "10.5.0.2", 443, 1000), fonte: "mirror" },
+      { ...riga(2, "10.5.0.1", "10.5.0.2", 443, 900), fonte: "netflow" },
+      { ...riga(3, "10.5.0.1", "10.5.0.2", 443, 10), fonte: "inventata" },
+    ]));
+    const h = coppieDiHost("10.5.0.2").gliParlano;
+    assert.equal(h.length, 1);
+    assert.equal(h[0].byte, 1010); // mirror 1000 + 10 (fonte sconosciuta = mirror); il netflow (900) non si somma
+    assert.deepEqual(h[0].fonti.split(",").sort(), ["mirror", "netflow"]);
+  });
+  // la migrazione: una tabella con la chiave vecchia tiene le sue righe e prende la colonna
+  const Database = (await import("better-sqlite3")).default;
+  const { assicuraTabelleTraffico } = await import("@/lib/traffico/schema");
+  const d = new Database(":memory:");
+  d.exec(`CREATE TABLE traffico_coppie (
+    giorno TEXT NOT NULL, collector_id INTEGER NOT NULL, client TEXT NOT NULL, server TEXT NOT NULL,
+    proto INTEGER NOT NULL, porta INTEGER NOT NULL, byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL,
+    flussi INTEGER NOT NULL, esterni INTEGER NOT NULL DEFAULT 0, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
+    PRIMARY KEY (giorno, collector_id, client, server, proto, porta));
+    INSERT INTO traffico_coppie VALUES ('2026-11-20', 1, 'a', 'b', 6, 80, 5, 1, 1, 0, 'x', 'y');`);
+  assicuraTabelleTraffico(d);
+  assert.deepEqual(d.prepare("SELECT fonte, byte FROM traffico_coppie").all(), [{ fonte: "mirror", byte: 5 }]);
+  d.prepare("INSERT INTO traffico_coppie (giorno, collector_id, fonte, client, server, proto, porta, byte, pacchetti, flussi, prima_vista, ultima_vista) VALUES ('2026-11-20', 1, 'sflow', 'a', 'b', 6, 80, 7, 1, 1, 'x', 'y')").run();
+  assert.equal((d.prepare("SELECT COUNT(*) AS n FROM traffico_coppie").get() as { n: number }).n, 2);
+  d.close();
 });

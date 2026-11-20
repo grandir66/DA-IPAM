@@ -58,6 +58,35 @@ class Archivio(unittest.TestCase):
         r = archivio.leggi_coppie(self.db, 0, 10)[0][0]
         self.assertEqual((r["inizio"], r["server"], r["porta"], r["byte"]), ("2026-11-20 10:05:00", "192.168.99.221", 502, 200))
 
+    def test_netflow_stessa_piega_fonte_dal_nome_e_niente_dimezzamento(self):
+        """Un file di nfacctd ha la stessa forma di quello di pmacctd (qui com'è scritto dalla 1.7.7)."""
+        cartella = os.path.join(self.dir.name, "in")
+        os.makedirs(cartella)
+        riga = ('{"event_type": "purge", "ip_src": "192.168.4.20", "ip_dst": "192.168.4.8", "port_src": 52100,'
+                ' "port_dst": 443, "ip_proto": "tcp", "packets": 40, "bytes": 8000}\n')
+        for nome in ("netflow-20261120-101000.json", "sflow-20261120-101000.json", "mirror-20261120-101000.json", "20261120-101500.json"):
+            with open(os.path.join(cartella, nome), "w") as o:
+                o.write(riga)
+        self.assertEqual(giro(self.db, cartella, ["192.168.0.0/16"], True, adesso=4102444800), 4)
+        righe = archivio.leggi_coppie(self.db, 0, 10)[0]
+        self.assertEqual(sorted((r["fonte"], r["byte"]) for r in righe),
+                         [("mirror", 4000), ("mirror", 4000), ("netflow", 8000), ("sflow", 8000)])
+        self.assertEqual({r["inizio"] for r in righe}, {"2026-11-20 10:05:00", "2026-11-20 10:10:00"})
+
+    def test_archivio_vecchio_prende_la_colonna_fonte(self):
+        import sqlite3
+        percorso = os.path.join(self.dir.name, "vecchio.db")
+        v = sqlite3.connect(percorso)
+        v.execute("CREATE TABLE coppia (seq INTEGER PRIMARY KEY AUTOINCREMENT, inizio TEXT NOT NULL, durata_s INTEGER NOT NULL,"
+                  " client TEXT NOT NULL, server TEXT NOT NULL, proto INTEGER NOT NULL, porta INTEGER NOT NULL,"
+                  " byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL, esterni INTEGER NOT NULL DEFAULT 0)")
+        v.execute("INSERT INTO coppia (inizio, durata_s, client, server, proto, porta, byte, pacchetti, flussi) VALUES ('2026-11-20 10:00:00', 300, 'a', 'b', 6, 80, 1, 1, 1)")
+        v.commit()
+        v.close()
+        d = archivio.apri(percorso)
+        self.assertEqual(archivio.leggi_coppie(d, 0, 10)[0][0]["fonte"], "mirror")
+        d.close()
+
     def test_inizio_senza_ora_nel_nome(self):
         self.assertEqual(inizio_da_nome("coppie.json", 600.0), "1970-01-01 00:05:00")
 

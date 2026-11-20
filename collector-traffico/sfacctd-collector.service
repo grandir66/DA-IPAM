@@ -1,0 +1,17 @@
+[Unit]
+Description=Collector di traffico: sFlow dagli apparati (sfacctd, UDP 6343)
+After=network-online.target
+PartOf=collector-traffico.service
+
+[Service]
+Environment=TZ=UTC
+ExecStart=/usr/sbin/sfacctd -f /etc/collector-traffico/sfacctd.conf
+# SIGINT e non SIGTERM: la finestra in corso si scrive prima di uscire (vedi pmacctd-collector.service).
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

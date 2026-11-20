@@ -5,6 +5,7 @@ con `datetime('now')`.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 
@@ -12,12 +13,23 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS coppia (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, inizio TEXT NOT NULL, durata_s INTEGER NOT NULL,
   client TEXT NOT NULL, server TEXT NOT NULL, proto INTEGER NOT NULL, porta INTEGER NOT NULL,
-  byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL, esterni INTEGER NOT NULL DEFAULT 0);
+  byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL, esterni INTEGER NOT NULL DEFAULT 0,
+  fonte TEXT NOT NULL DEFAULT 'mirror');
 CREATE INDEX IF NOT EXISTS idx_coppia_inizio ON coppia (inizio);
 CREATE TABLE IF NOT EXISTS stato (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS fatto (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, visto TEXT NOT NULL, tipo TEXT NOT NULL,
+  client TEXT NOT NULL, server TEXT NOT NULL, porta INTEGER NOT NULL, dettaglio TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS nome (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, visto TEXT NOT NULL, client TEXT NOT NULL,
+  tipo TEXT NOT NULL, nome TEXT NOT NULL, conteggio INTEGER NOT NULL);
 """
 
-COLONNE = ("seq", "inizio", "durata_s", "client", "server", "proto", "porta", "byte", "pacchetti", "flussi", "esterni")
+COLONNE_FATTO = ("seq", "visto", "tipo", "client", "server", "porta", "dettaglio")
+COLONNE_NOME = ("seq", "visto", "client", "tipo", "nome", "conteggio")
+
+COLONNE = ("seq", "inizio", "durata_s", "client", "server", "proto", "porta", "byte", "pacchetti", "flussi", "esterni", "fonte")
+FONTI = ("mirror", "netflow", "sflow")
 FINESTRA_S = 300
 
 
@@ -30,18 +42,21 @@ def apri(percorso: str) -> sqlite3.Connection:
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=NORMAL")
     db.executescript(SCHEMA)
+    # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
+    if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
+        db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
     return db
 
 
-def scrivi_finestra(db: sqlite3.Connection, inizio: str, coppie: list[dict], durata_s: int = FINESTRA_S) -> int:
+def scrivi_finestra(db: sqlite3.Connection, inizio: str, coppie: list[dict], durata_s: int = FINESTRA_S, fonte: str = "mirror") -> int:
     """Scrive le coppie di una finestra in una sola transazione. Ritorna quante righe."""
     with db:
         db.executemany(
-            "INSERT INTO coppia (inizio, durata_s, client, server, proto, porta, byte, pacchetti, flussi, esterni)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO coppia (inizio, durata_s, client, server, proto, porta, byte, pacchetti, flussi, esterni, fonte)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (inizio, durata_s, c["client"], c["server"], c["proto"], c["porta"],
-                 c["byte"], c["pacchetti"], c["flussi"], c.get("esterni", 0))
+                 c["byte"], c["pacchetti"], c["flussi"], c.get("esterni", 0), fonte)
                 for c in coppie
             ],
         )
@@ -65,16 +80,63 @@ def leggi_coppie(db: sqlite3.Connection, dopo: int, limite: int) -> tuple[list[d
     return righe, ultimo_seq, altri, buco
 
 
-def ultimo_seq(db: sqlite3.Connection) -> int:
-    r = db.execute("SELECT seq FROM sqlite_sequence WHERE name = 'coppia'").fetchone()
+def ultimo_seq(db: sqlite3.Connection, tabella: str = "coppia") -> int:
+    r = db.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (tabella,)).fetchone()
     return int(r[0]) if r else 0
+
+
+def scrivi_fatto(db: sqlite3.Connection, visto: str, tipo: str, client: str, server: str, porta: int, dettaglio: dict) -> None:
+    with db:
+        db.execute(
+            "INSERT INTO fatto (visto, tipo, client, server, porta, dettaglio) VALUES (?, ?, ?, ?, ?, ?)",
+            (visto, tipo, client, server, int(porta), json.dumps(dettaglio, separators=(",", ":"), sort_keys=True)),
+        )
+
+
+def scrivi_nomi(db: sqlite3.Connection, visto: str, conteggi: dict[tuple[str, str, str], int]) -> None:
+    """`conteggi`: (client, tipo, nome) → quante volte nella finestra."""
+    with db:
+        db.executemany(
+            "INSERT INTO nome (visto, client, tipo, nome, conteggio) VALUES (?, ?, ?, ?, ?)",
+            [(visto, k[0], k[1], k[2], n) for k, n in conteggi.items()],
+        )
+
+
+def _leggi(db: sqlite3.Connection, tabella: str, colonne: tuple[str, ...], dopo: int, limite: int):
+    """Stessa forma di `leggi_coppie`, per le tabelle col numero progressivo."""
+    limite = max(1, min(int(limite), 1000))
+    dopo = max(0, int(dopo))
+    grezze = db.execute(
+        f"SELECT {', '.join(colonne)} FROM {tabella} WHERE seq > ? ORDER BY seq LIMIT ?", (dopo, limite + 1)
+    ).fetchall()
+    altri = len(grezze) > limite
+    righe = [dict(zip(colonne, r)) for r in grezze[:limite]]
+    piu_vecchio = db.execute(f"SELECT MIN(seq) FROM {tabella}").fetchone()[0]
+    buco = dopo > 0 and piu_vecchio is not None and dopo < piu_vecchio - 1
+    return righe, (righe[-1]["seq"] if righe else dopo), altri, buco
+
+
+def leggi_fatti(db: sqlite3.Connection, dopo: int, limite: int):
+    righe, ultimo, altri, buco = _leggi(db, "fatto", COLONNE_FATTO, dopo, limite)
+    for r in righe:
+        try:
+            r["dettaglio"] = json.loads(r["dettaglio"])
+        except ValueError:
+            r["dettaglio"] = {}
+    return righe, ultimo, altri, buco
+
+
+def leggi_nomi(db: sqlite3.Connection, dopo: int, limite: int):
+    return _leggi(db, "nome", COLONNE_NOME, dopo, limite)
 
 
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
     with db:
-        fatto = db.execute("DELETE FROM coppia WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
-    return fatto.rowcount
+        tolte = db.execute("DELETE FROM coppia WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",)).rowcount
+        db.execute("DELETE FROM fatto WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM nome WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
+    return tolte
 
 
 def metti_stato(db: sqlite3.Connection, chiave: str, valore: object) -> None:

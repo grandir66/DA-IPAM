@@ -34,7 +34,7 @@ if [ "$QUI" != "$APP" ]; then
   cp "$QUI/pmacctd.conf" "$QUI"/*.service "$QUI/installa.sh" "$APP/"
 fi
 find "$APP" -name __pycache__ -type d -prune -exec rm -rf {} +
-install -m 644 "$APP/pmacctd.conf" "$CONF/pmacctd.conf"
+install -m 644 "$APP/pmacctd.conf" "$APP/nfacctd.conf" "$APP/sfacctd.conf" "$CONF/"
 
 if [ ! -s "$CONF/gettone" ]; then
   (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$CONF/gettone")
@@ -55,16 +55,27 @@ NOME=$NOME
 RETI_INTERNE=
 # 1 se lo switch copia entrata e uscita e ogni pacchetto arriva due volte
 MIRROR_DOPPIO=0
+# Flussi esportati da switch e firewall, oltre al mirror: no | netflow (UDP 2055) | sflow (UDP 6343)
+FLUSSI=no
 ENV
 else
   sed -i "s/^MIRROR_IF=.*/MIRROR_IF=$SCHEDA/" "$CONF/collector.env"
 fi
 chmod 640 "$CONF/collector.env"; chgrp collector "$CONF/collector.env"
 
-install -m 644 "$APP/collector-traffico.service" "$APP/pmacctd-collector.service" /etc/systemd/system/
+install -m 644 "$APP/collector-traffico.service" "$APP/pmacctd-collector.service" "$APP/collector-ascolto.service" \
+  "$APP/nfacctd-collector.service" "$APP/sfacctd-collector.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable -q collector-traffico.service pmacctd-collector.service
-systemctl restart pmacctd-collector.service collector-traffico.service
+systemctl enable -q collector-traffico.service pmacctd-collector.service collector-ascolto.service
+systemctl restart pmacctd-collector.service collector-traffico.service collector-ascolto.service
+
+# NetFlow e sFlow: spenti di serie, si accende solo quello scritto in FLUSSI.
+FLUSSI="$(sed -n 's/^FLUSSI=//p' "$CONF/collector.env" | tail -1)"
+systemctl disable -q --now nfacctd-collector.service sfacctd-collector.service 2>/dev/null || true
+case "$FLUSSI" in
+  netflow) systemctl enable -q --now nfacctd-collector.service ;;
+  sflow) systemctl enable -q --now sfacctd-collector.service ;;
+esac
 
 echo
 echo "Collector installato. Nome: $NOME · scheda in mirror: $SCHEDA · porta: 8477"

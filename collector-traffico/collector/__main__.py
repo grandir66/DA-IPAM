@@ -33,6 +33,12 @@ def inizio_da_nome(nome: str, mtime: float, durata_s: int = archivio.FINESTRA_S)
     return archivio.ora_utc(mtime - durata_s)
 
 
+def fonte_da_nome(nome: str) -> str:
+    """Il prefisso del file dice da dove viene il conteggio: `netflow-…`, `sflow-…`; il resto è mirror."""
+    prefisso = nome.split("-", 1)[0]
+    return prefisso if prefisso in archivio.FONTI else "mirror"
+
+
 def contatori_scheda(scheda: str, testo: str) -> tuple[int, int] | None:
     """Da /proc/net/dev: (pacchetti ricevuti, pacchetti scartati in ricezione) della scheda."""
     for linea in testo.splitlines():
@@ -59,9 +65,11 @@ def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | No
                 coppie = piega.piega(piega.da_pmacct(f.read()), reti)
         except OSError:
             continue
-        if doppio:
+        fonte = fonte_da_nome(nome)
+        # Il raddoppio è del mirror (entrata e uscita copiate): i flussi esportati dagli apparati non c'entrano.
+        if doppio and fonte == "mirror":
             coppie = piega.dimezza(coppie)
-        scritte += archivio.scrivi_finestra(db, inizio_da_nome(nome, mtime), coppie)
+        scritte += archivio.scrivi_finestra(db, inizio_da_nome(nome, mtime), coppie, fonte=fonte)
         os.unlink(percorso)
     return scritte
 

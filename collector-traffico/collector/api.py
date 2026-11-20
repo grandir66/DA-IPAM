@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, urlsplit
 from . import VERSIONE, archivio
 
 PORTA = 8477
+# Tutte con la stessa forma: ?dopo=<seq>&limite=<1..1000> → {righe, ultimo_seq, altri, buco}
+LETTURE = {"/v1/coppie": archivio.leggi_coppie, "/v1/fatti": archivio.leggi_fatti, "/v1/nomi": archivio.leggi_nomi}
 
 
 def _intero(valori: dict, nome: str, ripiego: int) -> int:
@@ -64,15 +66,17 @@ def crea_server(percorso_db: str, gettone: str, nome: str, avviato: str,
                         self._rispondi(200, {
                             "versione": VERSIONE, "nome": nome, "avviato": avviato,
                             "ultimo_seq": archivio.ultimo_seq(db),
+                            "ultimo_fatto": archivio.ultimo_seq(db, "fatto"),
+                            "ultimo_nome": archivio.ultimo_seq(db, "nome"),
                             "pacchetti_visti": visti, "pacchetti_persi": persi,
                             "copertura": 1.0 if visti + persi == 0 else round(1 - persi / (visti + persi), 6),
                         })
-                    elif url.path == "/v1/coppie":
+                    elif url.path in LETTURE:
                         q = parse_qs(url.query)
                         dopo, limite = _intero(q, "dopo", 0), _intero(q, "limite", 1000)
                         if dopo < 0 or not 1 <= limite <= 1000:
                             raise ValueError("limite")
-                        righe, ultimo, altri, buco = archivio.leggi_coppie(db, dopo, limite)
+                        righe, ultimo, altri, buco = LETTURE[url.path](db, dopo, limite)
                         self._rispondi(200, {"righe": righe, "ultimo_seq": ultimo, "altri": altri, "buco": buco})
                     else:
                         self._rispondi(404, {"errore": "rotta sconosciuta"})

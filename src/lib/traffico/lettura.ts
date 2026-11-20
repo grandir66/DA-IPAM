@@ -13,6 +13,7 @@ import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting }
 import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { assicuraTabelleTraffico } from "./schema";
 import { collectorGet, type CollectorAccesso } from "./collector-client";
+import { calcolaVolumi, creaRegistratore } from "./anomalie";
 
 export const PAGINA = 1000;
 export const PAGINE_PER_GIRO = 20;
@@ -68,7 +69,7 @@ interface RigaCollectorDb extends Omit<CollectorTraffico, "attivo"> {
 }
 
 export type Lettore = <T>(c: CollectorAccesso, percorso: string) => Promise<T>;
-/** Chiamata dopo ogni finestra scritta, dentro la stessa transazione (abitudini e anomalie). */
+/** Chiamata dopo ogni finestra scritta, dentro la stessa transazione. Di serie: `creaRegistratore` (abitudini e anomalie). */
 export type DopoFinestra = (db: Database.Database, inizio: string, righe: RigaCollector[]) => void;
 
 export function dbTraffico(): Database.Database {
@@ -173,6 +174,8 @@ function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
   const oggi = new Date().toISOString().slice(0, 10);
   if (getTenantSetting("traffico_ultima_pulizia") === oggi) return;
   d.prepare("DELETE FROM traffico_coppie WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
+  // Il volume si giudica sul giorno chiuso: ieri contro i 14 giorni prima.
+  calcolaVolumi(d, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
   setTenantSetting("traffico_ultima_pulizia", oggi);
 }
 
@@ -191,6 +194,8 @@ export async function sincronizzaTraffico(
     { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number }[];
   const esito = { collector: attivi.length, righe: 0, errori: 0 };
   if (attivi.length === 0) return esito;
+  // Abitudini e anomalie: reti, host e matrice si leggono una volta per giro.
+  const registra = dopoFinestra ?? creaRegistratore();
   for (const c of attivi) {
     try {
       const gettone = safeDecrypt(c.gettone_enc);
@@ -201,7 +206,7 @@ export async function sincronizzaTraffico(
       for (let n = 0; n < PAGINE_PER_GIRO; n++) {
         const p = await leggi<PaginaCoppie>(accesso, `/v1/coppie?dopo=${cursore}&limite=${PAGINA}`);
         if (!p || !Array.isArray(p.righe) || !Number.isInteger(p.ultimo_seq)) throw new Error("Risposta del collector senza righe");
-        esito.righe += scriviPagina(d, c.id, p, dopoFinestra);
+        esito.righe += scriviPagina(d, c.id, p, registra);
         cursore = p.ultimo_seq;
         if (!p.altri) break;
       }

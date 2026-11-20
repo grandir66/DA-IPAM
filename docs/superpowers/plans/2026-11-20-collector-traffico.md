@@ -36,7 +36,9 @@
 
 ---
 
-### [ ] Task 1 — Il collector: conteggio, SQLite, API
+### [x] Task 1 — Il collector: conteggio, SQLite, API
+
+Verifica: `python3 -m unittest discover -s collector-traffico/tests -t collector-traffico` → 21 prove, OK (20/11; sul Mac pytest non c'è, le prove sono `unittest` e girano anche sotto pytest).
 
 **File** (tutti nuovi, in `collector-traffico/`):
 - `collector/piega.py`, `collector/archivio.py`, `collector/api.py`, `collector/__main__.py`
@@ -296,6 +298,8 @@ Secondo gruppo (protocollo riconosciuto su qualunque porta): **solo la misura**.
 ---
 
 ## Registro
+
+- **20/11, Task 1 fatto.** Scostamenti: (a) le prove sono `unittest` della libreria standard, non pytest (sul Mac non è installato; il vincolo «solo libreria standard» resta intero); (b) multicast e broadcast diventano `diffusione` invece di `esterno`, altrimenti ogni host con mDNS o SSDP sembrerebbe uscire verso internet e al Task 4 ogni impianto darebbe l'anomalia; (c) alle reti interne di serie si aggiungono `fc00::/7` e `fe80::/10` (IPv6 locale); (d) `MIRROR_DOPPIO=1` è già nel servizio (caso 2), la misura resta al Task 2; (e) la scheda in mirror parte con ARP e IPv6 spenti, perché Linux su una scheda accesa senza indirizzo manda comunque gli annunci IPv6. **Da verificare sulla VM al Task 2**: i nomi delle chiavi di `pmacctd.conf` (`files_umask`, `print_output_file` con l'ora nel nome) e che l'ora nel nome sia la chiusura della finestra.
 
 ## Consuntivo
 ### Fatto

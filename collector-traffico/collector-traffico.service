@@ -1,0 +1,22 @@
+[Unit]
+Description=Collector di traffico: archivio e API
+After=network-online.target
+Wants=network-online.target pmacctd-collector.service
+
+[Service]
+User=collector
+Group=collector
+EnvironmentFile=/etc/collector-traffico/collector.env
+WorkingDirectory=/opt/collector-traffico
+ExecStart=/usr/bin/python3 -m collector
+Restart=on-failure
+RestartSec=10
+MemoryMax=128M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/collector-traffico
+
+[Install]
+WantedBy=multi-user.target

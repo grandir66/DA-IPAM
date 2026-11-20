@@ -84,9 +84,8 @@ byte **su qualunque porta** (SSH sulla 443, RDP su una porta alta). Qui il progr
 vedere il primo pacchetto di dati di ogni connessione, non solo di alcune porte: il costo
 si sa solo sul banco. Se pesa, resta spento di serie.
 
-Ogni controllo ha un interruttore e nasce **spento sugli impianti in scrittura**: il
-collector non scrive mai, ma un controllo nuovo non deve produrre cento avvisi il primo
-giorno. Le anomalie conclamate non aspettano i 14 giorni di apprendimento.
+Ogni controllo ha il suo interruttore in IPAM, rete per rete: una rete piena di apparati
+vecchi darebbe cento avvisi di SNMP v2 il primo giorno. Le anomalie conclamate non aspettano i 14 giorni di apprendimento.
 - **Servizio nostro**, piccolo, in Python come il sensore trunk di DA-Vul-can: legge
   l'uscita del conteggio, la tiene in SQLite con un numero progressivo, la espone su
   un'API. Tetto sul disco: finite le finestre di 7 giorni si buttano le più vecchie.

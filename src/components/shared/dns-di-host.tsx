@@ -53,6 +53,7 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
   const amministratore = useEAdmin();
   const [dns, setDns] = useState<DatiDns[]>([]);
   const [ip, setIp] = useState("");
+  const [letto, setLetto] = useState(false);
   const [anteprima, setAnteprima] = useState<{ integrazione: number; dati: Anteprima } | null>(null);
   const [preparo, setPreparo] = useState(false);
   const [riletture, setRiletture] = useState(0);
@@ -60,8 +61,9 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
   const carica = useCallback(async () => {
     try {
       const r = await fetch(fonte, { cache: "no-store" });
-      const dati = r.ok ? ((await r.json()) as { ip?: string; dns: DatiDns[] }) : { dns: [] };
+      const dati = r.ok ? ((await r.json()) as { ip?: string; letto?: boolean; dns: DatiDns[] }) : { dns: [] as DatiDns[] };
       setIp(dati.ip ?? "");
+      setLetto(dati.letto === true);
       setDns(dati.dns);
     } catch {
       setDns([]); // il DNS è un di più: se non risponde la scheda resta com'è
@@ -69,7 +71,16 @@ export function DnsDiHost({ fonte, giro = 0 }: { fonte: string; giro?: number })
   }, [fonte]);
   useEffect(() => { void carica(); }, [carica, giro, riletture]);
 
-  if (dns.length === 0) return null;
+  // Il DNS è stato letto ma di questo indirizzo non sa niente: si dice, altrimenti sembra che il riquadro manchi (Riccardo, 20/11/2026).
+  if (dns.length === 0) {
+    if (!letto) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+        <span className="flex items-center gap-2 font-semibold"><Globe className="h-4 w-4" />DNS di Active Directory</span>
+        <span className="text-muted-foreground">nessun nome e nessun reverse per {ip || "questo indirizzo"}</span>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2">
       {dns.map((d) => (

@@ -154,6 +154,11 @@ function diUnIp(q: Quadro, ip: string): DnsDiHost {
   };
 }
 
+/** C'è almeno un DNS di Active Directory letto: serve a dire «nel DNS non c'è niente» invece di tacere. */
+export function dnsAdLetto(): boolean {
+  return getAdIntegrations().some((i) => getZoneDnsAd(i.id).length > 0);
+}
+
 /** Com'è messo un IP nel DNS, per ogni dominio che ne sa qualcosa. Vuoto: nessun DNS letto, o niente su questo IP. */
 export function dnsDiIp(ip: string): DnsDiHost[] {
   if (!IPV4.test(ip)) return [];

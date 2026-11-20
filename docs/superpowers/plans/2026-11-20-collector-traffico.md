@@ -7,7 +7,7 @@
 **Architettura:** sulla VM `pmacct` conta, un servizio Python senza dipendenze tiene le righe in SQLite e le espone su un'API HTTPS col cursore. IPAM legge ogni 5 minuti (schema di `src/lib/trunk/sensore-trunk.ts`), tiene coppie e abitudini nel database del tenant e calcola le anomalie. I controlli sul contenuto sono un secondo processo sulla VM che guarda solo l'inizio delle connessioni.
 **Spec:** `docs/superpowers/specs/2026-11-20-collector-traffico-design.md`
 **Livello di controllo:** leggero (proposto nella spec, approvata da Riccardo il 20/11/2026).
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-20
+**Stato:** in corso (Task 1-4 e 6 fatti; 5 e 7 fermi in attesa di Riccardo) · **Ultimo aggiornamento:** 2026-11-20
 
 ## Vincoli globali
 
@@ -92,7 +92,9 @@ Funzioni: `scrivi_finestra(inizio, coppie)`, `leggi_coppie(dopo: int, limite: in
 
 ---
 
-### [ ] Task 2 — Il banco su PX-NAS e la misura
+### [x] Task 2 — Il banco su PX-NAS e la misura
+
+Verifica: `curl -sk -K /root/curl-gettone "https://127.0.0.1:8477/v1/coppie?dopo=0"` sulla VM 109 → le coppie `192.168.99.88 → 192.168.99.221` porta 502 e `→ 192.168.99.222` porta 80 (20/11). Misura a 50, 100, 200 Mbit/s: nessun pacchetto scartato da pcap, byte contati pari ai mandati, CPU circa 7%, RAM 153 MB. Copertura a 200 Mbit/s intera: **non c'è da fermarsi**. Tabella, casi 1 e 2 e comandi in `collector-traffico/README.md`; numeri veri nella spec.
 
 **Dipende da:** Task 1.
 
@@ -110,7 +112,9 @@ Funzioni: `scrivi_finestra(inizio, coppie)`, `leggi_coppie(dopo: int, limite: in
 
 ---
 
-### [ ] Task 3 — IPAM legge il collector
+### [x] Task 3 — IPAM legge il collector
+
+Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"` → verde; `npx tsc --noEmit` → nessun errore in `src/` (tre errori già presenti in `.next/types`, file generati). Giro vero dal Mac col codice di IPAM (cartella dati isolata) contro `collector-banco`: 119 righe lette, cursore 119, `192.168.99.221` porta 502 e `192.168.99.222` porta 80 da `192.168.99.88`; impronta sbagliata rifiutata (`ImprontaCambiata`), gettone sbagliato rifiutato. **Non provato**: la rotta HTTP su un'installazione dev con una sessione vera (serve un'utenza: si fa col Task 5).
 
 **Dipende da:** Task 1 (formato dell'API).
 
@@ -156,7 +160,9 @@ Rotte: `GET/POST /api/traffico/collector` e `PATCH/DELETE /api/traffico/collecto
 
 ---
 
-### [ ] Task 4 — Abitudini e anomalie
+### [x] Task 4 — Abitudini e anomalie
+
+Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"` → verde (una prova per regola, apprendimento che tace, «normale» che non torna). Giro vero sul banco, dal codice: con la rete 99 fuori dall'apprendimento e `192.168.99.221` censito come impianto, `banco-carico` che apre la 502 genera `impianto` (gravità 3); «è normale» la spegne e conferma l'abitudine.
 
 **Dipende da:** Task 3.
 
@@ -218,7 +224,9 @@ Rotte: `GET /api/traffico/anomalie?stato=&tipo=&pagina=` (`requireAuth`); `PATCH
 
 ---
 
-### [ ] Task 5 — Interfaccia
+### [!] Task 5 — Interfaccia
+
+**Fermo: aspetta Riccardo.** L'interfaccia si propone oggetto per oggetto prima di scriverla (vincoli del piano). La proposta è nel resoconto della sessione del 20/11 e in `TASKS.md`; le rotte che la pagina userà ci sono già (`/api/traffico/anomalie`, `/api/traffico/host/[ip]`, `/api/traffico/collector`, `/api/traffico/controlli`).
 
 **Dipende da:** Task 4.
 
@@ -234,7 +242,9 @@ Rotte: `GET /api/traffico/anomalie?stato=&tipo=&pagina=` (`requireAuth`); `PATCH
 
 ---
 
-### [ ] Task 6 — Nomi e controlli sul contenuto
+### [x] Task 6 — Nomi e controlli sul contenuto
+
+Verifica: `python3 -m unittest discover -s collector-traffico/tests -t collector-traffico` → 42 prove, OK. Sul banco: un accesso per controllo verso server finti → 11 fatti su 12 dal traffico vero (manca solo la posta via SMTP, coperta dalle prove), letti da IPAM come anomalie (`chiaro_ftp` gravità 3, `tls_vecchio` e `snmp_vecchio` gravità 2); `grep -r ProvaSegreta /var/lib/collector-traffico /var/log /etc/collector-traffico` e il journal sulla VM → 0. Secondo gruppo: solo misurato (CPU circa 3% sullo stesso traffico, poco indicativo), spento.
 
 **Dipende da:** Task 2 (banco) e Task 4.
 
@@ -285,7 +295,9 @@ Secondo gruppo (protocollo riconosciuto su qualunque porta): **solo la misura**.
 
 ---
 
-### [ ] Task 7 — NetFlow e sFlow
+### [!] Task 7 — NetFlow e sFlow
+
+**Fermo a metà: aspetta Riccardo.** Fatta la parte di codice: `nfacctd.conf`, `sfacctd.conf`, i due servizi spenti di serie, `FLUSSI` nell'env, colonna `fonte` sul collector e in IPAM (dentro la chiave, con ricostruzione della tabella nata senza). Verifica: prove verdi con un file di esempio di `nfacctd` e con mirror e NetFlow dello stesso collector che non si sommano. **Manca**: uno switch e un firewall veri della rete Domarc che esportino verso `collector-banco`, e i loro comandi nel README.
 
 **Dipende da:** Task 1.
 
@@ -300,6 +312,11 @@ Secondo gruppo (protocollo riconosciuto su qualunque porta): **solo la misura**.
 ## Registro
 
 - **20/11, Task 1 fatto.** Scostamenti: (a) le prove sono `unittest` della libreria standard, non pytest (sul Mac non è installato; il vincolo «solo libreria standard» resta intero); (b) multicast e broadcast diventano `diffusione` invece di `esterno`, altrimenti ogni host con mDNS o SSDP sembrerebbe uscire verso internet e al Task 4 ogni impianto darebbe l'anomalia; (c) alle reti interne di serie si aggiungono `fc00::/7` e `fe80::/10` (IPv6 locale); (d) `MIRROR_DOPPIO=1` è già nel servizio (caso 2), la misura resta al Task 2; (e) la scheda in mirror parte con ARP e IPv6 spenti, perché Linux su una scheda accesa senza indirizzo manda comunque gli annunci IPv6. **Da verificare sulla VM al Task 2**: i nomi delle chiavi di `pmacctd.conf` (`files_umask`, `print_output_file` con l'ora nel nome) e che l'ora nel nome sia la chiusura della finestra.
+
+- **20/11, Task 2 fatto.** Su PX-NAS: VM 109 `collector-banco` e contenitore 110 `banco-carico` (il traffico di prova parte da lui: `.221` e `.222` sono indirizzi di `banco-sim` stesso, il traffico da `banco-sim` a sé non passa dal veth). Il bridge della rete 99 è `vmbr0`, non `vmbr99`. Scostamenti: la seconda scheda si stacca dal bridge (`nomaster`) per ricevere solo il mirror; TSO e GSO spenti sul contenitore di carico, altrimenti la misura è falsata; `pidstat` non ha dato righe, la CPU viene da `/proc/stat`. Trovato e corretto: `pmacctd` con la cache di serie veniva ucciso per memoria (ora 8191 voci); fermato con SIGTERM perdeva la finestra in corso (ora SIGINT). Trovato e scritto: il raddoppio (caso 2) vale solo fra due porte entrambe in mirror, quindi `MIRROR_DOPPIO` non è una cura generale.
+- **20/11, Task 3 e 4 fatti.** Scostamenti: (a) il gettone parte solo dopo il controllo dell'impronta (connessione TLS aperta a mano, poi la richiesta sopra); (b) la modifica dello stato di un'anomalia chiede un amministratore, perché DA-IPAM non ha una guardia «operatore»; (c) `non_censito` vale solo dentro una rete censita, come per il DNS di AD, altrimenti è rumore; (d) gli IP fuori dalle reti censite fanno l'apprendimento insieme (rete 0); (e) una coppia dà un avviso solo, il più grave (impianto, poi porta nuova, poi coppia nuova); (f) `volume` chiede almeno 7 giorni di storia; (g) una finestra spezzata fra due pagine si valuta in due pezzi: `molti_contatti` può sfuggire su quel confine. **Non fatto (caso 5)**: l'aggancio all'host che aveva l'IP in quella finestra con la mappa MAC-IP. Le coppie restano per IP.
+- **20/11, Task 6 fatto, Task 7 a metà.** Scostamenti: `smb1` scatta sulla risposta del server, non sulla richiesta (i client moderni la mandano per chiedere «anche SMB2?»); i nomi si scrivono per finestra di 5 minuti (righe solo aggiunte, adatte al cursore); `nome_conteso` e `dns_anomalo` per numero di richieste hanno lo stato in `ascolto.py`; in IPAM c'è anche la rotta `/api/traffico/controlli` e la colonna `cursore_nomi`. I commit dei Task 6 e 7 sono uno solo: toccano gli stessi file (`archivio.py`, `lettura.ts`, `schema.ts`) e separarli a mano non valeva il rischio.
+- **Resta sul PX-NAS**: VM 109, contenitore 110, l'immagine `debian-12-genericcloud-amd64.qcow2`, il mirror `tc` su `veth103i0` (non sopravvive a un riavvio) e gli script in `/tmp`. Nel contenitore 110 postfix è fermo.
 
 ## Consuntivo
 ### Fatto

@@ -1,10 +1,22 @@
 # TASKS — DA-IPAM
 
-## 2026-11-20 — Collector del traffico in mirror (idea)
+## 2026-11-20 — Collector del traffico in mirror
 
 - [ ] Riccardo (20/11), idea, non da fare ora: VM collector distribuite (una per sede o cliente) che analizzano il traffico in mirror e mandano a IPAM le anomalie fra gli host; IPAM le aggancia agli host che conosce già. Lato sonda e rapporto con l'NDR di Codex: `TASKS.md` di DA-Vul-can, sezione del 14/11.
 - [x] 20/11: spec scritta, `docs/superpowers/specs/2026-11-20-collector-traffico-design.md` (VM a sé e leggera, IPAM legge col cursore come dal sensore trunk, sei tappe). Approvata da Riccardo il 20/11, con i controlli sul contenuto per le anomalie conclamate.
-- [ ] Piano `docs/superpowers/plans/2026-11-20-collector-traffico.md`, 7 task, livello leggero. Si avvia solo quando lo dice Riccardo. Fuori dal piano: installazione in Deploy-Appliance e prima sede di un cliente.
+- [~] Piano `docs/superpowers/plans/2026-11-20-collector-traffico.md`, 7 task, livello leggero. Fuori dal piano: installazione in Deploy-Appliance e prima sede di un cliente.
+  - [x] Task 1, collector (`collector-traffico/`): `pmacctd` conta, servizio Python con la sola libreria standard, SQLite, API HTTPS col gettone. 20/11.
+  - [x] Task 2, banco su PX-NAS (VM 109 `collector-banco`, contenitore 110 `banco-carico`): a 200 Mbit/s conta tutto, CPU circa 7%, RAM 153 MB. Non misurato: migliaia di flussi insieme, porta SPAN fisica. Tabella in `collector-traffico/README.md`. 20/11.
+  - [x] Task 3, IPAM legge il collector col cursore (`src/lib/traffico/`), job ogni 5 minuti, rotte `/api/traffico/collector` e `/api/traffico/host/[ip]`. 20/11.
+  - [x] Task 4, abitudini e anomalie, rotte `/api/traffico/anomalie`. 20/11.
+  - [!] Task 5, interfaccia: **aspetta il sì di Riccardo alla proposta** (pagina `/traffico`, scheda «Con chi parla» nell'host, riga dei collector, riga «in apprendimento»). Con l'interfaccia va provata anche una rotta su un'installazione vera, con una sessione.
+  - [x] Task 6, nomi DNS e TLS e 12 controlli sul contenuto; sul banco 11 su 12 dal traffico vero, la password di prova in nessun file. Secondo gruppo solo misurato, spento. 20/11.
+  - [!] Task 7, NetFlow e sFlow: codice fatto e provato con un file di esempio; **mancano uno switch e un firewall veri** che esportino verso `collector-banco`.
+  - [ ] Non fatto, caso 5 del piano: agganciare la coppia all'host che aveva quell'IP nella finestra (mappa MAC-IP). Oggi le coppie restano per IP.
+  - [ ] Da decidere con Riccardo: come si prende il mirror quando lo switch copia due volte (`MIRROR_DOPPIO` dimezza tutto, giusto solo se ogni pacchetto arriva doppio; meglio la copia in una sola direzione). Scritto nel README, «I casi del piano».
+  - [ ] Da provare prima di una sede vera: migliaia di flussi insieme (il costo di `pmacctd` cresce coi flussi, non coi byte) e una giornata intera.
+  - [ ] Trovato il 20/11 e non toccato: il DNS del PX-NAS (`192.168.6.254`) non risponde, il nodo non risolve i nomi. Decide Riccardo.
+  - [ ] Banco da tenere o buttare (Riccardo): VM 109 e contenitore 110 sul PX-NAS, comandi nel README.
 - Riccardo (20/11): «questo servizio deve rimanere separato e distribuito e alternativo alla sonda pesante». Scritto nella spec (decisione 6) e nei vincoli del piano. Esecuzione avviata da lui il 20/11 in una sessione nuova.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).
 

@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
+### Aggiunto
+- **Collector di traffico: chi parla con chi, dal mirror** (Riccardo, 20/11: una VM leggera, distribuita, alternativa alla sonda pesante con Suricata e Zeek). In `collector-traffico/` il servizio da installare su una Debian: `pmacctd` conta, un programma Python senza dipendenze tiene le coppie in SQLite e le espone su HTTPS; un secondo processo legge l'inizio delle connessioni per i nomi (DNS, TLS) e per dodici controlli sui casi conclamati (credenziali in chiaro, SMB1, TLS vecchio, scritture verso un PLC), salvando il fatto e mai il valore. IPAM legge i collector ogni 5 minuti col cursore, tiene coppie e abitudini per cliente e calcola le anomalie (coppia o porta nuova, molti contatti, impianti, VLAN chiuse, host non censito, volume), con 14 giorni di apprendimento per rete. Perché: sapere chi parla con chi fra gli host senza una sonda che pesi gigabyte. Misurato sul banco: 200 Mbit/s contati per intero col 7% di una vCPU e 153 MB di RAM. **Senza un collector registrato non cambia niente**; la pagina non c'è ancora (si propone a Riccardo prima di scriverla) e NetFlow/sFlow aspettano la prova con un apparato vero.
+
 ### Cambiato
 - **Il DNS di Active Directory anche nel pannello laterale dell'host** (Riccardo, 20/11: «non vedo assolutamente nulla nella scheda che mi dia info sui nomi dns»). Il pannello che si apre dalla riga della subnet mostra nomi, reverse e discrepanze; se il DNS è stato letto ma di quell'indirizzo non sa niente, lo dice.
 

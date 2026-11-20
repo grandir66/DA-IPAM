@@ -7,6 +7,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
 ### Cambiato
+- **Il trunk tiene aggiornati anche gli host che ci sono già** (Riccardo, 20/11: «Sì, aggiornali»). Prima un host già presente riceveva dal trunk solo il MAC mancante: se gli altri giri non lo raggiungevano sembrava fermo anche mentre parlava in rete. Ora «visto il» segue l'ultima osservazione e lo stato passa a online se è stato visto negli ultimi 15 minuti.
+
 - **Il DNS di Active Directory si vede anche dagli apparati, e dice cosa non torna** (Riccardo, 20/11: «la colonna è solo sotto subnet; viene detto che qualcosa non va, aprendo la scheda non viene mostrato nulla»). Colonna «DNS» nell'elenco degli apparati, riquadro nella scheda dell'apparato, e nel riquadro il dettaglio di ogni discrepanza invece della sola etichetta; il collegamento alla scheda «DNS» porta alle anomalie di quell'indirizzo.
 
 - **Più nomi sullo stesso IP non sono più un difetto dell'host** (Riccardo, 18/11: «spesso su un IP ci sono diversi record registrati per motivi reali»). Un host con più nomi o più reverse nel DNS resta «a posto» nel riquadro e nella colonna «DNS»; «Aggiorna il DNS…» aggiunge il nome di DA-IPAM e lascia gli altri; dopo un cambio di IP si spostano tutti i nomi e i reverse del vecchio indirizzo, non solo il primo. Prima un alias voluto faceva comparire «≠», e uno spostamento lasciava indietro gli altri nomi.

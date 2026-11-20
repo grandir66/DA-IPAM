@@ -51,14 +51,19 @@ test("rete con VLAN: host nuovi dal trunk, MAC mancanti compilati, MAC esistenti
     osserva(5, "02:00:00:00:00:17", "10.6.0.17");            // con tag: non è della rete senza VLAN
 
     const e = portaHostDalTrunk({ adesso: ADESSO });
-    assert.deepEqual(e, { creati: 2, mac: 1 });
+    assert.deepEqual(e, { creati: 2, mac: 1, rinfrescati: 2 });
+    // Riccardo, 20/11/2026: un host che c'è già prende «visto il» dal trunk; «online» solo se visto da poco (qui 2 ore fa: no).
+    assert.deepEqual(d.prepare("SELECT last_seen, status FROM hosts WHERE ip = '10.5.0.11'").get(), { last_seen: "2026-10-27 10:00:00", status: "unknown" });
+    d.prepare("UPDATE trunk_osservazioni SET ultima_vista = '2026-10-27T11:55:00' WHERE ip = '10.5.0.11'").run();
+    assert.equal(portaHostDalTrunk({ adesso: ADESSO }).rinfrescati, 1);
+    assert.deepEqual(d.prepare("SELECT last_seen, status FROM hosts WHERE ip = '10.5.0.11'").get(), { last_seen: "2026-10-27 11:55:00", status: "online" });
     assert.deepEqual(host(r5), [
       { ip: "10.5.0.10", mac: "02:00:00:00:00:10", hostname: "stampante" },
       { ip: "10.5.0.11", mac: "AA:AA:AA:00:00:11", hostname: null },
       { ip: "10.5.0.12", mac: "02:00:00:00:00:12", hostname: "nas" },
     ]);
     assert.deepEqual(host(nativa), [{ ip: "10.6.0.16", mac: "02:00:00:00:00:16", hostname: null }]);
-    assert.deepEqual(portaHostDalTrunk({ adesso: ADESSO }), { creati: 0, mac: 0 }, "un secondo giro non cambia niente");
+    assert.deepEqual(portaHostDalTrunk({ adesso: ADESSO }), { creati: 0, mac: 0, rinfrescati: 0 }, "un secondo giro non cambia niente");
   });
 });
 
@@ -107,7 +112,7 @@ test("Aggiungi: rete, poi giro ARP col VID, attesa della sonda, lettura e host",
     assert.equal(stati, 2, "aspetta che la sonda finisca il giro");
     assert.equal(e.rete.vlan_id, 9);
     assert.equal(e.giro, "giro ARP fatto");
-    assert.deepEqual(e.host, { creati: 1, mac: 0 });
+    assert.deepEqual(e.host, { creati: 1, mac: 0, rinfrescati: 0 });
     assert.deepEqual(host(e.rete.id).map((h) => [h.ip, h.mac, h.hostname]), [["10.10.9.5", "02:00:00:00:09:01", "pc"]]);
   });
 });

@@ -3,6 +3,7 @@
 ## 2026-11-20 — Collector del traffico in mirror (idea)
 
 - [ ] Riccardo (20/11), idea, non da fare ora: VM collector distribuite (una per sede o cliente) che analizzano il traffico in mirror e mandano a IPAM le anomalie fra gli host; IPAM le aggancia agli host che conosce già. Lato sonda e rapporto con l'NDR di Codex: `TASKS.md` di DA-Vul-can, sezione del 14/11.
+- [x] 20/11: spec scritta, `docs/superpowers/specs/2026-11-20-collector-traffico-design.md` (VM a sé e leggera, IPAM legge col cursore come dal sensore trunk, sei tappe). **Da approvare da Riccardo**; poi il piano.
 
 ## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)
 

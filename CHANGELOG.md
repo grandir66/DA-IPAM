@@ -17,6 +17,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **Installatore del collector di traffico**: lanciato da una cartella diversa da `/opt/collector-traffico` non copiava le configurazioni di NetFlow e sFlow e si fermava a metà, lasciando i servizi spenti. Trovato installando il primo collector su un nodo Proxmox dell'ufficio (20/11). Con l'occasione nel repo c'è lo script che su Proxmox copia l'uplink delle VM verso il collector e si rimette da solo a ogni avvio (`collector-traffico/proxmox/`).
 
 ### Cambiato
+- Subnet: il riquadro «Reti viste, da confermare» nasce chiuso e si apre a richiesta, perché l'elenco delle reti sentite dal trunk spingeva in basso le subnet vere (Riccardo, 20/11).
 - **Il DNS di Active Directory anche nel pannello laterale dell'host** (Riccardo, 20/11: «non vedo assolutamente nulla nella scheda che mi dia info sui nomi dns»). Il pannello che si apre dalla riga della subnet mostra nomi, reverse e discrepanze; se il DNS è stato letto ma di quell'indirizzo non sa niente, lo dice.
 
 - **Il trunk tiene aggiornati anche gli host che ci sono già** (Riccardo, 20/11: «Sì, aggiornali»). Prima un host già presente riceveva dal trunk solo il MAC mancante: se gli altri giri non lo raggiungevano sembrava fermo anche mentre parlava in rete. Ora «visto il» segue l'ultima osservazione e lo stato passa a online se è stato visto negli ultimi 15 minuti.

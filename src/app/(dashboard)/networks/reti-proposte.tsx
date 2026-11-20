@@ -30,6 +30,8 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
   const router = useRouter();
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [fatte, setFatte] = useState<Set<string>>(new Set());
+  // Chiuso di serie (Riccardo, 20/11/2026): l'elenco delle reti viste non deve stare sempre sopra le subnet.
+  const [aperto, setAperto] = useState(false);
   // Le reti pubbliche in fondo: di solito sono la WAN, non una rete del cliente.
   const restanti = proposte
     .filter((p) => !fatte.has(p.cidr))
@@ -66,8 +68,14 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
       titolo="Reti viste, da confermare"
       conteggio={restanti.length}
       sottotitolo="Sentite dal sensore trunk e non ancora in DA-IPAM: confermandole entrano con i loro host"
+      className={aperto ? undefined : "[&>header]:border-b-0"}
+      azioni={
+        <Button size="sm" variant="outline" aria-expanded={aperto} onClick={() => setAperto((v) => !v)}>
+          {aperto ? "Chiudi ▴" : "Apri ▾"}
+        </Button>
+      }
     >
-      <ul className="divide-y">
+      <ul className={aperto ? "divide-y" : "hidden"}>
         {restanti.map((p) => (
           <li key={`${p.vid}-${p.cidr}`} className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">

@@ -1,6 +1,6 @@
 # Collector di traffico — progetto
 
-> Spec del 20/11/2026, chiesta da Riccardo. **Stato: bozza da approvare, nessun codice scritto.**
+> Spec del 20/11/2026, chiesta da Riccardo. **Stato: approvata da Riccardo il 20/11/2026.** Piano: `docs/superpowers/plans/2026-11-20-collector-traffico.md`.
 > Riga in `TASKS.md` di DA-IPAM (20/11) e di DA-Vul-can (sezione del 14/11).
 
 ## Cos'è e cosa non è

@@ -1,7 +1,9 @@
 /**
  * Traffico dal collector (20/11/2026): tabelle nel database del tenant, solo additive.
  * Nessun CHECK e nessuna chiave esterna verso `hosts`: le coppie restano per IP anche se
- * l'host viene tolto. Spec: docs/superpowers/specs/2026-11-20-collector-traffico-design.md
+ * l'host viene tolto. `traffico_ore` (23/11) è la stessa coppia per ora invece che per giorno,
+ * tenuta 7 giorni: serve a «Ultima ora» e all'andamento; la chiave comincia dall'ora e dalla coppia
+ * perché il massimo fra collector si legge senza riordinare. Spec: docs/superpowers/specs/2026-11-20-collector-traffico-design.md
  */
 import type Database from "better-sqlite3";
 
@@ -40,6 +42,13 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       giorno TEXT NOT NULL, client TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
       conteggio INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
       PRIMARY KEY (giorno, client, tipo, nome));
+    CREATE TABLE IF NOT EXISTS traffico_ore (
+      ora TEXT NOT NULL, client TEXT NOT NULL, server TEXT NOT NULL, proto INTEGER NOT NULL, porta INTEGER NOT NULL,
+      collector_id INTEGER NOT NULL, fonte TEXT NOT NULL DEFAULT 'mirror',
+      byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL, esterni INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (ora, client, server, proto, porta, collector_id, fonte)) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_traffico_ore_client ON traffico_ore (client, ora);
+    CREATE INDEX IF NOT EXISTS idx_traffico_ore_server ON traffico_ore (server, ora);
   `);
   // `fonte` (mirror, netflow, sflow) fa parte della chiave: i flussi campionati di un apparato non si
   // sommano al mirror dello stesso tratto. La chiave primaria non si altera: la tabella nata senza

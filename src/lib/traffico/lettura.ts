@@ -19,6 +19,8 @@ import { ripulisciRumore, rumoreDiSonda } from "./sonde";
 export const PAGINA = 1000;
 export const PAGINE_PER_GIRO = 20;
 export const GIORNI_TENUTI = 90;
+/** Le coppie per ora (`traffico_ore`) si tengono una settimana. */
+export const GIORNI_ORE = 7;
 const FONTI = new Set(["mirror", "netflow", "sflow"]);
 
 export interface RigaCollector {
@@ -140,6 +142,7 @@ export function eliminaCollector(id: number): boolean {
   const d = dbTraffico();
   return d.transaction(() => {
     d.prepare("DELETE FROM traffico_coppie WHERE collector_id = ?").run(id);
+    d.prepare("DELETE FROM traffico_ore WHERE collector_id = ?").run(id);
     return d.prepare("DELETE FROM traffico_collector WHERE id = ?").run(id).changes > 0;
   })();
 }
@@ -177,12 +180,23 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
       esterni = MAX(traffico_coppie.esterni, excluded.esterni),
       prima_vista = MIN(traffico_coppie.prima_vista, excluded.prima_vista),
       ultima_vista = MAX(traffico_coppie.ultima_vista, excluded.ultima_vista)`);
+  // La stessa riga anche per ora: «Ultima ora» e l'andamento (piano del 23/11, tappa 1).
+  const insOra = d.prepare(`
+    INSERT INTO traffico_ore (ora, client, server, proto, porta, collector_id, fonte, byte, pacchetti, flussi, esterni)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(ora, client, server, proto, porta, collector_id, fonte) DO UPDATE SET
+      byte = traffico_ore.byte + excluded.byte,
+      pacchetti = traffico_ore.pacchetti + excluded.pacchetti,
+      flussi = traffico_ore.flussi + excluded.flussi,
+      esterni = MAX(traffico_ore.esterni, excluded.esterni)`);
   return d.transaction(() => {
     // Le scansioni di una sonda nota non si salvano (vedi `sonde.ts`); il cursore avanza lo stesso.
     const buone = p.righe.filter((r) => rigaValida(r) && !rumoreDiSonda(r, sonde));
     const finestre = new Map<string, RigaCollector[]>();
     for (const r of buone) {
-      ins.run(r.inizio.slice(0, 10), collectorId, FONTI.has(r.fonte ?? "") ? r.fonte : "mirror", r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
+      const fonte = FONTI.has(r.fonte ?? "") ? r.fonte : "mirror";
+      ins.run(r.inizio.slice(0, 10), collectorId, fonte, r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
+      insOra.run(`${r.inizio.slice(0, 13)}:00:00`, r.client, r.server, r.proto, r.porta, collectorId, fonte, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0);
       const f = finestre.get(r.inizio);
       if (f) f.push(r);
       else finestre.set(r.inizio, [r]);
@@ -243,6 +257,7 @@ function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
   if (getTenantSetting("traffico_ultima_pulizia") === oggi) return;
   d.prepare("DELETE FROM traffico_coppie WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
   d.prepare("DELETE FROM traffico_nomi WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
+  d.prepare("DELETE FROM traffico_ore WHERE ora < datetime('now', ?)").run(`-${GIORNI_ORE} days`);
   // Il volume si giudica sul giorno chiuso: ieri contro i 14 giorni prima.
   calcolaVolumi(d, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
   setTenantSetting("traffico_ultima_pulizia", oggi);

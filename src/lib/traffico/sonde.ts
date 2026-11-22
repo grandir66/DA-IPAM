@@ -73,6 +73,7 @@ export function ripulisciRumore(d: Database.Database, sonde: Set<string>): { cop
       const q = elenco.map(() => "?").join(",");
       const dove = `client IN (${q}) OR (server IN (${q}) AND (porta = 0 OR proto = 1))`;
       esito.coppie = d.prepare(`DELETE FROM traffico_coppie WHERE ${dove}`).run(...elenco, ...elenco).changes;
+      d.prepare(`DELETE FROM traffico_ore WHERE ${dove}`).run(...elenco, ...elenco);
       esito.abitudini = d.prepare(`DELETE FROM traffico_abitudini WHERE confermata = 0 AND (${dove})`).run(...elenco, ...elenco).changes;
       esito.anomalie += d.prepare(`DELETE FROM traffico_anomalie WHERE stato = 'nuova' AND client IN (${q})`).run(...elenco).changes;
     }

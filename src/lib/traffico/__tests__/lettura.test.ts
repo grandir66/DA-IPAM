@@ -14,6 +14,7 @@ import {
   sincronizzaTraffico, type Lettore, type RigaCollector,
 } from "@/lib/traffico/lettura";
 import { normalizzaImpronta, urlCollector } from "@/lib/traffico/collector-client";
+import { andamentoTraffico, insiemeTraffico } from "@/lib/traffico/insieme";
 
 const T = "TRAFF2011";
 const oggi = new Date().toISOString().slice(0, 10);
@@ -176,4 +177,45 @@ test("sonde note (22/11): le loro scansioni non si salvano, chi apre un loro ser
     assert.equal(conta(), 1);
     assert.equal((d.prepare("SELECT cursore_coppie AS c FROM traffico_collector WHERE id = ?").get(id) as { c: number }).c, 4);
   });
+});
+
+test("le coppie per ora: stessa ora si somma, ore diverse restano distinte, il massimo fra collector, via col collector", async () => {
+  const T2 = "TRAFFORE23";
+  try {
+    await withTenant(T2, async () => {
+      const a = creaCollector({ nome: "a", sede: "", url: "https://192.168.99.89:8477", gettone: "g", impronta: "AA" });
+      creaCollector({ nome: "b", sede: "", url: "https://192.168.99.90:8477", gettone: "g", impronta: "AA" });
+      const adesso = new Date();
+      const hh = (d: Date) => d.toISOString().slice(11, 13);
+      const ora = hh(adesso);
+      const prima = hh(new Date(adesso.getTime() - 3 * 3_600_000));
+      // i due collector vedono le stesse righe: non si sommano fra loro
+      const righe = [
+        riga(1, "192.168.99.88", "192.168.99.221", 502, 100, `${ora}:00:00`),
+        riga(2, "192.168.99.88", "192.168.99.221", 502, 50, `${ora}:05:00`),
+        riga(3, "192.168.99.88", "192.168.99.221", 502, 7, `${prima}:00:00`),
+      ];
+      await sincronizzaTraffico(finto(righe));
+      const d = dbTraffico();
+      const perOra = d.prepare("SELECT ora, byte FROM traffico_ore WHERE collector_id = ? ORDER BY byte").all(a) as { ora: string; byte: number }[];
+      assert.deepEqual(perOra.map((x) => x.byte), [7, 150]);
+      assert.ok(perOra.every((x) => x.ora.endsWith(":00:00")));
+      const stessoGiorno = ora >= prima; // a cavallo della mezzanotte UTC la riga «prima» ha la data di oggi ma un'ora futura
+      const ultimaOra = insiemeTraffico({ vista: "coppie", giorni: 0 });
+      assert.equal(ultimaOra.tessere.byte, stessoGiorno ? 150 : 157);
+      assert.ok(ultimaOra.dalle);
+      const oggiTutto = insiemeTraffico({ vista: "coppie", giorni: 1 });
+      assert.equal(oggiTutto.tessere.byte, 157);
+      assert.deepEqual([oggiTutto.coppie[0].pacchetti, oggiTutto.coppie[0].flussi], [3, 3]);
+      const punti = andamentoTraffico({ host: "192.168.99.88" }).punti;
+      assert.equal(punti.length, 24);
+      assert.equal(punti.at(-1)!.byte, 150);
+      assert.equal(andamentoTraffico({ host: "192.168.99.1" }).punti.reduce((s, p) => s + p.byte, 0), 0);
+      eliminaCollector(a);
+      assert.equal((d.prepare("SELECT COUNT(*) AS n FROM traffico_ore WHERE collector_id = ?").get(a) as { n: number }).n, 0);
+    });
+  } finally {
+    closeTenantDb(T2);
+    deleteTenantDatabase(T2);
+  }
 });

@@ -9,7 +9,7 @@ sicuramente le network sconosciute, dando un nome agli oggetti pur non inserendo
 voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 **Viene dopo:** `docs/superpowers/plans/2026-11-20-collector-traffico.md` (collector, lettura, anomalie, interfaccia: fatti).
 **Livello di controllo:** leggero per le tappe 1-6; la tappa 7 è zona rossa (dati personali).
-**Stato:** da cominciare · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** tappa 1 in corso (dati fatti, interfaccia da approvare) · **Ultimo aggiornamento:** 2026-11-23
 
 ## Dove siamo
 
@@ -57,7 +57,7 @@ voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 
 ---
 
-### [ ] Tappa 1 — Quello che c'è già e non si vede
+### [~] Tappa 1 — Quello che c'è già e non si vede
 
 Solo IPAM, nessun cambio al collector.
 
@@ -65,6 +65,12 @@ Solo IPAM, nessun cambio al collector.
   host, byte, pacchetti, connessioni) riempita nello stesso passaggio in cui si scrivono le coppie, tenuta 7 giorni.
 - In «Chi parla con chi»: periodo «Ultima ora»; colonne pacchetti e connessioni; in «Per host» quanti esterni diversi contatta.
 - Un grafico piccolo dell'andamento (per la rete scelta o per un host), tavolozza per daltonici e tratteggi.
+
+- [x] Dati: `traffico_ore`, riempimento, sfoltimento a 7 giorni, «Ultima ora» (`giorni=0`), pacchetti, connessioni ed
+  esterni nelle tre viste, `GET /api/traffico/andamento`. Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
+  28 su 28; `npx eslint src/lib/traffico src/app/api/traffico/andamento` pulito (23/11). Non ancora guardato sull'hub.
+- [ ] Interfaccia: proposta a Riccardo il 23/11, si scrive al suo sì.
+- [ ] Sull'hub: contare le righe di `traffico_ore` dopo 24 ore e scriverle nel Registro.
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.
 
@@ -139,6 +145,14 @@ chi ha fatto accesso a un server di prova.
 ## Registro
 
 - 2026-11-23: piano scritto e approvato da Riccardo. Esecuzione da una sessione nuova.
+- 2026-11-23, tappa 1, dati. **Scostamento dal piano**: `traffico_ore` non è per «rete o host» ma per coppia e servizio,
+  come `traffico_coppie` con l'ora al posto del giorno. Motivi: «Ultima ora» deve valere per le tre viste (fra reti, per host,
+  per coppia) e la regola «il massimo fra collector, mai la somma» è esatta solo sulla coppia. Costo: più righe (stima a
+  occhio qualche decina di migliaia per ora coi cinque collector, non misurata); se pesa si accorcia `GIORNI_ORE`.
+  «Ultima ora» è l'ora in corso più quella prima (da 60 a 120 minuti): la risposta porta `dalle` perché la pagina lo dica.
+  Gli esterni di un host sono il conteggio più alto fra i suoi servizi («almeno N»): il collector li conta per servizio e
+  finestra, la somma li conterebbe due volte. La tabella parte vuota: niente si ricostruisce dal passato, il grafico si
+  riempie in 24 ore dal rilascio. `npx tsc --noEmit` dà solo due errori di `.next/types` vecchi, su rotte non di questo lavoro.
 
 ## Consuntivo
 

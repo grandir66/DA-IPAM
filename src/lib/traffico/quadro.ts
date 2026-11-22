@@ -2,6 +2,7 @@
  * Quello che la pagina `/traffico` mostra intorno all'elenco: i collector e come stanno, le reti ancora in
  * apprendimento, quante anomalie aspettano. Più i nomi degli host per gli IP di una pagina di anomalie.
  */
+import { hostPerMacDegliIp } from "./identita";
 import { getNetworks } from "@/lib/db-tenant";
 import { GIORNI_APPRENDIMENTO, RETE_NESSUNA } from "./anomalie";
 import { dbTraffico, elencoCollector } from "./lettura";
@@ -65,6 +66,8 @@ export function nomiDegliIp(ip: string[]): Record<string, NomeDiIp> {
   ).all(...unici) as { id: number; ip: string; nome: string | null }[];
   const esito: Record<string, NomeDiIp> = {};
   for (const r of righe) esito[r.ip] = { id: r.id, nome: r.nome };
+  // Un IP che ha cambiato padrone (DHCP): vale l'host del MAC visto per ultimo con quell'indirizzo.
+  for (const [quale, h] of hostPerMacDegliIp(dbTraffico(), unici)) esito[quale] = h;
   return esito;
 }
 

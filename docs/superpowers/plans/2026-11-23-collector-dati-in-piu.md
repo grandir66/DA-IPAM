@@ -77,7 +77,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.
 
-### [ ] Tappa 2 — Chi è un indirizzo
+### [~] Tappa 2 — Chi è un indirizzo
 
 - Collector: nuova tabella `identita` (visto, mac, ip, vlan, fonte, nome, tipo). Fonti: ARP, DHCP (nome dell'host, classe del
   produttore, opzioni chieste), mDNS, NetBIOS, SSDP, LLDP/CDP (apparato vicino e porta). Una riga per coppia MAC-IP, aggiornata,
@@ -86,6 +86,16 @@ Solo IPAM, nessun cambio al collector.
   a mano); anomalie nuove `ip_doppio` (due MAC per un IP nella stessa finestra) e `mac_cambiato`; la coppia si aggancia
   all'host che aveva l'IP (caso 3).
 - Attenzione: ARP e DHCP non passano dalle porte del filtro attuale. Misura su PX03 prima.
+
+- [x] Collector: `identita.py`, tabella `identita`, `GET /v1/identita`. Verifica: `python3 -m unittest discover -s tests -t .`
+  50 su 50 (23/11).
+- [x] Misura su `DA-COLLECTOR-PX03` (solo lui ha il codice nuovo): vedi Registro. Sotto le soglie, ma di notte e per tre minuti.
+- [x] IPAM: `traffico_identita`, `identita.ts` (aggancio agli host solo dove il campo è vuoto, `ip_doppio`, `mac_cambiato`
+  con interruttore per rete, host per MAC nel caso 3). Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
+  30 su 30, eslint e `tsc` puliti fuori da `.next/types` (23/11).
+- [ ] Rifare la misura su PX03 di giorno, poi portare il collector su PX01, PX02, PX04, PX05.
+- [ ] Interfaccia: proposta a Riccardo (come si presenta un indirizzo, i due MAC nell'avviso).
+- [ ] IP doppio provocato sul banco del PX-NAS.
 
 **Fatto quando:** un host dell'ufficio senza MAC in IPAM lo riceve dal collector, e un IP doppio provocato sul banco compare.
 
@@ -161,6 +171,16 @@ chi ha fatto accesso a un server di prova.
   `da-ipam-update` ha rimandato due volte (23:18 e 23:33) perché `/api/health` dà un giro in corso; lo script aspetta fino a
   3 ore e poi aggiorna comunque, oppure subito con «Aggiorna ora» dall'interfaccia. I cinque collector sono attivi e senza
   errori. Da rifare dopo l'aggiornamento: versione, righe di `traffico_ore` per ora, «Ultima ora» contro «Oggi».
+
+- 2026-11-23, tappa 2. Misura su `DA-COLLECTOR-PX03` (VM 114), prima: `collector-ascolto` 864 s di CPU in 61,5 ore
+  (0,39% di una CPU), 100 MB; `pmacctd` 0,32%; RAM usata 386 MB su 973; copertura 99,987% (149.729 persi su 1,146 miliardi).
+  Dopo (23:49-23:52 UTC del 22, tre minuti, notte): `collector-ascolto` 0,37% di CPU, 9 MB; RAM usata 330 MB; 119 persi su
+  369.651 (99,97%); 415 pacchetti al secondo all'ascolto contro 358 di media; nessun pacchetto saltato nel journal.
+  Raccolte 105 identità: 81 ARP (74 MAC), 15 CDP, 4 DHCP, 4 mDNS, 1 LLDP, su otto VLAN; nessun IP con due MAC.
+  **Limite della misura**: tre minuti di notte non dicono il carico di giorno; `collector-ascolto` ha `MemoryMax=96M`.
+  La cattura è passata da 256 a 600 byte a pacchetto (le opzioni DHCP cominciano al byte 282).
+  Scelte: `mac_cambiato` non corregge l'host, lo dice (gravità bassa); `ip_doppio` solo fra due MAC in ARP sulla stessa
+  VLAN entro 10 minuti, esclusi i MAC virtuali (VRRP, HSRP); i due avvisi hanno l'interruttore per rete come i controlli.
 
 ## Consuntivo
 

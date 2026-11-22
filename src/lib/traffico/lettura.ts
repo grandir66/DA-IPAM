@@ -13,7 +13,8 @@ import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting }
 import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { assicuraTabelleTraffico } from "./schema";
 import { collectorGet, CollectorErrore, type CollectorAccesso } from "./collector-client";
-import { calcolaVolumi, creaRegistratore, creaRegistratoreFatti } from "./anomalie";
+import { calcolaVolumi, creaRegistratore, creaRegistratoreFatti, creaRegistratoreIdentita } from "./anomalie";
+import { GIORNI_IDENTITA, identitaValida, type IdentitaCollector } from "./identita";
 import { ripulisciRumore, rumoreDiSonda } from "./sonde";
 
 export const PAGINA = 1000;
@@ -143,6 +144,7 @@ export function eliminaCollector(id: number): boolean {
   return d.transaction(() => {
     d.prepare("DELETE FROM traffico_coppie WHERE collector_id = ?").run(id);
     d.prepare("DELETE FROM traffico_ore WHERE collector_id = ?").run(id);
+    d.prepare("DELETE FROM traffico_identita WHERE collector_id = ?").run(id);
     return d.prepare("DELETE FROM traffico_collector WHERE id = ?").run(id).changes > 0;
   })();
 }
@@ -213,8 +215,9 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
  * senza l'ascolto (versione vecchia) risponde 404: non è un errore, non c'è niente da leggere.
  */
 async function leggiFattiENomi(
-  d: Database.Database, leggi: Lettore, accesso: CollectorAccesso, c: { id: number; cursore_fatti: number; cursore_nomi: number },
+  d: Database.Database, leggi: Lettore, accesso: CollectorAccesso, c: { id: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number },
   registraFatti: (d: Database.Database, fatti: FattoCollector[]) => void,
+  registraIdentita: (d: Database.Database, collectorId: number, righe: IdentitaCollector[]) => void,
 ): Promise<void> {
   const aPagine = async <T extends { seq: number }>(percorso: string, da: number, scrivi: (p: Pagina<T>) => void) => {
     let cursore = da;
@@ -250,6 +253,11 @@ async function leggiFattiENomi(
     }
     d.prepare("UPDATE traffico_collector SET cursore_nomi = ? WHERE id = ?").run(p.ultimo_seq, c.id);
   });
+  // Chi è un indirizzo (23/11): un collector che non le legge ancora risponde 404, come sopra.
+  await aPagine<IdentitaCollector>("/v1/identita", c.cursore_identita, (p) => {
+    registraIdentita(d, c.id, p.righe.filter(identitaValida));
+    d.prepare("UPDATE traffico_collector SET cursore_identita = ? WHERE id = ?").run(p.ultimo_seq, c.id);
+  });
 }
 
 function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
@@ -258,6 +266,7 @@ function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
   d.prepare("DELETE FROM traffico_coppie WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
   d.prepare("DELETE FROM traffico_nomi WHERE giorno < date('now', ?)").run(`-${GIORNI_TENUTI} days`);
   d.prepare("DELETE FROM traffico_ore WHERE ora < datetime('now', ?)").run(`-${GIORNI_ORE} days`);
+  d.prepare("DELETE FROM traffico_identita WHERE ultima_vista < datetime('now', ?)").run(`-${GIORNI_IDENTITA} days`);
   // Il volume si giudica sul giorno chiuso: ieri contro i 14 giorni prima.
   calcolaVolumi(d, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
   setTenantSetting("traffico_ultima_pulizia", oggi);
@@ -277,13 +286,14 @@ export async function sincronizzaTraffico(
 ): Promise<{ collector: number; righe: number; errori: number }> {
   const d = dbTraffico();
   ripulisciRumore(d, sonde);
-  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
-    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number }[];
+  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi, cursore_identita FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
+    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number }[];
   const esito = { collector: attivi.length, righe: 0, errori: 0 };
   if (attivi.length === 0) return esito;
   // Abitudini e anomalie: reti, host e matrice si leggono una volta per giro.
   const registra = dopoFinestra ?? creaRegistratore();
   const registraFatti = creaRegistratoreFatti(sonde);
+  const registraIdentita = creaRegistratoreIdentita(sonde);
   for (const c of attivi) {
     try {
       const gettone = safeDecrypt(c.gettone_enc);
@@ -298,7 +308,7 @@ export async function sincronizzaTraffico(
         cursore = p.ultimo_seq;
         if (!p.altri) break;
       }
-      await leggiFattiENomi(d, leggi, accesso, c, registraFatti);
+      await leggiFattiENomi(d, leggi, accesso, c, registraFatti, registraIdentita);
       d.prepare("UPDATE traffico_collector SET ultimo_contatto = datetime('now'), ultimo_errore = NULL, copertura = ? WHERE id = ?")
         .run(typeof stato?.copertura === "number" ? stato.copertura : null, c.id);
     } catch (e) {

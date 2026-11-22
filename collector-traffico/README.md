@@ -89,6 +89,20 @@ anche i nomi, al più 200 diversi per host al giorno, contati per finestra di 5 
 **Secondo gruppo** (riconoscere il protocollo su qualunque porta): c'è solo il filtro per misurarlo
 (`SECONDO_GRUPPO_MISURA=1` nell'env), nessun controllo. Non si accende senza il sì di Riccardo.
 
+## Chi è un indirizzo (`identita.py`, 23/11/2026)
+
+Lo stesso processo dell'ascolto legge anche come gli apparati si annunciano: ARP, DHCP (nome dell'host, classe del
+produttore, opzioni chieste), mDNS, NetBIOS, SSDP, LLDP e CDP. In archivio, tabella `identita`: **una riga per
+(MAC, IP, fonte)**, riscritta solo se cambia qualcosa o dopo un'ora, con un numero nuovo perché IPAM la rilegga
+(`GET /v1/identita?dopo=`). Per questo `tcpdump` tiene 600 byte a pacchetto invece di 256 (le opzioni DHCP cominciano al
+byte 282; `CATTURA` nell'ambiente lo cambia) e il filtro chiede anche ARP, le porte 67, 68, 5353, 1900, LLDP e CDP.
+`IDENTITA=0` nell'ambiente lo spegne. Il MAC di chi manda vale solo per i pacchetti a tutti (un router non li inoltra);
+per DHCP vale il MAC scritto nel messaggio.
+
+Misura su `DA-COLLECTOR-PX03`, 22/11 notte (tre minuti dopo il riavvio, traffico basso): `collector-ascolto` 0,37% di una
+CPU (prima 0,39% di media su 61 ore), 9 MB di RAM, copertura 99,97%; 105 righe di identità (81 ARP, 15 CDP, 4 DHCP,
+4 mDNS, 1 LLDP). Da rifare di giorno.
+
 ## NetFlow e sFlow
 
 Seconda sorgente, spenta di serie: `FLUSSI=netflow` (UDP 2055, `nfacctd`) oppure `FLUSSI=sflow` (UDP 6343,

@@ -42,6 +42,13 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       giorno TEXT NOT NULL, client TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
       conteggio INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
       PRIMARY KEY (giorno, client, tipo, nome));
+    CREATE TABLE IF NOT EXISTS traffico_identita (
+      collector_id INTEGER NOT NULL, mac TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '', fonte TEXT NOT NULL,
+      vlan INTEGER NOT NULL DEFAULT 0, nome TEXT NOT NULL DEFAULT '', tipo TEXT NOT NULL DEFAULT '',
+      prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
+      PRIMARY KEY (collector_id, mac, ip, fonte)) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_traffico_identita_ip ON traffico_identita (ip, fonte);
+    CREATE INDEX IF NOT EXISTS idx_traffico_identita_mac ON traffico_identita (mac);
     CREATE TABLE IF NOT EXISTS traffico_ore (
       ora TEXT NOT NULL, client TEXT NOT NULL, server TEXT NOT NULL, proto INTEGER NOT NULL, porta INTEGER NOT NULL,
       collector_id INTEGER NOT NULL, fonte TEXT NOT NULL DEFAULT 'mirror',
@@ -75,5 +82,6 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   // Colonna aggiunta dopo la prima stesura della tabella: ALTER idempotente.
   const colonne = (db.prepare("PRAGMA table_info(traffico_collector)").all() as { name: string }[]).map((c) => c.name);
   if (!colonne.includes("cursore_nomi")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi INTEGER NOT NULL DEFAULT 0");
+  if (!colonne.includes("cursore_identita")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_identita INTEGER NOT NULL DEFAULT 0");
   pronte.add(db);
 }

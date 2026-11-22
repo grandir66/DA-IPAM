@@ -3,17 +3,17 @@ import { z } from "zod";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NO_STORE, readJson } from "@/lib/controllers/route-helpers";
-import { controlliSpenti, impostaControllo, TIPI_FATTO } from "@/lib/traffico/anomalie";
+import { controlliSpenti, impostaControllo, TIPI_CONTROLLO } from "@/lib/traffico/anomalie";
 import { dbTraffico } from "@/lib/traffico/lettura";
 import { retiPerControlli } from "@/lib/traffico/quadro";
 
-const Cambio = z.object({ network_id: z.number().int().min(0), tipo: z.enum(TIPI_FATTO), acceso: z.boolean() });
+const Cambio = z.object({ network_id: z.number().int().min(0), tipo: z.enum(TIPI_CONTROLLO), acceso: z.boolean() });
 
 /** GET /api/traffico/controlli — i controlli sul contenuto e quelli spenti, rete per rete (assente = acceso). */
 export async function GET() {
   const s = await requireAuth();
   if (isAuthError(s)) return s;
-  return withTenantFromSession(() => NextResponse.json({ tipi: TIPI_FATTO, spenti: controlliSpenti(dbTraffico()), reti: retiPerControlli() }, { headers: NO_STORE }));
+  return withTenantFromSession(() => NextResponse.json({ tipi: TIPI_CONTROLLO, spenti: controlliSpenti(dbTraffico()), reti: retiPerControlli() }, { headers: NO_STORE }));
 }
 
 /** PUT /api/traffico/controlli — `{ network_id, tipo, acceso }`: accende o spegne un controllo per una rete. */

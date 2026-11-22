@@ -14,13 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadError } from "@/components/shared/load-error";
 import { Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
-import type { TipoFatto } from "@/lib/traffico/anomalie";
+import type { TipoControllo } from "@/lib/traffico/anomalie";
 import { fraseAnomalia, NOME_TIPO } from "@/lib/traffico/frasi";
 import type { CollectorTraffico } from "@/lib/traffico/lettura";
 
 interface Controlli {
-  tipi: TipoFatto[];
-  spenti: { network_id: number; tipo: TipoFatto }[];
+  tipi: TipoControllo[];
+  spenti: { network_id: number; tipo: TipoControllo }[];
   reti: { id: number; nome: string; cidr: string }[];
 }
 const VUOTO = { nome: "", sede: "", url: "", gettone: "", impronta: "" };
@@ -77,7 +77,7 @@ export function CollectorEControlli({ onCambio }: { onCambio: () => void }) {
     await dopo();
   };
 
-  const cambiaControllo = async (tipo: TipoFatto, acceso: boolean) => {
+  const cambiaControllo = async (tipo: TipoControllo, acceso: boolean) => {
     const r = await fetchJson<{ ok: boolean }>("/api/traffico/controlli", {
       method: "PUT", headers: JSON_TESTA, body: JSON.stringify({ network_id: Number(rete), tipo, acceso }),
     });

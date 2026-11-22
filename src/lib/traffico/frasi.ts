@@ -24,6 +24,8 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   nome_conteso: "Nome conteso",
   impianto_scrittura: "Scrittura su impianto",
   dns_anomalo: "DNS anomalo",
+  ip_doppio: "IP doppio",
+  mac_cambiato: "MAC cambiato",
 };
 
 /** I tipi nell'ordine dei filtri. Sta qui e non in `anomalie.ts`: quel modulo tocca il database e non entra nel browser. */
@@ -81,6 +83,8 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "ntlm1": return "Accesso con NTLM versione 1";
     case "nome_conteso": return typeof d.nome === "string" ? `Due host rispondono per il nome ${d.nome}` : "Due host rispondono per lo stesso nome";
     case "impianto_scrittura": return "Comando di scrittura verso un impianto";
+    case "ip_doppio": return "Due apparati rispondono per lo stesso indirizzo";
+    case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
     case "dns_anomalo": return d.motivo === "molte_richieste" ? "Moltissime richieste DNS in cinque minuti" : "Richieste DNS fuori dal comune";
   }
 }

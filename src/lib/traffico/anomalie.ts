@@ -19,6 +19,7 @@ import { getAllHostsFlat, getCelleMatrice, getNetworks } from "@/lib/db-tenant";
 import { isIpInCidr } from "@/lib/utils";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import type { DopoFinestra, FattoCollector, RigaCollector } from "./lettura";
+import { agganciaHost, anomalieIdentita, scriviIdentita, type IdentitaCollector } from "./identita";
 
 /** I controlli sul contenuto fatti dal collector (`collector-traffico/collector/controlli.py`): il tipo del fatto è il tipo dell'anomalia. */
 export const TIPI_FATTO = [
@@ -26,9 +27,15 @@ export const TIPI_FATTO = [
   "smb1", "tls_vecchio", "ntlm1", "nome_conteso", "impianto_scrittura", "dns_anomalo",
 ] as const;
 export type TipoFatto = (typeof TIPI_FATTO)[number];
+/** Gli avvisi che nascono dalle identità lette dal collector (`identita.ts`): due MAC per un IP, MAC diverso da quello censito. */
+export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato"] as const;
+export type TipoIdentita = (typeof TIPI_IDENTITA)[number];
+/** I tipi che hanno l'interruttore per rete. */
+export const TIPI_CONTROLLO = [...TIPI_FATTO, ...TIPI_IDENTITA] as const;
+export type TipoControllo = (typeof TIPI_CONTROLLO)[number];
 export type TipoAnomalia = "coppia_nuova" | "porta_nuova" | "molti_contatti" | "impianto"
-  | "vlan_chiuse" | "volume" | "non_censito" | TipoFatto;
-export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito", ...TIPI_FATTO];
+  | "vlan_chiuse" | "volume" | "non_censito" | TipoFatto | TipoIdentita;
+export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito", ...TIPI_FATTO, ...TIPI_IDENTITA];
 export type StatoAnomalia = "nuova" | "vista" | "normale";
 export const STATI_ANOMALIA: readonly StatoAnomalia[] = ["nuova", "vista", "normale"];
 
@@ -187,6 +194,24 @@ function lettoreReti(): (ip: string) => number | null {
   };
 }
 
+/**
+ * Le identità lette da un collector: si scrivono, riempiono MAC e nome degli host dove mancano, e danno
+ * `ip_doppio` e `mac_cambiato`. Le sonde note non danno avvisi. Da chiamare dentro la transazione della pagina.
+ */
+export function creaRegistratoreIdentita(sonde: Set<string> = new Set()): (d: Database.Database, collectorId: number, righe: IdentitaCollector[]) => void {
+  const reteDi = lettoreReti();
+  return (d, collectorId, righe) => {
+    if (righe.length === 0) return;
+    scriviIdentita(d, collectorId, righe);
+    agganciaHost(d, righe);
+    const spenti = new Set((d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0").all() as { network_id: number; tipo: string }[])
+      .map((r) => `${r.network_id}|${r.tipo}`));
+    const nuove = anomalieIdentita(d, righe, (ip, tipo) => sonde.has(ip) || spenti.has(`${reteDi(ip) ?? RETE_NESSUNA}|${tipo}`));
+    const quando = righe.reduce((m, r) => (r.visto > m ? r.visto : m), righe[0].visto);
+    scriviAnomalie(d, quando, nuove);
+  };
+}
+
 /** Scrive le anomalie dei fatti letti da un collector. Da chiamare dentro la transazione della pagina. */
 export function creaRegistratoreFatti(sonde: Set<string> = new Set()): (d: Database.Database, fatti: FattoCollector[]) => void {
   const reteDi = lettoreReti();
@@ -204,11 +229,11 @@ export function creaRegistratoreFatti(sonde: Set<string> = new Set()): (d: Datab
 }
 
 /** I controlli spenti, rete per rete (assente = acceso). `network_id` 0 = fuori dalle reti censite. */
-export function controlliSpenti(d: Database.Database): { network_id: number; tipo: TipoFatto }[] {
-  return d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0 ORDER BY network_id, tipo").all() as { network_id: number; tipo: TipoFatto }[];
+export function controlliSpenti(d: Database.Database): { network_id: number; tipo: TipoControllo }[] {
+  return d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0 ORDER BY network_id, tipo").all() as { network_id: number; tipo: TipoControllo }[];
 }
 
-export function impostaControllo(d: Database.Database, networkId: number, tipo: TipoFatto, acceso: boolean): void {
+export function impostaControllo(d: Database.Database, networkId: number, tipo: TipoControllo, acceso: boolean): void {
   d.prepare(`INSERT INTO traffico_controlli (network_id, tipo, acceso) VALUES (?, ?, ?)
     ON CONFLICT(network_id, tipo) DO UPDATE SET acceso = excluded.acceso`).run(networkId, tipo, acceso ? 1 : 0);
 }

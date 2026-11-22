@@ -258,7 +258,11 @@ export function calcolaAndamento(righe: RigaOra[], ore: string[], tiene: (r: Rig
   return ore.map((ora) => per.get(ora)!);
 }
 
-export interface AndamentoTraffico { punti: PuntoAndamento[]; rete: string | null; host: string | null }
+export interface AndamentoTraffico {
+  punti: PuntoAndamento[]; rete: string | null; host: string | null;
+  /** La prima ora che la tabella ha: finché è più recente di 24 ore fa, il grafico è ancora corto. */
+  prima_ora: string | null;
+}
 
 /**
  * L'andamento delle ultime 24 ore, un punto per ora (UTC): tutta la rete, una rete o un host.
@@ -281,5 +285,6 @@ export function andamentoTraffico(filtro: { rete?: string; host?: string }): And
     const { reteDi } = creaReteDi();
     tiene = (r) => reteDi(r.client) === filtro.rete || reteDi(r.server) === filtro.rete;
   }
-  return { punti: calcolaAndamento(righe, ore, tiene), rete: host ? null : filtro.rete ?? null, host };
+  const prima = (d.prepare("SELECT MIN(ora) AS ora FROM traffico_ore").get() as { ora: string | null }).ora;
+  return { punti: calcolaAndamento(righe, ore, tiene), rete: host ? null : filtro.rete ?? null, host, prima_ora: prima };
 }

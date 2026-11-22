@@ -12,9 +12,11 @@ import { fetchJson } from "@/lib/fetch-json";
 import { formattaByte, protoPorta } from "@/lib/traffico/frasi";
 import type { InsiemeTraffico, Servizio, Vista } from "@/lib/traffico/insieme";
 import { Indirizzo } from "./pezzi";
+import { Andamento } from "./andamento";
 
 const TUTTE = "tutte";
 const PERIODI: { giorni: number; testo: string }[] = [
+  { giorni: 0, testo: "Ultima ora" },
   { giorni: 1, testo: "Oggi" },
   { giorni: 7, testo: "7 giorni" },
   { giorni: 30, testo: "30 giorni" },
@@ -46,6 +48,7 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
   const [cerca, setCerca] = useState("");
   const [scritto, setScritto] = useState("");
   const [pagina, setPagina] = useState(1);
+  const [hostAndamento, setHostAndamento] = useState<string | null>(null);
 
   const carica = useCallback(async () => {
     const q = new URLSearchParams({ giorni: String(giorni), vista, pagina: String(pagina) });
@@ -83,23 +86,28 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
   const pagine = dati ? Math.max(1, Math.ceil(dati.totale / dati.perPagina)) : 1;
   const periodo = PERIODI.find((p) => p.giorni === giorni)?.testo.toLowerCase() ?? "";
   const filtrato = rete !== TUTTE || verso !== null || cerca !== "";
+  const numero = (n: number): string => n.toLocaleString("it-IT");
+  const dalle = dati?.dalle ? new Date(`${dati.dalle.replace(" ", "T")}Z`).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : null;
+  const diCosa = hostAndamento ? `Host ${dati?.nomi[hostAndamento]?.nome ?? hostAndamento}` : rete !== TUTTE ? nomeRete(rete).nome : "Tutta la rete";
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-4 gap-3">
         <TesseraNumero titolo="Host che parlano" valore={t?.host ?? null} nota="indirizzi interni visti nel periodo" />
         <TesseraNumero titolo="Coppie" valore={t?.coppie ?? null} nota="chi ha aperto un collegamento verso chi" />
-        <TesseraNumero titolo="Volume" valore={t ? formattaByte(t.byte) : null} nota={filtrato ? "con i filtri scelti" : "tutto il traffico contato"} />
+        <TesseraNumero titolo="Volume" valore={t ? formattaByte(t.byte) : null} nota={t ? `${numero(t.pacchetti)} pacchetti · ${numero(t.flussi)} connessioni` : "tutto il traffico contato"} />
         <TesseraNumero titolo="Verso l'esterno" valore={quota === null ? null : `${quota}%`} qualifica={t ? formattaByte(t.byte_esterno) : undefined} nota="del volume, da o verso fuori" />
       </div>
+
+      {conCollector && <Andamento rete={rete === TUTTE ? null : rete} host={hostAndamento} descrizione={diCosa} onTogliHost={() => setHostAndamento(null)} />}
 
       <Pannello
         titolo="Chi parla con chi"
         conteggio={dati?.totale}
         sottotitolo={
-          vista === "reti" ? "Una riga per verso: la rete di chi apre il collegamento e la rete di chi risponde."
+          (dalle ? `Dalle ${dalle}. ` : "") + (vista === "reti" ? "Una riga per verso: la rete di chi apre il collegamento e la rete di chi risponde."
             : vista === "host" ? "Una riga per host: quanti ne contatta, da quanti è contattato, cosa offre."
-              : "Una riga per collegamento e servizio, i più pesanti in alto."
+              : "Una riga per collegamento e servizio, i più pesanti in alto.")
         }
         corpoClassName="p-0"
         azioni={
@@ -165,6 +173,8 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                 <TableHead className="text-right">Host</TableHead>
                 <TableHead className="text-right">Coppie</TableHead>
                 <TableHead className="text-right">Volume</TableHead>
+                <TableHead className="text-right">Pacchetti</TableHead>
+                <TableHead className="text-right">Connessioni</TableHead>
                 <TableHead>Servizi principali</TableHead>
                 <TableHead className="text-right">Dettaglio</TableHead>
               </TableRow>
@@ -177,6 +187,8 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                   <TableCell className="text-right font-mono tabular-nums">{r.host}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{r.coppie}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formattaByte(r.byte)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(r.pacchetti)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(r.flussi)}</TableCell>
                   <TableCell><Servizi servizi={r.servizi} /></TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="outline" onClick={() => apriVerso(r.da, r.a)}>Vedi le coppie</Button>
@@ -194,7 +206,11 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                 <TableHead className="text-right">Lo contattano</TableHead>
                 <TableHead className="text-right">Volume aperto da lui</TableHead>
                 <TableHead className="text-right">Volume verso di lui</TableHead>
+                <TableHead className="text-right">Pacchetti</TableHead>
+                <TableHead className="text-right">Connessioni</TableHead>
+                <TableHead className="text-right" title="Indirizzi esterni diversi contattati: sono almeno tanti">Esterni</TableHead>
                 <TableHead>Servizi che offre</TableHead>
+                <TableHead className="text-right">Andamento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,7 +221,13 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                   <TableCell className="text-right font-mono tabular-nums">{h.contattato_da}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formattaByte(h.byte_client)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formattaByte(h.byte_server)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(h.pacchetti)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(h.flussi)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{h.esterni > 0 ? `almeno ${numero(h.esterni)}` : "—"}</TableCell>
                   <TableCell><Servizi servizi={h.servizi} /></TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant={hostAndamento === h.ip ? "default" : "outline"} onClick={() => { setHostAndamento(h.ip); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Andamento</Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -218,6 +240,8 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                 <TableHead>Verso chi</TableHead>
                 <TableHead>Servizio</TableHead>
                 <TableHead className="text-right">Volume</TableHead>
+                <TableHead className="text-right">Pacchetti</TableHead>
+                <TableHead className="text-right">Connessioni</TableHead>
                 <TableHead>Ultima volta</TableHead>
               </TableRow>
             </TableHeader>
@@ -228,6 +252,8 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
                   <TableCell><Indirizzo ip={c.server} nomi={dati.nomi} /></TableCell>
                   <TableCell className="font-mono">{protoPorta(c.proto, c.porta)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formattaByte(c.byte)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(c.pacchetti)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{numero(c.flussi)}</TableCell>
                   <TableCell><TempoRelativo data={c.ultima_vista} /></TableCell>
                 </TableRow>
               ))}
@@ -237,7 +263,7 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
       </Pannello>
 
       {dati !== null && dati.nomi_chiesti.length > 0 && (
-        <Pannello titolo="Nomi più chiesti" conteggio={dati.nomi_chiesti.length} sottotitolo={`Dalle richieste DNS e dall'inizio delle connessioni cifrate (${periodo}).`} corpoClassName="p-0">
+        <Pannello titolo="Nomi più chiesti" conteggio={dati.nomi_chiesti.length} sottotitolo={dalle ? `Nomi visti dalle ${dalle}; le volte sono quelle di tutta la giornata.` : `Dalle richieste DNS e dall'inizio delle connessioni cifrate (${periodo}).`} corpoClassName="p-0">
           <Table>
             <TableHeader>
               <TableRow>

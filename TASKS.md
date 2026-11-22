@@ -5,7 +5,7 @@
 Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (non si ricopia qui).
 
 - [x] Tappa 1, dati: coppie per ora (`traffico_ore`), «Ultima ora», pacchetti, connessioni, esterni, rotta dell'andamento
-- [ ] Tappa 1, interfaccia: proposta a Riccardo il 23/11, aspetta il suo sì
+- [x] Tappa 1, interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila») e scritta; non guardata resa (in locale non ci sono dati)
 - [ ] Tappa 1, sull'hub `192.168.4.8`: guardare «Ultima ora» contro «Oggi», il grafico a 24 ore, e contare le righe di `traffico_ore`
 - [ ] Tappe 2-7
 

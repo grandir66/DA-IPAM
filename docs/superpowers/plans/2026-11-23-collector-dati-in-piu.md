@@ -69,7 +69,10 @@ Solo IPAM, nessun cambio al collector.
 - [x] Dati: `traffico_ore`, riempimento, sfoltimento a 7 giorni, «Ultima ora» (`giorni=0`), pacchetti, connessioni ed
   esterni nelle tre viste, `GET /api/traffico/andamento`. Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
   28 su 28; `npx eslint src/lib/traffico src/app/api/traffico/andamento` pulito (23/11). Non ancora guardato sull'hub.
-- [ ] Interfaccia: proposta a Riccardo il 23/11, si scrive al suo sì.
+- [x] Interfaccia: proposta a Riccardo il 23/11 e approvata («Sì, scrivila»). Pulsante «Ultima ora» con «Dalle HH:MM»,
+  colonne Pacchetti, Connessioni, Esterni, riquadro «Andamento, ultime 24 ore» (`traffico/andamento.tsx`).
+  Verifica: `npx eslint "src/app/(dashboard)/traffico" src/lib/traffico` pulito, `npx tsc --noEmit` senza errori fuori da
+  `.next/types` (23/11). **Non guardata resa**: in locale non ci sono dati di traffico.
 - [ ] Sull'hub: contare le righe di `traffico_ore` dopo 24 ore e scriverle nel Registro.
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.

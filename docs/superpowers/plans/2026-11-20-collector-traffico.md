@@ -7,7 +7,7 @@
 **Architettura:** sulla VM `pmacct` conta, un servizio Python senza dipendenze tiene le righe in SQLite e le espone su un'API HTTPS col cursore. IPAM legge ogni 5 minuti (schema di `src/lib/trunk/sensore-trunk.ts`), tiene coppie e abitudini nel database del tenant e calcola le anomalie. I controlli sul contenuto sono un secondo processo sulla VM che guarda solo l'inizio delle connessioni.
 **Spec:** `docs/superpowers/specs/2026-11-20-collector-traffico-design.md`
 **Livello di controllo:** leggero (proposto nella spec, approvata da Riccardo il 20/11/2026).
-**Stato:** in corso (Task 1-4 e 6 fatti; 5 e 7 fermi in attesa di Riccardo) · **Ultimo aggiornamento:** 2026-11-20
+**Stato:** completato salvo il Task 7 (fermo: serve un apparato vero) · **Ultimo aggiornamento:** 2026-11-22
 
 ## Vincoli globali
 
@@ -322,7 +322,29 @@ Secondo gruppo (protocollo riconosciuto su qualunque porta): **solo la misura**.
 - **Resta sul PX-NAS**: VM 109, contenitore 110, l'immagine `debian-12-genericcloud-amd64.qcow2`, il mirror `tc` su `veth103i0` (non sopravvive a un riavvio) e gli script in `/tmp`. Nel contenitore 110 postfix è fermo.
 
 ## Consuntivo
+
+Scritto il 22/11/2026. I numeri vengono dal database dell'IPAM `192.168.4.8` (cliente 70791), letti il 22/11 alle 11:27 UTC.
+
 ### Fatto
+- Task 1-6: collector, banco su PX-NAS, lettura da IPAM, abitudini e anomalie, interfaccia, nomi e 12 controlli sul contenuto.
+- Oltre il piano, chiesto da Riccardo il 20/11: tre collector veri in ufficio (`DA-COLLECTOR-PX04`, `-PX03`, `-PX02`, copia di `bond10` con hookscript) e la scheda «Chi parla con chi».
+- In esercizio dal 20/11: tre collector letti ogni 5 minuti, copertura 1,0 / 1,0 / 0,999, 193.128 righe di coppie, 424 host.
+
 ### Mancante
+- Task 7: NetFlow e sFlow provati solo con un file di esempio. Serve un apparato vero.
+- Caso 5: la coppia resta agganciata all'IP, non all'host che lo aveva in quella finestra.
+- DA-PX-01 senza collector (c'è la 423).
+- Le VM collector sono in DHCP: se l'indirizzo cambia IPAM non le trova.
+- Periodo più corto «Oggi»: le coppie sono salvate per giorno.
+- Non provati: build completa, memoria delle VM dopo giorni, una porta SPAN fisica.
+- Fuori dal piano fin dall'inizio: installazione in Deploy-Appliance e prima sede di un cliente.
+
 ### Scostamenti dal piano
+Nel Registro, task per task. I due che contano: le prove sono `unittest` e non pytest; collector e interruttori stanno nella pagina Traffico e non in Opzioni.
+
 ### Consigli di sviluppo
+1. **Prima di tutto il rumore**: 2.156 avvisi in due giorni, tutti «nuova». Dettaglio e ipotesi in `TASKS.md`, «Misura sui dati veri dell'ufficio (22/11)».
+2. Tenere separati andata e ritorno nel collector: un tentativo respinto e una destinazione che non esiste non sono traffico.
+3. Elenco delle sonde note (IPAM, Edge, Zabbix) fuori da avvisi e abitudini.
+4. «È normale» per host e tipo, e avvisi raggruppati per host.
+5. Misurare quanto pesa il traffico nel database prima di una sede vera.

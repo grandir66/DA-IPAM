@@ -14,7 +14,7 @@
   - [!] Task 7, NetFlow e sFlow: codice fatto e provato con un file di esempio; **mancano uno switch e un firewall veri** che esportino verso `collector-banco`.
   - [ ] Non fatto, caso 5 del piano: agganciare la coppia all'host che aveva quell'IP nella finestra (mappa MAC-IP). Oggi le coppie restano per IP.
   - [ ] Da decidere con Riccardo: come si prende il mirror quando lo switch copia due volte (`MIRROR_DOPPIO` dimezza tutto, giusto solo se ogni pacchetto arriva doppio; meglio la copia in una sola direzione). Scritto nel README, «I casi del piano».
-  - [ ] Da provare prima di una sede vera: migliaia di flussi insieme (il costo di `pmacctd` cresce coi flussi, non coi byte) e una giornata intera.
+  - [x] Migliaia di flussi e giornate intere: provato sull'ufficio dal 20 al 22/11. `DA-COLLECTOR-PX03` ha passato 1,39 milioni di righe con copertura 1,0. Non guardata la memoria della VM.
   - [x] DNS del PX-NAS: era `192.168.6.254`, un relitto del 15/05 (Riccardo, 20/11: «un relitto»). Messo `192.168.99.254` con `pvesh`, copia del file sul nodo.
   - [ ] Banco da tenere o buttare (Riccardo): VM 109 e contenitore 110 sul PX-NAS, comandi nel README.
 - Riccardo (20/11): «questo servizio deve rimanere separato e distribuito e alternativo alla sonda pesante». Scritto nella spec (decisione 6) e nei vincoli del piano. Esecuzione avviata da lui il 20/11 in una sessione nuova.
@@ -24,10 +24,19 @@
   - [x] Riccardo (20/11): «possiamo anche aggiungere un collector a px-03 e 02». DA-PX-03: VM 114 `DA-COLLECTOR-PX03` (192.168.4.186); DA-PX-02: VM 115 `DA-COLLECTOR-PX02` (192.168.4.190). Stessa copia di `bond10`, VLAN 16 esclusa. Verifica: servizi attivi, pacchetti sulla scheda in copia, 0 della VLAN 16.
   - [x] Riccardo (20/11): «serve una pagina sempre sotto rete che mostri le informazioni insieme... la rete è un oggetto globale non un singolo host». Scheda «Chi parla con chi», la prima della pagina Traffico: fra reti, per host, per coppia; periodo, rete, ricerca; nomi più chiesti. `src/lib/traffico/insieme.ts`, rotta `/api/traffico/insieme`. Guardata a 1920 su `localhost` con dati di prova; non ancora sui dati veri dell'ufficio.
   - [ ] Il periodo più corto è «Oggi»: le coppie sono tenute per giorno, «ultima ora» non si può fare senza cambiare come IPAM le salva.
-  - [ ] Registrare `DA-COLLECTOR-PX03` e `DA-COLLECTOR-PX02` come il PX-04. Resta fuori DA-PX-01 (c'è la 423: sì esplicito).
-  - [ ] Registrare `DA-COLLECTOR-PX04` nell'IPAM `192.168.4.8` (pagina Traffico, «Collector e controlli»): lo fa Riccardo, il gettone non passa dalla chat.
-  - [ ] Guardare dopo un giorno memoria e copertura della VM 113 e il carico del PX-04, poi DA-PX-01, 02, 03 (sul 01 gira la 423: sì esplicito di Riccardo).
+  - [x] `DA-COLLECTOR-PX03` e `DA-COLLECTOR-PX02` registrati da Riccardo nell'IPAM `192.168.4.8` (cliente 70791). Misura del 22/11 11:27 UTC sul database: tre collector attivi, ultimo contatto 11:25, nessun errore, copertura 1,0 / 1,0 / 0,999.
+  - [ ] DA-PX-01: nessun collector (c'è la 423: serve il sì esplicito di Riccardo).
+  - [x] `DA-COLLECTOR-PX04` registrato da Riccardo (vedi la misura del 22/11 qui sopra).
+  - [~] Dopo due giorni (22/11): copertura letta da IPAM, buona su tutti e tre. **Non guardati**: memoria delle VM 113, 114, 115 e carico dei nodi.
   - [ ] L'indirizzo della VM 113 è in DHCP: se cambia, IPAM non la trova più. Serve una prenotazione sul DHCP o un indirizzo fisso.
+- **Misura sui dati veri dell'ufficio (22/11, IPAM `192.168.4.8`, cliente 70791, dal 20/11)**: 193.128 righe di coppie, 424 host che parlano, 170.401 abitudini; 2.156 avvisi, **tutti ancora «nuova»**: così la pagina non si usa. Le 13 reti sono in apprendimento fino al 04/12, quindi questi sono solo gli avvisi che non aspettano.
+  - [ ] `non_censito`: 1.114 avvisi, circa 235 indirizzi per ciascuna di cinque reti (16, 3, 72, 15, 40), cioè quasi tutta la /24. **Ipotesi da verificare**: sono le destinazioni di una scansione, non host che parlano. L'avviso dovrebbe scattare solo se quell'IP ha mandato pacchetti.
+  - [ ] `vlan_chiuse`: 431 avvisi, 321 dalla rete 16 alla 4. **Ipotesi da verificare**: la copia è presa prima del firewall, quindi anche un tentativo respinto conta come traffico. Serve sapere se è tornata una risposta.
+  - [ ] Per tutti e due: il collector deve tenere separati i byte di andata e di ritorno (oggi `piega.py` li somma), e IPAM deve usare «c'è stata risposta».
+  - [ ] `snmp_vecchio`: 432 avvisi da 22 host, quasi certamente i sistemi di controllo (Zabbix, LibreNMS, IPAM). Serve un «è normale» per host e tipo, non riga per riga, e un elenco delle sonde note (IPAM, Edge, Zabbix) da non contare né negli avvisi né nelle abitudini.
+  - [ ] `DA-COLLECTOR-PX03` porta 182.214 righe su 193.128: da capire cosa le genera (sul DA-PX-03 gira la VM 664 di Vulcan con Edge: se sono le sue scansioni, sono finite nelle abitudini).
+  - [ ] Il database del cliente 70791 pesa 1,2 GB: **non so** quanto è del traffico, va misurato per tabella prima di una sede vera.
+  - [ ] 5.453 coppie viste da più collector: la lettura prende il massimo (caso 4 del piano), non serve altro.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).
 
 ## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)

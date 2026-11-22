@@ -23,8 +23,22 @@ postazione (ovviamente in AD)».
       con accessi su 39 `workstation`; 9 con persona prevalente (6 workstation, 1 server, 1 smartphone, 1 senza
       classificazione), tutte al 100% degli accessi; 17 con pochi dati; 2 condivisi. Solo 4 asset su 61 hanno un host:
       passando dall'asset la colonna resterebbe quasi vuota. 31 computer di AD su 59 legati a un host.
-- [ ] proposta a Riccardo (colonna, segno calcolato/a mano, regola di automatismo): in attesa del suo sì
-- [ ] dopo il sì: colonna in `/discovery`, scelta a mano sull'host, riuso di `calcolaProposta`, prove, rilascio su `dev`
+- [x] proposta a Riccardo (colonna, segno calcolato/a mano, regola di automatismo): «Sì, procedi» (23/11), coi valori
+      proposti: l'assegnatario dell'asset vale come scelta a mano e una scelta in Apparati lo allinea, senza creare asset;
+      pochi dati = «—»; calcolo per tutti tranne server e apparati; giro spento di serie con avviso nell'intestazione;
+      soglie di Abbinamenti (50%, 5 accessi, 30 giorni).
+- [x] 23/11: colonne `hosts.utente_abituale_{modo,integrazione,guid}` nella migrazione degli assegnatari (additive);
+      `src/lib/assegnatari/abituale.ts` (riusa `calcolaVoci` di Abbinamenti); rotta `/api/hosts/utente-abituale`
+      (GET utenti di AD, PUT scelta su uno o più host, solo amministratori); `utente_abituale` in `/api/hosts/discovery`;
+      colonna, ricerca, ordinamento, filtro del tasto destro e finestra di scelta in `/discovery`.
+      Verifica: `abituale.test.ts` 5/5, prove degli assegnatari 37/37, migrazione e pagina Apparati 34/34, lint 0 errori,
+      tsc pulito sui sorgenti (2 errori solo in `.next/types` vecchi, di rotte non mie).
+- [ ] Non verificato: la resa a schermo (colonna e finestra) e il clic vero sull'IPAM `192.168.4.8`; lì arriva con
+      l'aggiornamento da `dev`.
+- [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
+      (vale per ogni colonna nuova di Apparati).
+- [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a
+      zero, agenti Wazuh senza host, 18 postazioni di rete non trovate fra gli host), non da questa colonna.
 
 ## 2026-11-20 — Collector del traffico in mirror
 

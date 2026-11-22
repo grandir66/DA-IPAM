@@ -125,6 +125,8 @@ import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "./filtro-cl
 import { BadgeAltriIp } from "./cluster-ip";
 import { AggiuntaLibrenmsBlocco } from "@/components/discovery/aggiunta-librenms-blocco";
 import { CassettoHost } from "@/components/hosts/cassetto-host";
+import { CellaUtenteAbituale, FinestraUtenteAbituale, testoUtenteAbituale, type BersaglioUtenteAbituale } from "@/components/discovery/utente-abituale";
+import type { UtenteAbituale } from "@/lib/assegnatari/abituale";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -147,6 +149,8 @@ type EnrichedHost = Host & {
   switch_port?: string;
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
+  /** Utente abituale della postazione (calcolato dagli accessi o scelto a mano), o null. */
+  utente_abituale?: UtenteAbituale | null;
   validated_protocols?: string[];
   /** Cluster fisico accorpato (null = host solo o cluster ambiguo): chi è il principale e gli altri IP. */
   cluster?: InfoClusterDiscovery | null;
@@ -207,6 +211,7 @@ const COLUMNS: ColumnDef[] = [
   { id: "known_host",          label: "Manuale",         defaultVisible: true,  group: "base" },
   { id: "ip_assignment",       label: "DHCP",            defaultVisible: true,  group: "base" },
   { id: "in_ad",               label: "AD",              defaultVisible: true,  group: "rete" },
+  { id: "utente_abituale",     label: "Utente abituale", defaultVisible: true,  group: "rete" },
   { id: "vuln_max_severity",   label: "CVE",             defaultVisible: true,  group: "rilevamento" },
   { id: "vuln_counts",         label: "CVE C/H/M",       defaultVisible: true,  group: "rilevamento" },
   { id: "fp_confidence",       label: "Conf",            defaultVisible: true,  group: "base" },
@@ -511,6 +516,7 @@ function testoCella(h: EnrichedHost, colId: string): string {
     case "detected": { const d = parseDetectedDeviceFromDetectionJson(h.detection_json); return d?.label ?? ""; }
     case "multihomed": return h.multihomed ? `${h.multihomed.peers.length + 1} IF` : "";
     case "in_ad": return h.ad_dns_host_name ? "Si" : "No";
+    case "utente_abituale": return testoUtenteAbituale(h.utente_abituale);
     case "response_time": return h.last_response_time_ms != null ? String(h.last_response_time_ms) : "";
     case "device_manufacturer": return getManufacturer(h).text;
     case "model": return h.model ?? "";
@@ -675,6 +681,15 @@ export default function DiscoveryPage() {
 
   // ─── Selezione e bulk edit ────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  /** Utente abituale: la finestra di scelta (un host o la selezione) e lo stato del giro degli accessi. */
+  const [bersaglioAbituale, setBersaglioAbituale] = useState<BersaglioUtenteAbituale | null>(null);
+  const [abitualeInfo, setAbitualeInfo] = useState<{ giroAcceso: boolean; giorni: number } | null>(null);
+  useEffect(() => {
+    void fetch("/api/hosts/utente-abituale", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() as Promise<{ giroAcceso: boolean; giorni: number }> : null))
+      .then((d) => { if (d) setAbitualeInfo({ giroAcceso: d.giroAcceso, giorni: d.giorni }); })
+      .catch(() => { /* la colonna resta senza il dettaglio dei giorni */ });
+  }, []);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkForm, setBulkForm] = useState<DiscoveryBulkForm>(emptyBulkForm);
@@ -1096,7 +1111,7 @@ export default function DiscoveryPage() {
     if (soloDaRivedere) criteri.push((id) => prendi(id, (h) => (h.campi_da_rivedere ?? "").trim() !== ""));
     if (lower) {
       criteri.push((id) => prendi(id, (h) =>
-        [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer]
+        [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer, h.utente_abituale?.nome, h.utente_abituale?.account]
           .filter(Boolean).join(" ").toLowerCase().includes(lower)));
     }
     const trovati = new Map<number, string[]>();
@@ -1170,6 +1185,7 @@ export default function DiscoveryPage() {
     open_ports_tcp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsTcp ?? "",
     open_ports_udp:      (h: EnrichedHost) => hostExtras.get(h.id)?.openPortsUdp ?? "",
     in_ad:               (h: EnrichedHost) => h.ad_dns_host_name ? 1 : 0,
+    utente_abituale:     (h: EnrichedHost) => testoUtenteAbituale(h.utente_abituale).toLowerCase(),
     vuln_max_severity:   (h: EnrichedHost) => {
       const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3, Log: 4 };
       return h.vuln ? (rank[h.vuln.max_severity] ?? 9) : 99;
@@ -1853,6 +1869,14 @@ export default function DiscoveryPage() {
         return h.ad_dns_host_name
           ? <Badge className="bg-blue-500/15 text-blue-700 border-blue-300/40 dark:text-blue-400 text-xs">Si</Badge>
           : <span className="text-muted-foreground text-xs">No</span>;
+      case "utente_abituale":
+        return (
+          <CellaUtenteAbituale
+            valore={h.utente_abituale}
+            giorni={abitualeInfo?.giorni ?? null}
+            onModifica={admin ? () => setBersaglioAbituale({ hostIds: [h.id], etichetta: displayName(h) || h.ip, attuale: h.utente_abituale ?? null }) : undefined}
+          />
+        );
       case "vuln_max_severity": {
         if (!h.vuln) return <span className="text-muted-foreground text-xs">—</span>;
         const sev = h.vuln.max_severity;
@@ -2664,6 +2688,13 @@ export default function DiscoveryPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 Modifica multipla
               </Button>
+              {admin && (
+                <Button size="sm" variant="outline" className="gap-1.5"
+                  onClick={() => setBersaglioAbituale({ hostIds: Array.from(selectedIds), etichetta: `${selectedIds.size} host selezionat${selectedIds.size === 1 ? "o" : "i"}`, attuale: null })}>
+                  <Lock className="h-3.5 w-3.5" />
+                  Utente abituale…
+                </Button>
+              )}
               <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
                 {selectedIds.size > 50 ? `Rendi apparato (50 su ${selectedIds.size})` : "Rendi apparato"}
@@ -2793,6 +2824,9 @@ export default function DiscoveryPage() {
                         {GLOSSARIO[col.id] ? (
                           <span title={GLOSSARIO[col.id]} className="underline decoration-dotted underline-offset-4 cursor-help">{col.label}</span>
                         ) : col.label}
+                        {col.id === "utente_abituale" && abitualeInfo?.giroAcceso === false && (
+                          <span className="ml-1 rounded border px-1 text-xs font-normal" title="Il giro degli accessi ai PC è spento per questo cliente: la colonna mostra solo le scelte a mano. Si accende in Opzioni, «Chi si collega ai PC».">giro spento</span>
+                        )}
                       </SortableTableHead>
                     ))}
                   </TableRow>
@@ -2861,6 +2895,7 @@ export default function DiscoveryPage() {
       </Card>
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
+      <FinestraUtenteAbituale bersaglio={bersaglioAbituale} onChiudi={() => setBersaglioAbituale(null)} onSalvato={() => void fetchData()} />
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
         <DialogContent className={`${DIALOG_PANEL_WIDE_CLASS} border-2 border-primary/30 shadow-2xl`}>
           <DialogHeader className="shrink-0 border-b border-border px-5 pt-5 pb-3 bg-muted/30">

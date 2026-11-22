@@ -1145,6 +1145,11 @@ export const COLONNE_ASSEGNATARI_AD: ReadonlyArray<readonly [tabella: string, co
   ["ad_users", "employee_id", "TEXT"],
   ["ad_users", "office", "TEXT"],
   ["inventory_assets", "proposta_assegnatario_off", "INTEGER NOT NULL DEFAULT 0"],
+  // Utente abituale scelto a mano in Apparati (23/11/2026): `manuale` (con integrazione + guid dell'utente AD) o
+  // `condiviso`; NULL = vale il calcolo. Niente FK: un ALTER con FK su `hosts` ha già rotto un DB (os_family).
+  ["hosts", "utente_abituale_modo", "TEXT"],
+  ["hosts", "utente_abituale_integrazione", "INTEGER"],
+  ["hosts", "utente_abituale_guid", "TEXT"],
 ];
 export const DDL_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
   ["host_accessi_utente", `CREATE TABLE host_accessi_utente (

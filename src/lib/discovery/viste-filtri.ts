@@ -34,6 +34,7 @@ export const GLOSSARIO: Readonly<Record<string, string>> = {
   known_host: "Manuale: host segnato a mano come conosciuto",
   ip_assignment: "DHCP: come ha avuto l'indirizzo (dinamico, riservato o statico)",
   in_ad: "AD: presente in Active Directory",
+  utente_abituale: "Utente abituale: chi usa di più la postazione. «auto» = calcolato dagli accessi di AD; lucchetto = scelto a mano; triangolo = il calcolo indica un'altra persona",
   vuln_max_severity: "CVE: gravità più alta fra le vulnerabilità trovate",
   vuln_counts: "CVE C/H/M: numero di vulnerabilità critiche / alte / medie",
   multihomed: "MH: apparato con più indirizzi IP (stesso dispositivo fisico)",

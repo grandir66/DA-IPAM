@@ -35,6 +35,8 @@ export interface VoceAbbinamento {
    */
   omonimi: Array<{ id: number; nome: string; ip: string | null; categoria: string | null }>;
   gruppo: GruppoAbbinamento;
+  /** L'esito del calcolo, prima dei gruppi (serve all'utente abituale in Apparati). */
+  esito: Proposta["esito"];
   /** Perché è escluso o ha pochi dati, a parole. */
   motivo: string | null;
   persona: { account: string; nome: string; reparto: string | null; ruolo: string | null } | null;
@@ -71,10 +73,15 @@ interface RigaHost {
   assegnato_origine: string | null;
 }
 
-function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number): RigaHost[] {
+/** La condizione che lega un asset `a` (con `nd` = il suo apparato) all'host `h`, direttamente o tramite l'apparato. */
+export function legameAssetHost(db: Database.Database): string {
   // `network_devices.host_id` lo aggiunge un ALTER all'apertura del tenant: nei DB di prova può mancare.
   const conHostApparato = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).some((c) => c.name === "host_id");
-  const legame = conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
+  return conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
+}
+
+function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number): RigaHost[] {
+  const legame = legameAssetHost(db);
   return db.prepare(
     `WITH hh AS (
        SELECT h.id, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS pc, h.ip, h.classification,
@@ -96,7 +103,7 @@ function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number
 const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split(".")[0] || pc);
 
 /** Tutte le voci, calcolate. `soloHost`: una voce sola (la conferma). */
-function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
+export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
   const soglie = soglieDelCliente(db);
   const host = hostConAccessi(db, soglie.giorni, soloHost);
   if (host.length === 0) return { voci: [], giorni: soglie.giorni };
@@ -166,6 +173,7 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
       categoriaProposta: h.asset_id === null && daClassificazione && !CATEGORIE_SENZA_PROPOSTA.has(daClassificazione)
         && daClassificazione !== "Other" && daClassificazione !== "VM" ? daClassificazione : null,
       gruppo,
+      esito: p.esito,
       motivo,
       persona: pers && nome ? { account: pers.account, nome, reparto: pers.reparto, ruolo: pers.ruolo } : null,
       assegnatarioPersona,

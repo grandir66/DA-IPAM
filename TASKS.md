@@ -1,5 +1,22 @@
 # TASKS — DA-IPAM
 
+## 2026-11-23 — Utente abituale nella pagina Apparati
+
+Riccardo (23/11): «sarebbe utilissimo, nel momento in cui abbiamo i dati, poterlo assegnare e vedere direttamente anche
+nella pagina degli apparati, rendendolo il più automatico possibile: una colonna dedicata all'utente "standard" di una
+postazione (ovviamente in AD)».
+
+- [x] 23/11, dove vive oggi: `src/lib/assegnatari/` (piano `2026-10-23-assegnatari-da-ad`). Gli accessi stanno in
+      `host_accessi_utente` (giro orario: Wazuh tastiera e rete, WinRM, GLPI); la persona prevalente la calcola
+      `calcolaProposta` (`proposta.ts`, pura); diventa stabile solo come assegnatario dell'asset
+      (`inventory_assets.asset_assignee_id`) dalla pagina Abbinamenti. Sull'host non c'è niente di scritto.
+- [x] 23/11, misura sul 70791 dell'IPAM `192.168.4.8` (sola lettura, finestra 30 giorni, soglia 50%, minimo 5): 28 host
+      con accessi su 39 `workstation`; 9 con persona prevalente (6 workstation, 1 server, 1 smartphone, 1 senza
+      classificazione), tutte al 100% degli accessi; 17 con pochi dati; 2 condivisi. Solo 4 asset su 61 hanno un host:
+      passando dall'asset la colonna resterebbe quasi vuota. 31 computer di AD su 59 legati a un host.
+- [ ] proposta a Riccardo (colonna, segno calcolato/a mano, regola di automatismo): in attesa del suo sì
+- [ ] dopo il sì: colonna in `/discovery`, scelta a mano sull'host, riuso di `calcolaProposta`, prove, rilascio su `dev`
+
 ## 2026-11-20 — Collector del traffico in mirror
 
 - [ ] Riccardo (20/11), idea, non da fare ora: VM collector distribuite (una per sede o cliente) che analizzano il traffico in mirror e mandano a IPAM le anomalie fra gli host; IPAM le aggancia agli host che conosce già. Lato sonda e rapporto con l'NDR di Codex: `TASKS.md` di DA-Vul-can, sezione del 14/11.

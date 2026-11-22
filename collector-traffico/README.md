@@ -110,7 +110,9 @@ della VM (quindi anche dopo un riavvio del nodo). File in `proxmox/`.
 | `DA-COLLECTOR-PX04` | VM 113 su DA-PX-04, Debian 12 (immagine cloud), 2 vCPU, 1 GB, 8 GB su `zfs`, parte col nodo. `net0` di gestione su `vmbr_int` VLAN 4 in DHCP (il 20/11: 192.168.4.185); `net1` su `vmbr0`, un bridge senza porte, così riceve solo la copia |
 | `DA-COLLECTOR-PX03` | VM 114 su DA-PX-03 (il 20/11: 192.168.4.186). Come la 113, ma `net1` sta su `vmbr10GB`: su quel nodo `vmbr0` è il bridge di gestione e non va usato |
 | `DA-COLLECTOR-PX02` | VM 115 su DA-PX-02 (il 20/11: 192.168.4.190), `net1` su `vmbr0` |
-| `proxmox/collector-mirror.sh` | hookscript, sul nodo in `/var/lib/vz/snippets/`. In `post-start` copia entrata e uscita di `bond10` verso `tap<vmid>i1`; in `pre-stop`/`post-stop` toglie i suoi filtri. Usa solo le priorità 4476 e 4477 |
+| `DA-COLLECTOR-PX01` | VM 116 su DA-PX-01 (il 22/11: 192.168.4.192), `net1` su `vmbr0`. Sul nodo gira la 423: non è stata toccata |
+| `DA-COLLECTOR-PX05` | VM 102 su DA-PX-05 (il 22/11: 192.168.4.198). Nodo di laboratorio a sé: `bond10` è giù e le VM escono da `bond25` (`vmbr0`). In `/etc/collector-mirror.conf` del nodo: `UPLINK=bond25`, `VLAN_FUORI=` (niente da escludere), `STACCA=1`, perché non c'è un bridge vuoto e `net1` è dichiarata su `vmbr_VM` e staccata all'avvio. `net0` su `vmbr0` con tag 4 |
+| `proxmox/collector-mirror.sh` | hookscript, sul nodo in `/var/lib/vz/snippets/`. In `post-start` copia entrata e uscita di `bond10` verso `tap<vmid>i1`; in `pre-stop`/`post-stop` toglie i suoi filtri. Usa solo le priorità 4476 e 4477. Un nodo fatto diversamente lo dice in `/etc/collector-mirror.conf` (`UPLINK`, `VLAN_FUORI`, `STACCA`) |
 | `proxmox/collector-vendor.yaml` | cloud-init: installa l'agente QEMU, che serve a leggere l'indirizzo preso in DHCP |
 
 ```bash

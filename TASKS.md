@@ -27,6 +27,9 @@
   - [x] `DA-COLLECTOR-PX03` e `DA-COLLECTOR-PX02` registrati da Riccardo nell'IPAM `192.168.4.8` (cliente 70791). Misura del 22/11 11:27 UTC sul database: tre collector attivi, ultimo contatto 11:25, nessun errore, copertura 1,0 / 1,0 / 0,999.
   - [ ] DA-PX-01: nessun collector (c'è la 423: serve il sì esplicito di Riccardo).
   - [x] `DA-COLLECTOR-PX04` registrato da Riccardo (vedi la misura del 22/11 qui sopra).
+  - [x] Riccardo (22/11): «installa la sonda anche su px-01 e px-05». DA-PX-01: VM 116 `DA-COLLECTOR-PX01` (192.168.4.192), la 423 non toccata. DA-PX-05: VM 102 `DA-COLLECTOR-PX05` (192.168.4.198), copia di `bond25` perché lì `bond10` è giù; lo script della copia ora legge `/etc/collector-mirror.conf`. Verifica: servizi attivi, pacchetti sulla scheda in copia, sul PX-01 0 della VLAN 16.
+  - [ ] Registrare nell'IPAM `DA-COLLECTOR-PX01` e `DA-COLLECTOR-PX05` (Riccardo: il gettone non passa dalla chat).
+  - [ ] Sul DA-PX-05 c'è già la VM 101 `edge` con due bridge suoi (`vmbr-edge-mon`, `vmbr-edge-src`): se ascolta lo stesso traffico, lì vale «o il collector o la sonda pesante». Decide Riccardo.
   - [~] Dopo due giorni (22/11): copertura letta da IPAM, buona su tutti e tre. **Non guardati**: memoria delle VM 113, 114, 115 e carico dei nodi.
   - [ ] L'indirizzo della VM 113 è in DHCP: se cambia, IPAM non la trova più. Serve una prenotazione sul DHCP o un indirizzo fisso.
 - **Misura sui dati veri dell'ufficio (22/11, IPAM `192.168.4.8`, cliente 70791, dal 20/11)**: 193.128 righe di coppie, 424 host che parlano, 170.401 abitudini; 2.156 avvisi, **tutti ancora «nuova»**: così la pagina non si usa. Le 13 reti sono in apprendimento fino al 04/12, quindi questi sono solo gli avvisi che non aspettano.

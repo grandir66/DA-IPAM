@@ -157,6 +157,11 @@ chi ha fatto accesso a un server di prova.
   finestra, la somma li conterebbe due volte. La tabella parte vuota: niente si ricostruisce dal passato, il grafico si
   riempie in 24 ore dal rilascio. `npx tsc --noEmit` dà solo due errori di `.next/types` vecchi, su rotte non di questo lavoro.
 
+- 2026-11-23 (23:45 UTC del 22), tappa 1 sull'hub: **non ancora verificata**. L'IPAM `192.168.4.8` è rimasto alla 0.9.1292:
+  `da-ipam-update` ha rimandato due volte (23:18 e 23:33) perché `/api/health` dà un giro in corso; lo script aspetta fino a
+  3 ore e poi aggiorna comunque, oppure subito con «Aggiorna ora» dall'interfaccia. I cinque collector sono attivi e senza
+  errori. Da rifare dopo l'aggiornamento: versione, righe di `traffico_ore` per ora, «Ultima ora» contro «Oggi».
+
 ## Consuntivo
 
 (a chiusura: fatto · mancante · scostamenti · consigli)

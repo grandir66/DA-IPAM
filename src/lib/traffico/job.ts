@@ -7,6 +7,7 @@ import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { contaCollectorAttivi, sincronizzaTraffico } from "./lettura";
+import { sondeNote } from "./sonde";
 
 export const CRON_TRAFFICO = "*/5 * * * *";
 
@@ -26,7 +27,7 @@ export async function letturaTrafficoTutti(): Promise<void> {
       try {
         await withTenant(t.codice_cliente, async () => {
           if (contaCollectorAttivi() === 0) return;
-          const esito = await sincronizzaTraffico();
+          const esito = await sincronizzaTraffico(undefined, undefined, sondeNote());
           if (esito.righe > 0 || esito.errori > 0) {
             console.info(`[traffico] ${t.codice_cliente}: ${esito.collector} collector, ${esito.righe} righe nuove, ${esito.errori} non letti`);
           }

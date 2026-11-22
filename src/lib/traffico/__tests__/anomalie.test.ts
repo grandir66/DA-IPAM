@@ -68,12 +68,16 @@ test("vlan_chiuse: reti chiuse nella matrice, nel verso giusto, anche in apprend
   const a = valutaFinestra(ingresso([x], { chiuse, abitudini: new Set([chiaveCoppia(x)]), retiInApprendimento: new Set([1, 2]) }));
   assert.deepEqual(a.map((y) => [y.tipo, y.gravita]), [["vlan_chiuse", 3]]);
   assert.deepEqual(tipi(ingresso([c("10.2.0.9", "10.1.0.5", 22)], { chiuse, retiInApprendimento: new Set([1, 2]) })), []);
+  // 22/11: senza una porta di servizio (porte alte, ICMP) non si sa chi ha aperto: la risposta a un ping non è traffico dalla rete chiusa
+  assert.deepEqual(tipi(ingresso([c("10.1.0.5", "10.2.0.9", 0), c("10.1.0.5", "10.2.0.9", 0, 1)], { chiuse, retiInApprendimento: new Set([1, 2]) })), []);
 });
 
 test("non_censito: IP interno di una rete censita che IPAM non conosce, anche in apprendimento", () => {
   const x = c("10.1.0.77", "10.1.0.9", 80);
   const a = valutaFinestra(ingresso([x], { censiti: new Set(["10.1.0.9"]), retiInApprendimento: new Set([1]) }));
   assert.deepEqual(a.map((y) => [y.tipo, y.gravita, y.client, y.server]), [["non_censito", 2, "10.1.0.77", ""]]);
+  // 22/11: la destinazione di una scansione non è un host che parla (1.113 avvisi su 1.114 sull'IPAM dell'ufficio)
+  assert.deepEqual(tipi(ingresso([c("10.1.0.9", "10.1.0.200", 80)], { censiti: new Set(["10.1.0.9"]), abitudini: new Set(["10.1.0.9|10.1.0.200|6|80"]) })), []);
   // fuori dalle reti censite non è un avviso: sarebbe rumore
   assert.deepEqual(tipi(ingresso([c("172.20.0.7", "10.1.0.9", 80)], { censiti: new Set(["10.1.0.9"]), abitudini: new Set(["172.20.0.7|10.1.0.9|6|80"]) })), []);
 });

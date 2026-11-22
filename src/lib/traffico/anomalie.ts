@@ -8,6 +8,10 @@
  * Regole da non rompere:
  * - una rete nei primi 14 giorni è «in apprendimento»: le sue coppie entrano nelle
  *   abitudini senza avvisi. `vlan_chiuse` e `non_censito` non aspettano;
+ * - `non_censito` guarda solo chi ha mandato pacchetti (il client), mai la destinazione: il 22/11
+ *   1.113 avvisi su 1.114 erano indirizzi provati da una scansione, non host che parlavano;
+ * - `vlan_chiuse` non scatta senza una porta di servizio (porta 0, ICMP): lì non si sa chi ha
+ *   aperto, e le risposte a un ping sembravano traffico dalla rete chiusa;
  * - un'anomalia segnata «normale» non torna «nuova», nemmeno se il fatto si ripete.
  */
 import type Database from "better-sqlite3";
@@ -87,16 +91,14 @@ export function valutaFinestra(ingresso: IngressoFinestra): AnomaliaNuova[] {
     const base = { client: c.client, server: c.server, proto: c.proto, porta: c.porta };
 
     // Non aspettano l'apprendimento.
-    for (const ip of [ci ? c.client : "", si ? c.server : ""]) {
-      // Solo dentro una rete censita: fuori, ogni indirizzo di passaggio sarebbe un avviso.
-      if (ip && !censiti.has(ip) && reteDi(ip) !== null) {
-        metti({ tipo: "non_censito", gravita: 2, client: ip, server: "", proto: 0, porta: 0, dettaglio: {} });
-      }
+    // Solo chi ha mandato pacchetti, e solo dentro una rete censita: fuori, ogni indirizzo di passaggio sarebbe un avviso.
+    if (ci && !censiti.has(c.client) && reteDi(c.client) !== null) {
+      metti({ tipo: "non_censito", gravita: 2, client: c.client, server: "", proto: 0, porta: 0, dettaglio: {} });
     }
     if (ci && si) {
       const ra = reteDi(c.client);
       const rb = reteDi(c.server);
-      if (ra !== null && rb !== null && ra !== rb && chiuse.has(`${ra}|${rb}`)) {
+      if (c.porta !== 0 && c.proto !== 1 && ra !== null && rb !== null && ra !== rb && chiuse.has(`${ra}|${rb}`)) {
         metti({ tipo: "vlan_chiuse", gravita: 3, ...base, dettaglio: { rete_client: ra, rete_server: rb } });
       }
       let visti = contatti.get(c.client);
@@ -186,9 +188,11 @@ function lettoreReti(): (ip: string) => number | null {
 }
 
 /** Scrive le anomalie dei fatti letti da un collector. Da chiamare dentro la transazione della pagina. */
-export function creaRegistratoreFatti(): (d: Database.Database, fatti: FattoCollector[]) => void {
+export function creaRegistratoreFatti(sonde: Set<string> = new Set()): (d: Database.Database, fatti: FattoCollector[]) => void {
   const reteDi = lettoreReti();
-  return (d, fatti) => {
+  return (d, tutti) => {
+    // Una sonda nota che interroga in SNMP v2 o apre TLS vecchio lo fa per mestiere: non è una notizia.
+    const fatti = tutti.filter((f) => !sonde.has(f.client));
     const spenti = new Set((d.prepare("SELECT network_id, tipo FROM traffico_controlli WHERE acceso = 0").all() as { network_id: number; tipo: string }[])
       .map((r) => `${r.network_id}|${r.tipo}`));
     const confermate = new Set((d.prepare("SELECT client, server, proto, porta FROM traffico_abitudini WHERE confermata = 1").all() as

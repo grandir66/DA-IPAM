@@ -145,3 +145,35 @@ test("fonte: il NetFlow dello stesso collector non si somma al mirror; tabella n
   assert.equal((d.prepare("SELECT COUNT(*) AS n FROM traffico_coppie").get() as { n: number }).n, 2);
   d.close();
 });
+
+test("sonde note (22/11): le loro scansioni non si salvano, chi apre un loro servizio sì; il già salvato si toglie", async () => {
+  const { ripulisciRumore, rumoreDiSonda } = await import("@/lib/traffico/sonde");
+  const sonde = new Set(["192.168.50.8"]);
+  assert.equal(rumoreDiSonda({ client: "192.168.50.8", server: "192.168.50.20", proto: 6, porta: 22 }, sonde), true);
+  assert.equal(rumoreDiSonda({ client: "192.168.50.20", server: "192.168.50.8", proto: 6, porta: 0 }, sonde), true);
+  assert.equal(rumoreDiSonda({ client: "192.168.50.20", server: "192.168.50.8", proto: 1, porta: 0 }, sonde), true);
+  assert.equal(rumoreDiSonda({ client: "192.168.50.20", server: "192.168.50.8", proto: 6, porta: 443 }, sonde), false);
+  assert.equal(rumoreDiSonda({ client: "192.168.50.8", server: "192.168.50.20", proto: 6, porta: 22 }, new Set()), false);
+  await withTenant(T, async () => {
+    const d = dbTraffico();
+    const id = creaCollector({ nome: "sonde", sede: "lab", url: "https://192.168.50.89:8477", gettone: "g", impronta: "AA:BB" });
+    const righe = [
+      riga(1, "192.168.50.8", "192.168.50.20", 22, 100),
+      riga(2, "192.168.50.20", "192.168.50.8", 0, 100),
+      riga(3, "192.168.50.20", "192.168.50.8", 443, 100),
+    ];
+    // Prima senza conoscere la sonda: entra tutto.
+    await sincronizzaTraffico(finto(righe));
+    const conta = () => (d.prepare("SELECT COUNT(*) AS n FROM traffico_coppie WHERE collector_id = ?").get(id) as { n: number }).n;
+    assert.equal(conta(), 3);
+    // Poi la sonda è nota: il già salvato si toglie, resta chi apre la sua 443.
+    const tolte = ripulisciRumore(d, sonde);
+    assert.equal(tolte.coppie, 2);
+    assert.equal(conta(), 1);
+    assert.deepEqual(ripulisciRumore(d, sonde), { coppie: 0, abitudini: 0, anomalie: 0 }); // seconda volta: niente da fare
+    // E le righe nuove della sonda non entrano, ma il cursore avanza.
+    await sincronizzaTraffico(finto([...righe, riga(4, "192.168.50.8", "192.168.50.21", 80, 100)]), undefined, sonde);
+    assert.equal(conta(), 1);
+    assert.equal((d.prepare("SELECT cursore_coppie AS c FROM traffico_collector WHERE id = ?").get(id) as { c: number }).c, 4);
+  });
+});

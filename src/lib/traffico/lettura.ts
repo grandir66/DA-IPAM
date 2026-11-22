@@ -14,6 +14,7 @@ import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { assicuraTabelleTraffico } from "./schema";
 import { collectorGet, CollectorErrore, type CollectorAccesso } from "./collector-client";
 import { calcolaVolumi, creaRegistratore, creaRegistratoreFatti } from "./anomalie";
+import { ripulisciRumore, rumoreDiSonda } from "./sonde";
 
 export const PAGINA = 1000;
 export const PAGINE_PER_GIRO = 20;
@@ -165,7 +166,7 @@ function rigaValida(r: RigaCollector): boolean {
 }
 
 /** Scrive una pagina e sposta il cursore, tutto insieme. Ritorna le righe entrate. */
-function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie, dopoFinestra?: DopoFinestra): number {
+function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie, dopoFinestra: DopoFinestra | undefined, sonde: Set<string>): number {
   const ins = d.prepare(`
     INSERT INTO traffico_coppie (giorno, collector_id, fonte, client, server, proto, porta, byte, pacchetti, flussi, esterni, prima_vista, ultima_vista)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -177,7 +178,8 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
       prima_vista = MIN(traffico_coppie.prima_vista, excluded.prima_vista),
       ultima_vista = MAX(traffico_coppie.ultima_vista, excluded.ultima_vista)`);
   return d.transaction(() => {
-    const buone = p.righe.filter(rigaValida);
+    // Le scansioni di una sonda nota non si salvano (vedi `sonde.ts`); il cursore avanza lo stesso.
+    const buone = p.righe.filter((r) => rigaValida(r) && !rumoreDiSonda(r, sonde));
     const finestre = new Map<string, RigaCollector[]>();
     for (const r of buone) {
       ins.run(r.inizio.slice(0, 10), collectorId, FONTI.has(r.fonte ?? "") ? r.fonte : "mirror", r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
@@ -255,15 +257,18 @@ function motivo(e: unknown): string {
 export async function sincronizzaTraffico(
   leggi: Lettore = collectorGet,
   dopoFinestra?: DopoFinestra,
+  /** Le sonde note; il job passa `sondeNote()`. Vuoto di serie: una prova non dipende dagli indirizzi della macchina. */
+  sonde: Set<string> = new Set(),
 ): Promise<{ collector: number; righe: number; errori: number }> {
   const d = dbTraffico();
+  ripulisciRumore(d, sonde);
   const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
     { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number }[];
   const esito = { collector: attivi.length, righe: 0, errori: 0 };
   if (attivi.length === 0) return esito;
   // Abitudini e anomalie: reti, host e matrice si leggono una volta per giro.
   const registra = dopoFinestra ?? creaRegistratore();
-  const registraFatti = creaRegistratoreFatti();
+  const registraFatti = creaRegistratoreFatti(sonde);
   for (const c of attivi) {
     try {
       const gettone = safeDecrypt(c.gettone_enc);
@@ -274,7 +279,7 @@ export async function sincronizzaTraffico(
       for (let n = 0; n < PAGINE_PER_GIRO; n++) {
         const p = await leggi<PaginaCoppie>(accesso, `/v1/coppie?dopo=${cursore}&limite=${PAGINA}`);
         if (!p || !Array.isArray(p.righe) || !Number.isInteger(p.ultimo_seq)) throw new Error("Risposta del collector senza righe");
-        esito.righe += scriviPagina(d, c.id, p, registra);
+        esito.righe += scriviPagina(d, c.id, p, registra, sonde);
         cursore = p.ultimo_seq;
         if (!p.altri) break;
       }

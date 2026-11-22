@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS nome (
   tipo TEXT NOT NULL, nome TEXT NOT NULL, conteggio INTEGER NOT NULL);
 """
 
+CREATE_IDENTITA = """
+CREATE TABLE IF NOT EXISTS identita (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, visto TEXT NOT NULL, mac TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '',
+  vlan INTEGER NOT NULL DEFAULT 0, fonte TEXT NOT NULL, nome TEXT NOT NULL DEFAULT '', tipo TEXT NOT NULL DEFAULT '',
+  UNIQUE (mac, ip, fonte));
+"""
+COLONNE_IDENTITA = ("seq", "visto", "mac", "ip", "vlan", "fonte", "nome", "tipo")
 COLONNE_FATTO = ("seq", "visto", "tipo", "client", "server", "porta", "dettaglio")
 COLONNE_NOME = ("seq", "visto", "client", "tipo", "nome", "conteggio")
 
@@ -42,6 +49,7 @@ def apri(percorso: str) -> sqlite3.Connection:
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=NORMAL")
     db.executescript(SCHEMA)
+    db.executescript(CREATE_IDENTITA)
     # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
     if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
         db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
@@ -130,12 +138,31 @@ def leggi_nomi(db: sqlite3.Connection, dopo: int, limite: int):
     return _leggi(db, "nome", COLONNE_NOME, dopo, limite)
 
 
+def scrivi_identita(db: sqlite3.Connection, voci: list[dict]) -> None:
+    """Una riga per (mac, ip, fonte): quella vecchia si toglie e la nuova prende un numero nuovo,
+    così chi legge col cursore la riceve di nuovo quando qualcosa è cambiato."""
+    with db:
+        for v in voci:
+            db.execute("DELETE FROM identita WHERE mac = ? AND ip = ? AND fonte = ?", (v["mac"], v["ip"], v["fonte"]))
+            db.execute(
+                "INSERT INTO identita (visto, mac, ip, vlan, fonte, nome, tipo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (v["visto"], v["mac"], v["ip"], int(v["vlan"]), v["fonte"], v["nome"], v["tipo"]),
+            )
+
+
+def leggi_identita(db: sqlite3.Connection, dopo: int, limite: int):
+    """Come le altre letture, ma senza «buco»: qui le righe si riscrivono, i numeri mancanti sono normali."""
+    righe, ultimo, altri, _ = _leggi(db, "identita", COLONNE_IDENTITA, dopo, limite)
+    return righe, ultimo, altri, False
+
+
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
     with db:
         tolte = db.execute("DELETE FROM coppia WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",)).rowcount
         db.execute("DELETE FROM fatto WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM nome WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM identita WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
     return tolte
 
 

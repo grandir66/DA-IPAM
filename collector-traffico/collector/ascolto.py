@@ -13,14 +13,20 @@ import subprocess
 import sys
 import time
 
-from . import archivio, controlli, piega
+from . import archivio, controlli, identita, piega
 
 # Solo le porte dei controlli, più il saluto TLS su qualunque porta (primo byte del carico = 0x16).
 _BASE = (
     "port 21 or port 23 or port 25 or port 110 or port 143 or port 389 or port 80 or port 445 "
     "or port 502 or port 102 or udp port 53 or udp port 161 or udp port 5355 or udp port 137 "
-    "or (tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16)"
+    "or (tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16) "
+    # chi è un indirizzo (23/11): ARP, DHCP, mDNS, SSDP, LLDP, CDP; NetBIOS (137) c'è già
+    "or arp or udp port 67 or udp port 68 or udp port 5353 or udp port 1900 "
+    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc"
 )
+# Byte tenuti per pacchetto: le opzioni DHCP (nome dell'host) cominciano al byte 282.
+CATTURA = 600
+IDENTITA_OGNI_S = 10
 # Il mirror di un trunk porta il tag VLAN: la stessa espressione va ripetuta dietro «vlan».
 FILTRO = f"({_BASE}) or (vlan and ({_BASE}))"
 # Secondo gruppo (protocollo su qualunque porta): il primo pacchetto con dati di ogni connessione.
@@ -116,11 +122,15 @@ class Ascolto:
     quante richieste DNS ha fatto un host. `scrivi_fatto` e `scrivi_nomi` si passano da fuori,
     così le prove non hanno bisogno di un archivio."""
 
-    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi):
+    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None):
         self._reti = piega._reti(reti_interne)
         self._memo: dict[str, str] = {}
         self._scrivi_fatto = scrivi_fatto
         self._scrivi_nomi = scrivi_nomi
+        self._scrivi_identita = scrivi_identita
+        self._identita: dict[tuple[str, str, str], tuple[tuple, int]] = {}  # (mac, ip, fonte) → (cosa si sa, ultima scrittura)
+        self._identita_nuove: dict[tuple[str, str, str], dict] = {}
+        self._identita_scritte = 0
         self._detti: dict[tuple, int] = {}                # (tipo, client, server) → ultima volta
         self._risponde: dict[str, str] = {}               # nome → chi ha risposto per primo
         self._dns: dict[str, int] = {}                    # host → richieste DNS nella finestra
@@ -152,9 +162,36 @@ class Ascolto:
             self._giorno = giorno
             self._nomi_del_giorno = {}
 
+    def _osserva(self, adesso: int, voce: dict) -> None:
+        """Una riga per (mac, ip, fonte): si riscrive solo se cambia qualcosa o dopo un'ora."""
+        chiave = (voce["mac"], voce["ip"], voce["fonte"])
+        nota = self._identita.get(chiave)
+        # un pacchetto senza nome (la conferma DHCP) non cancella il nome già visto
+        nome = voce["nome"] or (nota[0][0] if nota else "")
+        tipo = voce["tipo"] or (nota[0][1] if nota else "")
+        cosa = (nome, tipo, voce["vlan"])
+        if nota and nota[0] == cosa and adesso - nota[1] < UNA_VOLTA_OGNI_S:
+            return
+        if len(self._identita) >= MEMORIA_MASSIMA:
+            self._identita.clear()
+        self._identita[chiave] = (cosa, adesso)
+        if len(self._identita_nuove) < MEMORIA_MASSIMA:
+            self._identita_nuove[chiave] = {**voce, "nome": nome, "tipo": tipo, "visto": archivio.ora_utc(adesso)}
+
+    def _scrivi_le_identita(self, adesso: int) -> None:
+        self._identita_scritte = adesso
+        if self._identita_nuove and self._scrivi_identita:
+            self._scrivi_identita(list(self._identita_nuove.values()))
+        self._identita_nuove = {}
+
     def pacchetto(self, adesso: int, pacchetto: bytes) -> None:
         if adesso - self._finestra >= FINESTRA_S:
             self._chiudi_finestra(adesso)
+        if self._scrivi_identita:
+            for voce in identita.osserva(pacchetto):
+                self._osserva(adesso, voce)
+            if adesso - self._identita_scritte >= IDENTITA_OGNI_S:
+                self._scrivi_le_identita(adesso)
         p = spacchetta(pacchetto)
         if not p or not p[5]:
             return
@@ -194,6 +231,7 @@ class Ascolto:
 
     def chiudi(self, adesso: int) -> None:
         self._chiudi_finestra(adesso)
+        self._scrivi_le_identita(adesso)
 
 
 def main() -> int:
@@ -209,10 +247,11 @@ def main() -> int:
         reti,
         lambda visto, tipo, client, server, porta, dettaglio: archivio.scrivi_fatto(db, visto, tipo, client, server, porta, dettaglio),
         lambda visto, conteggi: archivio.scrivi_nomi(db, visto, conteggi),
+        (lambda voci: archivio.scrivi_identita(db, voci)) if os.environ.get("IDENTITA", "1") != "0" else None,
     )
-    # -s 256: bastano i primi byte; -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
+    # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
     tcpdump = subprocess.Popen(
-        ["tcpdump", "-i", scheda, "-n", "-U", "-s", "256", "-w", "-", filtro],
+        ["tcpdump", "-i", scheda, "-n", "-U", "-s", os.environ.get("CATTURA", str(CATTURA)), "-w", "-", filtro],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )
     print("ascolto: avviato", flush=True)

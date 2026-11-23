@@ -364,7 +364,8 @@ def main() -> int:
         (lambda voci: archivio.scrivi_nomi_ip(db, voci)) if os.environ.get("ESTERNI", "1") != "0" else None,
         (lambda inizio, righe: archivio.scrivi_connessioni(db, inizio, righe)) if os.environ.get("CONNESSIONI", "1") != "0" else None,
         # ZONA ROSSA (nomi utente): spento di serie, lo accende Riccardo con ACCESSI=1 nell'ambiente del servizio
-        (lambda inizio, righe: archivio.scrivi_accessi(db, inizio, righe)) if os.environ.get("ACCESSI", "0") == "1" else None,
+        # per nome: in posizione sarebbe finito in `profilo` (23/11, ascolto fermo su DA-COLLECTOR-PX03)
+        scrivi_accessi=(lambda inizio, righe: archivio.scrivi_accessi(db, inizio, righe)) if os.environ.get("ACCESSI", "0") == "1" else None,
         profilo=os.environ.get("PROFILO", "leggero"),
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.

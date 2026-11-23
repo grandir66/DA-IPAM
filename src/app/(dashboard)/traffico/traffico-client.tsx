@@ -7,12 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
-import { BarraStato, Etichetta, Pannello, SchedePagina, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { Etichetta, Pannello, SchedePagina, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
 import type { AnomaliaTraffico, StatoAnomalia } from "@/lib/traffico/anomalie";
 import { fraseAnomalia, GRAVITA, macAnomalia, NOME_TIPO, protoPorta, TIPI } from "@/lib/traffico/frasi";
-import type { NomeDiIp, QuadroTraffico } from "@/lib/traffico/quadro";
+import type { CollectorQuadro, NomeDiIp, QuadroTraffico } from "@/lib/traffico/quadro";
 import { cn } from "@/lib/utils";
 import { CLASSE_GRAVITA, Indirizzo, SegnoGravita } from "./pezzi";
 import { CollectorEControlli } from "./collector-controlli";
@@ -101,23 +101,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
           azione={admin ? <Button size="sm" onClick={() => setScheda("collector")}>Registra un collector</Button> : undefined}
         />
       ) : (
-        <div className="space-y-2">
-          {q.collector.map((c) => (
-            <BarraStato
-              key={c.id}
-              acceso={c.attivo}
-              titolo={`${c.nome}${c.sede ? ` · ${c.sede}` : ""}`}
-              dettagli={[
-                c.ultimo_contatto ? `ultimo contatto ${parseDbDate(c.ultimo_contatto).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "mai sentito",
-                c.copertura === null ? "copertura —" : `copertura ${(c.copertura * 100).toFixed(c.copertura >= 0.9995 ? 0 : 1)}%`,
-                ...(c.motore ? [`${c.profilo === "avanzato" ? "sonda avanzata" : "sonda leggera"} · ${c.motore === "zeek" ? "Zeek" : "pmacct"}${c.versione_motore ? ` ${c.versione_motore}` : ""}`] : []),
-                ...(c.freno === 1 ? ["▲ Zeek fermo per il disco pieno"] : []),
-                ...(c.ultimo_errore ? [`✕ ${c.ultimo_errore}`] : []),
-                ...(c.ultimo_buco ? [`▲ dati persi il ${giornoBreve(c.ultimo_buco)}`] : []),
-              ]}
-            />
-          ))}
-        </div>
+        <StatoCollector collector={q.collector} />
       )}
 
       {q.apprendimento.length > 0 && (
@@ -265,6 +249,55 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
           )}
         </Pannello>
         </>
+      )}
+    </div>
+  );
+}
+
+const SETTE_GIORNI = 7 * 24 * 3600 * 1000;
+
+function oraBreve(s: string): string {
+  const d = parseDbDate(s);
+  const oggi = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString("it-IT", oggi ? { hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Cosa c'è da sapere di un collector, in una frase; `null` se va tutto bene. */
+function problemaCollector(c: CollectorQuadro): string | null {
+  if (!c.attivo) return "spento";
+  if (c.freno === 1) return "Zeek fermo per il disco pieno";
+  if (c.ultimo_errore) return c.ultimo_errore;
+  if (c.ultimo_buco && Date.now() - parseDbDate(c.ultimo_buco).getTime() < SETTE_GIORNI) return `dati persi il ${giornoBreve(c.ultimo_buco)}`;
+  return null;
+}
+
+/** Lo stato dei collector in quattro riquadri: l'elenco intero sta nella scheda «Collector e controlli» (Riccardo, 23/11). */
+function StatoCollector({ collector }: { collector: CollectorQuadro[] }) {
+  const accesi = collector.filter((c) => c.attivo);
+  const contatti = accesi.map((c) => c.ultimo_contatto).filter((x): x is string => !!x).sort();
+  const piuVecchio = contatti[0] ?? null;
+  const coperture = accesi.filter((c) => c.copertura !== null).sort((a, b) => (a.copertura ?? 0) - (b.copertura ?? 0));
+  const peggiore = coperture[0];
+  const problemi = collector.map((c) => ({ c, p: problemaCollector(c) })).filter((x): x is { c: CollectorQuadro; p: string } => x.p !== null);
+  const zeek = accesi.filter((c) => c.motore === "zeek").length;
+  const motori = zeek === accesi.length ? (zeek ? "tutti con Zeek" : "sonda leggera") : `${zeek} con Zeek, ${accesi.length - zeek} leggeri`;
+  const pct = (v: number) => `${(v * 100).toFixed(v >= 0.9995 ? 0 : 1)}%`;
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TesseraNumero titolo="Collector" valore={`${accesi.length}/${collector.length}`} qualifica="accesi" nota={motori} />
+        <TesseraNumero titolo="Ultimo contatto" valore={piuVecchio ? oraBreve(piuVecchio) : null} nota={accesi.length > 1 ? "il più vecchio fra gli accesi" : undefined} />
+        <TesseraNumero
+          titolo="Copertura"
+          valore={peggiore?.copertura != null ? pct(peggiore.copertura) : null}
+          nota={peggiore && (peggiore.copertura ?? 1) < 0.9995 ? `la più bassa: ${peggiore.nome}` : "pacchetti visti sul totale"}
+        />
+        <TesseraNumero titolo="Problemi" valore={problemi.length} qualifica={problemi.length ? "▲ da guardare" : "nessuno"} nota={problemi[0] ? `${problemi[0].c.nome}: ${problemi[0].p}` : undefined} />
+      </div>
+      {problemi.length > 1 && (
+        <p className="text-[13px] text-muted-foreground">
+          ▲ {problemi.map((x) => `${x.c.nome}: ${x.p}`).join(" · ")}
+        </p>
       )}
     </div>
   );

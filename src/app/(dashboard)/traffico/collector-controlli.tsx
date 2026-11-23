@@ -131,7 +131,7 @@ export function CollectorEControlli({ onCambio }: { onCambio: () => void }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead><TableHead>Sede</TableHead><TableHead>Indirizzo</TableHead>
-                <TableHead>Ultimo contatto</TableHead><TableHead>Ultimo errore</TableHead>
+                <TableHead>Ultimo contatto</TableHead><TableHead>Copertura</TableHead><TableHead>Motore</TableHead><TableHead>Ultimo errore</TableHead>
                 <TableHead>Acceso</TableHead><TableHead className="text-right">Azioni</TableHead>
               </TableRow>
             </TableHeader>
@@ -142,6 +142,11 @@ export function CollectorEControlli({ onCambio }: { onCambio: () => void }) {
                   <TableCell>{c.sede || "—"}</TableCell>
                   <TableCell className="font-mono">{c.url.replace(/^https:\/\//, "")}</TableCell>
                   <TableCell><TempoRelativo data={c.ultimo_contatto} /></TableCell>
+                  <TableCell className="font-mono">{c.copertura === null ? "—" : `${(c.copertura * 100).toFixed(c.copertura >= 0.9995 ? 0 : 1)}%`}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    {c.motore ? `${c.motore === "zeek" ? "Zeek" : "pmacct"}${c.versione_motore ? ` ${c.versione_motore}` : ""}` : "—"}
+                    {c.freno === 1 && <span className="block text-[13px]">▲ fermo per il disco pieno</span>}
+                  </TableCell>
                   <TableCell className="max-w-sm whitespace-normal">{c.ultimo_errore ?? "—"}</TableCell>
                   <TableCell><Switch checked={c.attivo} aria-label={`Collector ${c.nome} acceso`} onCheckedChange={(v) => void accendi(c, v)} /></TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="destructive" onClick={() => void togli(c)}>Togli</Button></TableCell>

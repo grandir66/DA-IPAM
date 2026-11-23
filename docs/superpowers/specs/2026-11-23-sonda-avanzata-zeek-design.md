@@ -1,6 +1,6 @@
 # Sonda avanzata con Zeek — progetto
 
-> Spec del 23/11/2026, chiesta da Riccardo («Sì, scrivi la spec»). **Stato: bozza da approvare, nessun codice.**
+> Spec del 23/11/2026, chiesta da Riccardo («Sì, scrivi la spec»). **Stato: approvata da Riccardo il 23/11/2026.** Piano: `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`.
 > Deriva da: spec del collector `2026-11-20-collector-traffico-design.md`, misure in `collector-traffico/README.md`
 > («Misura di Zeek» sul banco e «Zeek sul traffico vero» sul DA-PX-03), `TASKS.md` del 23/11.
 

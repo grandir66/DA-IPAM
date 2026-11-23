@@ -350,7 +350,10 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
   minuto). Log del primo tentativo in `/root/giornata-zeek-tentativo1.log`. Registri rimasti dal blocco (266 file
   piccoli della finestra delle 13:20) smaltiti dall'adattatore uno per registro a giro; scartati 0.
 - 2026-11-23, Task 6: manca la prova di `password_ssh_provate` sul banco (`SOLO_SSH=1`, dal 103 verso il 110). Chiesto
-  alla sessione delle tappe 5-7, che sta usando il banco, quando è libero; nessuna risposta per ora.
+  alla sessione delle tappe 5-7, che sta usando il banco, quando è libero. Ha risposto che era libero, ma subito dopo
+  Riccardo le ha dato il via alla tappa 7 sul banco (un'ora, CT 111 temporaneo, cattura su veth110i0): la prova SSH
+  aspetta il suo «finito». Pronta sul nodo: `SOLO_SSH=1 bash /root/cattura-zeek/cattura-zeek.sh`. Nomi allineati con
+  lei: programmi = tabella `nome`, tipo `software`, anche per la tappa 7; `tls_certificato` col motivo `non_valido`.
 
 ## Consuntivo
 ### Fatto

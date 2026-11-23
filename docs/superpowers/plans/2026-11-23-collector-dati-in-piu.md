@@ -175,14 +175,10 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
   63 su 63 (23/11).
 - [ ] Interfaccia: **da proporre a Riccardo** (scheda «Cosa non va» nella pagina Traffico; «Servizi usati» nel riquadro
   «Con chi parla» della scheda dell'host). Niente è scritto.
-- [!] Servizio spento apposta sul banco del PX-NAS: provato una volta, ha fatto trovare il difetto del filtro; la
-  riprova col filtro corretto è ferma perché dalle 02:17 UTC del 23/11 il banco lo usa un'altra sessione (VM 109
-  riavviata, servizi del collector fermati). Da rifare quando è libero: 10 minuti.
-
-**Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
-
-### [ ] Tappa 6 — DNS, TLS, VLAN sbagliata
-
+- [x] Servizio spento apposta sul banco del PX-NAS, col filtro corretto. Verifica: 23/11 alle 11:59 UTC, porta 8099 nel
+  contenitore 110, 6 aperture riuscite e poi 7 rifiutate; `collector-banco` le scrive tutte (riga del servizio con 6 riuscite,
+  riga 192.168.99.1 → 8099 con 7 rifiutate). Sull'hub `192.168.4.8`, alle 12:01 UTC, `traffico_connessioni` ha 2.403 righe
+  da 116 client e nessuna con client `192.168.4.8`: le scansioni dell'IPAM non entrano.
 - DNS: quali server usa ogni host (chi salta quello interno), richieste senza risposta o con errore.
 - TLS: certificato scaduto o autofirmato (dove si vede, fino a TLS 1.2), impronta del programma che si collega (JA3).
 - VLAN: un indirizzo visto con un tag diverso da quello della sua rete censita.

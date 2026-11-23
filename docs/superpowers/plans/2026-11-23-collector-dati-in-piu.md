@@ -222,6 +222,9 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 
 - Nomi utente da Kerberos (AS-REQ), SMB e LDAP: si salva (utente, da dove, verso dove, protocollo, quando, riuscito o no).
 - Programmi: versione dichiarata nei saluti in chiaro (SSH, HTTP `Server` e `User-Agent`, SMTP, FTP).
+  23/11, accordo con la sessione «Sonda con Zeek»: i programmi vanno nella tabella `nome` col tipo `software` e il nome
+  `<tipo>:<nome> <versione>`, lo stesso che scrive Zeek; niente tipo di fatto a parte. `tls_certificato` ha anche il motivo
+  `non_valido` (da Zeek).
 - **Prima del codice**: prova che fallisce se in archivio finisce una password, un hash o un biglietto, scritta con catture
   vere fatte sul banco del PX-NAS (mai sull'ufficio); vista fallire, poi il codice.
 - Visibile solo agli amministratori; 90 giorni; mai nei log, mai negli export, mai verso un modello.

@@ -62,6 +62,10 @@ postazione (ovviamente in AD)».
       logon di rete verso i server (DA-INVENT, SCANNER-DA, DA-RDH) e ticket 4769 solo verso i DC. La fonte giusta era
       la descrizione del computer scritta dallo script di accesso (35 PC su 42). Aggiunta come ripiego quando gli accessi
       non decidono: `assegnatari/descrizione-ad.ts`, prove `abituale.test.ts` 7/7, assegnatari 33/33.
+- [x] 23/11, IPAM `192.168.4.8` aggiornato a v0.9.1312 (health 200). Misura sul 70791 col codice installato: da 11 a
+      18 host con utente abituale; 9 da AD (PC-APADULA, PC-Soragni, NB-SMANCINI, NB-MICHELE, pc-bevini, PC-LasagniF,
+      NB-MAX, NB-GIOVANNI, NB-AGUZZOLI), 2 dagli accessi, 7 a mano. NB-GIOVANNI e NB-AGUZZOLI compaiono su due righe
+      d'host ciascuno (IP vecchio e nuovo). HP-CATS (f.gatti) no: nessun host con l'IP 192.168.6.22 della descrizione.
 - [ ] Da decidere con Riccardo: usare la descrizione di AD anche per le proposte di Abbinamenti (asset NIS2), non solo
       per la colonna di Apparati.
 - [ ] Visto misurando: NB-MARZIA in AD ha 192.168.4.195, il suo host legato è 192.168.5.198, offline dal 05/11: un

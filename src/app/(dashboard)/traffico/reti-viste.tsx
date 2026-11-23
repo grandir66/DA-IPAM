@@ -21,7 +21,7 @@ const PERIODI: { giorni: number; testo: string }[] = [
 const PAROLE: Record<string, string> = { esterno: "Fuori dalla rete", diffusione: "A tutti (diffusione)", nessuna: "Rete non censita" };
 
 /** La finestra «Dai un nome»: rete (modificabile), nome, nota. Non crea una subnet. */
-function DaiUnNome({ rete, onChiudi, onFatto }: { rete: ReteVista; onChiudi: () => void; onFatto: () => void }) {
+export function DaiUnNome({ rete, onChiudi, onFatto }: { rete: Pick<ReteVista, "chiave" | "nome" | "nota">; onChiudi: () => void; onFatto: () => void }) {
   const [chiave, setChiave] = useState(rete.chiave);
   const [nome, setNome] = useState(rete.nome ?? "");
   const [nota, setNota] = useState(rete.nota);

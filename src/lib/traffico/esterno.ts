@@ -107,6 +107,8 @@ export interface RigaVista {
   /** L'indirizzo esterno, il codice del paese, il numero del fornitore o l'indirizzo dell'host, secondo la vista. */
   chiave: string;
   nome: string | null;
+  /** Il nome l'ha dato una persona (oggetto con nome), non viene dal traffico. */
+  a_mano: boolean;
   paese: string | null;
   fornitore: string | null;
   /** Quanti host interni (viste per destinazione, paese, fornitore) o quante destinazioni (vista per host). */
@@ -134,7 +136,7 @@ export interface VistaEsterno {
  */
 export function calcolaEsterno(
   righe: RigaEsterna[],
-  info: (ip: string) => { nome: string | null; paese: string | null; asn: number | null; fornitore: string | null },
+  info: (ip: string) => { nome: string | null; a_mano?: boolean; paese: string | null; asn: number | null; fornitore: string | null },
   filtro: { per: Per; pagina?: number; cerca?: string },
 ): VistaEsterno {
   const cerca = (filtro.cerca ?? "").trim().toLowerCase();
@@ -165,7 +167,8 @@ export function calcolaEsterno(
     if (!g) {
       g = {
         riga: {
-          chiave, nome: filtro.per === "destinazione" ? i.nome : null,
+          chiave, nome: filtro.per === "destinazione" ? i.nome : filtro.per === "fornitore" ? i.fornitore : null,
+          a_mano: filtro.per === "destinazione" && i.a_mano === true,
           paese: filtro.per === "destinazione" || filtro.per === "paese" ? i.paese : null,
           fornitore: filtro.per === "destinazione" || filtro.per === "fornitore" ? i.fornitore : null,
           host: 0, destinazioni: 0, byte: 0, byte_dentro: 0, servizi: [], ultima_vista: r.ultima_vista,
@@ -225,7 +228,8 @@ export function esternoTraffico(filtro: { giorni?: number; per: Per; pagina?: nu
     let i = memo.get(ip);
     if (!i) {
       const o = diOggetto(ip);
-      i = { nome: (o ? nomeOggetto.get(o) : null) ?? nomi.get(ip) ?? null, ...geo(ip) };
+      const dato = o ? nomeOggetto.get(o) ?? null : null;
+      i = { nome: dato ?? nomi.get(ip) ?? null, a_mano: dato !== null, ...geo(ip) };
       memo.set(ip, i);
     }
     return i;

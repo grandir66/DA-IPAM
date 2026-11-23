@@ -143,7 +143,9 @@ Solo IPAM, nessun cambio al collector.
   14 giorni con interruttore per rete, `GET /api/traffico/esterno`, `GET|POST /api/traffico/geo`. Verifica: prove del
   traffico 35 su 35, eslint e `tsc` puliti; scarico vero dell'archivio provato una volta dal Mac in una cartella usa e
   getta: 2 secondi, 27 MB, 362.998 intervalli di paese e 409.312 di fornitore (23/11).
-- [ ] Interfaccia: scheda «Verso l'esterno», proposta a Riccardo il 23/11.
+- [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). Scheda «Verso l'esterno» (`traffico/esterno.tsx`):
+  quattro viste, riga gialla quando il tetto scatta, citazione di DB-IP nel piede, «Scarica l'archivio» per gli
+  amministratori, «Dai un nome» a una destinazione. Verifica: eslint e `tsc` puliti (23/11). **Non guardata resa.**
 - [ ] Sull'hub: scaricare l'archivio, guardare la vista, contare le righe di `traffico_esterni` dopo un giorno.
 - [ ] Misura di giorno su PX03, poi gli altri quattro collector (insieme alla tappa 2).
 

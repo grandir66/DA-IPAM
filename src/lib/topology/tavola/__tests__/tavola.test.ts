@@ -147,9 +147,17 @@ test("righe: gli apparati piccoli si affiancano finché ci stanno; un armadio nu
 test("rotta: site non numerico 400, assente = primo sito; un sito senza apparati dà apparati vuoti", () => {
   assert.equal(parseSitoTavola("abc").ok, false);
   assert.equal(parseSitoTavola("-3").ok, false);
+  assert.deepEqual(parseSitoTavola("0"), { ok: true, data: 0 });
   assert.deepEqual(parseSitoTavola(null), { ok: true, data: null });
   assert.deepEqual(parseSitoTavola("12"), { ok: true, data: 12 });
   const r = ritagliaSito({ nodes: [nodo(1, "switch")], links: [], sites: [{ locationId: SITO, name: "Sede A", headNodeId: null, headProposed: false, nodeIds: [] }] }, 42);
   assert.deepEqual(r.deviceIds, []);
   assert.deepEqual(r.collegamenti, []);
+  // Un'istanza senza sedi: gli apparati senza sede stanno nel «sito» 0, che compare nell'elenco.
+  const senza = ritagliaSito({ nodes: [nodo(1, "switch", { siteId: null }), nodo(2, "switch", { siteId: null })], links: [coll("L", "dev:1", "Port 1", "dev:2", "Port 1")], sites: [] }, 0);
+  assert.deepEqual(senza.siti, [{ id: 0, name: "Senza sede" }]);
+  assert.deepEqual(senza.deviceIds, [1, 2]);
+  const t = componiTavola({ sito: 0, nodi: senza.nodi, collegamenti: senza.collegamenti, apparati: [{ node: "dev:1", porte: [porta(1)] }, { node: "dev:2", porte: [porta(1)] }] });
+  assert.equal(t.cavi.length, 1);
+  assert.equal(t.cavi[0].tipo, "trunk");
 });

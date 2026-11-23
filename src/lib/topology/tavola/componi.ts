@@ -7,6 +7,7 @@
  */
 import { elencoDa, indiciInElenco, normale } from "@/lib/topology/cavi/porte";
 import type { MapLink, MapNode } from "@/lib/topology/model-types";
+import { SENZA_SEDE, nelSito } from "./api";
 import type { ApparatoComposto, ApparatoPorte, CavoComposto, PortaComposta, PortaTavola, TavolaComposta, TipoPorta } from "./tipi";
 
 const RETE = new Set(["router", "firewall", "switch", "access_point", "ap", "gateway", "wireless", "l3_switch"]);
@@ -43,7 +44,7 @@ export function numeroCorto(nome: string, indice: number | null): string {
 
 /** Il tipo di un collegamento, uguale dai due capi: così il cavo e le sue due porte hanno lo stesso colore. */
 export function tipoCollegamento(l: MapLink, a: MapNode | undefined, b: MapNode | undefined, sito: number): TipoPorta {
-  const fuori = (n: MapNode | undefined) => !n || (n.siteId !== null && n.siteId !== sito);
+  const fuori = (n: MapNode | undefined) => !n || (sito === SENZA_SEDE ? n.siteId !== null : n.siteId !== null && n.siteId !== sito);
   if (l.cavo?.wan || fuori(a) || fuori(b)) return "linea";
   if (l.cavo?.fascio || (a && b && eRete(a) && eRete(b))) return "trunk";
   if ((a && eServer(a)) || (b && eServer(b))) return "server";
@@ -81,7 +82,7 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
   const porteDi = new Map(input.apparati.map((a) => [a.node, a.porte]));
   const lavori = new Map<string, Lavoro>();
   for (const n of input.nodi) {
-    if (n.kind !== "device" || n.hidden || n.siteId !== input.sito) continue;
+    if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito)) continue;
     const righe = [...(porteDi.get(n.id) ?? [])].sort((x, y) => (x.indice ?? 1e9) - (y.indice ?? 1e9));
     const conIndice = righe.filter((r): r is PortaTavola & { indice: number } => r.indice !== null);
     const apparato: ApparatoComposto = { nodo: n.id, refId: n.refId, nome: n.name, tipo: n.type, ip: n.mgmtIp, rackId: n.rackId, rango: rangoDi(n), porte: [] };

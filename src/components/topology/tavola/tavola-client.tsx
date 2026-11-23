@@ -55,7 +55,7 @@ export function TavolaClient() {
   const ricarica = useCallback(async (s: number | null) => {
     setCarica(true);
     setErrore(null);
-    const r = await fetchJson<TavolaView>(`/api/topology/tavola${s ? `?site=${s}` : ""}`);
+    const r = await fetchJson<TavolaView>(`/api/topology/tavola${s !== null ? `?site=${s}` : ""}`);
     if (r.ok) {
       setDati(r.data);
       // Un sito ricordato che non c'è più: la rotta ha già scelto il primo, ma con quello chiesto non trova apparati.
@@ -181,7 +181,7 @@ export function TavolaClient() {
       ) : !dati || (carica && !tavola) ? (
         <div className="rounded-xl border bg-card px-4 py-10 text-center text-[14px] text-muted-foreground">Caricamento della tavola…</div>
       ) : dati.siti.length === 0 ? (
-        <div className="rounded-xl border bg-card px-4 py-10 text-center text-[14px]">Nessuna sede nella mappa: le sedi si assegnano in Topologia › Dati della mappa.</div>
+        <div className="rounded-xl border bg-card px-4 py-10 text-center text-[14px]">Nessun apparato nella mappa.</div>
       ) : tavola && tavola.apparati.length === 0 ? (
         <div className="rounded-xl border bg-card px-4 py-10 text-center text-[14px]">Nessun apparato in questa sede: gli apparati si assegnano alla sede dalla loro scheda.</div>
       ) : (

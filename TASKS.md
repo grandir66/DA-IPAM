@@ -78,6 +78,13 @@ postazione (ovviamente in AD)».
       Nessuna conferma fatta: la fa Riccardo dalla pagina.
 - [ ] Visto misurando: NB-MARZIA in AD ha 192.168.4.195, il suo host legato è 192.168.5.198, offline dal 05/11: un
       portatile che cambia IP resta su due righe d'host. L'utente si vede sulla riga legata, non su quella viva.
+- [ ] Riccardo (23/11): «avevamo già deciso che i client generalmente possono cambiare ip e se lo stesso pc cambia ip
+      dovrebbe riaggiornare i dati mantenendo lo storico, ma senza avere una moltiplicazione di oggetti».
+      Misura sul 70791 (sola lettura): NB-AGUZZOLI 3 righe (5.150, 3.108, 5.123), NB-GIOVANNI 3, NB-MAX 2,
+      SURFACE-ALAIN 4, PC-LasagniF 2. Il gruppo «stesso apparato» (`multihomed_links`) le riunisce già per nome o
+      seriale, ma Apparati accorpa solo per `physical_device_id`, che su queste righe è vuoto: per questo si vedono
+      tutte. Il legame AD (`ad_computers.host_id`) resta sulla riga vecchia. Difetto visto: il gruppo `ea89883e…` per
+      seriale mette insieme NB-MAX e quattro righe «Mac» (seriale condiviso). Proposta a Riccardo in chat, in attesa.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

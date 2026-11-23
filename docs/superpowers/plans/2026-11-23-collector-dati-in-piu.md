@@ -152,7 +152,7 @@ Solo IPAM, nessun cambio al collector.
 **Fatto quando:** «Verso l'esterno» mostra le destinazioni dell'ufficio con paese e fornitore, e l'archivio dell'hub non è
 cresciuto più del previsto (scrivere i numeri nel Registro).
 
-### [~] Tappa 5 — Connessioni fallite, tempi, servizi davvero usati
+### [x] Tappa 5 — Connessioni fallite, tempi, servizi davvero usati
 
 - Collector: per (client, server, porta) conta SYN senza risposta, rifiuti (RST), ritrasmissioni viste, tempo fra SYN e
   SYN-ACK (minimo e mediano). Si aggregano per finestra, non una riga per pacchetto.
@@ -173,15 +173,18 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 - [x] Difetto del filtro di cattura trovato sul banco e corretto (SYN e RST scartati fuori dalle porte dell'elenco).
   Verifica: sei pacchetti finti, 0 su 5 col filtro vecchio e 5 su 5 col nuovo; `python3 -m unittest discover -s tests -t .`
   63 su 63 (23/11).
-- [ ] Interfaccia: **da proporre a Riccardo** (scheda «Cosa non va» nella pagina Traffico; «Servizi usati» nel riquadro
-  «Con chi parla» della scheda dell'host). Niente è scritto.
+- [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). Scheda «Cosa non va» (`traffico/cosa-non-va.tsx`:
+  chi bussa a vuoto, servizi che non rispondono con «✕ Mai risposto» o «◐ A volte», servizi lenti) e «Servizi usati»
+  nel riquadro «Con chi parla» (usati e noti, «! usati ma non noti a IPAM», aperti mai usati). Verifica: eslint pulito,
+  `tsc` senza errori fuori da `.next/types`, prove del traffico 37 su 37 (23/11). **Non guardata resa** (in locale non
+  ci sono dati).
 - [x] Servizio spento apposta sul banco del PX-NAS, col filtro corretto. Verifica: 23/11 alle 11:59 UTC, porta 8099 nel
   contenitore 110, 6 aperture riuscite e poi 7 rifiutate; `collector-banco` le scrive tutte (riga del servizio con 6 riuscite,
   riga 192.168.99.1 → 8099 con 7 rifiutate). Sull'hub `192.168.4.8`, alle 12:01 UTC, `traffico_connessioni` ha 2.403 righe
   da 116 client e nessuna con client `192.168.4.8`: le scansioni dell'IPAM non entrano.
 
 **Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
-**Verificato il 23/11** (vedi la casella qui sopra); la tappa resta aperta solo per l'interfaccia, che aspetta il sì di Riccardo.
+**Verificato il 23/11** (vedi le caselle qui sopra). Resta, come per le tappe 2 e 4, la misura di giorno su PX03.
 
 ### [ ] Tappa 6 — DNS, TLS, VLAN sbagliata
 

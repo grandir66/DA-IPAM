@@ -19,6 +19,7 @@ import { CollectorEControlli } from "./collector-controlli";
 import { Insieme } from "./insieme";
 import { RetiViste } from "./reti-viste";
 import { Esterno } from "./esterno";
+import { CosaNonVa } from "./cosa-non-va";
 
 interface Dati {
   anomalie: AnomaliaTraffico[];
@@ -28,7 +29,7 @@ interface Dati {
   nomi: Record<string, NomeDiIp>;
   quadro: QuadroTraffico;
 }
-type Scheda = "insieme" | "esterno" | "anomalie" | "reti" | "collector";
+type Scheda = "insieme" | "esterno" | "nonva" | "anomalie" | "reti" | "collector";
 type FiltroStato = StatoAnomalia | "";
 
 const NOME_STATO: Record<StatoAnomalia, string> = { nuova: "Nuove", vista: "Viste", normale: "Normali" };
@@ -137,6 +138,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
         voci={[
           { valore: "insieme", titolo: "Chi parla con chi", descrizione: "Il traffico sulla rete intera: fra reti, per host, per coppia." },
           { valore: "esterno", titolo: "Verso l'esterno", descrizione: "Con chi fuori parlano gli host: per nome, paese e fornitore." },
+          { valore: "nonva", titolo: "Cosa non va", descrizione: "Chi bussa a vuoto, i servizi che non rispondono, i servizi lenti." },
           {
             valore: "anomalie", titolo: "Anomalie", descrizione: "Quello che è uscito dall'abitudine o è passato in chiaro.",
             segnale: daGuardare > 0 ? <span className={cn("ml-1.5 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold", CLASSE_GRAVITA[q.nuove.alta > 0 ? 3 : 2])}>{GRAVITA[q.nuove.alta > 0 ? 3 : 2].segno} {daGuardare}</span> : undefined,
@@ -153,6 +155,8 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
         <Insieme key={reteScelta ?? "tutte"} conCollector={q.collector.length > 0} reteIniziale={reteScelta} />
       ) : scheda === "esterno" ? (
         <Esterno admin={admin} />
+      ) : scheda === "nonva" ? (
+        <CosaNonVa />
       ) : scheda === "reti" ? (
         <RetiViste admin={admin} onVediCoppie={(chiave) => { setReteScelta(chiave); setScheda("insieme"); }} onCambio={() => void contaSenzaNome()} />
       ) : scheda === "collector" && admin ? (

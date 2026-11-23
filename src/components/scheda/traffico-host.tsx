@@ -14,9 +14,10 @@ import { formattaByte, protoPorta } from "@/lib/traffico/frasi";
 import type { CoppiaHost, NomeHost } from "@/lib/traffico/lettura";
 import type { IdentitaDiIp } from "@/lib/traffico/identita";
 import type { NomeDiIp } from "@/lib/traffico/quadro";
+import type { ServiziDiHost } from "@/lib/traffico/connessioni";
 import { Riquadro } from "./riquadro";
 
-interface Risposta { parlaCon: CoppiaHost[]; gliParlano: CoppiaHost[]; nomi: NomeHost[]; host: Record<string, NomeDiIp>; identita?: IdentitaDiIp[]; mac_censito?: string | null }
+interface Risposta { parlaCon: CoppiaHost[]; gliParlano: CoppiaHost[]; nomi: NomeHost[]; host: Record<string, NomeDiIp>; identita?: IdentitaDiIp[]; mac_censito?: string | null; servizi?: ServiziDiHost }
 
 const NOME_FONTE: Record<string, string> = { arp: "ARP", dhcp: "DHCP", mdns: "mDNS", netbios: "NetBIOS", ssdp: "SSDP", lldp: "LLDP", cdp: "CDP" };
 
@@ -102,6 +103,42 @@ function Coppie({ titolo, righe, host }: { titolo: string; righe: CoppiaHost[]; 
   );
 }
 
+/** Le porte usate nel traffico contro quelle che IPAM sa aperte dalle scansioni (tappa 5, approvata il 23/11). */
+function ServiziUsati({ s }: { s: ServiziDiHost }) {
+  const etichetta = (p: { proto: string; porta: number; servizio: string | null }) => `${p.proto}/${p.porta}${p.servizio ? ` ${p.servizio}` : ""}`;
+  const gruppi: { titolo: string; voci: { chiave: string; testo: string; nota?: string }[]; classe: string; segno?: string; spiega?: string }[] = [
+    { titolo: "Usati e noti", classe: "border bg-muted", voci: s.usate_note.map((p) => ({ chiave: `${p.proto}/${p.porta}`, testo: etichetta(p), nota: `${p.client} client` })) },
+    { titolo: "Usati ma non noti a IPAM", segno: "!", classe: "border-[#C9A800] bg-[#FFD400] text-[#0D2537]", spiega: "qualcuno li usa e la scansione non li conosce",
+      voci: s.usate_non_note.map((p) => ({ chiave: `${p.proto}/${p.porta}`, testo: etichetta(p), nota: `${p.client} client` })) },
+    { titolo: "Aperti, mai usati", classe: "border border-dashed border-foreground/50", spiega: "nel traffico che passa da un collector",
+      voci: s.aperte_mai_usate.map((p) => ({ chiave: `${p.proto}/${p.porta}`, testo: etichetta(p) })) },
+  ];
+  return (
+    <div className="mt-4">
+      <p className="mb-1.5 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Servizi usati · ultimi {s.giorni} giorni</p>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {gruppi.map((g) => (
+          <div key={g.titolo}>
+            <p className="mb-1 text-[13px] font-semibold">
+              {g.segno && <span aria-hidden className="mr-1">{g.segno}</span>}{g.titolo} <span className="font-mono font-normal text-muted-foreground">{g.voci.length}</span>
+              {g.spiega && <span className="block font-normal text-muted-foreground">{g.spiega}</span>}
+            </p>
+            {g.voci.length === 0 ? <span className="text-[13px] text-muted-foreground">—</span> : (
+              <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                {g.voci.map((v) => (
+                  <span key={v.chiave} className={`rounded-md px-1.5 py-0.5 font-mono text-[13px] ${g.classe}`} title={v.nota}>
+                    {g.segno && <span aria-hidden className="mr-0.5 font-sans font-bold">{g.segno}</span>}{v.testo}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TrafficoHost({ ip }: { ip: string }) {
   const [dati, setDati] = useState<Risposta | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
@@ -130,6 +167,7 @@ export function TrafficoHost({ ip }: { ip: string }) {
         <Coppie titolo="Parla con" righe={dati.parlaCon} host={dati.host} />
         <Coppie titolo="Gli parlano" righe={dati.gliParlano} host={dati.host} />
       </div>
+      {dati.servizi && (dati.servizi.usate_note.length + dati.servizi.usate_non_note.length + dati.servizi.aperte_mai_usate.length) > 0 && <ServiziUsati s={dati.servizi} />}
       {dati.nomi.length > 0 && (
         <div className="mt-4">
           <p className="mb-1.5 text-[13px] font-bold uppercase tracking-wider text-cian-testo">

@@ -305,8 +305,8 @@ Verifica (23/11): prove del collector 109 OK e del traffico in IPAM 43 OK (gravi
 CT 103 verso il 110, OpenSSH 9.2) → fatto `password_ssh_provate`, client 192.168.99.223, porta 22, `{"connessioni":30}`.
 Verificato nell'archivio del collector e, per IPAM, con le prove di `valutaFatti`: la pagina sull'hub non l'ho
 guardata. Scostamenti: i certificati usano il tipo `tls_certificato` della tappa 6 (non due tipi nuovi);
-`certificato_non_valido` → motivo `non_valido`; i programmi vanno nei nomi col tipo `software`, che IPAM salva ma non
-mostra; il tipo `software` lo usa anche la tappa 7 (accordo con quella sessione). Due tentativi a vuoto prima: verso
+`certificato_non_valido` → motivo `non_valido`; i programmi vanno nei nomi col tipo `software`, che la scheda dell'host mostra sotto «Programmi
+dichiarati» (fatto dalla sessione della tappa 7, approvato da Riccardo); il tipo `software` lo usa anche la tappa 7 (accordo con quella sessione). Due tentativi a vuoto prima: verso
 il CT 103 (OpenSSH 10 blocca chi sbaglia) e dal 103 con `sshpass` (il 103 non risolve i nomi, `apt` non va):
 ora `SSH_ASKPASS`.
 
@@ -365,6 +365,10 @@ ora `SSH_ASKPASS`.
   Riccardo le ha dato il via alla tappa 7 sul banco (un'ora, CT 111 temporaneo, cattura su veth110i0): la prova SSH
   aspetta il suo «finito». Pronta sul nodo: `SOLO_SSH=1 bash /root/cattura-zeek/cattura-zeek.sh`. Nomi allineati con
   lei: programmi = tabella `nome`, tipo `software`, anche per la tappa 7; `tls_certificato` col motivo `non_valido`.
+
+- 2026-11-23, Task 5: dalle 13:51:51 UTC sul DA-PX-03 l'ascolto gira con `ACCESSI=1` (tappa 7, acceso dalla sua
+  sessione su richiesta di Riccardo; lo rispegne lei a fine prova). Nella giornata cambia il carico dell'ascolto, non
+  le misure di Zeek (il sorvegliante misura il processo di Zeek, disco e memoria libera). `installa.sh` non tocca `ACCESSI`.
 
 ## Consuntivo
 ### Fatto

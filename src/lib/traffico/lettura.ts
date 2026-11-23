@@ -185,8 +185,8 @@ export function accessoCollector(id: number): CollectorAccesso | null {
 }
 
 const DATA = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
-/** Tipi di nome accettati dal collector. `software` (sonda avanzata, 23/11): versione dichiarata in rete; si salva ma
- *  la scheda dell'host non la mostra ancora (dove mostrarla lo decide Riccardo). */
+/** Tipi di nome accettati dal collector. `software` (sonda avanzata e tappa 7, 23/11): versione dichiarata in rete;
+ *  la scheda dell'host la mostra a parte, sotto «Programmi dichiarati» (`nomiDiHost`), non fra i nomi chiesti. */
 const TIPI_NOME = new Set(["dns", "sni", "software"]);
 function rigaValida(r: RigaCollector): boolean {
   return (

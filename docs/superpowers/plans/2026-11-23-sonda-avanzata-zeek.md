@@ -37,7 +37,7 @@
 
 ---
 
-### [ ] Task 1 — `sonda.zeek` e dati di prova dal banco
+### [x] Task 1 — `sonda.zeek` e dati di prova dal banco
 
 **File**
 - Crea: `collector-traffico/zeek/sonda.zeek`
@@ -87,9 +87,17 @@ Più, in `zeek_init` con priorità -5, un `Log::get_filter` / `$exclude` / `Log:
 
 **Commit:** `Sonda Zeek: script con i filtri dei campi e dati di prova dal banco`
 
+Verifica (23/11, banco PX-NAS, VM 109 13:08-13:23 UTC, snapshot `pre-zeek-cattura-20261123` poi ripristino e tolto):
+`zeek -a sonda.zeek` → `esito-a=0`; `grep -rl Prova-Segreto-7731 tests/dati/zeek/grezzi` → `ftp.log http.log ldap.log`
+(e `comunita-di-prova-7731` in `snmp.log`); lo stesso su `filtrati` → niente. Scostamenti: `detect-sqli` in 9.0.1 è
+`detect-sql-injection`; si spengono tutti i registri fuori da un elenco (MySQL, RADIUS, SOCKS, RDP scrivono utenti);
+tolti anche `uri`/`referrer` di `http` e `arg` di `ftp`; il fatto «accesso in chiaro» si calcola prima del filtro
+(`accesso_basic`, `accesso_chiaro`, `comunita_nota`). `accesso_chiaro` di `ldap` aggiunto dopo la cattura: si
+riprova con la cattura del Task 6. Dettaglio in `tests/dati/zeek/LEGGIMI.md`.
+
 ---
 
-### [ ] Task 2 — Prova di non-fuga
+### [x] Task 2 — Prova di non-fuga
 
 **Dipende da:** Task 1.
 
@@ -114,9 +122,12 @@ Vista rossa: si esegue la 2 puntandola a `grezzi/` (variabile d'ambiente `NON_FU
 
 **Commit:** `Sonda Zeek: prova che i segreti non arrivano su disco`
 
+Verifica (23/11): `python3 -m unittest tests.test_non_fuga` → 2 verdi, 1 saltata; vista rossa: `NON_FUGA_CARTELLA=grezzi`
+→ `test_i_filtrati_no` FAIL con `ftp.log`, `http.log`, `ldap.log`, `snmp.log`.
+
 ---
 
-### [ ] Task 3 — Adattatore: connessioni, DNS, TLS
+### [~] Task 3 — Adattatore: connessioni, DNS, TLS
 
 **Dipende da:** Task 1.
 
@@ -264,6 +275,14 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
 ---
 
 ## Registro
+
+- 2026-11-23, esecuzione in linea (sessione «sonda avanzata con Zeek»). La sessione delle tappe 5-7 non ha risposto
+  alla domanda sul banco; dal suo registro aveva finito con la VM 109 alle 12:33 UTC togliendo tutto: banco usato dalle
+  13:08. Primo lancio fallito all'installazione (sulla VM manca `gpg`: la chiave ora si salva in `.asc`); banco
+  rimesso a mano com'era, poi `cattura-zeek.sh` ripristina da sé anche quando si ferma a metà (`trap`).
+- Task 1, caso 3 (connessioni lunghe): in Zeek 9.0.1 lo script non c'è → limite, va nel README col Task 5.
+- Task 2, vista rossa: `NON_FUGA_CARTELLA=grezzi python3 -m unittest tests.test_non_fuga` → FAIL (segreti in
+  `ftp.log`, `http.log`, `ldap.log`, `snmp.log`), poi verde su `filtrati`.
 
 ## Consuntivo
 ### Fatto

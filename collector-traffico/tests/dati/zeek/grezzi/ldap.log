@@ -1,0 +1,2 @@
+{"ts":1795438656.425352,"uid":"C8tAyT0zyRYsNNYKc","id.orig_h":"192.168.99.88","id.orig_p":56322,"id.resp_h":"192.168.99.223","id.resp_p":389,"message_id":1,"version":3,"opcode":"bind simple","result":"success","object":"cn=prova-utente,dc=banco,dc=test","argument":"Prova-Segreto-7731"}
+{"ts":1795438656.425472,"uid":"C8tAyT0zyRYsNNYKc","id.orig_h":"192.168.99.88","id.orig_p":56322,"id.resp_h":"192.168.99.223","id.resp_p":389,"message_id":2,"opcode":"unbind"}

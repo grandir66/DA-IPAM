@@ -8,6 +8,7 @@ https://claude.ai/artifact/M6kM8kAvznAcTbLhV4V5pH (sorgente nella sessione DA-In
 Non sostituisce la Topologia: è un'altra **vista** sugli stessi dati (`topology_*`, `switch_ports`, lettori UniFi e
 MikroTik, LLDP dei Proxmox).
 
+- [~] (23/11) Spec della vista 1 scritta: `docs/superpowers/specs/2026-11-23-tavola-di-cablaggio-design.md`, da approvare (4 domande al §8).
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,
       libera/giù) e sotto la destinazione scritta; cavi nei corridoi, i lunghi dai bordi; al passaggio del mouse resta
       acceso solo quel collegamento. Dati già presenti: collegamenti della Topologia + porte di `switch_ports`.

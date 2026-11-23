@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS nome_ip (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, visto TEXT NOT NULL, ip TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
   UNIQUE (ip, tipo));
 """
+CREATE_CONNESSIONI = """
+CREATE TABLE IF NOT EXISTS connessione (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, inizio TEXT NOT NULL, client TEXT NOT NULL DEFAULT '', server TEXT NOT NULL, porta INTEGER NOT NULL,
+  tentate INTEGER NOT NULL, senza_risposta INTEGER NOT NULL, rifiutate INTEGER NOT NULL, ripetute INTEGER NOT NULL,
+  riuscite INTEGER NOT NULL, ms_minimo INTEGER NOT NULL, ms_mediano INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_connessione_inizio ON connessione (inizio);
+"""
+COLONNE_CONNESSIONE = ("seq", "inizio", "client", "server", "porta", "tentate", "senza_risposta", "rifiutate", "ripetute", "riuscite", "ms_minimo", "ms_mediano")
 COLONNE_ESTERNO = ("seq", "inizio", "interno", "ip", "verso", "proto", "porta", "byte", "pacchetti", "flussi")
 COLONNE_NOME_IP = ("seq", "visto", "ip", "tipo", "nome")
 COLONNE_IDENTITA = ("seq", "visto", "mac", "ip", "vlan", "fonte", "nome", "tipo")
@@ -63,6 +71,7 @@ def apri(percorso: str) -> sqlite3.Connection:
     db.executescript(SCHEMA)
     db.executescript(CREATE_IDENTITA)
     db.executescript(CREATE_ESTERNI)
+    db.executescript(CREATE_CONNESSIONI)
     # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
     if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
         db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
@@ -195,6 +204,19 @@ def leggi_nomi_ip(db: sqlite3.Connection, dopo: int, limite: int):
     return righe, ultimo, altri, False
 
 
+def scrivi_connessioni(db: sqlite3.Connection, inizio: str, righe: list[dict]) -> None:
+    nomi = COLONNE_CONNESSIONE[2:]
+    with db:
+        db.executemany(
+            f"INSERT INTO connessione (inizio, {', '.join(nomi)}) VALUES (?{', ?' * len(nomi)})",
+            [(inizio, *(r[n] for n in nomi)) for r in righe],
+        )
+
+
+def leggi_connessioni(db: sqlite3.Connection, dopo: int, limite: int):
+    return _leggi(db, "connessione", COLONNE_CONNESSIONE, dopo, limite)
+
+
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
     with db:
@@ -204,6 +226,7 @@ def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
         db.execute("DELETE FROM identita WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM esterno WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM nome_ip WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM connessione WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
     return tolte
 
 

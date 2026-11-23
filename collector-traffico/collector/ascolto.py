@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-from . import archivio, controlli, identita, piega
+from . import archivio, connessioni, controlli, identita, piega
 
 # Solo le porte dei controlli, più il saluto TLS su qualunque porta (primo byte del carico = 0x16).
 _BASE = (
@@ -22,7 +22,9 @@ _BASE = (
     "or (tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16) "
     # chi è un indirizzo (23/11): ARP, DHCP, mDNS, SSDP, LLDP, CDP; NetBIOS (137) c'è già
     "or arp or udp port 67 or udp port 68 or udp port 5353 or udp port 1900 "
-    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc"
+    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc "
+    # connessioni che non vanno (23/11): i pacchetti che aprono o rifiutano una connessione (SYN, RST)
+    "or (tcp[13] & 6 != 0)"
 )
 # Byte tenuti per pacchetto: le opzioni DHCP (nome dell'host) cominciano al byte 282.
 CATTURA = 600
@@ -53,17 +55,18 @@ def leggi_pcap(flusso):
         ordine = ">"
     else:
         raise ValueError("flusso pcap non riconosciuto")
+    divisore = 1e9 if magia in (0xA1B23C4D, 0x4D3CB2A1) else 1e6
     if struct.unpack(ordine + "I", testa[20:24])[0] != 1:
         raise ValueError("serve una cattura Ethernet")
     while True:
         t = flusso.read(16)
         if len(t) < 16:
             return
-        secondi, _, presi, _ = struct.unpack(ordine + "IIII", t)
+        secondi, frazione, presi, _ = struct.unpack(ordine + "IIII", t)
         dati = flusso.read(presi)
         if len(dati) < presi:
             return
-        yield secondi, dati
+        yield secondi + frazione / divisore, dati
 
 
 def spacchetta(pacchetto: bytes) -> tuple[str, str, int, int, int, bytes] | None:
@@ -122,7 +125,7 @@ class Ascolto:
     quante richieste DNS ha fatto un host. `scrivi_fatto` e `scrivi_nomi` si passano da fuori,
     così le prove non hanno bisogno di un archivio."""
 
-    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None):
+    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None, scrivi_connessioni=None):
         self._reti = piega._reti(reti_interne)
         self._memo: dict[str, str] = {}
         self._scrivi_fatto = scrivi_fatto
@@ -132,6 +135,7 @@ class Ascolto:
         self._identita_nuove: dict[tuple[str, str, str], dict] = {}
         self._identita_scritte = 0
         self._scrivi_nomi_ip = scrivi_nomi_ip
+        self._connessioni = connessioni.Connessioni(self._lato, scrivi_connessioni) if scrivi_connessioni else None
         self._nomi_ip: dict[tuple[str, str], tuple[str, int]] = {}  # (ip, tipo) → (nome, ultima scrittura)
         self._nomi_ip_nuovi: dict[tuple[str, str], dict] = {}
         self._detti: dict[tuple, int] = {}                # (tipo, client, server) → ultima volta
@@ -155,6 +159,8 @@ class Ascolto:
         self._scrivi_fatto(archivio.ora_utc(adesso), tipo, client, server, porta, dettaglio)
 
     def _chiudi_finestra(self, adesso: int) -> None:
+        if self._connessioni and self._finestra:
+            self._connessioni.chiudi_finestra(archivio.ora_utc(self._finestra), adesso)
         if self._nomi:
             self._scrivi_nomi(archivio.ora_utc(self._finestra), self._nomi)
         self._nomi = {}
@@ -205,9 +211,12 @@ class Ascolto:
         if len(self._nomi_ip_nuovi) < MEMORIA_MASSIMA:
             self._nomi_ip_nuovi[chiave] = {"visto": archivio.ora_utc(adesso), "ip": ip, "tipo": tipo, "nome": nome}
 
-    def pacchetto(self, adesso: int, pacchetto: bytes) -> None:
+    def pacchetto(self, adesso: int, pacchetto: bytes, istante: float | None = None) -> None:
+        """`istante`: l'ora del pacchetto con le frazioni di secondo (dalla cattura), per i tempi di risposta."""
         if adesso - self._finestra >= FINESTRA_S:
             self._chiudi_finestra(adesso)
+        if self._connessioni:
+            self._connessioni.pacchetto(float(adesso) if istante is None else istante, pacchetto)
         if self._scrivi_identita:
             for voce in identita.osserva(pacchetto):
                 self._osserva(adesso, voce)
@@ -276,6 +285,7 @@ def main() -> int:
         lambda visto, conteggi: archivio.scrivi_nomi(db, visto, conteggi),
         (lambda voci: archivio.scrivi_identita(db, voci)) if os.environ.get("IDENTITA", "1") != "0" else None,
         (lambda voci: archivio.scrivi_nomi_ip(db, voci)) if os.environ.get("ESTERNI", "1") != "0" else None,
+        (lambda inizio, righe: archivio.scrivi_connessioni(db, inizio, righe)) if os.environ.get("CONNESSIONI", "1") != "0" else None,
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
     tcpdump = subprocess.Popen(
@@ -290,10 +300,15 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _ferma)
     visti = 0
     try:
-        for _, pacchetto in leggi_pcap(tcpdump.stdout):
+        scarto = None
+        for istante, pacchetto in leggi_pcap(tcpdump.stdout):
             visti += 1
             try:
-                ascolto.pacchetto(int(time.time()), pacchetto)
+                # i tempi di risposta si misurano sull'ora della cattura, riportata all'orologio di qui
+                adesso = time.time()
+                if scarto is None:
+                    scarto = adesso - istante
+                ascolto.pacchetto(int(adesso), pacchetto, istante + scarto)
             except Exception as e:  # un pacchetto storto non ferma l'ascolto
                 print(f"ascolto: pacchetto saltato ({type(e).__name__})", file=sys.stderr, flush=True)
             if visti % 1000 == 0:

@@ -369,6 +369,8 @@ ora `SSH_ASKPASS`.
 - 2026-11-23, Task 5: dalle 13:51:51 UTC sul DA-PX-03 l'ascolto gira con `ACCESSI=1` (tappa 7, acceso dalla sua
   sessione su richiesta di Riccardo; lo rispegne lei a fine prova). Nella giornata cambia il carico dell'ascolto, non
   le misure di Zeek (il sorvegliante misura il processo di Zeek, disco e memoria libera). `installa.sh` non tocca `ACCESSI`.
+  Poi Riccardo ha deciso di tenerlo acceso in modo stabile: **`ACCESSI=1` sul DA-PX-03 resta**, anche se si
+  reinstalla o si cambia profilo.
 
 ## Consuntivo
 ### Fatto

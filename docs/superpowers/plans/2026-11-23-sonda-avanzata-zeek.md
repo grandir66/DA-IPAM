@@ -270,7 +270,7 @@ freno tirato, «▲ Zeek fermo per il disco pieno» (un testo nella riga che c'e
 
 ---
 
-### [~] Task 6 — Fatti nuovi: certificati, avvisi di Zeek, programmi
+### [x] Task 6 — Fatti nuovi: certificati, avvisi di Zeek, programmi
 
 **Dipende da:** Task 4 (può andare in parallelo al 5).
 
@@ -298,6 +298,17 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
 **Verifica:** prove verdi; sul banco un `ssh` con password sbagliata ripetuto dal contenitore 110 produce `password_ssh_provate` in IPAM (VM 109 col profilo avanzato, snapshot prima e ripristino dopo).
 
 **Commit:** `Sonda Zeek: certificati, avvisi di Zeek e programmi visti in rete`, poi rilascio.
+
+Verifica (23/11): prove del collector 109 OK e del traffico in IPAM 43 OK (gravità 3 per i due tipi nuovi, frasi,
+`non_valido`). Banco, collector installato col profilo avanzato: `sql_injection`, `tls_certificato` (autofirmato) e
+`tls_vecchio` dalla seconda prova; `password_ssh_provate` dalla terza (`SOLO_SSH=1`, 40 accessi rifiutati su 40 dal
+CT 103 verso il 110, OpenSSH 9.2) → fatto `password_ssh_provate`, client 192.168.99.223, porta 22, `{"connessioni":30}`.
+Verificato nell'archivio del collector e, per IPAM, con le prove di `valutaFatti`: la pagina sull'hub non l'ho
+guardata. Scostamenti: i certificati usano il tipo `tls_certificato` della tappa 6 (non due tipi nuovi);
+`certificato_non_valido` → motivo `non_valido`; i programmi vanno nei nomi col tipo `software`, che IPAM salva ma non
+mostra; il tipo `software` lo usa anche la tappa 7 (accordo con quella sessione). Due tentativi a vuoto prima: verso
+il CT 103 (OpenSSH 10 blocca chi sbaglia) e dal 103 con `sshpass` (il 103 non risolve i nomi, `apt` non va):
+ora `SSH_ASKPASS`.
 
 ---
 
@@ -349,7 +360,7 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
   dell'avvio dell'ascolto (la tappa 7 passava `scrivi_accessi` al posto di `profilo`: TypeError, ascolto fermo per un
   minuto). Log del primo tentativo in `/root/giornata-zeek-tentativo1.log`. Registri rimasti dal blocco (266 file
   piccoli della finestra delle 13:20) smaltiti dall'adattatore uno per registro a giro; scartati 0.
-- 2026-11-23, Task 6: manca la prova di `password_ssh_provate` sul banco (`SOLO_SSH=1`, dal 103 verso il 110). Chiesto
+- 2026-11-23, Task 6 (chiuso alle 14:2x UTC dopo la terza prova, vedi il task). Prima: manca la prova di `password_ssh_provate` sul banco (`SOLO_SSH=1`, dal 103 verso il 110). Chiesto
   alla sessione delle tappe 5-7, che sta usando il banco, quando è libero. Ha risposto che era libero, ma subito dopo
   Riccardo le ha dato il via alla tappa 7 sul banco (un'ora, CT 111 temporaneo, cattura su veth110i0): la prova SSH
   aspetta il suo «finito». Pronta sul nodo: `SOLO_SSH=1 bash /root/cattura-zeek/cattura-zeek.sh`. Nomi allineati con

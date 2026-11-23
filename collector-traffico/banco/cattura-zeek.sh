@@ -73,10 +73,12 @@ $VM "mkdir -p /root/zc; cd /root/zc; nohup tcpdump -i ens19 -s 0 -U -w cattura.p
 
 if [ "$SOLO_SSH" = 1 ]; then
   echo "== 40 accessi SSH falliti da banco-sim (103) verso banco-carico (110)"
-  pct exec 103 -- sh -c 'DEBIAN_FRONTEND=noninteractive apt-get -qq install -y sshpass >/dev/null 2>&1
-    for i in $(seq 40); do sshpass -p Sbagliata-0000 ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no \
-      -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1 -o ConnectTimeout=3 utente-ssh@192.168.99.88 true >/dev/null 2>&1; sleep 0.3; done
-    echo ssh-fatto; DEBIAN_FRONTEND=noninteractive apt-get -qq purge -y sshpass >/dev/null 2>&1'
+  # SSH_ASKPASS e non sshpass: il 103 non risolve i nomi (apt non va) e un sshpass mancante faceva fallire in silenzio
+  pct exec 103 -- sh -c 'printf "#!/bin/sh\necho Sbagliata-0000\n" > /tmp/pw.sh; chmod +x /tmp/pw.sh; n=0
+    for i in $(seq 40); do SSH_ASKPASS=/tmp/pw.sh SSH_ASKPASS_REQUIRE=force DISPLAY=x setsid -w ssh -n -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1 -o ConnectTimeout=3 utente-ssh@192.168.99.88 true 2>/tmp/ssh.err
+      grep -q "Permission denied" /tmp/ssh.err && n=$((n+1)); sleep 0.3; done
+    echo "ssh-fatto: rifiutati $n su 40"; rm -f /tmp/pw.sh /tmp/ssh.err'
   echo "== attesa della rotazione e del giro del collector (6 minuti e mezzo)"
   sleep 390
   $VM "pkill -INT tcpdump; cd /var/lib/collector-traffico; python3 -c \"

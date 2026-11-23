@@ -1,5 +1,22 @@
 # TASKS — DA-IPAM
 
+## 2026-11-23 — Idea: la «tavola di cablaggio» di DA-Infra dentro DA-IPAM, coi dati veri (Riccardo, proposta, niente codice)
+
+Riccardo: «sarebbe possibile integrare la mappa dinamica dentro da-ipam, collegandola ai dati reali letti dagli
+applicativi?»; «esiste già una pagina topologia, ma quello che hai generato è molto efficace». Modello: l'artifact
+https://claude.ai/artifact/M6kM8kAvznAcTbLhV4V5pH (sorgente nella sessione DA-Infra del 18-20/11).
+Non sostituisce la Topologia: è un'altra **vista** sugli stessi dati (`topology_*`, `switch_ports`, lettori UniFi e
+MikroTik, LLDP dei Proxmox).
+
+- [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,
+      libera/giù) e sotto la destinazione scritta; cavi nei corridoi, i lunghi dai bordi; al passaggio del mouse resta
+      acceso solo quel collegamento. Dati già presenti: collegamenti della Topologia + porte di `switch_ports`.
+- [ ] Vista 2 «Servizi» (schema logico): IP pubblico → porte inoltrate dal firewall → servizio interno → nomi smistati dal
+      reverse proxy; uscite verso Internet; chi è gateway di quale rete. **Mancano i lettori**: policy NAT/rotte dello
+      Stormshield (sola lettura via ssh), configurazione di Traefik, rotte dei MikroTik (in parte già negli export).
+- [ ] Vista 3 «Sedi»: sedi e tunnel (WireGuard, NetBird). Dati in parte già presenti (MikroTik, peer NetBird di DA-Link).
+- Repo pubblico: nel codice nessun dato di Domarc, tutto dal database.
+
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)
 
 Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (non si ricopia qui).

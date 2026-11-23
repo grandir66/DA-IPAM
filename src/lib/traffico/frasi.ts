@@ -26,6 +26,7 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   dns_anomalo: "DNS anomalo",
   ip_doppio: "IP doppio",
   mac_cambiato: "MAC cambiato",
+  paese_nuovo: "Paese nuovo",
 };
 
 /** I tipi nell'ordine dei filtri. Sta qui e non in `anomalie.ts`: quel modulo tocca il database e non entra nel browser. */
@@ -85,6 +86,7 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "impianto_scrittura": return "Comando di scrittura verso un impianto";
     case "ip_doppio": return "Due apparati rispondono per lo stesso indirizzo";
     case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
+    case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
     case "dns_anomalo": return d.motivo === "molte_richieste" ? "Moltissime richieste DNS in cinque minuti" : "Richieste DNS fuori dal comune";
   }
 }
@@ -102,4 +104,14 @@ export function macAnomalia(a: { tipo: TipoAnomalia; dettaglio: Record<string, u
     return x && y ? `prima ${x}, ora ${y}` : null;
   }
   return null;
+}
+
+/** Il nome italiano di un paese dal codice a due lettere («DE» → «Germania»); il codice stesso se non si conosce. */
+export function nomePaese(codice: string | null): string {
+  if (!codice || !/^[A-Z]{2}$/.test(codice)) return "Paese non noto";
+  try {
+    return new Intl.DisplayNames(["it"], { type: "region" }).of(codice) ?? codice;
+  } catch {
+    return codice;
+  }
 }

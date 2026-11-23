@@ -126,7 +126,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** una rete non censita vista dall'ufficio ha un nome dato da Riccardo e quel nome compare in «Fra reti».
 
-### [ ] Tappa 4 — L'esterno per nome, paese e fornitore
+### [~] Tappa 4 — L'esterno per nome, paese e fornitore
 
 - Collector: oggi tutto ciò che è fuori diventa `esterno`. Tenere la destinazione per le prime N esterne per host e finestra
   (N da misurare, partire da 50), il resto resta `esterno` e si conta. Nome da DNS e SNI già raccolti.
@@ -134,6 +134,18 @@ Solo IPAM, nessun cambio al collector.
   richiesta a un servizio esterno con un indirizzo. Vista «Verso l'esterno»: per nome, paese, fornitore; nomi dati a mano
   dalla tappa 3. Anomalia `paese_nuovo` solo dopo l'apprendimento.
 - Quando il tetto N scatta la pagina lo dice.
+
+- [x] Collector: `piega.esterni` (i primi 50 indirizzi esterni per host e finestra, il resto in una riga «altri» che dice
+  quanti e quanti byte), nome di un indirizzo da risposta DNS e saluto TLS, `GET /v1/esterni` e `/v1/nomi-ip`.
+  Verifica: `python3 -m unittest discover -s tests -t .` 56 su 56 (23/11).
+- [x] Misura su `DA-COLLECTOR-PX03` (solo lui ha il codice nuovo): vedi Registro. Sotto le soglie, di notte.
+- [x] IPAM: `traffico_esterni`, `traffico_nomi_ip`, `esterno.ts`, archivio locale `geo.ts` (DB-IP Lite), `paese_nuovo` dopo
+  14 giorni con interruttore per rete, `GET /api/traffico/esterno`, `GET|POST /api/traffico/geo`. Verifica: prove del
+  traffico 35 su 35, eslint e `tsc` puliti; scarico vero dell'archivio provato una volta dal Mac in una cartella usa e
+  getta: 2 secondi, 27 MB, 362.998 intervalli di paese e 409.312 di fornitore (23/11).
+- [ ] Interfaccia: scheda «Verso l'esterno», proposta a Riccardo il 23/11.
+- [ ] Sull'hub: scaricare l'archivio, guardare la vista, contare le righe di `traffico_esterni` dopo un giorno.
+- [ ] Misura di giorno su PX03, poi gli altri quattro collector (insieme alla tappa 2).
 
 **Fatto quando:** «Verso l'esterno» mostra le destinazioni dell'ufficio con paese e fornitore, e l'archivio dell'hub non è
 cresciuto più del previsto (scrivere i numeri nel Registro).
@@ -218,6 +230,18 @@ chi ha fatto accesso a un server di prova.
   mostrare così com'è**: su 363 host uno solo è senza MAC e il collector non l'ha visto in ARP; nessun nome è stato messo
   dal collector (tutti gli host visti ne avevano già uno). Serve un host di prova senza MAC, o si accetta la prova fatta
   dal codice. La 0.9.1300 (interfaccia della tappa 3) non era ancora arrivata sull'hub.
+
+- 2026-11-23, tappa 4. Su `DA-COLLECTOR-PX03` col codice della tappa 2, 82 minuti di notte (23:49-01:12 UTC):
+  `collector-ascolto` 0,41% di una CPU e 12 MB, `collector-traffico` 0,07%, `pmacctd` 0,20%, RAM usata 368 MB, copertura
+  99,978%: è anche la misura lunga che mancava alla tappa 2. Col codice della tappa 4, primi 4 minuti (01:12-01:16):
+  ascolto 0,51% (c'è dentro l'avvio), RAM usata 346 MB, copertura 99,974%, nessun errore nel journal. Una finestra di 5
+  minuti: 885 righe di destinazioni per 88 host e 350 indirizzi esterni, 4 host oltre il tetto di 50; i byte tornano con
+  le coppie verso «esterno» della stessa finestra (34,976 MB contro 34,983). 580 nomi di indirizzi (472 DNS, 108 TLS).
+  Stima, da ricontare di giorno: 250.000 righe al giorno nell'archivio del collector (tenute 7 giorni).
+  Scelte: le coppie non cambiano (l'esterno lì resta una riga sola), le destinazioni sono righe in più lette da una rotta
+  a parte, solo dal mirror; in IPAM si tengono 30 giorni; il nome è quello dato a mano, poi TLS, poi DNS; l'archivio dei
+  paesi sta in `data/geo/dbip.db`, fuori dai tenant, e **si scarica a mano** (amministratore): un automatismo mensile
+  nuovo nascerebbe spento, lo decide Riccardo. `paese_nuovo` guarda solo chi apre da dentro verso fuori.
 
 ## Consuntivo
 

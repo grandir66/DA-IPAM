@@ -42,6 +42,14 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       giorno TEXT NOT NULL, client TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
       conteggio INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
       PRIMARY KEY (giorno, client, tipo, nome));
+    CREATE TABLE IF NOT EXISTS traffico_esterni (
+      giorno TEXT NOT NULL, ip TEXT NOT NULL, interno TEXT NOT NULL, verso TEXT NOT NULL DEFAULT 'fuori',
+      proto INTEGER NOT NULL, porta INTEGER NOT NULL, collector_id INTEGER NOT NULL,
+      byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
+      PRIMARY KEY (giorno, ip, interno, verso, proto, porta, collector_id)) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_traffico_esterni_interno ON traffico_esterni (interno, giorno);
+    CREATE TABLE IF NOT EXISTS traffico_nomi_ip (ip TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL, ultima_vista TEXT NOT NULL, PRIMARY KEY (ip, tipo)) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS traffico_paesi (paese TEXT PRIMARY KEY, prima_vista TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS traffico_oggetti (
       chiave TEXT PRIMARY KEY, ambito TEXT NOT NULL DEFAULT 'interno', nome TEXT NOT NULL, nota TEXT NOT NULL DEFAULT '',
       creato_da TEXT NOT NULL DEFAULT '', creato_il TEXT NOT NULL, aggiornato_il TEXT NOT NULL);
@@ -86,5 +94,7 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   const colonne = (db.prepare("PRAGMA table_info(traffico_collector)").all() as { name: string }[]).map((c) => c.name);
   if (!colonne.includes("cursore_nomi")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_identita")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_identita INTEGER NOT NULL DEFAULT 0");
+  if (!colonne.includes("cursore_esterni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_esterni INTEGER NOT NULL DEFAULT 0");
+  if (!colonne.includes("cursore_nomi_ip")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi_ip INTEGER NOT NULL DEFAULT 0");
   pronte.add(db);
 }

@@ -20,6 +20,7 @@ import { isIpInCidr } from "@/lib/utils";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import type { DopoFinestra, FattoCollector, RigaCollector } from "./lettura";
 import { agganciaHost, anomalieIdentita, scriviIdentita, type IdentitaCollector } from "./identita";
+import { registraEsterni, type EsternoCollector } from "./esterno";
 
 /** I controlli sul contenuto fatti dal collector (`collector-traffico/collector/controlli.py`): il tipo del fatto è il tipo dell'anomalia. */
 export const TIPI_FATTO = [
@@ -31,11 +32,13 @@ export type TipoFatto = (typeof TIPI_FATTO)[number];
 export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato"] as const;
 export type TipoIdentita = (typeof TIPI_IDENTITA)[number];
 /** I tipi che hanno l'interruttore per rete. */
-export const TIPI_CONTROLLO = [...TIPI_FATTO, ...TIPI_IDENTITA] as const;
+/** Un host che apre verso un paese mai visto prima (`esterno.ts`), dopo l'apprendimento. */
+export const TIPI_ESTERNO = ["paese_nuovo"] as const;
+export const TIPI_CONTROLLO = [...TIPI_FATTO, ...TIPI_IDENTITA, ...TIPI_ESTERNO] as const;
 export type TipoControllo = (typeof TIPI_CONTROLLO)[number];
 export type TipoAnomalia = "coppia_nuova" | "porta_nuova" | "molti_contatti" | "impianto"
-  | "vlan_chiuse" | "volume" | "non_censito" | TipoFatto | TipoIdentita;
-export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito", ...TIPI_FATTO, ...TIPI_IDENTITA];
+  | "vlan_chiuse" | "volume" | "non_censito" | TipoFatto | TipoIdentita | (typeof TIPI_ESTERNO)[number];
+export const TIPI_ANOMALIA: readonly TipoAnomalia[] = ["coppia_nuova", "porta_nuova", "molti_contatti", "impianto", "vlan_chiuse", "volume", "non_censito", ...TIPI_FATTO, ...TIPI_IDENTITA, ...TIPI_ESTERNO];
 export type StatoAnomalia = "nuova" | "vista" | "normale";
 export const STATI_ANOMALIA: readonly StatoAnomalia[] = ["nuova", "vista", "normale"];
 
@@ -191,6 +194,17 @@ function lettoreReti(): (ip: string) => number | null {
       memo.set(ip, r);
     }
     return r;
+  };
+}
+
+/** Le destinazioni esterne lette da un collector: si scrivono, e un paese mai visto dà `paese_nuovo` (dopo l'apprendimento). */
+export function creaRegistratoreEsterni(sonde: Set<string> = new Set()): (d: Database.Database, collectorId: number, righe: EsternoCollector[]) => void {
+  const reteDi = lettoreReti();
+  return (d, collectorId, righe) => {
+    if (righe.length === 0) return;
+    const spenti = new Set((d.prepare("SELECT network_id FROM traffico_controlli WHERE acceso = 0 AND tipo = 'paese_nuovo'").all() as { network_id: number }[]).map((r) => r.network_id));
+    const nuove = registraEsterni(d, collectorId, righe, (ip) => sonde.has(ip) || spenti.has(reteDi(ip) ?? RETE_NESSUNA));
+    if (nuove.length > 0) scriviAnomalie(d, righe.reduce((m, r) => (r.inizio > m ? r.inizio : m), righe[0].inizio), nuove);
   };
 }
 

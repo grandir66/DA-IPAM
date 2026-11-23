@@ -103,6 +103,14 @@ Misura su `DA-COLLECTOR-PX03`, 22/11 notte (tre minuti dopo il riavvio, traffico
 CPU (prima 0,39% di media su 61 ore), 9 MB di RAM, copertura 99,97%; 105 righe di identità (81 ARP, 15 CDP, 4 DHCP,
 4 mDNS, 1 LLDP). Da rifare di giorno.
 
+## Verso l'esterno (`piega.esterni`, 23/11/2026)
+
+Le coppie non cambiano: lì tutto ciò che è fuori resta `esterno`. In più, per ogni finestra del mirror, la tabella
+`esterno` tiene per ogni host interno i 50 indirizzi esterni più pesanti (`ESTERNI_PER_HOST`; `ESTERNI=0` spegne); gli
+altri finiscono in una riga con `ip = altri`, che porta i loro byte e in `flussi` quanti indirizzi sono rimasti fuori.
+`collector-ascolto` tiene in `nome_ip` il nome di un indirizzo esterno, uno per tipo: quello chiesto al DNS (dalla
+risposta) e quello del saluto TLS. Rotte `GET /v1/esterni?dopo=` e `GET /v1/nomi-ip?dopo=`.
+
 ## NetFlow e sFlow
 
 Seconda sorgente, spenta di serie: `FLUSSI=netflow` (UDP 2055, `nfacctd`) oppure `FLUSSI=sflow` (UDP 6343,

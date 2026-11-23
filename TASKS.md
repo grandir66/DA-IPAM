@@ -15,7 +15,11 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 3, dati: oggetti con nome (`traffico_oggetti`), reti viste, rotte; il nome entra in «Fra reti»
 - [x] Tappa 3, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [ ] Tappa 3, sull'hub `192.168.4.8`: Riccardo dà un nome a una rete vista e lo ritrova in «Fra reti»
-- [ ] Tappe 4-7
+- [x] Tappa 4, collector e IPAM: destinazioni esterne col tetto di 50, nomi, archivio paese e fornitore, «Paese nuovo»
+- [ ] Tappa 4, interfaccia: scheda «Verso l'esterno», proposta a Riccardo il 23/11
+- [ ] Tappa 4, sull'hub: scaricare l'archivio DB-IP (a mano, da amministratore) e contare `traffico_esterni` dopo un giorno
+- [ ] Riccardo decide: l'archivio DB-IP si aggiorna da solo ogni mese o resta a mano?
+- [ ] Tappe 5-7
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati
 

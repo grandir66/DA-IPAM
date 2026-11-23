@@ -72,6 +72,10 @@ postazione (ovviamente in AD)».
       d'host ciascuno (IP vecchio e nuovo). HP-CATS (f.gatti) no: nessun host con l'IP 192.168.6.22 della descrizione.
 - [x] Riccardo (23/11): «sì, anche lì» — descrizione di AD anche nelle proposte di Abbinamenti, dentro `calcolaVoci`
       (un punto solo; la colonna di Apparati legge le stesse voci). Prove `abbinamenti.test.ts` 5/5, assegnatari 34/34.
+- [x] 23/11, IPAM `192.168.4.8` a v0.9.1316 (health 200). Abbinamenti sul 70791: 11 proposti (9 da AD: NB-AGUZZOLI,
+      NB-GIOVANNI, NB-MAX, NB-MICHELE, NB-SMANCINI, PC-APADULA, pc-bevini, PC-LasagniF, PC-Soragni; 4 con asset da
+      creare), 5 già abbinati, 12 pochi dati, 8 esclusi. Apparati invariato: 18 host (7 a mano, 9 da AD, 2 dagli accessi).
+      Nessuna conferma fatta: la fa Riccardo dalla pagina.
 - [ ] Visto misurando: NB-MARZIA in AD ha 192.168.4.195, il suo host legato è 192.168.5.198, offline dal 05/11: un
       portatile che cambia IP resta su due righe d'host. L'utente si vede sulla riga legata, non su quella viva.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»

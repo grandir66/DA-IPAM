@@ -111,6 +111,14 @@ altri finiscono in una riga con `ip = altri`, che porta i loro byte e in `flussi
 `collector-ascolto` tiene in `nome_ip` il nome di un indirizzo esterno, uno per tipo: quello chiesto al DNS (dalla
 risposta) e quello del saluto TLS. Rotte `GET /v1/esterni?dopo=` e `GET /v1/nomi-ip?dopo=`.
 
+## Connessioni che non vanno (`connessioni.py`, 23/11/2026)
+
+`collector-ascolto` guarda anche i pacchetti che aprono o rifiutano una connessione TCP (SYN, SYN-ACK, RST; solo IPv4).
+Per finestra scrive in `connessione` una riga per (client, server, porta) dove qualcosa è andato storto (senza risposta
+dopo 10 secondi, rifiutata, SYN ripetuti) e una riga per servizio, con `client` vuoto, con le aperture riuscite e il
+tempo fra SYN e SYN-ACK (minimo e mediano, in millisecondi). Rotta `GET /v1/connessioni?dopo=`; `CONNESSIONI=0` spegne.
+Sono indizi: se in una finestra non passa nessuna risposta (copia di una sola direzione) i «senza risposta» non si scrivono.
+
 ## NetFlow e sFlow
 
 Seconda sorgente, spenta di serie: `FLUSSI=netflow` (UDP 2055, `nfacctd`) oppure `FLUSSI=sflow` (UDP 6343,

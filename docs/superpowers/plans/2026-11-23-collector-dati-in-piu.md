@@ -9,7 +9,7 @@ sicuramente le network sconosciute, dando un nome agli oggetti pur non inserendo
 voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 **Viene dopo:** `docs/superpowers/plans/2026-11-20-collector-traffico.md` (collector, lettura, anomalie, interfaccia: fatti).
 **Livello di controllo:** leggero per le tappe 1-6; la tappa 7 è zona rossa (dati personali).
-**Stato:** tappe 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro); 5-7 da fare · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** tappe 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro); tappa 5 a metà (dati fatti, interfaccia da proporre); 6-7 da fare · **Ultimo aggiornamento:** 2026-11-23
 
 ## Dove siamo
 
@@ -152,13 +152,26 @@ Solo IPAM, nessun cambio al collector.
 **Fatto quando:** «Verso l'esterno» mostra le destinazioni dell'ufficio con paese e fornitore, e l'archivio dell'hub non è
 cresciuto più del previsto (scrivere i numeri nel Registro).
 
-### [ ] Tappa 5 — Connessioni fallite, tempi, servizi davvero usati
+### [~] Tappa 5 — Connessioni fallite, tempi, servizi davvero usati
 
 - Collector: per (client, server, porta) conta SYN senza risposta, rifiuti (RST), ritrasmissioni viste, tempo fra SYN e
   SYN-ACK (minimo e mediano). Si aggregano per finestra, non una riga per pacchetto.
 - IPAM: vista «Cosa non va» (chi bussa a vuoto, servizi che rifiutano o rispondono lenti); «servizi davvero usati» per host,
   confrontati con le porte aperte che IPAM conosce dalle scansioni (aperta e mai usata, usata e non nota).
 - Caso 2: escludere le scansioni di IPAM.
+
+- [x] Collector: `connessioni.py` (SYN, SYN-ACK, RST in IPv4: senza risposta, rifiutate, SYN ripetuti, tempo fra SYN e
+  SYN-ACK minimo e mediano; una riga per coppia storta e una per servizio, per finestra), `GET /v1/connessioni`.
+  Verifica: `python3 -m unittest discover -s tests -t .` 62 su 62 (23/11).
+- [x] IPAM: `traffico_connessioni`, `connessioni.ts` («cosa non va»: chi bussa a vuoto, servizi che rifiutano o non
+  rispondono, servizi lenti sopra 200 ms; servizi usati contro `hosts.open_ports`), `GET /api/traffico/connessioni`, e
+  `servizi` nella risposta di `/api/traffico/host/[ip]`. Le sonde note non si salvano (caso 2). Verifica: prove del
+  traffico 37 su 37, eslint e `tsc` puliti (23/11).
+- [~] Misura su `DA-COLLECTOR-PX03` (solo lui ha il codice nuovo): fatta solo sui primi due minuti, vedi Registro.
+  Da rifare con almeno due finestre intere, e di giorno.
+- [ ] Interfaccia: **da proporre a Riccardo** (scheda «Cosa non va» nella pagina Traffico; «Servizi usati» nel riquadro
+  «Con chi parla» della scheda dell'host). Niente è scritto.
+- [ ] Servizio spento apposta sul banco del PX-NAS (`collector-banco` va prima aggiornato; Riccardo ha già detto sì al banco).
 
 **Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
 
@@ -253,6 +266,18 @@ chi ha fatto accesso a un server di prova.
   `DA-COLLECTOR-PX03` e, se regge, `installa.sh` su PX01, PX02, PX04, PX05 (finché non si fa, identità e destinazioni
   esterne arrivano solo dal traffico che passa da DA-PX-03). Aperti sull'hub: grafico a 24 ore (tappa 1), un nome dato a
   una rete vista (tappa 3), archivio scaricato e righe di `traffico_esterni` dopo un giorno (tappa 4).
+
+- 2026-11-23, tappa 5. Su `DA-COLLECTOR-PX03` col codice della tappa 4, 37 minuti di notte (01:12-01:49 UTC):
+  `collector-ascolto` 0,34% di una CPU e 11 MB, `collector-traffico` 0,08%, RAM usata 355 MB, copertura 99,969%, 400
+  pacchetti al secondo all'ascolto. Col codice della tappa 5, primi due minuti (01:49-01:51): ascolto 0,43% (c'è dentro
+  l'avvio), 10 MB, RAM usata 322 MB, copertura 99,964%, 504 pacchetti al secondo (i SYN e i RST in più). Una sola
+  finestra, parziale: 3 righe. **Non basta a giudicare**: va riletta con finestre intere.
+  Scelte: solo l'apertura delle connessioni TCP IPv4 (il filtro aggiunge `tcp[13] & 6 != 0`); «ritrasmissioni» sono i
+  SYN ripetuti, non quelle dei dati; se in una finestra non si vede nessuna risposta (copia di una sola direzione) i
+  «senza risposta» non si scrivono; al più 20.000 aperture seguite insieme e 5.000 righe per finestra; il tempo del
+  giorno è la media delle mediane pesata sulle riuscite; in IPAM 30 giorni; nessun avviso nuovo, solo viste.
+- **Passaggio di consegne (Riccardo, 23/11: «le tappe successive apri un agente nuovo»)**: questa sessione si ferma qui.
+  La sessione nuova chiude la tappa 5 (misura, interfaccia da proporre, banco) e fa le tappe 6 e 7.
 
 ## Consuntivo
 

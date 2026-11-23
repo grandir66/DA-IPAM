@@ -19,7 +19,9 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 4, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [ ] Tappa 4, sull'hub: scaricare l'archivio DB-IP (a mano, da amministratore) e contare `traffico_esterni` dopo un giorno
 - [ ] Riccardo decide: l'archivio DB-IP si aggiorna da solo ogni mese o resta a mano?
-- [ ] Tappe 5-7
+- [x] Tappa 5, collector e IPAM: connessioni senza risposta, rifiutate, tempi; servizi usati contro porte note
+- [ ] Tappa 5: misura su `DA-COLLECTOR-PX03` con finestre intere, interfaccia da proporre a Riccardo, servizio spento sul banco del PX-NAS
+- [ ] Tappe 6-7 (Riccardo, 23/11: «le tappe successive apri un agente nuovo»: le fa una sessione nuova)
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati
 

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { CLASSE_GRAVITA, Indirizzo, SegnoGravita } from "./pezzi";
 import { CollectorEControlli } from "./collector-controlli";
 import { Insieme } from "./insieme";
+import { RetiViste } from "./reti-viste";
 
 interface Dati {
   anomalie: AnomaliaTraffico[];
@@ -26,7 +27,7 @@ interface Dati {
   nomi: Record<string, NomeDiIp>;
   quadro: QuadroTraffico;
 }
-type Scheda = "insieme" | "anomalie" | "collector";
+type Scheda = "insieme" | "anomalie" | "reti" | "collector";
 type FiltroStato = StatoAnomalia | "";
 
 const NOME_STATO: Record<StatoAnomalia, string> = { nuova: "Nuove", vista: "Viste", normale: "Normali" };
@@ -45,6 +46,14 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
   const [tipo, setTipo] = useState<string>(TUTTI);
   const [pagina, setPagina] = useState(1);
   const primo = useRef(true);
+  const [reteScelta, setReteScelta] = useState<string | undefined>(undefined);
+  const [senzaNome, setSenzaNome] = useState(0);
+
+  const contaSenzaNome = useCallback(async () => {
+    const r = await fetchJson<{ reti: { nome: string | null }[] }>("/api/traffico/reti-viste?giorni=7", { cache: "no-store" });
+    if (r.ok) setSenzaNome(r.data.reti.filter((x) => x.nome === null).length);
+  }, []);
+  useEffect(() => { void contaSenzaNome(); }, [contaSenzaNome]);
 
   const carica = useCallback(async () => {
     const q = new URLSearchParams({ pagina: String(pagina) });
@@ -130,12 +139,18 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
             valore: "anomalie", titolo: "Anomalie", descrizione: "Quello che è uscito dall'abitudine o è passato in chiaro.",
             segnale: daGuardare > 0 ? <span className={cn("ml-1.5 rounded-md border px-1.5 py-0.5 text-[13px] font-semibold", CLASSE_GRAVITA[q.nuove.alta > 0 ? 3 : 2])}>{GRAVITA[q.nuove.alta > 0 ? 3 : 2].segno} {daGuardare}</span> : undefined,
           },
+          {
+            valore: "reti", titolo: "Reti viste", descrizione: "Indirizzi interni che parlano fuori dalle subnet censite: a ogni rete si può dare un nome.",
+            segnale: senzaNome > 0 ? <span className="ml-1.5 rounded-md border bg-muted px-1.5 py-0.5 text-[13px] font-semibold" title="Reti senza nome negli ultimi 7 giorni">{senzaNome}</span> : undefined,
+          },
           ...(admin ? [{ valore: "collector" as const, titolo: "Collector e controlli", descrizione: "Le macchine che ascoltano e i controlli accesi, rete per rete." }] : []),
         ]}
       />
 
       {scheda === "insieme" ? (
-        <Insieme conCollector={q.collector.length > 0} />
+        <Insieme key={reteScelta ?? "tutte"} conCollector={q.collector.length > 0} reteIniziale={reteScelta} />
+      ) : scheda === "reti" ? (
+        <RetiViste admin={admin} onVediCoppie={(chiave) => { setReteScelta(chiave); setScheda("insieme"); }} onCambio={() => void contaSenzaNome()} />
       ) : scheda === "collector" && admin ? (
         <CollectorEControlli onCambio={() => void carica()} />
       ) : (

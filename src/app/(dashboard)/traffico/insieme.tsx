@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
@@ -38,12 +38,12 @@ function Servizi({ servizi }: { servizi: Servizio[] }) {
 }
 
 /** Il traffico sulla rete intera: fra reti, per host, per coppia. */
-export function Insieme({ conCollector }: { conCollector: boolean }) {
+export function Insieme({ conCollector, reteIniziale }: { conCollector: boolean; reteIniziale?: string }) {
   const [dati, setDati] = useState<InsiemeTraffico | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [giorni, setGiorni] = useState(1);
-  const [vista, setVista] = useState<Vista>("reti");
-  const [rete, setRete] = useState(TUTTE);
+  const [vista, setVista] = useState<Vista>(reteIniziale ? "coppie" : "reti");
+  const [rete, setRete] = useState(reteIniziale ?? TUTTE);
   const [verso, setVerso] = useState<{ da: string; a: string } | null>(null);
   const [cerca, setCerca] = useState("");
   const [scritto, setScritto] = useState("");
@@ -124,8 +124,14 @@ export function Insieme({ conCollector }: { conCollector: boolean }) {
               <SelectTrigger className="h-7 w-56" aria-label="Rete"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={TUTTE}>Tutte le reti</SelectItem>
-                {(dati?.reti_censite ?? []).map((r) => <SelectItem key={r.chiave} value={r.chiave}>{r.nome} · {r.cidr}</SelectItem>)}
+                {(dati?.reti_censite ?? []).filter((r) => !r.oggetto).map((r) => <SelectItem key={r.chiave} value={r.chiave}>{r.nome} · {r.cidr}</SelectItem>)}
                 {Object.entries(PAROLE_RETE).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                {(dati?.reti_censite ?? []).some((r) => r.oggetto) && (
+                  <SelectGroup>
+                    <SelectLabel>Reti con nome, non censite</SelectLabel>
+                    {(dati?.reti_censite ?? []).filter((r) => r.oggetto).map((r) => <SelectItem key={r.chiave} value={r.chiave}>{r.nome} · {r.cidr}</SelectItem>)}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
             <form onSubmit={cercaOra} className="flex items-center gap-1.5">

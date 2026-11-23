@@ -117,7 +117,10 @@ Solo IPAM, nessun cambio al collector.
   `GET /api/traffico/reti-viste`, `GET|PUT|DELETE /api/traffico/oggetti`; il nome entra in «Fra reti», nel filtro di rete
   e nell'andamento con la chiave `o:<rete>`. Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"` tutte
   verdi (33), eslint e `tsc` puliti fuori da `.next/types` (23/11).
-- [ ] Interfaccia: scheda «Reti viste» e «Dai un nome», proposta a Riccardo il 23/11.
+- [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). Scheda «Reti viste» (`traffico/reti-viste.tsx`) con
+  «Dai un nome», gruppo «Reti con nome, non censite» nel filtro di «Chi parla con chi». Verifica: eslint e `tsc` puliti
+  (23/11). **Non guardata resa.** Scostamento dalla proposta: «Vedi le coppie» funziona solo per una rete che ha già un
+  nome, perché il filtro di «Chi parla con chi» conosce le reti censite e gli oggetti, non un /24 qualunque.
 - [ ] Sull'hub: Riccardo dà un nome a una rete vista dall'ufficio e lo ritrova in «Fra reti».
 
 **Fatto quando:** una rete non censita vista dall'ufficio ha un nome dato da Riccardo e quel nome compare in «Fra reti».

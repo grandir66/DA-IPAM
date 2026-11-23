@@ -167,11 +167,17 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
   rispondono, servizi lenti sopra 200 ms; servizi usati contro `hosts.open_ports`), `GET /api/traffico/connessioni`, e
   `servizi` nella risposta di `/api/traffico/host/[ip]`. Le sonde note non si salvano (caso 2). Verifica: prove del
   traffico 37 su 37, eslint e `tsc` puliti (23/11).
-- [~] Misura su `DA-COLLECTOR-PX03` (solo lui ha il codice nuovo): fatta solo sui primi due minuti, vedi Registro.
-  Da rifare con almeno due finestre intere, e di giorno.
+- [x] Misura su `DA-COLLECTOR-PX03` (solo lui ha il codice nuovo), col filtro corretto e due finestre intere.
+  Verifica: 02:23-02:35 UTC del 23/11, ascolto 0,37% di CPU e 12 MB, RAM usata 373 MB, copertura 99,964% (Registro).
+  Di notte: quella di giorno resta da fare, insieme alle tappe 2 e 4.
+- [x] Difetto del filtro di cattura trovato sul banco e corretto (SYN e RST scartati fuori dalle porte dell'elenco).
+  Verifica: sei pacchetti finti, 0 su 5 col filtro vecchio e 5 su 5 col nuovo; `python3 -m unittest discover -s tests -t .`
+  63 su 63 (23/11).
 - [ ] Interfaccia: **da proporre a Riccardo** (scheda «Cosa non va» nella pagina Traffico; «Servizi usati» nel riquadro
   «Con chi parla» della scheda dell'host). Niente è scritto.
-- [ ] Servizio spento apposta sul banco del PX-NAS (`collector-banco` va prima aggiornato; Riccardo ha già detto sì al banco).
+- [!] Servizio spento apposta sul banco del PX-NAS: provato una volta, ha fatto trovare il difetto del filtro; la
+  riprova col filtro corretto è ferma perché dalle 02:17 UTC del 23/11 il banco lo usa un'altra sessione (VM 109
+  riavviata, servizi del collector fermati). Da rifare quando è libero: 10 minuti.
 
 **Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
 
@@ -300,6 +306,16 @@ chi ha fatto accesso a un server di prova.
   **Banco condiviso**: alle 02:17 UTC un'altra sessione ha fatto snapshot, spento e riacceso la VM 109 e fermato i
   servizi del collector; sulla porta del contenitore 110 c'era una coda `clsact` non mia che il mio comando di pulizia
   delle 02:10 ha tolto (poi rimessa da loro). Da lì il banco non l'ho più toccato: la prova col filtro corretto è da fare.
+
+- 2026-11-23, tappa 5, misura col filtro corretto. `DA-COLLECTOR-PX03`, prima (01:49:36-02:22:55 UTC, filtro vecchio):
+  `collector-ascolto` 0,38% di una CPU e 12 MB, 386 pacchetti al secondo, RAM usata 361 MB. Dopo (02:22:57-02:35:39,
+  12 minuti e mezzo, due finestre intere): ascolto 0,37% e 12 MB, `collector-traffico` 0,09% e 38 MB, `pmacctd` 0,14% e
+  54 MB, RAM usata 373 MB, 400 pacchetti al secondo, copertura 99,964% (527 persi su 1.478.301), nessun pacchetto
+  saltato. Righe di `connessione`: 113 nella finestra delle 02:25 e 1.641 in quella delle 02:30 (prima erano 26-151),
+  su 113 porte diverse invece di 9; in dieci minuti 30 client che bussano a vuoto verso 1.021 servizi (dentro c'è un
+  giro di scansione dell'IPAM, che in IPAM non si salva), nessun servizio lento. Sotto le soglie (700 MB, 99%), di notte.
+  Stima a occhio, da ricontare di giorno: fino a qualche centinaio di migliaia di righe al giorno nell'archivio del
+  collector (tetto 5.000 per finestra, tenute 7 giorni).
 
 ## Consuntivo
 

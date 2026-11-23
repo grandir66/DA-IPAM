@@ -12,6 +12,7 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 2, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [x] Tappa 2: IP doppio provocato sul banco del PX-NAS il 23/11, l'avviso nasce (dal codice, non dalla pagina)
 - [ ] Tappa 2, sull'hub `192.168.4.8`: un host senza MAC che lo riceve dal collector (l'hub non si era ancora aggiornato)
+- [ ] Tappa 2, «MAC cambiato»: rumore o no (analisi del 23/11 su 70791, 2 ore di ARP, nessuna modifica fatta). Su 3 avvisi: `.40.243` è rumore (stesso switch Ubiquiti che usa il MAC dell'interfaccia di gestione); `.4.14` è vero (anagrafe vecchia o VM clonata, il MAC censito non è mai comparso in ARP); `.40.240` è vero (il suo MAC è censito su `.40.107`). **Proposta in attesa di Riccardo**, tutta in `macCambiati` (`traffico/identita.ts`): (1) stesso OUI e MAC vecchio mai visto → non si avvisa; (2) MAC censito mai visto in ARP → avviso a parte, gravità più bassa; (3) MAC che appartiene a un altro host → tipo a parte, «MAC già censito su un altro IP». Prima di applicarla si rileggono gli avvisi con 24 ore di ARP.
 - [x] Tappa 3, dati: oggetti con nome (`traffico_oggetti`), reti viste, rotte; il nome entra in «Fra reti»
 - [x] Tappa 3, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [ ] Tappa 3, sull'hub `192.168.4.8`: Riccardo dà un nome a una rete vista e lo ritrova in «Fra reti»

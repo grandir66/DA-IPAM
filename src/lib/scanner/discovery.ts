@@ -3943,6 +3943,16 @@ async function runDiscovery(
     } catch (mhErr) {
       log(`Multi-homed: ${mhErr instanceof Error ? mhErr.message : "errore"}`);
     }
+    // Un PC, un apparato (23/11/2026): l'apparato di un PC di AD segue la riga viva, i doppioni per IP si uniscono.
+    try {
+      const { getDb } = await import("@/lib/db");
+      const { seguiIpVivoPc } = await import("@/lib/devices/stesso-pc-apparati");
+      const pc = seguiIpVivoPc(getDb());
+      if (pc.uniti + pc.spostati > 0) log(`Stesso PC: ${pc.uniti} apparati doppi uniti, ${pc.spostati} spostati sull'IP vivo`);
+      if (pc.saltati.length > 0) log(`Stesso PC: saltati ${pc.saltati.map((x) => `${x.pc} (${x.motivo})`).join(", ")}`);
+    } catch (pcErr) {
+      log(`Stesso PC: ${pcErr instanceof Error ? pcErr.message : "errore"}`);
+    }
   }
 
   const totalPorts = Array.from(nmapResults.values()).reduce((sum, r) => sum + r.ports.length, 0);

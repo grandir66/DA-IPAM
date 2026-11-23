@@ -119,8 +119,13 @@ postazione (ovviamente in AD)».
 - Riccardo (23/11), sugli apparati doppi: «teoricamente questo capiterà di continuo comunque». Quindi non una pulizia una
   tantum: regola automatica a ogni scansione (l'apparato segue il PC sull'IP vivo), e la stessa regola fa il primo giro
   su quelli che ci sono.
-- [ ] Proposta a Riccardo, in attesa: unire gli apparati doppi già esistenti dello stesso PC (uno resta, segue l'IP vivo,
-      gli altri si tolgono) e correggere il tipo «switch» dei PC. Tocca credenziali e storico delle letture.
+- [x] 23/11, Riccardo «Sì, procedi»: `devices/stesso-pc-apparati.ts` (piano, unione, giro dopo ogni scansione),
+      `scripts/stesso-pc-apparati-cli.ts`. Prove `stesso-pc-apparati.test.ts` 3/3; 1307 prove su apparati, host e
+      scansione verdi tranne 2 che cadono solo sul Mac per il vecchio `data/ipam.db` (sul commit pubblicato 39/39).
+      Prova a vuoto e applicazione su copia del DB del 70791: 10 PC, 8 apparati uniti, 5 spostati, 7 asset uniti,
+      0 saltati; secondo giro vuoto; `quick_check` ok (2 righe orfane di `host_credentials` già presenti sul servizio).
+- [-] Tipo «switch» dei PC: non cambiato. Il CHECK di `network_devices.device_type` non ammette «workstation» e
+      cambiarlo vuol dire ricostruire la tabella (decisione da prendere a parte); la classificazione è già «workstation».
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

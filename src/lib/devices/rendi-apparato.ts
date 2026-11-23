@@ -14,6 +14,7 @@ import {
   variantiPer,
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
+  CLASSI_POSTAZIONE,
 } from "@/lib/device-product-profiles";
 import { coerceScanTargetForVendor } from "@/lib/vendor-device-profile";
 import { DEFAULT_PORTS } from "@/lib/credentials/porte";
@@ -32,7 +33,7 @@ export type HostPerRendiApparato = HostPerProposta & {
   apparato_cluster?: { nome: string; host_id: number } | null;
 };
 
-export type TipoDispositivo = "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server" | "stampante" | "ups" | "voip" | "telecamera" | "iot";
+export type TipoDispositivo = "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server" | "stampante" | "ups" | "voip" | "telecamera" | "iot" | "workstation";
 
 /** Tipo dispositivo richiesto dalla tabella degli apparati, dedotto dalla classificazione. */
 export function deviceTypeDaClassificazione(c: string): TipoDispositivo {
@@ -45,6 +46,8 @@ export function deviceTypeDaClassificazione(c: string): TipoDispositivo {
   // Periferiche col loro tipo (09/11/2026), come `resolveDeviceTypeForCreate`.
   const periferica = TIPO_DELLA_CLASSIFICAZIONE_PERIFERICA[c];
   if (periferica) return periferica;
+  // Postazioni col loro tipo (23/11/2026): prima diventavano «server».
+  if (CLASSI_POSTAZIONE.has(c)) return "workstation";
   return "server";
 }
 

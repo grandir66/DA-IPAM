@@ -237,6 +237,9 @@ const TIPO_DEL_PROFILO_PERIFERICA: Partial<Record<ProductProfileId, NetworkDevic
 };
 
 /** Classificazioni delle periferiche → device_type. */
+/** Classificazioni da postazione: l'apparato è di tipo «workstation» (23/11/2026). */
+export const CLASSI_POSTAZIONE: ReadonlySet<string> = new Set(["workstation", "notebook", "thin_client"]);
+
 export const TIPO_DELLA_CLASSIFICAZIONE_PERIFERICA: Readonly<Record<string, NetworkDevice["device_type"]>> = {
   stampante: "stampante",
   multifunzione: "stampante",
@@ -320,6 +323,8 @@ export function resolveDeviceTypeForCreate(input: {
   if (input.classification === "switch") return "switch";
   if (input.classification === "access_point") return "access_point";
   if (input.classification === "nas" || input.classification === "storage") return "nas";
+  // Postazioni: un tipo proprio, mai più `switch` (23/11/2026; sul 70791 i PC degli apparati automatici erano «switch»).
+  if (input.classification && CLASSI_POSTAZIONE.has(input.classification)) return "workstation";
   // Periferiche: un tipo proprio, mai più `switch` (09/11/2026).
   const periferica = input.classification ? TIPO_DELLA_CLASSIFICAZIONE_PERIFERICA[input.classification] : undefined;
   if (periferica) return periferica;

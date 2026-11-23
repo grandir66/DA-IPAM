@@ -132,6 +132,22 @@ describe("migrazione tipi e marche di network_devices", () => {
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM network_devices").get() as { n: number }).n, 1);
   });
 
+  // 23/11/2026 (Riccardo: «assolutamente da fare… i tipi devono essere presenti ed automatici»): i tenant di oggi hanno
+  // il CHECK del 09/11, senza «workstation», e i PC degli apparati automatici erano «switch». Stessa ricostruzione.
+  it("dal CHECK del 09/11: accetta «workstation», gli id e le figlie dei PC restano", () => {
+    const db = tenantPrima(TIPI_PRIMA + ", 'stampante', 'ups', 'voip', 'telecamera', 'iot'",
+      MARCHE_PRIMA + ", 'fortinet', 'paloalto', 'checkpoint', 'watchguard', 'sonicwall'");
+    db.prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, classification) VALUES (31, 'NB-AGUZZOLI', '192.168.5.150', 'switch', 'windows', 'winrm', 'workstation')").run();
+    db.prepare("INSERT INTO switch_ports (device_id, port_index) VALUES (31, 1), (31, 2)").run();
+    assert.throws(() => db.prepare("UPDATE network_devices SET device_type = 'workstation' WHERE id = 31").run(), /CHECK constraint failed/);
+    assert.equal(migraCheckNetworkDevices(db), true);
+    db.prepare("UPDATE network_devices SET device_type = 'workstation' WHERE id = 31").run();
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM switch_ports WHERE device_id = 31").get() as { n: number }).n, 2);
+    assert.ok(sqlTabella(db).includes("'iot', 'workstation'") || sqlTabella(db).includes("'workstation'"));
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    assert.equal(migraCheckNetworkDevices(db), false, "la seconda volta non ricostruisce");
+  });
+
   it("un tenant nuovo (schema di getTenantDb) nasce già coi tipi e le marche nuovi", () => {
     const T = "TESTTIPINUOVI";
     try {
@@ -139,6 +155,7 @@ describe("migrazione tipi e marche di network_devices", () => {
         const db = getTenantDb(T);
         db.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES ('ups', '10.9.0.1', 'ups', 'other', 'snmp_v2')").run();
         db.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES ('fg', '10.9.0.2', 'firewall', 'fortinet', 'snmp_v2')").run();
+        db.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES ('pc', '10.9.0.3', 'workstation', 'windows', 'winrm')").run();
         assert.equal(migraCheckNetworkDevices(db), false);
       });
     } finally {

@@ -157,8 +157,12 @@ postazione (ovviamente in AD)».
 - [x] 23/11, applicato sull'IPAM .8 (v0.9.1322, health 200), copia prima `/opt/da-ipam/data/backups/70791-pre-stesso-pc-apparati-20261123.db`:
       8 apparati uniti, 5 spostati, 7 asset uniti, 0 saltati; secondo giro vuoto; `quick_check` ok. Restano NB-AGUZZOLI
       #31 @5.150, PC-APADULA #1313 @4.174, PC-LasagniF #1320 @5.156, SURFACE-ALAIN #1323 @3.122. Non guardato a schermo.
-- [-] Tipo «switch» dei PC: non cambiato. Il CHECK di `network_devices.device_type` non ammette «workstation» e
-      cambiarlo vuol dire ricostruire la tabella (decisione da prendere a parte); la classificazione è già «workstation».
+- [x] Tipo «switch» dei PC (Riccardo, 23/11, dalla sessione IPAM: «assolutamente da fare… i tipi devono essere presenti
+      ed automatici»): «workstation» aggiunto ai tipi ammessi con la ricostruzione del 09/11, scelta automatica dalla
+      classificazione (apparati automatici e «Rendi apparato»), correzione degli esistenti a ogni apertura e scansione.
+      Prove: migrazione 6/6 (vista fallire sul commit pubblicato: 2 rosse), `tipo-postazioni.test.ts` 2/2, 2370 prove
+      collegate verdi. Prova a vuoto su copia del 70791: 74 apparati e 10.324 righe figlie in 31 tabelle prima e dopo,
+      stesso id massimo, violazioni 2 → 2 (già note), indici 8 → 8, `quick_check` ok; 19 apparati a «workstation».
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

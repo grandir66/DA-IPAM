@@ -80,7 +80,8 @@ describe("difetti visti sull'hub 533 alla prima creazione (10/11/2026)", () => {
     }), ARCHIVIO);
     assert.ok("corpo" in r);
     assert.equal(r.corpo.classification, "workstation");
-    assert.equal(r.corpo.device_type, "server");
+    // Dal 23/11/2026 il tipo «workstation» esiste (Riccardo: «i tipi devono essere presenti ed automatici»); il 10/11 era «server».
+    assert.equal(r.corpo.device_type, "workstation");
   });
 });
 

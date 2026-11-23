@@ -3947,6 +3947,9 @@ async function runDiscovery(
     try {
       const { getDb } = await import("@/lib/db");
       const { seguiIpVivoPc } = await import("@/lib/devices/stesso-pc-apparati");
+      const { allineaTipoPostazioni } = await import("@/lib/devices/tipo-postazioni");
+      const tipi = allineaTipoPostazioni(getDb(), (r) => log(r));
+      if (tipi > 0) log(`Tipo «workstation» a ${tipi} apparati`);
       const pc = seguiIpVivoPc(getDb());
       if (pc.uniti + pc.spostati > 0) log(`Stesso PC: ${pc.uniti} apparati doppi uniti, ${pc.spostati} spostati sull'IP vivo`);
       if (pc.saltati.length > 0) log(`Stesso PC: saltati ${pc.saltati.map((x) => `${x.pc} (${x.motivo})`).join(", ")}`);

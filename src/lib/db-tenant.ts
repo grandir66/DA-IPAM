@@ -58,6 +58,7 @@ import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scri
 import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
 import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
 import { convertiDeviceTypeV22, SEGNO_DEVICE_TYPE_V22 } from "./devices/migra-device-type-v22";
+import { allineaTipoPostazioni } from "./devices/tipo-postazioni";
 import { convertiStormshieldFirewall, SEGNO_STORMSHIELD_FIREWALL } from "./devices/migra-stormshield-firewall";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -2896,6 +2897,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
     if (esito.eseguita) console.info(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22}, corretti ${esito.convertiti} apparati`);
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // Postazioni col loro tipo (23/11/2026): dopo la ricostruzione del CHECK, a ogni apertura (idempotente).
+  try {
+    const n = allineaTipoPostazioni(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (n > 0) console.info(`[db-tenant] ${tenantCode}: tipo «workstation» a ${n} apparati`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: tipo delle postazioni non aggiornato (ROLLBACK), si riprova alla prossima apertura:`, e);
   }
 
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo

@@ -71,9 +71,12 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
  * Tipi e marche ammessi da `network_devices` (09/11/2026, Riccardo): stampante, UPS, VoIP, telecamera e IoT ripiegavano su
  * `switch` e il giro ne leggeva porte e MAC; FortiGate, Palo Alto & c. finivano `other`. Un CHECK di SQLite non si altera:
  * `migraCheckNetworkDevices` ricostruisce la tabella quando la CREATE salvata non ha ancora questi valori.
+ * «workstation» dal 23/11/2026 (Riccardo: «assolutamente da fare… i tipi devono essere presenti ed automatici»): i PC
+ * nati dagli apparati automatici erano «switch», e il giro ne leggeva porte e MAC.
  */
 export const DEVICE_TYPES_AMMESSI: readonly string[] = [
   "router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot",
+  "workstation",
 ];
 export const VENDOR_AMMESSI: readonly string[] = [
   "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall",

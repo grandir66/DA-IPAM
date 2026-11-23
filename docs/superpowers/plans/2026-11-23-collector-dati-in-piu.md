@@ -73,7 +73,8 @@ Solo IPAM, nessun cambio al collector.
   colonne Pacchetti, Connessioni, Esterni, riquadro «Andamento, ultime 24 ore» (`traffico/andamento.tsx`).
   Verifica: `npx eslint "src/app/(dashboard)/traffico" src/lib/traffico` pulito, `npx tsc --noEmit` senza errori fuori da
   `.next/types` (23/11). **Non guardata resa**: in locale non ci sono dati di traffico.
-- [ ] Sull'hub: contare le righe di `traffico_ore` dopo 24 ore e scriverle nel Registro.
+- [~] Sull'hub: «Ultima ora» diversa da «Oggi» verificata dal database il 23/11 alle 00:21 UTC (841 MB contro 1,28 GB);
+  resta il grafico a 24 ore e il conto delle righe di `traffico_ore` dopo un giorno.
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.
 
@@ -208,6 +209,15 @@ chi ha fatto accesso a un server di prova.
   fuori dal censimento prende l'oggetto più stretto che lo contiene. Solo IPv4: gli IPv6 fuori dal censimento restano
   «Rete non censita». Gli oggetti compaiono nell'elenco `reti_censite` della vista d'insieme con `oggetto: true`, così
   il nome si vede in «Fra reti» e nel filtro senza toccare la pagina. Dare un nome lo può fare solo un amministratore.
+
+- 2026-11-23, 00:21 UTC, sull'hub `192.168.4.8` (ripartito alle 00:14 con la 0.9.1297; lettura del database, non della
+  pagina). Tappa 1: `traffico_ore` ha 2.188 righe per i primi 21 minuti dell'ora, da tutti e cinque i collector (a questo
+  passo, di notte, sotto 10.000 righe per ora: circa un milione in 7 giorni, da ricontare di giorno); «Ultima ora» 841 MB,
+  «Oggi» 1,28 GB. Tappa 2: `traffico_identita` ha 175 righe da `DA-COLLECTOR-PX03` (127 ARP, 15 CDP, 12 SSDP, 11 mDNS,
+  9 DHCP, 1 LLDP); tre avvisi `mac_cambiato`, nessun `ip_doppio`. **Il «Fatto quando» della tappa 2 sull'hub non si può
+  mostrare così com'è**: su 363 host uno solo è senza MAC e il collector non l'ha visto in ARP; nessun nome è stato messo
+  dal collector (tutti gli host visti ne avevano già uno). Serve un host di prova senza MAC, o si accetta la prova fatta
+  dal codice. La 0.9.1300 (interfaccia della tappa 3) non era ancora arrivata sull'hub.
 
 ## Consuntivo
 

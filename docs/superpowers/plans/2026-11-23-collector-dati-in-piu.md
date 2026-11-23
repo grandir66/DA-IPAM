@@ -9,7 +9,7 @@ sicuramente le network sconosciute, dando un nome agli oggetti pur non inserendo
 voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 **Viene dopo:** `docs/superpowers/plans/2026-11-20-collector-traffico.md` (collector, lettura, anomalie, interfaccia: fatti).
 **Livello di controllo:** leggero per le tappe 1-6; la tappa 7 è zona rossa (dati personali).
-**Stato:** tappa 1 in corso (dati fatti, interfaccia da approvare) · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** tappe 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro); 5-7 da fare · **Ultimo aggiornamento:** 2026-11-23
 
 ## Dove siamo
 
@@ -244,6 +244,15 @@ chi ha fatto accesso a un server di prova.
   a parte, solo dal mirror; in IPAM si tengono 30 giorni; il nome è quello dato a mano, poi TLS, poi DNS; l'archivio dei
   paesi sta in `data/geo/dbip.db`, fuori dai tenant, e **si scarica a mano** (amministratore): un automatismo mensile
   nuovo nascerebbe spento, lo decide Riccardo. `paese_nuovo` guarda solo chi apre da dentro verso fuori.
+
+- 2026-11-23, 01:25 UTC, sull'hub `192.168.4.8` (ripartito alle 01:21 con la 0.9.1302; lettura del database). In quattro
+  minuti `traffico_esterni` ha 1.719 righe per 662 indirizzi esterni, tutte da `DA-COLLECTOR-PX03`; `traffico_ore` 5.561
+  righe su due ore; nessun oggetto con nome ancora. L'archivio dei paesi sull'hub non è scaricato (lo fa un amministratore
+  dalla scheda «Verso l'esterno», che arriva con la 0.9.1303).
+- **Dove riprendere** (sessione nuova, questa è diventata lunga): tappe 5, 6, 7. Prima, di giorno: misura su
+  `DA-COLLECTOR-PX03` e, se regge, `installa.sh` su PX01, PX02, PX04, PX05 (finché non si fa, identità e destinazioni
+  esterne arrivano solo dal traffico che passa da DA-PX-03). Aperti sull'hub: grafico a 24 ore (tappa 1), un nome dato a
+  una rete vista (tappa 3), archivio scaricato e righe di `traffico_esterni` dopo un giorno (tappa 4).
 
 ## Consuntivo
 

@@ -346,7 +346,8 @@ async function fetchServerColumnOrder(): Promise<string[] | null> {
 // ---------------------------------------------------------------------------
 
 function displayName(h: EnrichedHost): string {
-  return h.custom_name || h.hostname || h.dns_reverse || h.ad_dns_host_name || "";
+  // La riga viva di un apparato che ha cambiato IP può non avere nome: vale quello delle sue altre righe (23/11/2026).
+  return h.custom_name || h.hostname || h.dns_reverse || h.ad_dns_host_name || h.cluster?.nome || "";
 }
 
 function formatDate(d: string | null): string {

@@ -8,11 +8,13 @@
  * 3. la persona prevalente calcolata dagli accessi; 4. «condiviso» se nessuno supera la soglia;
  * 5. se gli accessi non bastano: l'ultimo utente scritto in AD nella descrizione del computer, già dentro le voci di
  *    Abbinamenti (`fonte: "ad"`, 23/11: era la fonte che mancava per i PC senza agente).
+ * Tutto per apparato (23/11): le righe dello stesso PC (un portatile che cambia IP) hanno un solo utente, deciso sulla
+ * riga principale con le scelte, gli asset e gli accessi di tutte, e ripetuto su ognuna.
  * Il calcolato non si salva: si rilegge a ogni richiesta, quindi segue il dato. Una scelta a mano non viene mai
  * sostituita: se il calcolo dice un'altra persona lo si segnala (`diverso`) e basta.
  */
 import type Database from "better-sqlite3";
-import { calcolaVoci, legameAssetHost } from "./abbinamenti";
+import { calcolaVoci, gruppiApparato, legameAssetHost } from "./abbinamenti";
 import { assegnatarioDaUtente, utenteAdPerAccount } from "./importa";
 
 export interface UtenteAbituale {
@@ -59,6 +61,7 @@ const nomePersona = (r: RigaManuale): string | null =>
 export function utentiAbituali(db: Database.Database): Map<number, UtenteAbituale> {
   const out = new Map<number, UtenteAbituale>();
   const voci = new Map(calcolaVoci(db).voci.map((v) => [v.hostId, v]));
+  const { capo, membri } = gruppiApparato(db);
   const calcoloDi = (hostId: number): UtenteAbituale["calcolo"] => {
     const v = voci.get(hostId);
     if (!v || v.esito !== "proposta" || !v.persona) return null;
@@ -74,7 +77,10 @@ export function utentiAbituali(db: Database.Database): Map<number, UtenteAbitual
      FROM hosts h LEFT JOIN ad_users u ON u.integration_id = h.utente_abituale_integrazione AND u.object_guid = h.utente_abituale_guid
      WHERE h.utente_abituale_modo IS NOT NULL`,
   ).all() as RigaManuale[];
-  for (const r of manuali) {
+  manuali.sort((x, y) => Number(capo(y.id) === y.id) - Number(capo(x.id) === x.id) || x.id - y.id);
+  for (const riga of manuali) {
+    const r = { ...riga, id: capo(riga.id) };
+    if (out.has(r.id)) continue;
     const calcolo = calcoloDi(r.id);
     if (r.modo === "condiviso") {
       out.set(r.id, { origine: "condiviso", aMano: true, nome: null, account: null, disattivato: false, calcolo, diverso: calcolo !== null });
@@ -94,7 +100,9 @@ export function utentiAbituali(db: Database.Database): Map<number, UtenteAbitual
      JOIN asset_assignees aa ON aa.id = x.asset_assignee_id
      LEFT JOIN ad_users u ON u.integration_id = aa.ad_integration_id AND u.object_guid = aa.ad_object_guid`,
   ).all() as RigaAsset[];
-  for (const r of assegnati) {
+  assegnati.sort((x, y) => Number(capo(y.host_id) === y.host_id) - Number(capo(x.host_id) === x.host_id) || x.host_id - y.host_id);
+  for (const riga of assegnati) {
+    const r = { ...riga, host_id: capo(riga.host_id) };
     if (out.has(r.host_id)) continue;
     const calcolo = calcoloDi(r.host_id);
     out.set(r.host_id, {
@@ -109,6 +117,8 @@ export function utentiAbituali(db: Database.Database): Map<number, UtenteAbitual
     if (calcolo) out.set(hostId, { origine: "calcolato", aMano: false, nome: calcolo.nome, account: calcolo.account, disattivato: false, calcolo, diverso: false });
     else if (v.esito === "condiviso") out.set(hostId, { origine: "condiviso", aMano: false, nome: null, account: null, disattivato: false, calcolo: null, diverso: false });
   }
+  // Lo stesso valore su tutte le righe del PC: la riga principale si vede in Apparati, le altre negli «altri IP».
+  for (const [hostId, v] of [...out]) for (const m of membri(hostId)) if (!out.has(m)) out.set(m, v);
   return out;
 }
 
@@ -146,9 +156,11 @@ export function impostaUtenteAbituale(db: Database.Database, hostIds: readonly n
   );
   const scriviHost = db.prepare("UPDATE hosts SET utente_abituale_modo = ?, utente_abituale_integrazione = ?, utente_abituale_guid = ? WHERE id = ?");
   const s = (x: number | null) => (x === null ? null : String(x));
+  const { capo, membri } = gruppiApparato(db);
+  const tutti = new Set(hostIds.flatMap((h) => membri(capo(h))));
   db.transaction(() => {
     const assegnatarioId = u ? assegnatarioDaUtente(db, u).id : null;
-    for (const hostId of new Set(hostIds)) {
+    for (const hostId of tutti) {
       const fatto = scelta.modo === "manuale" ? scriviHost.run("manuale", u!.integration_id, u!.object_guid, hostId)
         : scelta.modo === "condiviso" ? scriviHost.run("condiviso", null, null, hostId)
         : scriviHost.run(null, null, null, hostId);

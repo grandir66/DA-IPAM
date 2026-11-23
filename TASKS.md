@@ -87,7 +87,16 @@ postazione (ovviamente in AD)».
       SURFACE-ALAIN 4, PC-LasagniF 2. Il gruppo «stesso apparato» (`multihomed_links`) le riunisce già per nome o
       seriale, ma Apparati accorpa solo per `physical_device_id`, che su queste righe è vuoto: per questo si vedono
       tutte. Il legame AD (`ad_computers.host_id`) resta sulla riga vecchia. Difetto visto: il gruppo `ea89883e…` per
-      seriale mette insieme NB-MAX e quattro righe «Mac» (seriale condiviso). Proposta a Riccardo in chat, in attesa.
+      seriale mette insieme NB-MAX e quattro righe «Mac» (seriale condiviso). Proposta approvata («Sì, procedi», 23/11).
+- [x] 23/11, fatto: ancora «PC di AD» nel motore dei gruppi (stessa rete e più MAC ammessi), seriale con nomi misti
+      scartato, principale = riga viva, nome del gruppo sulla riga senza nome, Abbinamenti e utente abituale per PC,
+      archivio delle righe passate dei PC di AD con passaggio della scelta a mano; `db.ts` delega al motore del tenant.
+      Prove `stesso-pc.test.ts` 6/6, 213 prove su gruppi, pulizia, Apparati e assegnatari; tsc e lint puliti.
+- [x] 23/11, prova a vuoto su copia del DB del 70791 sull'IPAM .8: gruppi nuovi SURFACE-ALAIN (4 righe), PC-LasagniF,
+      NB-MAX staccato dai «Mac»; sciolti due gruppi sbagliati per seriale (NB-MAX+«Mac»; AP+DESKTOP-70KINTB+«Mac»+
+      Air-di-Riccardo); principale sulla riga viva per 13 telecamere (VLAN 15 offline → VLAN 70) e DA-PX-06/07.
+      Pulizia della notte: nessuna riga di PC (righe vecchie assenti da meno di 30 giorni); in più rispetto a prima
+      solo «AP» 192.168.5.179 (assente da 32 giorni, era nel gruppo sbagliato), recuperabile dall'archivio.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

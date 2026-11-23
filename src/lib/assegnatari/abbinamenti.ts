@@ -15,7 +15,8 @@ import type Database from "better-sqlite3";
 import { mapHostClassificationToInventoryCategoria } from "@/lib/db-tenant";
 import type { InventoryAssetCategoria } from "@/types";
 import { personeAd, soglieDelCliente } from "./db";
-import { ultimiAccessiAd } from "./descrizione-ad";
+import { ultimiAccessiAd, type UltimoAccessoAd } from "./descrizione-ad";
+import { leggiClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { assegnatarioDaUtente, utenteAdPerAccount } from "./importa";
 import { CATEGORIE_SENZA_PROPOSTA, calcolaProposta, motivoFuori, type AccessoAggregato, type Proposta } from "./proposta";
 
@@ -89,25 +90,50 @@ export function legameAssetHost(db: Database.Database): string {
   return conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
 }
 
-function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number, daAd: readonly number[] = []): RigaHost[] {
+/**
+ * Le righe d'host che diventano voci: una per apparato (23/11/2026, Riccardo: «se lo stesso pc cambia ip… senza avere
+ * una moltiplicazione di oggetti»). `capi` sono le righe principali dei gruppi (`leggiClusterDiscovery`, la stessa
+ * nozione della pagina Apparati); l'asset si cerca sulla principale e, se manca, sulle altre righe dello stesso PC.
+ */
+function righeDelleVoci(db: Database.Database, capi: readonly number[], membriDi: (capo: number) => readonly number[]): RigaHost[] {
+  if (capi.length === 0) return [];
   const legame = legameAssetHost(db);
-  return db.prepare(
-    `WITH hh AS (
-       SELECT h.id, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS pc, h.ip, h.classification,
-              (SELECT a.id FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id
-               WHERE ${legame} ORDER BY (a.host_id IS NULL), a.id LIMIT 1) AS asset_id
-       FROM hosts h
-       WHERE (h.id IN (SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?))
-              OR h.id IN (SELECT value FROM json_each(?)))
-         ${soloHost !== undefined ? "AND h.id = ?" : ""}
-     )
-     SELECT hh.id, hh.pc, hh.ip, hh.classification, hh.asset_id, x.categoria, x.proposta_assegnatario_off AS proposta_off,
-            aa.id AS assegnato_id, aa.name AS assegnato_nome, aa.origine AS assegnato_origine
-     FROM hh
-     LEFT JOIN inventory_assets x ON x.id = hh.asset_id
-     LEFT JOIN asset_assignees aa ON aa.id = x.asset_assignee_id
-     ORDER BY lower(hh.pc)`,
-  ).all(`-${giorni} days`, JSON.stringify(daAd), ...(soloHost !== undefined ? [soloHost] : [])) as RigaHost[];
+  const tutti = [...new Set(capi.flatMap((c) => membriDi(c)))];
+  const assetDi = new Map<number, number>();
+  for (const r of db.prepare(
+    `SELECT h.id, (SELECT a.id FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id
+                   WHERE ${legame} ORDER BY (a.host_id IS NULL), a.id LIMIT 1) AS asset_id
+     FROM hosts h WHERE h.id IN (SELECT value FROM json_each(?))`,
+  ).all(JSON.stringify(tutti)) as Array<{ id: number; asset_id: number | null }>) {
+    if (r.asset_id !== null) assetDi.set(r.id, r.asset_id);
+  }
+  const base = db.prepare(
+    `SELECT h.id, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS pc, h.ip, h.classification
+     FROM hosts h WHERE h.id IN (SELECT value FROM json_each(?)) ORDER BY lower(pc)`,
+  ).all(JSON.stringify(capi)) as Array<{ id: number; pc: string; ip: string; classification: string | null }>;
+  const dettaglio = db.prepare(
+    `SELECT x.categoria, x.proposta_assegnatario_off AS proposta_off, aa.id AS assegnato_id, aa.name AS assegnato_nome,
+            aa.origine AS assegnato_origine
+     FROM inventory_assets x LEFT JOIN asset_assignees aa ON aa.id = x.asset_assignee_id WHERE x.id = ?`,
+  );
+  return base.map((h) => {
+    const assetId = assetDi.get(h.id) ?? [...membriDi(h.id)].sort((a, b) => a - b).map((m) => assetDi.get(m)).find((a) => a !== undefined) ?? null;
+    const d = assetId !== null
+      ? dettaglio.get(assetId) as { categoria: string | null; proposta_off: number | null; assegnato_id: number | null; assegnato_nome: string | null; assegnato_origine: string | null }
+      : { categoria: null, proposta_off: null, assegnato_id: null, assegnato_nome: null, assegnato_origine: null };
+    return { ...h, asset_id: assetId, ...d };
+  });
+}
+
+/** Righe dello stesso apparato: host → principale, principale → tutte le sue righe (lei compresa). */
+export function gruppiApparato(db: Database.Database): { capo: (id: number) => number; membri: (capo: number) => readonly number[] } {
+  const cl = leggiClusterDiscovery(db);
+  const perCapo = new Map<number, number[]>();
+  for (const [id, info] of cl) (perCapo.get(info.principale_host_id) ?? perCapo.set(info.principale_host_id, []).get(info.principale_host_id)!).push(id);
+  return {
+    capo: (id) => cl.get(id)?.principale_host_id ?? id,
+    membri: (c) => perCapo.get(c) ?? [c],
+  };
 }
 
 const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split(".")[0] || pc);
@@ -115,10 +141,21 @@ const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split
 /** Tutte le voci, calcolate. `soloHost`: una voce sola (la conferma). */
 export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
   const soglie = soglieDelCliente(db);
-  const daAd = ultimiAccessiAd(db, soglie.giorni);
-  const host = hostConAccessi(db, soglie.giorni, soloHost, [...daAd.keys()]);
+  const { capo, membri } = gruppiApparato(db);
+  // L'ultimo utente di AD di ogni PC, sulla riga principale: fra le righe dello stesso PC vince la data più recente.
+  const daAd = new Map<number, UltimoAccessoAd>();
+  for (const [hostId, u] of ultimiAccessiAd(db, soglie.giorni)) {
+    const c = capo(hostId);
+    const prima = daAd.get(c);
+    if (!prima || u.giorno > prima.giorno) daAd.set(c, u);
+  }
+  const conAccessi = (db.prepare("SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?)").all(`-${soglie.giorni} days`) as Array<{ host_id: number }>).map((r) => capo(r.host_id));
+  let capi = [...new Set([...conAccessi, ...daAd.keys()])];
+  if (soloHost !== undefined) capi = capi.filter((c) => c === capo(soloHost));
+  const host = righeDelleVoci(db, capi, membri);
   if (host.length === 0) return { voci: [], giorni: soglie.giorni };
-  const ids = host.map((h) => h.id);
+  // Gli accessi di tutte le righe dello stesso PC, sotto la principale (`calcolaProposta` somma per account).
+  const ids = [...new Set(host.flatMap((h) => membri(h.id)))];
   const accessi = new Map<number, AccessoAggregato[]>();
   for (let i = 0; i < ids.length; i += 500) {
     const parte = ids.slice(i, i + 500);
@@ -126,7 +163,10 @@ export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: V
       `SELECT host_id, account, fonte, SUM(conteggio) AS conteggio, MAX(ultimo) AS ultimo FROM host_accessi_utente
        WHERE giorno >= date('now', ?) AND host_id IN (${parte.map(() => "?").join(",")}) GROUP BY host_id, account, fonte`,
     ).all(`-${soglie.giorni} days`, ...parte) as Array<AccessoAggregato & { host_id: number }>;
-    for (const r of righe) (accessi.get(r.host_id) ?? accessi.set(r.host_id, []).get(r.host_id)!).push(r);
+    for (const r of righe) {
+      const c = capo(r.host_id);
+      (accessi.get(c) ?? accessi.set(c, []).get(c)!).push(r);
+    }
   }
   const persone = personeAd(db, [...new Set([...[...accessi.values()].flat().map((a) => a.account), ...[...daAd.values()].map((u) => u.account)])]);
   // Asset per nome (prima parte, minuscolo): una lettura sola, per gli omonimi dei PC senza asset.

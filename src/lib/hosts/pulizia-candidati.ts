@@ -63,6 +63,8 @@ export interface RigaHost {
   escluso: string | null;
   hostname: string | null;
   gruppo: string | null;
+  /** `ad_dns` = il gruppo è un PC di AD (nome del computer unico nel dominio, 23/11/2026). */
+  tipo_gruppo?: string | null;
   recuperato: number;
   sessioni: number;
 }
@@ -78,8 +80,10 @@ const PROTEZIONI_DEBOLI = new Set(["gruppo multihomed", "classificazione a mano"
  * MAC privato, nome non di serie, e un'altra riga dello stesso gruppo è stata vista DOPO. Cadono solo le protezioni
  * «gruppo» e «classificazione a mano» (la scelta è sull'apparato, non su quell'indirizzo); apparato, monitorato,
  * nome scritto a mano, asset, credenziali, unione a mano, recupero a mano e sessioni remote proteggono come prima.
+ * Dal 23/11/2026 vale anche per i PC di AD (Riccardo: «se lo stesso pc cambia ip… senza una moltiplicazione di
+ * oggetti»): lì il MAC è vero, ma il nome del computer è unico nel dominio e basta a dire che è lo stesso PC.
  */
-export function indirizziPassati(righe: readonly Pick<RigaHost, "id" | "mac" | "hostname" | "gruppo" | "last_seen" | "escluso" | "recuperato" | "sessioni">[]): Set<number> {
+export function indirizziPassati(righe: readonly Pick<RigaHost, "id" | "mac" | "hostname" | "gruppo" | "tipo_gruppo" | "last_seen" | "escluso" | "recuperato" | "sessioni">[]): Set<number> {
   const ultimaDelGruppo = new Map<string, string>();
   for (const r of righe) {
     if (!r.gruppo || !r.last_seen) continue;
@@ -90,7 +94,7 @@ export function indirizziPassati(righe: readonly Pick<RigaHost, "id" | "mac" | "
   for (const r of righe) {
     if (!r.gruppo || !r.escluso || !PROTEZIONI_DEBOLI.has(r.escluso)) continue;
     if (r.recuperato !== 0 || r.sessioni !== 0) continue;
-    if (!macPrivato(r.mac) || !r.hostname?.trim() || nomeGenerico(r.hostname)) continue;
+    if (!(macPrivato(r.mac) || r.tipo_gruppo === "ad_dns") || !r.hostname?.trim() || nomeGenerico(r.hostname)) continue;
     const ultima = ultimaDelGruppo.get(r.gruppo);
     if (ultima && (r.last_seen ?? "") < ultima) passati.add(r.id);
   }
@@ -121,6 +125,7 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
       END AS escluso,
       h.hostname,
       (SELECT ml.group_id FROM multihomed_links ml WHERE ml.host_id = h.id LIMIT 1) AS gruppo,
+      (SELECT ml.match_type FROM multihomed_links ml WHERE ml.host_id = h.id LIMIT 1) AS tipo_gruppo,
       EXISTS (SELECT 1 FROM hosts_archivio a WHERE a.nuovo_host_id = h.id) AS recuperato,
       (EXISTS (SELECT 1 FROM mc_remote_session rs WHERE rs.host_id = h.id)
         OR EXISTS (SELECT 1 FROM mc_command_log cl WHERE cl.host_id = h.id)) AS sessioni

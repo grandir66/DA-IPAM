@@ -13,7 +13,7 @@ import { CONFIG_ANOMALIE_DEL_GIRO, CONFIG_GIRO_CAMBIAMENTI } from "@/lib/cambiam
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
-import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
+import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO, confrontaPrincipale, serialeConNomiMisti, type MetaPrincipale } from "@/lib/hosts/ancore-gruppo";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -9121,14 +9121,25 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   // F4 v0.2.596: leggo anche hosts.physical_device_id come anchor di aggregazione.
   // Un physical_device_id condiviso è la firma più forte possibile (utente l'ha
   // dichiarato esplicitamente o l'identity-resolver l'ha trovato): prevale su tutto.
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; mac: string | null; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
-  const hostMeta = new Map<number, { ip: string; has_device: number }>();
-  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.dns_reverse, h.status, h.last_seen, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; mac: string | null; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dns_reverse: string | null; status: string | null; last_seen: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  const hostMeta = new Map<number, MetaPrincipale>();
+  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device, status: h.status, last_seen: h.last_seen });
+  const nomeDellHost = new Map<number, string | null>();
+  for (const h of hosts) nomeDellHost.set(h.id, h.custom_name?.trim() || h.hostname?.trim() || null);
+  // PC di AD (23/11/2026): il nome del computer è unico nel dominio, quindi unisce le righe dello stesso PC anche nella
+  // stessa rete (un portatile che prende un altro IP in DHCP) e anche con più schede (Wi-Fi, cavo, dock).
+  const nomiPcAd = new Set<string>();
+  try {
+    for (const r of d.prepare("SELECT lower(replace(sam_account_name, '$', '')) AS n FROM ad_computers WHERE enabled = 1 AND COALESCE(operating_system, '') NOT LIKE '%Server%'").all() as Array<{ n: string }>) {
+      if (r.n.length >= 3) nomiPcAd.add(r.n);
+    }
+  } catch { /* ad_computers assente in un DB vecchio: nessun PC di AD */ }
+  const pcAdHosts = new Set<number>();
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
   const macDellHost = new Map<number, string>();
   // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
-  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
+  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, adpc: 2, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
   function addToBucket(key: string, hostId: number, type: string, value: string) {
     if (!buckets.has(key)) buckets.set(key, new Set());
@@ -9163,6 +9174,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase()) && !nomeGenerico(sysName)) addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
     const hn = (h.hostname ?? "").trim().toLowerCase();
     if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn) && !nomeGenerico(hn)) { const shortHn = hn.split(".")[0]; if (shortHn.length >= 3) addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim()); }
+    for (const n of new Set([h.hostname, h.custom_name, h.dns_reverse].map((x) => (x ?? "").trim().toLowerCase().split(".")[0]))) {
+      if (n && nomiPcAd.has(n)) addToBucket(`adpc:${n}`, h.id, "adpc", n);
+    }
     const adDns = (h.ad_dns ?? "").trim().toLowerCase();
     if (adDns && adDns.length >= 3) { const shortAd = adDns.split(".")[0]; if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim()); }
   }
@@ -9178,11 +9192,14 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     if (hostIds.size < 2) continue;
     if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
     // Tanti MAC veri diversi sotto lo stesso nome o seriale: è un modello, non un apparato (ancore-gruppo.ts).
-    if (!key.startsWith("mac:") && !key.startsWith("physical:")
+    if (key.startsWith("serial:") && serialeConNomiMisti([...hostIds].map((hid) => nomeDellHost.get(hid)))) continue;
+    if (!key.startsWith("mac:") && !key.startsWith("physical:") && !key.startsWith("adpc:")
       && ancoraDiModello(hostIds.size, [...hostIds].map((hid) => macDellHost.get(hid)).filter((m): m is string => !!m))) continue;
     const isPhysical = key.startsWith("physical:");
     if (isPhysical) {
       for (const hid of hostIds) physicalLinkedHosts.add(hid);
+    } else if (key.startsWith("adpc:")) {
+      for (const hid of hostIds) pcAdHosts.add(hid);
     } else {
       // Per anchor non-physical conserva la regola "reti diverse" (evita falsi
       // positivi su hostname/sysname brevi che capitano nella stessa subnet).
@@ -9203,7 +9220,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     for (const [, members] of finalGroups) {
       if (members.size < 2) continue;
       // Skip "diverse reti" check per gruppi che includono link physical (manuale).
-      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid));
+      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid) || pcAdHosts.has(hid));
       if (!hasPhysicalAnchor) {
         const nets = new Set<number>();
         for (const hid of members) nets.add(hostNet.get(hid)!);
@@ -9216,10 +9233,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
       const ranked = [...members]
         .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
         .filter((m) => m.meta)
-        .sort((a, b) => {
-          if (a.meta.has_device !== b.meta.has_device) return b.meta.has_device - a.meta.has_device;
-          return ipv4ToInt(a.meta.ip) - ipv4ToInt(b.meta.ip);
-        });
+        .sort((a, b) => confrontaPrincipale(a.meta, b.meta, ipv4ToInt));
       const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
       for (const hid of members) {
         const best = hostBest.get(hid);
@@ -9227,7 +9241,8 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
           // v0.2.617: type 'physical_device' non passa il CHECK constraint (vedi
           // commento sopra). Lo mappiamo a 'serial_number' col marker nel value.
           // «mac» non passa il CHECK di match_type: va come «hostname», col prefisso `mac:` nel valore.
-          const dbType = best.type === "physical_device" ? "serial_number" : best.type === "mac" ? "hostname" : best.type;
+          // «adpc» (PC di AD) va come «ad_dns», che il CHECK ammette: Apparati lo legge per il tetto dei MAC.
+          const dbType = best.type === "physical_device" ? "serial_number" : best.type === "mac" ? "hostname" : best.type === "adpc" ? "ad_dns" : best.type;
           ins.run(groupId, hid, dbType, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }

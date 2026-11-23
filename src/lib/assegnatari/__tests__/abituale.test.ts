@@ -14,6 +14,8 @@ function dbProva(): Database.Database {
   db.pragma("foreign_keys = ON");
   db.exec(TENANT_SCHEMA_SQL);
   migrateAssegnatariAd(db);
+  // La aggiunge un ALTER all'apertura del tenant: la vuole la lettura dei gruppi di Apparati.
+  db.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL");
   db.prepare("INSERT INTO ad_integrations (id, name, dc_host, domain, base_dn, encrypted_username, encrypted_password) VALUES (1, 'AD', 'dc', 'cliente.local', 'DC=x', 'x', 'x')").run();
   const u = db.prepare("INSERT INTO ad_users (integration_id, object_guid, sam_account_name, display_name, enabled, given_name, surname) VALUES (1, ?, ?, ?, ?, ?, ?)");
   u.run("g-1", "marzia", "Marzia Miari", 1, "Marzia", "Miari");

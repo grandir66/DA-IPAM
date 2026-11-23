@@ -5,6 +5,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
 import { coppieDiHost, dbTraffico, nomiDiHost } from "@/lib/traffico/lettura";
 import { identitaDiIp } from "@/lib/traffico/identita";
+import { serviziDiHost } from "@/lib/traffico/connessioni";
 import { nomiDegliIp } from "@/lib/traffico/quadro";
 
 /** GET /api/traffico/host/[ip]?giorni=7 — con chi parla un host e chi parla a lui, dai collector. */
@@ -21,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ ip: stri
       const host = nomiDegliIp([...coppie.parlaCon, ...coppie.gliParlano].map((c) => c.altro));
       const d = dbTraffico();
       const censito = (d.prepare("SELECT mac FROM hosts WHERE ip = ?").get(ip) as { mac: string | null } | undefined)?.mac ?? null;
-      return NextResponse.json({ ip, ...coppie, nomi: nomiDiHost(ip, g), host, identita: identitaDiIp(d, ip), mac_censito: censito }, { headers: NO_STORE });
+      return NextResponse.json({ ip, ...coppie, nomi: nomiDiHost(ip, g), host, identita: identitaDiIp(d, ip), mac_censito: censito, servizi: serviziDiHost(ip) }, { headers: NO_STORE });
     } catch (e) {
       console.error("[traffico] coppie dell'host:", e instanceof Error ? e.message : e);
       return NextResponse.json({ error: "Errore nel recupero del traffico dell'host" }, { status: 500 });

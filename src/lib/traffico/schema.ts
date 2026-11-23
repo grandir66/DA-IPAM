@@ -42,6 +42,11 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       giorno TEXT NOT NULL, client TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
       conteggio INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
       PRIMARY KEY (giorno, client, tipo, nome));
+    CREATE TABLE IF NOT EXISTS traffico_connessioni (
+      giorno TEXT NOT NULL, client TEXT NOT NULL DEFAULT '', server TEXT NOT NULL, porta INTEGER NOT NULL, collector_id INTEGER NOT NULL,
+      tentate INTEGER NOT NULL, senza_risposta INTEGER NOT NULL, rifiutate INTEGER NOT NULL, ripetute INTEGER NOT NULL,
+      riuscite INTEGER NOT NULL, ms_minimo INTEGER NOT NULL, ms_mediano INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
+      PRIMARY KEY (giorno, client, server, porta, collector_id)) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS traffico_esterni (
       giorno TEXT NOT NULL, ip TEXT NOT NULL, interno TEXT NOT NULL, verso TEXT NOT NULL DEFAULT 'fuori',
       proto INTEGER NOT NULL, porta INTEGER NOT NULL, collector_id INTEGER NOT NULL,
@@ -96,5 +101,6 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   if (!colonne.includes("cursore_identita")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_identita INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_esterni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_esterni INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_nomi_ip")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi_ip INTEGER NOT NULL DEFAULT 0");
+  if (!colonne.includes("cursore_connessioni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_connessioni INTEGER NOT NULL DEFAULT 0");
   pronte.add(db);
 }

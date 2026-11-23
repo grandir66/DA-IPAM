@@ -16,6 +16,7 @@ import { collectorGet, CollectorErrore, type CollectorAccesso } from "./collecto
 import { calcolaVolumi, creaRegistratore, creaRegistratoreEsterni, creaRegistratoreFatti, creaRegistratoreIdentita } from "./anomalie";
 import { GIORNI_IDENTITA, identitaValida, type IdentitaCollector } from "./identita";
 import { registraNomiIp, sfoltisciEsterni, type EsternoCollector, type NomeIpCollector } from "./esterno";
+import { registraConnessioni, sfoltisciConnessioni, type ConnessioneCollector } from "./connessioni";
 import { ripulisciRumore, rumoreDiSonda } from "./sonde";
 
 export const PAGINA = 1000;
@@ -147,6 +148,7 @@ export function eliminaCollector(id: number): boolean {
     d.prepare("DELETE FROM traffico_ore WHERE collector_id = ?").run(id);
     d.prepare("DELETE FROM traffico_identita WHERE collector_id = ?").run(id);
     d.prepare("DELETE FROM traffico_esterni WHERE collector_id = ?").run(id);
+    d.prepare("DELETE FROM traffico_connessioni WHERE collector_id = ?").run(id);
     return d.prepare("DELETE FROM traffico_collector WHERE id = ?").run(id).changes > 0;
   })();
 }
@@ -217,7 +219,7 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
  * senza l'ascolto (versione vecchia) risponde 404: non è un errore, non c'è niente da leggere.
  */
 async function leggiFattiENomi(
-  d: Database.Database, leggi: Lettore, accesso: CollectorAccesso, c: { id: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number; cursore_esterni: number; cursore_nomi_ip: number },
+  d: Database.Database, leggi: Lettore, accesso: CollectorAccesso, c: { id: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number; cursore_esterni: number; cursore_nomi_ip: number; cursore_connessioni: number },
   registraFatti: (d: Database.Database, fatti: FattoCollector[]) => void,
   registraIdentita: (d: Database.Database, collectorId: number, righe: IdentitaCollector[]) => void,
   registraEsterni: (d: Database.Database, collectorId: number, righe: EsternoCollector[]) => void,
@@ -271,6 +273,11 @@ async function leggiFattiENomi(
     registraNomiIp(d, p.righe);
     d.prepare("UPDATE traffico_collector SET cursore_nomi_ip = ? WHERE id = ?").run(p.ultimo_seq, c.id);
   });
+  // Cosa non va (23/11): aperture senza risposta, rifiutate, tempi. Le sonde note bussano a vuoto per mestiere.
+  await aPagine<ConnessioneCollector>("/v1/connessioni", c.cursore_connessioni, (p) => {
+    registraConnessioni(d, c.id, p.righe, sonde);
+    d.prepare("UPDATE traffico_collector SET cursore_connessioni = ? WHERE id = ?").run(p.ultimo_seq, c.id);
+  });
 }
 
 function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
@@ -281,6 +288,7 @@ function sfoltisciUnaVoltaAlGiorno(d: Database.Database): void {
   d.prepare("DELETE FROM traffico_ore WHERE ora < datetime('now', ?)").run(`-${GIORNI_ORE} days`);
   d.prepare("DELETE FROM traffico_identita WHERE ultima_vista < datetime('now', ?)").run(`-${GIORNI_IDENTITA} days`);
   sfoltisciEsterni(d);
+  sfoltisciConnessioni(d);
   // Il volume si giudica sul giorno chiuso: ieri contro i 14 giorni prima.
   calcolaVolumi(d, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
   setTenantSetting("traffico_ultima_pulizia", oggi);
@@ -300,8 +308,8 @@ export async function sincronizzaTraffico(
 ): Promise<{ collector: number; righe: number; errori: number }> {
   const d = dbTraffico();
   ripulisciRumore(d, sonde);
-  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi, cursore_identita, cursore_esterni, cursore_nomi_ip FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
-    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number; cursore_esterni: number; cursore_nomi_ip: number }[];
+  const attivi = d.prepare("SELECT id, url, gettone_enc, impronta, cursore_coppie, cursore_fatti, cursore_nomi, cursore_identita, cursore_esterni, cursore_nomi_ip, cursore_connessioni FROM traffico_collector WHERE attivo = 1 ORDER BY id").all() as
+    { id: number; url: string; gettone_enc: string; impronta: string; cursore_coppie: number; cursore_fatti: number; cursore_nomi: number; cursore_identita: number; cursore_esterni: number; cursore_nomi_ip: number; cursore_connessioni: number }[];
   const esito = { collector: attivi.length, righe: 0, errori: 0 };
   if (attivi.length === 0) return esito;
   // Abitudini e anomalie: reti, host e matrice si leggono una volta per giro.

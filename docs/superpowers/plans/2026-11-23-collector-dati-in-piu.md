@@ -179,6 +179,12 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
   contenitore 110, 6 aperture riuscite e poi 7 rifiutate; `collector-banco` le scrive tutte (riga del servizio con 6 riuscite,
   riga 192.168.99.1 → 8099 con 7 rifiutate). Sull'hub `192.168.4.8`, alle 12:01 UTC, `traffico_connessioni` ha 2.403 righe
   da 116 client e nessuna con client `192.168.4.8`: le scansioni dell'IPAM non entrano.
+
+**Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
+**Verificato il 23/11** (vedi la casella qui sopra); la tappa resta aperta solo per l'interfaccia, che aspetta il sì di Riccardo.
+
+### [ ] Tappa 6 — DNS, TLS, VLAN sbagliata
+
 - DNS: quali server usa ogni host (chi salta quello interno), richieste senza risposta o con errore.
 - TLS: certificato scaduto o autofirmato (dove si vede, fino a TLS 1.2), impronta del programma che si collega (JA3).
 - VLAN: un indirizzo visto con un tag diverso da quello della sua rete censita.

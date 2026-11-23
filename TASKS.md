@@ -109,6 +109,7 @@ postazione (ovviamente in AD)».
   - Copia delle tre tabelle del traffico prima della pulizia: `/root/traffico-pre-pulizia-20261122.sql.gz` sull'IPAM `192.168.4.8` (368.285 righe). Si può buttare quando la pagina è stata guardata.
   - [ ] 5.453 coppie viste da più collector: la lettura prende il massimo (caso 4 del piano), non serve altro.
 - [ ] Riccardo (23/11), domanda: «quanto peserebbe implementare Zeek dentro l'Edge, dentro il collector o da qualche parte, per analizzare usando il prodotto già costruito?». Risposta data in chat: come **profilo «ricco» del collector** scelto all'installazione (Zeek al posto di `pmacctd` e `ascolto.py`, un adattatore che traduce i suoi registri nelle stesse tabelle e nella stessa API: IPAM non cambia); non in Edge, dove c'è già l'NDR di Codex. Stima non misurata: circa 2 vCPU e 4 GB contro 1 vCPU e 512 MB. Primo passo proposto: misura di Zeek sul banco (VM 109 del PX-NAS). Nessuna decisione presa.
+  - Riccardo (23/11): il ramo NDR di Codex «probabilmente non lo porteremo avanti» (non è una decisione, vedi `TASKS.md` di DA-Vul-can, 14/11). Se si ferma, il profilo con Zeek non ha più un doppione da evitare e il collector diventa l'unico prodotto, in due pesi.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).
 
 ## 2026-11-17 — Idea: DNS di Active Directory gestito da DA-IPAM, accanto al DHCP (Riccardo, proposta, niente codice)

@@ -243,7 +243,7 @@ export function insiemeTraffico(filtro: FiltroInsieme & { giorni?: number }): In
   const ipDellaPagina = [...esito.host.map((h) => h.ip), ...esito.coppie.flatMap((c) => [c.client, c.server])];
   const nomiChiesti = d.prepare(`
     SELECT tipo, nome, SUM(conteggio) AS conteggio, COUNT(DISTINCT client) AS host FROM traffico_nomi
-    WHERE giorno >= date('now', ?) AND ultima_vista >= ? GROUP BY tipo, nome ORDER BY conteggio DESC LIMIT 15`).all(da, dalle ?? "") as NomeChiesto[];
+    WHERE tipo IN ('dns', 'sni') AND giorno >= date('now', ?) AND ultima_vista >= ? GROUP BY tipo, nome ORDER BY conteggio DESC LIMIT 15`).all(da, dalle ?? "") as NomeChiesto[];
   return { ...esito, giorni, dalle, reti_censite: reti, nomi: nomiDegliIp(ipDellaPagina), nomi_chiesti: nomiChiesti, troncato };
 }
 

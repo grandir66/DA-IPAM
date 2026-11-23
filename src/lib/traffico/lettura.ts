@@ -183,6 +183,9 @@ export function accessoCollector(id: number): CollectorAccesso | null {
 }
 
 const DATA = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+/** Tipi di nome accettati dal collector. `software` (sonda avanzata, 23/11): versione dichiarata in rete; si salva ma
+ *  la scheda dell'host non la mostra ancora (dove mostrarla lo decide Riccardo). */
+const TIPI_NOME = new Set(["dns", "sni", "software"]);
 function rigaValida(r: RigaCollector): boolean {
   return (
     Number.isInteger(r.seq) && typeof r.inizio === "string" && DATA.test(r.inizio) &&
@@ -286,7 +289,7 @@ async function leggiFattiENomi(
       ultima_vista = MAX(traffico_nomi.ultima_vista, excluded.ultima_vista)`);
   await aPagine<NomeCollector>("/v1/nomi", c.cursore_nomi, (p) => {
     for (const n of p.righe) {
-      if (!DATA.test(n.visto ?? "") || !testo(n.client, 64) || (n.tipo !== "dns" && n.tipo !== "sni") || !testo(n.nome, 253) || !Number.isFinite(n.conteggio)) continue;
+      if (!DATA.test(n.visto ?? "") || !testo(n.client, 64) || !TIPI_NOME.has(n.tipo) || !testo(n.nome, 253) || !Number.isFinite(n.conteggio)) continue;
       ins.run(n.visto.slice(0, 10), n.client, n.tipo, n.nome, n.conteggio, n.visto, n.visto);
     }
     d.prepare("UPDATE traffico_collector SET cursore_nomi = ? WHERE id = ?").run(p.ultimo_seq, c.id);
@@ -428,5 +431,5 @@ export function nomiDiHost(ip: string, giorni = 7): NomeHost[] {
   const da = `-${Math.max(1, Math.min(GIORNI_TENUTI, Math.trunc(giorni)))} days`;
   return dbTraffico().prepare(`
     SELECT tipo, nome, SUM(conteggio) AS conteggio, MAX(ultima_vista) AS ultima_vista FROM traffico_nomi
-    WHERE client = ? AND giorno >= date('now', ?) GROUP BY tipo, nome ORDER BY conteggio DESC LIMIT 200`).all(ip, da) as NomeHost[];
+    WHERE client = ? AND tipo IN ('dns', 'sni') AND giorno >= date('now', ?) GROUP BY tipo, nome ORDER BY conteggio DESC LIMIT 200`).all(ip, da) as NomeHost[];
 }

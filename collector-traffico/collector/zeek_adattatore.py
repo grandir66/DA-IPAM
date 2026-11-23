@@ -26,7 +26,14 @@ from . import archivio, connessioni, piega, profili, zeek_stato
 # (`conn.2026-11-23-12-57-33.log`, `dns.2026-11-23-12-57-26.log`): per questo si raggruppa per finestra arrotondata.
 NOME_CHIUSO = re.compile(r"^(?P<registro>[a-z_]+)\.(?P<ora>\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.log$")
 # I registri che l'adattatore legge; gli altri chiusi si cancellano senza leggerli.
-REGISTRI = ("conn", "dns", "ssl", "snmp", "http", "ftp", "modbus", "ldap", "stats")
+REGISTRI = ("conn", "dns", "ssl", "x509", "snmp", "http", "ftp", "modbus", "ldap", "notice", "software", "stats")
+# Ordine in cui si leggono per i fatti: il certificato scaduto (con la data, da ssl+x509) prima dell'avviso di Zeek
+# sullo stesso servizio, che altrimenti lo direbbe senza data (uno l'ora per servizio: vince il primo).
+ORDINE_FATTI = ("ssl", "ftp", "http", "ldap", "snmp", "modbus", "notice")
+# Avvisi di Zeek che diventano fatti: solo questi, il resto si ignora (spec, «Dai registri di Zeek alle nostre tabelle»).
+_AVVISI = {"SSH::Password_Guessing": "password_ssh_provate", "HTTP::SQL_Injection_Attacker": "sql_injection",
+           "SSL::Invalid_Server_Cert": "tls_certificato"}
+_CONNESSIONI_NEL_TESTO = re.compile(r"seen in (\d+) connections")
 UNA_VOLTA_OGNI_S = 3600    # lo stesso fatto fra gli stessi due host, una volta l'ora (come `ascolto`)
 _TLS_VECCHIO = {"SSLv2": "più vecchia", "SSLv3": "SSL 3.0", "TLSv10": "TLS 1.0"}  # stesse soglie di controlli.saluto_tls
 _MODBUS_SCRITTURE = {"WRITE_SINGLE_COIL": "bobina", "WRITE_SINGLE_REGISTER": "registro",
@@ -215,7 +222,76 @@ def _fatti_di(registro: str, r: dict) -> list[tuple[str, dict]]:
         cosa = _MODBUS_SCRITTURE.get(str(r.get("func", "")).upper())
         if cosa:
             return [("impianto_scrittura", {"protocollo": "modbus", "cosa": cosa})]
+    if registro == "notice":
+        tipo = _AVVISI.get(str(r.get("note", "")))
+        if tipo == "password_ssh_provate":
+            m = _CONNESSIONI_NEL_TESTO.search(str(r.get("msg", "")))
+            return [(tipo, {"connessioni": int(m.group(1))} if m else {})]
+        if tipo == "sql_injection":
+            return [(tipo, {})]
+        if tipo == "tls_certificato":
+            testo = str(r.get("msg", "")).lower()
+            motivo = "autofirmato" if "self signed" in testo else "scaduto" if "expired" in testo else "non_valido"
+            return [(tipo, {"motivo": motivo})]
     return []
+
+
+def traduci_software(righe: list[dict], reti: list[str]) -> dict[tuple[str, str, str], int]:
+    """Programmi dichiarati in rete (`software.log`: server HTTP e SSH, browser...) → conteggi per `scrivi_nomi` col
+    tipo "software" e nome `<tipo>:<nome> <versione>` (es. `HTTP::SERVER:nginx 1.22.1`). Solo host di casa.
+    È la versione che il programma dice di sé, non una verifica."""
+    rr = piega._reti(reti)
+    memo: dict[str, str] = {}
+    conteggi: dict[tuple[str, str, str], int] = {}
+    per_host: dict[str, set] = {}
+    for r in righe:
+        host = piega.lato(str(r.get("host", "")), rr, memo)
+        nome = str(r.get("name") or "").strip()
+        if not nome or host in (piega.ESTERNO, piega.DIFFUSIONE):
+            continue
+        pezzi = [str(r[k]) for k in ("version.major", "version.minor", "version.minor2", "version.minor3") if r.get(k) is not None]
+        versione = ".".join(pezzi) + (str(r["version.addl"]) if r.get("version.addl") else "")
+        testo = f"{r.get('software_type', '')}:{nome}{(' ' + versione) if versione else ''}"[:253]
+        visti = per_host.setdefault(host, set())
+        if testo not in visti and len(visti) >= NOMI_PER_HOST:
+            continue
+        visti.add(testo)
+        conteggi[(host, "software", testo)] = conteggi.get((host, "software", testo), 0) + 1
+    return conteggi
+
+
+def _estremi_fatto(registro: str, tipo: str, r: dict) -> tuple[str, str, int] | None:
+    """(client, server, porta) del fatto, come li scrive `ascolto`. Un avviso di Zeek ha `src`/`dst` invece di `id`;
+    il certificato è del servizio, non di chi si collega (client vuoto, uno per servizio)."""
+    if tipo == "tls_certificato":
+        server = r.get("id.resp_h") or r.get("dst")
+        porta = r.get("id.resp_p") or r.get("p") or 0
+        return ("", str(server), int(porta)) if server else None
+    if registro == "notice":
+        porta = {"password_ssh_provate": 22, "sql_injection": 80}.get(tipo, 0)
+        return (str(r["src"]), str(r.get("dst") or ""), porta) if r.get("src") else None
+    return str(r["id.orig_h"]), str(r["id.resp_h"]), int(r.get("id.resp_p", 0) or 0)
+
+
+def _scaduti(registri: dict[str, list[dict]]) -> list[dict]:
+    """Righe di `ssl` il cui certificato del server (il primo della catena, letto in `x509`) era scaduto quando è stato visto.
+    Diventano `tls_certificato` col motivo «scaduto» e la data, come nell'ascolto."""
+    scadenze: dict[str, float] = {}
+    for x in registri.get("x509", []):
+        try:
+            scadenze[str(x["fingerprint"])] = float(x["certificate.not_valid_after"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    fuori = []
+    for r in registri.get("ssl", []):
+        catena = r.get("cert_chain_fps") or []
+        try:
+            scade = scadenze.get(str(catena[0])) if catena else None
+            if scade is not None and scade < float(r["ts"]):
+                fuori.append({**r, "_scaduto_il": archivio.ora_utc(scade)[:10]})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return fuori
 
 
 def traduci_fatti(registri: dict[str, list[dict]], reti: list[str], detti: dict[tuple, float] | None = None) -> list[dict]:
@@ -226,24 +302,34 @@ def traduci_fatti(registri: dict[str, list[dict]], reti: list[str], detti: dict[
     memo: dict[str, str] = {}
     detti = {} if detti is None else detti
     fuori = []
-    for registro in sorted(registri):
-        for r in registri[registro]:
-            for tipo, dettaglio in _fatti_di(registro, r):
-                if profili.fonte(tipo, "avanzato") != "zeek":
+    righe_per: list[tuple[str, dict, list[tuple[str, dict]]]] = [
+        ("ssl", r, [("tls_certificato", {"motivo": "scaduto", "scaduto_il": r["_scaduto_il"]})]) for r in _scaduti(registri)
+    ]
+    for registro in ORDINE_FATTI:
+        righe_per += [(registro, r, _fatti_di(registro, r)) for r in registri.get(registro, [])]
+    for registro, r, trovati in righe_per:
+        for tipo, dettaglio in trovati:
+            if profili.fonte(tipo, "avanzato") != "zeek":
+                continue
+            try:
+                ts = float(r["ts"])
+                estremi = _estremi_fatto(registro, tipo, r)
+                if estremi is None:
                     continue
-                try:
-                    ts = float(r["ts"])
-                    client = piega.lato(str(r["id.orig_h"]), rr, memo)
-                    server = piega.lato(str(r["id.resp_h"]), rr, memo)
-                    porta = int(r.get("id.resp_p", 0) or 0)
-                except (KeyError, TypeError, ValueError):
-                    continue
-                chiave = (tipo, client, server)
-                if ts - detti.get(chiave, -UNA_VOLTA_OGNI_S) < UNA_VOLTA_OGNI_S:
-                    continue
-                detti[chiave] = ts
-                fuori.append({"visto": archivio.ora_utc(ts), "tipo": tipo, "client": client, "server": server,
-                              "porta": porta, "dettaglio": dettaglio})
+                client = piega.lato(estremi[0], rr, memo) if estremi[0] else ""
+                server = piega.lato(estremi[1], rr, memo) if estremi[1] else ""
+                porta = estremi[2]
+            except (KeyError, TypeError, ValueError):
+                continue
+            # un certificato si guarda solo per i servizi di casa, come nell'ascolto
+            if tipo == "tls_certificato" and server in ("", piega.ESTERNO, piega.DIFFUSIONE):
+                continue
+            chiave = (tipo, client, server)
+            if ts - detti.get(chiave, -UNA_VOLTA_OGNI_S) < UNA_VOLTA_OGNI_S:
+                continue
+            detti[chiave] = ts
+            fuori.append({"visto": archivio.ora_utc(ts), "tipo": tipo, "client": client, "server": server,
+                          "porta": porta, "dettaglio": dettaglio})
     return fuori
 
 
@@ -253,6 +339,7 @@ def scrivi_registri(db, registri: dict[str, list[dict]], inizio: str, reti: list
     conn = traduci_conn(registri.get("conn", []), reti, tetto_esterni)
     nomi_dns, ip_dns = traduci_dns(registri.get("dns", []), inizio, reti)
     nomi_sni, ip_sni = traduci_ssl(registri.get("ssl", []), inizio, reti)
+    programmi = traduci_software(registri.get("software", []), reti)
     fatti = traduci_fatti(registri, reti, detti)
     visti, persi = zeek_stato.copertura_da_stats(registri.get("stats", []))
     with archivio.transazione(db):
@@ -267,8 +354,8 @@ def scrivi_registri(db, registri: dict[str, list[dict]], inizio: str, reti: list
             archivio.scrivi_esterni(db, inizio, conn["esterni"])
         if conn["connessioni"]:
             archivio.scrivi_connessioni(db, inizio, conn["connessioni"])
-        if nomi_dns or nomi_sni:
-            archivio.scrivi_nomi(db, inizio, {**nomi_dns, **nomi_sni})
+        if nomi_dns or nomi_sni or programmi:
+            archivio.scrivi_nomi(db, inizio, {**nomi_dns, **nomi_sni, **programmi})
         if ip_dns or ip_sni:
             archivio.scrivi_nomi_ip(db, ip_dns + ip_sni)
         for chiave, valore in (stato or {}).items():

@@ -189,6 +189,17 @@ test("fatti: gravità, interruttore per rete, scrittura confermata, tipo sconosc
   assert.equal(valutaFatti({ ...base, confermate: new Set(["10.1.0.5|10.1.0.50|6|502"]), fatti: [scrive] }).length, 0);
 });
 
+test("sonda avanzata (23/11): password SSH provate e iniezione SQL sono gravi; certificato non valido media", () => {
+  const base = { spenti: new Set<string>(), reteDi, confermate: new Set<string>() };
+  const a = valutaFatti({ ...base, fatti: [
+    fatto("password_ssh_provate", "10.1.0.5", "", 22, { connessioni: 30 }),
+    fatto("sql_injection", "10.1.0.5", "10.1.0.9", 80),
+    fatto("tls_certificato", "", "10.1.0.9", 443, { motivo: "non_valido" }),
+  ] });
+  assert.deepEqual(a.map((x) => [x.tipo, x.gravita]), [["password_ssh_provate", 3], ["sql_injection", 3], ["tls_certificato", 2]]);
+  assert.deepEqual(a[0].dettaglio, { connessioni: 30 });
+});
+
 test("dal collector: fatti e nomi coi loro cursori; «normale» su una scrittura la fa tacere; collector vecchio senza ascolto", async () => {
   await withTenant(T, async () => {
     const d = dbTraffico();

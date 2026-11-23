@@ -27,6 +27,7 @@ export const TIPI_FATTO = [
   "chiaro_telnet", "chiaro_ftp", "chiaro_posta", "chiaro_http_basic", "chiaro_ldap", "snmp_vecchio",
   "smb1", "tls_vecchio", "ntlm1", "nome_conteso", "impianto_scrittura", "dns_anomalo",
   "tls_certificato", "dns_esterno", "dns_errori", // tappa 6 (23/11)
+  "password_ssh_provate", "sql_injection", // sonda avanzata, Task 6 (23/11): dagli avvisi di Zeek, gravità alta
 ] as const;
 export type TipoFatto = (typeof TIPI_FATTO)[number];
 /** Gli avvisi che nascono dalle identità lette dal collector (`identita.ts`): due MAC per un IP, MAC diverso da quello censito. */

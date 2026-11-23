@@ -30,6 +30,8 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   tls_certificato: "Certificato",
   dns_esterno: "DNS fuori casa",
   dns_errori: "DNS che non risponde",
+  password_ssh_provate: "Password SSH provate",
+  sql_injection: "Iniezione SQL",
   vlan_sbagliata: "VLAN sbagliata",
 };
 
@@ -92,9 +94,14 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
     case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
     case "tls_certificato":
-      return d.motivo === "scaduto"
-        ? `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`
-        : "Servizio con certificato autofirmato";
+      if (d.motivo === "scaduto") return `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`;
+      // non_valido: la sonda avanzata (Zeek) non riesce a verificare la catena del certificato
+      return d.motivo === "non_valido" ? "Servizio con certificato non verificabile" : "Servizio con certificato autofirmato";
+    case "password_ssh_provate": {
+      const n = numero("connessioni");
+      return n !== null ? `Prova password SSH una dopo l'altra (${n} tentativi falliti)` : "Prova password SSH una dopo l'altra";
+    }
+    case "sql_injection": return "Manda richieste web con un'iniezione SQL";
     case "dns_esterno": return "Chiede i nomi direttamente a un DNS fuori dalla rete";
     case "dns_errori": {
       const e = numero("errori") ?? 0;

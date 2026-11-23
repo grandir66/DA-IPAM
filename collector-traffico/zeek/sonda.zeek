@@ -24,6 +24,11 @@
 @load base/protocols/ldap
 @load base/protocols/ssh
 @load base/frameworks/software
+# il riconoscimento dei programmi sta in policy: senza, software.log resta vuoto (visto sul banco il 23/11)
+@load policy/protocols/http/software
+@load policy/protocols/ssh/software
+@load policy/protocols/ftp/software
+@load policy/protocols/smtp/software
 @load base/frameworks/notice
 @load policy/protocols/ssh/detect-bruteforcing
 # in 9.0.1 si chiama cosi' (il piano diceva detect-sqli, che non esiste piu')

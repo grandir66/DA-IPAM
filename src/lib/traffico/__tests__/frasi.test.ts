@@ -31,3 +31,12 @@ describe("i MAC negli avvisi delle identità", () => {
     assert.equal(macAnomalia({ tipo: "volume", dettaglio: { prima: "aa:aa:aa:aa:aa:01", ora: "aa:aa:aa:aa:aa:02" } }), null);
   });
 });
+
+describe("sonda avanzata (23/11)", () => {
+  it("certificato non verificabile, password SSH provate, iniezione SQL", () => {
+    assert.equal(fraseAnomalia({ tipo: "tls_certificato", client: "", server: "10.0.0.2", dettaglio: { motivo: "non_valido" } }), "Servizio con certificato non verificabile");
+    assert.equal(fraseAnomalia({ tipo: "tls_certificato", client: "", server: "10.0.0.2", dettaglio: { motivo: "autofirmato" } }), "Servizio con certificato autofirmato");
+    assert.match(fraseAnomalia({ tipo: "password_ssh_provate", client: "10.0.0.1", server: "", dettaglio: { connessioni: 30 } }), /30 tentativi/);
+    assert.equal(fraseAnomalia({ tipo: "sql_injection", client: "10.0.0.1", server: "10.0.0.2", dettaglio: {} }), "Manda richieste web con un'iniezione SQL");
+  });
+});

@@ -107,6 +107,57 @@ class Fatti(unittest.TestCase):
         self.assertEqual([f["tipo"] for f in za.traduci_fatti({"ldap": [{**bind, "accesso_chiaro": True}]}, RETI)], ["chiaro_ldap"])
 
 
+class Avvisi(unittest.TestCase):
+    """Task 6: certificati, avvisi di Zeek scelti, programmi visti in rete."""
+
+    def setUp(self):
+        self.registri = {n: registro(n) for n in ("ssl", "x509", "notice")}
+
+    def test_dal_banco_certificato_autofirmato_e_iniezione_sql(self):
+        fatti = {f["tipo"]: f for f in za.traduci_fatti(self.registri, RETI)}
+        self.assertEqual(fatti["tls_certificato"]["dettaglio"], {"motivo": "autofirmato"})
+        self.assertEqual((fatti["tls_certificato"]["client"], fatti["tls_certificato"]["server"], fatti["tls_certificato"]["porta"]), ("", FINTI, 4443))
+        self.assertEqual((fatti["sql_injection"]["client"], fatti["sql_injection"]["server"]), (CARICO, SIM))
+        self.assertNotIn("password_ssh_provate", fatti)  # sul banco la soglia di Zeek (30 falliti) non è stata passata
+
+    def test_scaduto_con_la_data_vince_sull_avviso(self):
+        x509 = [{**self.registri["x509"][0], "certificate.not_valid_after": 1700000000.0}]
+        fatti = [f for f in za.traduci_fatti({**self.registri, "x509": x509}, RETI) if f["tipo"] == "tls_certificato"]
+        self.assertEqual(len(fatti), 1)
+        self.assertEqual(fatti[0]["dettaglio"], {"motivo": "scaduto", "scaduto_il": "2023-11-14"})
+
+    def test_certificato_di_un_servizio_fuori_non_si_guarda(self):
+        ssl = [{**self.registri["ssl"][0], "id.resp_h": "151.101.2.132"}]
+        notice = [{**n, "dst": "151.101.2.132", "id.resp_h": "151.101.2.132"} for n in self.registri["notice"]]
+        self.assertEqual([f for f in za.traduci_fatti({"ssl": ssl, "notice": notice}, RETI) if f["tipo"] == "tls_certificato"], [])
+
+    def test_password_ssh_provate(self):
+        avviso = {"ts": 1795438700.0, "note": "SSH::Password_Guessing", "src": CARICO,
+                  "msg": f"{CARICO} appears to be guessing SSH passwords (seen in 30 connections).", "sub": "Sampled servers:  192.168.99.223"}
+        fatti = za.traduci_fatti({"notice": [avviso]}, RETI)
+        self.assertEqual([(f["tipo"], f["client"], f["server"], f["porta"], f["dettaglio"]) for f in fatti],
+                         [("password_ssh_provate", CARICO, "", 22, {"connessioni": 30})])
+
+    def test_avvisi_fuori_elenco_si_ignorano(self):
+        self.assertEqual(za.traduci_fatti({"notice": [{"ts": 1.0, "note": "Scan::Port_Scan", "src": CARICO}]}, RETI), [])
+        vittima = [n for n in self.registri["notice"] if n["note"] == "HTTP::SQL_Injection_Victim"]
+        self.assertTrue(vittima)
+        self.assertEqual(za.traduci_fatti({"notice": vittima}, RETI), [])
+
+    def test_programmi(self):
+        righe = [
+            {"host": SIM, "host_p": 80, "software_type": "HTTP::SERVER", "name": "BaseHTTP", "version.major": 0, "version.minor": 6},
+            {"host": CARICO, "software_type": "HTTP::BROWSER", "name": "curl", "version.major": 7, "version.minor": 88, "version.minor2": 1},
+            {"host": "151.101.2.132", "software_type": "HTTP::SERVER", "name": "nginx", "version.major": 1},
+            {"host": FINTI, "software_type": "SSH::SERVER", "name": "OpenSSH", "version.major": 9, "version.minor": 2, "version.addl": "p1"},
+        ]
+        self.assertEqual(za.traduci_software(righe, RETI), {
+            (SIM, "software", "HTTP::SERVER:BaseHTTP 0.6"): 1,
+            (CARICO, "software", "HTTP::BROWSER:curl 7.88.1"): 1,
+            (FINTI, "software", "SSH::SERVER:OpenSSH 9.2p1"): 1,
+        })
+
+
 class Giro(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

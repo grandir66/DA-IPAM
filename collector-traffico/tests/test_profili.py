@@ -14,16 +14,21 @@ class Profili(unittest.TestCase):
             testo = f.read()
         blocco = re.search(r"export const TIPI_FATTO = \[(.*?)\] as const", testo, re.S).group(1)
         self.assertEqual(tuple(re.findall(r'"([a-z_0-9]+)"', blocco)), profili.TIPI)
-        self.assertEqual(controlli.TIPI, profili.TIPI)
+        # quelli che l'ascolto sa fare, più quelli che sa fare solo Zeek
+        self.assertEqual(set(controlli.TIPI) | profili.SOLO_ZEEK, set(profili.TIPI))
+        self.assertFalse(set(controlli.TIPI) & profili.SOLO_ZEEK)
 
     def test_una_fonte_per_tipo(self):
         for profilo in profili.PROFILI:
             for tipo in profili.TIPI:
+                if profilo == "leggero" and tipo in profili.SOLO_ZEEK:
+                    self.assertEqual(profili.fonte(tipo, profilo), "nessuna")
+                    continue
                 self.assertIn(profili.fonte(tipo, profilo), ("zeek", "ascolto"))
                 # chi lo fa davvero: ascolto (per intero) o zeek, mai tutti e due per la stessa parte
                 da_zeek = profili.fonte(tipo, profilo) == "zeek"
                 self.assertNotEqual(da_zeek, profili.ascolto_lo_fa(tipo, profilo), f"{tipo} in {profilo}")
-        self.assertTrue(all(profili.fonte(t, "leggero") == "ascolto" for t in profili.TIPI))
+        self.assertTrue(all(profili.fonte(t, "leggero") == "ascolto" for t in profili.TIPI if t not in profili.SOLO_ZEEK))
 
     def test_tipo_diviso(self):
         self.assertTrue(profili.ascolto_lo_fa("impianto_scrittura", "avanzato", "s7"))

@@ -270,7 +270,7 @@ freno tirato, «▲ Zeek fermo per il disco pieno» (un testo nella riga che c'e
 
 ---
 
-### [ ] Task 6 — Fatti nuovi: certificati, avvisi di Zeek, programmi
+### [~] Task 6 — Fatti nuovi: certificati, avvisi di Zeek, programmi
 
 **Dipende da:** Task 4 (può andare in parallelo al 5).
 
@@ -310,6 +310,19 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
 - Task 1, caso 3 (connessioni lunghe): in Zeek 9.0.1 lo script non c'è → limite, va nel README col Task 5.
 - Task 2, vista rossa: `NON_FUGA_CARTELLA=grezzi python3 -m unittest tests.test_non_fuga` → FAIL (segreti in
   `ftp.log`, `http.log`, `ldap.log`, `snmp.log`), poi verde su `filtrati`.
+
+- 2026-11-23, Task 5, partenza della giornata su `DA-COLLECTOR-PX03`: snapshot **`pre-sonda-zeek-20261123` su
+  DA-PX-03 (nodo 192.168.40.3, VM 114)** alle 13:13 UTC; VM portata a 2 GB (2 vCPU c'erano già; disco 8 GB, non 16:
+  al 21% prima della prova, lasciato com'è). Installato da `origin/dev` col profilo avanzato alle 13:14. **Difetto
+  trovato e corretto subito**: `collector-traffico.service` riaccendeva `pmacctd-collector` (`Wants=`) e i suoi file
+  restavano in `in/`; ora `pmacctd` ha un `ExecCondition` sul profilo. Prima finestra di Zeek (13:10) nell'archivio:
+  2.773 coppie, tutte con `byte_ritorno`; `/v1/stato` → `avanzato`, `zeek`, `9.0.1`, freno 0, scartati 0; l'IPAM
+  `192.168.4.8` ha letto il collector alle 13:15:04 senza errori. Righe del giorno col leggero, per il confronto:
+  `coppia` 609.853 il 22/11, `fatto` 4.162, `nome` 95.564 (`esterno` e `connessione` nate il 23/11).
+  Sorvegliante `giornata-zeek` (systemd, sulla VM, `banco/giornata-zeek.sh`) dalle 13:15:33 UTC: una riga ogni
+  10 minuti in `/root/giornata-zeek.log`, riepilogo dopo 24 ore (24/11 verso le 13:15 UTC). Se il disco passa il 50%,
+  un registro viene scartato o il kernel uccide per memoria, rimette da solo il profilo leggero e lo scrive; il
+  ritorno allo snapshot, se serve, si fa dal nodo. Da controllare alla fine anche `ultimo_errore` in IPAM.
 
 ## Consuntivo
 ### Fatto

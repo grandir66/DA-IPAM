@@ -104,7 +104,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** un host dell'ufficio senza MAC in IPAM lo riceve dal collector, e un IP doppio provocato sul banco compare.
 
-### [ ] Tappa 3 — Reti sconosciute e oggetti con nome
+### [~] Tappa 3 — Reti sconosciute e oggetti con nome
 
 - IPAM: tabella `traffico_oggetti` (chiave: rete o indirizzo, interno non censito o esterno; nome, nota, chi e quando).
   **Non è la tabella `networks`**: niente scansioni, niente host creati, non entra fra le subnet interne.
@@ -112,6 +112,13 @@ Solo IPAM, nessun cambio al collector.
   con host visti, volume, con chi parlano, prima e ultima volta; azione «Dai un nome». Il nome compare al posto di «Rete non
   censita» in tutte le viste.
 - Lo stesso per l'esterno, dalla tappa 4.
+
+- [x] Dati: `traffico_oggetti`, `oggetti.ts` (reti viste per /24 o per l'oggetto che le contiene, dare e togliere un nome),
+  `GET /api/traffico/reti-viste`, `GET|PUT|DELETE /api/traffico/oggetti`; il nome entra in «Fra reti», nel filtro di rete
+  e nell'andamento con la chiave `o:<rete>`. Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"` tutte
+  verdi (33), eslint e `tsc` puliti fuori da `.next/types` (23/11).
+- [ ] Interfaccia: scheda «Reti viste» e «Dai un nome», proposta a Riccardo il 23/11.
+- [ ] Sull'hub: Riccardo dà un nome a una rete vista dall'ufficio e lo ritrova in «Fra reti».
 
 **Fatto quando:** una rete non censita vista dall'ufficio ha un nome dato da Riccardo e quel nome compare in «Fra reti».
 
@@ -192,6 +199,12 @@ chi ha fatto accesso a un server di prova.
   temporanei sono stati tolti. Dal Mac la VM 109 si raggiunge solo passando dal PX-NAS (manca la sua chiave fra gli host noti).
   Sull'hub `192.168.4.8`, alle 00:14 UTC, `/opt/da-invent` era già al commit `2c2bb609` ma `da-ipam` girava dalle 18:31
   col codice vecchio e l'aggiornamento continuava a rimandarsi per un giro in corso: la verifica lì resta da fare.
+
+- 2026-11-23, tappa 3, dati. Scelte: la chiave di un oggetto è sempre una rete IPv4 (`10.9.8.0/24`, un indirizzo solo è
+  `/32`), prefisso da 8 a 32; una rete già censita fra le subnet non può avere un oggetto (ha già il suo nome); un indirizzo
+  fuori dal censimento prende l'oggetto più stretto che lo contiene. Solo IPv4: gli IPv6 fuori dal censimento restano
+  «Rete non censita». Gli oggetti compaiono nell'elenco `reti_censite` della vista d'insieme con `oggetto: true`, così
+  il nome si vede in «Fra reti» e nel filtro senza toccare la pagina. Dare un nome lo può fare solo un amministratore.
 
 ## Consuntivo
 

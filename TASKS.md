@@ -12,7 +12,9 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 2, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [x] Tappa 2: IP doppio provocato sul banco del PX-NAS il 23/11, l'avviso nasce (dal codice, non dalla pagina)
 - [ ] Tappa 2, sull'hub `192.168.4.8`: un host senza MAC che lo riceve dal collector (l'hub non si era ancora aggiornato)
-- [ ] Tappe 3-7
+- [x] Tappa 3, dati: oggetti con nome (`traffico_oggetti`), reti viste, rotte; il nome entra in «Fra reti»
+- [ ] Tappa 3, interfaccia: scheda «Reti viste» e «Dai un nome», proposta a Riccardo il 23/11
+- [ ] Tappe 4-7
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati
 

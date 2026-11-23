@@ -5,7 +5,7 @@ import { NO_STORE } from "@/lib/controllers/route-helpers";
 import { andamentoTraffico } from "@/lib/traffico/insieme";
 import { ipValido } from "@/lib/traffico/sonde";
 
-const CHIAVE_RETE = /^(\d{1,9}|esterno|diffusione|nessuna)$/;
+const CHIAVE_RETE = /^(\d{1,9}|esterno|diffusione|nessuna|o:\d{1,3}(\.\d{1,3}){3}\/\d{1,2})$/;
 
 /** GET /api/traffico/andamento?rete=&host= — il volume delle ultime 24 ore, un punto per ora (UTC):
  * tutta la rete, una rete, oppure un host. */

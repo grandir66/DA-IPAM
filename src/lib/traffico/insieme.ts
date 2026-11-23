@@ -10,6 +10,7 @@ import { isIpInCidr } from "@/lib/utils";
 import { DIFFUSIONE, ESTERNO } from "./anomalie";
 import { dbTraffico, GIORNI_TENUTI } from "./lettura";
 import { nomiDegliIp, type NomeDiIp } from "./quadro";
+import { creaCercatore, elencoOggetti, PREFISSO_CHIAVE_OGGETTO } from "./oggetti";
 
 export const VISTE = ["reti", "host", "coppie"] as const;
 export type Vista = (typeof VISTE)[number];
@@ -163,7 +164,7 @@ export function calcolaInsieme(
   return esito;
 }
 
-export interface ReteVista { chiave: string; nome: string; cidr: string }
+export interface ReteVista { chiave: string; nome: string; cidr: string; /** Non è una rete censita: è un oggetto con nome (`traffico_oggetti`). */ oggetto?: boolean }
 export interface NomeChiesto { tipo: string; nome: string; conteggio: number; host: number }
 export interface InsiemeTraffico extends Insieme {
   giorni: number;
@@ -178,19 +179,24 @@ export interface InsiemeTraffico extends Insieme {
 
 /** La chiave della rete di un indirizzo, con le reti censite lette una volta. */
 function creaReteDi(): { reti: ReteVista[]; reteDi: (ip: string) => string } {
-  const reti = getNetworks().map((n) => ({ chiave: String(n.id), nome: n.name, cidr: n.cidr }));
+  const reti: ReteVista[] = getNetworks().map((n) => ({ chiave: String(n.id), nome: n.name, cidr: n.cidr }));
+  // Gli oggetti con nome (tappa 3): un indirizzo fuori dal censimento prende il nome della rete che gli è stata data.
+  const oggetti = elencoOggetti();
+  const diOggetto = creaCercatore(oggetti.map((o) => o.chiave));
   const memo = new Map<string, string>();
   const reteDi = (ip: string): string => {
     if (ip === ESTERNO) return RETE_ESTERNO;
     if (ip === DIFFUSIONE || ip === "") return RETE_DIFFUSIONE;
     let r = memo.get(ip);
     if (r === undefined) {
-      r = reti.find((n) => isIpInCidr(ip, n.cidr))?.chiave ?? RETE_NON_CENSITA;
+      const censita = reti.find((n) => isIpInCidr(ip, n.cidr))?.chiave;
+      const oggetto = censita ? null : diOggetto(ip);
+      r = censita ?? (oggetto ? `${PREFISSO_CHIAVE_OGGETTO}${oggetto}` : RETE_NON_CENSITA);
       memo.set(ip, r);
     }
     return r;
   };
-  return { reti, reteDi };
+  return { reti: [...reti, ...oggetti.map((o) => ({ chiave: `${PREFISSO_CHIAVE_OGGETTO}${o.chiave}`, nome: o.nome, cidr: o.chiave, oggetto: true }))], reteDi };
 }
 
 /** L'inizio dell'ora di `quando`, spostato di `ore`, come sta in `traffico_ore` (UTC). */

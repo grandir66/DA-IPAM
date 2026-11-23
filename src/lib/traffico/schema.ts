@@ -42,6 +42,9 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       giorno TEXT NOT NULL, client TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
       conteggio INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
       PRIMARY KEY (giorno, client, tipo, nome));
+    CREATE TABLE IF NOT EXISTS traffico_oggetti (
+      chiave TEXT PRIMARY KEY, ambito TEXT NOT NULL DEFAULT 'interno', nome TEXT NOT NULL, nota TEXT NOT NULL DEFAULT '',
+      creato_da TEXT NOT NULL DEFAULT '', creato_il TEXT NOT NULL, aggiornato_il TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS traffico_identita (
       collector_id INTEGER NOT NULL, mac TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '', fonte TEXT NOT NULL,
       vlan INTEGER NOT NULL DEFAULT 0, nome TEXT NOT NULL DEFAULT '', tipo TEXT NOT NULL DEFAULT '',

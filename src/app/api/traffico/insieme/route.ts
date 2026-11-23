@@ -4,7 +4,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
 import { insiemeTraffico, PERIODI, VISTE, type Vista } from "@/lib/traffico/insieme";
 
-const CHIAVE_RETE = /^(\d{1,9}|esterno|diffusione|nessuna)$/;
+const CHIAVE_RETE = /^(\d{1,9}|esterno|diffusione|nessuna|o:\d{1,3}(\.\d{1,3}){3}\/\d{1,2})$/;
 
 /** GET /api/traffico/insieme?giorni=&vista=&rete=&da=&a=&cerca=&pagina= — il traffico sulla rete intera:
  * fra reti, per host o per coppia, coi numeri del periodo e i nomi più chiesti. */

@@ -48,6 +48,10 @@ class Api(unittest.TestCase):
         self.assertEqual(codice, 200)
         self.assertEqual((s["nome"], s["ultimo_seq"], s["pacchetti_visti"], s["pacchetti_persi"], s["copertura"]),
                          ("banco", 3, 950, 50, 0.95))
+        # un collector che non ha mai scritto il profilo è il leggero di prima
+        self.assertEqual((s["profilo"], s["motore"], s["versione_motore"], s["freno"], s["scartati"]), ("leggero", "pmacct", "", False, 0))
+        righe = self.chiedi("/v1/coppie?dopo=0")[1]["righe"]
+        self.assertTrue(all(r["byte_ritorno"] is None and r["risposta"] is None for r in righe))  # «non so», mai 0
 
     def test_coppie_col_cursore(self):
         codice, c = self.chiedi("/v1/coppie?dopo=0&limite=2")

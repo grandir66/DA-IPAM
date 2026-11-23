@@ -16,6 +16,10 @@ export interface CollectorQuadro {
   ultimo_errore: string | null;
   ultimo_buco: string | null;
   copertura: number | null;
+  profilo: string | null;
+  motore: string | null;
+  versione_motore: string | null;
+  freno: number | null;
 }
 export interface ReteInApprendimento { network_id: number; nome: string; cidr: string; fino_al: string }
 export interface QuadroTraffico {
@@ -41,6 +45,7 @@ export function quadroTraffico(): QuadroTraffico {
     collector: elencoCollector().map((c) => ({
       id: c.id, nome: c.nome, sede: c.sede, attivo: c.attivo, ultimo_contatto: c.ultimo_contatto,
       ultimo_errore: c.ultimo_errore, ultimo_buco: c.ultimo_buco, copertura: c.copertura,
+      profilo: c.profilo, motore: c.motore, versione_motore: c.versione_motore, freno: c.freno,
     })),
     apprendimento: inCorso
       // una rete tolta dal censimento non si nomina più

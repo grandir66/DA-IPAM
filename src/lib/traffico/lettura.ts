@@ -52,6 +52,12 @@ export interface StatoCollector {
   pacchetti_visti: number;
   pacchetti_persi: number;
   copertura: number;
+  /** Dalla sonda avanzata (23/11): un collector di prima non li manda. */
+  profilo?: string;
+  motore?: string;
+  versione_motore?: string;
+  freno?: boolean;
+  scartati?: number;
 }
 interface Pagina<T> {
   righe: T[];
@@ -93,6 +99,12 @@ export interface CollectorTraffico {
   ultimo_buco: string | null;
   copertura: number | null;
   creato: string;
+  /** `avanzato` (Zeek) o `leggero` (pmacctd); null = il collector non lo dice (versione di prima). */
+  profilo: string | null;
+  motore: string | null;
+  versione_motore: string | null;
+  /** 1 = Zeek fermo perché il disco è oltre il 70%. */
+  freno: number | null;
 }
 interface RigaCollectorDb extends Omit<CollectorTraffico, "attivo"> {
   attivo: number;
@@ -109,7 +121,11 @@ export function dbTraffico(): Database.Database {
   return d;
 }
 
-const CAMPI = "id, nome, sede, url, impronta, attivo, cursore_coppie, ultimo_contatto, ultimo_errore, ultimo_buco, copertura, creato";
+const CAMPI = "id, nome, sede, url, impronta, attivo, cursore_coppie, ultimo_contatto, ultimo_errore, ultimo_buco, copertura, creato, profilo, motore, versione_motore, freno";
+/** Un testo corto che viene da /v1/stato: solo lettere, cifre, punti e trattini, mai altro. */
+function testoStato(v: unknown): string | null {
+  return typeof v === "string" && /^[a-z0-9.\-]{1,32}$/i.test(v) ? v : null;
+}
 
 export function elencoCollector(): CollectorTraffico[] {
   const righe = dbTraffico().prepare(`SELECT ${CAMPI} FROM traffico_collector ORDER BY nome, id`).all() as RigaCollectorDb[];
@@ -348,8 +364,13 @@ export async function sincronizzaTraffico(
         if (!p.altri) break;
       }
       await leggiFattiENomi(d, leggi, accesso, c, registraFatti, registraIdentita, registraEsterni, sonde);
-      d.prepare("UPDATE traffico_collector SET ultimo_contatto = datetime('now'), ultimo_errore = NULL, copertura = ? WHERE id = ?")
-        .run(typeof stato?.copertura === "number" ? stato.copertura : null, c.id);
+      d.prepare("UPDATE traffico_collector SET ultimo_contatto = datetime('now'), ultimo_errore = NULL, copertura = ?, profilo = ?, motore = ?, versione_motore = ?, freno = ? WHERE id = ?")
+        .run(
+          typeof stato?.copertura === "number" ? stato.copertura : null,
+          testoStato(stato?.profilo), testoStato(stato?.motore), testoStato(stato?.versione_motore),
+          typeof stato?.freno === "boolean" ? (stato.freno ? 1 : 0) : null,
+          c.id,
+        );
     } catch (e) {
       esito.errori++;
       d.prepare("UPDATE traffico_collector SET ultimo_errore = ? WHERE id = ?").run(motivo(e), c.id);

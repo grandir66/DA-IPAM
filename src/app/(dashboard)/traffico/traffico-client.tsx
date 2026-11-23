@@ -108,6 +108,8 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
               dettagli={[
                 c.ultimo_contatto ? `ultimo contatto ${parseDbDate(c.ultimo_contatto).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "mai sentito",
                 c.copertura === null ? "copertura —" : `copertura ${(c.copertura * 100).toFixed(c.copertura >= 0.9995 ? 0 : 1)}%`,
+                ...(c.motore ? [`${c.profilo === "avanzato" ? "sonda avanzata" : "sonda leggera"} · ${c.motore === "zeek" ? "Zeek" : "pmacct"}${c.versione_motore ? ` ${c.versione_motore}` : ""}`] : []),
+                ...(c.freno === 1 ? ["▲ Zeek fermo per il disco pieno"] : []),
                 ...(c.ultimo_errore ? [`✕ ${c.ultimo_errore}`] : []),
                 ...(c.ultimo_buco ? [`▲ dati persi il ${giornoBreve(c.ultimo_buco)}`] : []),
               ]}

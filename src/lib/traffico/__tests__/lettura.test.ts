@@ -251,3 +251,29 @@ test("sonda avanzata (23/11): byte del ritorno e risposta; un collector che non 
     deleteTenantDatabase(T3);
   }
 });
+
+test("sonda avanzata (23/11): profilo, motore e freno da /v1/stato; un valore strano non entra", async () => {
+  const T4 = "TRAFFSTATO23";
+  try {
+    await withTenant(T4, async () => {
+      creaCollector({ nome: "z", sede: "", url: "https://192.168.99.89:8477", gettone: "g", impronta: "AA" });
+      const base = finto([riga(1, "192.168.99.88", "192.168.99.221", 502, 1)]);
+      const conStato = (extra: Record<string, unknown>) => (async (c: unknown, percorso: string) => {
+        const r = await (base as (c: unknown, p: string) => Promise<Record<string, unknown>>)(c, percorso);
+        return percorso === "/v1/stato" ? { ...r, ...extra } : r;
+      }) as Lettore;
+      await sincronizzaTraffico(base);
+      const prima = elencoCollector()[0];
+      assert.deepEqual([prima.profilo, prima.motore, prima.versione_motore, prima.freno], [null, null, null, null]);
+      await sincronizzaTraffico(conStato({ profilo: "avanzato", motore: "zeek", versione_motore: "9.0.1", freno: true, scartati: 0 }));
+      const dopo = elencoCollector()[0];
+      assert.deepEqual([dopo.profilo, dopo.motore, dopo.versione_motore, dopo.freno], ["avanzato", "zeek", "9.0.1", 1]);
+      await sincronizzaTraffico(conStato({ profilo: "<script>", motore: "zeek", versione_motore: "x".repeat(40), freno: "sì" }));
+      const strano = elencoCollector()[0];
+      assert.deepEqual([strano.profilo, strano.versione_motore, strano.freno], [null, null, null]);
+    });
+  } finally {
+    closeTenantDb(T4);
+    deleteTenantDatabase(T4);
+  }
+});

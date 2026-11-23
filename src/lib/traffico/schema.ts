@@ -102,6 +102,11 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   if (!colonne.includes("cursore_esterni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_esterni INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_nomi_ip")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi_ip INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_connessioni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_connessioni INTEGER NOT NULL DEFAULT 0");
+  // Sonda avanzata (Zeek, 23/11): chi conta su quel collector, da /v1/stato. NULL = collector di prima, che non lo dice.
+  if (!colonne.includes("profilo")) db.exec("ALTER TABLE traffico_collector ADD COLUMN profilo TEXT");
+  if (!colonne.includes("motore")) db.exec("ALTER TABLE traffico_collector ADD COLUMN motore TEXT");
+  if (!colonne.includes("versione_motore")) db.exec("ALTER TABLE traffico_collector ADD COLUMN versione_motore TEXT");
+  if (!colonne.includes("freno")) db.exec("ALTER TABLE traffico_collector ADD COLUMN freno INTEGER");
   // Sonda avanzata (Zeek, 23/11): byte del ritorno e «ha risposto». NULL = il collector non lo sa (profilo leggero), mai 0.
   for (const tabella of ["traffico_coppie", "traffico_ore"]) {
     const c = (db.prepare(`PRAGMA table_info(${tabella})`).all() as { name: string }[]).map((x) => x.name);

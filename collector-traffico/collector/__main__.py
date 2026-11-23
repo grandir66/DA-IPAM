@@ -9,6 +9,7 @@ from __future__ import annotations
 import calendar
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -82,6 +83,17 @@ def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | No
     return scritte
 
 
+def versione_motore(profilo: str) -> tuple[str, str]:
+    """(motore, versione) per /v1/stato: chi conta davvero su questa VM."""
+    comando = ["/opt/zeek/bin/zeek", "--version"] if profilo == "avanzato" else ["/usr/sbin/pmacctd", "-V"]
+    try:
+        uscita = subprocess.run(comando, capture_output=True, text=True, timeout=10).stdout + ""
+    except (OSError, subprocess.SubprocessError):
+        uscita = ""
+    m = re.search(r"(\d+\.\d+(?:\.\d+)?)", uscita)
+    return ("zeek" if profilo == "avanzato" else "pmacct"), (m.group(1) if m else "")
+
+
 def main() -> int:
     dati = os.environ.get("DATI", "/var/lib/collector-traffico")
     conf = os.environ.get("CONF", "/etc/collector-traffico")
@@ -110,6 +122,10 @@ def main() -> int:
     os.makedirs(cartella_in, exist_ok=True)
     db = archivio.apri(percorso_db)
     avviato = archivio.ora_utc()
+    motore, versione = versione_motore(profilo)
+    archivio.metti_stato(db, "profilo", profilo)
+    archivio.metti_stato(db, "motore", motore)
+    archivio.metti_stato(db, "versione_motore", versione)
     srv = api.crea_server(
         percorso_db, gettone, os.environ.get("NOME", os.uname().nodename), avviato,
         indirizzo=os.environ.get("ASCOLTA", "0.0.0.0"), porta=int(os.environ.get("PORTA", api.PORTA)),
@@ -127,7 +143,10 @@ def main() -> int:
                 scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni)
             if scritte:
                 print(f"collector: {scritte} coppie archiviate", flush=True)
-            if scheda:
+            if profilo == "avanzato":
+                # il freno lo tira zeek-freno.timer (root); qui si dice solo se è tirato
+                archivio.metti_stato(db, "freno", 1 if os.path.exists(os.path.join(dati, "zeek-freno")) else 0)
+            elif scheda:  # nel profilo avanzato i contatori vengono da stats.log di Zeek (adattatore)
                 try:
                     with open("/proc/net/dev", encoding="ascii") as f:
                         c = contatori_scheda(scheda, f.read())

@@ -73,6 +73,12 @@ def crea_server(percorso_db: str, gettone: str, nome: str, avviato: str,
                             "ultimo_nome": archivio.ultimo_seq(db, "nome"),
                             "pacchetti_visti": visti, "pacchetti_persi": persi,
                             "copertura": 1.0 if visti + persi == 0 else round(1 - persi / (visti + persi), 6),
+                            # sonda avanzata (23/11): chi conta, e se Zeek è fermo per il disco
+                            "profilo": archivio.leggi_stato(db, "profilo", "leggero"),
+                            "motore": archivio.leggi_stato(db, "motore", "pmacct"),
+                            "versione_motore": archivio.leggi_stato(db, "versione_motore", ""),
+                            "freno": archivio.leggi_stato(db, "freno", "0") == "1",
+                            "scartati": int(archivio.leggi_stato(db, "zeek_scartati", "0") or 0),
                         })
                     elif url.path in LETTURE:
                         q = parse_qs(url.query)

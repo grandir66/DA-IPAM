@@ -18,7 +18,7 @@ import os
 import re
 import time
 
-from . import archivio, connessioni, piega, profili
+from . import archivio, connessioni, piega, profili, zeek_stato
 
 # Nome di un registro chiuso da Zeek senza zeekctl, visto sul banco il 23/11/2026 (Zeek 9.0.1):
 # `conn.2026-11-23-13-00-00.log`. L'ora è quella di APERTURA del file (UTC: il servizio gira con TZ=UTC), e Zeek
@@ -26,7 +26,7 @@ from . import archivio, connessioni, piega, profili
 # (`conn.2026-11-23-12-57-33.log`, `dns.2026-11-23-12-57-26.log`): per questo si raggruppa per finestra arrotondata.
 NOME_CHIUSO = re.compile(r"^(?P<registro>[a-z_]+)\.(?P<ora>\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.log$")
 # I registri che l'adattatore legge; gli altri chiusi si cancellano senza leggerli.
-REGISTRI = ("conn", "dns", "ssl", "snmp", "http", "ftp", "modbus", "ldap")
+REGISTRI = ("conn", "dns", "ssl", "snmp", "http", "ftp", "modbus", "ldap", "stats")
 UNA_VOLTA_OGNI_S = 3600    # lo stesso fatto fra gli stessi due host, una volta l'ora (come `ascolto`)
 _TLS_VECCHIO = {"SSLv2": "più vecchia", "SSLv3": "SSL 3.0", "TLSv10": "TLS 1.0"}  # stesse soglie di controlli.saluto_tls
 _MODBUS_SCRITTURE = {"WRITE_SINGLE_COIL": "bobina", "WRITE_SINGLE_REGISTER": "registro",
@@ -254,7 +254,12 @@ def scrivi_registri(db, registri: dict[str, list[dict]], inizio: str, reti: list
     nomi_dns, ip_dns = traduci_dns(registri.get("dns", []), inizio, reti)
     nomi_sni, ip_sni = traduci_ssl(registri.get("ssl", []), inizio, reti)
     fatti = traduci_fatti(registri, reti, detti)
+    visti, persi = zeek_stato.copertura_da_stats(registri.get("stats", []))
     with archivio.transazione(db):
+        if visti or persi:
+            # contatori cumulati, come quelli della scheda nel profilo leggero: /v1/stato ne fa la copertura
+            archivio.metti_stato(db, "pacchetti_visti", int(archivio.leggi_stato(db, "pacchetti_visti", "0") or 0) + visti)
+            archivio.metti_stato(db, "pacchetti_persi", int(archivio.leggi_stato(db, "pacchetti_persi", "0") or 0) + persi)
         for f in fatti:
             archivio.scrivi_fatto(db, f["visto"], f["tipo"], f["client"], f["server"], f["porta"], f["dettaglio"])
         scritte = archivio.scrivi_finestra(db, inizio, conn["coppie"])

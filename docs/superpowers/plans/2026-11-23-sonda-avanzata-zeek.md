@@ -234,7 +234,7 @@ banco una volta sola `chiaro_ftp`, `chiaro_http_basic`, `snmp_vecchio`, `impiant
 
 ---
 
-### [ ] Task 5 — Installazione, freno sul disco, stato, una giornata sul DA-PX-03
+### [~] Task 5 — Installazione, freno sul disco, stato, una giornata sul DA-PX-03
 
 **Dipende da:** Task 4.
 
@@ -260,6 +260,13 @@ IPAM: la riga del collector nella pagina Traffico mostra profilo e versione del 
 **Verifica:** prove verdi (collector e IPAM); dopo 24 ore sul DA-PX-03: disco sotto il 50%, `scartati` 0, nessun `ultimo_errore` in IPAM per quel collector. Numeri nel README, sezione «Profilo avanzato».
 
 **Commit:** `Sonda Zeek: installazione col profilo, freno sul disco e stato`, poi rilascio.
+
+Codice (23/11): prove del collector 93 OK, del traffico in IPAM 41 OK, `tsc` ed eslint puliti sui file toccati.
+Scelta per il freno: `zeek-freno.timer` + `zeek-freno.service` da root ogni minuto (`collector.zeek_stato`), che ferma e
+riavvia Zeek e lascia il segno `DATI/zeek-freno`; niente polkit né sudo, perché `collector-traffico` gira con
+`NoNewPrivileges` e una Debian minima non ha polkit. Zeek gira da root (cattura), scrive in `DATI/zeek` di
+proprietà di `collector`, che legge e cancella. Nella riga del collector: «sonda avanzata · Zeek 9.0.1» e, col
+freno tirato, «▲ Zeek fermo per il disco pieno» (un testo nella riga che c'era, nessun cambio di layout).
 
 ---
 

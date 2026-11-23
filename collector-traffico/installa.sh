@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
 # Installa il collector di traffico su una Debian 12 pulita.
-# Uso (da root):  bash /opt/collector-traffico/installa.sh <scheda in mirror> [nome]
-# Rilanciarlo aggiorna codice e servizi; gettone, certificato e archivio restano.
+# Uso (da root):  bash /opt/collector-traffico/installa.sh [--profilo avanzato|leggero] <scheda in mirror> [nome]
+# Rilanciarlo aggiorna codice e servizi; gettone, certificato e archivio restano. Rilanciarlo con un altro
+# profilo cambia profilo senza toccare l'archivio (il cursore di IPAM non si rompe).
+# Profilo di serie: avanzato (Zeek), se la VM ha almeno 2 vCPU e 1900 MB; altrimenti leggero (pmacctd), e lo dice.
 set -euo pipefail
+
+ZEEK_VERSIONE=9.0.1-0
+ZEEK_REPO=https://download.opensuse.org/repositories/security:/zeek/Debian_12/
+PROFILO=avanzato
+CHIESTO=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profilo) PROFILO="${2:-}"; CHIESTO=1; shift 2 ;;
+    --profilo=*) PROFILO="${1#*=}"; CHIESTO=1; shift ;;
+    *) break ;;
+  esac
+done
+case "$PROFILO" in avanzato|leggero) ;; *) echo "Profilo sconosciuto: $PROFILO (avanzato o leggero)." >&2; exit 1 ;; esac
 
 SCHEDA="${1:-}"
 NOME="${2:-$(hostname)}"
@@ -18,20 +33,36 @@ if ip -4 -o addr show dev "$SCHEDA" | grep -q inet; then
   echo "La scheda $SCHEDA ha un indirizzo: quella in mirror non deve averne." >&2; exit 1
 fi
 
+CPU=$(nproc)
+RAM_MB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
+if [ "$PROFILO" = avanzato ] && { [ "$CPU" -lt 2 ] || [ "$RAM_MB" -lt 1900 ]; }; then
+  echo "ATTENZIONE: $CPU vCPU e $RAM_MB MB, il profilo avanzato ne vuole 2 e 1900: installo il profilo leggero." >&2
+  [ -n "$CHIESTO" ] && echo "(il profilo avanzato era stato chiesto: portare la VM a 2 vCPU e 2 GB e rilanciare)" >&2
+  PROFILO=leggero
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q pmacct tcpdump python3 openssl
+apt-get install -y -q pmacct tcpdump python3 openssl curl
+if [ "$PROFILO" = avanzato ]; then
+  # Repository del progetto Zeek. La chiave in .asc: apt la legge senza gpg (che una Debian minima non ha).
+  echo "deb $ZEEK_REPO /" > /etc/apt/sources.list.d/zeek.list
+  curl -fsSL "${ZEEK_REPO}Release.key" -o /etc/apt/trusted.gpg.d/zeek.asc
+  apt-get update -q
+  apt-get install -y -q "zeek-lts-core=$ZEEK_VERSIONE"
+  apt-mark hold zeek-lts-core >/dev/null
+fi
 # Il pacchetto accende i suoi servizi generici: qui si usa solo il nostro.
 systemctl disable --now pmacctd.service nfacctd.service sfacctd.service uacctd.service 2>/dev/null || true
 
 id collector >/dev/null 2>&1 || useradd --system --home-dir "$DATI" --shell /usr/sbin/nologin collector
 install -d -m 750 -o root -g collector "$CONF"
-install -d -m 750 -o collector -g collector "$DATI" "$DATI/in"
+install -d -m 750 -o collector -g collector "$DATI" "$DATI/in" "$DATI/zeek"
 
 if [ "$QUI" != "$APP" ]; then
   install -d "$APP"
-  cp -R "$QUI/collector" "$APP/"
-  cp "$QUI"/*.conf "$QUI"/*.service "$QUI/installa.sh" "$APP/"
+  cp -R "$QUI/collector" "$QUI/zeek" "$APP/"
+  cp "$QUI"/*.conf "$QUI"/*.service "$QUI"/*.timer "$QUI/installa.sh" "$APP/"
 fi
 find "$APP" -name __pycache__ -type d -prune -exec rm -rf {} +
 install -m 644 "$APP/pmacctd.conf" "$APP/nfacctd.conf" "$APP/sfacctd.conf" "$CONF/"
@@ -57,17 +88,33 @@ RETI_INTERNE=
 MIRROR_DOPPIO=0
 # Flussi esportati da switch e firewall, oltre al mirror: no | netflow (UDP 2055) | sflow (UDP 6343)
 FLUSSI=no
+# avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo
+PROFILO=$PROFILO
 ENV
 else
   sed -i "s/^MIRROR_IF=.*/MIRROR_IF=$SCHEDA/" "$CONF/collector.env"
+  if grep -q '^PROFILO=' "$CONF/collector.env"; then
+    sed -i "s/^PROFILO=.*/PROFILO=$PROFILO/" "$CONF/collector.env"
+  else
+    printf '# avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo\nPROFILO=%s\n' "$PROFILO" >> "$CONF/collector.env"
+  fi
 fi
 chmod 640 "$CONF/collector.env"; chgrp collector "$CONF/collector.env"
 
 install -m 644 "$APP/collector-traffico.service" "$APP/pmacctd-collector.service" "$APP/collector-ascolto.service" \
-  "$APP/nfacctd-collector.service" "$APP/sfacctd-collector.service" /etc/systemd/system/
+  "$APP/nfacctd-collector.service" "$APP/sfacctd-collector.service" "$APP/zeek-collector.service" \
+  "$APP/zeek-freno.service" "$APP/zeek-freno.timer" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable -q collector-traffico.service pmacctd-collector.service collector-ascolto.service
-systemctl restart pmacctd-collector.service collector-traffico.service collector-ascolto.service
+if [ "$PROFILO" = avanzato ]; then
+  systemctl disable -q --now pmacctd-collector.service 2>/dev/null || true
+  systemctl enable -q collector-traffico.service zeek-collector.service collector-ascolto.service zeek-freno.timer
+  systemctl restart zeek-collector.service collector-traffico.service collector-ascolto.service zeek-freno.timer
+else
+  systemctl disable -q --now zeek-collector.service zeek-freno.timer 2>/dev/null || true
+  rm -f "$DATI/zeek-freno"
+  systemctl enable -q collector-traffico.service pmacctd-collector.service collector-ascolto.service
+  systemctl restart pmacctd-collector.service collector-traffico.service collector-ascolto.service
+fi
 
 # NetFlow e sFlow: spenti di serie, si accende solo quello scritto in FLUSSI.
 FLUSSI="$(sed -n 's/^FLUSSI=//p' "$CONF/collector.env" | tail -1)"
@@ -78,7 +125,7 @@ case "$FLUSSI" in
 esac
 
 echo
-echo "Collector installato. Nome: $NOME · scheda in mirror: $SCHEDA · porta: 8477"
+echo "Collector installato. Nome: $NOME · scheda in mirror: $SCHEDA · porta: 8477 · profilo: $PROFILO"
 echo "Impronta SHA-256 del certificato (da dare a IPAM):"
 openssl x509 -in "$CONF/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2
 echo "Il gettone sta in $CONF/gettone (non viene stampato)."

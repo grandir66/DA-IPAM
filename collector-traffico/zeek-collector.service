@@ -1,0 +1,27 @@
+[Unit]
+Description=Collector di traffico: sonda avanzata (Zeek)
+After=network.target
+PartOf=collector-traffico.service
+
+[Service]
+EnvironmentFile=/etc/collector-traffico/collector.env
+# I registri chiusi portano l'ora nel nome: in UTC, come l'archivio.
+Environment=TZ=UTC
+# Parte solo col profilo avanzato, e mai mentre il freno sul disco e' tirato (zeek-freno.timer).
+ExecCondition=/bin/sh -c 'test "${PROFILO}" = avanzato && test ! -e /var/lib/collector-traffico/zeek-freno'
+# La scheda in mirror non ha indirizzo e non trasmette: niente IPv6 (niente annunci), niente ARP.
+ExecStartPre=/bin/sh -c 'test -n "${MIRROR_IF}"'
+ExecStartPre=/sbin/sysctl -q -w net.ipv6.conf.${MIRROR_IF}.disable_ipv6=1
+ExecStartPre=/sbin/ip link set dev ${MIRROR_IF} arp off promisc on up
+WorkingDirectory=/var/lib/collector-traffico/zeek
+# Senza zeekctl: un processo, registri JSON chiusi ogni 5 minuti (sonda.zeek), tradotti e cancellati da collector-traffico.
+ExecStart=/opt/zeek/bin/zeek -C -i ${MIRROR_IF} /opt/collector-traffico/zeek/sonda.zeek
+# I registri li legge e li cancella l'utente collector (proprietario della cartella).
+UMask=0022
+Restart=on-failure
+RestartSec=10
+Nice=5
+MemoryMax=1500M
+
+[Install]
+WantedBy=multi-user.target

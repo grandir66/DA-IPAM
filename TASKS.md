@@ -19,6 +19,13 @@ MikroTik, LLDP dei Proxmox).
   - Scostamenti dalla spec (23/11): la rotta restituisce anche nodi e collegamenti del sito (una chiamata sola, stesso calcolo di
     `/api/topology/model`); `site` assente = primo sito; `getTopologyTavolaPorte` prende gli id degli apparati, non il sito; tipo in
     più `attiva` (porta su senza dati); «da verificare» è un segno sopra il tipo, non un tipo.
+  - [x] (23/11) Vista sull'hub `192.168.4.8` con v0.9.1325, a 1920, utente `prova-claude`: sede «Senza sede» (l'hub non ha
+    sedi nella mappa: aggiunta la scelta, v0.9.1325), 74 apparati, 614 porte, 75 cavi, nessun errore di pagina; il fuoco al
+    passaggio su una porta isola il collegamento e i due telai. Non provati: clic su un cavo (pannello), ricerca, tema scuro,
+    istanza con sedi vere.
+  - [ ] Visto a schermo: le corsie di bordo vengono aggiunte dopo l'a capo delle righe, quindi la tavola supera di qualche
+    centinaio di px il riquadro e scorre; con molti cavi lunghi la corsia sinistra è larga. Da stringere: togliere le corsie
+    dalla larghezza usata per andare a capo, e preferire il bordo con meno cavi.
   - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,

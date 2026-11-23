@@ -141,6 +141,9 @@ postazione (ovviamente in AD)».
       scansione verdi tranne 2 che cadono solo sul Mac per il vecchio `data/ipam.db` (sul commit pubblicato 39/39).
       Prova a vuoto e applicazione su copia del DB del 70791: 10 PC, 8 apparati uniti, 5 spostati, 7 asset uniti,
       0 saltati; secondo giro vuoto; `quick_check` ok (2 righe orfane di `host_credentials` già presenti sul servizio).
+- [x] 23/11, applicato sull'IPAM .8 (v0.9.1322, health 200), copia prima `/opt/da-ipam/data/backups/70791-pre-stesso-pc-apparati-20261123.db`:
+      8 apparati uniti, 5 spostati, 7 asset uniti, 0 saltati; secondo giro vuoto; `quick_check` ok. Restano NB-AGUZZOLI
+      #31 @5.150, PC-APADULA #1313 @4.174, PC-LasagniF #1320 @5.156, SURFACE-ALAIN #1323 @3.122. Non guardato a schermo.
 - [-] Tipo «switch» dei PC: non cambiato. Il CHECK di `network_devices.device_type` non ammette «workstation» e
       cambiarlo vuol dire ricostruire la tabella (decisione da prendere a parte); la classificazione è già «workstation».
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»

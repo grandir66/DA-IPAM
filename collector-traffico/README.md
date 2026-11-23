@@ -216,6 +216,40 @@ ventesimo (una porta SPAN vera consegna pacchetti da 1500 byte: la prima misura,
 **Non misurato**: migliaia di flussi diversi insieme (la misura ha un flusso solo: il costo di `pmacctd`
 cresce coi flussi, non coi byte), una scheda fisica con una porta SPAN vera, più di 200 Mbit/s, una giornata intera.
 
+### Misura di Zeek (23/11/2026)
+
+Chiesta da Riccardo per decidere la sonda avanzata. Zeek 9.0.1 LTS (`zeek-lts-core`, dal repository
+ufficiale del progetto su `download.opensuse.org`, 53 MB in `/opt/zeek`), da solo, coi servizi del collector
+fermi; VM 109 portata a 2 vCPU e 4 GB per la prova. Avvio: `zeek -C -i ens19 local misc/stats
+misc/capture-loss LogAscii::use_json=T`. Script: `banco/misura-zeek.sh` (gira sul nodo), 100 secondi per carico.
+
+| Carico | CPU di Zeek | RAM di Zeek | Pacchetti al secondo | Scartati da Zeek | Registri scritti |
+|---|---|---|---|---|---|
+| fermo | 0% | 259 MB | 160 | 0 | 0,3 MB |
+| 50 Mbit/s, un flusso | meno dell'1% | 261 MB | 5.400 | 0 | 1,0 MB |
+| 100 Mbit/s, un flusso | 1% | 262 MB | 11.000 | 0 | 1,5 MB |
+| 200 Mbit/s, un flusso | 1% | 262 MB | 22.400 | 0 | 1,2 MB |
+| 84 pagine HTTP e 84 richieste DNS al secondo | 6% | 269 MB | 2.300 | 0 | 19,4 MB |
+
+- La CPU è la percentuale di **una** vCPU; tutta la VM usava 551 MB.
+- **Zeek costa per connessione, non per byte**: un flusso solo a 200 Mbit/s non gli pesa, 170 scambi al
+  secondo sì. I registri fanno circa 1,1 KB a scambio: a quel ritmo sono 16 GB al giorno, quindi chi li
+  legge li deve anche buttare.
+- **Non spiegato**: durante `iperf3` il controllo `capture-loss` di Zeek dice 43-72% di perdita, mentre i
+  suoi contatori (`pkts_dropped` 0, byte ricevuti pari ai 200 Mbit/s mandati) e la scheda dicono che è
+  arrivato tutto. Nella fase HTTP e DNS dice 0. Sulla scheda il GRO è acceso: è il primo indiziato.
+- **Cosa scrive**: `conn` (chi ha aperto, stato della connessione, pacchetti e byte per verso), `http`,
+  `dns`, `ssl` (versione e cifrario), `modbus` (funzione), `snmp`, `dhcp`, `software` (versione del
+  server vista in rete), `known_hosts`, `known_services`, `files`, `weird`, `notice`.
+- **Password**: una richiesta HTTP con accesso Basic di prova non ha lasciato la password in nessun
+  registro, né in chiaro né in base64. FTP, posta e LDAP **non provati**.
+- **Trappola: `snmp.log` scrive il nome della comunità in chiaro.** Il campo `community` va tolto prima
+  che i registri tocchino il disco, non dopo.
+- **Non misurato**: traffico vero di un ufficio (migliaia di connessioni aperte insieme fanno crescere la
+  RAM), una giornata intera, i parser industriali aggiuntivi.
+
+Dopo la prova la VM 109 è tornata allo snapshot (1 vCPU, 512 MB, senza Zeek) e lo snapshot è stato tolto.
+
 ### I casi del piano
 
 1. **Tag VLAN**: 20 pacchetti UDP e una richiesta DNS mandati con tag 77 da `banco-carico`. `pmacctd` li

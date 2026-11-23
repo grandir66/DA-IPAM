@@ -372,6 +372,19 @@ ora `SSH_ASKPASS`.
   Poi Riccardo ha deciso di tenerlo acceso in modo stabile: **`ACCESSI=1` sul DA-PX-03 resta**, anche se si
   reinstalla o si cambia profilo.
 
+- 2026-11-23, **Riccardo: «sì, passiamo tutte le sonde a Zeek con le caratteristiche definite, sono accettabili»**
+  (2 vCPU, 2 GB). Alle 14:47-14:52 UTC, sugli altri quattro collector: snapshot **`pre-sonda-zeek-20261123`** su
+  DA-PX-01 (VM 116; la 423 non toccata), DA-PX-02 (VM 115), DA-PX-04 (VM 113), DA-PX-05 (VM 102, nodo 192.168.40.5);
+  VM da 1 a 2 GB (le vCPU erano già 2), riavviate (copia rimessa dallo hookscript: 900, 1.317, 2.488 e 243
+  pacchetti al secondo); `installa.sh --profilo avanzato` da `origin/dev`; Zeek acceso, `pmacctd` spento; `ACCESSI`
+  com'era (spento). Sorvegliante `giornata-zeek` acceso anche su questi: stesse condizioni di ritorno al leggero.
+  Verifica alle 15:01 UTC: su tutti e cinque le finestre delle 14:50 e 14:55 nell'archivio con `byte_ritorno` su ogni
+  coppia (PX01 466, PX02 366, PX04 431, PX05 207, PX03 1.371 coppie nella finestra delle 14:55), scartati 0, nessuna
+  uccisione per memoria; Zeek 256-303 MB sui quattro nuovi, 397 sul PX03; `collector-traffico` 27-53 MB, 123 sul PX03
+  (da riguardare nella giornata: limite 256). IPAM `192.168.4.8`: tutti e cinque «avanzato, 9.0.1», nessun errore,
+  i quattro nuovi letti in pari. Il PX03 era rimasto indietro di 276.000 righe già col profilo leggero (stamattina
+  produceva più delle 20.000 righe ogni 5 minuti che l'hub legge per giro): alle 15:00 170.000, recupera da solo.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

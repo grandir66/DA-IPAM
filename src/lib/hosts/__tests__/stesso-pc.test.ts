@@ -80,7 +80,10 @@ test("gruppi: PC di AD riuniti anche nella stessa rete e con tre MAC; principale
   assert.equal(gruppoDi(db, 700), null, "due stampanti omonime nella stessa rete, senza AD: come prima, niente gruppo");
   const cl = leggiClusterDiscovery(db);
   assert.equal(cl.get(549)?.principale_host_id, 552);
-  assert.equal(cl.get(279)?.principale_host_id, cl.get(281)?.principale_host_id, "Apparati accorpa anche con tre MAC veri");
+  // Vivo su due reti lo stesso giorno (Wi-Fi 3.122, cavo 5.178): l'IP più basso, per non saltare a ogni scansione.
+  assert.equal(cl.get(279)?.principale_host_id, 601, "Apparati accorpa anche con tre MAC veri, su una riga viva");
+  assert.equal(cl.get(276)?.principale_host_id, 601);
+  assert.equal(cl.get(554)?.principale_host_id, 555);
 });
 
 test("dati che seguono il PC: una voce sola, accessi sommati, AD di una riga vecchia, scelta a mano su tutte le righe", () => {
@@ -115,4 +118,17 @@ test("nome dell'apparato: la riga viva senza nome prende quello delle altre righ
   assert.equal(nomeDelGruppo([m(1, "192.168.70.189"), m(2, "CAM-INGRESSO")], 1), "CAM-INGRESSO", "un indirizzo non è un nome");
   assert.equal(nomeDelGruppo([m(1, "NB-AGUZZOLI"), m(2, "altro")], 1), "NB-AGUZZOLI", "il nome della principale vince");
   assert.equal(nomeDelGruppo([m(1, null), m(2, null)], 1), null);
+});
+
+test("PC di AD con più apparati gestiti (uno per IP, apparati automatici): accorpato, principale la riga viva", () => {
+  const db = dbProva();
+  const nd = db.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, enabled, host_id) VALUES (?, ?, 'switch', 'windows', 'winrm', 1, ?)");
+  nd.run("NB-AGUZZOLI", "192.168.3.108", 592);
+  nd.run("SURFACE-ALAIN.domarc.it", "192.168.5.164", 276);
+  nd.run("SURFACE-ALAIN", "192.168.5.178", 281);
+  recomputeMultihomedLinks(db);
+  const cl = leggiClusterDiscovery(db);
+  assert.equal(cl.get(592)?.principale_host_id, 552, "l'apparato su 3.108 offline non vince sulla riga viva 5.150");
+  assert.equal(cl.get(276)?.principale_host_id, 601, "due apparati nello stesso PC: non è ambiguo, vince una riga viva");
+  assert.equal(cl.get(601)?.principale, true);
 });

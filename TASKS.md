@@ -97,6 +97,12 @@ postazione (ovviamente in AD)».
       Air-di-Riccardo); principale sulla riga viva per 13 telecamere (VLAN 15 offline → VLAN 70) e DA-PX-06/07.
       Pulizia della notte: nessuna riga di PC (righe vecchie assenti da meno di 30 giorni); in più rispetto a prima
       solo «AP» 192.168.5.179 (assente da 32 giorni, era nel gruppo sbagliato), recuperabile dall'archivio.
+- [x] 23/11, IPAM .8 a v0.9.1319: gruppi giusti nel DB (SURFACE-ALAIN 4 righe, PC-LasagniF 2, NB-AGUZZOLI 3) ma
+      Apparati non accorpava: i PC hanno un apparato WinRM per IP, creato dagli «apparati automatici» del 10/11
+      (NB-AGUZZOLI id 31 e 1327, PC-LasagniF 863/1318/1320, SURFACE-ALAIN 1321/1323), di tipo «switch». Corretto: nei
+      PC di AD vince la riga viva e più apparati non fanno «ambiguo». Prove 759/759.
+- [ ] Proposta a Riccardo, in attesa: unire gli apparati doppi già esistenti dello stesso PC (uno resta, segue l'IP vivo,
+      gli altri si tolgono) e correggere il tipo «switch» dei PC. Tocca credenziali e storico delle letture.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

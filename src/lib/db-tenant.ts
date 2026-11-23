@@ -9139,7 +9139,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   const hostNet = new Map<number, number>();
   const macDellHost = new Map<number, string>();
   // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
-  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, adpc: 2, hostname: 2, ad_dns: 1 };
+  // «adpc» sopra «hostname»: così la riga di un PC di AD si salva come `ad_dns` e Apparati sa che è un PC (tetto dei MAC,
+  // riga principale).
+  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, adpc: 2.5, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
   function addToBucket(key: string, hostId: number, type: string, value: string) {
     if (!buckets.has(key)) buckets.set(key, new Set());
@@ -9233,7 +9235,12 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
       const ranked = [...members]
         .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
         .filter((m) => m.meta)
-        .sort((a, b) => confrontaPrincipale(a.meta, b.meta, ipv4ToInt));
+        // In un PC di AD l'apparato gestito è solo «il PC a un indirizzo» (gli apparati automatici del 10/11 ne
+        // creavano uno per IP): non decide lui, vince la riga viva (NB-AGUZZOLI 3.108 offline, 23/11).
+        .sort((a, b) => {
+          const pc = [...members].some((hid) => pcAdHosts.has(hid));
+          return confrontaPrincipale(pc ? { ...a.meta, has_device: 0 } : a.meta, pc ? { ...b.meta, has_device: 0 } : b.meta, ipv4ToInt);
+        });
       const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
       for (const hid of members) {
         const best = hostBest.get(hid);

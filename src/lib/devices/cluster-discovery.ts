@@ -140,7 +140,9 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
   for (const { primario, membri, mac, pcAd } of perGruppo.values()) {
     if (mac.size > (pcAd ? MAX_MAC_VERI_PC_AD : MAX_MAC_VERI_PER_ACCORPARE)) continue;
     if (membri.some((m) => mappa.has(m.host_id))) continue;
-    const p = principaleDelCluster(membri, primario);
+    // PC di AD: la principale la sceglie il motore dei gruppi (la riga viva), anche con più apparati gestiti, che lì
+    // sono lo stesso PC a indirizzi diversi e non rendono il gruppo ambiguo (23/11/2026).
+    const p = pcAd && primario != null && membri.some((m) => m.host_id === primario) ? primario : principaleDelCluster(membri, primario);
     if (p == null) continue;
     const altri = membri
       .filter((m) => m.host_id !== p)

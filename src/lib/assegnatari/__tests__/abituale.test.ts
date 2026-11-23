@@ -7,6 +7,7 @@ import { migrateAssegnatariAd } from "@/lib/db-tenant";
 import { TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
 import { registraAccessi } from "../db";
 import { ErroreScelta, impostaUtenteAbituale, utentiAbituali, utentiSceglibili } from "../abituale";
+import { leggiDescrizioneAd } from "../descrizione-ad";
 
 function dbProva(): Database.Database {
   const db = new Database(":memory:");
@@ -45,7 +46,7 @@ test("senza interventi: calcolato dove c'è una persona prevalente, asset assegn
   const m = utentiAbituali(dbProva());
   assert.deepEqual(m.get(1), {
     origine: "calcolato", aMano: false, nome: "Marzia Miari", account: "marzia", disattivato: false, diverso: false,
-    calcolo: { nome: "Marzia Miari", account: "marzia", accessi: 108, totale: 108, base: "tastiera" },
+    calcolo: { nome: "Marzia Miari", account: "marzia", fonte: "accessi", accessi: 108, totale: 108, base: "tastiera", il: null, computer: null },
   });
   assert.equal(m.has(2), false, "un server non ha utente abituale");
   const max = m.get(3)!;
@@ -105,4 +106,49 @@ test("migrazione: le colonne sugli host ci sono e un secondo giro non aggiunge n
   const col = (db.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>).map((c) => c.name);
   for (const c of ["utente_abituale_modo", "utente_abituale_integrazione", "utente_abituale_guid"]) assert.ok(col.includes(c), c);
   assert.deepEqual(migrateAssegnatariAd(db), []);
+});
+
+// Descrizione del computer di AD scritta dallo script di accesso (formato vero del 70791, 23/11/2026).
+const gg = (giorniFa: number) => { const d = new Date(Date.now() - giorniFa * 86_400_000); return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}`; };
+function conComputer(db: Database.Database, nome: string, hostId: number | null, descr: string, os = "Windows 11 Pro"): void {
+  db.prepare("INSERT INTO ad_computers (integration_id, object_guid, sam_account_name, distinguished_name, operating_system, enabled, host_id, raw_data) VALUES (1, ?, ?, ?, ?, 1, ?, ?)")
+    .run(`c-${nome}`, `${nome}$`, `CN=${nome}`, os, hostId, JSON.stringify({ description: descr }));
+}
+
+test("descrizione di AD: formato dello script di accesso letto, altri formati e date impossibili scartati", () => {
+  assert.deepEqual(leggiDescrizioneAd("donato - 23/11/2026 - OS: Microsoft Windows 11 Pro sp 0 - IP: 192.168.4.174 - HP EliteDesk"),
+    { account: "donato", giorno: "2026-11-23", ip: "192.168.4.174" });
+  assert.deepEqual(leggiDescrizioneAd(["DOMARC\\Massimo - 1/9/2026 - OS: Windows 10"]), { account: "massimo", giorno: "2026-09-01", ip: null });
+  assert.equal(leggiDescrizioneAd("Server di stampa piano terra"), null);
+  assert.equal(leggiDescrizioneAd("donato - 31/02/2026 - OS: x"), null);
+  assert.equal(leggiDescrizioneAd(null), null);
+});
+
+test("descrizione di AD: vale dove gli accessi non bastano; gli accessi vincono; vecchia, server o di servizio no", () => {
+  const db = dbProva();
+  db.prepare("INSERT INTO ad_users (integration_id, object_guid, sam_account_name, display_name, enabled, given_name, surname) VALUES (1, 'g-9', 'scanner', 'Scanner Sala', 1, 'Scanner', 'Sala')").run();
+  const h = db.prepare("INSERT INTO hosts (id, network_id, ip, hostname, classification) VALUES (?, 1, ?, ?, ?)");
+  h.run(7, "192.168.4.174", "PC-APADULA", "workstation");
+  h.run(8, "192.168.4.180", "PC-VECCHIO", "workstation");
+  h.run(9, "192.168.6.22", null, null);
+  h.run(10, "192.168.4.181", "PC-SCANNER", "workstation");
+  conComputer(db, "PC-APADULA", 7, `donato - ${gg(1)} - OS: Microsoft Windows 11 Pro sp 0 - IP: 192.168.4.174 - HP`);
+  conComputer(db, "PC-POCHI", 4, `massimo - ${gg(2)} - OS: Windows 11 - IP: 192.168.4.170`);
+  conComputer(db, "PC-MIARI", 1, `donato - ${gg(0)} - OS: Windows 11 - IP: 192.168.4.132`);
+  conComputer(db, "PC-VECCHIO", 8, `donato - ${gg(45)} - OS: Windows 11 - IP: 192.168.4.180`);
+  conComputer(db, "HP-CATS", null, `massimo - ${gg(3)} - OS: Windows 11 - IP: 192.168.6.22`);
+  conComputer(db, "DA-SNS", 2, `donato - ${gg(1)} - OS: Windows Server 2019 - IP: 192.168.4.8`, "Windows Server 2019 Standard");
+  conComputer(db, "PC-SCANNER", 10, `scanner - ${gg(1)} - OS: Windows 10 - IP: 192.168.4.181`);
+  const m = utentiAbituali(db);
+  assert.deepEqual([m.get(7)?.origine, m.get(7)?.account, m.get(7)?.calcolo?.fonte, m.get(7)?.calcolo?.computer], ["calcolato", "donato", "ad", "PC-APADULA"]);
+  assert.deepEqual([m.get(4)?.account, m.get(4)?.calcolo?.fonte], ["massimo", "ad"], "pochi dati negli accessi: vale AD");
+  assert.deepEqual([m.get(1)?.account, m.get(1)?.calcolo?.fonte], ["marzia", "accessi"], "gli accessi vincono sull'ultimo utente di AD");
+  assert.equal(m.has(8), false, "descrizione più vecchia della finestra");
+  assert.deepEqual([m.get(9)?.account, m.get(9)?.calcolo?.computer], ["massimo", "HP-CATS"], "computer non legato: host trovato con l'IP della descrizione");
+  assert.equal(m.get(2), undefined, "server: niente");
+  assert.equal(m.has(10), false, "account di servizio: niente");
+  assert.equal(m.get(5)?.origine, "condiviso");
+  impostaUtenteAbituale(db, [7], { modo: "manuale", account: "massimo" }, null);
+  const v = utentiAbituali(db).get(7)!;
+  assert.deepEqual([v.origine, v.account, v.diverso, v.calcolo?.account], ["manuale", "massimo", true, "donato"], "a mano vince, AD diverso segnalato");
 });

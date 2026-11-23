@@ -56,6 +56,16 @@ postazione (ovviamente in AD)».
       questa sessione non aveva. Lo guarda Riccardo in Apparati.
 - [ ] Visto nella misura, dato da sistemare a mano: «zywall-usg-100» è classificato `workstation` e «NB-Commerciale»
       `smartphone`; per questo ricevono un utente abituale.
+- [x] Riccardo (23/11): «l'assegnazione del utente abituale è poco efficace… per i pc in AD dovrebbe essere relativamente
+      facile». Misura sul 70791: 42 PC di AD non server; 21 senza host ma quasi tutti morti in AD (ultimo accesso del
+      computer mesi o anni fa), 13 legati senza accessi, 5 calcolati. Wazuh non porta chi entra in quale PC: dai DC tiene
+      logon di rete verso i server (DA-INVENT, SCANNER-DA, DA-RDH) e ticket 4769 solo verso i DC. La fonte giusta era
+      la descrizione del computer scritta dallo script di accesso (35 PC su 42). Aggiunta come ripiego quando gli accessi
+      non decidono: `assegnatari/descrizione-ad.ts`, prove `abituale.test.ts` 7/7, assegnatari 33/33.
+- [ ] Da decidere con Riccardo: usare la descrizione di AD anche per le proposte di Abbinamenti (asset NIS2), non solo
+      per la colonna di Apparati.
+- [ ] Visto misurando: NB-MARZIA in AD ha 192.168.4.195, il suo host legato è 192.168.5.198, offline dal 05/11: un
+      portatile che cambia IP resta su due righe d'host. L'utente si vede sulla riga legata, non su quella viva.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a
@@ -115,7 +125,11 @@ postazione (ovviamente in AD)».
   - [ ] Trappola per la spec: `snmp.log` di Zeek scrive la comunità SNMP in chiaro. Nella prova è comparsa a schermo quella di un apparato della rete 99 di casa (nel trascritto della sessione, non nel repo): **Riccardo decide se cambiarla**.
   - [x] Riccardo (23/11): «Sì, prova su PX03». **Un'ora di Zeek sul traffico vero fatta il 23/11** su `DA-COLLECTOR-PX03`: media 23 Mbit/s e 95 connessioni al secondo, Zeek al 4,4% di una vCPU (picco 8,4%) e 379 MB di RAM, 0 pacchetti persi, 257 MB di registri l'ora (circa 6 GB al giorno); filtro della comunità SNMP funzionante. VM 114 riportata allo snapshot (1 GB, senza Zeek), snapshot tolto, collector e copia attivi. Dettaglio in `collector-traffico/README.md`, «Zeek sul traffico vero».
   - [x] Riccardo (23/11): «Sì, scrivi la spec». Spec `docs/superpowers/specs/2026-11-23-sonda-avanzata-zeek-design.md`, **bozza da approvare**: profilo con Zeek del collector, stesse tabelle e stessa API, 5 tappe (la 5, utenti, è zona rossa). Riccardo (23/11): «se la sonda non genera tutto questo carico potrebbe diventare la standard» → nella spec Zeek è il profilo di serie, il leggero è il ripiego; si conferma con la giornata intera della tappa 3.
-  - [ ] Riccardo (23/11): «Approvo, scrivi il piano». Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, 6 task, livello leggero; gli utenti (zona rossa) sono fuori. Si avvia quando lo dice Riccardo.
+  - [x] Riccardo (23/11): «Approvo, scrivi il piano». Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, 6 task, livello leggero; gli utenti (zona rossa) sono fuori. Eseguito in linea dal 23/11 (stato dei task e verifiche nel piano).
+    - [x] Task 1-4: `sonda.zeek` coi filtri per campo, dati di prova dal banco, prova di non-fuga (vista rossa), adattatore, `profili.py`. Su `origin/dev`.
+    - [x] Task 6 (codice): certificati nel tipo `tls_certificato` della tappa 6 (motivo nuovo `non_valido`), `password_ssh_provate`, `sql_injection`, programmi nei nomi di tipo `software`. Prova sul banco col collector installato: vedi il piano.
+    - [~] Task 5: installazione col profilo, freno sul disco, stato in IPAM. **Giornata su `DA-COLLECTOR-PX03` dal 23/11 13:15 UTC**, finisce il 24/11 verso le 13:15 UTC: leggere `/root/giornata-zeek.log` sulla VM (192.168.4.186), riportare i numeri nel README («Profilo avanzato») e nel piano, controllare `ultimo_errore` di `PX.03_collector` nell'IPAM `192.168.4.8`. Snapshot `pre-sonda-zeek-20261123` su DA-PX-03 da togliere se la giornata va bene. Il DA-PX-03 gira col codice del Task 5 (senza le aggiunte del Task 6): da aggiornare dopo la giornata.
+    - [ ] Da decidere con Riccardo: dove mostrare i programmi visti in rete (`software`, oggi salvati e non mostrati); se passare gli altri quattro collector dell'ufficio a Zeek (2 vCPU e 2 GB ciascuno) dopo la giornata; nome del profilo; tenere o no i registri grezzi per qualche ora (oggi si buttano subito).
   - [x] 23/11: `192.168.4.15` (`da-zabbix`) e `192.168.4.40` (`da-observe`) messi fra le sonde note dell'IPAM `192.168.4.8`, cliente 70791 (scritto direttamente `tenant_settings.traffico_sonde_note`: la pagina non ha ancora il campo). Copia delle loro 1.218 righe prima della pulizia in `/root/traffico-pre-sonde-zabbix-observe-20261123.sql` sull'IPAM. Verificato al giro delle 12:50 UTC: 0 avvisi e 0 coppie loro, collector senza errori. Restano 87 `snmp_vecchio` da altri host.
   - [ ] Campo delle sonde note nella pagina Traffico: da proporre a Riccardo.
 - [ ] Riccardo deve dare: il nome vero del collector; quali switch hanno la porta SPAN (Domarc e clienti); uno switch e un firewall veri per NetFlow/sFlow (Task 7).

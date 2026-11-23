@@ -87,7 +87,8 @@ function haNomeECognome(p: PersonaAd): boolean {
   return (p.nomeVisualizzato ?? "").trim().split(/\s+/).length >= 2;
 }
 
-function motivoFuori(account: string, p: PersonaAd | null): MotivoFuori | null {
+/** Perché un account non conta come persona (null = conta). Lo usa anche l'utente abituale da AD. */
+export function motivoFuori(account: string, p: PersonaAd | null): MotivoFuori | null {
   if (eAccountDiServizio(account)) return "servizio";
   if (eNomeAmministrativo(account) || p?.amministrativo) return "amministrativo";
   if (!p) return "non_in_ad";

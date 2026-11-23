@@ -5,13 +5,19 @@
  * Ordine di chi vince:
  * 1. la scelta a mano sull'host (`hosts.utente_abituale_modo`: `manuale` con l'utente AD, o `condiviso`);
  * 2. l'assegnatario dell'asset NIS2 legato all'host (è una scelta di una persona: vale come «a mano»);
- * 3. la persona prevalente calcolata; 4. «condiviso» se nessuno supera la soglia.
+ * 3. la persona prevalente calcolata dagli accessi; 4. «condiviso» se nessuno supera la soglia;
+ * 5. se gli accessi non bastano: l'ultimo utente scritto in AD nella descrizione del computer (`descrizione-ad.ts`),
+ *    se è una persona di AD e la data sta nella finestra (23/11: era la fonte che mancava per i PC senza agente).
  * Il calcolato non si salva: si rilegge a ogni richiesta, quindi segue il dato. Una scelta a mano non viene mai
  * sostituita: se il calcolo dice un'altra persona lo si segnala (`diverso`) e basta.
  */
 import type Database from "better-sqlite3";
+import { mapHostClassificationToInventoryCategoria } from "@/lib/db-tenant";
 import { calcolaVoci, legameAssetHost } from "./abbinamenti";
+import { personeAd, soglieDelCliente } from "./db";
+import { ultimiAccessiAd } from "./descrizione-ad";
 import { assegnatarioDaUtente, utenteAdPerAccount } from "./importa";
+import { CATEGORIE_SENZA_PROPOSTA, motivoFuori } from "./proposta";
 
 export interface UtenteAbituale {
   origine: "manuale" | "calcolato" | "condiviso";
@@ -21,8 +27,14 @@ export interface UtenteAbituale {
   account: string | null;
   /** L'utente scelto a mano è disattivato in AD o non c'è più: da riassegnare. */
   disattivato: boolean;
-  /** Cosa dice il calcolo adesso (null: nessuna persona prevalente). */
-  calcolo: { nome: string; account: string; accessi: number; totale: number; base: "tastiera" | "rete" | null } | null;
+  /**
+   * Cosa dice il calcolo adesso (null: nessuna persona). `fonte`: `accessi` = la più frequente negli accessi;
+   * `ad` = l'ultimo utente scritto in AD nella descrizione del computer, il giorno `il` («YYYY-MM-DD»).
+   */
+  calcolo: {
+    nome: string; account: string; fonte: "accessi" | "ad"; accessi: number; totale: number;
+    base: "tastiera" | "rete" | null; il: string | null; computer: string | null;
+  } | null;
   /** A mano, ma il calcolo indica un'altra persona. */
   diverso: boolean;
 }
@@ -51,10 +63,13 @@ const nomePersona = (r: RigaManuale): string | null =>
 export function utentiAbituali(db: Database.Database): Map<number, UtenteAbituale> {
   const out = new Map<number, UtenteAbituale>();
   const voci = new Map(calcolaVoci(db).voci.map((v) => [v.hostId, v]));
+  const daAd = dalleDescrizioniAd(db, voci);
   const calcoloDi = (hostId: number): UtenteAbituale["calcolo"] => {
     const v = voci.get(hostId);
-    if (!v || v.esito !== "proposta" || !v.persona) return null;
-    return { nome: v.persona.nome, account: v.persona.account, accessi: v.accessi, totale: v.totale, base: v.base };
+    if (v && v.esito === "proposta" && v.persona) {
+      return { nome: v.persona.nome, account: v.persona.account, fonte: "accessi", accessi: v.accessi, totale: v.totale, base: v.base, il: null, computer: null };
+    }
+    return daAd.get(hostId) ?? null;
   };
 
   const manuali = db.prepare(
@@ -91,11 +106,38 @@ export function utentiAbituali(db: Database.Database): Map<number, UtenteAbitual
     });
   }
 
-  for (const [hostId, v] of voci) {
+  for (const hostId of new Set([...voci.keys(), ...daAd.keys()])) {
     if (out.has(hostId)) continue;
     const calcolo = calcoloDi(hostId);
     if (calcolo) out.set(hostId, { origine: "calcolato", aMano: false, nome: calcolo.nome, account: calcolo.account, disattivato: false, calcolo, diverso: false });
-    else if (v.esito === "condiviso") out.set(hostId, { origine: "condiviso", aMano: false, nome: null, account: null, disattivato: false, calcolo: null, diverso: false });
+    else if (voci.get(hostId)?.esito === "condiviso") out.set(hostId, { origine: "condiviso", aMano: false, nome: null, account: null, disattivato: false, calcolo: null, diverso: false });
+  }
+  return out;
+}
+
+/**
+ * L'utente abituale dalla descrizione del computer di AD, per gli host dove gli accessi non decidono: niente voce,
+ * pochi dati o nessuna fonte. Mai sopra un «condiviso» o un'esclusione degli accessi; stesse regole sulle persone
+ * (`motivoFuori`: abilitate, con nome e cognome, non amministrative né di servizio) e sulle categorie.
+ */
+function dalleDescrizioniAd(db: Database.Database, voci: ReadonlyMap<number, { esito: string }>): Map<number, NonNullable<UtenteAbituale["calcolo"]>> {
+  const out = new Map<number, NonNullable<UtenteAbituale["calcolo"]>>();
+  const ultimi = ultimiAccessiAd(db, soglieDelCliente(db).giorni);
+  if (ultimi.size === 0) return out;
+  const persone = personeAd(db, [...new Set([...ultimi.values()].map((u) => u.account))]);
+  const categoria = db.prepare(
+    `SELECT h.classification AS c, (SELECT x.categoria FROM inventory_assets x WHERE x.host_id = h.id ORDER BY x.id LIMIT 1) AS a FROM hosts h WHERE h.id = ?`,
+  );
+  for (const [hostId, u] of ultimi) {
+    const esito = voci.get(hostId)?.esito;
+    if (esito === "proposta" || esito === "condiviso" || esito === "esclusa") continue;
+    const p = persone.get(u.account) ?? null;
+    if (!p || motivoFuori(u.account, p) !== null) continue;
+    const r = categoria.get(hostId) as { c: string | null; a: string | null } | undefined;
+    const cat = r?.a ?? mapHostClassificationToInventoryCategoria(r?.c ?? null);
+    if (cat && CATEGORIE_SENZA_PROPOSTA.has(cat)) continue;
+    const nome = [p.nome, p.cognome].filter((x) => x?.trim()).join(" ") || p.nomeVisualizzato?.trim() || p.account;
+    out.set(hostId, { nome, account: p.account, fonte: "ad", accessi: 0, totale: 0, base: null, il: u.giorno, computer: u.computer });
   }
   return out;
 }

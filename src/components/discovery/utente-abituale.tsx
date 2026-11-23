@@ -21,13 +21,17 @@ export function testoUtenteAbituale(v: UtenteAbituale | null | undefined): strin
 }
 
 function dettaglioCalcolo(c: NonNullable<UtenteAbituale["calcolo"]>, giorni: number | null): string {
+  if (c.fonte === "ad") {
+    const il = c.il ? c.il.split("-").reverse().join("/") : "data ignota";
+    return `ultimo accesso scritto in AD il ${il}${c.computer ? ` (descrizione del computer ${c.computer})` : ""}`;
+  }
   const base = c.base === "tastiera" ? "alla tastiera" : c.base === "rete" ? "di rete" : "";
   return `${c.accessi} accessi su ${c.totale}${giorni ? `, ultimi ${giorni} giorni` : ""}${base ? `, ${base}` : ""}`;
 }
 
 export function titoloUtenteAbituale(v: UtenteAbituale, giorni: number | null): string {
   const righe: string[] = [];
-  if (v.origine === "calcolato" && v.calcolo) righe.push(`Calcolato dagli accessi: ${dettaglioCalcolo(v.calcolo, giorni)}`);
+  if (v.origine === "calcolato" && v.calcolo) righe.push(`${v.calcolo.fonte === "ad" ? "Calcolato da AD" : "Calcolato dagli accessi"}: ${dettaglioCalcolo(v.calcolo, giorni)}`);
   if (v.origine === "manuale") righe.push("Scelto a mano: il ricalcolo non lo cambia");
   if (v.origine === "condiviso") righe.push(v.aMano ? "Segnato a mano come postazione condivisa" : "Condiviso: nessuna persona supera la soglia degli accessi");
   if (v.account) righe.push(`Account: ${v.account}`);
@@ -128,7 +132,7 @@ export function FinestraUtenteAbituale({ bersaglio, onChiudi, onSalvato }: { ber
         {att?.calcolo && (att.diverso || att.origine === "condiviso") && (
           <div className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span className="flex-1">Il calcolo dice <strong>{att.calcolo.nome}</strong> ({att.calcolo.accessi} accessi su {att.calcolo.totale}).</span>
+            <span className="flex-1">Il calcolo dice <strong>{att.calcolo.nome}</strong> ({att.calcolo.fonte === "ad" ? "ultimo accesso scritto in AD" : `${att.calcolo.accessi} accessi su ${att.calcolo.totale}`}).</span>
             <Button size="sm" variant="outline" disabled={salvo} onClick={() => void salva({ modo: "manuale", account: att.calcolo!.account })}>Usa questo</Button>
           </div>
         )}

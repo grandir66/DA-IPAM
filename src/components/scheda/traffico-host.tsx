@@ -159,6 +159,8 @@ export function TrafficoHost({ ip }: { ip: string }) {
     return <Riquadro titolo="Con chi parla"><LoadError what="il traffico dell'host" message={errore} onRetry={() => setTentativo((t) => t + 1)} /></Riquadro>;
   }
   const identita = dati?.identita ?? [];
+  const programmi = (dati?.nomi ?? []).filter((n) => n.tipo === "software");
+  const nomiChiesti = (dati?.nomi ?? []).filter((n) => n.tipo !== "software");
   if (dati === null || (dati.parlaCon.length === 0 && dati.gliParlano.length === 0 && dati.nomi.length === 0 && identita.length === 0)) return null;
   return (
     <Riquadro titolo="Con chi parla · ultimi 7 giorni" azione={<Link href="/traffico" className="text-[13px] font-semibold text-cian-testo underline-offset-2 hover:underline">Anomalie del traffico ›</Link>}>
@@ -168,13 +170,26 @@ export function TrafficoHost({ ip }: { ip: string }) {
         <Coppie titolo="Gli parlano" righe={dati.gliParlano} host={dati.host} />
       </div>
       {dati.servizi && (dati.servizi.usate_note.length + dati.servizi.usate_non_note.length + dati.servizi.aperte_mai_usate.length) > 0 && <ServiziUsati s={dati.servizi} />}
-      {dati.nomi.length > 0 && (
+      {programmi.length > 0 && (
         <div className="mt-4">
           <p className="mb-1.5 text-[13px] font-bold uppercase tracking-wider text-cian-testo">
-            Nomi chiesti <span className="font-mono font-normal text-muted-foreground">{dati.nomi.length}</span>
+            Programmi dichiarati <span className="font-mono font-normal text-muted-foreground">{programmi.length}</span>
+          </p>
+          <p className="mb-1.5 text-[13px] text-muted-foreground">La versione che il programma dice di sé nei saluti in chiaro, non una verifica.</p>
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+            {programmi.map((n) => (
+              <span key={n.nome} className="rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[13px]" title={`${n.conteggio} volte`}>{n.nome}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {nomiChiesti.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-1.5 text-[13px] font-bold uppercase tracking-wider text-cian-testo">
+            Nomi chiesti <span className="font-mono font-normal text-muted-foreground">{nomiChiesti.length}</span>
           </p>
           <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
-            {dati.nomi.map((n) => (
+            {nomiChiesti.map((n) => (
               <span key={`${n.tipo}|${n.nome}`} className="rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[13px]" title={`${n.tipo === "dns" ? "chiesto al DNS" : "nel saluto TLS"} · ${n.conteggio} volte`}>
                 <span className="font-sans font-semibold">{n.tipo === "dns" ? "DNS" : "TLS"}</span> {n.nome}
               </span>

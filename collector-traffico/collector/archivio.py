@@ -49,6 +49,15 @@ CREATE TABLE IF NOT EXISTS connessione (
   riuscite INTEGER NOT NULL, ms_minimo INTEGER NOT NULL, ms_mediano INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_connessione_inizio ON connessione (inizio);
 """
+CREATE_ACCESSI = """
+CREATE TABLE IF NOT EXISTS accesso (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, inizio TEXT NOT NULL, client TEXT NOT NULL, server TEXT NOT NULL,
+  protocollo TEXT NOT NULL, utente TEXT NOT NULL, dominio TEXT NOT NULL DEFAULT '', esito TEXT NOT NULL, volte INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_accesso_inizio ON accesso (inizio);
+"""
+COLONNE_ACCESSO = ("seq", "inizio", "client", "server", "protocollo", "utente", "dominio", "esito", "volte")
+# ZONA ROSSA (nomi utente): sul collector restano 2 giorni, quanto basta perché IPAM li legga anche dopo un fermo.
+GIORNI_ACCESSI = 2
 COLONNE_CONNESSIONE = ("seq", "inizio", "client", "server", "porta", "tentate", "senza_risposta", "rifiutate", "ripetute", "riuscite", "ms_minimo", "ms_mediano")
 COLONNE_ESTERNO = ("seq", "inizio", "interno", "ip", "verso", "proto", "porta", "byte", "pacchetti", "flussi")
 COLONNE_NOME_IP = ("seq", "visto", "ip", "tipo", "nome")
@@ -75,6 +84,7 @@ def apri(percorso: str) -> sqlite3.Connection:
     db.executescript(CREATE_IDENTITA)
     db.executescript(CREATE_ESTERNI)
     db.executescript(CREATE_CONNESSIONI)
+    db.executescript(CREATE_ACCESSI)
     # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
     if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
         db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
@@ -237,6 +247,19 @@ def leggi_connessioni(db: sqlite3.Connection, dopo: int, limite: int):
     return _leggi(db, "connessione", COLONNE_CONNESSIONE, dopo, limite)
 
 
+def scrivi_accessi(db: sqlite3.Connection, inizio: str, righe: list[dict]) -> None:
+    nomi = COLONNE_ACCESSO[2:]
+    with transazione(db):
+        db.executemany(
+            f"INSERT INTO accesso (inizio, {', '.join(nomi)}) VALUES (?{', ?' * len(nomi)})",
+            [(inizio, *(r[n] for n in nomi)) for r in righe],
+        )
+
+
+def leggi_accessi(db: sqlite3.Connection, dopo: int, limite: int):
+    return _leggi(db, "accesso", COLONNE_ACCESSO, dopo, limite)
+
+
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
     with transazione(db):
@@ -247,6 +270,7 @@ def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
         db.execute("DELETE FROM esterno WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM nome_ip WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM connessione WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM accesso WHERE inizio < datetime('now', ?)", (f"-{min(int(giorni), GIORNI_ACCESSI)} days",))
     return tolte
 
 

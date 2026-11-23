@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-from . import archivio, connessioni, controlli, identita, piega, profili
+from . import accessi, archivio, connessioni, controlli, identita, piega, profili
 
 # Solo le porte dei controlli, più il saluto TLS su qualunque porta (primo byte del carico = 0x16).
 _BASE = (
@@ -27,7 +27,11 @@ _BASE = (
     "or (tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16) "
     # chi è un indirizzo (23/11): ARP, DHCP, mDNS, SSDP, LLDP, CDP; NetBIOS (137) c'è già
     "or arp or udp port 67 or udp port 68 or udp port 5353 or udp port 1900 "
-    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc"
+    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc "
+    # chi accede a cosa (tappa 7, 23/11): Kerberos; SMB e LDAP passano già
+    "or port 88 "
+    # i saluti SSH (programma e versione): solo i pacchetti piccoli, non le copie di file
+    "or (tcp port 22 and less 400)"
 )
 # Byte tenuti per pacchetto: le opzioni DHCP (nome dell'host) cominciano al byte 282.
 CATTURA = 600
@@ -131,7 +135,7 @@ class Ascolto:
     così le prove non hanno bisogno di un archivio."""
 
     def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None, scrivi_connessioni=None,
-                 profilo: str = "leggero"):
+                 profilo: str = "leggero", scrivi_accessi=None):
         # Profilo avanzato: connessioni, nomi DNS e TLS e i controlli di `profili.DA_ZEEK` li fa Zeek (registri),
         # qui restano identità, nomi contesi e i controlli che Zeek non copre. Un controllo, una fonte.
         self._profilo = profilo
@@ -148,6 +152,8 @@ class Ascolto:
         self._identita_scritte = 0
         self._scrivi_nomi_ip = scrivi_nomi_ip
         self._connessioni = connessioni.Connessioni(self._lato, scrivi_connessioni) if scrivi_connessioni else None
+        # ZONA ROSSA: nomi utente. Esiste solo se chi avvia l'ascolto passa `scrivi_accessi` (ACCESSI=1).
+        self._accessi = accessi.Accessi(self._lato, scrivi_accessi) if scrivi_accessi else None
         self._nomi_ip: dict[tuple[str, str], tuple[str, int]] = {}  # (ip, tipo) → (nome, ultima scrittura)
         self._nomi_ip_nuovi: dict[tuple[str, str], dict] = {}
         self._detti: dict[tuple, int] = {}                # (tipo, client, server) → ultima volta
@@ -220,6 +226,8 @@ class Ascolto:
     def _chiudi_finestra(self, adesso: int) -> None:
         if self._connessioni and self._finestra:
             self._connessioni.chiudi_finestra(archivio.ora_utc(self._finestra), adesso)
+        if self._accessi and self._finestra:
+            self._accessi.chiudi_finestra(archivio.ora_utc(self._finestra))
         if self._nomi:
             self._scrivi_nomi(archivio.ora_utc(self._finestra), self._nomi)
         self._nomi = {}
@@ -286,6 +294,8 @@ class Ascolto:
         if not p or not p[5]:
             return
         src, dst, proto, sport, dport, carico = p
+        if self._accessi:
+            self._accessi.pacchetto(proto, src, dst, sport, dport, carico)
 
         for f in controlli.controlla(proto, sport, dport, carico):
             if not profili.ascolto_lo_fa(f["tipo"], self._profilo, str(f["dettaglio"].get("protocollo", ""))):
@@ -353,6 +363,8 @@ def main() -> int:
         (lambda voci: archivio.scrivi_identita(db, voci)) if os.environ.get("IDENTITA", "1") != "0" else None,
         (lambda voci: archivio.scrivi_nomi_ip(db, voci)) if os.environ.get("ESTERNI", "1") != "0" else None,
         (lambda inizio, righe: archivio.scrivi_connessioni(db, inizio, righe)) if os.environ.get("CONNESSIONI", "1") != "0" else None,
+        # ZONA ROSSA (nomi utente): spento di serie, lo accende Riccardo con ACCESSI=1 nell'ambiente del servizio
+        (lambda inizio, righe: archivio.scrivi_accessi(db, inizio, righe)) if os.environ.get("ACCESSI", "0") == "1" else None,
         profilo=os.environ.get("PROFILO", "leggero"),
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.

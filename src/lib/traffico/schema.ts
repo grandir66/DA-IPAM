@@ -92,6 +92,12 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
     })();
   }
   db.exec(`
+    -- ZONA ROSSA (tappa 7, 23/11): nomi utente degli accessi. 90 giorni, solo amministratori, mai negli export.
+    CREATE TABLE IF NOT EXISTS traffico_accessi (
+      giorno TEXT NOT NULL, client TEXT NOT NULL, server TEXT NOT NULL, protocollo TEXT NOT NULL, utente TEXT NOT NULL,
+      dominio TEXT NOT NULL DEFAULT '', esito TEXT NOT NULL, collector_id INTEGER NOT NULL,
+      volte INTEGER NOT NULL, prima_vista TEXT NOT NULL, ultima_vista TEXT NOT NULL,
+      PRIMARY KEY (giorno, client, server, protocollo, utente, dominio, esito, collector_id)) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS idx_traffico_coppie_client ON traffico_coppie (client, giorno);
     CREATE INDEX IF NOT EXISTS idx_traffico_coppie_server ON traffico_coppie (server, giorno);
   `);
@@ -102,6 +108,7 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   if (!colonne.includes("cursore_esterni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_esterni INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_nomi_ip")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi_ip INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_connessioni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_connessioni INTEGER NOT NULL DEFAULT 0");
+  if (!colonne.includes("cursore_accessi")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_accessi INTEGER NOT NULL DEFAULT 0");
   // Sonda avanzata (Zeek, 23/11): chi conta su quel collector, da /v1/stato. NULL = collector di prima, che non lo dice.
   if (!colonne.includes("profilo")) db.exec("ALTER TABLE traffico_collector ADD COLUMN profilo TEXT");
   if (!colonne.includes("motore")) db.exec("ALTER TABLE traffico_collector ADD COLUMN motore TEXT");

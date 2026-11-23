@@ -90,6 +90,8 @@ MIRROR_DOPPIO=0
 FLUSSI=no
 # avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo
 PROFILO=$PROFILO
+# ZONA ROSSA: 1 = legge i nomi utente degli accessi (Kerberos, SMB, LDAP). Spento di serie: lo accende Riccardo a mano
+ACCESSI=0
 ENV
 else
   sed -i "s/^MIRROR_IF=.*/MIRROR_IF=$SCHEDA/" "$CONF/collector.env"
@@ -98,6 +100,8 @@ else
   else
     printf '# avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo\nPROFILO=%s\n' "$PROFILO" >> "$CONF/collector.env"
   fi
+  # un archivio di prima della tappa 7: la riga si aggiunge spenta; un valore già scritto non si tocca mai
+  grep -q '^ACCESSI=' "$CONF/collector.env" || printf '# ZONA ROSSA: 1 = legge i nomi utente degli accessi. Spento di serie\nACCESSI=0\n' >> "$CONF/collector.env"
 fi
 chmod 640 "$CONF/collector.env"; chgrp collector "$CONF/collector.env"
 

@@ -248,8 +248,67 @@ def risposta_nome(proto: int, sport: int, carico: bytes) -> str | None:
     return None
 
 
+import re as _re
+
+_VERSIONE = _re.compile(rb"([A-Za-z][A-Za-z0-9-]{1,40})[ /_-]v?(\d+(?:\.\d+)+[A-Za-z0-9.+-]{0,20})")
+_BROWSER = (b"Edg/", b"OPR/", b"Firefox/", b"Chrome/", b"Safari/")
+
+
+def _nome_versione(testo: bytes, anche_senza_versione: bool = True) -> str | None:
+    """«Nome versione» dalla prima coppia che si legge («OpenSSH_9.2p1» → «OpenSSH 9.2p1»); il nome solo se non c'è versione."""
+    testo = testo.strip()[:200]
+    m = _VERSIONE.search(testo)
+    if m:
+        out = f"{m.group(1).decode('ascii', 'replace')} {m.group(2).decode('ascii', 'replace')}"
+    elif not anche_senza_versione:
+        return None
+    else:
+        primo = testo.split(b" ")[0].split(b"/")[0]
+        out = primo.decode("ascii", "replace") if primo else ""
+    return out if out and out.isprintable() else None
+
+
+def _intestazione(carico: bytes, nome: bytes) -> bytes | None:
+    i = carico[:2048].lower().find(b"\n" + nome + b":")
+    if i < 0:
+        return None
+    fine = carico.find(b"\r", i + 1)
+    return carico[i + len(nome) + 2:fine if fine > 0 else i + 300].strip()
+
+
+def programma(proto: int, sport: int, dport: int, carico: bytes) -> str | None:
+    """La versione che un programma dichiara di sé in un saluto in chiaro, nella forma di Zeek (`software.log`):
+    `<tipo>:<nome> <versione>`, del programma di chi MANDA il pacchetto. Tappa 7, parte non rossa (Riccardo, 23/11:
+    la versione dichiarata è una delle due eccezioni a «il fatto e mai il valore»)."""
+    if proto != TCP or not carico:
+        return None
+    nv = None
+    if carico.startswith(b"SSH-") and 22 in (sport, dport):
+        nv, tipo = _nome_versione(carico.split(b"\r")[0].split(b"\n")[0].split(b"-", 2)[-1]), "SSH::SERVER" if sport == 22 else "SSH::CLIENT"
+    elif sport == 80 and carico.startswith(b"HTTP/"):
+        v = _intestazione(carico, b"server")
+        nv, tipo = (_nome_versione(v) if v else None), "HTTP::SERVER"
+    elif dport == 80:
+        v = _intestazione(carico, b"user-agent")
+        if v:
+            for b in _BROWSER:
+                j = v.find(b)
+                if v.startswith(b"Mozilla/") and j >= 0:
+                    v = v[j:]
+                    break
+            nv, tipo = _nome_versione(v), "HTTP::BROWSER"
+    elif sport in (21, 25) and carico.startswith(b"220"):
+        # il saluto dice spesso il nome della macchina: senza una versione non si tiene niente
+        riga = carico.split(b"\r")[0].split(b"\n")[0][4:]
+        nv, tipo = _nome_versione(riga, anche_senza_versione=False), "FTP::SERVER" if sport == 21 else "SMTP::MAIL_SERVER"
+    return f"{tipo}:{nv}"[:253] if nv else None
+
+
 def nomi(proto: int, sport: int, dport: int, carico: bytes) -> list[tuple[str, str]]:
-    """I nomi che si tengono: quello chiesto al DNS e quello del server nel saluto TLS."""
+    """I nomi che si tengono: quello chiesto al DNS, quello del server nel saluto TLS, il programma dichiarato."""
+    sw = programma(proto, sport, dport, carico)
+    if sw:
+        return [("software", sw)]
     if proto == UDP and dport == 53 and len(carico) > 12 and not carico[2] & 0x80:
         n = nome_dns(carico)
         return [("dns", n[:253])] if n else []

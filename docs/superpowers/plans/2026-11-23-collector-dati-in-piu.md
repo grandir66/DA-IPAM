@@ -218,7 +218,7 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 
 **Fatto quando:** i tre tipi compaiono nella scheda «Collector e controlli» e almeno uno scatta su un caso provocato.
 
-### [ ] Tappa 7 — Chi accede a cosa, programmi in uso · ZONA ROSSA
+### [~] Tappa 7 — Chi accede a cosa, programmi in uso · ZONA ROSSA
 
 - Nomi utente da Kerberos (AS-REQ), SMB e LDAP: si salva (utente, da dove, verso dove, protocollo, quando, riuscito o no).
 - Programmi: versione dichiarata nei saluti in chiaro (SSH, HTTP `Server` e `User-Agent`, SMTP, FTP).
@@ -229,6 +229,23 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
   vere fatte sul banco del PX-NAS (mai sull'ufficio); vista fallire, poi il codice.
 - Visibile solo agli amministratori; 90 giorni; mai nei log, mai negli export, mai verso un modello.
 - Interruttore per installazione, **spento di serie**: lo accende Riccardo.
+
+Livello completo (zona rossa), approvato da Riccardo il 23/11 («Sì, tutto così»), con catture da un controller di dominio
+finto sul banco e l'interfaccia proposta (scheda «Accessi», interruttore, «Programmi dichiarati»).
+
+| Passo | Stato | Verifica |
+|---|---|---|
+| Banco: contenitore 111 `banco-dc` (Samba AD finto, `banco.test`, utente `prova`, password finte) e client nel 110 | [x] | 23/11, 14:20 UTC: controller a 192.168.99.91 |
+| Catture vere Kerberos, SMB, LDAP (giusta e sbagliata), SSH, HTTP | [x] | `tests/dati/accessi-banco.pcap`, 163 pacchetti, MAC azzerati; la password giusta c'è in chiaro una volta (bind LDAP) |
+| Prova di non-fuga **vista rossa** prima del codice | [x] | `python3 -m unittest tests.test_accessi`: errore `scrivi_accessi` sconosciuto (14:31 UTC); verdi le prove che la cattura contiene password, risposte NTLM e testi cifrati Kerberos e che il rivelatore scatta sul grezzo |
+| Collector: `accessi.py`, tabella `accesso` (2 giorni), `/v1/accessi`, `ACCESSI=0` di serie in `installa.sh` (un valore già scritto non si tocca), filtro + porta 88 e saluti SSH piccoli | [x] | prova di non-fuga verde, anche coi pacchetti tagliati a 600 byte come in produzione; tutte le prove 107 su 107 |
+| Collector: programmi dichiarati (SSH, HTTP, FTP, SMTP) nella tabella `nome` col tipo `software`, forma di Zeek | [x] | `Programmi.test_dalla_cattura_del_banco`: `SSH::SERVER:OpenSSH …`, `HTTP::BROWSER:ProvaAgente 1.0` |
+| IPAM: `traffico_accessi` (90 giorni), `accessi.ts`, lettura di `/v1/accessi` solo a interruttore acceso, `GET/PUT /api/traffico/accessi` con `requireAdmin` | [x] | `accessi.test.ts`: spento di serie, righe storte scartate, due collector al massimo, 90 giorni; prove del traffico 45 su 45 |
+| Interfaccia: scheda «Accessi» (solo amministratori, solo a interruttore acceso), interruttore in «Collector e controlli», «Programmi dichiarati» nella scheda dell'host | [x] | eslint e `tsc` puliti. **Non guardata resa** |
+| Nessun export porta fuori gli accessi | [x] | nessuna rotta di export legge le tabelle `traffico_*`. Il backup intero del database del cliente li contiene, come tutto il resto |
+| Misura su `DA-COLLECTOR-PX03` col filtro nuovo (88 e SSH) | [ ] | |
+| Giro intero sul banco: collector con `ACCESSI=1` → righe in `/v1/accessi` | [ ] | |
+| Sull'ufficio (acceso da Riccardo) si vede chi ha fatto accesso a un server di prova | [ ] | tocca a Riccardo accendere |
 
 **Fatto quando:** la prova di non-fuga è verde dopo essere stata vista rossa, e sull'ufficio (acceso da Riccardo) si vede
 chi ha fatto accesso a un server di prova.

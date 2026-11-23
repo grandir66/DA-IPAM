@@ -18,7 +18,8 @@ PORTA = 8477
 LETTURE = {"/v1/coppie": archivio.leggi_coppie, "/v1/fatti": archivio.leggi_fatti, "/v1/nomi": archivio.leggi_nomi,
            "/v1/identita": archivio.leggi_identita,
            "/v1/esterni": archivio.leggi_esterni, "/v1/nomi-ip": archivio.leggi_nomi_ip,
-           "/v1/connessioni": archivio.leggi_connessioni}
+           "/v1/connessioni": archivio.leggi_connessioni,
+           "/v1/accessi": archivio.leggi_accessi}  # vuota finché sul collector ACCESSI non è 1
 
 
 def _intero(valori: dict, nome: str, ripiego: int) -> int:

@@ -20,6 +20,7 @@ import { Insieme } from "./insieme";
 import { RetiViste } from "./reti-viste";
 import { Esterno } from "./esterno";
 import { CosaNonVa } from "./cosa-non-va";
+import { Accessi, useAccessiAccesi } from "./accessi";
 
 interface Dati {
   anomalie: AnomaliaTraffico[];
@@ -29,7 +30,7 @@ interface Dati {
   nomi: Record<string, NomeDiIp>;
   quadro: QuadroTraffico;
 }
-type Scheda = "insieme" | "esterno" | "nonva" | "anomalie" | "reti" | "collector";
+type Scheda = "insieme" | "esterno" | "nonva" | "anomalie" | "reti" | "accessi" | "collector";
 type FiltroStato = StatoAnomalia | "";
 
 const NOME_STATO: Record<StatoAnomalia, string> = { nuova: "Nuove", vista: "Viste", normale: "Normali" };
@@ -50,6 +51,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
   const primo = useRef(true);
   const [reteScelta, setReteScelta] = useState<string | undefined>(undefined);
   const [senzaNome, setSenzaNome] = useState(0);
+  const [accessiAccesi, ricontrollaAccessi] = useAccessiAccesi(admin);
 
   const contaSenzaNome = useCallback(async () => {
     const r = await fetchJson<{ reti: { nome: string | null }[] }>("/api/traffico/reti-viste?giorni=7", { cache: "no-store" });
@@ -149,6 +151,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
             valore: "reti", titolo: "Reti viste", descrizione: "Indirizzi interni che parlano fuori dalle subnet censite: a ogni rete si può dare un nome.",
             segnale: senzaNome > 0 ? <span className="ml-1.5 rounded-md border bg-muted px-1.5 py-0.5 text-[13px] font-semibold" title="Reti senza nome negli ultimi 7 giorni">{senzaNome}</span> : undefined,
           },
+          ...(admin && accessiAccesi ? [{ valore: "accessi" as const, titolo: "Accessi", descrizione: "Chi accede a cosa, coi nomi utente. Solo amministratori." }] : []),
           ...(admin ? [{ valore: "collector" as const, titolo: "Collector e controlli", descrizione: "Le macchine che ascoltano e i controlli accesi, rete per rete." }] : []),
         ]}
       />
@@ -161,8 +164,10 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
         <CosaNonVa />
       ) : scheda === "reti" ? (
         <RetiViste admin={admin} onVediCoppie={(chiave) => { setReteScelta(chiave); setScheda("insieme"); }} onCambio={() => void contaSenzaNome()} />
+      ) : scheda === "accessi" && admin && accessiAccesi ? (
+        <Accessi />
       ) : scheda === "collector" && admin ? (
-        <CollectorEControlli onCambio={() => void carica()} />
+        <CollectorEControlli onCambio={() => { void carica(); ricontrollaAccessi(); }} />
       ) : (
         <>
         <div className="grid grid-cols-3 gap-3">

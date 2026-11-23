@@ -17,6 +17,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import type { TipoControllo } from "@/lib/traffico/anomalie";
 import { fraseAnomalia, NOME_TIPO } from "@/lib/traffico/frasi";
 import type { CollectorTraffico } from "@/lib/traffico/lettura";
+import { InterruttoreAccessi } from "./accessi";
 
 interface Controlli {
   tipi: TipoControllo[];
@@ -183,6 +184,7 @@ export function CollectorEControlli({ onCambio }: { onCambio: () => void }) {
           })}
         </div>
       </Pannello>
+      <InterruttoreAccessi onCambio={onCambio} />
     </div>
   );
 }

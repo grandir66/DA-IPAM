@@ -97,7 +97,10 @@ Solo IPAM, nessun cambio al collector.
 - [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). «Come si presenta in rete» nel riquadro «Con chi
   parla» della scheda, i MAC sotto la frase di «IP doppio» e «MAC cambiato». Verifica: prove del traffico 31 su 31, eslint
   e `tsc` puliti (23/11). **Non guardata resa** (in locale non ci sono dati).
-- [ ] IP doppio provocato sul banco del PX-NAS.
+- [x] IP doppio provocato sul banco del PX-NAS (col sì di Riccardo). Verifica: dal contenitore 110 due MAC finti
+  (`02:00:00:00:00:01` e `:02`) annunciano in ARP `10.77.0.9`; `collector-banco` li dà tutti e due su `/v1/identita`;
+  quelle righe, passate a `sincronizzaTraffico` in un database usa e getta, danno un avviso `ip_doppio` di gravità 3 coi
+  due MAC (23/11, 00:15 UTC). Dal codice, non dalla pagina.
 
 **Fatto quando:** un host dell'ufficio senza MAC in IPAM lo riceve dal collector, e un IP doppio provocato sul banco compare.
 
@@ -183,6 +186,12 @@ chi ha fatto accesso a un server di prova.
   La cattura è passata da 256 a 600 byte a pacchetto (le opzioni DHCP cominciano al byte 282).
   Scelte: `mac_cambiato` non corregge l'host, lo dice (gravità bassa); `ip_doppio` solo fra due MAC in ARP sulla stessa
   VLAN entro 10 minuti, esclusi i MAC virtuali (VRRP, HSRP); i due avvisi hanno l'interruttore per rete come i controlli.
+
+- 2026-11-23, tappa 2, banco: `collector-banco` (VM 109) aggiornato al codice di `origin/dev`, resta col codice nuovo.
+  L'indirizzo di prova è di una rete che sul banco non esiste, così nessun apparato vero ne è stato disturbato; i file
+  temporanei sono stati tolti. Dal Mac la VM 109 si raggiunge solo passando dal PX-NAS (manca la sua chiave fra gli host noti).
+  Sull'hub `192.168.4.8`, alle 00:14 UTC, `/opt/da-invent` era già al commit `2c2bb609` ma `da-ipam` girava dalle 18:31
+  col codice vecchio e l'aggiornamento continuava a rimandarsi per un giro in corso: la verifica lì resta da fare.
 
 ## Consuntivo
 

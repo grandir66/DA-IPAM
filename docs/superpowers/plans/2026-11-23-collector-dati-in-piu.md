@@ -185,6 +185,10 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 
 ### [ ] Tappa 6 — DNS, TLS, VLAN sbagliata
 
+> 23/11: la bozza `docs/superpowers/specs/2026-11-23-sonda-avanzata-zeek-design.md` (non ancora approvata da Riccardo)
+> propone Zeek come profilo del collector, con gli stessi tipi d'anomalia delle tappe 6-7 da due fonti. Finché Riccardo
+> non decide, le tappe 6-7 vanno avanti come scritte qui; se la approva, i tipi nuovi si scrivono una volta per tutti e due.
+
 - DNS: quali server usa ogni host (chi salta quello interno), richieste senza risposta o con errore.
 - TLS: certificato scaduto o autofirmato (dove si vede, fino a TLS 1.2), impronta del programma che si collega (JA3).
 - VLAN: un indirizzo visto con un tag diverso da quello della sua rete censita.

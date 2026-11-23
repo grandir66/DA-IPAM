@@ -9,9 +9,12 @@
  * - `ip_doppio` vale solo fra due MAC visti in ARP sulla stessa VLAN a pochi minuti l'uno dall'altro:
  *   un indirizzo che cambia padrone col DHCP non è un doppione. I MAC virtuali (VRRP, HSRP) non contano;
  * - `mac_cambiato` non corregge l'host: lo dice e basta. Le scansioni di IPAM restano la fonte del MAC.
+ * - `vlan_sbagliata` (tappa 6) guarda solo l'ARP con un tag: un indirizzo che si annuncia su una VLAN diversa da quella
+ *   della sua rete censita. Senza tag (VLAN nativa) o in una rete senza VLAN non si dice niente.
  */
 import type Database from "better-sqlite3";
 import type { AnomaliaNuova } from "./anomalie";
+import { isIpInCidr } from "@/lib/utils";
 
 export const FONTI_IDENTITA = ["arp", "dhcp", "mdns", "netbios", "ssdp", "lldp", "cdp"] as const;
 export type FonteIdentita = (typeof FONTI_IDENTITA)[number];
@@ -90,6 +93,18 @@ export function macCambiati(viste: VistaArp[], macNoti: Map<string, string>): An
 }
 
 /** Scrive le righe di una pagina: una per (collector, mac, ip, fonte). Un nome già visto non si cancella con un vuoto. */
+/** Gli indirizzi visti in ARP con un tag diverso dalla VLAN della rete censita che li contiene. Pura. */
+export function vlanSbagliate(viste: { ip: string; mac: string; vlan: number }[], reti: { cidr: string; vlan_id: number }[]): AnomaliaNuova[] {
+  const uscite = new Map<string, AnomaliaNuova>();
+  for (const v of viste) {
+    if (v.vlan <= 0 || uscite.has(v.ip)) continue;
+    const rete = reti.find((r) => isIpInCidr(v.ip, r.cidr));
+    if (!rete || rete.vlan_id <= 0 || rete.vlan_id === v.vlan) continue;
+    uscite.set(v.ip, { tipo: "vlan_sbagliata", gravita: 2, client: v.ip, server: "", proto: 0, porta: 0, dettaglio: { vista: v.vlan, attesa: rete.vlan_id, mac: v.mac, rete: rete.cidr } });
+  }
+  return [...uscite.values()];
+}
+
 export function scriviIdentita(d: Database.Database, collectorId: number, righe: IdentitaCollector[]): void {
   const ins = d.prepare(`
     INSERT INTO traffico_identita (collector_id, mac, ip, fonte, vlan, nome, tipo, prima_vista, ultima_vista) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -133,9 +148,10 @@ export function agganciaHost(d: Database.Database, righe: IdentitaCollector[]): 
 }
 
 /** Gli avvisi che le righe appena scritte fanno nascere. `spento(ip, tipo)`: il controllo è spento per la rete di quell'indirizzo. */
-export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[], spento: (ip: string, tipo: "ip_doppio" | "mac_cambiato") => boolean): AnomaliaNuova[] {
+export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[], spento: (ip: string, tipo: "ip_doppio" | "mac_cambiato" | "vlan_sbagliata") => boolean): AnomaliaNuova[] {
   const ip = [...new Set(righe.filter((r) => r.fonte === "arp" && r.ip).map((r) => r.ip))];
-  const uscite: AnomaliaNuova[] = [];
+  const reti = d.prepare("SELECT cidr, vlan_id FROM networks WHERE vlan_id IS NOT NULL AND vlan_id > 0").all() as { cidr: string; vlan_id: number }[];
+  const uscite: AnomaliaNuova[] = vlanSbagliate(righe.filter((r) => r.fonte === "arp" && r.ip), reti).filter((a) => !spento(a.client, "vlan_sbagliata"));
   for (const blocco of aBlocchi(ip)) {
     const q = blocco.map(() => "?").join(",");
     const viste = d.prepare(`SELECT ip, mac, vlan, MAX(ultima_vista) AS ultima_vista FROM traffico_identita WHERE fonte = 'arp' AND ip IN (${q}) GROUP BY ip, mac, vlan`).all(...blocco) as VistaArp[];

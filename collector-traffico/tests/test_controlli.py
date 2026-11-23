@@ -202,7 +202,7 @@ class AscoltoStato(unittest.TestCase):
         p = pacchetto("192.168.99.88", "192.168.99.222", UDP, 40000, 53, dns("www.esempio.it"))
         flusso = struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 256, 1) + struct.pack("<IIII", 1700000000, 0, len(p), len(p)) + p + b"\x00\x01"
         self.assertEqual(list(leggi_pcap(io.BytesIO(flusso))), [(1700000000, p)])
-        self.assertEqual(len(controlli.TIPI), 12)
+        self.assertEqual(len(controlli.TIPI), 15)  # 12 dei controlli, più i 3 della tappa 6 (23/11)
 
 
 if __name__ == "__main__":

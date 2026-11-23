@@ -26,10 +26,11 @@ import { registraEsterni, type EsternoCollector } from "./esterno";
 export const TIPI_FATTO = [
   "chiaro_telnet", "chiaro_ftp", "chiaro_posta", "chiaro_http_basic", "chiaro_ldap", "snmp_vecchio",
   "smb1", "tls_vecchio", "ntlm1", "nome_conteso", "impianto_scrittura", "dns_anomalo",
+  "tls_certificato", "dns_esterno", "dns_errori", // tappa 6 (23/11)
 ] as const;
 export type TipoFatto = (typeof TIPI_FATTO)[number];
 /** Gli avvisi che nascono dalle identità lette dal collector (`identita.ts`): due MAC per un IP, MAC diverso da quello censito. */
-export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato"] as const;
+export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato", "vlan_sbagliata"] as const;
 export type TipoIdentita = (typeof TIPI_IDENTITA)[number];
 /** I tipi che hanno l'interruttore per rete. */
 /** Un host che apre verso un paese mai visto prima (`esterno.ts`), dopo l'apprendimento. */
@@ -150,6 +151,9 @@ export function volumeAnomalo(byteDelGiorno: number, giorniPrima: number[]): { m
   return byteDelGiorno > VOLUME_VOLTE * m ? { mediana: Math.round(m) } : null;
 }
 
+/** Gravità dei fatti che non sono «alta». Un DNS che va fuori o un certificato autofirmato in casa sono comuni: bassa. */
+const GRAVITA_FATTO: Partial<Record<TipoFatto, 1 | 2>> = { tls_vecchio: 2, snmp_vecchio: 2, tls_certificato: 2, dns_esterno: 1, dns_errori: 1 };
+
 /** Dai fatti del collector alle anomalie. Conclamate: non aspettano l'apprendimento. */
 export function valutaFatti(ingresso: {
   fatti: { tipo: string; client: string; server: string; porta: number; dettaglio: unknown }[];
@@ -173,7 +177,7 @@ export function valutaFatti(ingresso: {
       }
     }
     const a: AnomaliaNuova = {
-      tipo, gravita: tipo === "tls_vecchio" || tipo === "snmp_vecchio" ? 2 : 3,
+      tipo, gravita: GRAVITA_FATTO[tipo] ?? 3,
       client: f.client, server: f.server, proto: 0, porta: f.porta, dettaglio,
     };
     uscite.set(`${a.tipo}|${chiaveCoppia(a)}`, a);

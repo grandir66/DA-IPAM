@@ -43,6 +43,8 @@ FINESTRA_S = 300
 UNA_VOLTA_OGNI_S = 3600
 NOMI_PER_HOST_AL_GIORNO = 200
 DNS_RICHIESTE_MASSIME = 1000
+DNS_ATTESA_S = 10       # una richiesta DNS senza risposta da più di così è «senza risposta»
+DNS_ERRORI_SOGLIA = 20  # errori o richieste senza risposta per host e finestra prima di dirlo
 MEMORIA_MASSIMA = 20000  # voci per dizionario: oltre, si svuota (meglio ripetere un fatto che finire la RAM)
 
 
@@ -144,6 +146,9 @@ class Ascolto:
         self._detti: dict[tuple, int] = {}                # (tipo, client, server) → ultima volta
         self._risponde: dict[str, str] = {}               # nome → chi ha risposto per primo
         self._dns: dict[str, int] = {}                    # host → richieste DNS nella finestra
+        self._dns_attese: dict[tuple[str, str, bytes], float] = {}  # (client, server, id) → quando è partita
+        self._dns_esito: dict[str, list[int]] = {}        # client → [richieste, errori, senza risposta] nella finestra
+        self._dns_risposte = 0
         self._nomi: dict[tuple[str, str, str], int] = {}  # (client, tipo, nome) → conteggio nella finestra
         self._nomi_del_giorno: dict[str, set] = {}
         self._giorno = ""
@@ -161,6 +166,50 @@ class Ascolto:
         self._detti[chiave] = adesso
         self._scrivi_fatto(archivio.ora_utc(adesso), tipo, client, server, porta, dettaglio)
 
+    def _chiudi_dns(self, adesso: int) -> None:
+        """Le richieste DNS rimaste senza risposta e gli errori della finestra: un fatto per host oltre la soglia.
+        Senza nemmeno una risposta in tutta la finestra la copia porta una direzione sola: i «senza risposta» non si contano."""
+        for k in [k for k, t in self._dns_attese.items() if adesso - t >= DNS_ATTESA_S]:
+            del self._dns_attese[k]
+            if self._dns_risposte > 0:
+                self._dns_esito.setdefault(k[0], [0, 0, 0])[2] += 1
+        for client, (richieste, errori, senza) in self._dns_esito.items():
+            if errori >= DNS_ERRORI_SOGLIA or senza >= DNS_ERRORI_SOGLIA:
+                self._fatto(adesso, "dns_errori", self._lato(client), "", 53, {"richieste": richieste, "errori": errori, "senza_risposta": senza})
+        self._dns_esito = {}
+        self._dns_risposte = 0
+
+    def _dns_visto(self, adesso: int, src: str, dst: str, sport: int, dport: int, carico: bytes) -> None:
+        if len(carico) < 12:
+            return
+        if dport == 53 and not carico[2] & 0x80:
+            if len(self._dns_attese) < MEMORIA_MASSIMA:
+                self._dns_attese[(src, dst, carico[:2])] = adesso
+            if len(self._dns_esito) < MEMORIA_MASSIMA or src in self._dns_esito:
+                self._dns_esito.setdefault(src, [0, 0, 0])[0] += 1
+            client = self._lato(src)
+            if self._lato(dst) == piega.ESTERNO and client not in (piega.ESTERNO, piega.DIFFUSIONE):
+                # chi chiede direttamente a un DNS fuori salta quello di casa (o è il DNS di casa che inoltra)
+                self._fatto(adesso, "dns_esterno", client, piega.ESTERNO, 53, {})
+        elif sport == 53 and carico[2] & 0x80:
+            self._dns_risposte += 1
+            self._dns_attese.pop((dst, src, carico[:2]), None)
+            if carico[3] & 0x0F in (2, 5) and (len(self._dns_esito) < MEMORIA_MASSIMA or dst in self._dns_esito):  # SERVFAIL, REFUSED
+                self._dns_esito.setdefault(dst, [0, 0, 0])[1] += 1
+
+    def _certificato(self, adesso: int, src: str, sport: int, carico: bytes) -> None:
+        """Certificato di un servizio di casa scaduto o autofirmato (si vede fino a TLS 1.2). Uno per servizio, non per client."""
+        server = self._lato(src)
+        if server in (piega.ESTERNO, piega.DIFFUSIONE):
+            return
+        c = controlli.certificato(carico)
+        if not c:
+            return
+        if c["scade"] and c["scade"] < archivio.ora_utc(adesso):
+            self._fatto(adesso, "tls_certificato", "", server, sport, {"motivo": "scaduto", "scaduto_il": c["scade"][:10]})
+        elif c["autofirmato"]:
+            self._fatto(adesso, "tls_certificato", "", server, sport, {"motivo": "autofirmato"})
+
     def _chiudi_finestra(self, adesso: int) -> None:
         if self._connessioni and self._finestra:
             self._connessioni.chiudi_finestra(archivio.ora_utc(self._finestra), adesso)
@@ -168,6 +217,7 @@ class Ascolto:
             self._scrivi_nomi(archivio.ora_utc(self._finestra), self._nomi)
         self._nomi = {}
         self._dns = {}
+        self._chiudi_dns(adesso)
         self._finestra = adesso - adesso % FINESTRA_S
         giorno = archivio.ora_utc(adesso)[:10]
         if giorno != self._giorno:
@@ -244,6 +294,11 @@ class Ascolto:
             elif primo != src:
                 # chi risponde ora per un nome che era di un altro: client = lui, server = chi c'era prima
                 self._fatto(adesso, "nome_conteso", self._lato(src), self._lato(primo), sport, {"nome": nome[:80]})
+
+        if proto == controlli.UDP and 53 in (sport, dport):
+            self._dns_visto(adesso, src, dst, sport, dport, carico)
+        if proto == controlli.TCP and len(carico) > 5 and carico[0] == 0x16 and carico[5] == 2:
+            self._certificato(adesso, src, sport, carico)
 
         if proto == controlli.UDP and dport == 53:
             n = self._dns.get(src, 0) + 1

@@ -95,3 +95,33 @@ test("dal collector agli host: riempie il vuoto, non tocca il pieno; IP doppio e
     assert.equal((d.prepare("SELECT COUNT(*) AS n FROM traffico_anomalie WHERE tipo = 'ip_doppio'").get() as { n: number }).n, 0);
   });
 });
+
+import { vlanSbagliate } from "@/lib/traffico/identita";
+import { valutaFatti } from "@/lib/traffico/anomalie";
+import { fraseAnomalia } from "@/lib/traffico/frasi";
+
+test("tappa 6: VLAN sbagliata solo con un tag diverso da quello della rete censita", () => {
+  const reti = [{ cidr: "10.30.0.0/24", vlan_id: 30 }, { cidr: "10.40.0.0/24", vlan_id: 40 }];
+  const a = vlanSbagliate([
+    { ip: "10.30.0.5", mac: "aa:aa:aa:aa:aa:05", vlan: 40 },   // sbagliata
+    { ip: "10.30.0.6", mac: "aa:aa:aa:aa:aa:06", vlan: 30 },   // giusta
+    { ip: "10.30.0.7", mac: "aa:aa:aa:aa:aa:07", vlan: 0 },    // senza tag: non si sa
+    { ip: "10.99.0.8", mac: "aa:aa:aa:aa:aa:08", vlan: 40 },   // fuori dalle reti censite
+  ], reti);
+  assert.deepEqual(a.map((x) => [x.client, x.dettaglio.vista, x.dettaglio.attesa]), [["10.30.0.5", 40, 30]]);
+  assert.equal(fraseAnomalia({ ...a[0], dettaglio: a[0].dettaglio }), "Si annuncia sulla VLAN 40, la sua rete è sulla VLAN 30");
+});
+
+test("tappa 6: i tre fatti nuovi del collector diventano anomalie con la loro gravità", () => {
+  const fatto = (tipo: string, client: string, server: string, porta: number, dettaglio: Record<string, unknown> = {}) => ({ tipo, client, server, porta, dettaglio });
+  const a = valutaFatti({
+    fatti: [
+      fatto("tls_certificato", "", "10.30.0.9", 443, { motivo: "scaduto", scaduto_il: "2025-01-01" }),
+      fatto("dns_esterno", "10.30.0.5", "esterno", 53),
+      fatto("dns_errori", "10.30.0.5", "", 53, { richieste: 40, errori: 25, senza_risposta: 0 }),
+    ],
+    spenti: new Set(["1|dns_esterno"]), reteDi: (ip) => (ip.startsWith("10.30.") ? 1 : null), confermate: new Set(),
+  });
+  assert.deepEqual(a.map((x) => [x.tipo, x.gravita]), [["tls_certificato", 2], ["dns_errori", 1]]);
+  assert.equal(fraseAnomalia(a[0]), "Servizio con certificato scaduto il 01/01/2025");
+});

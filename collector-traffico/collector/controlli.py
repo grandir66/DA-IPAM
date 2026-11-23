@@ -12,6 +12,8 @@ TCP, UDP = 6, 17
 TIPI = (
     "chiaro_telnet", "chiaro_ftp", "chiaro_posta", "chiaro_http_basic", "chiaro_ldap", "snmp_vecchio",
     "smb1", "tls_vecchio", "ntlm1", "nome_conteso", "impianto_scrittura", "dns_anomalo",
+    # tappa 6 (23/11): certificato visto nel saluto del server; i due DNS li decide `ascolto`, che conta per finestra
+    "tls_certificato", "dns_esterno", "dns_errori",
 )
 
 MODBUS_SCRITTURE = {5: "bobina", 6: "registro", 15: "bobine", 16: "registri"}
@@ -118,6 +120,80 @@ def saluto_tls(carico: bytes) -> tuple[int, str] | None:
                 massima = max(versioni)
         i += 4 + lungo
     return massima, nome
+
+
+def _tempo_asn1(tag: int, valore: bytes) -> str | None:
+    """UTCTime (23) o GeneralizedTime (24) → «AAAA-MM-GG HH:MM:SS». None se non si legge."""
+    try:
+        t = valore.decode("ascii").rstrip("Z")
+    except UnicodeDecodeError:
+        return None
+    if tag == 23 and len(t) >= 12 and t[:12].isdigit():
+        anno = int(t[:2])
+        t = f"{1900 + anno if anno >= 50 else 2000 + anno}{t[2:]}"
+    elif not (tag == 24 and len(t) >= 14 and t[:14].isdigit()):
+        return None
+    return f"{t[0:4]}-{t[4:6]}-{t[6:8]} {t[8:10]}:{t[10:12]}:{t[12:14] if len(t) >= 14 else '00'}"
+
+
+def _primo_certificato(carico: bytes) -> bytes | None:
+    """Dal volo del server (TLS fino alla 1.2, in chiaro): i byte del primo certificato, anche tronchi.
+    I messaggi di handshake possono stare in più record consecutivi: si ricuciono."""
+    flusso = b""
+    i = 0
+    while i + 5 <= len(carico) and carico[i] == 0x16 and carico[i + 1] == 0x03:
+        lungo = int.from_bytes(carico[i + 3:i + 5], "big")
+        flusso += carico[i + 5:i + 5 + lungo]
+        i += 5 + lungo
+    j = 0
+    while j + 4 <= len(flusso):
+        tipo, lungo = flusso[j], int.from_bytes(flusso[j + 1:j + 4], "big")
+        if tipo == 11:  # Certificate: lunghezza dell'elenco (3), lunghezza del primo (3), il primo
+            if j + 10 > len(flusso):
+                return None
+            n = int.from_bytes(flusso[j + 7:j + 10], "big")
+            return flusso[j + 10:j + 10 + n]
+        if tipo != 2:  # prima del certificato c'è solo il ServerHello
+            return None
+        j += 4 + lungo
+    return None
+
+
+def certificato(carico: bytes) -> dict | None:
+    """Dal saluto del server: {'scade': data o None, 'autofirmato': True/False/None}. None se qui non c'è un certificato.
+    Un certificato tronco (la cattura tiene i primi byte) dice quello che si vede: None dove non si vede."""
+    der = _primo_certificato(carico)
+    if not der:
+        return None
+    cert = _ber(der, 0)
+    if not cert or cert[0] != 0x30:
+        return None
+    tbs = _ber(der, cert[1])
+    if not tbs or tbs[0] != 0x30:
+        return None
+    i = tbs[1]
+    pezzi: list[tuple[int, int, int]] = []
+    while len(pezzi) < 6:
+        e = _ber(der, i)
+        if not e:
+            break
+        if not pezzi and e[0] == 0xA0:  # [0] versione: facoltativa
+            i = e[1] + e[2]
+            continue
+        pezzi.append(e)
+        i = e[1] + e[2]
+    # numero di serie, algoritmo, emittente, validità, soggetto
+    esito: dict = {"scade": None, "autofirmato": None}
+    if len(pezzi) >= 4 and pezzi[3][0] == 0x30:
+        prima = _ber(der, pezzi[3][1])
+        dopo = _ber(der, prima[1] + prima[2]) if prima else None
+        if dopo and dopo[1] + dopo[2] <= len(der):
+            esito["scade"] = _tempo_asn1(dopo[0], der[dopo[1]:dopo[1] + dopo[2]])
+    if len(pezzi) >= 5 and pezzi[4][1] + pezzi[4][2] <= len(der):
+        emittente = der[pezzi[2][1]:pezzi[2][1] + pezzi[2][2]]
+        soggetto = der[pezzi[4][1]:pezzi[4][1] + pezzi[4][2]]
+        esito["autofirmato"] = emittente == soggetto
+    return esito
 
 
 def _ntlm1(carico: bytes) -> bool:

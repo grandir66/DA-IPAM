@@ -27,6 +27,10 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   ip_doppio: "IP doppio",
   mac_cambiato: "MAC cambiato",
   paese_nuovo: "Paese nuovo",
+  tls_certificato: "Certificato",
+  dns_esterno: "DNS fuori casa",
+  dns_errori: "DNS che non risponde",
+  vlan_sbagliata: "VLAN sbagliata",
 };
 
 /** I tipi nell'ordine dei filtri. Sta qui e non in `anomalie.ts`: quel modulo tocca il database e non entra nel browser. */
@@ -87,6 +91,21 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "ip_doppio": return "Due apparati rispondono per lo stesso indirizzo";
     case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
     case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
+    case "tls_certificato":
+      return d.motivo === "scaduto"
+        ? `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`
+        : "Servizio con certificato autofirmato";
+    case "dns_esterno": return "Chiede i nomi direttamente a un DNS fuori dalla rete";
+    case "dns_errori": {
+      const e = numero("errori") ?? 0;
+      const s = numero("senza_risposta") ?? 0;
+      return `Richieste DNS fallite in cinque minuti: ${e} con errore, ${s} senza risposta`;
+    }
+    case "vlan_sbagliata": {
+      const v = numero("vista");
+      const t = numero("attesa");
+      return v !== null && t !== null ? `Si annuncia sulla VLAN ${v}, la sua rete è sulla VLAN ${t}` : "Si annuncia su una VLAN diversa da quella della sua rete";
+    }
     case "dns_anomalo": return d.motivo === "molte_richieste" ? "Moltissime richieste DNS in cinque minuti" : "Richieste DNS fuori dal comune";
   }
 }

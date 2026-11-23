@@ -37,8 +37,15 @@ postazione (ovviamente in AD)».
       colonna, ricerca, ordinamento, filtro del tasto destro e finestra di scelta in `/discovery`.
       Verifica: `abituale.test.ts` 5/5, prove degli assegnatari 37/37, migrazione e pagina Apparati 34/34, lint 0 errori,
       tsc pulito sui sorgenti (2 errori solo in `.next/types` vecchi, di rotte non mie).
-- [ ] Non verificato: la resa a schermo (colonna e finestra) e il clic vero sull'IPAM `192.168.4.8`; lì arriva con
-      l'aggiornamento da `dev`.
+- [x] 23/11, IPAM `192.168.4.8` aggiornato a `dev` (`scripts/update.sh --restart`, v0.9.1297 `2c2bb609`, health 200); la
+      migrazione ha aggiunto le tre colonne su 70791 e 70791a (journal 00:14 UTC). Calcolo vero sul 70791 in sola
+      lettura: 11 host con utente abituale in 14 ms, 5 calcolati (MICHELE-TAB, NB-AGUZZOLI, NB-Commerciale, PC-MIARI,
+      zywall-usg-100) e 6 a mano dall'assegnatario dell'asset (NB-GIOVANNI, PC-MAX, SURFACE-ALAIN, Mac,
+      MARZIA-SURFACE, iPhone); 51 utenti di AD fra cui scegliere.
+- [ ] Non verificato: la resa a schermo (colonna e finestra) e il clic vero; serve l'accesso con `prova-claude`, che
+      questa sessione non aveva. Lo guarda Riccardo in Apparati.
+- [ ] Visto nella misura, dato da sistemare a mano: «zywall-usg-100» è classificato `workstation` e «NB-Commerciale»
+      `smartphone`; per questo ricevono un utente abituale.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

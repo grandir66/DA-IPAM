@@ -124,6 +124,12 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
   } catch {
     return; // tabella assente su un archivio vecchio: restano i soli cluster fisici
   }
+  // I nomi dei PC di AD (non server, abilitati): un gruppo che ne contiene uno è un PC, comunque sia stato salvato
+  // (PC-LasagniF era «seriale» e restava su due righe, 23/11/2026).
+  const nomiPcAd = new Set<string>();
+  try {
+    for (const r of db.prepare("SELECT lower(replace(sam_account_name, '$', '')) AS n FROM ad_computers WHERE enabled = 1 AND COALESCE(operating_system, '') NOT LIKE '%Server%'").all() as Array<{ n: string }>) nomiPcAd.add(r.n);
+  } catch { /* ad_computers assente: nessun PC di AD */ }
   const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[]; mac: Set<string>; pcAd: boolean }>();
   for (const r of righe) {
     let g = perGruppo.get(r.group_id);
@@ -134,7 +140,7 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
     const vero = macAncora(r.mac);
     if (vero) g.mac.add(vero);
     if (r.is_primary === 1) g.primario = r.id;
-    if (r.match_type === "ad_dns") g.pcAd = true;
+    if (r.match_type === "ad_dns" || nomiPcAd.has((r.nome ?? "").trim().toLowerCase().split(".")[0])) g.pcAd = true;
     g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1, nome: r.nome });
   }
   for (const { primario, membri, mac, pcAd } of perGruppo.values()) {

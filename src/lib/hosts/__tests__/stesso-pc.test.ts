@@ -132,3 +132,15 @@ test("PC di AD con più apparati gestiti (uno per IP, apparati automatici): acco
   assert.equal(cl.get(276)?.principale_host_id, 601, "due apparati nello stesso PC: non è ambiguo, vince una riga viva");
   assert.equal(cl.get(601)?.principale, true);
 });
+
+test("PC di AD salvato come gruppo per seriale, con due apparati: Apparati lo riconosce dal nome e accorpa", () => {
+  const db = dbProva();
+  db.prepare("UPDATE hosts SET serial_number = 'PF3ABCDE' WHERE id IN (554, 555)").run();
+  const nd = db.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, enabled, host_id) VALUES (?, ?, 'switch', 'windows', 'winrm', 1, ?)");
+  nd.run("PC-LasagniF.domarc.it", "192.168.5.154", 554);
+  nd.run("PC-LasagniF", "192.168.5.156", 555);
+  recomputeMultihomedLinks(db);
+  assert.equal((db.prepare("SELECT match_type FROM multihomed_links WHERE host_id = 555").get() as { match_type: string }).match_type, "serial_number");
+  const cl = leggiClusterDiscovery(db);
+  assert.equal(cl.get(554)?.principale_host_id, 555, "la riga vista per ultima, non ambiguo");
+});

@@ -101,6 +101,14 @@ postazione (ovviamente in AD)».
       Apparati non accorpava: i PC hanno un apparato WinRM per IP, creato dagli «apparati automatici» del 10/11
       (NB-AGUZZOLI id 31 e 1327, PC-LasagniF 863/1318/1320, SURFACE-ALAIN 1321/1323), di tipo «switch». Corretto: nei
       PC di AD vince la riga viva e più apparati non fanno «ambiguo». Prove 759/759.
+- [x] 23/11, IPAM .8 a v0.9.1320 (il primo giro è fallito: DNS di `github.com` non risolto per un momento, e lo
+      script aveva già messo `.next` nello stash; il secondo giro ha ricompilato). Apparati sul 70791: NB-AGUZZOLI una
+      riga, la viva 5.150, «+2 IP», Luca Aguzzoli; SURFACE-ALAIN una riga «+3 IP», Alain Rossi; righe visibili da 298 a
+      295. PC-LasagniF ancora su due righe (gruppo salvato «seriale» + due apparati): Apparati ora riconosce il PC di
+      AD dal nome (v0.9.1321).
+- [ ] Trappola vista: `scripts/update.sh` mette `.next` nello stash prima del `git fetch`; se il fetch fallisce il
+      servizio resta su senza la cartella compilata e non ripartirebbe. Sull'IPAM .8 ci sono stash `autoupdate-*`
+      accumulati.
 - [ ] Proposta a Riccardo, in attesa: unire gli apparati doppi già esistenti dello stesso PC (uno resta, segue l'IP vivo,
       gli altri si tolgono) e correggere il tipo «switch» dei PC. Tocca credenziali e storico delle letture.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»

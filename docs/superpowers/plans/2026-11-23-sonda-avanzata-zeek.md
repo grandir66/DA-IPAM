@@ -344,6 +344,14 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
   vista rossa con la lettura di prima (91 MB). Effetto collaterale visto: `zeek-collector` ha `PartOf=collector-traffico`,
   quindi ogni riavvio del collector riavvia anche Zeek (file piccoli nella stessa finestra: si traducono al giro dopo).
 
+- 2026-11-23, Task 5, **seconda partenza della giornata alle 13:36:44 UTC** (fine prevista 24/11 verso le 13:37 UTC),
+  col codice v0.9.1315: lettura a righe, `collector-traffico` a 256 MB (68 MB in uso allo smaltimento), più la correzione
+  dell'avvio dell'ascolto (la tappa 7 passava `scrivi_accessi` al posto di `profilo`: TypeError, ascolto fermo per un
+  minuto). Log del primo tentativo in `/root/giornata-zeek-tentativo1.log`. Registri rimasti dal blocco (266 file
+  piccoli della finestra delle 13:20) smaltiti dall'adattatore uno per registro a giro; scartati 0.
+- 2026-11-23, Task 6: manca la prova di `password_ssh_provate` sul banco (`SOLO_SSH=1`, dal 103 verso il 110). Chiesto
+  alla sessione delle tappe 5-7, che sta usando il banco, quando è libero; nessuna risposta per ora.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

@@ -219,3 +219,35 @@ test("le coppie per ora: stessa ora si somma, ore diverse restano distinte, il m
     deleteTenantDatabase(T2);
   }
 });
+
+test("sonda avanzata (23/11): byte del ritorno e risposta; un collector che non li manda è «non so», mai 0", async () => {
+  const T3 = "TRAFFZEEK23";
+  try {
+    await withTenant(T3, async () => {
+      creaCollector({ nome: "z", sede: "", url: "https://192.168.99.89:8477", gettone: "g", impronta: "AA" });
+      const c = "192.168.99.88";
+      const righe: RigaCollector[] = [
+        { ...riga(1, c, "192.168.99.221", 502, 100), byte_ritorno: 40, risposta: 1 },
+        { ...riga(2, c, "192.168.99.221", 502, 50, "10:05:00"), byte_ritorno: 10, risposta: 0 },
+        { ...riga(3, c, "192.168.99.222", 80, 9), byte_ritorno: 0, risposta: 0 },
+        { ...riga(4, c, "192.168.99.222", 80, 9, "10:05:00"), byte_ritorno: 0, risposta: 0 },
+        riga(5, c, "192.168.99.223", 21, 5),
+        { ...riga(6, c, "192.168.99.224", 22, 5), byte_ritorno: 3, risposta: 1 },
+        riga(7, c, "192.168.99.224", 22, 5, "10:05:00"),
+      ];
+      await sincronizzaTraffico(finto(righe));
+      const d = dbTraffico();
+      const leggi = (s: string, p: number) => d.prepare("SELECT byte_ritorno, risposta FROM traffico_coppie WHERE server = ? AND porta = ?").get(s, p) as { byte_ritorno: number | null; risposta: number | null };
+      assert.deepEqual(leggi("192.168.99.221", 502), { byte_ritorno: 50, risposta: 1 });
+      assert.deepEqual(leggi("192.168.99.222", 80), { byte_ritorno: 0, risposta: 0 });
+      assert.deepEqual(leggi("192.168.99.223", 21), { byte_ritorno: null, risposta: null });
+      // una finestra lo sa e l'altra no: la somma sarebbe una parte, quindi «non so»; la risposta vista resta
+      assert.deepEqual(leggi("192.168.99.224", 22), { byte_ritorno: null, risposta: 1 });
+      const ora = d.prepare("SELECT byte_ritorno, risposta FROM traffico_ore WHERE server = '192.168.99.221'").get();
+      assert.deepEqual(ora, { byte_ritorno: 50, risposta: 1 });
+    });
+  } finally {
+    closeTenantDb(T3);
+    deleteTenantDatabase(T3);
+  }
+});

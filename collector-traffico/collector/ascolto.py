@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-from . import archivio, connessioni, controlli, identita, piega
+from . import archivio, connessioni, controlli, identita, piega, profili
 
 # Solo le porte dei controlli, più il saluto TLS su qualunque porta (primo byte del carico = 0x16).
 _BASE = (
@@ -130,7 +130,14 @@ class Ascolto:
     quante richieste DNS ha fatto un host. `scrivi_fatto` e `scrivi_nomi` si passano da fuori,
     così le prove non hanno bisogno di un archivio."""
 
-    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None, scrivi_connessioni=None):
+    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None, scrivi_connessioni=None,
+                 profilo: str = "leggero"):
+        # Profilo avanzato: connessioni, nomi DNS e TLS e i controlli di `profili.DA_ZEEK` li fa Zeek (registri),
+        # qui restano identità, nomi contesi e i controlli che Zeek non copre. Un controllo, una fonte.
+        self._profilo = profilo
+        self._avanzato = profilo == "avanzato"
+        if self._avanzato:
+            scrivi_nomi_ip = scrivi_connessioni = None
         self._reti = piega._reti(reti_interne)
         self._memo: dict[str, str] = {}
         self._scrivi_fatto = scrivi_fatto
@@ -281,6 +288,8 @@ class Ascolto:
         src, dst, proto, sport, dport, carico = p
 
         for f in controlli.controlla(proto, sport, dport, carico):
+            if not profili.ascolto_lo_fa(f["tipo"], self._profilo, str(f["dettaglio"].get("protocollo", ""))):
+                continue
             client, server, porta = (src, dst, dport) if f["verso_server"] else (dst, src, sport)
             self._fatto(adesso, f["tipo"], self._lato(client), self._lato(server), porta, f["dettaglio"])
 
@@ -297,7 +306,7 @@ class Ascolto:
 
         if proto == controlli.UDP and 53 in (sport, dport):
             self._dns_visto(adesso, src, dst, sport, dport, carico)
-        if proto == controlli.TCP and len(carico) > 5 and carico[0] == 0x16 and carico[5] == 2:
+        if proto == controlli.TCP and len(carico) > 5 and carico[0] == 0x16 and carico[5] == 2 and profili.ascolto_lo_fa("tls_certificato", self._profilo):
             self._certificato(adesso, src, sport, carico)
 
         if proto == controlli.UDP and dport == 53:
@@ -310,7 +319,7 @@ class Ascolto:
             for ip, chiesto in identita.indirizzi_dns(carico):
                 self._nome_di_ip(adesso, ip, "dns", chiesto)
 
-        for tipo, n in controlli.nomi(proto, sport, dport, carico):
+        for tipo, n in ([] if self._avanzato else controlli.nomi(proto, sport, dport, carico)):
             if tipo == "sni":
                 self._nome_di_ip(adesso, dst, "sni", n)
             client = self._lato(src)
@@ -344,6 +353,7 @@ def main() -> int:
         (lambda voci: archivio.scrivi_identita(db, voci)) if os.environ.get("IDENTITA", "1") != "0" else None,
         (lambda voci: archivio.scrivi_nomi_ip(db, voci)) if os.environ.get("ESTERNI", "1") != "0" else None,
         (lambda inizio, righe: archivio.scrivi_connessioni(db, inizio, righe)) if os.environ.get("CONNESSIONI", "1") != "0" else None,
+        profilo=os.environ.get("PROFILO", "leggero"),
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
     tcpdump = subprocess.Popen(

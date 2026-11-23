@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS coppia (
@@ -55,7 +56,9 @@ COLONNE_IDENTITA = ("seq", "visto", "mac", "ip", "vlan", "fonte", "nome", "tipo"
 COLONNE_FATTO = ("seq", "visto", "tipo", "client", "server", "porta", "dettaglio")
 COLONNE_NOME = ("seq", "visto", "client", "tipo", "nome", "conteggio")
 
-COLONNE = ("seq", "inizio", "durata_s", "client", "server", "proto", "porta", "byte", "pacchetti", "flussi", "esterni", "fonte")
+# byte_ritorno e risposta: solo dal profilo avanzato (Zeek sa chi ha aperto); NULL = «non so», mai 0.
+COLONNE = ("seq", "inizio", "durata_s", "client", "server", "proto", "porta", "byte", "pacchetti", "flussi", "esterni", "fonte",
+           "byte_ritorno", "risposta")
 FONTI = ("mirror", "netflow", "sflow")
 FINESTRA_S = 300
 
@@ -75,18 +78,35 @@ def apri(percorso: str) -> sqlite3.Connection:
     # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
     if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
         db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
+    gia = [c[1] for c in db.execute("PRAGMA table_info(coppia)")]
+    for colonna in ("byte_ritorno", "risposta"):
+        if colonna not in gia:
+            db.execute(f"ALTER TABLE coppia ADD COLUMN {colonna} INTEGER")
+    db.commit()
     return db
+
+
+@contextmanager
+def transazione(db: sqlite3.Connection):
+    """Una transazione; dentro un'altra già aperta non chiude niente, decide quella di fuori.
+    Serve all'adattatore di Zeek: righe di una finestra e nome del registro tradotto insieme, o niente."""
+    if db.in_transaction:
+        yield
+        return
+    with db:
+        db.execute("BEGIN")
+        yield
 
 
 def scrivi_finestra(db: sqlite3.Connection, inizio: str, coppie: list[dict], durata_s: int = FINESTRA_S, fonte: str = "mirror") -> int:
     """Scrive le coppie di una finestra in una sola transazione. Ritorna quante righe."""
-    with db:
+    with transazione(db):
         db.executemany(
-            "INSERT INTO coppia (inizio, durata_s, client, server, proto, porta, byte, pacchetti, flussi, esterni, fonte)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO coppia (inizio, durata_s, client, server, proto, porta, byte, pacchetti, flussi, esterni, fonte, byte_ritorno, risposta)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (inizio, durata_s, c["client"], c["server"], c["proto"], c["porta"],
-                 c["byte"], c["pacchetti"], c["flussi"], c.get("esterni", 0), fonte)
+                 c["byte"], c["pacchetti"], c["flussi"], c.get("esterni", 0), fonte, c.get("byte_ritorno"), c.get("risposta"))
                 for c in coppie
             ],
         )
@@ -116,7 +136,7 @@ def ultimo_seq(db: sqlite3.Connection, tabella: str = "coppia") -> int:
 
 
 def scrivi_fatto(db: sqlite3.Connection, visto: str, tipo: str, client: str, server: str, porta: int, dettaglio: dict) -> None:
-    with db:
+    with transazione(db):
         db.execute(
             "INSERT INTO fatto (visto, tipo, client, server, porta, dettaglio) VALUES (?, ?, ?, ?, ?, ?)",
             (visto, tipo, client, server, int(porta), json.dumps(dettaglio, separators=(",", ":"), sort_keys=True)),
@@ -125,7 +145,7 @@ def scrivi_fatto(db: sqlite3.Connection, visto: str, tipo: str, client: str, ser
 
 def scrivi_nomi(db: sqlite3.Connection, visto: str, conteggi: dict[tuple[str, str, str], int]) -> None:
     """`conteggi`: (client, tipo, nome) → quante volte nella finestra."""
-    with db:
+    with transazione(db):
         db.executemany(
             "INSERT INTO nome (visto, client, tipo, nome, conteggio) VALUES (?, ?, ?, ?, ?)",
             [(visto, k[0], k[1], k[2], n) for k, n in conteggi.items()],
@@ -163,7 +183,7 @@ def leggi_nomi(db: sqlite3.Connection, dopo: int, limite: int):
 def scrivi_identita(db: sqlite3.Connection, voci: list[dict]) -> None:
     """Una riga per (mac, ip, fonte): quella vecchia si toglie e la nuova prende un numero nuovo,
     così chi legge col cursore la riceve di nuovo quando qualcosa è cambiato."""
-    with db:
+    with transazione(db):
         for v in voci:
             db.execute("DELETE FROM identita WHERE mac = ? AND ip = ? AND fonte = ?", (v["mac"], v["ip"], v["fonte"]))
             db.execute(
@@ -179,7 +199,7 @@ def leggi_identita(db: sqlite3.Connection, dopo: int, limite: int):
 
 
 def scrivi_esterni(db: sqlite3.Connection, inizio: str, voci: list[dict]) -> int:
-    with db:
+    with transazione(db):
         db.executemany(
             "INSERT INTO esterno (inizio, interno, ip, verso, proto, porta, byte, pacchetti, flussi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [(inizio, v["interno"], v["ip"], v["verso"], v["proto"], v["porta"], v["byte"], v["pacchetti"], v["flussi"]) for v in voci],
@@ -193,7 +213,7 @@ def leggi_esterni(db: sqlite3.Connection, dopo: int, limite: int):
 
 def scrivi_nomi_ip(db: sqlite3.Connection, voci: list[dict]) -> None:
     """Il nome con cui un indirizzo esterno è stato chiesto (DNS) o chiamato (TLS): uno per (ip, tipo), l'ultimo."""
-    with db:
+    with transazione(db):
         for v in voci:
             db.execute("DELETE FROM nome_ip WHERE ip = ? AND tipo = ?", (v["ip"], v["tipo"]))
             db.execute("INSERT INTO nome_ip (visto, ip, tipo, nome) VALUES (?, ?, ?, ?)", (v["visto"], v["ip"], v["tipo"], v["nome"]))
@@ -206,7 +226,7 @@ def leggi_nomi_ip(db: sqlite3.Connection, dopo: int, limite: int):
 
 def scrivi_connessioni(db: sqlite3.Connection, inizio: str, righe: list[dict]) -> None:
     nomi = COLONNE_CONNESSIONE[2:]
-    with db:
+    with transazione(db):
         db.executemany(
             f"INSERT INTO connessione (inizio, {', '.join(nomi)}) VALUES (?{', ?' * len(nomi)})",
             [(inizio, *(r[n] for n in nomi)) for r in righe],
@@ -219,7 +239,7 @@ def leggi_connessioni(db: sqlite3.Connection, dopo: int, limite: int):
 
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
-    with db:
+    with transazione(db):
         tolte = db.execute("DELETE FROM coppia WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",)).rowcount
         db.execute("DELETE FROM fatto WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM nome WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
@@ -231,7 +251,7 @@ def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
 
 
 def metti_stato(db: sqlite3.Connection, chiave: str, valore: object) -> None:
-    with db:
+    with transazione(db):
         db.execute(
             "INSERT INTO stato (chiave, valore) VALUES (?, ?) ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore",
             (chiave, str(valore)),

@@ -127,7 +127,7 @@ Verifica (23/11): `python3 -m unittest tests.test_non_fuga` → 2 verdi, 1 salta
 
 ---
 
-### [~] Task 3 — Adattatore: connessioni, DNS, TLS
+### [x] Task 3 — Adattatore: connessioni, DNS, TLS
 
 **Dipende da:** Task 1.
 
@@ -181,9 +181,19 @@ Caso 3: sul banco si controlla lo script per le connessioni lunghe; se c'è, si 
 
 **Commit:** `Sonda Zeek: adattatore per connessioni, DNS e TLS`, poi rilascio.
 
+Verifica (23/11): `python3 -m unittest discover -s tests -t .` (da `collector-traffico/`) → 90 OK;
+`node --import tsx --test "src/lib/traffico/**/*.test.ts"` → 40 OK; `npx tsc --noEmit` → solo due errori su file
+generati in `.next/types` (rotte che non esistono più), nessuno nei file toccati; eslint pulito.
+Scostamenti: (1) i file chiusi hanno nel nome l'ora di **apertura**, e il primo dopo l'avvio un'ora diversa per ogni
+registro (`conn.…-12-57-33`, `dns.…-12-57-26`): si raggruppa per finestra arrotondata a 5 minuti (`finestra()`), non
+per nome; (2) per scrivere una finestra in una transazione sola `archivio` ha `transazione()` (una dentro l'altra non
+chiude); (3) `traduci_dns`/`traduci_ssl` prendono anche `reti` (servono per «di casa» ed «esterno»); (4) nel profilo
+avanzato connessioni, nomi DNS e TLS li fa solo Zeek (l'ascolto li spegne: altrimenti in IPAM si contavano due volte);
+(5) commit unico con il Task 4, perché l'adattatore importa `profili`.
+
 ---
 
-### [ ] Task 4 — Controlli sul contenuto da Zeek e chi fa cosa
+### [x] Task 4 — Controlli sul contenuto da Zeek e chi fa cosa
 
 **Dipende da:** Task 2, Task 3.
 
@@ -211,6 +221,16 @@ Partenza proposta per `DA_ZEEK`, da correggere con quello che i registri del ban
 **Verifica:** `test_profili.py`: ogni tipo di `TIPI` ha una sola fonte per profilo, e `TIPI` coincide con `TIPI_FATTO` letto da `src/lib/traffico/anomalie.ts` (regex sul file). `test_zeek_adattatore.py`: dai registri del banco escono una volta sola `chiaro_ftp`, `chiaro_http_basic`, `snmp_vecchio` (con `comunita_nota` vero per `public`), `impianto_scrittura`, `tls_vecchio` se la cattura l'ha. `test_non_fuga.py` intera verde.
 
 **Commit:** `Sonda Zeek: controlli sul contenuto dai registri, un controllo una fonte`
+
+Verifica (23/11): stesse prove del Task 3 (90 OK). `test_profili`: una fonte per tipo nei due profili, `TIPI` =
+`TIPI_FATTO` di `anomalie.ts` (15 tipi, coi tre della tappa 6), e la cattura dei controlli del 20/11 letta
+dall'ascolto avanzato perde esattamente i tipi di Zeek (resta la scrittura S7). `test_zeek_adattatore.Fatti`: dal
+banco una volta sola `chiaro_ftp`, `chiaro_http_basic`, `snmp_vecchio`, `impianto_scrittura` (Modbus, registro),
+`tls_vecchio` (TLS 1.0). `test_non_fuga` intera verde (anche l'archivio, fatti compresi).
+`DA_ZEEK` finale: `chiaro_ftp`, `chiaro_http_basic`, `chiaro_ldap`, `snmp_vecchio`, `tls_vecchio`, `impianto_scrittura`
+(solo Modbus). Restano all'ascolto `smb1` e `ntlm1` (sul banco non c'è un server SMB: non visti da Zeek) e
+`tls_certificato` (passa a Zeek col Task 6). `chiaro_ldap` provato solo con una riga finta: la cattura vera col campo
+`accesso_chiaro` si rifà nel Task 6.
 
 ---
 

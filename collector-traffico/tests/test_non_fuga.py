@@ -44,7 +44,6 @@ class NonFuga(unittest.TestCase):
         self.assertTrue(testi, "nessun registro filtrato: la prova non proverebbe niente")
         self.assertEqual(_trovati(testi), [])
 
-    @unittest.skip("i fatti dai registri arrivano col Task 4: si toglie lì")
     def test_l_archivio_no(self):
         from collector import archivio, zeek_adattatore
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,6 +60,8 @@ class NonFuga(unittest.TestCase):
                     for s in SEGRETI + IN_BASE64:
                         self.assertNotIn(s, testo, f"{s} nella tabella {tabella}")
             self.assertGreater(righe, 0, "archivio vuoto: la prova non proverebbe niente")
+            # i fatti ci sono: la prova guarda anche il dettaglio dei controlli, non solo le coppie
+            self.assertGreaterEqual(db.execute("SELECT COUNT(*) FROM fatto").fetchone()[0], 4)
 
 
 if __name__ == "__main__":

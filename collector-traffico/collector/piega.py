@@ -75,7 +75,7 @@ def _reti(reti_interne: list[str]) -> list[ipaddress._BaseNetwork]:
     return fatte
 
 
-def _lato(ip: str, reti: list, memo: dict[str, str]) -> str:
+def lato(ip: str, reti: list, memo: dict[str, str]) -> str:
     """L'indirizzo com'è se è interno, altrimenti «esterno» o «diffusione»."""
     gia = memo.get(ip)
     if gia is not None:
@@ -93,6 +93,9 @@ def _lato(ip: str, reti: list, memo: dict[str, str]) -> str:
         esito = ESTERNO
     memo[ip] = esito
     return esito
+
+
+_lato = lato  # il nome di prima: lo usano ascolto e le prove
 
 
 def _estremi(r: dict) -> tuple[str, str, int, int, int]:
@@ -115,17 +118,20 @@ ESTERNI_PER_HOST = 50
 ALTRI = "altri"
 
 
-def esterni(righe: list[dict], reti_interne: list[str], tetto: int = ESTERNI_PER_HOST) -> list[dict]:
+def esterni(righe: list[dict], reti_interne: list[str], tetto: int = ESTERNI_PER_HOST, estremi=None) -> list[dict]:
     """Con chi fuori parla ogni host interno, in una finestra (23/11/2026).
     Per ogni host si tengono i `tetto` indirizzi esterni più pesanti; gli altri finiscono in una riga
     sola con ip = "altri", che porta i loro byte e in `flussi` QUANTI indirizzi sono stati lasciati fuori:
     chi legge sa che il tetto è scattato. `verso`: "fuori" se è l'host interno ad aprire, "dentro" se è l'esterno.
+    `estremi`: come leggere (client, server, porta del client, proto, porta) da una riga; di serie dalle porte
+    (pmacct non sa chi ha aperto), la sonda avanzata passa il verso vero preso da Zeek.
     Ritorna: interno, ip, verso, proto, porta, byte, pacchetti, flussi."""
     reti = _reti(reti_interne)
     memo: dict[str, str] = {}
     voci: dict[tuple, dict] = {}
+    estremi = estremi or _estremi
     for r in righe:
-        client_ip, server_ip, cport, proto, porta = _estremi(r)
+        client_ip, server_ip, cport, proto, porta = estremi(r)
         client, server = _lato(client_ip, reti, memo), _lato(server_ip, reti, memo)
         if client == ESTERNO and server not in (ESTERNO, DIFFUSIONE):
             chiave = (server, client_ip, "dentro", proto, porta)

@@ -1,7 +1,8 @@
 """Servizio del collector: prende i file di pmacct, li piega in coppie, li archivia, espone l'API.
 
 Configurazione da variabili d'ambiente (systemd le carica da /etc/collector-traffico/collector.env):
-MIRROR_IF, RETI_INTERNE (aggiunte, separate da virgola), MIRROR_DOPPIO=1, NOME, DATI, CONF.
+MIRROR_IF, RETI_INTERNE (aggiunte, separate da virgola), MIRROR_DOPPIO=1, NOME, DATI, CONF,
+PROFILO (avanzato = registri di Zeek in DATI/zeek; leggero = file di pmacct in DATI/in).
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import sys
 import threading
 import time
 
-from . import api, archivio, piega
+from . import api, archivio, piega, zeek_adattatore
 
 OGNI_S = 30
 # Un file più giovane di così può essere ancora in scrittura da parte di pmacct.
@@ -102,6 +103,8 @@ def main() -> int:
         print("collector: gettone vuoto, non parto", file=sys.stderr)
         return 1
 
+    profilo = os.environ.get("PROFILO", "leggero")
+    cartella_zeek = os.path.join(dati, "zeek")
     percorso_db = os.path.join(dati, "collector.db")
     cartella_in = os.path.join(dati, "in")
     os.makedirs(cartella_in, exist_ok=True)
@@ -118,7 +121,10 @@ def main() -> int:
     ultimo_sfoltimento = 0.0
     while True:
         try:
-            scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni)
+            if profilo == "avanzato":
+                scritte = zeek_adattatore.giro_zeek(db, cartella_zeek, reti, tetto_esterni) if os.path.isdir(cartella_zeek) else 0
+            else:
+                scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni)
             if scritte:
                 print(f"collector: {scritte} coppie archiviate", flush=True)
             if scheda:

@@ -102,5 +102,11 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
   if (!colonne.includes("cursore_esterni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_esterni INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_nomi_ip")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_nomi_ip INTEGER NOT NULL DEFAULT 0");
   if (!colonne.includes("cursore_connessioni")) db.exec("ALTER TABLE traffico_collector ADD COLUMN cursore_connessioni INTEGER NOT NULL DEFAULT 0");
+  // Sonda avanzata (Zeek, 23/11): byte del ritorno e «ha risposto». NULL = il collector non lo sa (profilo leggero), mai 0.
+  for (const tabella of ["traffico_coppie", "traffico_ore"]) {
+    const c = (db.prepare(`PRAGMA table_info(${tabella})`).all() as { name: string }[]).map((x) => x.name);
+    if (!c.includes("byte_ritorno")) db.exec(`ALTER TABLE ${tabella} ADD COLUMN byte_ritorno INTEGER`);
+    if (!c.includes("risposta")) db.exec(`ALTER TABLE ${tabella} ADD COLUMN risposta INTEGER`);
+  }
   pronte.add(db);
 }

@@ -40,6 +40,9 @@ export interface RigaCollector {
   esterni: number;
   /** `mirror`, `netflow` o `sflow`; un collector vecchio non la manda: mirror. */
   fonte?: string;
+  /** Solo dal profilo avanzato (Zeek): byte del server verso il client, e 1 se il server ha risposto. Assenti o null = non so. */
+  byte_ritorno?: number | null;
+  risposta?: number | null;
 }
 export interface StatoCollector {
   versione: string;
@@ -174,12 +177,22 @@ function rigaValida(r: RigaCollector): boolean {
   );
 }
 
+/** Un campo facoltativo del profilo avanzato: un numero intero non negativo, altrimenti «non so». */
+function forseNumero(v: unknown): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+}
+// Sul conflitto: i byte del ritorno si sommano solo se tutte e due le righe li sanno (altrimenti la somma
+// sarebbe una parte spacciata per il tutto); «ha risposto» è 1 se una delle due l'ha visto, 0 solo se tutte e due dicono 0.
+const RITORNO = (t: string) => `byte_ritorno = CASE WHEN ${t}.byte_ritorno IS NULL OR excluded.byte_ritorno IS NULL THEN NULL ELSE ${t}.byte_ritorno + excluded.byte_ritorno END,
+      risposta = CASE WHEN ${t}.risposta = 1 OR excluded.risposta = 1 THEN 1 WHEN ${t}.risposta IS NULL OR excluded.risposta IS NULL THEN NULL ELSE 0 END`;
+
 /** Scrive una pagina e sposta il cursore, tutto insieme. Ritorna le righe entrate. */
 function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie, dopoFinestra: DopoFinestra | undefined, sonde: Set<string>): number {
   const ins = d.prepare(`
-    INSERT INTO traffico_coppie (giorno, collector_id, fonte, client, server, proto, porta, byte, pacchetti, flussi, esterni, prima_vista, ultima_vista)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO traffico_coppie (giorno, collector_id, fonte, client, server, proto, porta, byte, pacchetti, flussi, esterni, prima_vista, ultima_vista, byte_ritorno, risposta)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(giorno, collector_id, fonte, client, server, proto, porta) DO UPDATE SET
+      ${RITORNO("traffico_coppie")},
       byte = traffico_coppie.byte + excluded.byte,
       pacchetti = traffico_coppie.pacchetti + excluded.pacchetti,
       flussi = traffico_coppie.flussi + excluded.flussi,
@@ -188,9 +201,10 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
       ultima_vista = MAX(traffico_coppie.ultima_vista, excluded.ultima_vista)`);
   // La stessa riga anche per ora: «Ultima ora» e l'andamento (piano del 23/11, tappa 1).
   const insOra = d.prepare(`
-    INSERT INTO traffico_ore (ora, client, server, proto, porta, collector_id, fonte, byte, pacchetti, flussi, esterni)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO traffico_ore (ora, client, server, proto, porta, collector_id, fonte, byte, pacchetti, flussi, esterni, byte_ritorno, risposta)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(ora, client, server, proto, porta, collector_id, fonte) DO UPDATE SET
+      ${RITORNO("traffico_ore")},
       byte = traffico_ore.byte + excluded.byte,
       pacchetti = traffico_ore.pacchetti + excluded.pacchetti,
       flussi = traffico_ore.flussi + excluded.flussi,
@@ -201,8 +215,10 @@ function scriviPagina(d: Database.Database, collectorId: number, p: PaginaCoppie
     const finestre = new Map<string, RigaCollector[]>();
     for (const r of buone) {
       const fonte = FONTI.has(r.fonte ?? "") ? r.fonte : "mirror";
-      ins.run(r.inizio.slice(0, 10), collectorId, fonte, r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio);
-      insOra.run(`${r.inizio.slice(0, 13)}:00:00`, r.client, r.server, r.proto, r.porta, collectorId, fonte, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0);
+      const ritorno = forseNumero(r.byte_ritorno);
+      const risposta = forseNumero(r.risposta) === null ? null : Math.min(1, forseNumero(r.risposta)!);
+      ins.run(r.inizio.slice(0, 10), collectorId, fonte, r.client, r.server, r.proto, r.porta, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, r.inizio, r.inizio, ritorno, risposta);
+      insOra.run(`${r.inizio.slice(0, 13)}:00:00`, r.client, r.server, r.proto, r.porta, collectorId, fonte, r.byte, r.pacchetti, r.flussi, r.esterni ?? 0, ritorno, risposta);
       const f = finestre.get(r.inizio);
       if (f) f.push(r);
       else finestre.set(r.inizio, [r]);

@@ -287,7 +287,7 @@ scrittura tenuto, `/api/health` senza risposta, coda di ascolto piena): le richi
 - [x] Applicato a mano sul 70791 di 192.168.4.8 alle 16:08 UTC, con le stesse due istruzioni: prova a vuoto (attive 1.889 prima e dopo), poi 109.626 righe tolte in 0,32 s; restano 19.677 righe, 1.889 attive. Copia delle righe tolte sulla macchina: `/root/attribution_evidence-superate-20261117-160825.csv.gz`. Sul server girava ancora la 0.9.1270: il giro notturno arriva con la 0.9.1271.
 - [ ] Resta da approvare: decidere quale fonte vince sul MAC di un host quando ARP e l'altra fonte non concordano, e capire perché sul 210 e sul 187 l'ARP risponde col MAC di un Meigao (stesso OUI degli host 50, 52, 53 della rete 2).
 - [x] Riccardo ha riprovato con più IP dopo l'indice: «ora funziona» (17/11).
-- [ ] L'indice arriva agli altri tenant e alle appliance con la prossima versione; `main` non toccato.
+- [x] 23/11: indice e sfoltimento notturno sul `dev` e sull'IPAM .8 (v0.9.1324); evidenze sul 70791 23.759, superate oltre 30 giorni solo 254. Alle appliance arrivano con la prossima promozione di `main`.
 
 ## 2026-11-16 — Firewall: porte interne 3001 e 8080 riservate alla macchina (Riccardo, zona rossa)
 

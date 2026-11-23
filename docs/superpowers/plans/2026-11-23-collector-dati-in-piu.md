@@ -9,7 +9,7 @@ sicuramente le network sconosciute, dando un nome agli oggetti pur non inserendo
 voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 **Viene dopo:** `docs/superpowers/plans/2026-11-20-collector-traffico.md` (collector, lettura, anomalie, interfaccia: fatti).
 **Livello di controllo:** leggero per le tappe 1-6; la tappa 7 è zona rossa (dati personali).
-**Stato:** tappe 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro); tappa 5 a metà (dati fatti, interfaccia da proporre); 6-7 da fare · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** tappe 5, 6 e 7 chiuse; 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro) · **Ultimo aggiornamento:** 2026-11-23
 
 ## Dove siamo
 
@@ -218,7 +218,7 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 
 **Fatto quando:** i tre tipi compaiono nella scheda «Collector e controlli» e almeno uno scatta su un caso provocato.
 
-### [~] Tappa 7 — Chi accede a cosa, programmi in uso · ZONA ROSSA
+### [x] Tappa 7 — Chi accede a cosa, programmi in uso · ZONA ROSSA
 
 - Nomi utente da Kerberos (AS-REQ), SMB e LDAP: si salva (utente, da dove, verso dove, protocollo, quando, riuscito o no).
 - Programmi: versione dichiarata nei saluti in chiaro (SSH, HTTP `Server` e `User-Agent`, SMTP, FTP).
@@ -245,7 +245,7 @@ finto sul banco e l'interfaccia proposta (scheda «Accessi», interruttore, «Pr
 | Nessun export porta fuori gli accessi | [x] | nessuna rotta di export legge le tabelle `traffico_*`. Il backup intero del database del cliente li contiene, come tutto il resto |
 | Misura del filtro leggero nuovo (88 e SSH) | [!] | `DA-COLLECTOR-PX03` dal 23/11 gira col profilo avanzato (Zeek, sessione «Sonda con Zeek»): il profilo leggero va misurato su un altro collector, quando Riccardo lo decide. Su PX03 l'ascolto della v0.9.1313 non partiva (accessi passati per posizione in `main()`, errore mio), fermo 13:35:57-13:37:32 UTC, corretto dall'altra sessione (`35585048`) |
 | Giro intero sul banco: collector con `ACCESSI=1` → righe in `/v1/accessi` | [x] | 23/11, 13:41 UTC: `collector-banco` scrive 5 righe (Kerberos e SMB riuscito e fallito per `prova`, LDAP fallito ×2) e i programmi (`SSH::SERVER:OpenSSH 9.2p1`, `HTTP::BROWSER:ProvaAgente 1.0`…); nel giornale nessun nome utente; poi `ACCESSI=0` di nuovo e contenitore 111 tolto |
-| Sull'ufficio (acceso da Riccardo) si vede chi ha fatto accesso a un server di prova | [ ] | tocca a Riccardo accendere |
+| Sull'ufficio (acceso su richiesta di Riccardo) si vede chi ha fatto accesso a un server di prova | [x] | 23/11, 13:52 UTC: `ACCESSI=1` su `DA-COLLECTOR-PX03` (copia dell'ambiente in `collector.env.bak-*`) e `traffico_accessi_acceso=1` sull'hub, su richiesta di Riccardo («procedi subito»). Alle 14:03 tre bind LDAP dal collector verso il DC `192.168.4.1` con un utente inesistente (`prova-collector@domarc.it`, password finta): il collector scrive 1 riga (ldap, fallito, 3 volte) e alle 14:10 l'hub la ha in `traffico_accessi` (collector 2). Nessun nome utente nel giornale del collector né in quello di `da-ipam`. **Non guardata la pagina**. Dalla copia di PX03 passano pochissimi accessi veri (un pacchetto ogni 15 s per protocollo): i login dell'ufficio non attraversano quell'uplink |
 
 **Fatto quando:** la prova di non-fuga è verde dopo essere stata vista rossa, e sull'ufficio (acceso da Riccardo) si vede
 chi ha fatto accesso a un server di prova.
@@ -380,6 +380,21 @@ chi ha fatto accesso a un server di prova.
   in IPAM e `ACCESSI=1` su un collector) e fare un accesso a un server di prova. Il filtro leggero nuovo non è misurato
   di giorno su nessun collector (PX03 è passato a Zeek).
 
-## Consuntivo
+## Consuntivo (tappe 5-7, 23/11/2026)
 
-(a chiusura: fatto · mancante · scostamenti · consigli)
+- **Fatto.** Tappa 5: connessioni che non vanno, scheda «Cosa non va» e «Servizi usati»; trovato sul banco e corretto un
+  difetto vero del filtro di cattura (SYN e RST scartati fuori dalle porte dell'elenco). Tappa 6: certificati, DNS fuori
+  casa, DNS che non risponde, VLAN sbagliata, con interruttore per rete. Tappa 7 (zona rossa): accessi coi nomi utente
+  (Kerberos, SMB, LDAP) e programmi dichiarati, prova di non-fuga con catture vere vista rossa prima del codice, spento di
+  serie due volte, provato dal banco fino all'hub.
+- **Mancante.** Tappe 1-4: le verifiche sull'hub (vedi «Dove riprendere»). Misura di giorno del profilo leggero col
+  filtro nuovo (porte 88 e SSH) su un collector leggero, poi l'aggiornamento di PX01, PX02, PX04, PX05 (oggi hanno ancora
+  il codice della tappa 1). Nessuna pagina guardata resa. JA3 rimandato.
+- **Scostamenti.** JA3 non fatto (cattura a 600 byte). Programmi nella tabella `nome` col tipo `software` invece di un
+  fatto a parte, per allinearsi alla sonda con Zeek. `DA-COLLECTOR-PX03` è passato al profilo con Zeek durante il lavoro:
+  le misure del profilo leggero lì valgono fino alle 13:35 UTC del 23/11.
+- **Errori.** v0.9.1313: accessi passati per posizione in `main()`, ascolto di PX03 fermo un minuto e mezzo, corretto
+  dalla sessione Zeek. Le prove non avviano `main()`: una prova che lo costruisce con l'ambiente vero eviterebbe il caso.
+- **Consigli.** Una prova di avvio di `ascolto.main()`; decidere dove mettere un collector leggero per misurarlo di giorno;
+  gli accessi sono accesi su PX03 e sull'hub (riga di prova `prova-collector@domarc.it` nell'hub, va via in 90 giorni):
+  spegnerli se non servono, dall'interruttore in «Collector e controlli» e con `ACCESSI=0` sul collector.

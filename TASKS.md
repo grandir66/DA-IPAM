@@ -25,7 +25,9 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 6: certificati, DNS fuori casa, DNS che non risponde, VLAN sbagliata; provata sul banco e di giorno su PX03; parole approvate
 - [-] Tappa 6, JA3: rimandato (con la cattura a 600 byte l'impronta verrebbe sbagliata); da decidere con la sonda Zeek
 - [x] Tappa 7 (zona rossa): prova di non-fuga vista rossa con catture vere del banco, codice, interfaccia; giro intero sul banco
-- [ ] Tappa 7, Riccardo: accendere «Accessi con nome utente» in IPAM e `ACCESSI=1` su un collector, poi un accesso a un server di prova
+- [x] Tappa 7 sull'ufficio: accesi su richiesta di Riccardo (PX03 e hub), un bind LDAP finto verso il DC arriva fino all'hub; nessun nome utente nei giornali
+- [ ] Riccardo decide: lasciare accesi gli accessi su PX03 e sull'hub, o spegnerli (interruttore in «Collector e controlli» e `ACCESSI=0`)
+- [ ] Una prova che avvia `ascolto.main()` con l'ambiente vero (l'errore della v0.9.1313 le prove non lo vedevano)
 - [ ] Misura di giorno del filtro leggero nuovo (porte 88 e SSH) su un collector col profilo leggero (PX03 è passato a Zeek)
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati

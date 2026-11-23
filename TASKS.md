@@ -170,6 +170,10 @@ postazione (ovviamente in AD)».
       Prove: migrazione 6/6 (vista fallire sul commit pubblicato: 2 rosse), `tipo-postazioni.test.ts` 2/2, 2370 prove
       collegate verdi. Prova a vuoto su copia del 70791: 74 apparati e 10.324 righe figlie in 31 tabelle prima e dopo,
       stesso id massimo, violazioni 2 → 2 (già note), indici 8 → 8, `quick_check` ok; 19 apparati a «workstation».
+- [x] 23/11, IPAM .8 a v0.9.1326 (health 200), copie `/opt/da-ipam/data/backups/*-pre-tipo-workstation-20261123.db`:
+      70791 CHECK ricostruito, 74 apparati, 19 «workstation», violazioni 2 (le note), `quick_check` ok; 70791a CHECK
+      ricostruito, `quick_check` ok. DEFAULT.db non ancora (0 apparati, il servizio non lo apre): si ricostruisce alla
+      prima apertura. Non guardato a schermo.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»
       (vale per ogni colonna nuova di Apparati).
 - [ ] Copertura bassa sul 70791 (9 postazioni su 28 con accessi): dipende dai punti aperti del 23/10 (WinRM quasi a

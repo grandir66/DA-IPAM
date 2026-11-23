@@ -16,7 +16,8 @@ from . import VERSIONE, archivio
 PORTA = 8477
 # Tutte con la stessa forma: ?dopo=<seq>&limite=<1..1000> → {righe, ultimo_seq, altri, buco}
 LETTURE = {"/v1/coppie": archivio.leggi_coppie, "/v1/fatti": archivio.leggi_fatti, "/v1/nomi": archivio.leggi_nomi,
-           "/v1/identita": archivio.leggi_identita}
+           "/v1/identita": archivio.leggi_identita,
+           "/v1/esterni": archivio.leggi_esterni, "/v1/nomi-ip": archivio.leggi_nomi_ip}
 
 
 def _intero(valori: dict, nome: str, ripiego: int) -> int:

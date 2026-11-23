@@ -244,3 +244,29 @@ def osserva(p: bytes) -> list[dict]:
     if dport == 1900:
         return _ssdp(carico, src, ip, vlan)
     return []
+
+
+def indirizzi_dns(c: bytes) -> list[tuple[str, str]]:
+    """Da una risposta DNS: (indirizzo IPv4, nome CHIESTO) per ogni record A. Il nome è quello della domanda,
+    non quello del record: dietro un CNAME il record porta il nome della rete di distribuzione."""
+    if len(c) < 12 or not c[2] & 0x80 or int.from_bytes(c[4:6], "big") < 1:
+        return []
+    chiesto, i = _nome_compresso(c, 12)
+    i += 4
+    if not chiesto:
+        return []
+    for _ in range(int.from_bytes(c[4:6], "big") - 1):
+        _, i = _nome_compresso(c, i)
+        i += 4
+    trovati: list[tuple[str, str]] = []
+    for _ in range(min(int.from_bytes(c[6:8], "big"), 24)):
+        _, i = _nome_compresso(c, i)
+        if i + 10 > len(c):
+            break
+        tipo = int.from_bytes(c[i:i + 2], "big")
+        lung = int.from_bytes(c[i + 8:i + 10], "big")
+        dati = c[i + 10:i + 10 + lung]
+        i += 10 + lung
+        if tipo == 1 and len(dati) == 4:
+            trovati.append((_ip(dati), chiesto[:253]))
+    return trovati

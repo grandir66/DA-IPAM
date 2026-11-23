@@ -51,7 +51,7 @@ def contatori_scheda(scheda: str, testo: str) -> tuple[int, int] | None:
     return None
 
 
-def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | None = None) -> int:
+def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | None = None, tetto_esterni: int = 0) -> int:
     """Un giro: ogni file pronto diventa una finestra, poi si cancella. Ritorna le righe scritte."""
     adesso = time.time() if adesso is None else adesso
     scritte = 0
@@ -62,7 +62,8 @@ def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | No
             if not os.path.isfile(percorso) or adesso - mtime < FERMO_DA_S:
                 continue
             with open(percorso, encoding="utf-8", errors="replace") as f:
-                coppie = piega.piega(piega.da_pmacct(f.read()), reti)
+                righe = piega.da_pmacct(f.read())
+            coppie = piega.piega(righe, reti)
         except OSError:
             continue
         fonte = fonte_da_nome(nome)
@@ -70,6 +71,12 @@ def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | No
         if doppio and fonte == "mirror":
             coppie = piega.dimezza(coppie)
         scritte += archivio.scrivi_finestra(db, inizio_da_nome(nome, mtime), coppie, fonte=fonte)
+        # Le destinazioni esterne solo dal mirror: i flussi campionati dello stesso tratto le conterebbero due volte.
+        if tetto_esterni > 0 and fonte == "mirror":
+            fuori = piega.esterni(righe, reti, tetto_esterni)
+            if doppio:
+                fuori = [{**v, "byte": v["byte"] // 2, "pacchetti": (v["pacchetti"] + 1) // 2} for v in fuori]
+            archivio.scrivi_esterni(db, inizio_da_nome(nome, mtime), fuori)
         os.unlink(percorso)
     return scritte
 
@@ -80,6 +87,11 @@ def main() -> int:
     scheda = os.environ.get("MIRROR_IF", "")
     reti = piega.RETI_INTERNE_DI_SERIE + [r for r in os.environ.get("RETI_INTERNE", "").split(",") if r.strip()]
     doppio = os.environ.get("MIRROR_DOPPIO", "0") == "1"
+    # Quanti indirizzi esterni tenere per host e finestra; 0 (o ESTERNI=0) li spegne.
+    try:
+        tetto_esterni = 0 if os.environ.get("ESTERNI", "1") == "0" else max(0, int(os.environ.get("ESTERNI_PER_HOST", str(piega.ESTERNI_PER_HOST))))
+    except ValueError:
+        tetto_esterni = piega.ESTERNI_PER_HOST
     try:
         with open(os.path.join(conf, "gettone"), encoding="utf-8") as f:
             gettone = f.read().strip()
@@ -106,7 +118,7 @@ def main() -> int:
     ultimo_sfoltimento = 0.0
     while True:
         try:
-            scritte = giro(db, cartella_in, reti, doppio)
+            scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni)
             if scritte:
                 print(f"collector: {scritte} coppie archiviate", flush=True)
             if scheda:

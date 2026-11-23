@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS identita (
   vlan INTEGER NOT NULL DEFAULT 0, fonte TEXT NOT NULL, nome TEXT NOT NULL DEFAULT '', tipo TEXT NOT NULL DEFAULT '',
   UNIQUE (mac, ip, fonte));
 """
+CREATE_ESTERNI = """
+CREATE TABLE IF NOT EXISTS esterno (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, inizio TEXT NOT NULL, interno TEXT NOT NULL, ip TEXT NOT NULL,
+  verso TEXT NOT NULL DEFAULT 'fuori', proto INTEGER NOT NULL, porta INTEGER NOT NULL,
+  byte INTEGER NOT NULL, pacchetti INTEGER NOT NULL, flussi INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_esterno_inizio ON esterno (inizio);
+CREATE TABLE IF NOT EXISTS nome_ip (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, visto TEXT NOT NULL, ip TEXT NOT NULL, tipo TEXT NOT NULL, nome TEXT NOT NULL,
+  UNIQUE (ip, tipo));
+"""
+COLONNE_ESTERNO = ("seq", "inizio", "interno", "ip", "verso", "proto", "porta", "byte", "pacchetti", "flussi")
+COLONNE_NOME_IP = ("seq", "visto", "ip", "tipo", "nome")
 COLONNE_IDENTITA = ("seq", "visto", "mac", "ip", "vlan", "fonte", "nome", "tipo")
 COLONNE_FATTO = ("seq", "visto", "tipo", "client", "server", "porta", "dettaglio")
 COLONNE_NOME = ("seq", "visto", "client", "tipo", "nome", "conteggio")
@@ -50,6 +62,7 @@ def apri(percorso: str) -> sqlite3.Connection:
     db.execute("PRAGMA synchronous=NORMAL")
     db.executescript(SCHEMA)
     db.executescript(CREATE_IDENTITA)
+    db.executescript(CREATE_ESTERNI)
     # Archivio nato prima di NetFlow e sFlow: la colonna si aggiunge, le righe vecchie sono mirror.
     if "fonte" not in [c[1] for c in db.execute("PRAGMA table_info(coppia)")]:
         db.execute("ALTER TABLE coppia ADD COLUMN fonte TEXT NOT NULL DEFAULT 'mirror'")
@@ -156,6 +169,32 @@ def leggi_identita(db: sqlite3.Connection, dopo: int, limite: int):
     return righe, ultimo, altri, False
 
 
+def scrivi_esterni(db: sqlite3.Connection, inizio: str, voci: list[dict]) -> int:
+    with db:
+        db.executemany(
+            "INSERT INTO esterno (inizio, interno, ip, verso, proto, porta, byte, pacchetti, flussi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(inizio, v["interno"], v["ip"], v["verso"], v["proto"], v["porta"], v["byte"], v["pacchetti"], v["flussi"]) for v in voci],
+        )
+    return len(voci)
+
+
+def leggi_esterni(db: sqlite3.Connection, dopo: int, limite: int):
+    return _leggi(db, "esterno", COLONNE_ESTERNO, dopo, limite)
+
+
+def scrivi_nomi_ip(db: sqlite3.Connection, voci: list[dict]) -> None:
+    """Il nome con cui un indirizzo esterno è stato chiesto (DNS) o chiamato (TLS): uno per (ip, tipo), l'ultimo."""
+    with db:
+        for v in voci:
+            db.execute("DELETE FROM nome_ip WHERE ip = ? AND tipo = ?", (v["ip"], v["tipo"]))
+            db.execute("INSERT INTO nome_ip (visto, ip, tipo, nome) VALUES (?, ?, ?, ?)", (v["visto"], v["ip"], v["tipo"], v["nome"]))
+
+
+def leggi_nomi_ip(db: sqlite3.Connection, dopo: int, limite: int):
+    righe, ultimo, altri, _ = _leggi(db, "nome_ip", COLONNE_NOME_IP, dopo, limite)
+    return righe, ultimo, altri, False
+
+
 def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
     """Butta le finestre più vecchie di `giorni`. Ritorna quante righe ha tolto."""
     with db:
@@ -163,6 +202,8 @@ def sfoltisci(db: sqlite3.Connection, giorni: int = 7) -> int:
         db.execute("DELETE FROM fatto WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM nome WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
         db.execute("DELETE FROM identita WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM esterno WHERE inizio < datetime('now', ?)", (f"-{int(giorni)} days",))
+        db.execute("DELETE FROM nome_ip WHERE visto < datetime('now', ?)", (f"-{int(giorni)} days",))
     return tolte
 
 

@@ -122,7 +122,7 @@ class Ascolto:
     quante richieste DNS ha fatto un host. `scrivi_fatto` e `scrivi_nomi` si passano da fuori,
     così le prove non hanno bisogno di un archivio."""
 
-    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None):
+    def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None):
         self._reti = piega._reti(reti_interne)
         self._memo: dict[str, str] = {}
         self._scrivi_fatto = scrivi_fatto
@@ -131,6 +131,9 @@ class Ascolto:
         self._identita: dict[tuple[str, str, str], tuple[tuple, int]] = {}  # (mac, ip, fonte) → (cosa si sa, ultima scrittura)
         self._identita_nuove: dict[tuple[str, str, str], dict] = {}
         self._identita_scritte = 0
+        self._scrivi_nomi_ip = scrivi_nomi_ip
+        self._nomi_ip: dict[tuple[str, str], tuple[str, int]] = {}  # (ip, tipo) → (nome, ultima scrittura)
+        self._nomi_ip_nuovi: dict[tuple[str, str], dict] = {}
         self._detti: dict[tuple, int] = {}                # (tipo, client, server) → ultima volta
         self._risponde: dict[str, str] = {}               # nome → chi ha risposto per primo
         self._dns: dict[str, int] = {}                    # host → richieste DNS nella finestra
@@ -183,6 +186,24 @@ class Ascolto:
         if self._identita_nuove and self._scrivi_identita:
             self._scrivi_identita(list(self._identita_nuove.values()))
         self._identita_nuove = {}
+        if self._nomi_ip_nuovi and self._scrivi_nomi_ip:
+            self._scrivi_nomi_ip(list(self._nomi_ip_nuovi.values()))
+        self._nomi_ip_nuovi = {}
+
+    def _nome_di_ip(self, adesso: int, ip: str, tipo: str, nome: str) -> None:
+        """Il nome di un indirizzo esterno: uno per (ip, tipo). Si riscrive se cambia (non più di una volta
+        ogni cinque minuti: dietro una rete di distribuzione lo stesso indirizzo serve molti nomi) o dopo un'ora."""
+        if not self._scrivi_nomi_ip or self._lato(ip) != piega.ESTERNO:
+            return
+        chiave = (ip, tipo)
+        nota = self._nomi_ip.get(chiave)
+        if nota and adesso - nota[1] < (FINESTRA_S if nota[0] != nome else UNA_VOLTA_OGNI_S):
+            return
+        if len(self._nomi_ip) >= MEMORIA_MASSIMA:
+            self._nomi_ip.clear()
+        self._nomi_ip[chiave] = (nome, adesso)
+        if len(self._nomi_ip_nuovi) < MEMORIA_MASSIMA:
+            self._nomi_ip_nuovi[chiave] = {"visto": archivio.ora_utc(adesso), "ip": ip, "tipo": tipo, "nome": nome}
 
     def pacchetto(self, adesso: int, pacchetto: bytes) -> None:
         if adesso - self._finestra >= FINESTRA_S:
@@ -190,8 +211,8 @@ class Ascolto:
         if self._scrivi_identita:
             for voce in identita.osserva(pacchetto):
                 self._osserva(adesso, voce)
-            if adesso - self._identita_scritte >= IDENTITA_OGNI_S:
-                self._scrivi_le_identita(adesso)
+        if adesso - self._identita_scritte >= IDENTITA_OGNI_S:
+            self._scrivi_le_identita(adesso)
         p = spacchetta(pacchetto)
         if not p or not p[5]:
             return
@@ -218,7 +239,13 @@ class Ascolto:
             if n == DNS_RICHIESTE_MASSIME + 1:
                 self._fatto(adesso, "dns_anomalo", self._lato(src), self._lato(dst), 53, {"motivo": "molte_richieste", "soglia": DNS_RICHIESTE_MASSIME})
 
+        if self._scrivi_nomi_ip and proto == controlli.UDP and sport == 53:
+            for ip, chiesto in identita.indirizzi_dns(carico):
+                self._nome_di_ip(adesso, ip, "dns", chiesto)
+
         for tipo, n in controlli.nomi(proto, sport, dport, carico):
+            if tipo == "sni":
+                self._nome_di_ip(adesso, dst, "sni", n)
             client = self._lato(src)
             if client in (piega.ESTERNO, piega.DIFFUSIONE):
                 continue
@@ -248,6 +275,7 @@ def main() -> int:
         lambda visto, tipo, client, server, porta, dettaglio: archivio.scrivi_fatto(db, visto, tipo, client, server, porta, dettaglio),
         lambda visto, conteggi: archivio.scrivi_nomi(db, visto, conteggi),
         (lambda voci: archivio.scrivi_identita(db, voci)) if os.environ.get("IDENTITA", "1") != "0" else None,
+        (lambda voci: archivio.scrivi_nomi_ip(db, voci)) if os.environ.get("ESTERNI", "1") != "0" else None,
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
     tcpdump = subprocess.Popen(

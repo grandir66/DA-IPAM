@@ -26,7 +26,7 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [-] Tappa 6, JA3: rimandato (con la cattura a 600 byte l'impronta verrebbe sbagliata); da decidere con la sonda Zeek
 - [x] Tappa 7 (zona rossa): prova di non-fuga vista rossa con catture vere del banco, codice, interfaccia; giro intero sul banco
 - [x] Tappa 7 sull'ufficio: accesi su richiesta di Riccardo (PX03 e hub), un bind LDAP finto verso il DC arriva fino all'hub; nessun nome utente nei giornali
-- [ ] Riccardo decide: lasciare accesi gli accessi su PX03 e sull'hub, o spegnerli (interruttore in «Collector e controlli» e `ACCESSI=0`)
+- [x] Riccardo (23/11): «Lasciali accesi»: accessi coi nomi utente accesi su `DA-COLLECTOR-PX03` e sull'hub `192.168.4.8`
 - [ ] Una prova che avvia `ascolto.main()` con l'ambiente vero (l'errore della v0.9.1313 le prove non lo vedevano)
 - [ ] Misura di giorno del filtro leggero nuovo (porte 88 e SSH) su un collector col profilo leggero (PX03 è passato a Zeek)
 

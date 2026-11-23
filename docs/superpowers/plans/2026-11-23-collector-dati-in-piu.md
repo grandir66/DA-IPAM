@@ -396,5 +396,5 @@ chi ha fatto accesso a un server di prova.
 - **Errori.** v0.9.1313: accessi passati per posizione in `main()`, ascolto di PX03 fermo un minuto e mezzo, corretto
   dalla sessione Zeek. Le prove non avviano `main()`: una prova che lo costruisce con l'ambiente vero eviterebbe il caso.
 - **Consigli.** Una prova di avvio di `ascolto.main()`; decidere dove mettere un collector leggero per misurarlo di giorno;
-  gli accessi sono accesi su PX03 e sull'hub (riga di prova `prova-collector@domarc.it` nell'hub, va via in 90 giorni):
-  spegnerli se non servono, dall'interruttore in «Collector e controlli» e con `ACCESSI=0` sul collector.
+  gli accessi restano accesi su PX03 e sull'hub per decisione di Riccardo (23/11, «Lasciali accesi»); la riga di prova
+  `prova-collector@domarc.it` nell'hub va via da sola in 90 giorni. Per spegnerli: interruttore in «Collector e controlli» e `ACCESSI=0`.

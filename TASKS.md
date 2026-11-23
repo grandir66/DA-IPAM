@@ -106,6 +106,8 @@ postazione (ovviamente in AD)».
       riga, la viva 5.150, «+2 IP», Luca Aguzzoli; SURFACE-ALAIN una riga «+3 IP», Alain Rossi; righe visibili da 298 a
       295. PC-LasagniF ancora su due righe (gruppo salvato «seriale» + due apparati): Apparati ora riconosce il PC di
       AD dal nome (v0.9.1321).
+- [x] 23/11, IPAM .8 a v0.9.1321 (health 200): PC-LasagniF una riga «+1 IP», Francesca Lasagni; righe visibili 294.
+      Non guardato a schermo: misura dal codice installato sul DB del servizio.
 - [ ] Trappola vista: `scripts/update.sh` mette `.next` nello stash prima del `git fetch`; se il fetch fallisce il
       servizio resta su senza la cartella compilata e non ripartirebbe. Sull'IPAM .8 ci sono stash `autoupdate-*`
       accumulati.

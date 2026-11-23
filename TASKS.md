@@ -1,5 +1,13 @@
 # TASKS — DA-IPAM
 
+## 2026-11-24 — Versione inglese di DA-IPAM: censimento e piano (Riccardo, solo piano)
+
+Piano: [docs/superpowers/plans/2026-11-24-versione-inglese.md](docs/superpowers/plans/2026-11-24-versione-inglese.md). Nessun codice prima del sì.
+
+- [x] Censimento: ~20.000 stringhe in ~2.100 file, nessuna libreria di traduzione, ~70 confronti su frasi italiane, CHECK con valori italiani, testi verso Vulcan
+- [ ] Riccardo decide le 9 domande della §3 del piano e il livello (proposto: Leggero)
+- [ ] Tappe 0-8 (stima 5-8 settimane)
+
 ## 2026-11-23 — Idea: la «tavola di cablaggio» di DA-Infra dentro DA-IPAM, coi dati veri (Riccardo, proposta, niente codice)
 
 Riccardo: «sarebbe possibile integrare la mappa dinamica dentro da-ipam, collegandola ai dati reali letti dagli

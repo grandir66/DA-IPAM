@@ -186,7 +186,7 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 **Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
 **Verificato il 23/11** (vedi le caselle qui sopra). Resta, come per le tappe 2 e 4, la misura di giorno su PX03.
 
-### [~] Tappa 6 — DNS, TLS, VLAN sbagliata
+### [x] Tappa 6 — DNS, TLS, VLAN sbagliata
 
 > 23/11: la bozza `docs/superpowers/specs/2026-11-23-sonda-avanzata-zeek-design.md` (non ancora approvata da Riccardo)
 > propone Zeek come profilo del collector, con gli stessi tipi d'anomalia delle tappe 6-7 da due fonti. Finché Riccardo
@@ -213,8 +213,8 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 - [x] Caso provocato sul banco del PX-NAS. Verifica: 23/11 alle 12:33 UTC, dal contenitore 110 un servizio TLS 1.2 con
   certificato autofirmato sulla porta 8443 e una richiesta DNS a 9.9.9.9; `collector-banco` scrive `tls_certificato`
   (`autofirmato`, server 192.168.99.88:8443) e `dns_esterno`. Dal collector, non dalla pagina; copia e server tolti.
-- [~] Interfaccia: nessun riquadro nuovo, solo nomi e frasi in `frasi.ts` (i tipi compaiono da soli fra le anomalie e
-  nella scheda «Collector e controlli»). Scritti come proposta, **da confermare con Riccardo**.
+- [x] Interfaccia: nessun riquadro nuovo, solo nomi e frasi in `frasi.ts` (i tipi compaiono da soli fra le anomalie e
+  nella scheda «Collector e controlli»). Verifica: approvati da Riccardo il 23/11 («Sì, vai alla 7»).
 
 **Fatto quando:** i tre tipi compaiono nella scheda «Collector e controlli» e almeno uno scatta su un caso provocato.
 

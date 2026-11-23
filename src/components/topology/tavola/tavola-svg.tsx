@@ -22,12 +22,11 @@ export interface Fuoco {
 }
 
 /**
- * Quanto resta visibile ciò che non è nel fuoco. Il 10 % della spec non si leggeva (Riccardo, 23/11: «non si vede più
- * nulla… un colore appena appena più chiaro o più scuro rispetto allo sfondo»): al passaggio del mouse 35 %, con un
- * collegamento scelto col clic o una ricerca, che restano, 50 %.
+ * Il fuoco tocca solo i cavi (Riccardo, 23/11: «è ancora quasi invisibile la mappa»; prima porte e scritte scendevano al
+ * 10 %, poi al 50 %, e coi colori già chiari non si leggevano). Porte, scritte e telai restano sempre pieni; i cavi fuori dal
+ * fuoco scendono al 25 %; il collegamento nel fuoco si ingrossa, le sue porte hanno un anello e i due telai il bordo.
  */
-export const SPENTO_PASSAGGIO = 0.35;
-export const SPENTO_SCELTA = 0.5;
+export const SPENTO_CAVI = 0.25;
 const MAX_CARATTERI = 17;
 
 const corta = (s: string) => (s.length > MAX_CARATTERI ? `${s.slice(0, MAX_CARATTERI - 1)}…` : s);
@@ -56,8 +55,6 @@ export function TavolaSvg(p: {
   disegno: Disegno;
   tipoCavo: ReadonlyMap<string, { tipo: TipoPorta; dubbio: boolean }>;
   fuoco: Fuoco | null;
-  /** Opacità di ciò che è fuori dal fuoco. */
-  spento: number;
   /** Clic sul vuoto: toglie la scelta. */
   onVuoto: () => void;
   onPorta: (porta: PortaComposta | null) => void;
@@ -68,7 +65,6 @@ export function TavolaSvg(p: {
   const perNodo = new Map(p.apparati.map((a) => [a.nodo, a]));
   const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const transizione = reduce ? undefined : "opacity 120ms";
-  const opPorta = (id: string) => (fuoco && !fuoco.porte.has(id) ? p.spento : 1);
   return (
     // Larghezza del riquadro, mai oltre la propria (niente ingrandimento) né sotto 1240 px: sotto scorre il riquadro, non la pagina.
     <svg viewBox={`0 0 ${d.larghezza} ${d.altezza}`} role="img" aria-label="Tavola di cablaggio"
@@ -101,15 +97,18 @@ export function TavolaSvg(p: {
               const titolo = [porta.nome, porta.destinazione ? `→ ${porta.destinazione}` : null, porta.velocita, porta.vlan !== null ? `VLAN ${porta.vlan}` : null,
                 porta.fantasma ? "porta non nell'elenco dell'apparato" : null, porta.dubbio ? "da verificare" : null].filter(Boolean).join(" · ");
               return (
-                <g key={porta.id} opacity={opPorta(porta.id)} style={{ transition: transizione, cursor: porta.collegamento ? "pointer" : "default" }}
+                <g key={porta.id} style={{ cursor: porta.collegamento ? "pointer" : "default" }}
                   onMouseEnter={() => p.onPorta(porta)} onClick={() => (porta.collegamento ? p.onScegli(porta.collegamento) : p.onVuoto())}>
                   <title>{titolo}</title>
                   <g opacity={porta.fantasma ? 0.6 : 1}>
                     <SegnoPorta x={pp.x} y={pp.y} tipo={porta.tipo} dubbio={porta.dubbio} numero={porta.numero} />
                   </g>
+                  {fuoco?.porte.has(porta.id) && (
+                    <rect x={pp.x - 4} y={pp.y - 4} width={32} height={32} rx={6} fill="none" stroke="var(--foreground)" strokeWidth={2.5} style={{ pointerEvents: "none" }} />
+                  )}
                   {porta.destinazione && (
                     <text x={pp.ex} y={yEtichette} transform={`rotate(90 ${pp.ex} ${yEtichette})`} dominantBaseline="middle" fontSize={13}
-                      fill={porta.tipo === "libera" ? "var(--muted-foreground)" : "var(--foreground)"}>{corta(porta.destinazione)}</text>
+                      fill="var(--foreground)">{corta(porta.destinazione)}</text>
                   )}
                 </g>
               );
@@ -121,8 +120,9 @@ export function TavolaSvg(p: {
         const t = p.tipoCavo.get(l.id);
         const s = STILE_CAVO[t?.tipo ?? "client"];
         const pts = l.punti.map(([x, y]) => `${x},${y}`).join(" ");
-        const w = l.lungo ? Math.max(1.2, s.width - 0.8) : s.width;
-        const op = fuoco && !fuoco.collegamenti.has(l.collegamento) ? p.spento : 1;
+        const nelFuoco = fuoco?.collegamenti.has(l.collegamento) ?? false;
+        const w = (l.lungo ? Math.max(1.5, s.width - 0.5) : s.width) + (nelFuoco ? 2 : 0);
+        const op = fuoco && !nelFuoco ? SPENTO_CAVI : 1;
         const [a0, a1] = [l.punti[0], l.punti[l.punti.length - 1]];
         return (
           <g key={l.id} opacity={op} style={{ transition: transizione, cursor: "pointer" }} onMouseEnter={() => p.onCavo(l.collegamento)} onClick={() => p.onScegli(l.collegamento)}>

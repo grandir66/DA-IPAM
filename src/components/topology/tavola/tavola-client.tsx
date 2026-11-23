@@ -17,7 +17,7 @@ import { componiTavola } from "@/lib/topology/tavola/componi";
 import { disponiEInstrada } from "@/lib/topology/tavola/instrada";
 import type { PortaComposta, TavolaView, TipoPorta } from "@/lib/topology/tavola/tipi";
 import { LegendaTavola } from "./legenda";
-import { SPENTO_PASSAGGIO, SPENTO_SCELTA, TavolaSvg, type Fuoco } from "./tavola-svg";
+import { TavolaSvg, type Fuoco } from "./tavola-svg";
 
 const CHIAVE_SITO = "topologia.tavola.sito";
 const CHIAVE_LIBERE = "topologia.tavola.libere";
@@ -186,7 +186,7 @@ export function TavolaClient() {
         <div ref={riquadro} className="overflow-x-auto rounded-xl border bg-background p-3" style={{ opacity: carica ? 0.6 : 1 }}>
           {tavola && (
             <TavolaSvg apparati={tavola.apparati} righe={tavola.righe} disegno={tavola.disegno} tipoCavo={tavola.tipoCavo} fuoco={fuoco}
-              spento={sopraPorta || sopraCavo ? SPENTO_PASSAGGIO : SPENTO_SCELTA} onVuoto={() => setScelto(null)}
+              onVuoto={() => setScelto(null)}
               onPorta={setSopraPorta} onCavo={setSopraCavo} onScegli={(c) => setScelto((x) => (x === c ? null : c))} />
           )}
         </div>

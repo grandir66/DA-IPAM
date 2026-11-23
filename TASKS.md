@@ -26,6 +26,8 @@ MikroTik, LLDP dei Proxmox).
   - [x] (23/11, Riccardo: «si») Tavola stretta nel riquadro: `disponiEInstrada` va a capo in due giri (il primo conta le corsie
     di bordo, il secondo usa la larghezza meno quelle); l'SVG prende la larghezza del riquadro (viewBox, mai ingrandito, minimo
     1240 px, sotto scorre il riquadro). Prova `disponiEInstrada` 7/7 con le altre. Resta aperto: preferire il bordo con meno cavi.
+  - [x] (23/11, Riccardo: «è ancora quasi invisibile la mappa») Il fuoco tocca solo i cavi (25 %); porte, scritte e telai sempre pieni;
+    collegamento scelto più spesso con anello sulle porte; riempimenti più carichi, destinazioni nel colore del testo (≥ 4,5:1).
   - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,

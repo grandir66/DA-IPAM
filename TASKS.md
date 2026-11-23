@@ -8,7 +8,14 @@ https://claude.ai/artifact/M6kM8kAvznAcTbLhV4V5pH (sorgente nella sessione DA-In
 Non sostituisce la Topologia: è un'altra **vista** sugli stessi dati (`topology_*`, `switch_ports`, lettori UniFi e
 MikroTik, LLDP dei Proxmox).
 
-- [~] (23/11) Spec della vista 1 scritta: `docs/superpowers/specs/2026-11-23-tavola-di-cablaggio-design.md`, da approvare (4 domande al §8).
+- [x] (23/11) Spec della vista 1: `docs/superpowers/specs/2026-11-23-tavola-di-cablaggio-design.md`. Riccardo: «Sì, tutte e 4»
+      (sito→armadio, ordine automatico, hub e appliance, sola lettura). Livello base.
+  Piano (base, nessuna prova intermedia; alla fine `node --test` sui file nuovi + una schermata a 1920 sul dev):
+  - [ ] T1 `src/lib/topology/tavola/tipi.ts` + `componi.ts` (tipi di porta e destinazioni, fasci, porte fantasma) — §3
+  - [ ] T2 `righe.ts` (sito → armadio → ruolo, a capo oltre la larghezza) + `instrada.ts` (corsie a intervalli, giro dal bordo)
+  - [ ] T3 `getTopologyTavolaPorte(siteId)` in `db-tenant.ts` (una query + `hypervisorNics`) e `GET /api/topology/tavola`
+  - [ ] T4 componenti `src/components/topology/tavola/` (barra, legenda, telaio, porta, cavo, fuoco) + pagina + link dalla Topologia, STILE-UI
+  - [ ] T5 prove in `tavola/__tests__/` (dati inventati), lint + tsc, `version:release -- --staged-only`, push su dev; main resta a Riccardo
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,
       libera/giù) e sotto la destinazione scritta; cavi nei corridoi, i lunghi dai bordi; al passaggio del mouse resta
       acceso solo quel collegamento. Dati già presenti: collegamenti della Topologia + porte di `switch_ports`.

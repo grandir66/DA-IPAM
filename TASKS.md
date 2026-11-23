@@ -111,6 +111,14 @@ postazione (ovviamente in AD)».
 - [ ] Trappola vista: `scripts/update.sh` mette `.next` nello stash prima del `git fetch`; se il fetch fallisce il
       servizio resta su senza la cartella compilata e non ripartirebbe. Sull'IPAM .8 ci sono stash `autoupdate-*`
       accumulati.
+- [x] 23/11, misura sul 70791 (sola lettura): 7 PC di AD con più apparati WinRM (MICHELE-TAB, NB-AGUZZOLI, NB-MICHELE,
+      PC-APADULA, PC-LASAGNIF 3, PC-MIARI, SURFACE-ALAIN), 15 con uno. Ogni apparato ha il suo asset NIS2
+      (`inventory_assets.network_device_id`), quindi anche gli asset sono doppi. Tipi: 22 «switch», 6 «server», 2 «nas»,
+      nessuno «workstation». I doppioni sono nati il 10/11 e il 23/11 all'IP nuovo; quelli vecchi restano su IP senza
+      riga d'host. Un apparato tolto si porta via in cascata 27 tabelle di storia (letture, software, credenziali).
+- Riccardo (23/11), sugli apparati doppi: «teoricamente questo capiterà di continuo comunque». Quindi non una pulizia una
+  tantum: regola automatica a ogni scansione (l'apparato segue il PC sull'IP vivo), e la stessa regola fa il primo giro
+  su quelli che ci sono.
 - [ ] Proposta a Riccardo, in attesa: unire gli apparati doppi già esistenti dello stesso PC (uno resta, segue l'IP vivo,
       gli altri si tolgono) e correggere il tipo «switch» dei PC. Tocca credenziali e storico delle letture.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»

@@ -211,5 +211,36 @@ class Giro(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM coppia").fetchone()[0], 0)
 
 
+class Memoria(unittest.TestCase):
+    """23/11/2026, DA-PX-03: un conn di 5 minuti da 39 MB letto tutto insieme faceva uccidere collector-traffico
+    (limite di 128 MB) trenta volte di fila. Ora si legge a righe: la memoria non cresce col numero di connessioni."""
+
+    def test_registro_grande_a_righe(self):
+        import json
+        import tracemalloc
+        tmp = tempfile.mkdtemp()
+        try:
+            cartella = os.path.join(tmp, "zeek")
+            os.makedirs(cartella)
+            with open(os.path.join(cartella, "conn.2026-11-23-13-15-00.log"), "w") as f:
+                for i in range(60000):
+                    f.write(json.dumps({"ts": 1795440000.0 + i / 100, "uid": f"C{i:012d}", "id.orig_h": f"192.168.{i % 50}.{i % 200 + 1}",
+                                        "id.orig_p": 40000 + i % 20000, "id.resp_h": f"10.0.{i % 7}.{i % 9 + 1}" if i % 3 else f"151.101.{i % 250}.{i % 200 + 1}",
+                                        "id.resp_p": [443, 80, 53, 161][i % 4], "proto": "tcp" if i % 4 != 2 else "udp", "conn_state": "SF",
+                                        "orig_pkts": 5, "orig_ip_bytes": 600, "resp_pkts": 4, "resp_ip_bytes": 2400, "service": "ssl"}) + "\n")
+            db = archivio.apri(os.path.join(tmp, "c.db"))
+            tracemalloc.start()
+            n = za.giro_zeek(db, cartella, RETI, 50)
+            picco = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+            db.close()
+            self.assertGreater(n, 0)
+            self.assertEqual(os.listdir(cartella), [])
+            # 60.000 righe tenute come elenco di dizionari passano i 60 MB; a righe resta qualche MB
+            self.assertLess(picco, 25 * 1024 * 1024, f"picco {picco // 1024} KB")
+        finally:
+            shutil.rmtree(tmp)
+
+
 if __name__ == "__main__":
     unittest.main()

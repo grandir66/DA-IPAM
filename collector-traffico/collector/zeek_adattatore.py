@@ -44,6 +44,31 @@ _RIUSCITE = {"SF", "S1", "S2", "S3", "RSTO", "RSTR"}
 _CON_PORTA = {6, 17, 132}
 
 
+def righe_file(percorso: str):
+    """Le righe JSON di un registro, una alla volta: un `conn` di 5 minuti sul DA-PX-03 pesa 39 MB e letto tutto
+    insieme faceva uccidere `collector-traffico` per memoria (23/11/2026). Un byte storto non ferma la lettura."""
+    with open(percorso, encoding="utf-8", errors="replace") as f:
+        for linea in f:
+            linea = linea.strip()
+            if not linea.startswith("{"):
+                continue
+            try:
+                o = json.loads(linea)
+            except ValueError:
+                continue
+            if isinstance(o, dict):
+                yield o
+
+
+def _finisce_a_capo(percorso: str) -> bool:
+    with open(percorso, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        if f.tell() == 0:
+            return True
+        f.seek(-1, os.SEEK_END)
+        return f.read(1) == b"\n"
+
+
 def leggi_registro(testo: str) -> list[dict]:
     """Righe JSON; salta righe vuote, righe che non si leggono e un'ultima riga senza a capo (in scrittura)."""
     linee = testo.split("\n")
@@ -69,13 +94,14 @@ def _intero(v: object) -> int:
         return 0
 
 
-def traduci_conn(righe: list[dict], reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_HOST) -> dict:
-    """-> {"coppie": [...], "esterni": [...], "connessioni": [...]}.
-    Il verso viene da Zeek: client = chi ha aperto (`id.orig_h`), server = chi risponde. Niente indovinare dalle porte."""
+def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_HOST) -> dict:
+    """-> {"coppie": [...], "esterni": [...], "connessioni": [...]}. `righe`: un elenco o un generatore (si legge una volta).
+    Il verso viene da Zeek: client = chi ha aperto (`id.orig_h`), server = chi risponde. Niente indovinare dalle porte.
+    In memoria restano solo i totali (coppie, esterni per indirizzo, connessioni storte), mai le righe."""
     rr = piega._reti(reti)
     memo: dict[str, str] = {}
     coppie: dict[tuple, dict] = {}
-    grezze: list[dict] = []
+    grezze: dict[tuple, dict] = {}        # (client, server, proto, porta) con gli indirizzi veri → totali, per gli esterni
     storte: dict[tuple, list[int]] = {}   # (client, server, porta) → [tentate, senza risposta, rifiutate, ripetute]
     servizi: dict[tuple, int] = {}        # (server, porta) → riuscite
     risposte = 0
@@ -105,7 +131,13 @@ def traduci_conn(righe: list[dict], reti: list[str], tetto_esterni: int = piega.
             c["_esterni"].add(oh)
         if server == piega.ESTERNO:
             c["_esterni"].add(rh)
-        grezze.append({"c": oh, "s": rh, "cp": op, "proto": proto, "porta": porta, "byte": ob + rb, "pacchetti": opk + rpk})
+        if client == piega.ESTERNO or server == piega.ESTERNO:
+            g = grezze.get((oh, rh, proto, porta))
+            if g is None:
+                g = grezze[(oh, rh, proto, porta)] = {"c": oh, "s": rh, "proto": proto, "porta": porta, "byte": 0, "pacchetti": 0, "flussi": 0}
+            g["byte"] += ob + rb
+            g["pacchetti"] += opk + rpk
+            g["flussi"] += 1
         if proto == 6:
             stato = str(r.get("conn_state", ""))
             if rpk > 0:
@@ -134,7 +166,7 @@ def traduci_conn(righe: list[dict], reti: list[str], tetto_esterni: int = piega.
     ]
     fuori = []
     if tetto_esterni > 0:
-        fuori = piega.esterni(grezze, reti, tetto_esterni, estremi=lambda g: (g["c"], g["s"], g["cp"], g["proto"], g["porta"]))
+        fuori = piega.esterni(list(grezze.values()), reti, tetto_esterni, estremi=lambda g: (g["c"], g["s"], 0, g["proto"], g["porta"]))
     return {
         "coppie": [
             {"client": k[0], "server": k[1], "proto": k[2], "porta": k[3], "byte": c["byte"], "pacchetti": c["pacchetti"],
@@ -409,18 +441,18 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
                 os.unlink(percorso)  # tradotto prima di un arresto, mai cancellato: non si ritraduce
                 continue
             try:
-                with open(percorso, encoding="utf-8") as f:
-                    testo = f.read()
-            except (OSError, UnicodeDecodeError):
+                intero = _finisce_a_capo(percorso)
+            except OSError:
                 _scarta(db, cartella, nome)
                 continue
-            if testo and not testo.endswith("\n"):
+            if not intero:
                 if adesso - os.path.getmtime(percorso) > PARZIALE_SCARTA_S:
                     _scarta(db, cartella, nome)
                     continue
                 aspetta = True
                 break
-            registri[registro] = leggi_registro(testo)
+            # `conn` si legge mentre si traduce (generatore), gli altri sono piccoli
+            registri[registro] = righe_file(percorso) if registro == "conn" else list(righe_file(percorso))
             stato[f"zeek_ultimo_{registro}"] = nome
             tradotti.append(percorso)
         if aspetta:

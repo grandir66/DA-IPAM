@@ -141,10 +141,14 @@ def esterni(righe: list[dict], reti_interne: list[str], tetto: int = ESTERNI_PER
             continue
         v = voci.get(chiave)
         if v is None:
-            v = voci[chiave] = {"byte": 0, "pacchetti": 0, "_flussi": set()}
+            v = voci[chiave] = {"byte": 0, "pacchetti": 0, "_flussi": set(), "_contati": 0}
         v["byte"] += int(r.get("byte", 0) or 0)
         v["pacchetti"] += int(r.get("pacchetti", 0) or 0)
-        v["_flussi"].add((client_ip, cport, server_ip))
+        if "flussi" in r:
+            # riga già raccolta per connessione (sonda avanzata): porta il numero di connessioni, non serve l'insieme
+            v["_contati"] += int(r["flussi"] or 0)
+        else:
+            v["_flussi"].add((client_ip, cport, server_ip))
     per_host: dict[str, dict[str, int]] = {}
     for (interno, ip, _verso, _proto, _porta), v in voci.items():
         pesi = per_host.setdefault(interno, {})
@@ -158,7 +162,7 @@ def esterni(righe: list[dict], reti_interne: list[str], tetto: int = ESTERNI_PER
     for (interno, ip, verso, proto, porta), v in voci.items():
         if ip in tenuti[interno]:
             uscite.append({"interno": interno, "ip": ip, "verso": verso, "proto": proto, "porta": porta,
-                           "byte": v["byte"], "pacchetti": v["pacchetti"], "flussi": len(v["_flussi"])})
+                           "byte": v["byte"], "pacchetti": v["pacchetti"], "flussi": len(v["_flussi"]) + v["_contati"]})
         else:
             a = resto.setdefault(interno, {"byte": 0, "pacchetti": 0, "_ip": set()})
             a["byte"] += v["byte"]

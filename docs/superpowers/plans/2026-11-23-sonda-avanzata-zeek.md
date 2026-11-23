@@ -336,6 +336,14 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
   momento; avvisata, tolto dai dati di prova. I campi con utenti di NTLM, Kerberos e LDAP non erano nei filtrati.
   Dati di prova sostituiti con questa cattura (108 prove verdi; non-fuga rossa sui grezzi, verde sui filtrati).
 
+- 2026-11-23, Task 5, **giornata interrotta alle 13:25 UTC dal sorvegliante** (condizione «memoria»): non Zeek, ma
+  `collector-traffico` ucciso 30 volte di fila dal suo limite (`MemoryMax=128M`), perché l'adattatore leggeva in
+  memoria il registro `conn` di 5 minuti, 39 MB sul DA-PX-03 (sul banco erano poche centinaia di KB). Il sorvegliante ha
+  rimesso il profilo leggero come previsto; registri rimasti nella cartella, nessun dato perso. Correzione: lettura a
+  righe (`righe_file`), in memoria solo i totali; limite a 256 MB. Prova `Memoria` (60.000 righe): picco sotto i 25 MB,
+  vista rossa con la lettura di prima (91 MB). Effetto collaterale visto: `zeek-collector` ha `PartOf=collector-traffico`,
+  quindi ogni riavvio del collector riavvia anche Zeek (file piccoli nella stessa finestra: si traducono al giro dopo).
+
 ## Consuntivo
 ### Fatto
 ### Mancante

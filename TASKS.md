@@ -57,7 +57,7 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 1, interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila») e scritta; non guardata resa (in locale non ci sono dati)
 - [ ] Tappa 1, sull'hub `192.168.4.8`: guardare «Ultima ora» contro «Oggi», il grafico a 24 ore, e contare le righe di `traffico_ore`
 - [x] Tappa 2, collector e IPAM: identità (MAC, IP, nome), aggancio agli host, «IP doppio» e «MAC cambiato»
-- [ ] Tappa 2: misura di giorno su `DA-COLLECTOR-PX03` (oggi solo tre minuti di notte), poi gli altri quattro collector
+- [-] Tappa 2: misura di giorno su `DA-COLLECTOR-PX03`, poi gli altri quattro collector: superata il 23/11, la sessione «Sonda con Zeek» ha portato tutti e cinque a Zeek; la misura di giorno è la giornata di Zeek che si chiude il 24/11 (lettura notturna del 23/11 nella nota `misura-di-giorno-collector.md` delle sessioni)
 - [x] Tappa 2, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [x] Tappa 2: IP doppio provocato sul banco del PX-NAS il 23/11, l'avviso nasce (dal codice, non dalla pagina)
 - [ ] Tappa 2, sull'hub `192.168.4.8`: un host senza MAC che lo riceve dal collector (l'hub non si era ancora aggiornato)
@@ -76,8 +76,8 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 7 (zona rossa): prova di non-fuga vista rossa con catture vere del banco, codice, interfaccia; giro intero sul banco
 - [x] Tappa 7 sull'ufficio: accesi su richiesta di Riccardo (PX03 e hub), un bind LDAP finto verso il DC arriva fino all'hub; nessun nome utente nei giornali
 - [x] Riccardo (23/11): «Lasciali accesi»: accessi coi nomi utente accesi su `DA-COLLECTOR-PX03` e sull'hub `192.168.4.8`
-- [ ] Una prova che avvia `ascolto.main()` con l'ambiente vero (l'errore della v0.9.1313 le prove non lo vedevano)
-- [ ] Misura di giorno del filtro leggero nuovo (porte 88 e SSH) su un collector col profilo leggero (PX03 è passato a Zeek)
+- [x] Una prova che avvia `ascolto.main()` con l'ambiente vero (l'errore della v0.9.1313 le prove non lo vedevano): `tests/test_ascolto_main.py`, 4 casi (di serie, tutto acceso, tutto spento, senza scheda) con la cattura del banco al posto di `tcpdump`, verdi il 24/11
+- [!] Misura di giorno del filtro leggero nuovo (porte 88 e SSH): bloccata, dal 23/11 tutti e cinque i collector dell'ufficio usano Zeek e nessuno ha più il profilo leggero; si fa se un sorvegliante torna al leggero o sulla prima installazione piccola (24/11)
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati
 

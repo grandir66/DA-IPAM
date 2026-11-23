@@ -4,6 +4,10 @@ Una VM leggera che ascolta il traffico in copia (mirror) e conta **chi parla con
 IPAM la legge col cursore e calcola le anomalie. Spec:
 `docs/superpowers/specs/2026-11-20-collector-traffico-design.md`.
 
+**Due profili** (dal 23/11/2026): **avanzato**, di serie, dove conta e controlla Zeek; **leggero** (`pmacctd` più
+l'ascolto scritto da noi) per le macchine piccole. Stesse tabelle e stessa API: IPAM non vede la differenza, se non
+nella riga del collector. Vedi «Profilo avanzato (Zeek)».
+
 **Non è** la sonda pesante (l'NDR con Suricata e Zeek): è un servizio a sé, senza codice in
 comune con Edge né con l'NDR, e in un punto di ascolto va **o** il collector **o** la sonda
 pesante. Non manda mai niente sulla rete ascoltata: la scheda in mirror non ha indirizzo,
@@ -25,8 +29,11 @@ Solo libreria standard di Python: niente da installare oltre a `pmacct`, `tcpdum
 ## Installazione (Debian 12, da root)
 
 ```bash
-bash /opt/collector-traffico/installa.sh <scheda in mirror> [nome]
+bash /opt/collector-traffico/installa.sh [--profilo avanzato|leggero] <scheda in mirror> [nome]
 ```
+
+Di serie il profilo avanzato; sotto 2 vCPU o 1900 MB di RAM `installa.sh` scende al leggero e lo stampa.
+Rilanciarlo con l'altro profilo cambia profilo senza toccare l'archivio.
 
 Stampa l'impronta del certificato e dice dove sta il gettone (`/etc/collector-traffico/gettone`),
 senza stamparlo. Configurazione in `/etc/collector-traffico/collector.env`: `MIRROR_IF`, `NOME`,
@@ -58,6 +65,28 @@ dove pytest è installato.
 finestra in corso. Sul banco un riavvio ha perso così 4 minuti di conteggio. Con SIGINT scrive un file in
 anticipo; il collector lo prende come una finestra in più, con l'ora d'inizio approssimata (i byte sono giusti).
 Fermare `collector-traffico` ferma anche conteggio e ascolto (`PartOf`).
+
+## Profilo avanzato (Zeek, 23/11/2026)
+
+Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/specs/2026-11-23-sonda-avanzata-zeek-design.md`.
+
+| Pezzo | Cosa fa |
+|---|---|
+| `zeek-collector.service` | Zeek 9.0.1 (`zeek-lts-core`, versione fissata in `installa.sh`), da solo, senza `zeekctl`, sulla scheda in mirror; registri JSON in `/var/lib/collector-traffico/zeek/`, chiusi ogni 5 minuti allineati all'orologio. Parte solo con `PROFILO=avanzato` e freno non tirato |
+| `zeek/sonda.zeek` | l'elenco degli script caricati e i **filtri per campo**: comunità SNMP, utenti e password di HTTP, FTP, LDAP, NTLM, Kerberos, `uri` di HTTP non arrivano mai su disco. Di un segreto si tiene il fatto (`comunita_nota`, `accesso_basic`, `accesso_chiaro`). Ogni registro fuori elenco è spento (in Zeek 9 MySQL, RADIUS, SOCKS e RDP scrivono utenti) |
+| `collector/zeek_adattatore.py` | dentro `collector-traffico`, a ogni giro: prende i registri **chiusi**, li traduce nelle tabelle di sempre (`conn` → coppie con `byte_ritorno` e `risposta`, esterni, connessioni; `dns`/`ssl` → nomi; `software` → nomi di tipo `software`; `ftp`, `http`, `ldap`, `snmp`, `modbus`, `ssl`+`x509`, `notice` → fatti), scrive la finestra in una transazione col nome del registro, poi li cancella. Un registro che non si legge va in `zeek/scartati/` e si conta in `/v1/stato` |
+| `collector/profili.py` | chi fa ogni controllo: nel profilo avanzato l'ascolto lascia a Zeek i suoi (e anche connessioni e nomi DNS/TLS); resta all'ascolto ciò che Zeek non vede: identità (ARP, CDP, LLDP), telnet, posta, nomi contesi, DNS anomali, SMB1, NTLM1, scrittura S7 |
+| `zeek-freno.timer` | da root ogni minuto (`collector.zeek_stato`): sopra il 70% del disco ferma Zeek e lascia `DATI/zeek-freno`, sotto il 50% lo riavvia. Da root perché `collector-traffico` gira con `NoNewPrivileges` e una Debian minima non ha polkit |
+
+- **Copertura** dai contatori di Zeek (`stats.log`: `pkts_link`, `pkts_dropped`), mai da `capture_loss`.
+- **`/v1/stato`** in più: `profilo`, `motore` (`zeek`|`pmacct`), `versione_motore`, `freno`, `scartati`.
+- **Risorse**: 2 vCPU, 2 GB; registri al massimo una finestra (circa 25 MB sul DA-PX-03), poi cancellati.
+- **Limiti**: Zeek scrive una connessione quando finisce, e in 9.0.1 non c'è lo script per le connessioni lunghe
+  (è un pacchetto esterno): un trasferimento di ore cade tutto nella finestra in cui si chiude. Il tempo fra SYN e
+  SYN-ACK non c'è (`ms_minimo`/`ms_mediano` = -1, «non misurato»). S7 e BACnet non li legge. SMB1 e NTLM1 restano
+  all'ascolto finché una cattura vera non mostra che Zeek li distingue.
+- **Dati di prova**: `tests/dati/zeek/` (cattura del banco, LEGGIMI); la prova di non-fuga è `tests/test_non_fuga.py`.
+- **Giornata sul DA-PX-03**: in corso dal 23/11 13:15 UTC (sorvegliante `banco/giornata-zeek.sh`); numeri qui a fine prova.
 
 ## Nomi e controlli sul contenuto (`collector-ascolto`)
 

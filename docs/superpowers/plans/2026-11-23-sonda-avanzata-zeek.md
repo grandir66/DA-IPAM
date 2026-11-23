@@ -324,6 +324,18 @@ Le sonde note di IPAM escludono già questi fatti quando il client è una sonda 
   un registro viene scartato o il kernel uccide per memoria, rimette da solo il profilo leggero e lo scrive; il
   ritorno allo snapshot, se serve, si fa dal nodo. Da controllare alla fine anche `ultimo_errore` in IPAM.
 
+- 2026-11-23, seconda prova sul banco (13:16-13:33 UTC, VM 109, snapshot e ripristino): collector installato da
+  `installa.sh --profilo avanzato` (2 vCPU, 2 GB): Zeek acceso, `pmacctd` spento, `zeek -a` pulito. Nell'archivio dal
+  vivo: `chiaro_ftp`, `chiaro_http_basic`, `chiaro_ldap` (campo `accesso_chiaro` ora provato), `snmp_vecchio`,
+  `impianto_scrittura`, `sql_injection`, `tls_certificato` (autofirmato), `tls_vecchio`; programmi nei nomi
+  `software`; 157 coppie su 157 con `byte_ritorno`; `/v1/stato` con profilo, motore 9.0.1, freno falso, scartati 0,
+  copertura 99,98%. **`password_ssh_provate` non uscito**: il server SSH del contenitore 103 è OpenSSH 10.0, che con
+  `PerSourcePenalties` rifiuta chi sbaglia prima dell'autenticazione (Zeek: 10 falliti, 30 senza tentativo; soglia 30).
+  Da rifare verso il contenitore 110 (OpenSSH 9.2): `SOLO_SSH=1` in `cattura-zeek.sh`. Nella copia c'era anche il
+  traffico di un'altra sessione (da 110 verso 192.168.99.91: LDAP, NTLM, Kerberos, SMB): usava il banco nello stesso
+  momento; avvisata, tolto dai dati di prova. I campi con utenti di NTLM, Kerberos e LDAP non erano nei filtrati.
+  Dati di prova sostituiti con questa cattura (108 prove verdi; non-fuga rossa sui grezzi, verde sui filtrati).
+
 ## Consuntivo
 ### Fatto
 ### Mancante

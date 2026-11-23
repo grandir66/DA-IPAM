@@ -75,7 +75,7 @@ class Fatti(unittest.TestCase):
         per_tipo = {}
         for f in fatti:
             per_tipo.setdefault(f["tipo"], []).append(f)
-        for tipo in ("chiaro_ftp", "chiaro_http_basic", "impianto_scrittura", "tls_vecchio"):
+        for tipo in ("chiaro_ftp", "chiaro_http_basic", "chiaro_ldap", "impianto_scrittura", "tls_vecchio"):
             self.assertEqual(len(per_tipo.get(tipo, [])), 1, tipo)
         # due comunità verso lo stesso server: un fatto l'ora per coppia di host, la prima vista (quella di prova)
         self.assertEqual(len(per_tipo["snmp_vecchio"]), 1)
@@ -102,9 +102,12 @@ class Fatti(unittest.TestCase):
         self.assertEqual(len(za.traduci_fatti({"ftp": dopo}, RETI, detti)), 1)
 
     def test_ldap_solo_col_fatto_calcolato_da_zeek(self):
-        bind = {**self.registri["ldap"][0]}
-        self.assertEqual(za.traduci_fatti({"ldap": [bind]}, RETI), [])  # cattura fatta prima del campo: niente
-        self.assertEqual([f["tipo"] for f in za.traduci_fatti({"ldap": [{**bind, "accesso_chiaro": True}]}, RETI)], ["chiaro_ldap"])
+        # dal banco: il bind semplice con password ha il campo calcolato da sonda.zeek, l'unbind no
+        self.assertEqual([r.get("accesso_chiaro") for r in self.registri["ldap"]], [True, None])
+        self.assertEqual([f["tipo"] for f in za.traduci_fatti({"ldap": self.registri["ldap"]}, RETI)], ["chiaro_ldap"])
+        # senza il campo (un bind anonimo, o un Zeek senza sonda.zeek) niente fatto
+        senza = [{k: v for k, v in r.items() if k != "accesso_chiaro"} for r in self.registri["ldap"]]
+        self.assertEqual(za.traduci_fatti({"ldap": senza}, RETI), [])
 
 
 class Avvisi(unittest.TestCase):
@@ -143,6 +146,11 @@ class Avvisi(unittest.TestCase):
         vittima = [n for n in self.registri["notice"] if n["note"] == "HTTP::SQL_Injection_Victim"]
         self.assertTrue(vittima)
         self.assertEqual(za.traduci_fatti({"notice": vittima}, RETI), [])
+
+    def test_programmi_dal_banco(self):
+        nomi = {k[2] for k in za.traduci_software(registro("software"), RETI)}
+        self.assertIn("HTTP::BROWSER:curl 7.88.1", nomi)
+        self.assertTrue(any(n.startswith("SSH::SERVER:OpenSSH") for n in nomi))
 
     def test_programmi(self):
         righe = [

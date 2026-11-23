@@ -21,7 +21,13 @@ export interface Fuoco {
   nodi: ReadonlySet<string>;
 }
 
-const SPENTO = 0.1;
+/**
+ * Quanto resta visibile ciò che non è nel fuoco. Il 10 % della spec non si leggeva (Riccardo, 23/11: «non si vede più
+ * nulla… un colore appena appena più chiaro o più scuro rispetto allo sfondo»): al passaggio del mouse 35 %, con un
+ * collegamento scelto col clic o una ricerca, che restano, 50 %.
+ */
+export const SPENTO_PASSAGGIO = 0.35;
+export const SPENTO_SCELTA = 0.5;
 const MAX_CARATTERI = 17;
 
 const corta = (s: string) => (s.length > MAX_CARATTERI ? `${s.slice(0, MAX_CARATTERI - 1)}…` : s);
@@ -50,6 +56,10 @@ export function TavolaSvg(p: {
   disegno: Disegno;
   tipoCavo: ReadonlyMap<string, { tipo: TipoPorta; dubbio: boolean }>;
   fuoco: Fuoco | null;
+  /** Opacità di ciò che è fuori dal fuoco. */
+  spento: number;
+  /** Clic sul vuoto: toglie la scelta. */
+  onVuoto: () => void;
   onPorta: (porta: PortaComposta | null) => void;
   onCavo: (collegamento: string | null) => void;
   onScegli: (collegamento: string) => void;
@@ -58,11 +68,12 @@ export function TavolaSvg(p: {
   const perNodo = new Map(p.apparati.map((a) => [a.nodo, a]));
   const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const transizione = reduce ? undefined : "opacity 120ms";
-  const opPorta = (id: string) => (fuoco && !fuoco.porte.has(id) ? SPENTO : 1);
+  const opPorta = (id: string) => (fuoco && !fuoco.porte.has(id) ? p.spento : 1);
   return (
     <svg width={d.larghezza} height={d.altezza} viewBox={`0 0 ${d.larghezza} ${d.altezza}`} role="img" aria-label="Tavola di cablaggio"
       className="block select-none" onMouseLeave={() => { p.onPorta(null); p.onCavo(null); }}>
       <DefinizioniTavola />
+      <rect width={d.larghezza} height={d.altezza} fill="transparent" onClick={p.onVuoto} />
       {p.righe.map((r, ri) => r.apparati.map((ap) => {
         const a = perNodo.get(ap.nodo);
         if (!a) return null;
@@ -89,7 +100,7 @@ export function TavolaSvg(p: {
                 porta.fantasma ? "porta non nell'elenco dell'apparato" : null, porta.dubbio ? "da verificare" : null].filter(Boolean).join(" · ");
               return (
                 <g key={porta.id} opacity={opPorta(porta.id)} style={{ transition: transizione, cursor: porta.collegamento ? "pointer" : "default" }}
-                  onMouseEnter={() => p.onPorta(porta)} onClick={() => porta.collegamento && p.onScegli(porta.collegamento)}>
+                  onMouseEnter={() => p.onPorta(porta)} onClick={() => (porta.collegamento ? p.onScegli(porta.collegamento) : p.onVuoto())}>
                   <title>{titolo}</title>
                   <g opacity={porta.fantasma ? 0.6 : 1}>
                     <SegnoPorta x={pp.x} y={pp.y} tipo={porta.tipo} dubbio={porta.dubbio} numero={porta.numero} />
@@ -109,7 +120,7 @@ export function TavolaSvg(p: {
         const s = STILE_CAVO[t?.tipo ?? "client"];
         const pts = l.punti.map(([x, y]) => `${x},${y}`).join(" ");
         const w = l.lungo ? Math.max(1.2, s.width - 0.8) : s.width;
-        const op = fuoco && !fuoco.collegamenti.has(l.collegamento) ? SPENTO : 1;
+        const op = fuoco && !fuoco.collegamenti.has(l.collegamento) ? p.spento : 1;
         const [a0, a1] = [l.punti[0], l.punti[l.punti.length - 1]];
         return (
           <g key={l.id} opacity={op} style={{ transition: transizione, cursor: "pointer" }} onMouseEnter={() => p.onCavo(l.collegamento)} onClick={() => p.onScegli(l.collegamento)}>

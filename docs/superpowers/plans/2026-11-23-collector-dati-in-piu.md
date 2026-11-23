@@ -94,7 +94,9 @@ Solo IPAM, nessun cambio al collector.
   con interruttore per rete, host per MAC nel caso 3). Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
   30 su 30, eslint e `tsc` puliti fuori da `.next/types` (23/11).
 - [ ] Rifare la misura su PX03 di giorno, poi portare il collector su PX01, PX02, PX04, PX05.
-- [ ] Interfaccia: proposta a Riccardo (come si presenta un indirizzo, i due MAC nell'avviso).
+- [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). «Come si presenta in rete» nel riquadro «Con chi
+  parla» della scheda, i MAC sotto la frase di «IP doppio» e «MAC cambiato». Verifica: prove del traffico 31 su 31, eslint
+  e `tsc` puliti (23/11). **Non guardata resa** (in locale non ci sono dati).
 - [ ] IP doppio provocato sul banco del PX-NAS.
 
 **Fatto quando:** un host dell'ufficio senza MAC in IPAM lo riceve dal collector, e un IP doppio provocato sul banco compare.

@@ -9,7 +9,8 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [ ] Tappa 1, sull'hub `192.168.4.8`: guardare «Ultima ora» contro «Oggi», il grafico a 24 ore, e contare le righe di `traffico_ore`
 - [x] Tappa 2, collector e IPAM: identità (MAC, IP, nome), aggancio agli host, «IP doppio» e «MAC cambiato»
 - [ ] Tappa 2: misura di giorno su `DA-COLLECTOR-PX03` (oggi solo tre minuti di notte), poi gli altri quattro collector
-- [ ] Tappa 2: interfaccia da proporre a Riccardo; IP doppio da provocare sul banco del PX-NAS
+- [x] Tappa 2, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
+- [ ] Tappa 2: IP doppio da provocare sul banco del PX-NAS (serve il sì di Riccardo a usare il banco)
 - [ ] Tappe 3-7
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati

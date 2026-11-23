@@ -12,10 +12,52 @@ import { TempoRelativo } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { formattaByte, protoPorta } from "@/lib/traffico/frasi";
 import type { CoppiaHost, NomeHost } from "@/lib/traffico/lettura";
+import type { IdentitaDiIp } from "@/lib/traffico/identita";
 import type { NomeDiIp } from "@/lib/traffico/quadro";
 import { Riquadro } from "./riquadro";
 
-interface Risposta { parlaCon: CoppiaHost[]; gliParlano: CoppiaHost[]; nomi: NomeHost[]; host: Record<string, NomeDiIp> }
+interface Risposta { parlaCon: CoppiaHost[]; gliParlano: CoppiaHost[]; nomi: NomeHost[]; host: Record<string, NomeDiIp>; identita?: IdentitaDiIp[]; mac_censito?: string | null }
+
+const NOME_FONTE: Record<string, string> = { arp: "ARP", dhcp: "DHCP", mdns: "mDNS", netbios: "NetBIOS", ssdp: "SSDP", lldp: "LLDP", cdp: "CDP" };
+
+/** Come l'indirizzo si è annunciato alla rete: un MAC per riga, il più recente in alto. */
+function Presentazione({ righe, censito }: { righe: IdentitaDiIp[]; censito: string | null }) {
+  return (
+    <div className="mb-4">
+      <p className="mb-1.5 text-[13px] font-bold uppercase tracking-wider text-cian-testo">
+        Come si presenta in rete <span className="font-mono font-normal text-muted-foreground">{righe.length}</span>
+      </p>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>MAC</TableHead><TableHead>Nome annunciato</TableHead><TableHead>Tipo dichiarato</TableHead>
+              <TableHead>Fonti</TableHead><TableHead>VLAN</TableHead><TableHead>Prima volta</TableHead><TableHead>Ultima volta</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {righe.map((r, i) => (
+              <TableRow key={r.mac}>
+                <TableCell className="font-mono font-semibold">
+                  {r.mac.toUpperCase()}
+                  {i === 0 && censito && censito.toLowerCase() !== r.mac && (
+                    <span className="ml-2 rounded-md border border-[#C9A800] bg-[#FFD400] px-1.5 py-0.5 font-sans text-[13px] font-semibold text-[#0D2537]" title={`In IPAM questo indirizzo ha il MAC ${censito.toUpperCase()}`}>▲ diverso dal censito</span>
+                  )}
+                </TableCell>
+                <TableCell>{r.nome || <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell className="max-w-xs whitespace-normal">{r.tipo || <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell>{r.fonti.split(",").map((f) => NOME_FONTE[f] ?? f).join(", ")}</TableCell>
+                <TableCell className="font-mono">{r.vlan > 0 ? r.vlan : "—"}</TableCell>
+                <TableCell><TempoRelativo data={r.prima_vista} /></TableCell>
+                <TableCell><TempoRelativo data={r.ultima_vista} /></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
 
 function Altro({ ip, host }: { ip: string; host: Record<string, NomeDiIp> }) {
   if (ip === "esterno") return <span>fuori dalla rete</span>;
@@ -79,9 +121,11 @@ export function TrafficoHost({ ip }: { ip: string }) {
   if (errore !== null) {
     return <Riquadro titolo="Con chi parla"><LoadError what="il traffico dell'host" message={errore} onRetry={() => setTentativo((t) => t + 1)} /></Riquadro>;
   }
-  if (dati === null || (dati.parlaCon.length === 0 && dati.gliParlano.length === 0 && dati.nomi.length === 0)) return null;
+  const identita = dati?.identita ?? [];
+  if (dati === null || (dati.parlaCon.length === 0 && dati.gliParlano.length === 0 && dati.nomi.length === 0 && identita.length === 0)) return null;
   return (
     <Riquadro titolo="Con chi parla · ultimi 7 giorni" azione={<Link href="/traffico" className="text-[13px] font-semibold text-cian-testo underline-offset-2 hover:underline">Anomalie del traffico ›</Link>}>
+      {identita.length > 0 && <Presentazione righe={identita} censito={dati.mac_censito ?? null} />}
       <div className="grid gap-4 lg:grid-cols-2">
         <Coppie titolo="Parla con" righe={dati.parlaCon} host={dati.host} />
         <Coppie titolo="Gli parlano" righe={dati.gliParlano} host={dati.host} />

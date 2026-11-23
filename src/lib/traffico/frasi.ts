@@ -88,3 +88,18 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "dns_anomalo": return d.motivo === "molte_richieste" ? "Moltissime richieste DNS in cinque minuti" : "Richieste DNS fuori dal comune";
   }
 }
+
+/** I MAC di un avviso «IP doppio» o «MAC cambiato», da mostrare sotto la frase. Null per gli altri tipi o se mancano. */
+export function macAnomalia(a: { tipo: TipoAnomalia; dettaglio: Record<string, unknown> }): string | null {
+  const m = (k: string): string | null => (typeof a.dettaglio[k] === "string" && /^[0-9a-f:]{17}$/i.test(a.dettaglio[k] as string) ? (a.dettaglio[k] as string).toUpperCase() : null);
+  if (a.tipo === "ip_doppio") {
+    const [x, y] = [m("mac_a"), m("mac_b")];
+    const altri = typeof a.dettaglio.quanti === "number" && a.dettaglio.quanti > 2 ? ` e altri ${a.dettaglio.quanti - 2}` : "";
+    return x && y ? `${x} e ${y}${altri}` : null;
+  }
+  if (a.tipo === "mac_cambiato") {
+    const [x, y] = [m("prima"), m("ora")];
+    return x && y ? `prima ${x}, ora ${y}` : null;
+  }
+  return null;
+}

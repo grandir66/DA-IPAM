@@ -11,7 +11,7 @@ import { BarraStato, Etichetta, Pannello, SchedePagina, TempoRelativo, TesseraNu
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
 import type { AnomaliaTraffico, StatoAnomalia } from "@/lib/traffico/anomalie";
-import { fraseAnomalia, GRAVITA, NOME_TIPO, protoPorta, TIPI } from "@/lib/traffico/frasi";
+import { fraseAnomalia, GRAVITA, macAnomalia, NOME_TIPO, protoPorta, TIPI } from "@/lib/traffico/frasi";
 import type { NomeDiIp, QuadroTraffico } from "@/lib/traffico/quadro";
 import { cn } from "@/lib/utils";
 import { CLASSE_GRAVITA, Indirizzo, SegnoGravita } from "./pezzi";
@@ -207,6 +207,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
                     <TableCell className="max-w-md whitespace-normal">
                       <span className="block font-medium">{fraseAnomalia(a)}</span>
                       <span className="text-[13px] text-muted-foreground">{NOME_TIPO[a.tipo] ?? a.tipo}</span>
+                      {macAnomalia(a) && <span className="block font-mono text-[13px]">{macAnomalia(a)}</span>}
                     </TableCell>
                     <TableCell><Indirizzo ip={a.client} nomi={dati.nomi} /></TableCell>
                     <TableCell><Indirizzo ip={a.server} nomi={dati.nomi} /></TableCell>

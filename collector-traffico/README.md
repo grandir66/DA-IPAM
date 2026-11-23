@@ -250,6 +250,33 @@ misc/capture-loss LogAscii::use_json=T`. Script: `banco/misura-zeek.sh` (gira su
 
 Dopo la prova la VM 109 è tornata allo snapshot (1 vCPU, 512 MB, senza Zeek) e lo snapshot è stato tolto.
 
+### Zeek sul traffico vero (23/11/2026)
+
+Un'ora (10:34-11:33 UTC) su `DA-COLLECTOR-PX03` (VM 114, DA-PX-03), copia di `bond10` senza la VLAN 16,
+accanto al collector acceso. VM portata a 4 GB per la prova, poi riportata allo snapshot (1 GB, senza Zeek).
+Stesso avvio del banco più `togli.zeek`, un filtro che toglie il campo `community` da `snmp.log`.
+
+| Misura | Valore |
+|---|---|
+| Traffico copiato | media 23 Mbit/s e 4.350 pacchetti al secondo; minuto più carico circa 100 Mbit/s |
+| CPU di Zeek | media 4,4% di una vCPU, minuto più carico 8,4% |
+| RAM di Zeek | 270 MB all'avvio, 379 MB stabile dopo 10 minuti |
+| Connessioni | 340.656 in un'ora (circa 95 al secondo), al massimo 2.640 TCP aperte insieme; 435 host che aprono, 3.751 che rispondono |
+| Pacchetti persi | Zeek 0 su 15,4 milioni; la scheda 2.530 (0,02%) |
+| Registri | 257 MB in un'ora, circa 6 GB al giorno; `conn` 129 MB, `snmp` 46 MB, `http` 32 MB |
+| Comunità SNMP | 0 righe col campo: il filtro funziona |
+
+- **Il collector leggero non cambia**: con Zeek accanto ha continuato a girare, e la VM intera è stata
+  sotto i 470 MB usati. Una VM con 2 vCPU e 2 GB basta per un nodo come il DA-PX-03.
+- **Metà delle connessioni è SNMP** (179.289): sistemi di controllo che interrogano gli apparati
+  (`192.168.4.40` 108.750, `192.168.4.15` 56.299, IPAM `192.168.4.8` 12.439). Vanno tra le sonde note anche qui.
+- **Cosa ha visto in più del collector**: sessioni TLS 1.0 e 1.1 verso 15 server; 168 certificati non
+  validi; NTLM e SMB (186 scambi NTLM); versioni del software di 81 server HTTP e 80 server SSH; 23 prove
+  Log4Shell (`${jndi:…}`). Gli avvisi «tentativi di password SSH» e «SQL injection» vengono da IPAM
+  (`192.168.4.8`): le sue scansioni. Le prove Log4Shell probabilmente sono le scansioni di Edge (non verificato).
+- **Perdita segnalata da `capture-loss`**: quasi sempre sotto l'1%, con picchi fra 8% e 29% in sette
+  minuti su sessanta, mentre i contatori di Zeek danno 0 scartati. È la stessa stranezza del banco, non spiegata.
+
 ### I casi del piano
 
 1. **Tag VLAN**: 20 pacchetti UDP e una richiesta DNS mandati con tag 77 da `banco-carico`. `pmacctd` li

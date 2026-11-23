@@ -66,8 +66,8 @@ postazione (ovviamente in AD)».
       18 host con utente abituale; 9 da AD (PC-APADULA, PC-Soragni, NB-SMANCINI, NB-MICHELE, pc-bevini, PC-LasagniF,
       NB-MAX, NB-GIOVANNI, NB-AGUZZOLI), 2 dagli accessi, 7 a mano. NB-GIOVANNI e NB-AGUZZOLI compaiono su due righe
       d'host ciascuno (IP vecchio e nuovo). HP-CATS (f.gatti) no: nessun host con l'IP 192.168.6.22 della descrizione.
-- [ ] Da decidere con Riccardo: usare la descrizione di AD anche per le proposte di Abbinamenti (asset NIS2), non solo
-      per la colonna di Apparati.
+- [x] Riccardo (23/11): «sì, anche lì» — descrizione di AD anche nelle proposte di Abbinamenti, dentro `calcolaVoci`
+      (un punto solo; la colonna di Apparati legge le stesse voci). Prove `abbinamenti.test.ts` 5/5, assegnatari 34/34.
 - [ ] Visto misurando: NB-MARZIA in AD ha 192.168.4.195, il suo host legato è 192.168.5.198, offline dal 05/11: un
       portatile che cambia IP resta su due righe d'host. L'utente si vede sulla riga legata, non su quella viva.
 - [ ] Trappola: chi ha già un ordine di colonne salvato non vede la colonna nuova finché non la spunta in «Colonne»

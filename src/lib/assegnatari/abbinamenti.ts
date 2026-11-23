@@ -3,6 +3,10 @@
  * manca per abbinarlo (l'asset, l'assegnatario, l'assegnazione). Una lettura sola di accessi e persone per tutti gli
  * host; la conferma ricalcola ogni voce dentro la transazione e scrive solo quelle che valgono ancora.
  *
+ * Dal 23/11/2026 entrano anche gli host senza accessi sufficienti ma con l'ultimo utente scritto in AD nella descrizione del
+ * computer (`descrizione-ad.ts`): dove gli accessi danno «pochi dati» o niente, la proposta viene da lì (`fonte: "ad"`).
+ * Gli accessi frequenti vincono; esclusioni e «condiviso» degli accessi restano.
+ *
  * Gruppi: `proposto` (persona prevalente, asset senza assegnatario o da creare) · `da_rivedere` (asset assegnato a un
  * altro: mai spuntato di serie) · `abbinato` (già assegnato a chi lo usa) · `pochi_dati` · `escluso` (server,
  * apparati, PC condivisi o segnati come tali).
@@ -11,8 +15,9 @@ import type Database from "better-sqlite3";
 import { mapHostClassificationToInventoryCategoria } from "@/lib/db-tenant";
 import type { InventoryAssetCategoria } from "@/types";
 import { personeAd, soglieDelCliente } from "./db";
+import { ultimiAccessiAd } from "./descrizione-ad";
 import { assegnatarioDaUtente, utenteAdPerAccount } from "./importa";
-import { CATEGORIE_SENZA_PROPOSTA, calcolaProposta, type AccessoAggregato, type Proposta } from "./proposta";
+import { CATEGORIE_SENZA_PROPOSTA, calcolaProposta, motivoFuori, type AccessoAggregato, type Proposta } from "./proposta";
 
 export type GruppoAbbinamento = "proposto" | "da_rivedere" | "abbinato" | "pochi_dati" | "escluso";
 export const GRUPPI: readonly GruppoAbbinamento[] = ["proposto", "da_rivedere", "abbinato", "pochi_dati", "escluso"];
@@ -47,6 +52,10 @@ export interface VoceAbbinamento {
   totale: number;
   base: Proposta["base"];
   ultimo: string | null;
+  /** Da dove viene la persona: `accessi` (la più frequente) o `ad` (l'ultimo utente nella descrizione del computer). */
+  fonte: "accessi" | "ad" | null;
+  /** Con `fonte: "ad"`: il computer di AD che l'ha scritta. */
+  computerAd: string | null;
 }
 
 export interface Abbinamenti {
@@ -80,7 +89,7 @@ export function legameAssetHost(db: Database.Database): string {
   return conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
 }
 
-function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number): RigaHost[] {
+function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number, daAd: readonly number[] = []): RigaHost[] {
   const legame = legameAssetHost(db);
   return db.prepare(
     `WITH hh AS (
@@ -88,7 +97,8 @@ function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number
               (SELECT a.id FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id
                WHERE ${legame} ORDER BY (a.host_id IS NULL), a.id LIMIT 1) AS asset_id
        FROM hosts h
-       WHERE h.id IN (SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?))
+       WHERE (h.id IN (SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?))
+              OR h.id IN (SELECT value FROM json_each(?)))
          ${soloHost !== undefined ? "AND h.id = ?" : ""}
      )
      SELECT hh.id, hh.pc, hh.ip, hh.classification, hh.asset_id, x.categoria, x.proposta_assegnatario_off AS proposta_off,
@@ -97,7 +107,7 @@ function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number
      LEFT JOIN inventory_assets x ON x.id = hh.asset_id
      LEFT JOIN asset_assignees aa ON aa.id = x.asset_assignee_id
      ORDER BY lower(hh.pc)`,
-  ).all(`-${giorni} days`, ...(soloHost !== undefined ? [soloHost] : [])) as RigaHost[];
+  ).all(`-${giorni} days`, JSON.stringify(daAd), ...(soloHost !== undefined ? [soloHost] : [])) as RigaHost[];
 }
 
 const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split(".")[0] || pc);
@@ -105,7 +115,8 @@ const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split
 /** Tutte le voci, calcolate. `soloHost`: una voce sola (la conferma). */
 export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
   const soglie = soglieDelCliente(db);
-  const host = hostConAccessi(db, soglie.giorni, soloHost);
+  const daAd = ultimiAccessiAd(db, soglie.giorni);
+  const host = hostConAccessi(db, soglie.giorni, soloHost, [...daAd.keys()]);
   if (host.length === 0) return { voci: [], giorni: soglie.giorni };
   const ids = host.map((h) => h.id);
   const accessi = new Map<number, AccessoAggregato[]>();
@@ -117,7 +128,7 @@ export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: V
     ).all(`-${soglie.giorni} days`, ...parte) as Array<AccessoAggregato & { host_id: number }>;
     for (const r of righe) (accessi.get(r.host_id) ?? accessi.set(r.host_id, []).get(r.host_id)!).push(r);
   }
-  const persone = personeAd(db, [...new Set([...accessi.values()].flat().map((a) => a.account))]);
+  const persone = personeAd(db, [...new Set([...[...accessi.values()].flat().map((a) => a.account), ...[...daAd.values()].map((u) => u.account)])]);
   // Asset per nome (prima parte, minuscolo): una lettura sola, per gli omonimi dei PC senza asset.
   const assetPerNome = new Map<string, VoceAbbinamento["omonimi"]>();
   for (const r of db.prepare("SELECT id, hostname, ip_address, categoria FROM inventory_assets WHERE hostname IS NOT NULL AND hostname <> ''").all() as Array<{ id: number; hostname: string; ip_address: string | null; categoria: string | null }>) {
@@ -140,19 +151,24 @@ export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: V
       propostaOff: h.proposta_off === 1,
       soglie,
     });
-    const pers = p.persona;
+    // Gli accessi non decidono (pochi o nessuno): vale l'ultimo utente scritto in AD, se è una persona che conta.
+    const ad = daAd.get(h.id);
+    const personaAd = ad && (p.esito === "pochi_dati" || p.esito === "nessuna_fonte") ? persone.get(ad.account) ?? null : null;
+    const usaAd = personaAd !== null && motivoFuori(ad!.account, personaAd) === null;
+    const esito: Proposta["esito"] = usaAd ? "proposta" : p.esito;
+    const pers = usaAd ? personaAd : p.persona;
     const assegnatarioPersona = pers ? perGuid.get(`${pers.integrationId}:${pers.guid}`) ?? null : null;
     let gruppo: GruppoAbbinamento;
     let motivo: string | null = null;
-    if (p.esito === "esclusa") {
+    if (esito === "esclusa") {
       gruppo = "escluso";
       motivo = p.perche === "segnato_condiviso"
         ? "segnato come PC condiviso"
         : h.asset_id !== null ? `categoria ${h.categoria} nell'inventario` : `${h.classification ?? "classificazione"} (classificazione dell'host)`;
-    } else if (p.esito === "condiviso") {
+    } else if (esito === "condiviso") {
       gruppo = "escluso";
       motivo = "condiviso: nessuno sopra la soglia";
-    } else if (p.esito === "pochi_dati" || p.esito === "nessuna_fonte") {
+    } else if (esito === "pochi_dati" || esito === "nessuna_fonte") {
       gruppo = "pochi_dati";
       motivo = `meno di ${soglie.minimo} accessi di persone`;
     } else if (h.assegnato_id === null) {
@@ -173,15 +189,17 @@ export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: V
       categoriaProposta: h.asset_id === null && daClassificazione && !CATEGORIE_SENZA_PROPOSTA.has(daClassificazione)
         && daClassificazione !== "Other" && daClassificazione !== "VM" ? daClassificazione : null,
       gruppo,
-      esito: p.esito,
+      esito,
       motivo,
       persona: pers && nome ? { account: pers.account, nome, reparto: pers.reparto, ruolo: pers.ruolo } : null,
       assegnatarioPersona,
       assegnato: h.assegnato_id !== null ? { id: h.assegnato_id, nome: h.assegnato_nome ?? "", origine: h.assegnato_origine } : null,
-      accessi: p.accessiPersona,
-      totale: p.totale,
-      base: p.base,
-      ultimo: p.ultimoPersona,
+      accessi: usaAd ? 0 : p.accessiPersona,
+      totale: usaAd ? 0 : p.totale,
+      base: usaAd ? null : p.base,
+      ultimo: usaAd ? `${ad!.giorno} 00:00:00` : p.ultimoPersona,
+      fonte: usaAd ? "ad" : (esito === "proposta" || (esito === "esclusa" && pers)) ? "accessi" : null,
+      computerAd: usaAd ? ad!.computer : null,
     };
   });
   return { voci, giorni: soglie.giorni };

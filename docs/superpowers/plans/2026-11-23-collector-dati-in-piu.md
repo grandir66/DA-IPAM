@@ -243,8 +243,8 @@ finto sul banco e l'interfaccia proposta (scheda «Accessi», interruttore, «Pr
 | IPAM: `traffico_accessi` (90 giorni), `accessi.ts`, lettura di `/v1/accessi` solo a interruttore acceso, `GET/PUT /api/traffico/accessi` con `requireAdmin` | [x] | `accessi.test.ts`: spento di serie, righe storte scartate, due collector al massimo, 90 giorni; prove del traffico 45 su 45 |
 | Interfaccia: scheda «Accessi» (solo amministratori, solo a interruttore acceso), interruttore in «Collector e controlli», «Programmi dichiarati» nella scheda dell'host | [x] | eslint e `tsc` puliti. **Non guardata resa** |
 | Nessun export porta fuori gli accessi | [x] | nessuna rotta di export legge le tabelle `traffico_*`. Il backup intero del database del cliente li contiene, come tutto il resto |
-| Misura su `DA-COLLECTOR-PX03` col filtro nuovo (88 e SSH) | [ ] | |
-| Giro intero sul banco: collector con `ACCESSI=1` → righe in `/v1/accessi` | [ ] | |
+| Misura del filtro leggero nuovo (88 e SSH) | [!] | `DA-COLLECTOR-PX03` dal 23/11 gira col profilo avanzato (Zeek, sessione «Sonda con Zeek»): il profilo leggero va misurato su un altro collector, quando Riccardo lo decide. Su PX03 l'ascolto della v0.9.1313 non partiva (accessi passati per posizione in `main()`, errore mio), fermo 13:35:57-13:37:32 UTC, corretto dall'altra sessione (`35585048`) |
+| Giro intero sul banco: collector con `ACCESSI=1` → righe in `/v1/accessi` | [x] | 23/11, 13:41 UTC: `collector-banco` scrive 5 righe (Kerberos e SMB riuscito e fallito per `prova`, LDAP fallito ×2) e i programmi (`SSH::SERVER:OpenSSH 9.2p1`, `HTTP::BROWSER:ProvaAgente 1.0`…); nel giornale nessun nome utente; poi `ACCESSI=0` di nuovo e contenitore 111 tolto |
 | Sull'ufficio (acceso da Riccardo) si vede chi ha fatto accesso a un server di prova | [ ] | tocca a Riccardo accendere |
 
 **Fatto quando:** la prova di non-fuga è verde dopo essere stata vista rossa, e sull'ufficio (acceso da Riccardo) si vede
@@ -372,6 +372,13 @@ chi ha fatto accesso a un server di prova.
   servizi (3 scaduti, dal 2015 e dal 2019; gli altri autofirmati: stampanti, desktop remoto, pannelli), `dns_esterno` 17
   host, `dns_errori` 2 host (uno con 30 richieste su 31 senza risposta). In IPAM un avviso si scrive una volta per tipo e
   coppia, quindi è il primo giro che pesa; se i certificati autofirmati di casa sono troppi si spegne il controllo per rete.
+
+- 2026-11-23, tappa 7. Fatto tutto quello che dipende dal codice e dal banco (tabella dei passi nella tappa). Errore mio:
+  nella v0.9.1313 `main()` passava gli accessi per posizione e finivano in `profilo` (aggiunto nel frattempo dalla
+  sessione Zeek): l'ascolto di `DA-COLLECTOR-PX03` non è partito per un minuto e mezzo, l'ha corretto quella sessione.
+  Le prove passavano perché non chiamano `main()`. Resta a Riccardo: accendere gli accessi sull'ufficio (interruttore
+  in IPAM e `ACCESSI=1` su un collector) e fare un accesso a un server di prova. Il filtro leggero nuovo non è misurato
+  di giorno su nessun collector (PX03 è passato a Zeek).
 
 ## Consuntivo
 

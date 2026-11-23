@@ -20,8 +20,12 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [ ] Tappa 4, sull'hub: scaricare l'archivio DB-IP (a mano, da amministratore) e contare `traffico_esterni` dopo un giorno
 - [ ] Riccardo decide: l'archivio DB-IP si aggiorna da solo ogni mese o resta a mano?
 - [x] Tappa 5, collector e IPAM: connessioni senza risposta, rifiutate, tempi; servizi usati contro porte note
-- [ ] Tappa 5: misura su `DA-COLLECTOR-PX03` con finestre intere, interfaccia da proporre a Riccardo, servizio spento sul banco del PX-NAS
-- [ ] Tappe 6-7 (Riccardo, 23/11: «le tappe successive apri un agente nuovo»: le fa una sessione nuova)
+- [x] Tappa 5: misura su PX03 (trovato e corretto il filtro che scartava SYN e RST), interfaccia approvata e scritta, servizio spento visto sul banco
+- [x] Tappa 6: certificati, DNS fuori casa, DNS che non risponde, VLAN sbagliata; provata sul banco e di giorno su PX03; parole approvate
+- [-] Tappa 6, JA3: rimandato (con la cattura a 600 byte l'impronta verrebbe sbagliata); da decidere con la sonda Zeek
+- [x] Tappa 7 (zona rossa): prova di non-fuga vista rossa con catture vere del banco, codice, interfaccia; giro intero sul banco
+- [ ] Tappa 7, Riccardo: accendere «Accessi con nome utente» in IPAM e `ACCESSI=1` su un collector, poi un accesso a un server di prova
+- [ ] Misura di giorno del filtro leggero nuovo (porte 88 e SSH) su un collector col profilo leggero (PX03 è passato a Zeek)
 
 ## 2026-11-23 — Utente abituale nella pagina Apparati
 

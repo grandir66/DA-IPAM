@@ -186,7 +186,7 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 **Fatto quando:** un servizio spento apposta sul banco compare fra le connessioni fallite, e le scansioni dell'hub no.
 **Verificato il 23/11** (vedi le caselle qui sopra). Resta, come per le tappe 2 e 4, la misura di giorno su PX03.
 
-### [ ] Tappa 6 — DNS, TLS, VLAN sbagliata
+### [~] Tappa 6 — DNS, TLS, VLAN sbagliata
 
 > 23/11: la bozza `docs/superpowers/specs/2026-11-23-sonda-avanzata-zeek-design.md` (non ancora approvata da Riccardo)
 > propone Zeek come profilo del collector, con gli stessi tipi d'anomalia delle tappe 6-7 da due fonti. Finché Riccardo
@@ -196,6 +196,25 @@ cresciuto più del previsto (scrivere i numeri nel Registro).
 - TLS: certificato scaduto o autofirmato (dove si vede, fino a TLS 1.2), impronta del programma che si collega (JA3).
 - VLAN: un indirizzo visto con un tag diverso da quello della sua rete censita.
 - Sono anomalie nuove in `anomalie.ts` e `frasi.ts`, con il loro interruttore per rete come gli altri controlli.
+
+- [x] Collector: `tls_certificato` (certificato di un servizio di casa scaduto o autofirmato, letto dal volo del server
+  fino a TLS 1.2; uno per servizio, non per client; dai primi 600 byte: dove il certificato è tronco dice solo quello che
+  vede), `dns_esterno` (un host che chiede a un DNS fuori), `dns_errori` (per host e finestra almeno 20 risposte SERVFAIL o
+  REFUSED, o 20 richieste senza risposta; senza nessuna risposta nella finestra i «senza risposta» non si contano). Nessun
+  pacchetto in più: DNS e saluto TLS passavano già dal filtro. Verifica: `python3 -m unittest discover -s tests -t .`
+  69 su 69 (23/11).
+- [x] IPAM: i tre tipi in `TIPI_FATTO` (gravità: certificato media, i due DNS bassa), `vlan_sbagliata` in `identita.ts`
+  (indirizzo visto in ARP con un tag diverso dalla VLAN della rete censita; senza tag o rete senza VLAN, niente); tutti
+  e quattro hanno l'interruttore per rete perché stanno in `TIPI_CONTROLLO`. Verifica: prove del traffico 39 su 39, eslint
+  e `tsc` puliti (23/11).
+- [-] JA3 (impronta del programma che si collega): rimandato. Con la cattura a 600 byte il saluto dei browser di oggi
+  (oltre 1.200 byte, per la chiave post-quantistica) arriva tronco e l'impronta verrebbe sbagliata; servirebbe catturare di
+  più, che è un costo da misurare, e un posto nell'interfaccia. Da decidere con Riccardo (e con la bozza su Zeek, che lo dà).
+- [x] Caso provocato sul banco del PX-NAS. Verifica: 23/11 alle 12:33 UTC, dal contenitore 110 un servizio TLS 1.2 con
+  certificato autofirmato sulla porta 8443 e una richiesta DNS a 9.9.9.9; `collector-banco` scrive `tls_certificato`
+  (`autofirmato`, server 192.168.99.88:8443) e `dns_esterno`. Dal collector, non dalla pagina; copia e server tolti.
+- [~] Interfaccia: nessun riquadro nuovo, solo nomi e frasi in `frasi.ts` (i tipi compaiono da soli fra le anomalie e
+  nella scheda «Collector e controlli»). Scritti come proposta, **da confermare con Riccardo**.
 
 **Fatto quando:** i tre tipi compaiono nella scheda «Collector e controlli» e almeno uno scatta su un caso provocato.
 
@@ -325,6 +344,14 @@ chi ha fatto accesso a un server di prova.
   giro di scansione dell'IPAM, che in IPAM non si salva), nessun servizio lento. Sotto le soglie (700 MB, 99%), di notte.
   Stima a occhio, da ricontare di giorno: fino a qualche centinaio di migliaia di righe al giorno nell'archivio del
   collector (tetto 5.000 per finestra, tenute 7 giorni).
+
+- 2026-11-23, tappa 6, su `DA-COLLECTOR-PX03` di giorno (prima volta di giorno per il codice nuovo). Prima (12:13-12:34
+  UTC, codice della tappa 5): `collector-ascolto` 1,0% di una CPU. Dopo (12:34:05-12:45:32, codice della tappa 6, due
+  finestre intere): 1,17% di una CPU e 18 MB, 940 pacchetti al secondo all'ascolto (di notte erano 400), RAM usata 342 MB,
+  copertura 99,987% (486 persi su 3,82 milioni), nessun pacchetto saltato. Fatti in 11 minuti: `tls_certificato` 25
+  servizi (3 scaduti, dal 2015 e dal 2019; gli altri autofirmati: stampanti, desktop remoto, pannelli), `dns_esterno` 17
+  host, `dns_errori` 2 host (uno con 30 richieste su 31 senza risposta). In IPAM un avviso si scrive una volta per tipo e
+  coppia, quindi è il primo giro che pesa; se i certificati autofirmati di casa sono troppi si spegne il controllo per rete.
 
 ## Consuntivo
 

@@ -1,7 +1,7 @@
 [Unit]
 Description=Collector di traffico: archivio e API
 After=network-online.target
-Wants=network-online.target pmacctd-collector.service collector-ascolto.service
+Wants=network-online.target pmacctd-collector.service zeek-collector.service collector-ascolto.service
 
 [Service]
 User=collector

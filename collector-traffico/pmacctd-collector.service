@@ -6,6 +6,9 @@ PartOf=collector-traffico.service
 [Service]
 EnvironmentFile=/etc/collector-traffico/collector.env
 Environment=TZ=UTC
+# Nel profilo avanzato conta Zeek: pmacctd non parte nemmeno se collector-traffico lo chiede (Wants=).
+# Visto sul DA-PX-03 il 23/11: senza, il riavvio di collector-traffico lo riaccendeva e i suoi file restavano in in/.
+ExecCondition=/bin/sh -c 'test "${PROFILO}" != avanzato'
 # La scheda in mirror non ha indirizzo e non trasmette: niente IPv6 (niente annunci), niente ARP.
 ExecStartPre=/bin/sh -c 'test -n "${MIRROR_IF}"'
 ExecStartPre=/sbin/sysctl -q -w net.ipv6.conf.${MIRROR_IF}.disable_ipv6=1

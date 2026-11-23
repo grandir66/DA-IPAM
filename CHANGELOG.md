@@ -7,6 +7,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
 ### Corretto
+- **Collector: le connessioni fallite si vedevano solo sulle porte dell'elenco** (23/11, tappa 5). Sul banco del PX-NAS un servizio spento apposta sulla porta 8099 non compariva. Nel filtro di cattura la clausola del saluto TLS legge il primo byte dei dati: su un pacchetto senza dati (l'apertura o il rifiuto di una connessione) la lettura esce dal pacchetto e il kernel lo scarta senza guardare le clausole dopo. Quella delle aperture e dei rifiuti ora viene prima; una prova ne tiene l'ordine. Da ora il collector legge più pacchetti: misura su `DA-COLLECTOR-PX03` nel piano.
 - **Traffico: gli avvisi contavano le scansioni di IPAM** (22/11). Sull'IPAM dell'ufficio, in due giorni, 2.156 avvisi tutti da guardare: 1.102 «host non censito» su 1.114 erano gli indirizzi che IPAM stesso aveva provato, e 172.238 righe di coppie su 193.128 erano le sue scansioni, finite anche nelle abitudini. Ora il traffico delle sonde note (gli indirizzi di IPAM, più quelle aggiunte con `PUT /api/traffico/sonde`) non si salva e non dà avvisi; «host non censito» guarda solo chi ha mandato pacchetti; «VLAN chiuse» non scatta senza una porta di servizio, dove non si sa chi ha aperto. Al primo giro si toglie il già salvato delle sonde e si rifanno gli avvisi ancora «nuova» di quei due tipi; quelli già segnati da una persona restano.
 
 ### Aggiunto

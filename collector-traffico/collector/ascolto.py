@@ -19,12 +19,15 @@ from . import archivio, connessioni, controlli, identita, piega
 _BASE = (
     "port 21 or port 23 or port 25 or port 110 or port 143 or port 389 or port 80 or port 445 "
     "or port 502 or port 102 or udp port 53 or udp port 161 or udp port 5355 or udp port 137 "
+    # connessioni che non vanno (23/11): i pacchetti che aprono o rifiutano una connessione (SYN, RST).
+    # DEVE stare PRIMA della clausola TLS: quella legge il primo byte del carico, e su un pacchetto senza
+    # carico (un SYN, un RST) la lettura cade fuori dal pacchetto e il kernel lo SCARTA senza guardare il
+    # resto del filtro. Visto sul banco il 23/11: i rifiuti verso una porta fuori dall'elenco non arrivavano.
+    "or (tcp[13] & 6 != 0) "
     "or (tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16) "
     # chi è un indirizzo (23/11): ARP, DHCP, mDNS, SSDP, LLDP, CDP; NetBIOS (137) c'è già
     "or arp or udp port 67 or udp port 68 or udp port 5353 or udp port 1900 "
-    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc "
-    # connessioni che non vanno (23/11): i pacchetti che aprono o rifiutano una connessione (SYN, RST)
-    "or (tcp[13] & 6 != 0)"
+    "or ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc"
 )
 # Byte tenuti per pacchetto: le opzioni DHCP (nome dell'host) cominciano al byte 282.
 CATTURA = 600

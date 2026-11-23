@@ -279,6 +279,28 @@ chi ha fatto accesso a un server di prova.
 - **Passaggio di consegne (Riccardo, 23/11: «le tappe successive apri un agente nuovo»)**: questa sessione si ferma qui.
   La sessione nuova chiude la tappa 5 (misura, interfaccia da proporre, banco) e fa le tappe 6 e 7.
 
+- 2026-11-23, tappa 5, misura riletta (sessione nuova). `DA-COLLECTOR-PX03` col codice della tappa 5, 16 minuti di notte
+  (01:49:36-02:05:38 UTC), tre finestre intere di `connessione`: `collector-ascolto` 0,40% di una CPU e 10 MB,
+  `collector-traffico` 0,08% e 25 MB, `pmacctd` 0,16% e 51 MB; RAM usata 341 MB su 973; copertura 99,973% (322 persi su
+  1.186.934 fra le 01:58 e le 02:05); 388 pacchetti al secondo all'ascolto; nessun avviso nel journal. Righe per finestra:
+  26 (01:50), 26 (01:55), 151 (02:00, c'è dentro un giro di scansione dell'IPAM `192.168.4.8`: 55 righe sue con 154
+  aperture fallite, che in IPAM non si salvano perché è una sonda nota). In tutto 8 client che bussano a vuoto verso 77
+  servizi; mediana dei tempi 44 ms di media, massimo 3,1 s, nessun servizio «lento» (servono 5 aperture riuscite sopra
+  200 ms). Sotto le soglie (700 MB, 99%). **Resta la misura di giorno**, come per le tappe 2 e 4.
+
+- 2026-11-23, tappa 5, banco e **difetto trovato**. `collector-banco` (VM 109) aggiornato a `origin/dev` alle 02:06 UTC.
+  Prova: servizio HTTP sulla porta 8099 nel contenitore 110, sei aperture riuscite dal nodo, poi spento, sette rifiutate;
+  i pacchetti arrivavano alla scheda in copia (visti con `tcpdump port 8099`) ma in `connessione` non c'era niente.
+  Causa: nel filtro la clausola TLS (`tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16`) legge oltre la fine di un pacchetto
+  senza dati e il kernel lo scarta prima delle clausole dopo; SYN e RST passavano solo sulle porte dell'elenco
+  (80, 445, 389…). Riprodotto in locale con sei pacchetti finti: 0 su 5 col filtro vecchio, 5 su 5 col nuovo (clausola
+  spostata prima). **La misura qui sopra vale quindi solo per le porte dell'elenco: va rifatta col filtro corretto.**
+  Visto anche: con due porte in copia (103 e 110) ogni SYN fra i due si vede due volte e finisce in «ripetute»; in
+  ufficio la copia è di una porta sola (uplink), e in IPAM una riga con soli SYN ripetuti non conta come fallimento.
+  **Banco condiviso**: alle 02:17 UTC un'altra sessione ha fatto snapshot, spento e riacceso la VM 109 e fermato i
+  servizi del collector; sulla porta del contenitore 110 c'era una coda `clsact` non mia che il mio comando di pulizia
+  delle 02:10 ha tolto (poi rimessa da loro). Da lì il banco non l'ho più toccato: la prova col filtro corretto è da fare.
+
 ## Consuntivo
 
 (a chiusura: fatto · mancante · scostamenti · consigli)

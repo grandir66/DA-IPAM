@@ -96,6 +96,16 @@ class NellAscolto(unittest.TestCase):
     def test_il_filtro_chiede_syn_e_rst_anche_dietro_vlan(self):
         self.assertEqual(FILTRO.count("tcp[13] & 6 != 0"), 2)
 
+    def test_syn_e_rst_prima_della_clausola_tls(self):
+        """Banco del PX-NAS, 23/11/2026: un servizio spento sulla porta 8099 non compariva. La clausola TLS legge
+        il primo byte del carico; su un SYN o un RST (senza carico) la lettura esce dal pacchetto e il filtro del
+        kernel lo scarta prima di arrivare alle clausole dopo. Quella dei SYN e RST deve venire prima."""
+        tls = "tcp[((tcp[12:1] & 0xf0) >> 2):1] = 0x16"
+        pezzi = FILTRO.split("(vlan and")
+        self.assertEqual(len(pezzi), 2)
+        for pezzo in pezzi:
+            self.assertLess(pezzo.index("tcp[13] & 6 != 0"), pezzo.index(tls))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,7 @@ export default async function TopologyPage() {
       <div className="flex items-baseline gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Topologia</h1>
         <Link href="/topology/dati" className="text-sm underline">Dati della mappa</Link>
+        <Link href="/topology/tavola" className="text-sm underline">Tavola di cablaggio</Link>
       </div>
       <TopologyMapClient isAdmin={isAdmin} />
     </div>

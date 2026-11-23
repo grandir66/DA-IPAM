@@ -98,6 +98,7 @@ import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { ApparatoPorte, PortaTavola } from "./topology/tavola/tipi";
 import type { IngressoDispositivi } from "./scheda/dispositivi-router";
 import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaUtenteMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
 import type { RisultatoMkScheda } from "./devices/mikrotik-letture";
@@ -12926,6 +12927,52 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
     "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+}
+
+/**
+ * Le porte di tutti gli apparati di un sito per la «Tavola di cablaggio» (spec 2026-11-23 §2): una query sola su
+ * `switch_ports` per gli apparati dati, e per quelli senza righe le schede dell'hypervisor dalla scansione Proxmox
+ * (come `getTopologyKnownPorts`). Gli id arrivano dal modello della mappa: qui non si decide chi sta nel sito.
+ */
+export function getTopologyTavolaPorte(deviceIds: readonly number[]): ApparatoPorte[] {
+  if (deviceIds.length === 0) return [];
+  const d = db();
+  const ids = [...new Set(deviceIds)];
+  const segnaposti = ids.map(() => "?").join(",");
+  const righe = d.prepare(
+    `SELECT device_id, port_index, port_name, status, speed, vlan, is_trunk, mac_count, single_mac_hostname, single_mac_ip, poe_power_mw
+     FROM switch_ports WHERE device_id IN (${segnaposti}) ORDER BY device_id, port_index`,
+  ).all(...ids) as Array<{ device_id: number; port_index: number; port_name: string; status: string | null; speed: string | null; vlan: number | null;
+    is_trunk: number | null; mac_count: number | null; single_mac_hostname: string | null; single_mac_ip: string | null; poe_power_mw: number | null }>;
+  const perApparato = new Map<number, PortaTavola[]>();
+  for (const r of righe) {
+    const v = perApparato.get(r.device_id) ?? [];
+    v.push({
+      indice: r.port_index, nome: r.port_name,
+      stato: r.status === "up" || r.status === "down" || r.status === "disabled" ? r.status : null,
+      velocita: r.speed && r.speed.trim() !== "" ? r.speed.trim() : null, vlan: r.vlan, trunk: r.is_trunk === 1,
+      macCount: r.mac_count ?? 0, nomeClient: r.single_mac_hostname || null, ipClient: r.single_mac_ip || null,
+      poeW: r.poe_power_mw != null && r.poe_power_mw > 0 ? r.poe_power_mw / 1000 : null,
+    });
+    perApparato.set(r.device_id, v);
+  }
+  const senza = ids.filter((id) => !perApparato.has(id));
+  if (senza.length > 0) {
+    const scans = d.prepare(
+      "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
+    ).all() as Array<{ id: number; raw: string }>;
+    if (scans.length > 0) {
+      const devs = d.prepare(`SELECT id, host, name FROM network_devices WHERE id IN (${senza.map(() => "?").join(",")})`).all(...senza) as Array<{ id: number; host: string | null; name: string | null }>;
+      for (const dev of devs) {
+        const nics = hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+        if (nics.length > 0) perApparato.set(dev.id, nics.map((k) => ({
+          indice: null, nome: k.name, stato: (k.note ?? "").includes("giù") ? "down" : null, velocita: k.speed, vlan: null, trunk: false,
+          macCount: 0, nomeClient: null, ipClient: null, poeW: null,
+        })));
+      }
+    }
+  }
+  return ids.map((id) => ({ node: `dev:${id}`, porte: perApparato.get(id) ?? [] }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

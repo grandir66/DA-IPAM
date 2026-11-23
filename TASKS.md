@@ -11,11 +11,16 @@ MikroTik, LLDP dei Proxmox).
 - [x] (23/11) Spec della vista 1: `docs/superpowers/specs/2026-11-23-tavola-di-cablaggio-design.md`. Riccardo: «Sì, tutte e 4»
       (sito→armadio, ordine automatico, hub e appliance, sola lettura). Livello base.
   Piano (base, nessuna prova intermedia; alla fine `node --test` sui file nuovi + una schermata a 1920 sul dev):
-  - [ ] T1 `src/lib/topology/tavola/tipi.ts` + `componi.ts` (tipi di porta e destinazioni, fasci, porte fantasma) — §3
-  - [ ] T2 `righe.ts` (sito → armadio → ruolo, a capo oltre la larghezza) + `instrada.ts` (corsie a intervalli, giro dal bordo)
-  - [ ] T3 `getTopologyTavolaPorte(siteId)` in `db-tenant.ts` (una query + `hypervisorNics`) e `GET /api/topology/tavola`
-  - [ ] T4 componenti `src/components/topology/tavola/` (barra, legenda, telaio, porta, cavo, fuoco) + pagina + link dalla Topologia, STILE-UI
-  - [ ] T5 prove in `tavola/__tests__/` (dati inventati), lint + tsc, `version:release -- --staged-only`, push su dev; main resta a Riccardo
+  - [x] T1 `src/lib/topology/tavola/tipi.ts` + `componi.ts` (tipi di porta e destinazioni, fasci, porte fantasma) — §3
+  - [x] T2 `righe.ts` (sito → armadio → ruolo, a capo oltre la larghezza) + `instrada.ts` (corsie a intervalli, giro dal bordo)
+  - [x] T3 `getTopologyTavolaPorte(siteId)` in `db-tenant.ts` (una query + `hypervisorNics`) e `GET /api/topology/tavola`
+  - [x] T4 componenti `src/components/topology/tavola/` (barra, legenda, telaio, porta, cavo, fuoco) + pagina + link dalla Topologia, STILE-UI
+  - [x] T5 prove in `tavola/__tests__/tavola.test.ts` (6/6 verdi, dati inventati), eslint 0 errori sui file toccati, tsc 0 errori in `src/`, rilascio su dev; main resta a Riccardo
+  - Scostamenti dalla spec (23/11): la rotta restituisce anche nodi e collegamenti del sito (una chiamata sola, stesso calcolo di
+    `/api/topology/model`); `site` assente = primo sito; `getTopologyTavolaPorte` prende gli id degli apparati, non il sito; tipo in
+    più `attiva` (porta su senza dati); «da verificare» è un segno sopra il tipo, non un tipo.
+  - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
+    il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,
       libera/giù) e sotto la destinazione scritta; cavi nei corridoi, i lunghi dai bordi; al passaggio del mouse resta
       acceso solo quel collegamento. Dati già presenti: collegamenti della Topologia + porte di `switch_ports`.

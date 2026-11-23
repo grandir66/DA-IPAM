@@ -497,3 +497,18 @@ test("ESET: senza il nome della macchina resta l'agente, e i campi ESET non tocc
   assert.equal(b.agentName, "SRV-DC");
   assert.equal(b.targetUser, null);
 });
+
+// DTS 22/11/2026: l'app di ESET scrive i campi vuoti come testo "null"; i rilevamenti del firewall
+// arrivavano tutti con macchina "null" e finivano in una riga sola. Il nome viene dalla copia di DA-Link.
+test("ESET: nome \"null\" = assente, e la macchina si trova dal suo identificativo", () => {
+  const uuid = "5812c06d-49e3-4ef2-9aaa-97910115896e";
+  const nomi = (u: string) => (u === uuid ? "srv-dc01.dts.local" : null);
+  const a = normalizeAlert(docEset(7, { deviceDisplayName: "null", deviceUuid: uuid, userNameBase: "null" }), "h1", undefined, undefined, nomi);
+  assert.equal(a.agentName, "srv-dc01.dts.local");
+  assert.equal(a.agentId, null);
+  assert.equal(a.targetUser, null);
+  const ignota = normalizeAlert(docEset(7, { deviceDisplayName: "null", deviceUuid: "altro" }), "h2", undefined, undefined, nomi);
+  assert.equal(ignota.agentName, "da-wazuh");
+  const senzaCopia = normalizeAlert(docEset(7, { deviceDisplayName: "null" }), "h3");
+  assert.equal(senzaCopia.agentName, "da-wazuh");
+});

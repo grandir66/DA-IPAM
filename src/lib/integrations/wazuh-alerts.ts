@@ -328,12 +328,20 @@ export function isModificaAccountAVuoto(doc: WazuhAlertDoc): boolean {
   return ed.oldUacValue != null && ed.oldUacValue === ed.newUacValue;
 }
 
+/** Un campo dell'app di ESET: vuoto e il testo "null" valgono come assenti. */
+function campoEset(valore: string | null | undefined): string | null {
+  const t = valore?.trim();
+  return t && t.toLowerCase() !== "null" ? t : null;
+}
+
 export function normalizeAlert(
   doc: WazuhAlertDoc,
   hitId: string,
   self?: SelfIdentity,
   /** ID regola degli apparati configurati per questa installazione. */
   deviceRuleIds?: string[],
+  /** Nome della macchina ESET dal suo identificativo (copia di DA-Link), se il nome manca. */
+  nomeEset?: (uuid: string) => string | null,
 ): NormalizedAlert {
   const groups = doc.rule?.groups ?? [];
   const ed = doc.data?.win?.eventdata;
@@ -341,12 +349,16 @@ export function normalizeAlert(
   // ESET: l'agente Wazuh che scrive l'avviso è il server dove gira l'app di ESET, non la macchina
   // colpita. La macchina e l'utente stanno nei campi di ESET; se il nome manca resta l'agente.
   const eset = groups.includes("eset") ? doc.data?.eset : undefined;
-  const macchinaEset = eset?.deviceDisplayName?.trim() || null;
+  // L'app di ESET scrive i campi vuoti come testo "null" (DTS 22/11/2026: tutti i rilevamenti
+  // del firewall senza nome, solo `deviceUuid`): il nome allora si cerca nella copia di DA-Link.
+  const uuidEset = campoEset(eset?.deviceUuid);
+  const macchinaEset =
+    campoEset(eset?.deviceDisplayName) ?? (uuidEset && nomeEset ? nomeEset(uuidEset) : null);
 
   // Ogni sorgente usa un campo diverso: Windows targetUserName, Microsoft 365
   // UserId, i decoder generici srcuser/dstuser.
   const targetUser =
-    (eset?.userNameBase?.trim() || undefined) ??
+    (campoEset(eset?.userNameBase) ?? undefined) ??
     ed?.targetUserName ??
     o365?.UserId ??
     doc.data?.srcuser ??

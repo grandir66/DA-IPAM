@@ -70,7 +70,9 @@ export function TavolaSvg(p: {
   const transizione = reduce ? undefined : "opacity 120ms";
   const opPorta = (id: string) => (fuoco && !fuoco.porte.has(id) ? p.spento : 1);
   return (
-    <svg width={d.larghezza} height={d.altezza} viewBox={`0 0 ${d.larghezza} ${d.altezza}`} role="img" aria-label="Tavola di cablaggio"
+    // Larghezza del riquadro, mai oltre la propria (niente ingrandimento) né sotto 1240 px: sotto scorre il riquadro, non la pagina.
+    <svg viewBox={`0 0 ${d.larghezza} ${d.altezza}`} role="img" aria-label="Tavola di cablaggio"
+      style={{ width: "100%", maxWidth: d.larghezza, minWidth: Math.min(1240, d.larghezza), height: "auto" }}
       className="block select-none" onMouseLeave={() => { p.onPorta(null); p.onCavo(null); }}>
       <DefinizioniTavola />
       <rect width={d.larghezza} height={d.altezza} fill="transparent" onClick={p.onVuoto} />

@@ -14,8 +14,7 @@ import { Input } from "@/components/ui/input";
 import { fetchJson } from "@/lib/fetch-json";
 import { SOURCE_WORDS, seenWords, speedLabel } from "@/lib/topology/edge-look";
 import { componiTavola } from "@/lib/topology/tavola/componi";
-import { instrada } from "@/lib/topology/tavola/instrada";
-import { disponi } from "@/lib/topology/tavola/righe";
+import { disponiEInstrada } from "@/lib/topology/tavola/instrada";
 import type { PortaComposta, TavolaView, TipoPorta } from "@/lib/topology/tavola/tipi";
 import { LegendaTavola } from "./legenda";
 import { SPENTO_PASSAGGIO, SPENTO_SCELTA, TavolaSvg, type Fuoco } from "./tavola-svg";
@@ -74,7 +73,7 @@ export function TavolaClient() {
   useEffect(() => {
     const el = riquadro.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setLarghezza(Math.max(LARGHEZZA_MIN, Math.floor(e.contentRect.width) - 60)));
+    const ro = new ResizeObserver(([e]) => setLarghezza(Math.max(LARGHEZZA_MIN, Math.floor(e.contentRect.width))));
     ro.observe(el);
     return () => ro.disconnect();
   }, [dati]);
@@ -83,8 +82,7 @@ export function TavolaClient() {
     if (!dati) return null;
     const composta = componiTavola({ sito: dati.site, nodi: dati.nodi, collegamenti: dati.collegamenti, apparati: dati.apparati });
     const apparati = libere ? composta.apparati : composta.apparati.map((a) => ({ ...a, porte: a.porte.filter((p) => p.tipo !== "libera" || p.collegamento) }));
-    const righe = disponi(apparati, larghezza);
-    const disegno = instrada(righe, composta.cavi);
+    const { righe, disegno } = disponiEInstrada(apparati, composta.cavi, larghezza);
     const tipoCavo = new Map(composta.cavi.map((c) => [c.id, { tipo: c.tipo, dubbio: c.dubbio }]));
     const porte = apparati.flatMap((a) => a.porte);
     return { apparati, righe, disegno, tipoCavo, porte, cavi: composta.cavi };

@@ -7,8 +7,8 @@
  * prende la prima corsia libera, così due cavi non stanno mai sullo stesso tratto. Uscita: polilinee ortogonali, in
  * coordinate della tavola intera. Logica pura.
  */
-import type { CavoComposto } from "./tipi";
-import type { Riga } from "./righe";
+import type { ApparatoComposto, CavoComposto } from "./tipi";
+import { disponi, type Riga } from "./righe";
 
 export type Punto = [number, number];
 
@@ -139,4 +139,24 @@ export function instrada(righe: readonly Riga[], cavi: readonly CavoComposto[]):
     attacchi[p.idB] = pt[pt.length - 1];
   });
   return { dx, yRighe, linee, larghezza, altezza: y, attacchi };
+}
+
+/**
+ * Righe e cavi entro `larghezza`, corsie di bordo comprese (Riccardo, 23/11: la tavola scorreva perché le corsie si
+ * aggiungevano dopo l'a capo). Due giri: il primo conta le corsie di bordo, il secondo va a capo con la larghezza utile
+ * meno quelle. Se il secondo giro chiede più corsie del primo se ne fa un terzo con le sue. Oltre resta più larga solo
+ * quando un apparato da solo non ci sta.
+ */
+export function disponiEInstrada(apparati: readonly ApparatoComposto[], cavi: readonly CavoComposto[], larghezza: number): { righe: Riga[]; disegno: Disegno } {
+  let utile = larghezza;
+  let righe = disponi(apparati, utile);
+  let disegno = instrada(righe, cavi);
+  for (let giro = 0; giro < 2; giro++) {
+    const bordi = disegno.larghezza - Math.max(0, ...righe.map((r) => r.w));
+    if (Math.max(0, ...righe.map((r) => r.w)) + bordi <= larghezza) break;
+    utile = Math.max(1, larghezza - bordi);
+    righe = disponi(apparati, utile);
+    disegno = instrada(righe, cavi);
+  }
+  return { righe, disegno };
 }

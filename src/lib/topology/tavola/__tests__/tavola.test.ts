@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode } from "@/lib/topology/model-types";
 import { componiTavola } from "@/lib/topology/tavola/componi";
-import { instrada } from "@/lib/topology/tavola/instrada";
+import { disponiEInstrada, instrada } from "@/lib/topology/tavola/instrada";
 import { disponi } from "@/lib/topology/tavola/righe";
 import { parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
 import type { ApparatoComposto, PortaTavola } from "@/lib/topology/tavola/tipi";
@@ -160,4 +160,17 @@ test("rotta: site non numerico 400, assente = primo sito; un sito senza apparati
   const t = componiTavola({ sito: 0, nodi: senza.nodi, collegamenti: senza.collegamenti, apparati: [{ node: "dev:1", porte: [porta(1)] }, { node: "dev:2", porte: [porta(1)] }] });
   assert.equal(t.cavi.length, 1);
   assert.equal(t.cavi[0].tipo, "trunk");
+});
+
+test("disponiEInstrada: con le corsie di bordo la tavola sta nella larghezza utile, nessun cavo fuori", () => {
+  // Dodici apparati piccoli e cavi lunghi dalla prima riga a tutte le altre: tante corsie di bordo.
+  const apparati = Array.from({ length: 18 }, (_, i) => app(i + 1, 8));
+  const cavi = apparati.slice(1).map((a, i) => ({ id: `c${i}`, collegamento: `c${i}`, da: `dev:1|${i % 8}`, a: `${a.nodo}|0`, tipo: "trunk" as const, dubbio: false }));
+  const L = 900;
+  const primo = instrada(disponi(apparati, L), cavi);
+  assert.ok(primo.larghezza > L, "senza i due giri la tavola esce dal riquadro (la prova vale solo se è così)");
+  const { disegno } = disponiEInstrada(apparati, cavi, L);
+  assert.ok(disegno.larghezza <= L, `larghezza ${disegno.larghezza} oltre ${L}`);
+  for (const l of disegno.linee) for (const [x] of l.punti) assert.ok(x >= 0 && x <= disegno.larghezza, `${l.id} esce a x=${x}`);
+  assert.equal(disegno.linee.length, cavi.length);
 });

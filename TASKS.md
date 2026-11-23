@@ -23,9 +23,9 @@ MikroTik, LLDP dei Proxmox).
     sedi nella mappa: aggiunta la scelta, v0.9.1325), 74 apparati, 614 porte, 75 cavi, nessun errore di pagina; il fuoco al
     passaggio su una porta isola il collegamento e i due telai. Non provati: clic su un cavo (pannello), ricerca, tema scuro,
     istanza con sedi vere.
-  - [ ] Visto a schermo: le corsie di bordo vengono aggiunte dopo l'a capo delle righe, quindi la tavola supera di qualche
-    centinaio di px il riquadro e scorre; con molti cavi lunghi la corsia sinistra è larga. Da stringere: togliere le corsie
-    dalla larghezza usata per andare a capo, e preferire il bordo con meno cavi.
+  - [x] (23/11, Riccardo: «si») Tavola stretta nel riquadro: `disponiEInstrada` va a capo in due giri (il primo conta le corsie
+    di bordo, il secondo usa la larghezza meno quelle); l'SVG prende la larghezza del riquadro (viewBox, mai ingrandito, minimo
+    1240 px, sotto scorre il riquadro). Prova `disponiEInstrada` 7/7 con le altre. Resta aperto: preferire il bordo con meno cavi.
   - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,

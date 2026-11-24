@@ -75,13 +75,18 @@ Riccardo: estendere a IPAM la logica di DA-GEO (paesi, geoblocking, indirizzi co
 Misurato il 24/11 sul 70791 (sola lettura, due giorni, collector sommati: quote indicative): ~10.000 indirizzi esterni, solo 7 senza
 fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita; 59 destinazioni nei 18 paesi di DA-GEO
 (CN 29, HK 17, RU 10, VN 3); nessun indirizzo in Spamhaus DROP. L'hub raggiunge `/geo/salute`.
-- [ ] Riccardo approva le fasi (proposta): 1 reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
+- [x] Riccardo (24/11): «Sì, fase 1». Rotta `config.json` in DA-GEO (1.5.0, pubblicata su DA-TRAEFIK); in IPAM `traffico/liste.ts`,
+      `/api/traffico/liste`, avviso `indirizzo_compromesso`, filtro `segnate` in «Verso l'esterno», giro alle 5:41
+- [ ] Fase 1, interfaccia: proposta a Riccardo oggetto per oggetto, in attesa del sì
+- [ ] Fase 1, Riccardo: in DA-GEO il cliente 70791 con le liste e un dispositivo per l'hub `192.168.4.8`, poi il codice in IPAM
+- [ ] Fase 1, Riccardo: fonte C2 al posto di ThreatFox (410); vive e datate: Emerging Threats «compromised» (~570 indirizzi), nodi Tor
+- [ ] Riccardo approva le altre fasi (proposta): 1 (fatta nei dati) reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
       geoblocking»: confronto in locale, nessun indirizzo esce); 2 fornitore e servizio (tavola ASN → nome breve e categoria, più gli
       intervalli pubblicati da AWS/Azure/Google/Cloudflare); 3 mappa per paese e direttrici; 4 azienda (RIPE `inetnum`, 224 MB
       compressi, preparato da DA-GEO; nomi TLS/DNS già raccolti)
 - Regola che resta: mai una richiesta fuori con dentro un indirizzo. Il paese resta DB-IP: le zone di DA-GEO (ipdeny) sono
   registrazioni e servono per dire cosa blocca il firewall, non dove sta una macchina.
-- Manca in DA-GEO: una rotta di lettura per IPAM (oggi c'è solo `config.rsc` dell'apparato) e una fonte C2 viva: **ThreatFox risponde 410**.
+- Manca in DA-GEO una fonte C2 viva: **ThreatFox risponde 410**.
 
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)
 
@@ -96,7 +101,8 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 2: IP doppio provocato sul banco del PX-NAS il 23/11, l'avviso nasce (dal codice, non dalla pagina)
 - [ ] Tappa 2, sull'hub `192.168.4.8`: un host senza MAC che lo riceve dal collector (l'hub non si era ancora aggiornato)
 - [x] Tappa 2, «MAC cambiato»: regole applicate (Riccardo, 24/11: «Sì, applicala»), in `macCambiati` (`traffico/identita.ts`), dopo la rilettura con 37 ore di ARP: 12 avvisi (erano 3). Tre tipi, tutti gravità bassa (più bassa non c'è): `mac_altrove` (il MAC è censito su un altro IP), `mac_mai_visto` (il censito non si è mai visto lì), `mac_cambiato` (visto e poi sostituito); stesso produttore e censito mai visto → niente avviso. Scostamento dalla proposta: coi prefissi delle VM e i MAC assegnati in locale la regola «stesso produttore» non vale, altrimenti `192.168.4.14` (caso vero) sarebbe sparito.
-- [ ] «MAC cambiato», sull'hub `192.168.4.8`: guardare gli avvisi nuovi; i 12 vecchi restano finché Riccardo non dice di toglierli
+- [x] (24/11, «Sì, toglili») I 12 avvisi «MAC cambiato» vecchi tolti dall'hub con la v0.9.1339 attiva (snapshot `pre-mac-cambiato-20261124` della 533 su DA-PX-03, righe in `/root/avvisi-mac-cambiato-20261124.csv`)
+- [ ] «MAC cambiato», sull'hub: guardare gli avvisi che nascono con le regole nuove (nei primi 11 minuti nessuno)
 - [ ] «MAC cambiato» e «IP doppio» dei nodi Proxmox: dalle 12:45 del 24/11 i nodi rispondono in ARP anche con altre loro schede (sul PX-05 il MAC è quello di `fwbr515i0`, il bridge del firewall della VM 515; `arp_ignore = 0`). È lo stesso apparato con più schede: proposta, non avvisare quando i MAC sono dello stesso host
 - [x] Tappa 3, dati: oggetti con nome (`traffico_oggetti`), reti viste, rotte; il nome entra in «Fra reti»
 - [x] Tappa 3, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa

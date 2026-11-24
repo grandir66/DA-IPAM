@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
-import { esternoTraffico, PER, type Per } from "@/lib/traffico/esterno";
+import { esternoTraffico, PER, SEGNATE, type Per, type Segnate } from "@/lib/traffico/esterno";
 
 const PERIODI = [1, 7, 30];
 
@@ -18,9 +18,11 @@ export async function GET(req: Request) {
     const pagina = Number(q.get("pagina") ?? 1);
     if (!PERIODI.includes(giorni)) return NextResponse.json({ error: "Periodo non valido" }, { status: 400 });
     if (!(PER as readonly string[]).includes(per)) return NextResponse.json({ error: "Vista non valida" }, { status: 400 });
+    const segnate = q.get("segnate");
+    if (segnate !== null && !(SEGNATE as readonly string[]).includes(segnate)) return NextResponse.json({ error: "Filtro non valido" }, { status: 400 });
     try {
       return NextResponse.json(
-        esternoTraffico({ giorni, per: per as Per, pagina: Number.isFinite(pagina) ? pagina : 1, cerca: (q.get("cerca") ?? "").slice(0, 80) }),
+        esternoTraffico({ giorni, per: per as Per, pagina: Number.isFinite(pagina) ? pagina : 1, cerca: (q.get("cerca") ?? "").slice(0, 80), segnate: (segnate ?? undefined) as Segnate | undefined }),
         { headers: NO_STORE },
       );
     } catch (e) {

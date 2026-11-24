@@ -15,6 +15,7 @@ import type { AnomaliaNuova } from "./anomalie";
 import { creaCercaGeo, statoGeo, type Geo, type StatoGeo } from "./geo";
 import { dbTraffico } from "./lettura";
 import { creaCercatore, elencoOggetti } from "./oggetti";
+import { creaCercaListe, type SegnoLista } from "./liste";
 import { nomiDegliIp, type NomeDiIp } from "./quadro";
 
 export const GIORNI_ESTERNI = 30;
@@ -118,10 +119,17 @@ export interface RigaVista {
   byte_dentro: number;
   servizi: Servizio[];
   ultima_vista: string;
+  /** Destinazioni del gruppo in una lista di reputazione, e quante ne taglierebbe il geoblocking (liste di DA-GEO). */
+  compromesse: number;
+  bloccherebbe: number;
+  /** Solo per destinazione: le liste in cui sta. */
+  liste: SegnoLista[];
 }
+export const SEGNATE = ["compromesse", "bloccate"] as const;
+export type Segnate = (typeof SEGNATE)[number];
 export interface TettoScattato { host: number; byte: number; indirizzi: number }
 export interface VistaEsterno {
-  tessere: { destinazioni: number; paesi: number; fornitori: number; byte: number; host: number };
+  tessere: { destinazioni: number; paesi: number; fornitori: number; byte: number; host: number; compromesse: number; bloccherebbe: number };
   righe: RigaVista[];
   totale: number;
   pagina: number;
@@ -136,13 +144,15 @@ export interface VistaEsterno {
  */
 export function calcolaEsterno(
   righe: RigaEsterna[],
-  info: (ip: string) => { nome: string | null; a_mano?: boolean; paese: string | null; asn: number | null; fornitore: string | null },
-  filtro: { per: Per; pagina?: number; cerca?: string },
+  info: (ip: string) => { nome: string | null; a_mano?: boolean; paese: string | null; asn: number | null; fornitore: string | null; liste?: SegnoLista[] },
+  filtro: { per: Per; pagina?: number; cerca?: string; segnate?: Segnate },
 ): VistaEsterno {
   const cerca = (filtro.cerca ?? "").trim().toLowerCase();
   const altri: TettoScattato = { host: 0, byte: 0, indirizzi: 0 };
   const hostAltri = new Set<string>();
-  const gruppi = new Map<string, { riga: RigaVista; host: Set<string>; dest: Set<string>; servizi: Map<string, Servizio> }>();
+  const compromesse = new Set<string>();
+  const bloccate = new Set<string>();
+  const gruppi = new Map<string, { riga: RigaVista; host: Set<string>; dest: Set<string>; comp: Set<string>; bloc: Set<string>; servizi: Map<string, Servizio> }>();
   const tutteDest = new Set<string>();
   const paesi = new Set<string>();
   const fornitori = new Set<string>();
@@ -157,7 +167,13 @@ export function calcolaEsterno(
     }
     const i = info(r.ip);
     if (cerca && ![r.ip, r.interno, i.nome ?? "", i.paese ?? "", i.fornitore ?? ""].some((x) => x.toLowerCase().includes(cerca))) continue;
+    const liste = i.liste ?? [];
+    const compromessa = liste.some((l) => l.tipo === "reputazione");
+    const bloccata = liste.some((l) => l.tipo === "geo");
+    if ((filtro.segnate === "compromesse" && !compromessa) || (filtro.segnate === "bloccate" && !bloccata)) continue;
     byte += r.byte;
+    if (compromessa) compromesse.add(r.ip);
+    if (bloccata) bloccate.add(r.ip);
     tutteDest.add(r.ip);
     tuttiHost.add(r.interno);
     if (i.paese) paesi.add(i.paese);
@@ -172,13 +188,16 @@ export function calcolaEsterno(
           paese: filtro.per === "destinazione" || filtro.per === "paese" ? i.paese : null,
           fornitore: filtro.per === "destinazione" || filtro.per === "fornitore" ? i.fornitore : null,
           host: 0, destinazioni: 0, byte: 0, byte_dentro: 0, servizi: [], ultima_vista: r.ultima_vista,
+          compromesse: 0, bloccherebbe: 0, liste: filtro.per === "destinazione" ? liste : [],
         },
-        host: new Set(), dest: new Set(), servizi: new Map(),
+        host: new Set(), dest: new Set(), comp: new Set(), bloc: new Set(), servizi: new Map(),
       };
       gruppi.set(chiave, g);
     }
     g.host.add(r.interno);
     g.dest.add(r.ip);
+    if (compromessa) g.comp.add(r.ip);
+    if (bloccata) g.bloc.add(r.ip);
     g.riga.byte += r.byte;
     if (r.verso === "dentro") g.riga.byte_dentro += r.byte;
     if (r.ultima_vista > g.riga.ultima_vista) g.riga.ultima_vista = r.ultima_vista;
@@ -189,12 +208,12 @@ export function calcolaEsterno(
   }
   altri.host = hostAltri.size;
   const tutte = [...gruppi.values()].map((g) => ({
-    ...g.riga, host: g.host.size, destinazioni: g.dest.size,
+    ...g.riga, host: g.host.size, destinazioni: g.dest.size, compromesse: g.comp.size, bloccherebbe: g.bloc.size,
     servizi: [...g.servizi.values()].sort((a, b) => b.byte - a.byte).slice(0, 3),
   })).sort((a, b) => b.byte - a.byte);
   const pagina = Math.max(1, Math.trunc(filtro.pagina ?? 1));
   return {
-    tessere: { destinazioni: tutteDest.size, paesi: paesi.size, fornitori: fornitori.size, byte, host: tuttiHost.size },
+    tessere: { destinazioni: tutteDest.size, paesi: paesi.size, fornitori: fornitori.size, byte, host: tuttiHost.size, compromesse: compromesse.size, bloccherebbe: bloccate.size },
     righe: tutte.slice((pagina - 1) * PER_PAGINA, pagina * PER_PAGINA), totale: tutte.length, pagina, perPagina: PER_PAGINA,
     altri: altri.host > 0 ? altri : null,
   };
@@ -202,7 +221,7 @@ export function calcolaEsterno(
 
 export interface EsternoTraffico extends VistaEsterno { giorni: number; per: Per; archivio: StatoGeo; nomi_host: Record<string, NomeDiIp>; troncato: boolean }
 
-export function esternoTraffico(filtro: { giorni?: number; per: Per; pagina?: number; cerca?: string }): EsternoTraffico {
+export function esternoTraffico(filtro: { giorni?: number; per: Per; pagina?: number; cerca?: string; segnate?: Segnate }): EsternoTraffico {
   const d = dbTraffico();
   const giorni = Math.max(1, Math.min(GIORNI_ESTERNI, Math.trunc(filtro.giorni ?? 1)));
   const righe = d.prepare(`
@@ -217,6 +236,7 @@ export function esternoTraffico(filtro: { giorni?: number; per: Per; pagina?: nu
   if (troncato) righe.length = MASSIMO_RIGHE;
 
   const geo = creaCercaGeo();
+  const cercaListe = creaCercaListe(d);
   const oggetti = elencoOggetti(d);
   const nomeOggetto = new Map(oggetti.map((o) => [o.chiave, o.nome]));
   const diOggetto = creaCercatore(oggetti.map((o) => o.chiave));
@@ -229,7 +249,7 @@ export function esternoTraffico(filtro: { giorni?: number; per: Per; pagina?: nu
     if (!i) {
       const o = diOggetto(ip);
       const dato = o ? nomeOggetto.get(o) ?? null : null;
-      i = { nome: dato ?? nomi.get(ip) ?? null, a_mano: dato !== null, ...geo(ip) };
+      i = { nome: dato ?? nomi.get(ip) ?? null, a_mano: dato !== null, ...geo(ip), liste: cercaListe(ip) };
       memo.set(ip, i);
     }
     return i;

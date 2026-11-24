@@ -45,7 +45,7 @@ test("regole pure: raggruppamenti, il tetto dichiarato, la ricerca, il paese nuo
   const righe = [r("10.4.0.10", "93.184.216.34", 1000), r("10.4.0.11", "93.184.216.34", 500), r("10.4.0.10", "5.9.1.1", 300), r("10.4.0.20", "8.8.8.8", 70, "dentro"), r("10.4.0.10", "altri", 40, "fuori", 12)];
   const info = (ip: string) => (ip.startsWith("93.") ? { nome: "posta.esempio.it", paese: "US", asn: 15133, fornitore: "Edgecast" } : ip.startsWith("5.") ? { nome: null, paese: "DE", asn: 24940, fornitore: "Hetzner" } : { nome: null, paese: null, asn: null, fornitore: null });
   const dest = calcolaEsterno(righe, info, { per: "destinazione" });
-  assert.deepEqual(dest.tessere, { destinazioni: 3, paesi: 2, fornitori: 2, byte: 1870, host: 3 });
+  assert.deepEqual(dest.tessere, { destinazioni: 3, paesi: 2, fornitori: 2, byte: 1870, host: 3, compromesse: 0, bloccherebbe: 0 });
   assert.deepEqual(dest.righe.map((x) => [x.chiave, x.nome, x.paese, x.host, x.byte]), [["93.184.216.34", "posta.esempio.it", "US", 2, 1500], ["5.9.1.1", null, "DE", 1, 300], ["8.8.8.8", null, null, 1, 70]]);
   assert.equal(dest.righe[2].byte_dentro, 70);
   assert.deepEqual(dest.altri, { host: 1, byte: 40, indirizzi: 12 });

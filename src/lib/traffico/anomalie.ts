@@ -20,7 +20,8 @@ import { isIpInCidr } from "@/lib/utils";
 import { eImpianto } from "@/lib/vuln/impianti-in-rete";
 import type { DopoFinestra, FattoCollector, RigaCollector } from "./lettura";
 import { agganciaHost, anomalieIdentita, scriviIdentita, type IdentitaCollector } from "./identita";
-import { registraEsterni, type EsternoCollector } from "./esterno";
+import { esternoValido, registraEsterni, type EsternoCollector } from "./esterno";
+import { creaCercaListe, versoCompromessi } from "./liste";
 
 /** I controlli sul contenuto fatti dal collector (`collector-traffico/collector/controlli.py`): il tipo del fatto è il tipo dell'anomalia. */
 export const TIPI_FATTO = [
@@ -35,7 +36,7 @@ export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato", "mac_mai_visto", "mac
 export type TipoIdentita = (typeof TIPI_IDENTITA)[number];
 /** I tipi che hanno l'interruttore per rete. */
 /** Un host che apre verso un paese mai visto prima (`esterno.ts`), dopo l'apprendimento. */
-export const TIPI_ESTERNO = ["paese_nuovo"] as const;
+export const TIPI_ESTERNO = ["paese_nuovo", "indirizzo_compromesso"] as const;
 export const TIPI_CONTROLLO = [...TIPI_FATTO, ...TIPI_IDENTITA, ...TIPI_ESTERNO] as const;
 export type TipoControllo = (typeof TIPI_CONTROLLO)[number];
 export type TipoAnomalia = "coppia_nuova" | "porta_nuova" | "molti_contatti" | "impianto"
@@ -208,7 +209,10 @@ export function creaRegistratoreEsterni(sonde: Set<string> = new Set()): (d: Dat
   return (d, collectorId, righe) => {
     if (righe.length === 0) return;
     const spenti = new Set((d.prepare("SELECT network_id FROM traffico_controlli WHERE acceso = 0 AND tipo = 'paese_nuovo'").all() as { network_id: number }[]).map((r) => r.network_id));
+    const senzaListe = new Set((d.prepare("SELECT network_id FROM traffico_controlli WHERE acceso = 0 AND tipo = 'indirizzo_compromesso'").all() as { network_id: number }[]).map((r) => r.network_id));
     const nuove = registraEsterni(d, collectorId, righe, (ip) => sonde.has(ip) || spenti.has(reteDi(ip) ?? RETE_NESSUNA));
+    // gli indirizzi compromessi non hanno apprendimento: valgono dal primo giorno
+    nuove.push(...versoCompromessi(righe.filter(esternoValido), creaCercaListe(d)).filter((a) => !sonde.has(a.client) && !senzaListe.has(reteDi(a.client) ?? RETE_NESSUNA)));
     if (nuove.length > 0) scriviAnomalie(d, righe.reduce((m, r) => (r.inizio > m ? r.inizio : m), righe[0].inizio), nuove);
   };
 }

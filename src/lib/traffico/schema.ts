@@ -91,6 +91,16 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       `);
     })();
   }
+  // Liste di DA-GEO (24/11): `fonte` ha al più una riga, il codice del dispositivo è cifrato.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS traffico_liste_fonte (
+      id INTEGER PRIMARY KEY, url TEXT NOT NULL, codice_enc TEXT NOT NULL, ultimo_giro TEXT, errore TEXT);
+    CREATE TABLE IF NOT EXISTS traffico_liste (
+      nome TEXT PRIMARY KEY, tipo TEXT NOT NULL, titolo TEXT NOT NULL DEFAULT '', fonte TEXT NOT NULL DEFAULT '',
+      voci INTEGER NOT NULL, generato TEXT NOT NULL, in_errore INTEGER NOT NULL DEFAULT 0, scaricata_il TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS traffico_liste_reti (
+      lista TEXT NOT NULL, inizio INTEGER NOT NULL, fine INTEGER NOT NULL, PRIMARY KEY (lista, inizio)) WITHOUT ROWID;
+  `);
   db.exec(`
     -- ZONA ROSSA (tappa 7, 23/11): nomi utente degli accessi. 90 giorni, solo amministratori, mai negli export.
     CREATE TABLE IF NOT EXISTS traffico_accessi (

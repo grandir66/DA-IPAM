@@ -29,6 +29,7 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   mac_mai_visto: "MAC censito mai visto",
   mac_altrove: "MAC già censito su un altro IP",
   paese_nuovo: "Paese nuovo",
+  indirizzo_compromesso: "Indirizzo compromesso",
   tls_certificato: "Certificato",
   dns_esterno: "DNS fuori casa",
   dns_errori: "DNS che non risponde",
@@ -97,6 +98,7 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "mac_mai_visto": return "Risponde un apparato diverso da quello censito, che in rete non si è mai visto: la scheda è forse vecchia";
     case "mac_altrove": return typeof d.altrove === "string" && /^[0-9.]{7,15}$/.test(d.altrove) ? `Risponde col MAC già censito su ${d.altrove}` : "Risponde col MAC già censito su un altro indirizzo";
     case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
+    case "indirizzo_compromesso": return typeof d.lista === "string" ? `Apre una connessione verso un indirizzo noto come compromesso (${d.lista})` : "Apre una connessione verso un indirizzo noto come compromesso";
     case "tls_certificato":
       if (d.motivo === "scaduto") return `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`;
       // non_valido: la sonda avanzata (Zeek) non riesce a verificare la catena del certificato

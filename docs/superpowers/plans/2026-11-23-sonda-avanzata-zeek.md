@@ -385,6 +385,16 @@ ora `SSH_ASKPASS`.
   i quattro nuovi letti in pari. Il PX03 era rimasto indietro di 276.000 righe già col profilo leggero (stamattina
   produceva più delle 20.000 righe ogni 5 minuti che l'hub legge per giro): alle 15:00 170.000, recupera da solo.
 
+- 2026-11-24, Task 5, lettura delle 19:05 UTC (Riccardo: «il giro è finito»). **Finito su PX01, PX02, PX04** (24 h,
+  scartati 0, nessun avviso). **Non finito su PX03 e PX05**: interrotti alle 09:06 e 09:12 UTC dalla scansione di tutte
+  le porte partita da `192.168.4.8` (corretta, `c6d20234`), ripartiti alle 13:39, finiscono il 25/11 verso le 13:40 UTC;
+  finora scartati 0 e nessuna uccisione dopo le 09:25 UTC. IPAM `192.168.4.8`: cinque collector «avanzato 9.0.1», nessun
+  errore, PX03 in pari (cursore 4.156.643 su 4.157.343). Numeri nel README, «Profilo avanzato».
+  **Difetto trovato, aperto**: le connessioni che non si chiudono mancano dall'archivio (caso 3 del piano, pesa molto
+  più del previsto: sul PX04 51 GB su 76 del traffico stabile). Correzione proposta a Riccardo: uno script nostro in
+  `sonda.zeek` che ogni 5 minuti scrive i byte delle connessioni vive, l'adattatore somma le differenze e le toglie
+  dalla riga finale di `conn`. Non iniziata.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

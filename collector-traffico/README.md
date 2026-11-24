@@ -82,11 +82,32 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
 - **`/v1/stato`** in più: `profilo`, `motore` (`zeek`|`pmacct`), `versione_motore`, `freno`, `scartati`.
 - **Risorse**: 2 vCPU, 2 GB; registri al massimo una finestra (circa 25 MB sul DA-PX-03), poi cancellati.
 - **Limiti**: Zeek scrive una connessione quando finisce, e in 9.0.1 non c'è lo script per le connessioni lunghe
-  (è un pacchetto esterno): un trasferimento di ore cade tutto nella finestra in cui si chiude. Il tempo fra SYN e
+  (è un pacchetto esterno): un trasferimento di ore cade tutto nella finestra in cui si chiude, e una connessione che
+  non si chiude mai non si vede proprio (misura del 24/11, sotto: è il limite più pesante). Il tempo fra SYN e
   SYN-ACK non c'è (`ms_minimo`/`ms_mediano` = -1, «non misurato»). S7 e BACnet non li legge. SMB1 e NTLM1 restano
   all'ascolto finché una cattura vera non mostra che Zeek li distingue.
 - **Dati di prova**: `tests/dati/zeek/` (cattura del banco, LEGGIMI); la prova di non-fuga è `tests/test_non_fuga.py`.
-- **Giornata sul DA-PX-03**: in corso dal 23/11 13:15 UTC (sorvegliante `banco/giornata-zeek.sh`); numeri qui a fine prova.
+- **Giornata intera (sorvegliante `banco/giornata-zeek.sh`)**, letta il 24/11 alle 19:05 UTC:
+
+  | Collector | Durata | CPU di Zeek, media e massimo (una vCPU) | RAM massima di Zeek | Disco massimo | Scartati |
+  |---|---|---|---|---|---|
+  | PX01 | 24 h, chiusa | 1%, 20% | 305 MB | 17% | 0 |
+  | PX02 | 24 h, chiusa | 0%, 1% | 287 MB | 15% | 0 |
+  | PX04 | 24 h, chiusa | 1%, 3% | 511 MB | 16% | 0 |
+  | PX03, primo giro | 19 h 30, interrotto dalla scansione | 2,7%, 10% | 405 MB | 30% | 0 |
+  | PX03, secondo giro | 5 h 20 di 24, in corso | 2,7%, 3% | 364 MB | 25% | 0 |
+  | PX05, primo giro | 18 h 20, interrotto dalla scansione | 0%, 1% | 1.060 MB | 16% | 0 |
+  | PX05, secondo giro | 5 h 20 di 24, in corso | 0%, 0% | 257 MB | 14% | 0 |
+
+- **Coppie, profilo leggero contro avanzato** (22 ore contro 22 ore, 18 sul PX03; 22-23/11 contro 23-24/11): le righe
+  calano da 341.869 a 105.920 (PX01), da 349.772 a 86.143 (PX02), da 347.256 a 181.462 (PX04) per due motivi.
+  Il primo è voluto: 133.000-203.000 righe del leggero erano coppie viste in una finestra sola (scansioni e porte
+  effimere; sul PX03 un milione). Il secondo è un **buco**: coppie stabili (viste in almeno 50 finestre) che con Zeek
+  **mancano del tutto o quasi**, perché la connessione non si chiude mai e Zeek la scrive solo alla fine. Assenti 211
+  su 699 sul PX01, 102 su 527 sul PX02, 124 su 652 sul PX04 (51 GB su 76 del traffico stabile), 241 su 4.590 sul PX03
+  (46 GB su 109). Fra queste: telefoni SIP (17/5060), syslog (6/5140), connessioni 443 di giorni, annunci MikroTik
+  (17/5678); gli agenti Wazuh (6/1514) ci sono ma in meno di un quarto delle finestre. Il conto è per eccesso: una
+  parte degli assenti ha il verso rovesciato o ha cambiato protocollo (ICMPv6 ora conta come ICMP, IGMP non c'è).
 
 ## Nomi e controlli sul contenuto (`collector-ascolto`)
 

@@ -81,7 +81,7 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
       `/api/traffico/liste`, avviso `indirizzo_compromesso`, filtro `segnate` in «Verso l'esterno», giro alle 5:41
 - [x] Fase 1, interfaccia (Riccardo, 24/11: «Sì, scrivila»), vista a 1920 in locale con dati finti: destinazioni, vista per host col filtro, riquadro delle liste. Non provati: salvataggio di un codice vero, finestra «Togli», tema scuro
 - [ ] Fase 1, Riccardo: in DA-GEO il cliente 70791 con le liste e un dispositivo per l'hub `192.168.4.8`, poi il codice in IPAM
-- [ ] Fase 1, Riccardo: fonte C2 al posto di ThreatFox (410); vive e datate: Emerging Threats «compromised» (~570 indirizzi), nodi Tor
+- [x] Fase 1, fonte al posto di ThreatFox: Emerging Threats «compromised» (Riccardo, 24/11), DA-GEO 1.6.0. Resta scoperto il traffico verso i C2
 - [ ] Riccardo approva le altre fasi (proposta): 1 (fatta nei dati) reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
       geoblocking»: confronto in locale, nessun indirizzo esce); 2 fornitore e servizio (tavola ASN → nome breve e categoria, più gli
       intervalli pubblicati da AWS/Azure/Google/Cloudflare); 3 mappa per paese e direttrici; 4 azienda (RIPE `inetnum`, 224 MB

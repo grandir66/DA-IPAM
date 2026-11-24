@@ -12937,6 +12937,14 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
 }
 
+/** Il MAC di ogni host chiesto (tavola di cablaggio: riconoscere una VM dal MAC). Una query. */
+export function getMacDegliHost(hostIds: readonly number[]): Map<number, string> {
+  const ids = [...new Set(hostIds)];
+  if (ids.length === 0) return new Map();
+  const righe = db().prepare(`SELECT id, mac FROM hosts WHERE mac IS NOT NULL AND mac <> '' AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as Array<{ id: number; mac: string }>;
+  return new Map(righe.map((r) => [r.id, r.mac]));
+}
+
 /**
  * Le porte di tutti gli apparati di un sito per la «Tavola di cablaggio» (spec 2026-11-23 §2): una query sola su
  * `switch_ports` per gli apparati dati, e per quelli senza righe le schede dell'hypervisor dalla scansione Proxmox

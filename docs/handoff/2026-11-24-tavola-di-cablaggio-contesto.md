@@ -42,8 +42,9 @@ modelloDellaMappa(staleDays)         lib/topology/mappa-server.ts   lo stesso di
 | `…/tavola/componi.ts` | `componiTavola`, `tipoCollegamento`, `rangoDi`, `eRete`, `eServer`, `numeroCorto` | tipo, destinazione, ruolo |
 | `…/tavola/righe.ts` | `GEO` (misure), `ordina`, `posaApparato`, `disponi` | misure, ordine, a capo |
 | `…/tavola/instrada.ts` | `instrada`, `disponiEInstrada` | percorso dei cavi |
+| `…/tavola/vm.ts` | quali nodi sono VM, il loro hypervisor fisico, l'elenco nel telaio | VM |
 | `…/tavola/ricerca.ts` | `cercaInTavola`, risultati in ordine di vista | cosa trova la ricerca |
-| `…/tavola/__tests__/tavola.test.ts` | 9 prove, dati inventati | prove nuove in aggiunta |
+| `…/tavola/__tests__/tavola.test.ts` | 10 prove, dati inventati | prove nuove in aggiunta |
 | `src/lib/db-tenant.ts` | `getTopologyTavolaPorte` | colonne lette |
 | `src/app/api/topology/tavola/route.ts` | la rotta | risposta |
 | `src/components/topology/tavola/tavola-client.tsx` | stato, barra, ricerca, fuoco, riquadro del collegamento | comportamento della pagina |
@@ -66,6 +67,7 @@ con nome o IP) → `molti` (più MAC) → `attiva` (accesa, nessun dato).
 
 - **`dubbio` non è un tipo**: è un segno sopra il tipo. Vale per collegamento `stale`, `porteDaVerificare`, o porta giù.
 - **Più MAC non vuol dire trunk 802.1Q**: si scrive «N MAC».
+- **Una VM non è un apparato della tavola**: sta nel telaio del suo hypervisor (Riccardo, 24/11).
 - **Porta fantasma**: nome di porta citato da un collegamento ma assente dall'elenco. Resta visibile in fondo, più chiara.
 - **Fascio**: un cavo per membro (id `<collegamento>#<i>`), uniti da una graffa.
 - **Più collegamenti sulla stessa porta**: si scrive il primo e «(+N)».

@@ -8,6 +8,7 @@ import { disponiEInstrada, instrada } from "@/lib/topology/tavola/instrada";
 import { disponi } from "@/lib/topology/tavola/righe";
 import { nomiArmadi, parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
 import { cercaInTavola } from "@/lib/topology/tavola/ricerca";
+import { vmDaiMac } from "@/lib/topology/tavola/vm";
 import type { ApparatoComposto, PortaTavola } from "@/lib/topology/tavola/tipi";
 
 const SITO = 7;
@@ -197,4 +198,27 @@ test("armadi: percorso senza la sede, ordine per nome, fascia solo se ci sono ar
   assert.ok(righe.every((r) => (r.testa ?? 0) > 0));
   const senza = disponi(componiTavola({ sito: SITO, nodi: [nodi[2]], collegamenti: [], apparati }).apparati, 1600);
   assert.equal(senza[0].testa, 0);
+});
+
+test("VM: dentro il telaio del loro hypervisor, non apparati; sulla porta vince il cavo dell'hypervisor", () => {
+  const sw = nodo(1, "switch"), pve = nodo(2, "hypervisor", { proxmoxScan: true }), vm = nodo(3, "server"), persa = nodo(4, "server", { fusedHostIds: [40] });
+  const base = { scannedAt: null, ips: ["192.0.2.3"], status: "running" };
+  const note = [
+    { ...base, id: "vm:2:100", name: "app-3", hypervisorNodeId: "dev:2", nodeId: "dev:3" },
+    { ...base, id: "vm:2:101", name: "prova-spenta", status: "stopped", hypervisorNodeId: "dev:2", nodeId: null },
+  ];
+  const nodi = [sw, pve, vm, persa];
+  const dalMac = vmDaiMac(nodi, note, new Map([[40, "BC:24:11:00:00:01"]]), (m) => m.startsWith("BC:24:11"));
+  assert.deepEqual(dalMac.map((v) => v.nodeId), ["dev:4"]);
+  const t = componiTavola({
+    sito: SITO, nodi, vms: [...note, ...dalMac],
+    collegamenti: [coll("V1", "dev:1", "Port 1", "dev:3", ""), coll("L1", "dev:1", "Port 1", "dev:2", "eno1"), coll("V2", "dev:2", "eno1", "dev:3", "")],
+    apparati: [{ node: "dev:1", porte: [porta(1)] }, { node: "dev:2", porte: [{ ...porta(0, { nome: "eno1" }), indice: null }] }, { node: "dev:3", porte: [porta(1)] }],
+  });
+  assert.deepEqual(t.apparati.map((a) => a.nodo), ["dev:1", "dev:2"]);
+  assert.deepEqual(t.apparati[1].vms?.map((v) => [v.nome, v.accesa, v.scheda]), [["app-3", true, "/devices/3"], ["prova-spenta", false, null]]);
+  assert.equal(t.apparati[0].porte[0].collegamento, "L1");
+  assert.deepEqual(t.cavi.map((c) => c.id), ["L1"]);
+  assert.deepEqual(t.vmSenzaCasa.map((v) => v.nome), ["app-4"]);
+  assert.deepEqual(cercaInTavola(t.apparati, "prova-sp"), [{ nodo: "dev:2", porta: null }]);
 });

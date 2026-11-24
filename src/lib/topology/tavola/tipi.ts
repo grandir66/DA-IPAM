@@ -3,7 +3,7 @@
  * ogni apparato è un pannello di porte con sotto la destinazione. Logica pura: nessun import del DB. Le porte arrivano
  * dalla rotta GET /api/topology/tavola, i collegamenti dal modello della mappa (non si ricalcola niente).
  */
-import type { MapLink, MapNode } from "@/lib/topology/model-types";
+import type { MapLink, MapNode, MapVm } from "@/lib/topology/model-types";
 
 /** Una porta come la legge il server: una riga di `switch_ports`, o una scheda dell'hypervisor (senza indice). */
 export interface PortaTavola {
@@ -29,6 +29,8 @@ export interface TavolaView {
   armadi: Array<{ id: number; name: string }>;
   nodi: MapNode[];
   collegamenti: MapLink[];
+  /** Le VM dei nodi qui sopra: non sono apparati della tavola, stanno dentro il loro hypervisor. */
+  vms: MapVm[];
   apparati: ApparatoPorte[];
   staleDays: number;
 }
@@ -65,6 +67,17 @@ export interface PortaComposta {
   letta?: PortaTavola | null;
 }
 
+/** Una VM scritta nel telaio del suo hypervisor. */
+export interface VmComposta {
+  id: string;
+  nome: string;
+  ip: string | null;
+  /** null = nessuna lettura dice se è accesa. */
+  accesa: boolean | null;
+  /** La sua scheda, se è un apparato o un host censito. */
+  scheda: string | null;
+}
+
 export interface ApparatoComposto {
   nodo: string;
   refId: number;
@@ -77,6 +90,8 @@ export interface ApparatoComposto {
   /** Per l'ordine in fila: 0 router/firewall, 1 core, 2 accesso, 3 hypervisor, 4 il resto. */
   rango: number;
   porte: PortaComposta[];
+  /** Le VM che girano dentro (solo un hypervisor). */
+  vms?: VmComposta[];
 }
 
 /** Un cavo da disegnare: tutti e due i capi sono porte della tavola. */
@@ -93,4 +108,6 @@ export interface CavoComposto {
 export interface TavolaComposta {
   apparati: ApparatoComposto[];
   cavi: CavoComposto[];
+  /** VM di questa sede il cui hypervisor non è un apparato della tavola. */
+  vmSenzaCasa: VmComposta[];
 }

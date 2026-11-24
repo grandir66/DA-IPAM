@@ -6,8 +6,9 @@
  * che l'elenco non ha diventa una porta fantasma in fondo, invece di sparire (spec §7). Logica pura.
  */
 import { elencoDa, indiciInElenco, normale } from "@/lib/topology/cavi/porte";
-import type { MapLink, MapNode } from "@/lib/topology/model-types";
+import type { MapLink, MapNode, MapVm } from "@/lib/topology/model-types";
 import { SENZA_SEDE, nelSito } from "./api";
+import { componiVm, ferroDelleVm } from "./vm";
 import type { ApparatoComposto, ApparatoPorte, CavoComposto, PortaComposta, PortaTavola, TavolaComposta, TipoPorta } from "./tipi";
 
 const RETE = new Set(["router", "firewall", "switch", "access_point", "ap", "gateway", "wireless", "l3_switch"]);
@@ -77,13 +78,15 @@ interface Lavoro {
   composte: PortaComposta[];
 }
 
-export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; collegamenti: readonly MapLink[]; apparati: readonly ApparatoPorte[]; armadi?: ReadonlyArray<{ id: number; name: string }> }): TavolaComposta {
+export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; collegamenti: readonly MapLink[]; apparati: readonly ApparatoPorte[]; armadi?: ReadonlyArray<{ id: number; name: string }>; vms?: readonly MapVm[] }): TavolaComposta {
   const perId = new Map(input.nodi.map((n) => [n.id, n]));
   const porteDi = new Map(input.apparati.map((a) => [a.node, a.porte]));
   const nomeArmadio = new Map((input.armadi ?? []).map((a) => [a.id, a.name]));
+  const vms = input.vms ?? [];
+  const ferro = ferroDelleVm(vms);
   const lavori = new Map<string, Lavoro>();
   for (const n of input.nodi) {
-    if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito)) continue;
+    if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito) || ferro.has(n.id)) continue;
     const righe = [...(porteDi.get(n.id) ?? [])].sort((x, y) => (x.indice ?? 1e9) - (y.indice ?? 1e9));
     const conIndice = righe.filter((r): r is PortaTavola & { indice: number } => r.indice !== null);
     const apparato: ApparatoComposto = { nodo: n.id, refId: n.refId, nome: n.name, tipo: n.type, ip: n.mgmtIp, rackId: n.rackId, armadio: n.rackId === null ? null : nomeArmadio.get(n.rackId) ?? null, rango: rangoDi(n), porte: [] };
@@ -150,12 +153,26 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
 
   const cavi: CavoComposto[] = [];
   const visti = new Set<string>();
-  for (const l of input.collegamenti) {
+  // I collegamenti verso una VM dopo gli altri: sono visti attraverso il cavo del suo hypervisor, che sulla porta vince.
+  const ordinati = [...input.collegamenti].sort((x, y) => Number(ferro.has(x.a) || ferro.has(x.b)) - Number(ferro.has(y.a) || ferro.has(y.b)));
+  for (const l of ordinati) {
     if (visti.has(l.id)) continue;
     visti.add(l.id);
     const wa = lavori.get(l.a), wb = lavori.get(l.b);
     if (!wa && !wb) continue;
     const na = perId.get(l.a), nb = perId.get(l.b);
+    if (ferro.has(l.a) || ferro.has(l.b)) {
+      if (ferro.has(l.a) && ferro.has(l.b)) continue;
+      const [w, vm, porta] = ferro.has(l.a) ? [wb, na, l.bPort] : [wa, nb, l.aPort];
+      const casa = vm ? ferro.get(vm.id) ?? null : null;
+      // Fra la VM e il suo hypervisor non c'è un cavo; senza il nome della porta non c'è niente da scrivere.
+      if (!w || !vm || casa === w.apparato.nodo || porta.trim() === "") continue;
+      const p = trova(w, porta, `${l.id}:vm`);
+      if (p.collegamento !== null) continue;
+      segna(p, l, "server", vm, "", w.righe[w.composte.indexOf(p)], null);
+      if (casa !== null) p.destinazione = `${perId.get(casa)?.name ?? "hypervisor"} (${vm.name})`;
+      continue;
+    }
     const tipo = tipoCollegamento(l, na, nb, input.sito);
     const membri = l.cavo?.fascio?.membri ?? [];
     const coppie = membri.length > 0
@@ -170,6 +187,16 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
     }
   }
 
-  const apparati = [...lavori.values()].map((w) => ({ ...w.apparato, porte: w.composte }));
-  return { apparati, cavi };
+  /** L'hypervisor fisico di una VM (il suo, o quello che contiene il suo). */
+  const dentro = (v: MapVm): string | null => (v.hypervisorNodeId === null ? null : ferro.has(v.hypervisorNodeId) ? ferro.get(v.hypervisorNodeId) ?? null : v.hypervisorNodeId);
+  const apparati = [...lavori.values()].map((w) => ({
+    ...w.apparato, porte: w.composte,
+    vms: componiVm(vms.filter((v) => dentro(v) === w.apparato.nodo), perId),
+  }));
+  const vmSenzaCasa = componiVm(vms.filter((v) => {
+    const h = dentro(v);
+    const n = v.nodeId !== null ? perId.get(v.nodeId) : undefined;
+    return (h === null || !lavori.has(h)) && n !== undefined && n.kind === "device" && !n.hidden && nelSito(n, input.sito);
+  }), perId);
+  return { apparati, cavi, vmSenzaCasa };
 }

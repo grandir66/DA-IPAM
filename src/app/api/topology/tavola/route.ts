@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getLocations, getTopologyTavolaPorte } from "@/lib/db-tenant";
+import { getLocations, getMacDegliHost, getTopologyTavolaPorte } from "@/lib/db-tenant";
 import { modelloDellaMappa } from "@/lib/topology/mappa-server";
 import { getLinkStaleDays } from "@/lib/topology/settings";
 import { SENZA_SEDE, nomiArmadi, parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
+import { vmDaiMac, vmDeiNodi } from "@/lib/topology/tavola/vm";
+import { macDiVm } from "@/lib/topology/vms";
 import type { TavolaView } from "@/lib/topology/tavola/tipi";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
 
@@ -24,7 +26,9 @@ export async function GET(req: Request) {
       const { model } = modelloDellaMappa(staleDays);
       const scelto = sito.data ?? ritagliaSito(model, SENZA_SEDE).siti[0]?.id ?? SENZA_SEDE;
       const r = ritagliaSito(model, scelto);
-      const view: TavolaView = { site: scelto, siti: r.siti, armadi: nomiArmadi(r.nodi, getLocations()), nodi: r.nodi, collegamenti: r.collegamenti, apparati: getTopologyTavolaPorte(r.deviceIds), staleDays };
+      const macs = getMacDegliHost(r.nodi.flatMap((n) => (n.kind === "device" ? n.fusedHostIds : [])));
+      const vms = [...vmDeiNodi(r.nodi, model.vms), ...vmDaiMac(r.nodi, model.vms, macs, macDiVm)];
+      const view: TavolaView = { site: scelto, siti: r.siti, armadi: nomiArmadi(r.nodi, getLocations()), nodi: r.nodi, collegamenti: r.collegamenti, vms, apparati: getTopologyTavolaPorte(r.deviceIds), staleDays };
       return NextResponse.json(view, { headers: NO_STORE });
     } catch (error) {
       console.error("[topology] tavola:", error);

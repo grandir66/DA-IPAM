@@ -5,6 +5,7 @@
  * tavola nel suo riquadro che scorre in orizzontale sotto i 1240 px, e il riquadro del collegamento o della porta scelta. Sola lettura:
  * per correggere un cavo si va alla Topologia. Dati da GET /api/topology/tavola; un errore si mostra come errore.
  */
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LoadError } from "@/components/shared/load-error";
@@ -17,7 +18,7 @@ import { cercaInTavola } from "@/lib/topology/tavola/ricerca";
 import type { PortaComposta, TavolaView, TipoPorta } from "@/lib/topology/tavola/tipi";
 import { LegendaTavola } from "./legenda";
 import { RiquadroScelta } from "./riquadro-scelta";
-import { TavolaSvg, type Fuoco } from "./tavola-svg";
+import { TavolaSvg, scrittaVm, type Fuoco } from "./tavola-svg";
 
 const CHIAVE_SITO = "topologia.tavola.sito";
 const CHIAVE_LIBERE = "topologia.tavola.libere";
@@ -88,15 +89,16 @@ export function TavolaClient() {
 
   const tavola = useMemo(() => {
     if (!dati) return null;
-    const composta = componiTavola({ sito: dati.site, nodi: dati.nodi, collegamenti: dati.collegamenti, apparati: dati.apparati, armadi: dati.armadi });
+    const composta = componiTavola({ sito: dati.site, nodi: dati.nodi, collegamenti: dati.collegamenti, apparati: dati.apparati, armadi: dati.armadi, vms: dati.vms });
     const conPorte = libere ? composta.apparati : composta.apparati.map((a) => ({ ...a, porte: a.porte.filter((p) => p.tipo !== "libera" || p.collegamento) }));
     // Con le porte libere nascoste un telaio senza porte non dice niente: si nasconde, e la barra dice quanti sono.
     const tutti = composta.apparati.length;
-    const apparati = libere ? conPorte : conPorte.filter((a) => a.porte.length > 0);
+    const apparati = libere ? conPorte : conPorte.filter((a) => a.porte.length > 0 || (a.vms?.length ?? 0) > 0);
     const { righe, disegno } = disponiEInstrada(apparati, composta.cavi, larghezza);
     const tipoCavo = new Map(composta.cavi.map((c) => [c.id, { tipo: c.tipo, dubbio: c.dubbio }]));
     const porte = apparati.flatMap((a) => a.porte);
-    return { apparati, righe, disegno, tipoCavo, porte, cavi: composta.cavi, nascosti: tutti - apparati.length };
+    return { apparati, righe, disegno, tipoCavo, porte, cavi: composta.cavi, nascosti: tutti - apparati.length, vmSenzaCasa: composta.vmSenzaCasa,
+      quanteVm: composta.apparati.reduce((n, a) => n + (a.vms?.length ?? 0), composta.vmSenzaCasa.length) };
   }, [dati, libere, larghezza]);
 
   const perCollegamento = useCallback((ids: Iterable<string>): Fuoco | null => {
@@ -158,6 +160,7 @@ export function TavolaClient() {
         {tavola && (
           <div className="flex flex-wrap items-center gap-2 border-l pl-4 font-mono text-[13px] text-muted-foreground">
             <span className="rounded-md border bg-muted/50 px-2 py-0.5">{tavola.apparati.length} apparati{tavola.nascosti > 0 ? ` · ${tavola.nascosti} nascosti` : ""}</span>
+            {tavola.quanteVm > 0 && <span className="rounded-md border bg-muted/50 px-2 py-0.5">{tavola.quanteVm} VM</span>}
             <span className="rounded-md border bg-muted/50 px-2 py-0.5">{tavola.disegno.linee.length} cavi</span>
             <span className="rounded-md border bg-muted/50 px-2 py-0.5">{contaTipi("libera")} porte libere</span>
             {tavola.porte.some((p) => p.dubbio) && (
@@ -200,6 +203,15 @@ export function TavolaClient() {
               onPorta={setSopraPorta} onCavo={setSopraCavo} onScegli={scegli} />
           )}
         </div>
+      )}
+
+      {tavola && tavola.vmSenzaCasa.length > 0 && (
+        <section className="rounded-xl border bg-card px-4 py-3 text-[13px]">
+          <h2 className="font-semibold">Macchine virtuali senza hypervisor nella tavola · {tavola.vmSenzaCasa.length}</h2>
+          <ul className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4">
+            {tavola.vmSenzaCasa.map((v) => <li key={v.id} className="truncate">{v.scheda ? <Link href={v.scheda} className="hover:underline">{scrittaVm(v, 60)}</Link> : scrittaVm(v, 60)}</li>)}
+          </ul>
+        </section>
       )}
 
       {tavola && (

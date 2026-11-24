@@ -18,6 +18,10 @@ export const GEO = {
   margine: 10,
   /** La fascia col nome dell'armadio sopra la sua prima riga. */
   testaArmadio: 34,
+  /** L'elenco delle VM sotto le etichette: colonna, riga, titolo. */
+  vmColonna: 216,
+  vmRiga: 20,
+  vmTesta: 28,
   /** Spazio fra due apparati della stessa riga. */
   spazio: 24,
   larghezzaMin: 190,
@@ -45,6 +49,8 @@ export interface ApparatoPosto {
   h: number;
   file: 1 | 2;
   porte: PortaPosta[];
+  /** Quante colonne ha l'elenco delle VM (0 = nessuna VM). */
+  vmColonne?: number;
 }
 
 export interface Riga {
@@ -78,11 +84,14 @@ export function posaApparato(a: ApparatoComposto): Omit<ApparatoPosto, "x"> {
     const cx = GEO.margine + col * GEO.passo + GEO.porta / 2;
     return { id: p.id, x: cx - GEO.porta / 2, y: GEO.testata + fila * GEO.passo, cx, ex: file === 2 ? cx + (fila === 0 ? -7 : 7) : cx };
   });
+  const nVm = a.vms?.length ?? 0;
+  const vmColonne = nVm === 0 ? 0 : Math.max(Math.min(4, Math.ceil(nVm / 5)), Math.min(4, Math.floor((colonne * GEO.passo) / GEO.vmColonna)));
   return {
     nodo: a.nodo,
-    w: Math.max(GEO.larghezzaMin, colonne * GEO.passo + 2 * GEO.margine),
-    h: GEO.testata + file * GEO.passo + GEO.etichette + GEO.margine,
+    w: Math.max(GEO.larghezzaMin, colonne * GEO.passo + 2 * GEO.margine, vmColonne * GEO.vmColonna + 2 * GEO.margine),
+    h: GEO.testata + file * GEO.passo + GEO.etichette + GEO.margine + (nVm === 0 ? 0 : GEO.vmTesta + Math.ceil(nVm / vmColonne) * GEO.vmRiga),
     file,
+    vmColonne,
     porte,
   };
 }

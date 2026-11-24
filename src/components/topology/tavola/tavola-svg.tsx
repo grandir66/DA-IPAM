@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import type { Disegno } from "@/lib/topology/tavola/instrada";
 import { GEO, type Riga } from "@/lib/topology/tavola/righe";
-import type { ApparatoComposto, PortaComposta } from "@/lib/topology/tavola/tipi";
+import type { ApparatoComposto, PortaComposta, VmComposta } from "@/lib/topology/tavola/tipi";
 import { DefinizioniTavola, SegnoPorta } from "./porta-svg";
 import { STILE_CAVO } from "./stile-tavola";
 import type { TipoPorta } from "@/lib/topology/tavola/tipi";
@@ -30,6 +30,15 @@ export const SPENTO_CAVI = 0.25;
 const MAX_CARATTERI = 17;
 
 const corta = (s: string) => (s.length > MAX_CARATTERI ? `${s.slice(0, MAX_CARATTERI - 1)}…` : s);
+
+/** «▶ nome · IP» (■ spenta): l'IP solo se ci sta nella colonna. */
+export function scrittaVm(v: VmComposta, max = 28): string {
+  const testa = v.accesa === null ? "" : v.accesa ? "▶ " : "■ ";
+  const intera = `${testa}${v.nome}${v.ip ? ` · ${v.ip}` : ""}`;
+  if (intera.length <= max) return intera;
+  const breve = `${testa}${v.nome}`;
+  return breve.length <= max ? breve : `${breve.slice(0, max - 1)}…`;
+}
 
 function Graffe({ porte, posizioni, y }: { porte: PortaComposta[]; posizioni: Map<string, number>; y: number }) {
   const gruppi = new Map<string, number[]>();
@@ -94,6 +103,26 @@ export function TavolaSvg(p: {
             </Link>
             <text x={GEO.margine} y={39} fontSize={13} fontFamily="var(--font-mono)" fill="var(--muted-foreground)">{sotto}</text>
             <Graffe porte={a.porte} posizioni={posizioni} y={GEO.testata + ap.file * GEO.passo + 2} />
+            {(a.vms?.length ?? 0) > 0 && (ap.vmColonne ?? 0) > 0 && (() => {
+              const vms = a.vms!, col = ap.vmColonne!, yVm = GEO.testata + ap.file * GEO.passo + GEO.etichette;
+              const accese = vms.filter((v) => v.accesa).length;
+              return (
+                <g>
+                  <line x1={GEO.margine} x2={ap.w - GEO.margine} y1={yVm} y2={yVm} stroke="var(--border)" />
+                  <text x={GEO.margine} y={yVm + 19} fontSize={13} fontWeight={700} fill="var(--foreground)">{`${vms.length} VM, ${accese} ${accese === 1 ? "accesa" : "accese"}`}</text>
+                  {vms.map((v, i) => {
+                    const testo = (
+                      <text x={GEO.margine + (i % col) * GEO.vmColonna} y={yVm + GEO.vmTesta + Math.floor(i / col) * GEO.vmRiga + 14} fontSize={13}
+                        fill={v.accesa === false ? "var(--muted-foreground)" : "var(--foreground)"} className={v.scheda ? "hover:underline" : undefined}>
+                        <title>{[v.nome, v.ip, v.accesa === null ? null : v.accesa ? "accesa" : "spenta"].filter(Boolean).join(" · ")}</title>
+                        {scrittaVm(v)}
+                      </text>
+                    );
+                    return v.scheda ? <Link key={v.id} href={v.scheda}>{testo}</Link> : <g key={v.id}>{testo}</g>;
+                  })}
+                </g>
+              );
+            })()}
             {a.porte.map((porta) => {
               const pp = ap.porte.find((x) => x.id === porta.id);
               if (!pp) return null;

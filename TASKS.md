@@ -57,6 +57,8 @@ MikroTik, LLDP dei Proxmox).
     coi capi cliccabili, clic sulle porte senza cavo, telai vuoti nascosti. Prove 8/8, eslint e tsc puliti.
   - [x] (24/11, Riccardo: «Sì, gli armadi») Nome dell'armadio sopra le sue righe (percorso dalle ubicazioni, ordine per nome). Non visto
     a schermo: serve un'istanza con armadi.
+  - [x] (24/11, Riccardo: «metterle sotto al proxmox che li contiene») VM nel telaio del loro hypervisor (`tavola/vm.ts`), le altre in elenco
+    in fondo. Non visto a schermo.
   - [ ] Da fare dopo v1: filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,

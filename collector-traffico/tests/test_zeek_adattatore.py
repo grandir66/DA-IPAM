@@ -53,6 +53,19 @@ class Conn(unittest.TestCase):
         self.assertIn(("192.0.2.1", "fuori", 9), {(e["ip"], e["verso"], e["porta"]) for e in self.t["esterni"]})
 
 
+class Vive(unittest.TestCase):
+    """24/11/2026: le connessioni che non si chiudono. sonda.zeek scrive in `conn` una riga a finestra con la differenza."""
+
+    def test_byte_sommati_e_riuscita_contata_una_volta(self):
+        r = {"id.orig_h": CARICO, "id.orig_p": 40000, "id.resp_h": SIM, "id.resp_p": 443, "proto": "tcp", "conn_state": "S1",
+             "orig_ip_bytes": 100, "resp_ip_bytes": 300, "orig_pkts": 2, "resp_pkts": 3, "gia_vista": False}
+        fine = {**r, "conn_state": "SF", "orig_ip_bytes": 10, "resp_ip_bytes": 20, "orig_pkts": 1, "resp_pkts": 1, "gia_vista": True}
+        muta = {**fine, "id.resp_p": 8443, "orig_ip_bytes": 0, "resp_ip_bytes": 0, "orig_pkts": 0, "resp_pkts": 0}
+        t = za.traduci_conn([r, {**r, "gia_vista": True}, fine, muta], RETI)
+        self.assertEqual([(c["porta"], c["byte"], c["byte_ritorno"], c["risposta"]) for c in t["coppie"]], [(443, 830, 620, 1)])
+        self.assertEqual([(c["porta"], c["riuscite"]) for c in t["connessioni"]], [(443, 1)])
+
+
 class Scansione(unittest.TestCase):
     """24/11/2026, DA-PX-03: tutte le porte da un solo host, 1,35 milioni di righe in una finestra."""
 

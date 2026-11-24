@@ -77,6 +77,118 @@ hook Conn::log_policy(rec: Conn::Info, id: Log::ID, filter: Log::Filter) &priori
 		break;
 	}
 
+# Connessioni vive. Zeek scrive una connessione in `conn` solo quando finisce: quelle sempre aperte (telefoni SIP,
+# syslog, agenti Wazuh, sessioni 443 di giorni) non comparivano mai (24/11/2026: sul DA-PX-04 51 GB su 76 del traffico
+# stabile). A ogni finestra, poco prima che Zeek chiuda il registro, si scrive in `conn` una riga con quello che la
+# connessione ha scambiato dall'ultima volta; alla fine, dalla riga normale si toglie quanto gia' scritto.
+# `gia_vista` = T sulle righe dopo la prima della stessa connessione: la connessione e' gia' stata contata come riuscita.
+redef record Conn::Info += {
+	gia_vista: bool &optional &log;
+};
+
+type Viva: record {
+	id: conn_id;
+	orig_b: count &default=0;
+	resp_b: count &default=0;
+	orig_p: count &default=0;
+	resp_p: count &default=0;
+	scritta: bool &default=F;
+};
+
+const vive_ogni = 300 sec;
+const vive_anticipo = 5 sec;     # prima della chiusura del registro (allineata all'orologio)
+const vive_dopo = 120 sec;       # una connessione piu' giovane si conta alla fine, o al giro dopo
+const vive_massime = 200000;     # oltre, le nuove si contano solo alla fine, come prima
+global vive: table[string] of Viva;
+global scrivi_vive: event();
+
+function attesa_vive(): interval
+	{
+	local t = time_to_double(network_time());
+	if ( t < 1.0 )
+		return 1 sec;  # lettura da file: il tempo parte col primo pacchetto
+	local g = interval_to_double(vive_ogni);
+	local resto = g - ( t - floor(t / g) * g ) - interval_to_double(vive_anticipo);
+	return double_to_interval(resto > 1.0 ? resto : resto + g);
+	}
+
+function meno(a: count, b: count): count
+	{
+	return a > b ? a - b : 0;
+	}
+
+event zeek_init()
+	{
+	schedule attesa_vive() { scrivi_vive() };
+	}
+
+event new_connection(c: connection)
+	{
+	if ( |vive| < vive_massime && c$id$orig_h !in sonde_note )
+		vive[c$uid] = Viva($id=c$id);
+	}
+
+event connection_flipped(c: connection)
+	{
+	if ( c$uid !in vive )
+		return;
+	local v = vive[c$uid];
+	vive[c$uid] = Viva($id=c$id, $orig_b=v$resp_b, $resp_b=v$orig_b, $orig_p=v$resp_p, $resp_p=v$orig_p, $scritta=v$scritta);
+	}
+
+event scrivi_vive()
+	{
+	schedule attesa_vive() { scrivi_vive() };
+	for ( uid, v in vive )
+		{
+		if ( ! connection_exists(v$id) )
+			next;
+		local c = lookup_connection(v$id);
+		if ( c$uid != uid || network_time() - c$start_time < vive_dopo || ! c$orig?$num_pkts || ! c$resp?$num_pkts )
+			next;
+		local op = meno(c$orig$num_pkts, v$orig_p);
+		local rp = meno(c$resp$num_pkts, v$resp_p);
+		if ( op + rp == 0 )
+			next;
+		local info = Conn::Info($ts=c$start_time, $uid=uid, $id=c$id, $proto=get_port_transport_proto(c$id$resp_p));
+		info$duration = network_time() - c$start_time;
+		info$orig_pkts = op;
+		info$resp_pkts = rp;
+		info$orig_ip_bytes = meno(c$orig$num_bytes_ip, v$orig_b);
+		info$resp_ip_bytes = meno(c$resp$num_bytes_ip, v$resp_b);
+		# S1 = aperta e viva; con una direzione sola non si puo' dire niente
+		info$conn_state = c$orig$num_pkts > 0 && c$resp$num_pkts > 0 ? "S1" : "OTH";
+		info$gia_vista = v$scritta;
+		v$orig_p = c$orig$num_pkts;
+		v$resp_p = c$resp$num_pkts;
+		v$orig_b = c$orig$num_bytes_ip;
+		v$resp_b = c$resp$num_bytes_ip;
+		v$scritta = T;
+		Log::write(Conn::LOG, info);
+		}
+	}
+
+# dopo che Zeek ha riempito c$conn (priorita' 5), prima che lo scriva (-5)
+event connection_state_remove(c: connection) &priority=0
+	{
+	if ( c$uid !in vive )
+		return;
+	local v = vive[c$uid];
+	if ( v$scritta && c?$conn )
+		{
+		c$conn$gia_vista = T;
+		if ( c$conn?$orig_pkts )
+			c$conn$orig_pkts = meno(c$conn$orig_pkts, v$orig_p);
+		if ( c$conn?$resp_pkts )
+			c$conn$resp_pkts = meno(c$conn$resp_pkts, v$resp_p);
+		if ( c$conn?$orig_ip_bytes )
+			c$conn$orig_ip_bytes = meno(c$conn$orig_ip_bytes, v$orig_b);
+		if ( c$conn?$resp_ip_bytes )
+			c$conn$resp_ip_bytes = meno(c$conn$resp_ip_bytes, v$resp_b);
+		}
+	delete vive[c$uid];
+	}
+
 # Del segreto si tiene solo il FATTO, calcolato prima che il campo venga tolto:
 # la comunita' SNMP e' una di quelle di fabbrica? c'era un accesso Basic? una password FTP?
 redef record SNMP::Info += {

@@ -144,6 +144,9 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
             memo.clear()
         ob, rb = _intero(r.get("orig_ip_bytes")), _intero(r.get("resp_ip_bytes"))
         opk, rpk = _intero(r.get("orig_pkts")), _intero(r.get("resp_pkts"))
+        # una connessione già scritta da viva (`gia_vista`, sonda.zeek) e muta da allora fino alla fine non porta niente
+        if r.get("gia_vista") and opk + rpk == 0:
+            continue
         client, server = piega.lato(oh, rr, memo), piega.lato(rh, rr, memo)
         c = coppie.get((client, server, proto, porta))
         if c is None:
@@ -192,7 +195,7 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
                 s = storte.setdefault(k, [0, 0, 0, 0]) if k in storte or len(storte) < STORTE_MASSIME else [0, 0, 0, 0]
                 s[0] += 1
                 s[1 if stato == "S0" else 2] += 1
-            elif stato in _RIUSCITE:
+            elif stato in _RIUSCITE and not r.get("gia_vista"):  # una connessione viva si conta riuscita una volta sola
                 servizi[(server, rp)] = servizi.get((server, rp), 0) + 1
     # senza nemmeno una risposta nella finestra la copia porta una direzione sola: i «senza risposta» sarebbero tutti falsi
     if risposte == 0:

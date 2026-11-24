@@ -41,6 +41,11 @@ if [ "$PROFILO" = avanzato ] && { [ "$CPU" -lt 2 ] || [ "$RAM_MB" -lt 1900 ]; };
   PROFILO=leggero
 fi
 
+# Dove si vuole Zeek e basta (Riccardo, 24/11, collector Domarc) il leggero non si installa, né a mano né dal sorvegliante.
+if [ "$PROFILO" = leggero ] && grep -qs '^RITORNO_LEGGERO=0' "$CONF/collector.env"; then
+  echo "RITORNO_LEGGERO=0 in $CONF/collector.env: resto col profilo avanzato, non tocco niente." >&2; exit 3
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q pmacct tcpdump python3 openssl curl
@@ -92,6 +97,8 @@ SONDE_NOTE=
 FLUSSI=no
 # avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo
 PROFILO=$PROFILO
+# 0 = resta sempre su Zeek: installa.sh e il sorvegliante non rimettono il profilo leggero
+RITORNO_LEGGERO=1
 # ZONA ROSSA: 1 = legge i nomi utente degli accessi (Kerberos, SMB, LDAP). Spento di serie: lo accende Riccardo a mano
 ACCESSI=0
 ENV

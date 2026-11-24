@@ -19,6 +19,12 @@ tick() { local p; p=$(systemctl show -p MainPID --value zeek-collector); [ "$p" 
   set -- $(cut -d' ' -f14,15 /proc/$p/stat 2>/dev/null) ; echo "$(( ${1:-0} + ${2:-0} )) $(awk '/VmRSS/{print $2}' /proc/$p/status 2>/dev/null || echo 0)"; }
 stato() { sqlite3 -readonly -cmd ".timeout 5000" "$DATI/collector.db" "select coalesce((select valore from stato where chiave='$1'),'0')" 2>/dev/null || echo "?"; }
 ritorna() {
+  # dove il ritorno è spento si scrive e si va avanti con Zeek
+  if grep -qs '^RITORNO_LEGGERO=0' /etc/collector-traffico/collector.env; then
+    echo "$(date -u +%H:%M) ATTENZIONE: $1 (ritorno al leggero spento, resta Zeek)" >> "$LOG"
+    OOM0=$(journalctl -k --no-pager 2>/dev/null | grep -c -i "out of memory"); SCART0=$SCART
+    return 0
+  fi
   echo "$(date -u +%H:%M) RITORNO AL LEGGERO: $1" >> "$LOG"
   bash "$INSTALLA" --profilo leggero ens19 "$(sed -n 's/^NOME=//p' /etc/collector-traffico/collector.env)" >> "$LOG" 2>&1
   echo "$(date -u +%H:%M) profilo leggero rimesso, giornata interrotta" >> "$LOG"
@@ -26,6 +32,7 @@ ritorna() {
 }
 
 command -v sqlite3 >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q sqlite3 >/dev/null
+SCART0=0
 OOM0=$(journalctl -k --no-pager 2>/dev/null | grep -c -i "out of memory")
 RIAVVII0=$(systemctl show -p NRestarts --value zeek-collector)
 echo "inizio $INIZIO UTC · ora cpu%(una vCPU) rss_MB disco% zeek_MB db_MB scartati freno mem_libera_MB copertura_visti/persi" > "$LOG"
@@ -43,7 +50,7 @@ for g in $(seq "$GIRI"); do
   [ $((RSS / 1024)) -gt "$RSS_MAX" ] && RSS_MAX=$((RSS / 1024)); [ "$DISCO" -gt "$DISCO_MAX" ] && DISCO_MAX=$DISCO
   [ "$DISCO" -gt 50 ] && ritorna "disco al $DISCO%"
   # un archivio occupato dà «?»: non è un registro scartato, si riguarda al giro dopo
-  [ "$SCART" -gt 0 ] 2>/dev/null && ritorna "registri scartati: $SCART"
+  [ "$SCART" -gt "$SCART0" ] 2>/dev/null && ritorna "registri scartati: $SCART"
   [ "$(journalctl -k --no-pager 2>/dev/null | grep -c -i "out of memory")" -gt "$OOM0" ] && ritorna "il kernel ha ucciso un processo per memoria"
   [ "$(systemctl show -p NRestarts --value zeek-collector)" -gt "$RIAVVII0" ] && echo "$(date -u +%H:%M) attenzione: Zeek riavviato da systemd" >> "$LOG"
 done

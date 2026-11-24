@@ -5,7 +5,9 @@
 Riccardo, 24/11: «la versione minimale pronta per essere installata su un mini PC low cost dal cliente, in cui le funzioni di base devono essere quelle di da-ipam + proxy zabbix e scansioni minimali con nety il motore base»; «nety è solo il motore di verifica di vulnerabilità interno a da-ipam senza l'edge».
 Piano di riferimento: `docs/superpowers/plans/2026-11-07-installazione-snella-e-collegamento.md` (Task 1-2 fatti, 3 quasi).
 - [x] Misura 24/11, VM 108 `79993-ipam-5` (15 giorni accesa, 0.9.1261, 4 vCPU, 4 GB): usata 1,76 GB, DA-IPAM 1,13 GB, swap 116 MB, disco 9,3 GB, zero OOM. Ma **0 reti, 0 host, 0 servizi**: il carico vero non è mai stato misurato. `naabu` assente; registro di sistema 490 MB; DA-IPAM lì segue `main`
-- [ ] Prova di carico: una /24 vera con Nety e proxy Zabbix, prima di scegliere il mini PC
+- [x] Prova di carico 24/11 (Riccardo: «Sì, sulla VM 108»; snapshot `pre-carico-20261124`, PX-NAS): 192.168.99.0/24, 50 host in archivio di cui 33 accesi, 183 servizi. Giro veloce 32 s, giro nmap 305 s (146 porte), Nety insieme. IPAM al massimo 1,13 GB, RAM disponibile mai sotto 1,99 GB su 3,9, swap 116 MB invariata, CPU picco 80% di un core e media 2,3%, zero OOM. Giri spenti a fine prova; la rete è rimasta in archivio sulla 108. Limiti: CPU del PX-NAS Ryzen 7 255 (non un mini PC), IPAM 0.9.1261, nessun apparato nel proxy Zabbix oltre alla VM, un'ora scarsa, rete piccola
+- [ ] Riccardo, 24/11: «vorrei un mini pc da verificare se installare direttamente sul sistema o su proxmox»; «pensa a stabilità e gestione». Proposto: Proxmox, mini PC aziendale vPro recente, un solo modello, macchine di scorta. Da decidere: modello, backup notturno cifrato fuori dal mini PC
+- [ ] Da provare: compilazione di IPAM (3,4 GB di picco il 07/11) sul mini PC vero, e rete più grande
 - [ ] Resto della proposta: in chat, da approvare
 
 ## 2026-11-24 — Versione inglese di DA-IPAM: censimento e piano (Riccardo, solo piano)

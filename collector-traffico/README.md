@@ -81,9 +81,11 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
 - **Copertura** dai contatori di Zeek (`stats.log`: `pkts_link`, `pkts_dropped`), mai da `capture_loss`.
 - **`/v1/stato`** in più: `profilo`, `motore` (`zeek`|`pmacct`), `versione_motore`, `freno`, `scartati`.
 - **Risorse**: 2 vCPU, 2 GB; registri al massimo una finestra (circa 25 MB sul DA-PX-03), poi cancellati.
-- **Limiti**: Zeek scrive una connessione quando finisce, e in 9.0.1 non c'è lo script per le connessioni lunghe
-  (è un pacchetto esterno): un trasferimento di ore cade tutto nella finestra in cui si chiude, e una connessione che
-  non si chiude mai non si vede proprio (misura del 24/11, sotto: è il limite più pesante). Il tempo fra SYN e
+- **Connessioni vive (24/11)**: Zeek da solo scrive una connessione quando finisce, e quelle sempre aperte non si
+  vedevano. `sonda.zeek` scrive in `conn`, 5 secondi prima della chiusura di ogni finestra, quello che ogni connessione
+  più vecchia di 2 minuti ha scambiato dall'ultima volta, e alla fine lo toglie dalla riga normale. `gia_vista` segna
+  le righe dopo la prima: i byte si sommano, la connessione riuscita si conta una volta.
+- **Limiti**: il tempo fra SYN e
   SYN-ACK non c'è (`ms_minimo`/`ms_mediano` = -1, «non misurato»). S7 e BACnet non li legge. SMB1 e NTLM1 restano
   all'ascolto finché una cattura vera non mostra che Zeek li distingue.
 - **Dati di prova**: `tests/dati/zeek/` (cattura del banco, LEGGIMI); la prova di non-fuga è `tests/test_non_fuga.py`.
@@ -108,6 +110,9 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
   (46 GB su 109). Fra queste: telefoni SIP (17/5060), syslog (6/5140), connessioni 443 di giorni, annunci MikroTik
   (17/5678); gli agenti Wazuh (6/1514) ci sono ma in meno di un quarto delle finestre. Il conto è per eccesso: una
   parte degli assenti ha il verso rovesciato o ha cambiato protocollo (ICMPv6 ora conta come ICMP, IGMP non c'è).
+  **Corretto il 24/11** (connessioni vive). Finestre da 5 minuti prima e dopo (19:00 e 19:30 UTC), coppie: PX02 Wazuh
+  da 1 a 28, syslog da 2 a 10, MikroTik da 0 a 16; PX01 SIP da 0 a 19, Wazuh da 0 a 4; PX04 Wazuh da 0 a 5, syslog
+  da 1 a 3, MikroTik da 0 a 16. Memoria di Zeek e di `collector-traffico` uguale a prima.
 
 ## Nomi e controlli sul contenuto (`collector-ascolto`)
 

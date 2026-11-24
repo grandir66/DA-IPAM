@@ -395,6 +395,13 @@ ora `SSH_ASKPASS`.
   `sonda.zeek` che ogni 5 minuti scrive i byte delle connessioni vive, l'adattatore somma le differenze e le toglie
   dalla riga finale di `conn`. Non iniziata.
 
+- 2026-11-24, **connessioni vive** (Riccardo: «Sì, correggi»), v0.9.1346. Verifica: `python3 -m unittest` nel collector →
+  117 verdi; pacchetti di prova letti da Zeek con e senza la modifica → totali uguali al byte su TCP chiusa, TCP mai
+  chiusa e UDP continuo. Installato su PX02 (19:10 UTC), PX01 e PX04 (19:22 UTC), snapshot `pre-vive-zeek-20261124`
+  (VM 115, 116, 113). Dopo: scartati 0, nessun riavvio, nessuna uccisione, IPAM legge senza errori; numeri nel README.
+  **Da portare su PX03 e PX05** a giornata finita (25/11 dalle 13:40 UTC); sul PX03 c'è più traffico: riguardare la
+  memoria nella prima ora.
+
 ## Consuntivo
 ### Fatto
 ### Mancante

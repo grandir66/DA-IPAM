@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadError } from "@/components/shared/load-error";
 import { BarraStato, InCorso, Legenda, Pannello, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { useParteGuida } from "@/components/shared/parte-guida";
+import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import type { CellaMatrice, ConteggiSegmentazione, ProvaSegmentazione, VistaServizio } from "@/lib/segmentazione/db";
@@ -106,7 +107,7 @@ export function SegmentazioneClient({ iniziale, admin }: { iniziale: Dati; admin
         acceso={c.ultimo !== null}
         titolo="Misura"
         stato={giro?.inCorso ? "in corso" : c.ultimo ? "fatta" : "mai fatta"}
-        dettagli={c.ultimo ? [`ultimo giro ${c.ultimo.slice(0, 16)} UTC`] : []}
+        dettagli={c.ultimo ? [`ultimo giro ${parseDbDate(c.ultimo).toLocaleString("it-IT", { timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`] : []}
         azioni={
           admin ? (
             <Button size="sm" onClick={() => void avvia()} disabled={giro?.inCorso === true}>

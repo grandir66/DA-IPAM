@@ -31,8 +31,12 @@ export const SEZIONI: readonly Sezione[] = [
   ] },
   { nome: "Topologia", schede: [
     { href: "/topology", etichetta: "Mappa" },
+    // Prima erano due collegamenti accanto al titolo della Mappa (Riccardo, 24/11/2026: i tab stanno tutti in alto, «non
+    // distribuirle su diversi livelli»).
+    { href: "/topology/tavola", etichetta: "Tavola di cablaggio" },
     { href: "/port-map", etichetta: "Porte" },
     { href: "/arp-table", etichetta: "Tabella ARP" },
+    { href: "/topology/dati", etichetta: "Dati della mappa" },
   ] },
   { nome: "Credenziali", schede: [
     { href: "/credentials", etichetta: "Credenziali" },

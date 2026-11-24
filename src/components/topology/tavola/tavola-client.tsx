@@ -142,8 +142,6 @@ export function TavolaClient() {
             Mostra porte libere
           </label>
           <Input className="h-9 w-64" placeholder="Trova porta o apparato" value={cerca} onChange={(e) => { setCerca(e.target.value); setScelto(null); }} />
-          <span className="h-6 w-px bg-border" />
-          <Link href="/topology" className="text-[13px] underline">Topologia</Link>
         </div>
       </div>
 

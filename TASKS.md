@@ -11,6 +11,7 @@ Piano di riferimento: `docs/superpowers/plans/2026-11-07-installazione-snella-e-
 - Riccardo, 24/11: comprati tre HP EliteDesk 800 G6 Mini (i5-10500T, 16 GB, SSD 256 GB, ricondizionati) per un laboratorio Proxmox **a uso interno**. Proposto di provarci la ridotta (Proxmox contro Debian diretta); il modello per i clienti è deciso sotto
 - **Riccardo, 24/11, decisione: «la base sarà hp g2 di cui ho già 4 esemplari e andranno dai clienti»** (HP EliteDesk 800 G2 Mini, i5-6500T). Soglie e prove si misurano su quello
 - Riccardo, 24/11: «il g2 dei clienti avrà 16gb di ram» (supera i 32 GB detti prima) «e dischi variabili», ma «lo spazio non sarà mai inferiore a 256GB»
+- [x] Strumenti per il G2 pronti e provati sul PX-NAS e sulla VM 108: Deploy-Appliance `strumenti/prova-mini-pc/` (`controllo-host.sh`, `carico.sh`, `LEGGIMI.md`)
 - [ ] Sui quattro G2: RAM riconosciuta, salute degli SSD, TPM, AMT, una prova di una notte; poi Proxmox e ridotta su uno. La ridotta resta tarata su 4 GB
 - [ ] Resto della proposta: in chat, da approvare
 

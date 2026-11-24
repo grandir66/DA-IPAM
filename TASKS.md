@@ -10,7 +10,8 @@ Piano di riferimento: `docs/superpowers/plans/2026-11-07-installazione-snella-e-
 - [ ] Da provare: compilazione di IPAM (3,4 GB di picco il 07/11) sul mini PC vero, e rete più grande
 - Riccardo, 24/11: comprati tre HP EliteDesk 800 G6 Mini (i5-10500T, 16 GB, SSD 256 GB, ricondizionati) per un laboratorio Proxmox **a uso interno**. Proposto di provarci la ridotta (Proxmox contro Debian diretta); il modello per i clienti è deciso sotto
 - **Riccardo, 24/11, decisione: «la base sarà hp g2 di cui ho già 4 esemplari e andranno dai clienti»** (HP EliteDesk 800 G2 Mini, i5-6500T). Soglie e prove si misurano su quello
-- [ ] Sui quattro G2: RAM, disco, TPM, AMT, una prova di una notte; poi Proxmox e ridotta su uno
+- Riccardo, 24/11: pensa di portare i G2 a **32 GB** con memorie che ha già e di usare **SSD da 1 TB** che ha già
+- [ ] Sui quattro G2: RAM riconosciuta, salute degli SSD, TPM, AMT, una prova di una notte; poi Proxmox e ridotta su uno. La ridotta resta tarata su 4 GB
 - [ ] Resto della proposta: in chat, da approvare
 
 ## 2026-11-24 — Versione inglese di DA-IPAM: censimento e piano (Riccardo, solo piano)

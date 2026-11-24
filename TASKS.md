@@ -1,5 +1,13 @@
 # TASKS — DA-IPAM
 
+## 2026-11-24 — IPAM ridotto su mini PC economico (Riccardo, analisi)
+
+Riccardo, 24/11: «la versione minimale pronta per essere installata su un mini PC low cost dal cliente, in cui le funzioni di base devono essere quelle di da-ipam + proxy zabbix e scansioni minimali con nety il motore base»; «nety è solo il motore di verifica di vulnerabilità interno a da-ipam senza l'edge».
+Piano di riferimento: `docs/superpowers/plans/2026-11-07-installazione-snella-e-collegamento.md` (Task 1-2 fatti, 3 quasi).
+- [x] Misura 24/11, VM 108 `79993-ipam-5` (15 giorni accesa, 0.9.1261, 4 vCPU, 4 GB): usata 1,76 GB, DA-IPAM 1,13 GB, swap 116 MB, disco 9,3 GB, zero OOM. Ma **0 reti, 0 host, 0 servizi**: il carico vero non è mai stato misurato. `naabu` assente; registro di sistema 490 MB; DA-IPAM lì segue `main`
+- [ ] Prova di carico: una /24 vera con Nety e proxy Zabbix, prima di scegliere il mini PC
+- [ ] Resto della proposta: in chat, da approvare
+
 ## 2026-11-24 — Versione inglese di DA-IPAM: censimento e piano (Riccardo, solo piano)
 
 Piano: [docs/superpowers/plans/2026-11-24-versione-inglese.md](docs/superpowers/plans/2026-11-24-versione-inglese.md). Nessun codice prima del sì.

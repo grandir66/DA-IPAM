@@ -87,7 +87,7 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 - [x] Tappa 4, collector e IPAM: destinazioni esterne col tetto di 50, nomi, archivio paese e fornitore, «Paese nuovo»
 - [x] Tappa 4, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [ ] Tappa 4, sull'hub: scaricare l'archivio DB-IP (a mano, da amministratore) e contare `traffico_esterni` dopo un giorno
-- [ ] Riccardo decide: l'archivio DB-IP si aggiorna da solo ogni mese o resta a mano?
+- [x] Riccardo (24/11): «DB-IP ogni mese». Dopo il primo scaricamento a mano l'archivio si aggiorna da solo: ogni mattina alle 5:23 si guarda se manca quello del mese (`aggiornaGeoSeServe`), solo dove c'è un collector attivo. Non ancora visto girare sull'hub: serve il primo scaricamento, poi il 1/12
 - [x] Tappa 5, collector e IPAM: connessioni senza risposta, rifiutate, tempi; servizi usati contro porte note
 - [x] Tappa 5: misura su PX03 (trovato e corretto il filtro che scartava SYN e RST), interfaccia approvata e scritta, servizio spento visto sul banco
 - [x] Tappa 6: certificati, DNS fuori casa, DNS che non risponde, VLAN sbagliata; provata sul banco e di giorno su PX03; parole approvate

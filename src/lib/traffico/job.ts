@@ -6,10 +6,13 @@
 import cron from "node-cron";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
+import { aggiornaGeoSeServe } from "./geo";
 import { contaCollectorAttivi, sincronizzaTraffico } from "./lettura";
 import { sondeNote } from "./sonde";
 
 export const CRON_TRAFFICO = "*/5 * * * *";
+/** Ogni mattina si guarda se manca l'archivio DB-IP del mese; si scarica una volta al mese. */
+export const CRON_GEO = "23 5 * * *";
 
 interface StatoLettura {
   inCorso: boolean;
@@ -41,10 +44,24 @@ export async function letturaTrafficoTutti(): Promise<void> {
   }
 }
 
+/** Archivio dei paesi: solo dove almeno un cliente ha un collector attivo. Un errore si scrive e si ritenta domani. */
+export async function aggiornamentoGeo(): Promise<void> {
+  try {
+    let collector = 0;
+    for (const t of getActiveTenants()) collector += await withTenant(t.codice_cliente, async () => contaCollectorAttivi());
+    if (collector === 0) return;
+    const fatto = await aggiornaGeoSeServe();
+    if (fatto) console.info(`[traffico] archivio dei paesi aggiornato a ${fatto.mese}: ${fatto.paesi} paesi, ${fatto.fornitori} fornitori`);
+  } catch (e) {
+    console.warn(`[traffico] archivio dei paesi non aggiornato, si ritenta domani: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 /** Avvia il cron; un secondo avvio (riavvio a caldo) non crea altri timer. */
 export function avviaLetturaTraffico(): void {
   const s = stato();
   if (s.avviato) return;
   s.avviato = true;
   cron.schedule(CRON_TRAFFICO, () => void letturaTrafficoTutti());
+  cron.schedule(CRON_GEO, () => void aggiornamentoGeo());
 }

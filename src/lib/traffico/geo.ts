@@ -119,12 +119,19 @@ async function scarica(nome: string): Promise<AsyncIterable<string>> {
   return createInterface({ input: Readable.fromWeb(r.body as Parameters<typeof Readable.fromWeb>[0]).pipe(createGunzip()), crlfDelay: Infinity });
 }
 
+/** Uno scaricamento alla volta nel processo: a mano e da solo scriverebbero le stesse tabelle di appoggio. Su globalThis, la rotta e il giro possono avere due copie del modulo. */
+const g = globalThis as typeof globalThis & { __scaricoGeo?: Promise<StatoGeo> | null };
+const meseDi = (adesso: Date, indietro = 0): string =>
+  new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth() - indietro, 1)).toISOString().slice(0, 7);
+
 /** Scarica l'archivio del mese (o del mese prima, se quello nuovo non è ancora uscito) e lo sostituisce al vecchio. */
-export async function scaricaGeo(adesso: Date = new Date()): Promise<StatoGeo> {
+export function scaricaGeo(adesso: Date = new Date(), indietro: number[] = [0, 1]): Promise<StatoGeo> {
+  return (g.__scaricoGeo ??= scaricaMesi(indietro.map((n) => meseDi(adesso, n))).finally(() => { g.__scaricoGeo = null; }));
+}
+
+async function scaricaMesi(mesi: string[]): Promise<StatoGeo> {
   let ultimoErrore: unknown = null;
-  for (const indietro of [0, 1]) {
-    const d = new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth() - indietro, 1));
-    const mese = d.toISOString().slice(0, 7);
+  for (const mese of mesi) {
     try {
       await importaGeo("paese", await scarica(`dbip-country-lite-${mese}.csv.gz`));
       await importaGeo("asn", await scarica(`dbip-asn-lite-${mese}.csv.gz`));
@@ -138,6 +145,17 @@ export async function scaricaGeo(adesso: Date = new Date()): Promise<StatoGeo> {
     }
   }
   throw ultimoErrore instanceof Error ? ultimoErrore : new Error("Archivio non scaricato");
+}
+
+/**
+ * Aggiornamento mensile (Riccardo, 24/11/2026: «DB-IP ogni mese»). Il primo scaricamento resta a mano: chi ha
+ * l'archivio lo tiene aggiornato, chi non l'ha mai voluto non scarica niente. Solo il mese in corso: se non è ancora
+ * uscito si ritenta il giorno dopo, senza riscaricare quello che c'è già.
+ */
+export async function aggiornaGeoSeServe(adesso: Date = new Date()): Promise<StatoGeo | null> {
+  const s = statoGeo();
+  if (!s.presente || (s.mese ?? "") >= meseDi(adesso)) return null;
+  return scaricaGeo(adesso, [0]);
 }
 
 export function statoGeo(): StatoGeo {

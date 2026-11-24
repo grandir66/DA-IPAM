@@ -78,6 +78,8 @@ test("scarico, confronto, avviso, lista troncata, errore senza codice", async ()
     const v = esternoTraffico({ giorni: 1, per: "destinazione" });
     assert.deepEqual([v.tessere.compromesse, v.tessere.bloccherebbe], [2, 1]);
     assert.deepEqual(esternoTraffico({ giorni: 1, per: "destinazione", segnate: "bloccate" }).righe.map((r) => [r.chiave, r.liste.map((l) => l.nome)]), [["6.1.1.1", ["geo-BLOCK"]]]);
+    const t = esternoTraffico({ giorni: 1, per: "destinazione", segnate: "bloccate" }).tessere;
+    assert.deepEqual([t.destinazioni, t.compromesse, t.bloccherebbe], [1, 2, 1]); // il filtro non azzera l'altra tessera
     assert.deepEqual(esternoTraffico({ giorni: 1, per: "host", segnate: "compromesse" }).righe.map((r) => r.chiave).sort(), ["10.4.0.10", "10.4.0.13"]);
 
     // troncata: la lista di prima resta; non più dichiarata: si toglie

@@ -7,7 +7,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
 ### Aggiunto
-- **Traffico: liste di DA-GEO in IPAM** (Riccardo, 24/11; solo dati e API, la pagina viene dopo). Le destinazioni esterne si confrontano con le stesse liste che i firewall scaricano da DA-GEO: avviso «Indirizzo compromesso» quando un host apre una connessione verso una lista di reputazione, e quante destinazioni taglierebbe il geoblocking. Si scaricano le liste intere e si cerca in locale: nessun indirizzo esce. Una lista arrivata a metà non sostituisce quella buona.
+- **Traffico: liste di DA-GEO in IPAM** (Riccardo, 24/11; scheda «Verso l'esterno»: due tessere, due filtri, il segno accanto alla destinazione e il riquadro «Liste di DA-GEO» per gli amministratori). Le destinazioni esterne si confrontano con le stesse liste che i firewall scaricano da DA-GEO: avviso «Indirizzo compromesso» quando un host apre una connessione verso una lista di reputazione, e quante destinazioni taglierebbe il geoblocking. Si scaricano le liste intere e si cerca in locale: nessun indirizzo esce. Una lista arrivata a metà non sostituisce quella buona.
 
 ### Corretto
 - **Traffico: «MAC cambiato» diviso in tre, con meno rumore** (Riccardo, 24/11). Finiva nello stesso avviso lo switch che risponde col MAC della gestione, la scheda IPAM vecchia e il MAC già censito su un altro indirizzo. Ora il primo non avvisa, gli altri due hanno nome e frase propri e il loro interruttore per rete. Fra macchine virtuali lo stesso prefisso non conta come stesso produttore.

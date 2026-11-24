@@ -10,7 +10,9 @@ import { Pagination } from "@/components/shared/pagination";
 import { Pannello, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { formattaByte, nomePaese, protoPorta } from "@/lib/traffico/frasi";
-import type { EsternoTraffico, Per, RigaVista, Servizio } from "@/lib/traffico/esterno";
+import type { EsternoTraffico, Per, RigaVista, Segnate, Servizio } from "@/lib/traffico/esterno";
+import type { StatoListe } from "@/lib/traffico/liste";
+import { ListeDaGeo, NumeroSegnate, SegniListe } from "./liste-dageo";
 import { Indirizzo } from "./pezzi";
 import { DaiUnNome } from "./reti-viste";
 
@@ -56,18 +58,31 @@ export function Esterno({ admin }: { admin: boolean }) {
   const [pagina, setPagina] = useState(1);
   const [daNominare, setDaNominare] = useState<RigaVista | null>(null);
   const [scarico, setScarico] = useState(false);
+  const [segnate, setSegnate] = useState<Segnate | null>(null);
+  const [liste, setListe] = useState<StatoListe | null>(null);
+  const [erroreListe, setErroreListe] = useState<string | null>(null);
 
   const carica = useCallback(async () => {
     const q = new URLSearchParams({ giorni: String(giorni), per, pagina: String(pagina) });
     if (cerca) q.set("cerca", cerca);
+    if (segnate) q.set("segnate", segnate);
     const r = await fetchJson<EsternoTraffico>(`/api/traffico/esterno?${q.toString()}`, { cache: "no-store" });
     if (r.ok) {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [giorni, per, cerca, pagina]);
+  }, [giorni, per, cerca, pagina, segnate]);
 
   useEffect(() => { void carica(); }, [carica]);
+
+  const caricaListe = useCallback(async () => {
+    const r = await fetchJson<StatoListe>("/api/traffico/liste", { cache: "no-store" });
+    if (r.ok) {
+      setListe(r.data);
+      setErroreListe(null);
+    } else setErroreListe(r.message);
+  }, []);
+  useEffect(() => { void caricaListe(); }, [caricaListe]);
 
   const cambia = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPagina(1); };
   const cercaOra = (e: FormEvent) => { e.preventDefault(); setCerca(scritto.trim()); setPagina(1); };
@@ -81,17 +96,23 @@ export function Esterno({ admin }: { admin: boolean }) {
   };
 
   const t = dati?.tessere;
+  // senza una lista di quel tipo il numero non si sa: «—», non zero
+  const haReputazione = liste?.liste.some((l) => l.tipo === "reputazione") ?? false;
+  const haGeo = liste?.liste.some((l) => l.tipo === "geo") ?? false;
+  const conListe = haReputazione || haGeo;
   const archivio = dati?.archivio;
   const pagine = dati ? Math.max(1, Math.ceil(dati.totale / dati.perPagina)) : 1;
   const meseArchivio = archivio?.mese ? `${MESI[Number(archivio.mese.slice(5, 7)) - 1] ?? ""} ${archivio.mese.slice(0, 4)}` : "";
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
         <TesseraNumero titolo="Destinazioni" valore={t?.destinazioni ?? null} nota="indirizzi esterni con cui si è parlato" />
         <TesseraNumero titolo="Paesi" valore={archivio?.presente ? t?.paesi ?? null : null} nota={archivio && !archivio.presente ? "serve l'archivio dei paesi" : "dove stanno quegli indirizzi"} />
         <TesseraNumero titolo="Fornitori" valore={archivio?.presente ? t?.fornitori ?? null : null} nota={archivio && !archivio.presente ? "serve l'archivio dei paesi" : "le reti che li ospitano"} />
         <TesseraNumero titolo="Volume" valore={t ? formattaByte(t.byte) : null} nota={t ? `${numero(t.host)} host interni` : undefined} />
+        <TesseraNumero titolo="Compromesse" valore={haReputazione ? t?.compromesse ?? null : null} nota={haReputazione || !liste ? "in una lista di reputazione" : "serve una lista di DA-GEO"} />
+        <TesseraNumero titolo="Taglierebbe il geoblocking" valore={haGeo ? t?.bloccherebbe ?? null : null} nota={haGeo || !liste ? "nei paesi della lista" : "serve una lista di DA-GEO"} />
       </div>
 
       {archivio && !archivio.presente && (
@@ -121,6 +142,13 @@ export function Esterno({ admin }: { admin: boolean }) {
             {(Object.keys(NOME_PER) as Per[]).map((v) => (
               <Button key={v} size="sm" variant={per === v ? "default" : "outline"} onClick={() => cambia(setPer)(v)}>{NOME_PER[v]}</Button>
             ))}
+            {(conListe || segnate !== null) && (
+              <>
+                <span aria-hidden className="h-6 w-px bg-border" />
+                {(haReputazione || segnate === "compromesse") && <Button size="sm" variant={segnate === "compromesse" ? "default" : "outline"} aria-pressed={segnate === "compromesse"} onClick={() => cambia(setSegnate)(segnate === "compromesse" ? null : "compromesse")}>Solo compromesse</Button>}
+                {(haGeo || segnate === "bloccate") && <Button size="sm" variant={segnate === "bloccate" ? "default" : "outline"} aria-pressed={segnate === "bloccate"} onClick={() => cambia(setSegnate)(segnate === "bloccate" ? null : "bloccate")}>Solo da geoblocking</Button>}
+              </>
+            )}
             <span aria-hidden className="h-6 w-px bg-border" />
             <form onSubmit={cercaOra} className="flex items-center gap-1.5">
               <Input value={scritto} onChange={(e) => setScritto(e.target.value)} placeholder="Nome, indirizzo, paese, fornitore" aria-label="Cerca un nome, un indirizzo, un paese o un fornitore" className="h-7 w-56" />
@@ -156,7 +184,7 @@ export function Esterno({ admin }: { admin: boolean }) {
           <p className="p-3 text-sm text-muted-foreground" role="status">Carico le destinazioni…</p>
         ) : dati.totale === 0 ? (
           <div className="p-3">
-            <Vuoto titolo={cerca ? "Niente con questa ricerca" : "Nessuna destinazione esterna nel periodo"} testo="Le destinazioni arrivano dai collector aggiornati: uno non ancora aggiornato conta il traffico verso fuori ma non dice verso chi." />
+            <Vuoto titolo={cerca ? "Niente con questa ricerca" : segnate === "compromesse" ? "Nessuna destinazione compromessa nel periodo" : segnate === "bloccate" ? "Nessuna destinazione che il geoblocking taglierebbe" : "Nessuna destinazione esterna nel periodo"} testo={segnate ? "Il confronto è con le liste di DA-GEO scaricate, per il periodo scelto." : "Le destinazioni arrivano dai collector aggiornati: uno non ancora aggiornato conta il traffico verso fuori ma non dice verso chi."} />
           </div>
         ) : per === "destinazione" ? (
           <Table>
@@ -174,6 +202,7 @@ export function Esterno({ admin }: { admin: boolean }) {
                   <TableCell className="max-w-sm whitespace-normal">
                     {r.nome && <span className="block font-semibold">{r.nome}{r.a_mano && <span className="ml-1.5 text-[13px] font-normal text-muted-foreground">nome dato a mano</span>}</span>}
                     <span className={r.nome ? "font-mono text-[13px] text-muted-foreground" : "font-mono font-semibold"}>{r.chiave}</span>
+                    <SegniListe liste={r.liste} />
                   </TableCell>
                   <TableCell>{r.paese ? <>{nomePaese(r.paese)} <span className="font-mono text-[13px] text-muted-foreground">{r.paese}</span></> : <Trattino />}</TableCell>
                   <TableCell className="max-w-xs whitespace-normal">{r.fornitore ?? <Trattino />}</TableCell>
@@ -194,7 +223,7 @@ export function Esterno({ admin }: { admin: boolean }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Host</TableHead><TableHead className="text-right">Destinazioni</TableHead><TableHead className="text-right">Volume</TableHead>
+                <TableHead>Host</TableHead><TableHead className="text-right">Destinazioni</TableHead>{conListe && <TableHead className="text-right">Segnate</TableHead>}<TableHead className="text-right">Volume</TableHead>
                 <TableHead>Servizi principali</TableHead><TableHead>Ultima volta</TableHead>
               </TableRow>
             </TableHeader>
@@ -203,6 +232,7 @@ export function Esterno({ admin }: { admin: boolean }) {
                 <TableRow key={r.chiave}>
                   <TableCell><Indirizzo ip={r.chiave} nomi={dati.nomi_host} /></TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{r.destinazioni}</TableCell>
+                  {conListe && <TableCell className="text-right"><NumeroSegnate compromesse={r.compromesse} bloccherebbe={r.bloccherebbe} /></TableCell>}
                   <TableCell className="text-right"><Volume r={r} /></TableCell>
                   <TableCell><Servizi servizi={r.servizi} /></TableCell>
                   <TableCell><TempoRelativo data={r.ultima_vista} /></TableCell>
@@ -215,7 +245,7 @@ export function Esterno({ admin }: { admin: boolean }) {
             <TableHeader>
               <TableRow>
                 <TableHead>{per === "paese" ? "Paese" : "Fornitore"}</TableHead>
-                <TableHead className="text-right">Destinazioni</TableHead><TableHead className="text-right">Host interni</TableHead>
+                <TableHead className="text-right">Destinazioni</TableHead>{conListe && <TableHead className="text-right">Segnate</TableHead>}<TableHead className="text-right">Host interni</TableHead>
                 <TableHead className="text-right">Volume</TableHead><TableHead>Servizi principali</TableHead><TableHead>Ultima volta</TableHead>
               </TableRow>
             </TableHeader>
@@ -228,6 +258,7 @@ export function Esterno({ admin }: { admin: boolean }) {
                         : <><span className="block font-semibold">{r.nome ?? "Senza nome"}</span><span className="font-mono text-[13px] text-muted-foreground">AS{r.chiave}</span></>}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{r.destinazioni}</TableCell>
+                  {conListe && <TableCell className="text-right"><NumeroSegnate compromesse={r.compromesse} bloccherebbe={r.bloccherebbe} /></TableCell>}
                   <TableCell className="text-right font-mono tabular-nums">{r.host}</TableCell>
                   <TableCell className="text-right"><Volume r={r} /></TableCell>
                   <TableCell><Servizi servizi={r.servizi} /></TableCell>
@@ -238,6 +269,7 @@ export function Esterno({ admin }: { admin: boolean }) {
           </Table>
         )}
       </Pannello>
+      {admin && <ListeDaGeo stato={liste} errore={erroreListe} onRicarica={() => void caricaListe()} onCambiato={(s) => { setListe(s); setSegnate(null); setPagina(1); void carica(); }} />}
       {daNominare && (
         <DaiUnNome
           rete={{ chiave: `${daNominare.chiave}/32`, nome: daNominare.a_mano ? daNominare.nome : null, nota: "" }}

@@ -77,7 +77,7 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
 (CN 29, HK 17, RU 10, VN 3); nessun indirizzo in Spamhaus DROP. L'hub raggiunge `/geo/salute`.
 - [x] Riccardo (24/11): «Sì, fase 1». Rotta `config.json` in DA-GEO (1.5.0, pubblicata su DA-TRAEFIK); in IPAM `traffico/liste.ts`,
       `/api/traffico/liste`, avviso `indirizzo_compromesso`, filtro `segnate` in «Verso l'esterno», giro alle 5:41
-- [ ] Fase 1, interfaccia: proposta a Riccardo oggetto per oggetto, in attesa del sì
+- [x] Fase 1, interfaccia (Riccardo, 24/11: «Sì, scrivila»), vista a 1920 in locale con dati finti: destinazioni, vista per host col filtro, riquadro delle liste. Non provati: salvataggio di un codice vero, finestra «Togli», tema scuro
 - [ ] Fase 1, Riccardo: in DA-GEO il cliente 70791 con le liste e un dispositivo per l'hub `192.168.4.8`, poi il codice in IPAM
 - [ ] Fase 1, Riccardo: fonte C2 al posto di ThreatFox (410); vive e datate: Emerging Threats «compromised» (~570 indirizzi), nodi Tor
 - [ ] Riccardo approva le altre fasi (proposta): 1 (fatta nei dati) reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il

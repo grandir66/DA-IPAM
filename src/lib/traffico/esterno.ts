@@ -170,10 +170,11 @@ export function calcolaEsterno(
     const liste = i.liste ?? [];
     const compromessa = liste.some((l) => l.tipo === "reputazione");
     const bloccata = liste.some((l) => l.tipo === "geo");
-    if ((filtro.segnate === "compromesse" && !compromessa) || (filtro.segnate === "bloccate" && !bloccata)) continue;
-    byte += r.byte;
+    // le due tessere delle segnate contano prima del filtro: con «Solo compromesse» l'altra non deve dire zero
     if (compromessa) compromesse.add(r.ip);
     if (bloccata) bloccate.add(r.ip);
+    if ((filtro.segnate === "compromesse" && !compromessa) || (filtro.segnate === "bloccate" && !bloccata)) continue;
+    byte += r.byte;
     tutteDest.add(r.ip);
     tuttiHost.add(r.interno);
     if (i.paese) paesi.add(i.paese);

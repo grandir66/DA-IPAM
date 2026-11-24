@@ -90,7 +90,7 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
       const s = senzaCollegamento(r);
       return {
         id: `${n.id}|${i}`, nodo: n.id, numero: numeroCorto(r.nome, r.indice), nome: r.nome, tipo: s.tipo, destinazione: s.destinazione,
-        dubbio: false, collegamento: null, altroNodo: null, fantasma: false, fascio: null, velocita: r.velocita, vlan: r.vlan,
+        dubbio: false, collegamento: null, altroNodo: null, fantasma: false, fascio: null, velocita: r.velocita, vlan: r.vlan, letta: r,
       };
     });
     lavori.set(n.id, {
@@ -123,7 +123,7 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
     const f: PortaComposta = {
       id: `${w.apparato.nodo}|f:${n !== "" ? normale(n) : chiaveFantasma}`, nodo: w.apparato.nodo, numero: n ? numeroCorto(n, null) : "?",
       nome: n || "porta non nota", tipo: "attiva", destinazione: null, dubbio: false, collegamento: null, altroNodo: null, fantasma: true,
-      fascio: null, velocita: null, vlan: null,
+      fascio: null, velocita: null, vlan: null, letta: null,
     };
     w.composte.push(f);
     w.righe.push({ indice: null, nome: f.nome, stato: null, velocita: null, vlan: null, trunk: false, macCount: 0, nomeClient: null, ipClient: null, poeW: null });

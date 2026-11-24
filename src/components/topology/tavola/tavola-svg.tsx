@@ -3,7 +3,7 @@
 /**
  * Il disegno della tavola (spec tavola §4 punti 3-6): telai, porte, destinazioni ruotate, graffe dei fasci, cavi. Le
  * posizioni arrivano già calcolate (`righe.ts`, `instrada.ts`): qui nessun calcolo grafico. Il fuoco lo decide chi
- * chiama: ciò che non è nel fuoco scende al 10 % di opacità.
+ * chiama: i cavi fuori dal fuoco scendono al 25 %, il resto non cambia (vedi SPENTO_CAVI).
  */
 import Link from "next/link";
 import { Fragment } from "react";
@@ -55,11 +55,13 @@ export function TavolaSvg(p: {
   disegno: Disegno;
   tipoCavo: ReadonlyMap<string, { tipo: TipoPorta; dubbio: boolean }>;
   fuoco: Fuoco | null;
+  /** Il risultato della ricerca su cui si è: id di una porta o di un nodo, col doppio anello. */
+  corrente: string | null;
   /** Clic sul vuoto: toglie la scelta. */
   onVuoto: () => void;
   onPorta: (porta: PortaComposta | null) => void;
   onCavo: (collegamento: string | null) => void;
-  onScegli: (collegamento: string) => void;
+  onScegli: (collegamento: string | null, porta: PortaComposta | null) => void;
 }) {
   const { disegno: d, fuoco } = p;
   const perNodo = new Map(p.apparati.map((a) => [a.nodo, a]));
@@ -81,8 +83,9 @@ export function TavolaSvg(p: {
         const yEtichette = GEO.testata + ap.file * GEO.passo + 8;
         const sotto = [a.tipo, a.ip].filter(Boolean).join(" · ");
         return (
-          <g key={a.nodo} transform={`translate(${x0},${y0})`}>
+          <g key={a.nodo} id={`tavola-${a.nodo}`} transform={`translate(${x0},${y0})`}>
             <rect width={ap.w} height={ap.h} rx={8} fill="var(--card)" stroke={evidenziato ? "var(--primary)" : "var(--border)"} strokeWidth={evidenziato ? 3 : 1} />
+            {p.corrente === a.nodo && <rect x={-6} y={-6} width={ap.w + 12} height={ap.h + 12} rx={12} fill="none" stroke="var(--primary)" strokeWidth={4} />}
             <Link href={`/devices/${a.refId}`}>
               <text x={GEO.margine} y={21} fontSize={15} fontWeight={700} fill="var(--foreground)" className="hover:underline">
                 {a.nome.length > Math.floor((ap.w - 2 * GEO.margine) / 8.5) ? `${a.nome.slice(0, Math.floor((ap.w - 2 * GEO.margine) / 8.5) - 1)}…` : a.nome}
@@ -97,14 +100,17 @@ export function TavolaSvg(p: {
               const titolo = [porta.nome, porta.destinazione ? `→ ${porta.destinazione}` : null, porta.velocita, porta.vlan !== null ? `VLAN ${porta.vlan}` : null,
                 porta.fantasma ? "porta non nell'elenco dell'apparato" : null, porta.dubbio ? "da verificare" : null].filter(Boolean).join(" · ");
               return (
-                <g key={porta.id} style={{ cursor: porta.collegamento ? "pointer" : "default" }}
-                  onMouseEnter={() => p.onPorta(porta)} onClick={() => (porta.collegamento ? p.onScegli(porta.collegamento) : p.onVuoto())}>
+                <g key={porta.id} id={`tavola-${porta.id}`} style={{ cursor: "pointer" }}
+                  onMouseEnter={() => p.onPorta(porta)} onClick={() => p.onScegli(porta.collegamento, porta)}>
                   <title>{titolo}</title>
                   <g opacity={porta.fantasma ? 0.6 : 1}>
                     <SegnoPorta x={pp.x} y={pp.y} tipo={porta.tipo} dubbio={porta.dubbio} numero={porta.numero} />
                   </g>
                   {fuoco?.porte.has(porta.id) && (
                     <rect x={pp.x - 4} y={pp.y - 4} width={32} height={32} rx={6} fill="none" stroke="var(--foreground)" strokeWidth={2.5} style={{ pointerEvents: "none" }} />
+                  )}
+                  {p.corrente === porta.id && (
+                    <rect x={pp.x - 9} y={pp.y - 9} width={42} height={42} rx={9} fill="none" stroke="var(--primary)" strokeWidth={4} style={{ pointerEvents: "none" }} />
                   )}
                   {porta.destinazione && (
                     <text x={pp.ex} y={yEtichette} transform={`rotate(90 ${pp.ex} ${yEtichette})`} dominantBaseline="middle" fontSize={13}
@@ -125,7 +131,7 @@ export function TavolaSvg(p: {
         const op = fuoco && !nelFuoco ? SPENTO_CAVI : 1;
         const [a0, a1] = [l.punti[0], l.punti[l.punti.length - 1]];
         return (
-          <g key={l.id} opacity={op} style={{ transition: transizione, cursor: "pointer" }} onMouseEnter={() => p.onCavo(l.collegamento)} onClick={() => p.onScegli(l.collegamento)}>
+          <g key={l.id} opacity={op} style={{ transition: transizione, cursor: "pointer" }} onMouseEnter={() => p.onCavo(l.collegamento)} onClick={() => p.onScegli(l.collegamento, null)}>
             <polyline points={pts} fill="none" stroke="transparent" strokeWidth={10} />
             <polyline points={pts} fill="none" stroke="var(--background)" strokeWidth={w + 3} strokeLinejoin="round" />
             <polyline points={pts} fill="none" stroke={t?.dubbio ? "var(--destructive)" : s.stroke} strokeWidth={w} strokeDasharray={t?.dubbio ? "2 3" : s.dash} strokeLinejoin="round" />

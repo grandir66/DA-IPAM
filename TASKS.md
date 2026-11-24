@@ -38,6 +38,8 @@ MikroTik, LLDP dei Proxmox).
     collegamento scelto più spesso con anello sulle porte; riempimenti più carichi, destinazioni nel colore del testo (≥ 4,5:1).
     Visto sull'hub con v0.9.1329 a 1920, tema chiaro, porta scelta col clic: si legge; SVG 1588 px nel riquadro di 1638, la pagina non
     scorre. Non visto: tema scuro.
+  - [x] (24/11, Riccardo: «Sì, procedi») Trovare e seguire un cavo: ricerca che scorre sul risultato, riquadro fisso in basso a destra
+    coi capi cliccabili, clic sulle porte senza cavo, telai vuoti nascosti. Prove 8/8, eslint e tsc puliti.
   - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,

@@ -42,13 +42,15 @@ modelloDellaMappa(staleDays)         lib/topology/mappa-server.ts   lo stesso di
 | `…/tavola/componi.ts` | `componiTavola`, `tipoCollegamento`, `rangoDi`, `eRete`, `eServer`, `numeroCorto` | tipo, destinazione, ruolo |
 | `…/tavola/righe.ts` | `GEO` (misure), `ordina`, `posaApparato`, `disponi` | misure, ordine, a capo |
 | `…/tavola/instrada.ts` | `instrada`, `disponiEInstrada` | percorso dei cavi |
-| `…/tavola/__tests__/tavola.test.ts` | 7 prove, dati inventati | prove nuove in aggiunta |
+| `…/tavola/ricerca.ts` | `cercaInTavola`, risultati in ordine di vista | cosa trova la ricerca |
+| `…/tavola/__tests__/tavola.test.ts` | 8 prove, dati inventati | prove nuove in aggiunta |
 | `src/lib/db-tenant.ts` | `getTopologyTavolaPorte` | colonne lette |
 | `src/app/api/topology/tavola/route.ts` | la rotta | risposta |
 | `src/components/topology/tavola/tavola-client.tsx` | stato, barra, ricerca, fuoco, riquadro del collegamento | comportamento della pagina |
 | `…/tavola-svg.tsx` | disegno: telai, porte, etichette, graffe, cavi | aspetto |
 | `…/porta-svg.tsx` | `SegnoPorta`, motivo a righe | la forma della porta |
 | `…/stile-tavola.ts` | `STILE_PORTA`, `STILE_CAVO`, `NOME_TIPO`, `ORDINE_TIPI` | colori, tratti, nomi |
+| `…/riquadro-scelta.tsx` | riquadro fisso del collegamento o della porta scelta | cosa si legge di un cavo o di una porta |
 | `…/legenda.tsx` | legenda | segue `ORDINE_TIPI` |
 | `src/app/(dashboard)/topology/tavola/page.tsx` | monta `TavolaClient` | quasi mai |
 
@@ -98,7 +100,7 @@ Leggi `docs/STILE-UI.md` (vincolante). In più, per questa pagina:
 - Tipo in più `attiva`; `dubbio` è un segno. Sede «Senza sede» aggiunta: l'hub non ha sedi nella mappa.
 - Il clic sul nome porta a `/devices/<id>`, non a `/objects/<id>` (che vuole l'id dell'host).
 - Il clic su una porta o un cavo apre un riquadro breve, non il pannello completo della Topologia.
-- Fuoco: vale il §5, non il 10 % della spec. **Anche il commento in testa a `tavola-svg.tsx` dice ancora 10 %**: è vecchio.
+- Fuoco: vale il §5, non il 10 % della spec.
 
 ## 7. Aperto e non provato
 

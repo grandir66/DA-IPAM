@@ -59,6 +59,8 @@ export interface PortaComposta {
   fascio: string | null;
   velocita: string | null;
   vlan: number | null;
+  /** La riga letta dall'apparato; null per una porta fantasma. */
+  letta?: PortaTavola | null;
 }
 
 export interface ApparatoComposto {

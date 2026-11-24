@@ -7,6 +7,7 @@ import { componiTavola } from "@/lib/topology/tavola/componi";
 import { disponiEInstrada, instrada } from "@/lib/topology/tavola/instrada";
 import { disponi } from "@/lib/topology/tavola/righe";
 import { parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
+import { cercaInTavola } from "@/lib/topology/tavola/ricerca";
 import type { ApparatoComposto, PortaTavola } from "@/lib/topology/tavola/tipi";
 
 const SITO = 7;
@@ -173,4 +174,14 @@ test("disponiEInstrada: con le corsie di bordo la tavola sta nella larghezza uti
   assert.ok(disegno.larghezza <= L, `larghezza ${disegno.larghezza} oltre ${L}`);
   for (const l of disegno.linee) for (const [x] of l.punti) assert.ok(x >= 0 && x <= disegno.larghezza, `${l.id} esce a x=${x}`);
   assert.equal(disegno.linee.length, cavi.length);
+});
+
+test("ricerca: un risultato per apparato trovato, le porte per client letto, in ordine di vista", () => {
+  const t = componiTavola({
+    sito: SITO, nodi: [nodo(1, "switch"), nodo(2, "firewall", { name: "prova-fw" })], collegamenti: [],
+    apparati: [{ node: "dev:1", porte: [porta(1), porta(2, { nomeClient: "pc-prova", ipClient: "192.0.2.77" })] }, { node: "dev:2", porte: [porta(1)] }],
+  });
+  assert.deepEqual(cercaInTavola(t.apparati, "PROVA"), [{ nodo: "dev:2", porta: null }, { nodo: "dev:1", porta: "dev:1|1" }]);
+  assert.deepEqual(cercaInTavola(t.apparati, "192.0.2.77"), [{ nodo: "dev:1", porta: "dev:1|1" }]);
+  assert.deepEqual(cercaInTavola(t.apparati, "p"), []);
 });

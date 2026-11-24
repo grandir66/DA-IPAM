@@ -16,19 +16,16 @@ export function IntestazionePagina({
   titolo,
   sottotitolo,
   azioni,
-  soloLettori = false,
 }: {
   titolo: string;
   sottotitolo?: string;
   azioni?: ReactNode;
-  /** Il nome lo dicono già le schede in alto: il titolo resta per i lettori di schermo (Riccardo, 24/11/2026). */
-  soloLettori?: boolean;
 }) {
   return (
-    <div className={cn("flex flex-wrap justify-between gap-3", soloLettori ? "items-center" : "items-end")}>
+    <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className={soloLettori ? "sr-only" : "text-2xl font-bold tracking-tight"}>{titolo}</h1>
-        {sottotitolo && <p className={cn("text-sm text-muted-foreground", !soloLettori && "mt-1")}>{sottotitolo}</p>}
+        <h1 className="text-2xl font-bold tracking-tight">{titolo}</h1>
+        {sottotitolo && <p className="mt-1 text-sm text-muted-foreground">{sottotitolo}</p>}
       </div>
       {azioni && <div className="flex flex-wrap items-center gap-2">{azioni}</div>}
     </div>
@@ -39,11 +36,14 @@ export function IntestazionePagina({
 export function BarraStato({
   acceso,
   titolo,
+  stato,
   dettagli = [],
   azioni,
 }: {
   acceso: boolean;
   titolo: string;
+  /** La parola accanto al titolo; senza, «acceso» o «spento». */
+  stato?: string;
   /** Fatti brevi in monospazio (interfaccia, ultima lettura, modo): uno per voce. */
   dettagli?: string[];
   azioni?: ReactNode;
@@ -61,7 +61,7 @@ export function BarraStato({
             )}
           />
           {titolo}
-          <span className="text-muted-foreground font-normal">{acceso ? "acceso" : "spento"}</span>
+          <span className="text-muted-foreground font-normal">{stato ?? (acceso ? "acceso" : "spento")}</span>
         </span>
         {dettagli.map((d) => (
           <span key={d} className="rounded-md border bg-muted/50 px-2 py-0.5 font-mono text-[13px] text-muted-foreground">

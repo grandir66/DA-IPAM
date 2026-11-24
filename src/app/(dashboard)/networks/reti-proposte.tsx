@@ -94,7 +94,7 @@ export function RetiProposte({ proposte, admin }: { proposte: ReteProposta[]; ad
                 variant="outline"
                 onClick={() => void conferma(p)}
                 disabled={inCorso !== null || p.maschera === "incerta"}
-                title={p.maschera === "incerta" ? "La maschera è incerta: correggila in «Reti dal trunk»" : undefined}
+                title={p.maschera === "incerta" ? "La maschera è incerta: correggila in Sicurezza › Rete › VLAN e indirizzi" : undefined}
               >
                 Porta {p.cidr} in DA-IPAM
               </Button>

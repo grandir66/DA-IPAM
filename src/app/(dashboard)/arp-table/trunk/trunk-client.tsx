@@ -285,6 +285,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   const blocchiVisti = matrice.reti.reduce((a, x) => a + x.blocchi.length, 0);
   const ril = iniziale.rilievi.riepilogo;
   const esposizioniLlmnr = ril.perTipo.find((t) => t.tipo === "nomi_insicuri")?.n ?? 0;
+  const statoLettura = leggiStato(attiva, sonda, ultimoEsito);
   const totSilenziosi = matrice.reti.reduce((a, x) => a + silenziosi(x), 0);
 
   return (
@@ -297,6 +298,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
           sonda.pacchettiAlSecondo != null ? `${Math.round(sonda.pacchettiAlSecondo)} pacchetti/s` : "traffico non misurato",
           sonda.tagLetti ? "tag VLAN letti" : "nessun tag VLAN visto",
           `letta dal ${sonda.fonte === "socket" ? "socket locale" : "Scanner-Edge"}`,
+          ...(statoLettura.segno === "✓" ? [`dati ${fa(ultimoEsito?.quando ?? r.aggiornato)}`] : []),
         ] : ["non risponde"]}
         azioni={
           <Button size="sm" variant={attiva ? "outline" : "default"} render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
@@ -304,16 +306,17 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
           </Button>
         }
       />
-      <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
-
+      {statoLettura.segno !== "✓" && <AvvisoLettura {...statoLettura} />}
 
       {scheda === "sicurezza" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <TesseraNumero titolo="Allarmi" valore={ril.allarmi}
               qualifica={ril.allarmiAlti ? `✕ ${ril.allarmiAlti} gravi da prendere` : "nessuno grave aperto"} nota="DHCP, IP contesi, indirizzi fuori rete" />
             <TesseraNumero titolo="Esposizioni" valore={ril.esposizioni}
               qualifica={`${esposizioniLlmnr} con LLMNR/NetBIOS`} nota="come è fatta la rete, con cosa fare" />
+            <TesseraNumero titolo="Novità" valore={ril.novita} nota="apparati sconosciuti sentiti sulla rete" />
+            <TesseraNumero titolo="Da prendere in carico" valore={ril.perTipo.reduce((a, t) => a + t.daPrendere, 0)} nota="senza nessuno che se ne occupa" />
           </div>
           <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
         </div>
@@ -323,11 +326,13 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
 
       {scheda === "reti" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
               qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
-            <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`}
-              nota={`+${matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nuovi in 7 giorni, senza leggere il router`} />
+            <TesseraNumero titolo="Reti" valore={matrice.reti.length}
+              qualifica={`${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM`} nota="dedotte dagli indirizzi visti" />
+            <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`} nota="visti senza leggere il router" />
+            <TesseraNumero titolo="Nuovi in 7 giorni" valore={matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nota="indirizzi mai visti prima" />
           </div>
 
           {/* VLAN nativa: i pacchetti senza tag arrivano come VID 0, in DA-IPAM la stessa rete ha la sua VLAN (08/11). */}
@@ -591,10 +596,10 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   );
 }
 
-/** Una riga in parole semplici: la sonda gira? DA-IPAM riceve i dati? Se no, perché. */
-function StatoLettura({ attiva, sonda, esito, aggiornato }: {
-  attiva: boolean; sonda: TrunkStatoSonda; esito: TrunkEsitoLettura | null; aggiornato: string | null;
-}) {
+interface StatoLettura { segno: "✓" | "▲" | "✕"; testo: string }
+
+/** La sonda gira? DA-IPAM riceve i dati? Se no, perché. Quando va tutto bene basta la barra, senza una riga in più. */
+function leggiStato(attiva: boolean, sonda: TrunkStatoSonda, esito: TrunkEsitoLettura | null): StatoLettura {
   let segno: "✓" | "▲" | "✕";
   let testo: string;
   if (!sonda.raggiungibile) {
@@ -614,12 +619,16 @@ function StatoLettura({ attiva, sonda, esito, aggiornato }: {
     testo = `Ultima lettura ${fa(esito.quando)} non riuscita: ${esito.nota}`;
   } else {
     segno = "✓";
-    testo = `Funziona. Dati ricevuti ${fa(esito?.quando ?? aggiornato)}; DA-IPAM legge ogni 2 minuti.`;
+    testo = "";
   }
+  return { segno, testo };
+}
+
+function AvvisoLettura({ segno, testo }: StatoLettura) {
   return (
     <div role="status" className={cn("flex items-start gap-2 rounded-xl border px-4 py-2.5 text-sm",
-      segno === "✓" ? "border-[#1F7A4D] bg-card" : segno === "▲" ? "border-[#C9A800] bg-[#FFD400]/15" : "border-[#8E1B20] bg-card")}>
-      <span aria-hidden className={cn("font-bold", segno === "✓" ? "text-[#1F7A4D]" : segno === "✕" ? "text-[#8E1B20] dark:text-[#F07178]" : "")}>{segno}</span>
+      segno === "▲" ? "border-[#C9A800] bg-[#FFD400]/15" : "border-[#8E1B20] bg-card")}>
+      <span aria-hidden className={cn("font-bold", segno === "✕" ? "text-[#8E1B20] dark:text-[#F07178]" : "")}>{segno}</span>
       <span>{testo}</span>
     </div>
   );

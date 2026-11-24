@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
-import { Etichetta, Pannello, SchedePagina, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { BarraStato, Etichetta, Pannello, SchedePagina, TempoRelativo, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { useParteGuida } from "@/components/shared/parte-guida";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
 import type { AnomaliaTraffico, StatoAnomalia } from "@/lib/traffico/anomalie";
@@ -44,6 +45,7 @@ export function TrafficoClient({ iniziale, admin }: { iniziale: Dati; admin: boo
   const [dati, setDati] = useState<Dati>(iniziale);
   const [errore, setErrore] = useState<string | null>(null);
   const [scheda, setScheda] = useState<Scheda>("insieme");
+  useParteGuida(scheda);
   const [stato, setStato] = useState<FiltroStato>("nuova");
   const [gravita, setGravita] = useState(0);
   const [tipo, setTipo] = useState<string>(TUTTI);
@@ -271,7 +273,7 @@ function problemaCollector(c: CollectorQuadro): string | null {
   return null;
 }
 
-/** Lo stato dei collector in quattro riquadri: l'elenco intero sta nella scheda «Collector e controlli» (Riccardo, 23/11). */
+/** Lo stato dei collector in una riga, come nelle altre pagine di Rete: l'elenco intero sta nella scheda «Collector e controlli» (Riccardo, 23/11). */
 function StatoCollector({ collector }: { collector: CollectorQuadro[] }) {
   const accesi = collector.filter((c) => c.attivo);
   const contatti = accesi.map((c) => c.ultimo_contatto).filter((x): x is string => !!x).sort();
@@ -284,18 +286,18 @@ function StatoCollector({ collector }: { collector: CollectorQuadro[] }) {
   const pct = (v: number) => `${(v * 100).toFixed(v >= 0.9995 ? 0 : 1)}%`;
   return (
     <div className="space-y-2">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <TesseraNumero titolo="Collector" valore={`${accesi.length}/${collector.length}`} qualifica="accesi" nota={motori} />
-        <TesseraNumero titolo="Ultimo contatto" valore={piuVecchio ? oraBreve(piuVecchio) : null} nota={accesi.length > 1 ? "il più vecchio fra gli accesi" : undefined} />
-        <TesseraNumero
-          titolo="Copertura"
-          valore={peggiore?.copertura != null ? pct(peggiore.copertura) : null}
-          nota={peggiore && (peggiore.copertura ?? 1) < 0.9995 ? `la più bassa: ${peggiore.nome}` : "pacchetti visti sul totale"}
-        />
-        <TesseraNumero titolo="Problemi" valore={problemi.length} qualifica={problemi.length ? "▲ da guardare" : "nessuno"} nota={problemi[0] ? `${problemi[0].c.nome}: ${problemi[0].p}` : undefined} />
-      </div>
-      {problemi.length > 1 && (
-        <p className="text-[13px] text-muted-foreground">
+      <BarraStato
+        acceso={accesi.length > 0}
+        titolo="Collector"
+        stato={`${accesi.length} di ${collector.length} accesi`}
+        dettagli={[
+          ...(accesi.length ? [motori] : []),
+          piuVecchio ? `ultimo contatto ${oraBreve(piuVecchio)}${accesi.length > 1 ? " (il più vecchio)" : ""}` : "nessun contatto",
+          ...(peggiore?.copertura != null ? [`copertura ${pct(peggiore.copertura)}${peggiore.copertura < 0.9995 ? ` (${peggiore.nome})` : ""}`] : []),
+        ]}
+      />
+      {problemi.length > 0 && (
+        <p className="text-[13px]" role="status">
           ▲ {problemi.map((x) => `${x.c.nome}: ${x.p}`).join(" · ")}
         </p>
       )}

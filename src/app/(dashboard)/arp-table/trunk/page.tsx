@@ -28,13 +28,7 @@ export default async function TrunkPage() {
   const sonda = await withTenant(tenantCode, () => statoSonda());
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="sr-only">Reti dal trunk</h1>
-        <p className="text-muted-foreground text-sm">
-          Quello che il sensore trunk vede in ascolto sulla porta collegata a tutte le VLAN del cliente: rilievi di
-          sicurezza, VLAN, reti e indirizzi, senza leggere il router. Le scansioni restano sull&apos;IP ufficiale dell&apos;appliance.
-        </p>
-      </div>
+      <h1 className="sr-only">Reti dal trunk</h1>
       <TrunkClient iniziale={{ ...dati, sonda }} admin={ruolo === "admin" || ruolo === "superadmin"} />
     </div>
   );

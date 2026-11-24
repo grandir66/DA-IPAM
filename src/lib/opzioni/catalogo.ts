@@ -1082,7 +1082,7 @@ function opzioniAutomatismi(): Opzione[] {
       valePer: "cliente",
       forma: "levetta",
       diSerie: "acceso",
-      configura: { href: "/segmentazione", etichetta: "Matrice di segmentazione ›" },
+      configura: { href: "/segmentazione", etichetta: "Chi raggiunge cosa ›" },
       spegnendo: {
         siFerma: "il giro settimanale della matrice. Il pulsante nella pagina resta.",
         resta: "le prove già fatte.",

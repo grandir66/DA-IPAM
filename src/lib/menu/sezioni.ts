@@ -13,6 +13,8 @@ export interface SchedaSezione {
   tab?: string;
   /** Una riga verticale prima di questa scheda: comincia un gruppo. */
   stacco?: boolean;
+  /** Nome del gruppo che comincia con questa scheda, scritto prima di lei. */
+  gruppo?: string;
   /** Chi la vede: solo gli amministratori, o solo chi ha più di un'istanza. Senza, tutti. */
   per?: "admin" | "piu-istanze";
   /** Altri indirizzi che stanno sotto questa scheda senza averne una loro (es. `/settings/mdm` sotto «Moduli»). */
@@ -56,15 +58,15 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/vulnerabilities/scansioni", etichetta: "VA dall'Edge" },
   ] },
   { nome: "Rete", schede: [
-    { href: "/servizi-rete", etichetta: "Servizi di rete" },
-    { href: "/segmentazione", etichetta: "Segmentazione" },
-    { href: "/traffico", etichetta: "Traffico" },
-    // Le tre parti di «Reti dal trunk» stanno qui, non in una seconda fila dentro la pagina (Riccardo, 13/11/2026:
-    // «le metterei direttamente nel tab superiore indicando Passive Net Security, Passive Vlan and Devices, Passive
-    // Announce, messo in italiano e più contratto»). La prima è quella che si apre senza àncora.
-    { href: "/arp-table/trunk", etichetta: "Passiva · Sicurezza", ancora: "sicurezza" },
-    { href: "/arp-table/trunk", etichetta: "Passiva · VLAN e apparati", ancora: "reti" },
-    { href: "/arp-table/trunk", etichetta: "Passiva · Annunci", ancora: "annunci" },
+    // Nomi e gruppi di Riccardo, 24/11/2026 («renderle più parlanti»): le prime mandano prove sulla rete, le altre
+    // ascoltano soltanto. Le tre parti della sonda trunk stanno qui e non in una seconda fila (13/11/2026); la prima è
+    // quella che si apre senza àncora.
+    { href: "/servizi-rete", etichetta: "Porte e servizi", gruppo: "Provate dalla sonda" },
+    { href: "/segmentazione", etichetta: "Chi raggiunge cosa" },
+    { href: "/traffico", etichetta: "Traffico", gruppo: "Viste in ascolto", stacco: true },
+    { href: "/arp-table/trunk", etichetta: "Allarmi di rete", ancora: "sicurezza" },
+    { href: "/arp-table/trunk", etichetta: "VLAN e indirizzi", ancora: "reti" },
+    { href: "/arp-table/trunk", etichetta: "Apparati annunciati", ancora: "annunci" },
   ] },
   // Impostazioni e Config (Riccardo, 14/11/2026). Prima: «uniformare i tab… utenti, aggiornamenti, moduli, istanza sono
   // fondamentali», «inserendo dentro impostazioni anche le voci di menù opzioni e schedulazioni». Poi: «avere un menù

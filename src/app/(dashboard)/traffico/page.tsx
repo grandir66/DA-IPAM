@@ -1,7 +1,6 @@
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { auth } from "@/lib/auth";
-import { IntestazionePagina } from "@/components/shared/console";
 import { elencoAnomalie } from "@/lib/traffico/anomalie";
 import { dbTraffico } from "@/lib/traffico/lettura";
 import { nomiDegliIp, quadroTraffico } from "@/lib/traffico/quadro";
@@ -18,11 +17,7 @@ export default async function TrafficoPage() {
   const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
   return (
     <div className="space-y-4">
-      <IntestazionePagina
-        soloLettori
-        titolo="Traffico"
-        sottotitolo="Chi parla con chi, visto dai collector: quello che esce dall'abitudine o passa in chiaro."
-      />
+      <h1 className="sr-only">Traffico</h1>
       <TrafficoClient iniziale={iniziale} admin={ruolo === "admin" || ruolo === "superadmin"} />
     </div>
   );

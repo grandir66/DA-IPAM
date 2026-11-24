@@ -131,8 +131,25 @@ export function PannelloRilievi({ iniziale, admin }: { iniziale: DatiRilievi; ad
   const scelto = tipo ? TIPI_RILIEVO[tipo] : null;
 
   return (
-    <Pannello titolo="Sicurezza della rete" conteggio={riepilogo.allarmi + riepilogo.esposizioni + riepilogo.novita}
-      sottotitolo="Quello che si capisce ascoltando il trunk: allarmi, esposizioni e apparati sconosciuti"
+    <Pannello titolo="Allarmi di rete" conteggio={riepilogo.allarmi + riepilogo.esposizioni + riepilogo.novita}
+      azioni={nessuno ? undefined : (
+        <>
+          {scelto && <Etichetta tono="marca" mono={false}>{scelto.etichetta}</Etichetta>}
+          <div className="flex overflow-hidden rounded-lg border" role="group" aria-label="Quali rilievi">
+            {[{ v: false, t: "Tutti" }, { v: true, t: "Da prendere in carico" }].map((b) => (
+              <button key={b.t} type="button" aria-pressed={daPrendere === b.v} onClick={() => filtra({ daPrendere: b.v })}
+                className={cn("min-h-8 px-2.5 text-[13px]", daPrendere === b.v ? "bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50")}>
+                {b.t}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-64 max-w-full">
+            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <Input className="h-8 pl-8" placeholder="Cerca IP, MAC, testo" value={q} onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
+          </div>
+        </>
+      )}
       piede={scelto ? <><b className="text-foreground">Cosa fare:</b> {scelto.cosaFare}</> : "Scegli un tipo di rilievo per filtrare l'elenco e leggere cosa fare."}>
       {nessuno ? (
         <Vuoto titolo="Nessun rilievo aperto"
@@ -161,25 +178,6 @@ export function PannelloRilievi({ iniziale, admin }: { iniziale: DatiRilievi; ad
                 </div>
               );
             })}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {scelto && <Etichetta tono="marca" mono={false}>{scelto.etichetta}</Etichetta>}
-              <div className="flex overflow-hidden rounded-lg border" role="group" aria-label="Quali rilievi">
-                {[{ v: false, t: "Tutti" }, { v: true, t: "Da prendere in carico" }].map((b) => (
-                  <button key={b.t} type="button" aria-pressed={daPrendere === b.v} onClick={() => filtra({ daPrendere: b.v })}
-                    className={cn("min-h-8 px-2.5 text-[13px]", daPrendere === b.v ? "bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50")}>
-                    {b.t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="relative w-64 max-w-full">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              <Input className="h-8 pl-8" placeholder="Cerca IP, MAC, testo" value={q} onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
-            </div>
           </div>
 
           {errore && <LoadError what="i rilievi di sicurezza" message={errore} onRetry={() => filtra({ off: offset })} />}

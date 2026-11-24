@@ -11,7 +11,7 @@ import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
-import { Etichetta, Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
+import { Etichetta, Pannello, TesseraNumero, TempoRelativo, Vuoto } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import type { ApparatoAnnunciato } from "@/lib/trunk/annunci";
 
@@ -92,11 +92,19 @@ export function PannelloAnnunci() {
       return n;
     });
 
+  const n = (v: number) => (apparati ? v : null);
+
   return (
+    <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <TesseraNumero titolo="Apparati annunciati" valore={n(tutti.length)} nota="si presentano da soli sul trunk" />
+      <TesseraNumero titolo="Non in DA-IPAM" valore={n(nonInIpam)} nota="da aggiungere all'inventario" />
+      <TesseraNumero titolo="Non registrati" valore={n(nonApparato)} nota="noti come host, non come apparato" />
+      <TesseraNumero titolo="Protocolli sentiti" valore={n(Object.keys(perProtocollo).length)} nota={Object.keys(perProtocollo).map((p) => NOME_PROTOCOLLO[p] ?? p).join(", ") || undefined} />
+    </div>
     <Pannello
-      titolo="Annunci"
+      titolo="Apparati annunciati"
       conteggio={tutti.length}
-      sottotitolo="Chi si presenta da solo sul trunk"
       azioni={
         <div className="relative">
           <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
@@ -226,5 +234,6 @@ export function PannelloAnnunci() {
         )}
       </div>
     </Pannello>
+    </div>
   );
 }

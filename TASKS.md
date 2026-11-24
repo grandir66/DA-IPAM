@@ -68,6 +68,21 @@ MikroTik, LLDP dei Proxmox).
 - [ ] Vista 3 «Sedi»: sedi e tunnel (WireGuard, NetBird). Dati in parte già presenti (MikroTik, peer NetBird di DA-Link).
 - Repo pubblico: nel codice nessun dato di Domarc, tutto dal database.
 
+## 2026-11-24 — Idea: «Verso l'esterno» con DA-GEO, fornitori noti e aziende (Riccardo, proposta, niente codice)
+
+Riccardo: estendere a IPAM la logica di DA-GEO (paesi, geoblocking, indirizzi compromessi) «sfruttando lo stesso URL»
+(`https://survey.domarc.it/geo`), e dire se una destinazione è Azure, Cloudflare, OVH… o di quale ditta, italiana o straniera.
+Misurato il 24/11 sul 70791 (sola lettura, due giorni, collector sommati: quote indicative): ~10.000 indirizzi esterni, solo 7 senza
+fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita; 59 destinazioni nei 18 paesi di DA-GEO
+(CN 29, HK 17, RU 10, VN 3); nessun indirizzo in Spamhaus DROP. L'hub raggiunge `/geo/salute`.
+- [ ] Riccardo approva le fasi (proposta): 1 reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
+      geoblocking»: confronto in locale, nessun indirizzo esce); 2 fornitore e servizio (tavola ASN → nome breve e categoria, più gli
+      intervalli pubblicati da AWS/Azure/Google/Cloudflare); 3 mappa per paese e direttrici; 4 azienda (RIPE `inetnum`, 224 MB
+      compressi, preparato da DA-GEO; nomi TLS/DNS già raccolti)
+- Regola che resta: mai una richiesta fuori con dentro un indirizzo. Il paese resta DB-IP: le zone di DA-GEO (ipdeny) sono
+  registrazioni e servono per dire cosa blocca il firewall, non dove sta una macchina.
+- Manca in DA-GEO: una rotta di lettura per IPAM (oggi c'è solo `config.rsc` dell'apparato) e una fonte C2 viva: **ThreatFox risponde 410**.
+
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)
 
 Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (non si ricopia qui).

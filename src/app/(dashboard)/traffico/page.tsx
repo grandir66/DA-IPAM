@@ -19,6 +19,7 @@ export default async function TrafficoPage() {
   return (
     <div className="space-y-4">
       <IntestazionePagina
+        soloLettori
         titolo="Traffico"
         sottotitolo="Chi parla con chi, visto dai collector: quello che esce dall'abitudine o passa in chiaro."
       />

@@ -18,6 +18,7 @@ export default async function SegmentazionePage() {
   return (
     <div className="space-y-4">
       <IntestazionePagina
+        soloLettori
         titolo="Matrice di segmentazione"
         sottotitolo="Da ogni VLAN la sonda prova i servizi già noti delle altre reti: raggiunti, chiusi, filtrati. Accesa di serie una volta a settimana."
       />

@@ -677,6 +677,7 @@ export function ServiziReteClient({
 
   const intestazione = (
     <IntestazionePagina
+      soloLettori
       titolo="Servizi di rete"
       sottotitolo={
         apparati

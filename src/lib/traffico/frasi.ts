@@ -26,6 +26,8 @@ export const NOME_TIPO: Record<TipoAnomalia, string> = {
   dns_anomalo: "DNS anomalo",
   ip_doppio: "IP doppio",
   mac_cambiato: "MAC cambiato",
+  mac_mai_visto: "MAC censito mai visto",
+  mac_altrove: "MAC già censito su un altro IP",
   paese_nuovo: "Paese nuovo",
   tls_certificato: "Certificato",
   dns_esterno: "DNS fuori casa",
@@ -92,6 +94,8 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "impianto_scrittura": return "Comando di scrittura verso un impianto";
     case "ip_doppio": return "Due apparati rispondono per lo stesso indirizzo";
     case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
+    case "mac_mai_visto": return "Risponde un apparato diverso da quello censito, che in rete non si è mai visto: la scheda è forse vecchia";
+    case "mac_altrove": return typeof d.altrove === "string" && /^[0-9.]{7,15}$/.test(d.altrove) ? `Risponde col MAC già censito su ${d.altrove}` : "Risponde col MAC già censito su un altro indirizzo";
     case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
     case "tls_certificato":
       if (d.motivo === "scaduto") return `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`;
@@ -125,7 +129,7 @@ export function macAnomalia(a: { tipo: TipoAnomalia; dettaglio: Record<string, u
     const altri = typeof a.dettaglio.quanti === "number" && a.dettaglio.quanti > 2 ? ` e altri ${a.dettaglio.quanti - 2}` : "";
     return x && y ? `${x} e ${y}${altri}` : null;
   }
-  if (a.tipo === "mac_cambiato") {
+  if (a.tipo === "mac_cambiato" || a.tipo === "mac_mai_visto" || a.tipo === "mac_altrove") {
     const [x, y] = [m("prima"), m("ora")];
     return x && y ? `prima ${x}, ora ${y}` : null;
   }

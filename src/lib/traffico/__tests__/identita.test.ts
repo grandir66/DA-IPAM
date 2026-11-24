@@ -55,6 +55,23 @@ test("regole pure: doppione solo fra MAC vicini nel tempo e sulla stessa VLAN, m
   assert.ok(identitaValida(voce("aa:aa:aa:aa:aa:01", "", "lldp", { nome: "sw-piano1", tipo: "porta 12" })));
 });
 
+test("MAC diverso da quello censito: le tre regole del 24/11, sui casi veri dell'ufficio (MAC inventati)", () => {
+  const ip = "10.4.0.10";
+  const v = (mac: string, fa: number) => ({ ip, mac, vlan: 0, ultima_vista: alle(fa) });
+  const tipi = (viste: ReturnType<typeof v>[], noto: string, su: [string, string[]][] = []) => macCambiati(viste, new Map([[ip, noto]]), new Map(su)).map((a) => [a.tipo, a.gravita, a.dettaglio.altrove]);
+  // switch che risponde col MAC della gestione: stesso produttore, il censito non si è mai visto
+  assert.deepEqual(tipi([v("e4:38:83:00:00:02", 10)], "E4:38:83:00:00:01"), []);
+  // stesso produttore, ma il censito si era visto: la scheda è cambiata davvero
+  assert.deepEqual(tipi([v("e4:38:83:00:00:02", 10), v("e4:38:83:00:00:01", 9000)], "E4:38:83:00:00:01"), [["mac_cambiato", 1, undefined]]);
+  // due VM Proxmox hanno sempre lo stesso prefisso: non vale come «stesso produttore»
+  assert.deepEqual(tipi([v("bc:24:11:00:00:02", 10)], "BC:24:11:00:00:01"), [["mac_mai_visto", 1, undefined]]);
+  assert.deepEqual(tipi([v("c2:64:de:00:00:02", 10)], "C2:64:DE:00:00:01"), [["mac_mai_visto", 1, undefined]]);
+  // il MAC è di un altro host censito: tipo a parte, anche con lo stesso produttore
+  assert.deepEqual(tipi([v("78:9a:18:00:00:02", 10)], "24:5A:4C:00:00:01", [["78:9a:18:00:00:02", ["10.4.0.77"]]]), [["mac_altrove", 1, "10.4.0.77"]]);
+  // tornato quello censito: niente
+  assert.deepEqual(tipi([v("e4:38:83:00:00:02", 9000), v("e4:38:83:00:00:01", 10)], "E4:38:83:00:00:01"), []);
+});
+
 test("dal collector agli host: riempie il vuoto, non tocca il pieno; IP doppio e MAC cambiato; l'host del MAC", async () => {
   await withTenant(T, async () => {
     const d = dbTraffico();
@@ -83,7 +100,7 @@ test("dal collector agli host: riempie il vuoto, non tocca il pieno; IP doppio e
     assert.deepEqual([h("10.4.0.11").mac, h("10.4.0.11").hostname], ["AA:AA:AA:AA:AA:11", "nome-vero"]);
     assert.deepEqual([h("10.4.0.12").mac, h("10.4.0.12").hostname, h("10.4.0.12").custom_name], ["BB:BB:BB:BB:BB:12", null, "Messo a mano"]);
     const avvisi = d.prepare("SELECT tipo, client, gravita FROM traffico_anomalie ORDER BY tipo, client").all() as { tipo: string; client: string; gravita: number }[];
-    assert.deepEqual(avvisi, [{ tipo: "ip_doppio", client: "10.4.0.50", gravita: 3 }, { tipo: "mac_cambiato", client: "10.4.0.11", gravita: 1 }]);
+    assert.deepEqual(avvisi, [{ tipo: "ip_doppio", client: "10.4.0.50", gravita: 3 }, { tipo: "mac_mai_visto", client: "10.4.0.11", gravita: 1 }]);
     // l'indirizzo nuovo del portatile porta al suo host, anche se in IPAM è ancora sul vecchio
     assert.equal(nomiDegliIp(["10.4.0.99"])["10.4.0.99"]?.nome, "portatile");
     // secondo giro: niente di nuovo, il cursore è avanti

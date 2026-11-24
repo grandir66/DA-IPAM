@@ -31,7 +31,7 @@ export const TIPI_FATTO = [
 ] as const;
 export type TipoFatto = (typeof TIPI_FATTO)[number];
 /** Gli avvisi che nascono dalle identità lette dal collector (`identita.ts`): due MAC per un IP, MAC diverso da quello censito. */
-export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato", "vlan_sbagliata"] as const;
+export const TIPI_IDENTITA = ["ip_doppio", "mac_cambiato", "mac_mai_visto", "mac_altrove", "vlan_sbagliata"] as const;
 export type TipoIdentita = (typeof TIPI_IDENTITA)[number];
 /** I tipi che hanno l'interruttore per rete. */
 /** Un host che apre verso un paese mai visto prima (`esterno.ts`), dopo l'apprendimento. */

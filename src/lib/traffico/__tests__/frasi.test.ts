@@ -28,6 +28,8 @@ describe("i MAC negli avvisi delle identità", () => {
     assert.equal(macAnomalia({ tipo: "ip_doppio", dettaglio: { mac_a: "aa:aa:aa:aa:aa:01", mac_b: "aa:aa:aa:aa:aa:02", quanti: 3 } }), "AA:AA:AA:AA:AA:01 e AA:AA:AA:AA:AA:02 e altri 1");
     assert.equal(macAnomalia({ tipo: "mac_cambiato", dettaglio: { prima: "aa:aa:aa:aa:aa:01", ora: "aa:aa:aa:aa:aa:02" } }), "prima AA:AA:AA:AA:AA:01, ora AA:AA:AA:AA:AA:02");
     assert.equal(macAnomalia({ tipo: "mac_cambiato", dettaglio: { prima: "<script>", ora: "aa:aa:aa:aa:aa:02" } }), null);
+    assert.equal(macAnomalia({ tipo: "mac_altrove", dettaglio: { prima: "aa:aa:aa:aa:aa:01", ora: "aa:aa:aa:aa:aa:02" } }), "prima AA:AA:AA:AA:AA:01, ora AA:AA:AA:AA:AA:02");
+    assert.equal(fraseAnomalia({ tipo: "mac_altrove", client: "10.4.0.1", server: "", dettaglio: { altrove: "10.4.0.77" } }), "Risponde col MAC già censito su 10.4.0.77");
     assert.equal(macAnomalia({ tipo: "volume", dettaglio: { prima: "aa:aa:aa:aa:aa:01", ora: "aa:aa:aa:aa:aa:02" } }), null);
   });
 });

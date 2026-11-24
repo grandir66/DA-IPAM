@@ -8,13 +8,14 @@
  * - lo stesso fatto visto da più collector è una riga per collector: chi legge prende il più recente;
  * - `ip_doppio` vale solo fra due MAC visti in ARP sulla stessa VLAN a pochi minuti l'uno dall'altro:
  *   un indirizzo che cambia padrone col DHCP non è un doppione. I MAC virtuali (VRRP, HSRP) non contano;
- * - `mac_cambiato` non corregge l'host: lo dice e basta. Le scansioni di IPAM restano la fonte del MAC.
+ * - `mac_cambiato`, `mac_mai_visto` e `mac_altrove` non correggono l'host: lo dicono e basta. Le scansioni di IPAM restano la fonte del MAC.
  * - `vlan_sbagliata` (tappa 6) guarda solo l'ARP con un tag: un indirizzo che si annuncia su una VLAN diversa da quella
  *   della sua rete censita. Senza tag (VLAN nativa) o in una rete senza VLAN non si dice niente.
  */
 import type Database from "better-sqlite3";
 import type { AnomaliaNuova } from "./anomalie";
 import { isIpInCidr } from "@/lib/utils";
+import { macSenzaProduttore } from "@/lib/classification/forma";
 
 export const FONTI_IDENTITA = ["arp", "dhcp", "mdns", "netbios", "ssdp", "lldp", "cdp"] as const;
 export type FonteIdentita = (typeof FONTI_IDENTITA)[number];
@@ -56,6 +57,8 @@ export function macVirtuale(mac: string): boolean {
 
 const secondi = (data: string): number => Date.parse(`${data.replace(" ", "T")}Z`) / 1000;
 
+/** I tre avvisi di `macCambiati`. */
+export type TipoMac = "mac_cambiato" | "mac_mai_visto" | "mac_altrove";
 export interface VistaArp { ip: string; mac: string; vlan: number; ultima_vista: string }
 
 /** Gli IP che in ARP hanno due MAC diversi sulla stessa VLAN, visti a pochi minuti l'uno dall'altro. Pura. */
@@ -81,15 +84,32 @@ export function ipDoppi(viste: VistaArp[], finestraS = FINESTRA_DOPPIO_S): Anoma
   return [...uscite.values()];
 }
 
-/** Gli host censiti che in ARP rispondono con un MAC diverso da quello che IPAM conosce. Pura. */
-export function macCambiati(viste: VistaArp[], macNoti: Map<string, string>): AnomaliaNuova[] {
-  const uscite = new Map<string, AnomaliaNuova>();
-  for (const v of viste) {
-    const noto = (macNoti.get(v.ip) ?? "").toLowerCase();
-    if (!noto || noto === v.mac || macVirtuale(v.mac) || macVirtuale(noto)) continue;
-    uscite.set(v.ip, { tipo: "mac_cambiato", gravita: 1, client: v.ip, server: "", proto: 0, porta: 0, dettaglio: { prima: noto, ora: v.mac } });
+/** Stesso produttore vero: le prime tre coppie uguali, e il prefisso dice davvero chi ha fatto la scheda. */
+const stessoProduttore = (a: string, b: string): boolean => a.slice(0, 8) === b.slice(0, 8) && !macSenzaProduttore(a);
+
+/**
+ * Gli host censiti che in ARP rispondono con un MAC diverso da quello che IPAM conosce. Pura. `viste` ha anche i MAC
+ * di prima: conta solo l'ultimo. Regole del 24/11/2026, dagli avvisi veri di due giorni:
+ * - il MAC nuovo è censito su un altro indirizzo → `mac_altrove` (un apparato con due indirizzi, o una scheda IPAM sbagliata);
+ * - stesso produttore e MAC censito mai visto in ARP su quell'indirizzo → niente: gli switch rispondono col MAC della
+ *   gestione. Non vale coi prefissi delle macchine virtuali, che sono gli stessi per tutte (una VM clonata si dice);
+ * - MAC censito mai visto su quell'indirizzo → `mac_mai_visto`, anagrafe vecchia; visto e poi sostituito → `mac_cambiato`.
+ */
+export function macCambiati(viste: VistaArp[], macNoti: Map<string, string>, censitiSu: Map<string, string[]> = new Map()): AnomaliaNuova[] {
+  const perIp = new Map<string, VistaArp[]>();
+  for (const v of viste) perIp.set(v.ip, [...(perIp.get(v.ip) ?? []), v]);
+  const uscite: AnomaliaNuova[] = [];
+  for (const [ip, sue] of perIp) {
+    const ora = sue.reduce((m, v) => (v.ultima_vista > m.ultima_vista ? v : m)).mac;
+    const noto = (macNoti.get(ip) ?? "").toLowerCase();
+    if (!noto || noto === ora || macVirtuale(ora) || macVirtuale(noto)) continue;
+    const altrove = (censitiSu.get(ora) ?? []).find((x) => x !== ip);
+    const maiVisto = !sue.some((v) => v.mac === noto);
+    if (!altrove && maiVisto && stessoProduttore(noto, ora)) continue;
+    const tipo = altrove ? "mac_altrove" : maiVisto ? "mac_mai_visto" : "mac_cambiato";
+    uscite.push({ tipo, gravita: 1, client: ip, server: "", proto: 0, porta: 0, dettaglio: { prima: noto, ora, ...(altrove ? { altrove } : {}) } });
   }
-  return [...uscite.values()];
+  return uscite;
 }
 
 /** Scrive le righe di una pagina: una per (collector, mac, ip, fonte). Un nome già visto non si cancella con un vuoto. */
@@ -148,7 +168,7 @@ export function agganciaHost(d: Database.Database, righe: IdentitaCollector[]): 
 }
 
 /** Gli avvisi che le righe appena scritte fanno nascere. `spento(ip, tipo)`: il controllo è spento per la rete di quell'indirizzo. */
-export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[], spento: (ip: string, tipo: "ip_doppio" | "mac_cambiato" | "vlan_sbagliata") => boolean): AnomaliaNuova[] {
+export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[], spento: (ip: string, tipo: "ip_doppio" | TipoMac | "vlan_sbagliata") => boolean): AnomaliaNuova[] {
   const ip = [...new Set(righe.filter((r) => r.fonte === "arp" && r.ip).map((r) => r.ip))];
   const reti = d.prepare("SELECT cidr, vlan_id FROM networks WHERE vlan_id IS NOT NULL AND vlan_id > 0").all() as { cidr: string; vlan_id: number }[];
   const uscite: AnomaliaNuova[] = vlanSbagliate(righe.filter((r) => r.fonte === "arp" && r.ip), reti).filter((a) => !spento(a.client, "vlan_sbagliata"));
@@ -158,11 +178,14 @@ export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[
     const doppi = ipDoppi(viste).filter((a) => !spento(a.client, "ip_doppio"));
     const conDoppio = new Set(doppi.map((a) => a.client));
     const noti = new Map((d.prepare(`SELECT ip, mac FROM hosts WHERE mac IS NOT NULL AND mac <> '' AND ip IN (${q})`).all(...blocco) as { ip: string; mac: string }[]).map((h) => [h.ip, h.mac]));
-    // per ogni IP solo il MAC visto per ultimo: quello di prima è appunto «prima»
-    const ultima = new Map<string, VistaArp>();
-    for (const v of viste) if (!ultima.has(v.ip) || ultima.get(v.ip)!.ultima_vista < v.ultima_vista) ultima.set(v.ip, v);
+    const macVisti = [...new Set(viste.map((v) => v.mac))];
+    const censitiSu = new Map<string, string[]>();
+    for (const gruppo of aBlocchi(macVisti)) {
+      const righeMac = d.prepare(`SELECT LOWER(mac) AS mac, ip FROM hosts WHERE LOWER(mac) IN (${gruppo.map(() => "?").join(",")}) ORDER BY ip`).all(...gruppo) as { mac: string; ip: string }[];
+      for (const h of righeMac) censitiSu.set(h.mac, [...(censitiSu.get(h.mac) ?? []), h.ip]);
+    }
     // un IP conteso fra due MAC è già detto da `ip_doppio`, che è più grave
-    const cambiati = macCambiati([...ultima.values()], noti).filter((a) => !conDoppio.has(a.client) && !spento(a.client, "mac_cambiato"));
+    const cambiati = macCambiati(viste, noti, censitiSu).filter((a) => !conDoppio.has(a.client) && !spento(a.client, a.tipo as TipoMac));
     uscite.push(...doppi, ...cambiati);
   }
   return uscite;

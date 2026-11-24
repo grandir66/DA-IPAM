@@ -468,6 +468,7 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
     Un file che non si legge va in `cartella/scartati/` e incrementa `stato.zeek_scartati`: mai buttato in silenzio."""
     adesso = time.time() if adesso is None else adesso
     finestre: dict[str, dict[str, str]] = {}
+    doppie: set[str] = set()
     for nome in sorted(os.listdir(cartella)):
         m = NOME_CHIUSO.match(nome)
         if m:
@@ -476,6 +477,8 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
             except ValueError:
                 continue
             # due file dello stesso registro nella stessa finestra (Zeek riavviato): il secondo al giro dopo
+            if m["registro"] in REGISTRI and finestre.setdefault(inizio, {}).get(m["registro"], nome) != nome:
+                doppie.add(inizio)
             finestre.setdefault(inizio, {}).setdefault(m["registro"], nome)
     scritte = 0
     for inizio in sorted(finestre):
@@ -523,4 +526,6 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
         for registro, nome in file.items():
             if registro not in REGISTRI and os.path.exists(os.path.join(cartella, nome)):
                 os.unlink(os.path.join(cartella, nome))
+        if inizio in doppie:
+            break  # prima il secondo file di questa finestra: passando alla prossima sembrerebbe già tradotto e si perderebbe (24/11)
     return scritte

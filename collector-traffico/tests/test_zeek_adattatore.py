@@ -1,4 +1,5 @@
 """Adattatore dei registri di Zeek (profilo avanzato), con i registri veri del banco del PX-NAS (23/11/2026)."""
+import json
 import os
 import shutil
 import tempfile
@@ -74,6 +75,21 @@ class Scansione(unittest.TestCase):
                             sonde=frozenset({CARICO}))
         self.assertEqual([(c["client"], c["server"], c["porta"]) for c in t["coppie"]], [(FINTI, CARICO, 443)])
         self.assertEqual(t["tagliate"], 0)
+
+
+class DueFileNellaStessaFinestra(unittest.TestCase):
+    """24/11/2026: Zeek riavviato più volte nella finestra; i secondi file si cancellavano senza tradurli."""
+
+    def test_non_si_perde_il_secondo(self):
+        with tempfile.TemporaryDirectory() as d:
+            for ora, porta in (("09-05-00", 11), ("09-05-24", 12), ("09-10-00", 13)):
+                with open(os.path.join(d, f"conn.2026-11-24-{ora}.log"), "w") as f:
+                    f.write(json.dumps({**Scansione.righe(CARICO, 1)[0], "id.resp_p": porta}) + "\n")
+            db = archivio.apri(os.path.join(d, "x.db"))
+            for _ in range(3):
+                za.giro_zeek(db, d, RETI, 50, detti={})
+            self.assertEqual([r[0] for r in db.execute("SELECT porta FROM coppia ORDER BY porta")], [11, 12, 13])
+            db.close()
 
 
 class Nomi(unittest.TestCase):

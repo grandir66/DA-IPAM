@@ -77,7 +77,7 @@ export function TavolaSvg(p: {
       {p.righe.map((r, ri) => r.apparati.map((ap) => {
         const a = perNodo.get(ap.nodo);
         if (!a) return null;
-        const x0 = d.dx + ap.x, y0 = d.yRighe[ri];
+        const x0 = d.dx + ap.x, y0 = d.yRighe[ri] + (r.testa ?? 0);
         const evidenziato = fuoco?.nodi.has(a.nodo) ?? false;
         const posizioni = new Map(ap.porte.map((pp) => [pp.id, pp.cx]));
         const yEtichette = GEO.testata + ap.file * GEO.passo + 8;
@@ -136,6 +136,21 @@ export function TavolaSvg(p: {
             <polyline points={pts} fill="none" stroke="var(--background)" strokeWidth={w + 3} strokeLinejoin="round" />
             <polyline points={pts} fill="none" stroke={t?.dubbio ? "var(--destructive)" : s.stroke} strokeWidth={w} strokeDasharray={t?.dubbio ? "2 3" : s.dash} strokeLinejoin="round" />
             {[a0, a1].map(([x, y], i) => <Fragment key={i}><circle cx={x} cy={y} r={3.5} fill={s.stroke} stroke="var(--card)" strokeWidth={1} /></Fragment>)}
+          </g>
+        );
+      })}
+      {/* Dopo i cavi: un cavo che attraversa la fascia non copre il nome (contorno del colore del fondo). */}
+      {p.righe.map((r, ri) => {
+        if (!r.testa) return null;
+        const miei = p.apparati.filter((a) => a.rackId === r.armadio);
+        const nome = r.armadio === null ? "Senza armadio" : miei[0]?.armadio ?? "Armadio senza nome";
+        const y = d.yRighe[ri] + 21;
+        return (
+          <g key={`armadio-${r.armadio ?? "senza"}`} style={{ pointerEvents: "none" }}>
+            <line x1={d.dx} x2={d.larghezza - 16} y1={y + 7} y2={y + 7} stroke="var(--muted-foreground)" strokeWidth={1.5} />
+            <text x={d.dx} y={y} fontSize={17} fontWeight={700} fill="var(--foreground)" stroke="var(--background)" strokeWidth={5} paintOrder="stroke">
+              {nome}<tspan dx={12} fontSize={13} fontWeight={400}>{miei.length === 1 ? "1 apparato" : `${miei.length} apparati`}</tspan>
+            </text>
           </g>
         );
       })}

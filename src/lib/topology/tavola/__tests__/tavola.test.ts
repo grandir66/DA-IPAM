@@ -6,7 +6,7 @@ import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode } from "@/lib/topology/m
 import { componiTavola } from "@/lib/topology/tavola/componi";
 import { disponiEInstrada, instrada } from "@/lib/topology/tavola/instrada";
 import { disponi } from "@/lib/topology/tavola/righe";
-import { parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
+import { nomiArmadi, parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
 import { cercaInTavola } from "@/lib/topology/tavola/ricerca";
 import type { ApparatoComposto, PortaTavola } from "@/lib/topology/tavola/tipi";
 
@@ -184,4 +184,17 @@ test("ricerca: un risultato per apparato trovato, le porte per client letto, in 
   assert.deepEqual(cercaInTavola(t.apparati, "PROVA"), [{ nodo: "dev:2", porta: null }, { nodo: "dev:1", porta: "dev:1|1" }]);
   assert.deepEqual(cercaInTavola(t.apparati, "192.0.2.77"), [{ nodo: "dev:1", porta: "dev:1|1" }]);
   assert.deepEqual(cercaInTavola(t.apparati, "p"), []);
+});
+
+test("armadi: percorso senza la sede, ordine per nome, fascia solo se ci sono armadi", () => {
+  const ub = [{ id: 1, name: "Sede", parent_id: null }, { id: 2, name: "CED", parent_id: 1 }, { id: 3, name: "Armadio 2", parent_id: 2 }, { id: 9, name: "Armadio 1", parent_id: 2 }];
+  const nodi = [nodo(1, "switch", { rackId: 3 }), nodo(2, "switch", { rackId: 9 }), nodo(3, "switch")];
+  const armadi = nomiArmadi(nodi, ub);
+  assert.deepEqual(armadi, [{ id: 3, name: "CED › Armadio 2" }, { id: 9, name: "CED › Armadio 1" }]);
+  const apparati = nodi.map((n) => ({ node: n.id, porte: [porta(1)] }));
+  const righe = disponi(componiTavola({ sito: SITO, nodi, collegamenti: [], apparati, armadi }).apparati, 1600);
+  assert.deepEqual(righe.map((r) => r.armadio), [9, 3, null]);
+  assert.ok(righe.every((r) => (r.testa ?? 0) > 0));
+  const senza = disponi(componiTavola({ sito: SITO, nodi: [nodi[2]], collegamenti: [], apparati }).apparati, 1600);
+  assert.equal(senza[0].testa, 0);
 });

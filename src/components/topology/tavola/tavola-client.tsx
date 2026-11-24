@@ -88,7 +88,7 @@ export function TavolaClient() {
 
   const tavola = useMemo(() => {
     if (!dati) return null;
-    const composta = componiTavola({ sito: dati.site, nodi: dati.nodi, collegamenti: dati.collegamenti, apparati: dati.apparati });
+    const composta = componiTavola({ sito: dati.site, nodi: dati.nodi, collegamenti: dati.collegamenti, apparati: dati.apparati, armadi: dati.armadi });
     const conPorte = libere ? composta.apparati : composta.apparati.map((a) => ({ ...a, porte: a.porte.filter((p) => p.tipo !== "libera" || p.collegamento) }));
     // Con le porte libere nascoste un telaio senza porte non dice niente: si nasconde, e la barra dice quanti sono.
     const tutti = composta.apparati.length;

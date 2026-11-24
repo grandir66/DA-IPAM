@@ -59,7 +59,7 @@ export function instrada(righe: readonly Riga[], cavi: readonly CavoComposto[]):
   const larghezzaContenuto = Math.max(0, ...righe.map((r) => r.w));
   const capi = new Map<string, Capo>();
   righe.forEach((r, ri) => {
-    for (const a of r.apparati) for (const p of a.porte) capi.set(p.id, { riga: ri, x: a.x + p.cx, alto: 0, basso: a.h });
+    for (const a of r.apparati) for (const p of a.porte) capi.set(p.id, { riga: ri, x: a.x + p.cx, alto: r.testa ?? 0, basso: (r.testa ?? 0) + a.h });
   });
 
   type Piano =

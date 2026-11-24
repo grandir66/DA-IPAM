@@ -54,7 +54,9 @@ MikroTik, LLDP dei Proxmox).
     scorre. Non visto: tema scuro.
   - [x] (24/11, Riccardo: «Sì, procedi») Trovare e seguire un cavo: ricerca che scorre sul risultato, riquadro fisso in basso a destra
     coi capi cliccabili, clic sulle porte senza cavo, telai vuoti nascosti. Prove 8/8, eslint e tsc puliti.
-  - [ ] Da fare dopo v1: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
+  - [x] (24/11, Riccardo: «Sì, gli armadi») Nome dell'armadio sopra le sue righe (percorso dalle ubicazioni, ordine per nome). Non visto
+    a schermo: serve un'istanza con armadi.
+  - [ ] Da fare dopo v1: filtro per armadio oltre 80 apparati;
     il clic su un cavo apre un pannello breve (fonti, visto, frasi) e rimanda alla Topologia, non il pannello completo della Topologia.
 - [ ] Vista 1 «Tavola»: apparati in file, ogni porta un riquadro col colore del tipo (linea, trunk, gestione, client,
       libera/giù) e sotto la destinazione scritta; cavi nei corridoi, i lunghi dai bordi; al passaggio del mouse resta

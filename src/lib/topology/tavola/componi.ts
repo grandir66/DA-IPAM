@@ -77,15 +77,16 @@ interface Lavoro {
   composte: PortaComposta[];
 }
 
-export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; collegamenti: readonly MapLink[]; apparati: readonly ApparatoPorte[] }): TavolaComposta {
+export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; collegamenti: readonly MapLink[]; apparati: readonly ApparatoPorte[]; armadi?: ReadonlyArray<{ id: number; name: string }> }): TavolaComposta {
   const perId = new Map(input.nodi.map((n) => [n.id, n]));
   const porteDi = new Map(input.apparati.map((a) => [a.node, a.porte]));
+  const nomeArmadio = new Map((input.armadi ?? []).map((a) => [a.id, a.name]));
   const lavori = new Map<string, Lavoro>();
   for (const n of input.nodi) {
     if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito)) continue;
     const righe = [...(porteDi.get(n.id) ?? [])].sort((x, y) => (x.indice ?? 1e9) - (y.indice ?? 1e9));
     const conIndice = righe.filter((r): r is PortaTavola & { indice: number } => r.indice !== null);
-    const apparato: ApparatoComposto = { nodo: n.id, refId: n.refId, nome: n.name, tipo: n.type, ip: n.mgmtIp, rackId: n.rackId, rango: rangoDi(n), porte: [] };
+    const apparato: ApparatoComposto = { nodo: n.id, refId: n.refId, nome: n.name, tipo: n.type, ip: n.mgmtIp, rackId: n.rackId, armadio: n.rackId === null ? null : nomeArmadio.get(n.rackId) ?? null, rango: rangoDi(n), porte: [] };
     const composte = righe.map((r, i): PortaComposta => {
       const s = senzaCollegamento(r);
       return {

@@ -19,6 +19,23 @@ export function parseSitoTavola(v: string | null): { ok: true; data: number | nu
   return Number.isSafeInteger(n) && n >= 0 ? { ok: true, data: n } : { ok: false, error: "Sito non valido: serve l'id numerico della sede" };
 }
 
+interface Ubicazione { id: number; name: string; parent_id: number | null }
+
+/** Il nome di ogni armadio usato dai nodi, col percorso dentro la sede (la sede, in cima, non si ripete). */
+export function nomiArmadi(nodi: readonly Pick<MapNode, "rackId">[], ubicazioni: readonly Ubicazione[]): Array<{ id: number; name: string }> {
+  const perId = new Map(ubicazioni.map((u) => [u.id, u]));
+  const usati = [...new Set(nodi.flatMap((n) => (n.rackId === null ? [] : [n.rackId])))];
+  return usati.flatMap((id) => {
+    const nomi: string[] = [];
+    const visti = new Set<number>();
+    for (let u = perId.get(id); u && u.parent_id !== null && perId.has(u.parent_id) && !visti.has(u.id); u = perId.get(u.parent_id)) {
+      visti.add(u.id);
+      nomi.unshift(u.name);
+    }
+    return nomi.length > 0 ? [{ id, name: nomi.join(" › ") }] : [];
+  });
+}
+
 /** Gli apparati del sito (id numerici), i collegamenti che li toccano e i nodi che servono a nominarne i capi. */
 export function ritagliaSito(model: Pick<TopologyModel, "nodes" | "links" | "sites">, sito: number) {
   const apparati = model.nodes.filter((n) => n.kind === "device" && !n.hidden && nelSito(n, sito));

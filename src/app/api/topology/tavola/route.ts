@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getTopologyTavolaPorte } from "@/lib/db-tenant";
+import { getLocations, getTopologyTavolaPorte } from "@/lib/db-tenant";
 import { modelloDellaMappa } from "@/lib/topology/mappa-server";
 import { getLinkStaleDays } from "@/lib/topology/settings";
-import { SENZA_SEDE, parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
+import { SENZA_SEDE, nomiArmadi, parseSitoTavola, ritagliaSito } from "@/lib/topology/tavola/api";
 import type { TavolaView } from "@/lib/topology/tavola/tipi";
 import { NO_STORE } from "@/lib/controllers/route-helpers";
 
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       const { model } = modelloDellaMappa(staleDays);
       const scelto = sito.data ?? ritagliaSito(model, SENZA_SEDE).siti[0]?.id ?? SENZA_SEDE;
       const r = ritagliaSito(model, scelto);
-      const view: TavolaView = { site: scelto, siti: r.siti, nodi: r.nodi, collegamenti: r.collegamenti, apparati: getTopologyTavolaPorte(r.deviceIds), staleDays };
+      const view: TavolaView = { site: scelto, siti: r.siti, armadi: nomiArmadi(r.nodi, getLocations()), nodi: r.nodi, collegamenti: r.collegamenti, apparati: getTopologyTavolaPorte(r.deviceIds), staleDays };
       return NextResponse.json(view, { headers: NO_STORE });
     } catch (error) {
       console.error("[topology] tavola:", error);

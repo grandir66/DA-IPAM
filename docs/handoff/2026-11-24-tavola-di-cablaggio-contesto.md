@@ -43,7 +43,7 @@ modelloDellaMappa(staleDays)         lib/topology/mappa-server.ts   lo stesso di
 | `…/tavola/righe.ts` | `GEO` (misure), `ordina`, `posaApparato`, `disponi` | misure, ordine, a capo |
 | `…/tavola/instrada.ts` | `instrada`, `disponiEInstrada` | percorso dei cavi |
 | `…/tavola/ricerca.ts` | `cercaInTavola`, risultati in ordine di vista | cosa trova la ricerca |
-| `…/tavola/__tests__/tavola.test.ts` | 8 prove, dati inventati | prove nuove in aggiunta |
+| `…/tavola/__tests__/tavola.test.ts` | 9 prove, dati inventati | prove nuove in aggiunta |
 | `src/lib/db-tenant.ts` | `getTopologyTavolaPorte` | colonne lette |
 | `src/app/api/topology/tavola/route.ts` | la rotta | risposta |
 | `src/components/topology/tavola/tavola-client.tsx` | stato, barra, ricerca, fuoco, riquadro del collegamento | comportamento della pagina |
@@ -72,7 +72,7 @@ con nome o IP) → `molti` (più MAC) → `attiva` (accesa, nessun dato).
 - **Solo i cavi con tutti e due i capi nella tavola sono disegnati**; gli altri restano scritti sotto la porta.
 - Le porte si abbinano con `elencoDa`, `indiciInElenco` e `normale` di `lib/topology/cavi/porte.ts`: non farne una copia.
 
-**Disposizione.** Armadio (senza armadio in fondo) → rango (0 router e firewall, 1 core, 2 accesso, 3 hypervisor e
+**Disposizione.** Armadio per nome, con la fascia del nome (senza armadio in fondo) → rango (0 router e firewall, 1 core, 2 accesso, 3 hypervisor e
 server, 4 il resto) → nome. Oltre 24 porte due file; oltre 28 riga propria; una riga non mescola due armadi.
 
 **Cavi.** Fra file adiacenti una corsia del corridoio (alto 30 + 8 × corsie); fra file lontane si passa dal bordo,
@@ -104,7 +104,7 @@ Leggi `docs/STILE-UI.md` (vincolante). In più, per questa pagina:
 
 ## 7. Aperto e non provato
 
-Aperto: nome dell'armadio sopra le sue righe (il modello ha solo `rackId`); filtro per armadio oltre 80 apparati;
+Aperto: filtro per armadio oltre 80 apparati;
 pannello completo del collegamento; preferire il bordo con meno cavi. Non si fanno senza richiesta.
 
 **Mai guardati**: tema scuro, ricerca, un'istanza con sedi vere (sull'hub c'è solo «Senza sede»).

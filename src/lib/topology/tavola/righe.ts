@@ -16,6 +16,8 @@ export const GEO = {
   /** La fascia sotto le porte con le destinazioni ruotate di 90°. */
   etichette: 124,
   margine: 10,
+  /** La fascia col nome dell'armadio sopra la sua prima riga. */
+  testaArmadio: 34,
   /** Spazio fra due apparati della stessa riga. */
   spazio: 24,
   larghezzaMin: 190,
@@ -50,14 +52,18 @@ export interface Riga {
   /** La prima riga di un armadio porta il suo nome. */
   primaDellArmadio: boolean;
   apparati: ApparatoPosto[];
+  /** Altezza della fascia col nome dell'armadio in cima alla riga (compresa in `h`); assente = 0. */
+  testa?: number;
   h: number;
   w: number;
 }
 
-/** L'ordine della tavola: armadio (senza armadio in fondo), ruolo, nome. */
+/** L'ordine della tavola: armadio per nome (senza armadio in fondo), ruolo, nome. */
 export function ordina(apparati: readonly ApparatoComposto[]): ApparatoComposto[] {
   return [...apparati].sort((a, b) =>
-    (a.rackId ?? Number.MAX_SAFE_INTEGER) - (b.rackId ?? Number.MAX_SAFE_INTEGER)
+    Number(a.rackId === null) - Number(b.rackId === null)
+    || (a.armadio ?? "").localeCompare(b.armadio ?? "", "it", { numeric: true })
+    || (a.rackId ?? 0) - (b.rackId ?? 0)
     || a.rango - b.rango
     || a.nome.localeCompare(b.nome, "it", { numeric: true }));
 }
@@ -85,6 +91,8 @@ export function posaApparato(a: ApparatoComposto): Omit<ApparatoPosto, "x"> {
 export function disponi(apparati: readonly ApparatoComposto[], larghezza: number): Riga[] {
   const righe: Riga[] = [];
   let cur: Riga | null = null;
+  // Senza nessun armadio definito non c'è niente da intitolare.
+  const conArmadi = apparati.some((a) => a.rackId !== null);
   let armadioPrima: number | null | undefined = undefined;
   for (const a of ordina(apparati)) {
     const posto = posaApparato(a);
@@ -92,14 +100,14 @@ export function disponi(apparati: readonly ApparatoComposto[], larghezza: number
     const sua = a.porte.length > GEO.porteRigaSua;
     const nonCi = cur !== null && cur.w + GEO.spazio + posto.w > larghezza;
     if (cur === null || nuovoArmadio || sua || nonCi || cur.apparati.length === 1 && cur.apparati[0].porte.length > GEO.porteRigaSua) {
-      cur = { armadio: a.rackId, primaDellArmadio: nuovoArmadio, apparati: [], h: 0, w: 0 };
+      cur = { armadio: a.rackId, primaDellArmadio: nuovoArmadio, apparati: [], testa: conArmadi && nuovoArmadio ? GEO.testaArmadio : 0, h: 0, w: 0 };
       righe.push(cur);
     }
     armadioPrima = a.rackId;
     const x = cur.apparati.length === 0 ? 0 : cur.w + GEO.spazio;
     cur.apparati.push({ ...posto, x });
     cur.w = x + posto.w;
-    cur.h = Math.max(cur.h, posto.h);
+    cur.h = Math.max(cur.h, posto.h + (cur.testa ?? 0));
   }
   return righe;
 }

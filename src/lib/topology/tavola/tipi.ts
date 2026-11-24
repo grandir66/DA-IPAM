@@ -25,6 +25,8 @@ export interface ApparatoPorte { node: string; porte: PortaTavola[] }
 export interface TavolaView {
   site: number;
   siti: Array<{ id: number; name: string }>;
+  /** Gli armadi (e i locali) degli apparati del sito, col percorso dentro la sede: «CED › Armadio 1». */
+  armadi: Array<{ id: number; name: string }>;
   nodi: MapNode[];
   collegamenti: MapLink[];
   apparati: ApparatoPorte[];
@@ -70,6 +72,8 @@ export interface ApparatoComposto {
   tipo: string;
   ip: string | null;
   rackId: number | null;
+  /** Il nome dell'armadio col suo percorso dentro la sede. */
+  armadio?: string | null;
   /** Per l'ordine in fila: 0 router/firewall, 1 core, 2 accesso, 3 hypervisor, 4 il resto. */
   rango: number;
   porte: PortaComposta[];

@@ -86,6 +86,8 @@ NOME=$NOME
 RETI_INTERNE=
 # 1 se lo switch copia entrata e uscita e ogni pacchetto arriva due volte
 MIRROR_DOPPIO=0
+# Macchine che scandiscono la rete per mestiere (IPAM, Zabbix), separate da virgola: il loro traffico non si conta
+SONDE_NOTE=
 # Flussi esportati da switch e firewall, oltre al mirror: no | netflow (UDP 2055) | sflow (UDP 6343)
 FLUSSI=no
 # avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo
@@ -100,6 +102,7 @@ else
   else
     printf '# avanzato = Zeek; leggero = pmacctd. Si cambia rilanciando installa.sh --profilo\nPROFILO=%s\n' "$PROFILO" >> "$CONF/collector.env"
   fi
+  grep -q '^SONDE_NOTE=' "$CONF/collector.env" || printf '# Macchine che scandiscono la rete per mestiere (IPAM, Zabbix), separate da virgola\nSONDE_NOTE=\n' >> "$CONF/collector.env"
   # un archivio di prima della tappa 7: la riga si aggiunge spenta; un valore già scritto non si tocca mai
   grep -q '^ACCESSI=' "$CONF/collector.env" || printf '# ZONA ROSSA: 1 = legge i nomi utente degli accessi. Spento di serie\nACCESSI=0\n' >> "$CONF/collector.env"
 fi

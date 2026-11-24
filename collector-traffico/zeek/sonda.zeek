@@ -53,6 +53,30 @@ export {
 	} &redef;
 }
 
+# Le sonde note (SONDE_NOTE in collector.env: IPAM, Zabbix...) scandiscono per mestiere: le loro connessioni non si
+# scrivono. Il 24/11/2026 una scansione di tutte le porte da IPAM ha fatto un conn.log da 498 MB in 5 minuti.
+# Stessa regola di `sonde.ts` e `piega.rumore_di_sonda`: resta chi apre un servizio della sonda.
+global sonde_note: set[addr];
+
+event zeek_init()
+	{
+	local pezzi = split_string(getenv("SONDE_NOTE"), /,/);
+	for ( i in pezzi )
+		{
+		local p = strip(pezzi[i]);
+		if ( is_valid_ip(p) )
+			add sonde_note[to_addr(p)];
+		}
+	}
+
+hook Conn::log_policy(rec: Conn::Info, id: Log::ID, filter: Log::Filter) &priority=10
+	{
+	if ( rec$id$orig_h in sonde_note )
+		break;
+	if ( rec$id$resp_h in sonde_note && ( rec$proto == icmp || port_to_count(rec$id$resp_p) >= 32768 ) )
+		break;
+	}
+
 # Del segreto si tiene solo il FATTO, calcolato prima che il campo venga tolto:
 # la comunita' SNMP e' una di quelle di fabbrica? c'era un accesso Basic? una password FTP?
 redef record SNMP::Info += {

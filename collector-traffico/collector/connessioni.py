@@ -15,6 +15,7 @@ ATTESA_S = 10            # un SYN più vecchio di così senza risposta è «senz
 PENDENTI_MASSIMI = 20000  # oltre, i SYN nuovi non si seguono (una scansione non deve finire la RAM)
 CAMPIONI = 50             # tempi tenuti per servizio e finestra
 RIGHE_MASSIME = 5000      # righe per finestra
+STORTE_MASSIME = 20000    # (client, server, porta) seguiti per finestra: il 24/11 una scansione di tutte le porte ha finito i 96 MB dell'ascolto
 
 SYN, RST, ACK = 0x02, 0x04, 0x10
 
@@ -45,8 +46,9 @@ def bandiere(p: bytes) -> tuple[str, str, int, int, int, int] | None:
 class Connessioni:
     """`lato(ip)`: l'indirizzo se è interno, altrimenti «esterno». `scrivi(inizio, righe)` a ogni finestra chiusa."""
 
-    def __init__(self, lato, scrivi):
+    def __init__(self, lato, scrivi, sonde: frozenset[str] = frozenset()):
         self._lato = lato
+        self._sonde = sonde
         self._scrivi = scrivi
         self._pendenti: dict[tuple[str, int, str, int], list] = {}  # (client, porta client, server, porta) → [istante, seq, ripetuti]
         self._storte: dict[tuple[str, str, int], list[int]] = {}    # (client, server, porta) → [tentate, senza risposta, rifiutate, ripetute]
@@ -55,6 +57,8 @@ class Connessioni:
 
     def _storta(self, client: str, server: str, porta: int) -> list[int]:
         chiave = (self._lato(client), self._lato(server), porta)
+        if chiave not in self._storte and len(self._storte) >= STORTE_MASSIME:
+            return [0, 0, 0, 0]  # oltre il tetto non si tiene: se ne scrivono comunque RIGHE_MASSIME
         return self._storte.setdefault(chiave, [0, 0, 0, 0])
 
     def pacchetto(self, istante: float, p: bytes) -> None:
@@ -63,6 +67,8 @@ class Connessioni:
             return
         src, dst, sport, dport, flag, seq = b
         if flag & SYN and not flag & ACK:
+            if src in self._sonde:
+                return
             chiave = (src, sport, dst, dport)
             gia = self._pendenti.get(chiave)
             if gia is not None and gia[1] == seq:

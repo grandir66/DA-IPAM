@@ -98,6 +98,23 @@ def lato(ip: str, reti: list, memo: dict[str, str]) -> str:
 _lato = lato  # il nome di prima: lo usano ascolto e le prove
 
 
+def sonde_note(testo: str) -> frozenset[str]:
+    """`SONDE_NOTE` (indirizzi separati da virgola) → le macchine che scandiscono per mestiere; ciò che non è un indirizzo si salta."""
+    buone = set()
+    for pezzo in testo.split(","):
+        try:
+            buone.add(str(ipaddress.ip_address(pezzo.strip())))
+        except ValueError:
+            continue
+    return frozenset(buone)
+
+
+def rumore_di_sonda(client: str, server: str, proto: int, porta: int, sonde: frozenset[str]) -> bool:
+    """La stessa regola di IPAM (`sonde.ts`): ciò che la sonda apre, e le risposte alle sue prove (porta 0 o ICMP).
+    Resta chi apre un servizio della sonda."""
+    return client in sonde or (server in sonde and (porta == 0 or proto == 1))
+
+
 def _estremi(r: dict) -> tuple[str, str, int, int, int]:
     """Di una riga pmacct: (client, server, porta del client, protocollo, porta del servizio)."""
     proto = int(r["proto"])

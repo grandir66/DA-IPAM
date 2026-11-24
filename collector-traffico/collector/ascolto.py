@@ -135,7 +135,7 @@ class Ascolto:
     così le prove non hanno bisogno di un archivio."""
 
     def __init__(self, reti_interne: list[str], scrivi_fatto, scrivi_nomi, scrivi_identita=None, scrivi_nomi_ip=None, scrivi_connessioni=None,
-                 profilo: str = "leggero", scrivi_accessi=None):
+                 profilo: str = "leggero", scrivi_accessi=None, sonde: frozenset[str] = frozenset()):
         # Profilo avanzato: connessioni, nomi DNS e TLS e i controlli di `profili.DA_ZEEK` li fa Zeek (registri),
         # qui restano identità, nomi contesi e i controlli che Zeek non copre. Un controllo, una fonte.
         self._profilo = profilo
@@ -151,7 +151,7 @@ class Ascolto:
         self._identita_nuove: dict[tuple[str, str, str], dict] = {}
         self._identita_scritte = 0
         self._scrivi_nomi_ip = scrivi_nomi_ip
-        self._connessioni = connessioni.Connessioni(self._lato, scrivi_connessioni) if scrivi_connessioni else None
+        self._connessioni = connessioni.Connessioni(self._lato, scrivi_connessioni, sonde) if scrivi_connessioni else None
         # ZONA ROSSA: nomi utente. Esiste solo se chi avvia l'ascolto passa `scrivi_accessi` (ACCESSI=1).
         self._accessi = accessi.Accessi(self._lato, scrivi_accessi) if scrivi_accessi else None
         self._nomi_ip: dict[tuple[str, str], tuple[str, int]] = {}  # (ip, tipo) → (nome, ultima scrittura)
@@ -367,6 +367,7 @@ def main() -> int:
         # per nome: in posizione sarebbe finito in `profilo` (23/11, ascolto fermo su DA-COLLECTOR-PX03)
         scrivi_accessi=(lambda inizio, righe: archivio.scrivi_accessi(db, inizio, righe)) if os.environ.get("ACCESSI", "0") == "1" else None,
         profilo=os.environ.get("PROFILO", "leggero"),
+        sonde=piega.sonde_note(os.environ.get("SONDE_NOTE", "")),
     )
     # -s: bastano i primi byte (600, per le opzioni DHCP); -U: ogni pacchetto esce subito; -n: nessuna risoluzione di nomi.
     tcpdump = subprocess.Popen(

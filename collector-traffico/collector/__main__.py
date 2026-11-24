@@ -2,6 +2,7 @@
 
 Configurazione da variabili d'ambiente (systemd le carica da /etc/collector-traffico/collector.env):
 MIRROR_IF, RETI_INTERNE (aggiunte, separate da virgola), MIRROR_DOPPIO=1, NOME, DATI, CONF,
+SONDE_NOTE (indirizzi che scandiscono per mestiere, separati da virgola: il loro traffico non si conta),
 PROFILO (avanzato = registri di Zeek in DATI/zeek; leggero = file di pmacct in DATI/in).
 """
 from __future__ import annotations
@@ -53,7 +54,8 @@ def contatori_scheda(scheda: str, testo: str) -> tuple[int, int] | None:
     return None
 
 
-def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | None = None, tetto_esterni: int = 0) -> int:
+def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | None = None, tetto_esterni: int = 0,
+         sonde: frozenset[str] = frozenset()) -> int:
     """Un giro: ogni file pronto diventa una finestra, poi si cancella. Ritorna le righe scritte."""
     adesso = time.time() if adesso is None else adesso
     scritte = 0
@@ -65,7 +67,7 @@ def giro(db, cartella_in: str, reti: list[str], doppio: bool, adesso: float | No
                 continue
             with open(percorso, encoding="utf-8", errors="replace") as f:
                 righe = piega.da_pmacct(f.read())
-            coppie = piega.piega(righe, reti)
+            coppie = [c for c in piega.piega(righe, reti) if not piega.rumore_di_sonda(c["client"], c["server"], c["proto"], c["porta"], sonde)]
         except OSError:
             continue
         fonte = fonte_da_nome(nome)
@@ -99,6 +101,7 @@ def main() -> int:
     conf = os.environ.get("CONF", "/etc/collector-traffico")
     scheda = os.environ.get("MIRROR_IF", "")
     reti = piega.RETI_INTERNE_DI_SERIE + [r for r in os.environ.get("RETI_INTERNE", "").split(",") if r.strip()]
+    sonde = piega.sonde_note(os.environ.get("SONDE_NOTE", ""))
     doppio = os.environ.get("MIRROR_DOPPIO", "0") == "1"
     # Quanti indirizzi esterni tenere per host e finestra; 0 (o ESTERNI=0) li spegne.
     try:
@@ -138,9 +141,9 @@ def main() -> int:
     while True:
         try:
             if profilo == "avanzato":
-                scritte = zeek_adattatore.giro_zeek(db, cartella_zeek, reti, tetto_esterni) if os.path.isdir(cartella_zeek) else 0
+                scritte = zeek_adattatore.giro_zeek(db, cartella_zeek, reti, tetto_esterni, sonde=sonde) if os.path.isdir(cartella_zeek) else 0
             else:
-                scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni)
+                scritte = giro(db, cartella_in, reti, doppio, tetto_esterni=tetto_esterni, sonde=sonde)
             if scritte:
                 print(f"collector: {scritte} coppie archiviate", flush=True)
             if profilo == "avanzato":

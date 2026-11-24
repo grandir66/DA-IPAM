@@ -59,6 +59,8 @@ export interface StatoCollector {
   versione_motore?: string;
   freno?: boolean;
   scartati?: number;
+  /** Ultima finestra in cui il collector ha tolto dettaglio per il tetto sulle righe (24/11); "" = mai. */
+  finestra_tagliata?: string;
 }
 interface Pagina<T> {
   righe: T[];
@@ -377,6 +379,10 @@ export async function sincronizzaTraffico(
         if (!p.altri) break;
       }
       await leggiFattiENomi(d, leggi, accesso, c, registraFatti, registraIdentita, registraEsterni, sonde);
+      const tagliata = stato?.finestra_tagliata;
+      if (typeof tagliata === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(tagliata)) {
+        d.prepare("UPDATE traffico_collector SET ultimo_buco = ? WHERE id = ? AND (ultimo_buco IS NULL OR ultimo_buco < ?)").run(tagliata, c.id, tagliata);
+      }
       d.prepare("UPDATE traffico_collector SET ultimo_contatto = datetime('now'), ultimo_errore = NULL, copertura = ?, profilo = ?, motore = ?, versione_motore = ?, freno = ? WHERE id = ?")
         .run(
           typeof stato?.copertura === "number" ? stato.copertura : null,

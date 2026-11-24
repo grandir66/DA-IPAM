@@ -79,6 +79,8 @@ def crea_server(percorso_db: str, gettone: str, nome: str, avviato: str,
                             "motore": archivio.leggi_stato(db, "motore", "pmacct"),
                             "versione_motore": archivio.leggi_stato(db, "versione_motore", ""),
                             "freno": archivio.leggi_stato(db, "freno", "0") == "1",
+                            # l'ultima finestra in cui il tetto sulle righe ha tagliato del dettaglio ("" = mai)
+                            "finestra_tagliata": archivio.leggi_stato(db, "finestra_tagliata", ""),
                             "scartati": int(archivio.leggi_stato(db, "zeek_scartati", "0") or 0),
                         })
                     elif url.path in LETTURE:

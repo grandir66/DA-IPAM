@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import calendar
 import ipaddress
+import itertools
 import json
 import os
 import re
@@ -40,6 +41,21 @@ _MODBUS_SCRITTURE = {"WRITE_SINGLE_COIL": "bobina", "WRITE_SINGLE_REGISTER": "re
                      "WRITE_MULTIPLE_COILS": "bobine", "WRITE_MULTIPLE_REGISTERS": "registri"}
 NOMI_PER_HOST = 200        # nomi diversi per host e finestra, come il tetto dell'ascolto
 PARZIALE_SCARTA_S = 900    # un file chiuso ma tronco da più di così non si completerà più: si scarta
+# Tetti per finestra (24/11/2026): una scansione di tutte le porte da un solo host dava un `conn` da 1,35 milioni di
+# righe, una coppia a riga, e `collector-traffico` moriva a 256 MB riga dopo riga, per sempre sullo stesso file.
+# Oltre il tetto il dettaglio si perde e si DICE (`stato.finestra_tagliata` → IPAM «dati persi»).
+COPPIE_PER_CLIENT = 3000   # coppie di uno stesso client; oltre, le sue porte finiscono nella porta 0 dello stesso server
+COPPIE_MASSIME = 40000     # coppie in tutto; oltre, le nuove non si contano
+ESTERNI_MASSIMI = 30000    # indirizzi esterni diversi seguiti
+STORTE_MASSIME = 30000     # (client, server, porta) con aperture storte; se ne scrivono connessioni.RIGHE_MASSIME
+RIGHE_PER_REGISTRO = 50000 # righe lette degli altri registri
+# Dei registri diversi da `conn` si tengono in memoria solo i campi che qualcuno legge.
+CAMPI = frozenset((
+    "ts", "id.orig_h", "id.resp_h", "id.resp_p", "query", "answers", "server_name", "version", "cert_chain_fps", "fingerprint",
+    "certificate.not_valid_after", "accesso_chiaro", "accesso_basic", "comunita_nota", "func", "note", "msg", "src", "dst", "p",
+    "host", "name", "software_type", "version.major", "version.minor", "version.minor2", "version.minor3", "version.addl",
+    "pkts_link", "pkts_dropped",
+))
 _RIUSCITE = {"SF", "S1", "S2", "S3", "RSTO", "RSTR"}
 _CON_PORTA = {6, 17, 132}
 
@@ -58,6 +74,12 @@ def righe_file(percorso: str):
                 continue
             if isinstance(o, dict):
                 yield o
+
+
+def righe_altri(percorso: str) -> tuple[list[dict], bool]:
+    """(righe coi soli CAMPI, tagliato) di un registro diverso da `conn`."""
+    righe = [{k: v for k, v in r.items() if k in CAMPI} for r in itertools.islice(righe_file(percorso), RIGHE_PER_REGISTRO + 1)]
+    return righe[:RIGHE_PER_REGISTRO], len(righe) > RIGHE_PER_REGISTRO
 
 
 def _finisce_a_capo(percorso: str) -> bool:
@@ -94,8 +116,8 @@ def _intero(v: object) -> int:
         return 0
 
 
-def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_HOST) -> dict:
-    """-> {"coppie": [...], "esterni": [...], "connessioni": [...]}. `righe`: un elenco o un generatore (si legge una volta).
+def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_HOST, sonde: frozenset[str] = frozenset()) -> dict:
+    """-> {"coppie": [...], "esterni": [...], "connessioni": [...], "tagliate": righe a cui il tetto ha tolto dettaglio}. `righe`: un elenco o un generatore (si legge una volta).
     Il verso viene da Zeek: client = chi ha aperto (`id.orig_h`), server = chi risponde. Niente indovinare dalle porte.
     In memoria restano solo i totali (coppie, esterni per indirizzo, connessioni storte), mai le righe."""
     rr = piega._reti(reti)
@@ -104,7 +126,8 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
     grezze: dict[tuple, dict] = {}        # (client, server, proto, porta) con gli indirizzi veri → totali, per gli esterni
     storte: dict[tuple, list[int]] = {}   # (client, server, porta) → [tentate, senza risposta, rifiutate, ripetute]
     servizi: dict[tuple, int] = {}        # (server, porta) → riuscite
-    risposte = 0
+    per_client: dict[str, int] = {}
+    risposte = tagliate = 0
     for r in righe:
         try:
             oh, rh = str(r["id.orig_h"]), str(r["id.resp_h"])
@@ -115,25 +138,46 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
         if proto not in _CON_PORTA:
             op = rp = 0
         porta = rp if rp < piega.PORTA_ALTA else 0
+        if sonde and piega.rumore_di_sonda(oh, rh, proto, porta, sonde):
+            continue
+        if len(memo) > 50000:
+            memo.clear()
         ob, rb = _intero(r.get("orig_ip_bytes")), _intero(r.get("resp_ip_bytes"))
         opk, rpk = _intero(r.get("orig_pkts")), _intero(r.get("resp_pkts"))
         client, server = piega.lato(oh, rr, memo), piega.lato(rh, rr, memo)
         c = coppie.get((client, server, proto, porta))
         if c is None:
-            c = coppie[(client, server, proto, porta)] = {"byte": 0, "pacchetti": 0, "flussi": 0, "byte_ritorno": 0, "risposta": 0, "_esterni": set()}
+            chiave = (client, server, proto, porta)
+            if per_client.get(client, 0) >= COPPIE_PER_CLIENT:
+                tagliate += 1
+                chiave = (client, server, proto, 0)
+                c = coppie.get(chiave)
+            if c is None and len(coppie) >= COPPIE_MASSIME:
+                tagliate += 1 if chiave[3] == porta else 0
+                continue
+            if c is None:
+                c = coppie[chiave] = {"byte": 0, "pacchetti": 0, "flussi": 0, "byte_ritorno": 0, "risposta": 0, "_esterni": None}
+                per_client[client] = per_client.get(client, 0) + 1
         c["byte"] += ob + rb
         c["byte_ritorno"] += rb
         c["pacchetti"] += opk + rpk
         c["flussi"] += 1
         if rpk > 0:
             c["risposta"] = 1
-        if client == piega.ESTERNO:
-            c["_esterni"].add(oh)
-        if server == piega.ESTERNO:
-            c["_esterni"].add(rh)
+        if client == piega.ESTERNO or server == piega.ESTERNO:
+            if c["_esterni"] is None:
+                c["_esterni"] = set()
+            if len(c["_esterni"]) < ESTERNI_MASSIMI:
+                if client == piega.ESTERNO:
+                    c["_esterni"].add(oh)
+                if server == piega.ESTERNO:
+                    c["_esterni"].add(rh)
         if client == piega.ESTERNO or server == piega.ESTERNO:
             g = grezze.get((oh, rh, proto, porta))
-            if g is None:
+            if g is None and len(grezze) >= ESTERNI_MASSIMI:
+                tagliate += 1
+                g = {"byte": 0, "pacchetti": 0, "flussi": 0}  # non si tiene
+            elif g is None:
                 g = grezze[(oh, rh, proto, porta)] = {"c": oh, "s": rh, "proto": proto, "porta": porta, "byte": 0, "pacchetti": 0, "flussi": 0}
             g["byte"] += ob + rb
             g["pacchetti"] += opk + rpk
@@ -143,7 +187,9 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
             if rpk > 0:
                 risposte += 1
             if stato == "S0" or stato == "REJ":
-                s = storte.setdefault((client, server, rp), [0, 0, 0, 0])
+                k = (client, server, rp)
+                # oltre il tetto non si tiene: se ne scrivono comunque solo RIGHE_MASSIME, e le coppie contano tutto
+                s = storte.setdefault(k, [0, 0, 0, 0]) if k in storte or len(storte) < STORTE_MASSIME else [0, 0, 0, 0]
                 s[0] += 1
                 s[1 if stato == "S0" else 2] += 1
             elif stato in _RIUSCITE:
@@ -170,11 +216,12 @@ def traduci_conn(righe, reti: list[str], tetto_esterni: int = piega.ESTERNI_PER_
     return {
         "coppie": [
             {"client": k[0], "server": k[1], "proto": k[2], "porta": k[3], "byte": c["byte"], "pacchetti": c["pacchetti"],
-             "flussi": c["flussi"], "esterni": len(c["_esterni"]), "byte_ritorno": c["byte_ritorno"], "risposta": c["risposta"]}
+             "flussi": c["flussi"], "esterni": len(c["_esterni"] or ()), "byte_ritorno": c["byte_ritorno"], "risposta": c["risposta"]}
             for k, c in coppie.items()
         ],
         "esterni": fuori,
         "connessioni": righe_conn[:connessioni.RIGHE_MASSIME],
+        "tagliate": tagliate,
     }
 
 
@@ -366,9 +413,12 @@ def traduci_fatti(registri: dict[str, list[dict]], reti: list[str], detti: dict[
 
 
 def scrivi_registri(db, registri: dict[str, list[dict]], inizio: str, reti: list[str], tetto_esterni: int,
-                    stato: dict[str, str] | None = None, detti: dict[tuple, float] | None = None) -> int:
+                    stato: dict[str, str] | None = None, detti: dict[tuple, float] | None = None,
+                    sonde: frozenset[str] = frozenset(), tagliato: bool = False) -> int:
     """Tutti i registri di una finestra nell'archivio, in UNA transazione insieme a `stato` (caso 2). Ritorna le coppie scritte."""
-    conn = traduci_conn(registri.get("conn", []), reti, tetto_esterni)
+    conn = traduci_conn(registri.get("conn", []), reti, tetto_esterni, sonde)
+    if conn["tagliate"] or tagliato:
+        print(f"collector: finestra {inizio} tagliata dal tetto ({conn['tagliate']} connessioni senza dettaglio)", flush=True)
     nomi_dns, ip_dns = traduci_dns(registri.get("dns", []), inizio, reti)
     nomi_sni, ip_sni = traduci_ssl(registri.get("ssl", []), inizio, reti)
     programmi = traduci_software(registri.get("software", []), reti)
@@ -379,6 +429,8 @@ def scrivi_registri(db, registri: dict[str, list[dict]], inizio: str, reti: list
             # contatori cumulati, come quelli della scheda nel profilo leggero: /v1/stato ne fa la copertura
             archivio.metti_stato(db, "pacchetti_visti", int(archivio.leggi_stato(db, "pacchetti_visti", "0") or 0) + visti)
             archivio.metti_stato(db, "pacchetti_persi", int(archivio.leggi_stato(db, "pacchetti_persi", "0") or 0) + persi)
+        if conn["tagliate"] or tagliato:
+            archivio.metti_stato(db, "finestra_tagliata", inizio)
         for f in fatti:
             archivio.scrivi_fatto(db, f["visto"], f["tipo"], f["client"], f["server"], f["porta"], f["dettaglio"])
         scritte = archivio.scrivi_finestra(db, inizio, conn["coppie"])
@@ -411,7 +463,7 @@ _DETTI: dict[tuple, float] = {}  # fra un giro e l'altro, nel processo del servi
 
 
 def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: float | None = None,
-              detti: dict[tuple, float] | None = None) -> int:
+              detti: dict[tuple, float] | None = None, sonde: frozenset[str] = frozenset()) -> int:
     """Prende i file chiusi in `cartella`, li traduce per finestra, scrive, li cancella. Ritorna le coppie scritte.
     Un file che non si legge va in `cartella/scartati/` e incrementa `stato.zeek_scartati`: mai buttato in silenzio."""
     adesso = time.time() if adesso is None else adesso
@@ -431,7 +483,7 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
         registri: dict[str, list[dict]] = {}
         stato: dict[str, str] = {}
         tradotti: list[str] = []
-        aspetta = False
+        aspetta = tagliato = False
         for registro, nome in sorted(file.items()):
             percorso = os.path.join(cartella, nome)
             if registro not in REGISTRI:
@@ -452,13 +504,18 @@ def giro_zeek(db, cartella: str, reti: list[str], tetto_esterni: int, adesso: fl
                 aspetta = True
                 break
             # `conn` si legge mentre si traduce (generatore), gli altri sono piccoli
-            registri[registro] = righe_file(percorso) if registro == "conn" else list(righe_file(percorso))
+            if registro == "conn":
+                registri[registro] = righe_file(percorso)
+            else:
+                registri[registro], troppe = righe_altri(percorso)
+                tagliato = tagliato or troppe
             stato[f"zeek_ultimo_{registro}"] = nome
             tradotti.append(percorso)
         if aspetta:
             break  # le finestre si traducono in ordine: si riprova al giro dopo
         if registri:
-            scritte += scrivi_registri(db, registri, inizio, reti, tetto_esterni, stato, _DETTI if detti is None else detti)
+            scritte += scrivi_registri(db, registri, inizio, reti, tetto_esterni, stato, _DETTI if detti is None else detti,
+                                       sonde, tagliato)
             if len(_DETTI) > 20000:
                 _DETTI.clear()  # meglio ripetere un fatto che finire la RAM (come `ascolto`)
         for percorso in tradotti:

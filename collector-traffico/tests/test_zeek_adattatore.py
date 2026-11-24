@@ -52,6 +52,30 @@ class Conn(unittest.TestCase):
         self.assertIn(("192.0.2.1", "fuori", 9), {(e["ip"], e["verso"], e["porta"]) for e in self.t["esterni"]})
 
 
+class Scansione(unittest.TestCase):
+    """24/11/2026, DA-PX-03: tutte le porte da un solo host, 1,35 milioni di righe in una finestra."""
+
+    @staticmethod
+    def righe(da, quante, stato="REJ"):
+        return [{"id.orig_h": da, "id.orig_p": 40000, "id.resp_h": SIM, "id.resp_p": p, "proto": "tcp", "conn_state": stato,
+                 "orig_ip_bytes": 60, "resp_ip_bytes": 40, "orig_pkts": 1, "resp_pkts": 1} for p in range(1, quante + 1)]
+
+    def test_il_tetto_piega_e_lo_dice(self):
+        t = za.traduci_conn(self.righe(CARICO, 20000) + self.righe(FINTI, 5), RETI)
+        mie = [c for c in t["coppie"] if c["client"] == CARICO]
+        self.assertLessEqual(len(mie), za.COPPIE_PER_CLIENT + 1)
+        self.assertEqual(sum(c["flussi"] for c in mie), 20000)  # i totali non si perdono, solo le porte
+        self.assertEqual(sum(c["byte"] for c in mie), 2000000)
+        self.assertEqual(t["tagliate"], 20000 - za.COPPIE_PER_CLIENT)
+        self.assertEqual(len([c for c in t["coppie"] if c["client"] == FINTI]), 5)  # gli altri host restano interi
+
+    def test_sonda_nota(self):
+        t = za.traduci_conn(self.righe(CARICO, 5000) + [{**self.righe(FINTI, 1)[0], "id.resp_h": CARICO, "id.resp_p": 443}], RETI,
+                            sonde=frozenset({CARICO}))
+        self.assertEqual([(c["client"], c["server"], c["porta"]) for c in t["coppie"]], [(FINTI, CARICO, 443)])
+        self.assertEqual(t["tagliate"], 0)
+
+
 class Nomi(unittest.TestCase):
     def test_dns(self):
         conteggi, nomi_ip = za.traduci_dns(registro("dns"), "2026-11-23 13:00:00", RETI)

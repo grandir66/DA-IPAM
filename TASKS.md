@@ -8,6 +8,7 @@ Piano di riferimento: `docs/superpowers/plans/2026-11-07-installazione-snella-e-
 - [x] Prova di carico 24/11 (Riccardo: «Sì, sulla VM 108»; snapshot `pre-carico-20261124`, PX-NAS): 192.168.99.0/24, 50 host in archivio di cui 33 accesi, 183 servizi. Giro veloce 32 s, giro nmap 305 s (146 porte), Nety insieme. IPAM al massimo 1,13 GB, RAM disponibile mai sotto 1,99 GB su 3,9, swap 116 MB invariata, CPU picco 80% di un core e media 2,3%, zero OOM. Giri spenti a fine prova; la rete è rimasta in archivio sulla 108. Limiti: CPU del PX-NAS Ryzen 7 255 (non un mini PC), IPAM 0.9.1261, nessun apparato nel proxy Zabbix oltre alla VM, un'ora scarsa, rete piccola
 - [ ] Riccardo, 24/11: «vorrei un mini pc da verificare se installare direttamente sul sistema o su proxmox»; «pensa a stabilità e gestione». Proposto: Proxmox, mini PC aziendale vPro recente, un solo modello, macchine di scorta. Da decidere: modello, backup notturno cifrato fuori dal mini PC
 - [ ] Da provare: compilazione di IPAM (3,4 GB di picco il 07/11) sul mini PC vero, e rete più grande
+- Riccardo, 24/11: comprati tre HP EliteDesk 800 G6 Mini (i5-10500T, 16 GB, SSD 256 GB, ricondizionati) per un laboratorio Proxmox **a uso interno**. Proposto di provarci la ridotta (Proxmox contro Debian diretta); il modello per i clienti resta da scegliere
 - [ ] Resto della proposta: in chat, da approvare
 
 ## 2026-11-24 — Versione inglese di DA-IPAM: censimento e piano (Riccardo, solo piano)

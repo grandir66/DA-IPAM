@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-25 — Protezione dell'appliance: accessi ed esche (Riccardo, da approvare; zona rossa → livello completo)
+
+Riccardo, 25/11: «vorrei aprire un ramo per una funzione di sicurezza di da-ipam. vorrei che dall'UI si potesse gestire l'accesso al sistema impostando filtri sugli ip che possono collegarsi e le porte presentate. vorrei schede in cui le funzioni di sicurezza di IPAM sono chiare e modificabili» (A: IP e porte presentate, IP ammessi, utenti, log degli accessi, sistemi remoti, immagini interne con le porte; B: honeypot con log, alert, ban e «traffico di contrasto»).
+Piano: `docs/superpowers/plans/2026-11-25-sicurezza-accessi-honeypot.md`. Tavola: `docs/superpowers/tavole/2026-11-25-protezione.html`. Ramo `feat/sicurezza-accessi-honeypot` (da `origin/dev`, non pubblicato su `dev`). **Niente codice finché Riccardo non approva.**
+- [x] Ramo, censimento del codice e della VM 533 in sola lettura (25/11; il censimento della macchina sta fuori dal repo, che è pubblico), piano e tavola a 1920.
+- [ ] Riccardo risponde alle otto domande del piano (§7): dove si accende, moduli nel perimetro, cosa intende per contrasto (proposta: solo difesa sul nostro lato, niente traffico verso chi attacca), chi è sempre ammesso, quali esche, guasto aperto o chiuso, blocco degli indirizzi interni, nome e posto nel menu.
+- [ ] Tappa 0: ADR. Tappa 1: schede in sola lettura. Tappa 2: esecutore e filtro con prova a tempo. Tappa 3: esche in solo allerta. Tappa 4: blocco. Tappa 5: collaudo (laboratorio, poi hub in «osserva» una settimana). Stima: circa 20 giornate, 4-5 settimane.
+- Da verificare alla fonte nella tappa 2: che la catena sul prerouting a priorità −150 veda la porta vera delle porte pubblicate da Docker; non si è provato niente, nessun firewall è stato toccato.
+
 ## 2026-11-24 — IPAM ridotto su mini PC economico (Riccardo, analisi)
 
 Riccardo, 24/11: «la versione minimale pronta per essere installata su un mini PC low cost dal cliente, in cui le funzioni di base devono essere quelle di da-ipam + proxy zabbix e scansioni minimali con nety il motore base»; «nety è solo il motore di verifica di vulnerabilità interno a da-ipam senza l'edge».

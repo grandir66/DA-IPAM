@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Tavola — Protezione dell'appliance (DA-IPAM), 25/11/2026</title>
+<!-- Tavola di progetto, non codice dell'app. Dati finti: indirizzi degli intervalli di documentazione. -->
+<link href="https://fonts.googleapis.com/css2?family=Signika:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0D2537;--cian:#00A7E7;--cian-testo:#006C96;--giallo:#FFD400;--bg:#EDEDED;--card:#fff;--muted:#E7EAEB;--mf:#5A6B75;--bordo:#CFD3D7}
+*{box-sizing:border-box}
+body{margin:0;width:1920px;background:var(--bg);color:var(--navy);font:15px/1.4 Signika,system-ui,sans-serif}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:14px}
+.app{display:flex}
+.lato{width:232px;background:var(--navy);color:#E7EAEB;padding:18px 0;min-height:1080px}
+.lato b{display:block;padding:0 20px 16px;font-size:20px;color:#fff}
+.lato div{padding:9px 20px;font-size:15px}
+.lato .qui{background:var(--cian);color:var(--navy);font-weight:600}
+.corpo{flex:1;padding:18px 24px 28px;position:relative}
+.fila{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;border-bottom:1px solid var(--bordo);padding-bottom:8px}
+.sch{height:40px;display:inline-flex;align-items:center;padding:0 16px;border:2px solid var(--bordo);border-radius:8px;background:#f3f4f5;font-weight:500;white-space:nowrap}
+.sch.on{background:var(--cian);border-color:var(--cian);font-weight:600}
+.grp{font-size:13px;color:var(--mf);text-transform:uppercase;letter-spacing:.04em}
+.stacco{width:2px;height:28px;background:var(--bordo);margin:0 4px}
+.aiuto{margin-left:auto;background:#fff;border-color:#0D253766}
+.n{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:13px;background:var(--giallo);color:var(--navy);font-weight:700;font-size:14px;border:2px solid var(--navy);margin-right:6px;flex:none}
+.stato{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--bordo);border-left:6px solid var(--navy);border-radius:8px;padding:10px 14px;margin-top:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:6px;font-weight:600;border:2px solid var(--navy)}
+.pill.pieno{background:var(--navy);color:#fff}
+.pill.giallo{background:var(--giallo)}
+.pill.vuoto{background:#fff}
+.btn{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:8px;border:2px solid var(--navy);background:#fff;font:600 15px Signika,sans-serif;color:var(--navy);white-space:nowrap}
+.btn.pri{background:var(--navy);color:#fff}
+.btn.cian{background:var(--cian);border-color:var(--cian)}
+.tess{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+.tess>div{background:#fff;border:1px solid var(--bordo);border-radius:8px;padding:12px 14px}
+.tess strong{font-size:30px;display:block;line-height:1.1}
+.tess span{color:var(--mf)}
+.due{display:grid;grid-template-columns:400px 1fr;gap:12px;margin-top:12px}
+.pan{background:#fff;border:1px solid var(--bordo);border-radius:8px;overflow:hidden}
+.pan h3{margin:0;padding:10px 14px;font-size:16px;border-bottom:1px solid var(--bordo);display:flex;align-items:center;gap:6px}
+.pan h3 small{font-weight:400;color:var(--mf);font-size:14px;margin-left:6px}
+.pan .dentro{padding:10px 14px}
+.voce{border:2px solid var(--bordo);border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px}
+.voce.on{border-color:var(--navy);background:#E5F6FD}
+table{width:100%;border-collapse:collapse}
+th{font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--mf);text-align:left;padding:7px 10px;border-bottom:1px solid var(--bordo);background:#f6f7f8;white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--muted);vertical-align:middle;white-space:nowrap}
+.sel{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:2px solid var(--bordo);border-radius:6px;background:#fff}
+.sel::after{content:"▾";color:var(--mf)}
+.griglia td{white-space:normal}.griglia td .btn,.griglia td .pill,.griglia td.mono{white-space:nowrap}.griglia th{white-space:normal}
+.leg{display:flex;gap:18px;padding:8px 14px;color:var(--mf);font-size:14px;border-top:1px solid var(--bordo)}
+h2{font-size:18px;margin:26px 0 0;display:flex;align-items:center;gap:10px}
+h2 small{font-weight:400;color:var(--mf);font-size:14px}
+.griglia{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.nome{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--cian-testo);font-weight:700;margin-right:4px}
+.azioni{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bordo);background:#f6f7f8;flex-wrap:wrap;align-items:center}
+.nota{color:var(--mf);font-size:14px}
+.spiega{margin-top:26px;background:#fff;border:2px solid var(--navy);border-radius:8px;padding:14px 18px;columns:2;column-gap:40px}
+.spiega p{margin:0 0 7px;break-inside:avoid;display:flex;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="lato">
+  <b>DA-IPAM</b>
+  <div>Dashboard</div><div>Apparati</div><div>Topologia</div><div>Credenziali</div><div>DHCP</div><div>Patch Management</div><div>Scansioni</div><div>Rete</div>
+  <div class="qui"><span class="n">1</span>Protezione</div>
+  <div>Impostazioni</div><div>Config</div>
+</aside>
+<main class="corpo">
+
+  <!-- fila unica di schede -->
+  <div class="fila">
+    <span class="n">2</span>
+    <span class="grp">Accessi</span>
+    <span class="sch on">Porte presentate</span>
+    <span class="sch">Chi può collegarsi</span>
+    <span class="sch">Utenti</span>
+    <span class="sch">Registro accessi</span>
+    <span class="sch">Sistemi remoti</span>
+    <span class="sch">Moduli e container</span>
+    <span class="stacco"></span>
+    <span class="grp">Esche</span>
+    <span class="sch">Esche</span>
+    <span class="sch">Intrusioni e blocchi</span>
+    <span class="sch aiuto"><span class="n">3</span>ⓘ Come si usa</span>
+  </div>
+
+  <!-- barra di stato, uguale in ogni scheda -->
+  <div class="stato">
+    <span class="n">4</span>
+    <b>Filtro degli accessi</b>
+    <span class="pill giallo">◐ Osserva</span>
+    <span class="nota">conta chi resterebbe fuori, non blocca nessuno · dal 25/11 09:10</span>
+    <span class="stacco"></span>
+    <b>Esche</b>
+    <span class="pill pieno">● Accese · 4</span>
+    <span class="nota">blocco automatico: spento</span>
+    <span style="margin-left:auto;display:flex;gap:8px">
+      <span class="btn">Anteprima</span>
+      <span class="btn pri">Applica in prova (2 minuti)</span>
+      <span class="btn">Spegni il filtro</span>
+    </span>
+  </div>
+
+  <div class="tess">
+    <div><span class="n">5</span><strong>11</strong><span>porte presentate</span></div>
+    <div><strong>7 <small style="font-size:16px;font-weight:500">▲</small></strong><span>aperte a tutti gli indirizzi</span></div>
+    <div><strong>3</strong><span>indirizzi che resterebbero fuori (7 giorni)</span></div>
+    <div><strong>2 <small style="font-size:16px;font-weight:500">■</small></strong><span>indirizzi bloccati adesso</span></div>
+  </div>
+
+  <div class="due">
+    <div class="pan">
+      <h3><span class="n">6</span>1. Schede di rete <small>4 · scegline una per filtrare</small></h3>
+      <div class="dentro">
+        <div class="voce on"><span><b>Tutte</b></span><span class="mono">11 porte</span></div>
+        <div class="voce"><span><b>eth0</b> · rete dei server<br><span class="mono">192.0.2.8/24</span></span><span class="mono">11</span></div>
+        <div class="voce"><span><b>eth0.20</b> · rete di gestione<br><span class="mono">198.51.100.8/24</span></span><span class="mono">11</span></div>
+        <div class="voce"><span><b>wt0</b> · NetBird (DA-Link)<br><span class="mono">100.64.0.12/16</span> · <span class="nota">regole di DA-Link, non si cambiano qui</span></span><span class="mono">2</span></div>
+        <div class="voce"><span><b>IPv6</b><br><span class="nota">solo indirizzi locali al collegamento</span></span><span class="mono">8</span></div>
+      </div>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">7</span>2. Porte presentate <small>11 · cosa risponde su questa macchina e a chi</small></h3>
+      <table>
+        <tr><th>Porta</th><th>Gruppo</th><th>Chi la tiene</th><th>Modulo</th><th>Schede</th><th>Oggi la raggiunge</th><th>Viste (24 h)</th><th><span class="n">8</span>Da chi</th></tr>
+        <tr><td class="mono">443/tcp</td><td>Pagina web</td><td>nginx <span class="nota">(container)</span></td><td>DA-IPAM</td><td>tutte</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">1.284 da 9</td><td><span class="sel">Solo gli elenchi</span></td></tr>
+        <tr><td class="mono">22/tcp</td><td>SSH</td><td>sshd</td><td>sistema</td><td>tutte</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">14 da 2</td><td><span class="sel">Solo gli elenchi</span></td></tr>
+        <tr><td class="mono">6443/tcp</td><td>Console dei moduli</td><td>nginx <span class="nota">(container)</span></td><td>Scanner-Edge</td><td>tutte</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">31 da 1</td><td><span class="sel">Solo gli elenchi</span></td></tr>
+        <tr><td class="mono">7443/tcp</td><td>Console dei moduli</td><td>nginx <span class="nota">(container)</span></td><td>LibreNMS</td><td>tutte</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">0</td><td><span class="sel">Solo gli elenchi</span></td></tr>
+        <tr><td class="mono">4443/tcp</td><td>Ricezione dati</td><td>meshcentral <span class="nota">(container)</span></td><td>MeshCentral</td><td>tutte</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">212 da 37</td><td><span class="sel">Tutti</span></td></tr>
+        <tr><td class="mono">514/udp</td><td>Ricezione dati</td><td>librenms <span class="nota">(container)</span></td><td>LibreNMS · syslog</td><td>eth0</td><td><span class="pill pieno">● Tutti</span></td><td class="mono">8.410 da 22</td><td><span class="sel">Tutti</span></td></tr>
+        <tr><td class="mono">3001/tcp</td><td>Interna</td><td>node</td><td>DA-IPAM</td><td>—</td><td><span class="pill vuoto">○ Solo la macchina</span></td><td class="mono">—</td><td class="nota">fissa</td></tr>
+        <tr><td class="mono">8080/tcp</td><td>Interna</td><td>uvicorn <span class="nota">(rete host)</span></td><td>Scanner-Edge</td><td>—</td><td><span class="pill vuoto">○ Solo la macchina</span></td><td class="mono">—</td><td class="nota">fissa</td></tr>
+        <tr><td class="mono">23/tcp</td><td>Esca</td><td>da-ipam-esche</td><td>Telnet finto</td><td>eth0, eth0.20</td><td><span class="pill giallo">◆ Esca</span></td><td class="mono">6 da 2</td><td class="nota">si cambia in «Esche»</td></tr>
+      </table>
+      <div class="leg"><span class="n">9</span><span>● aperta a tutti</span><span>◐ solo gli elenchi</span><span>○ chiusa / solo la macchina</span><span>◆ esca</span><span>▲ da guardare</span><span>■ bloccato</span><span style="margin-left:auto">Le uscite (scansioni, DNS, aggiornamenti) non si filtrano</span></div>
+    </div>
+  </div>
+
+  <h2>Le altre sette schede <small>stessa fila, stessa barra di stato; qui il centro di ognuna</small></h2>
+  <div class="griglia">
+
+    <div class="pan">
+      <h3><span class="n">10</span><span class="nome">Chi può collegarsi</span> Elenchi di indirizzi per gruppo di porte</h3>
+      <table>
+        <tr><th>Gruppo</th><th>Indirizzo o rete</th><th>Nota</th><th>Scade</th><th>Collegato ora</th><th></th></tr>
+        <tr><td><b>Sempre ammessi</b></td><td class="mono">wt0 (NetBird / DA-Link)</td><td class="nota">nel codice, non si toglie</td><td>mai</td><td>●</td><td></td></tr>
+        <tr><td><b>Sempre ammessi</b></td><td class="mono">198.51.100.0/27</td><td>tecnici Domarc</td><td>mai</td><td>●</td><td><span class="btn">Togli</span></td></tr>
+        <tr><td>Pagina web</td><td class="mono">192.0.2.0/24</td><td>ufficio del cliente</td><td>mai</td><td>●</td><td><span class="btn">Togli</span></td></tr>
+        <tr><td>Pagina web</td><td class="mono">2001:db8:12::/64</td><td>ufficio, IPv6</td><td>mai</td><td>○</td><td><span class="btn">Togli</span></td></tr>
+        <tr><td>SSH</td><td class="mono">198.51.100.14</td><td>postazione di manutenzione</td><td class="mono">30/11</td><td>○</td><td><span class="btn">Togli</span></td></tr>
+        <tr><td>Resterebbe fuori ▲</td><td class="mono">203.0.113.77</td><td class="nota">ha aperto la pagina web 12 volte in 7 giorni</td><td></td><td>○</td><td><span class="btn cian">Ammetti</span></td></tr>
+      </table>
+      <div class="azioni"><span class="btn">+ Aggiungi indirizzo</span><span class="btn">Anteprima</span><span class="btn pri">Applica in prova (2 minuti)</span><span class="nota">poi «Conferma»: senza conferma tornano le regole di prima</span></div>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">11</span><span class="nome">Utenti</span> Chi può entrare e da dove</h3>
+      <table>
+        <tr><th>Utente</th><th>Ruolo</th><th>Tipo</th><th>Seconda verifica</th><th>Ultimo accesso</th><th>Solo da</th></tr>
+        <tr><td>m.rossi</td><td>admin</td><td>account Domarc</td><td><span class="pill pieno">● sì</span></td><td class="mono">oggi 16:02 · 198.51.100.14</td><td><span class="sel">Sempre ammessi</span></td></tr>
+        <tr><td>cliente.it</td><td>viewer</td><td>locale</td><td><span class="pill vuoto">○ no ▲</span></td><td class="mono">22/11 09:40 · 192.0.2.31</td><td><span class="sel">Ovunque</span></td></tr>
+        <tr><td>servizio</td><td>admin</td><td>utenza di servizio</td><td><span class="pill vuoto">— </span></td><td class="mono">mai</td><td><span class="sel">Solo la macchina</span></td></tr>
+        <tr><td>emergenza</td><td>admin</td><td>monouso, 60 minuti</td><td>—</td><td class="mono">non creata</td><td class="nota">—</td></tr>
+      </table>
+      <div class="azioni"><span class="btn">Gestisci utenti (Impostazioni › Utenti)</span><span class="nota">creare, cambiare ruolo e password resta là: un posto solo</span></div>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">12</span><span class="nome">Registro accessi</span> Tutto in una tabella, 400 giorni</h3>
+      <table>
+        <tr><th>Quando</th><th>Cosa</th><th>Chi</th><th>Da</th><th>Dove</th><th>Esito</th></tr>
+        <tr><td class="mono">16:02:11</td><td>Login</td><td>m.rossi</td><td class="mono">198.51.100.14</td><td>Pagina web</td><td><span class="pill pieno">● riuscito</span></td></tr>
+        <tr><td class="mono">15:58:40</td><td>Login</td><td>admin</td><td class="mono">203.0.113.77</td><td>Pagina web</td><td><span class="pill giallo">▲ rifiutato ×4</span></td></tr>
+        <tr><td class="mono">15:41:03</td><td>Filtro</td><td>—</td><td class="mono">203.0.113.90</td><td class="mono">22/tcp</td><td><span class="pill vuoto">○ scartato ×31</span></td></tr>
+        <tr><td class="mono">15:30:27</td><td>Cambio alla protezione</td><td>m.rossi</td><td class="mono">198.51.100.14</td><td>Chi può collegarsi</td><td><span class="pill pieno">● confermato</span></td></tr>
+        <tr><td class="mono">14:12:55</td><td>SSH</td><td>root</td><td class="mono">wt0 · 100.64.0.3</td><td class="mono">22/tcp</td><td><span class="pill pieno">● chiave</span></td></tr>
+      </table>
+      <div class="azioni"><span class="sel">Tutti i tipi</span><span class="sel">Ultime 24 ore</span><span class="sel">Indirizzo o utente…</span><span class="btn" style="margin-left:auto">Scarica CSV</span></div>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">13</span><span class="nome">Sistemi remoti</span> Chi ci parla e a chi parliamo</h3>
+      <table>
+        <tr><th>Sistema</th><th>Verso</th><th>Indirizzo</th><th>Porta</th><th>Si autentica con</th><th>Ultimo contatto</th><th></th></tr>
+        <tr><td>DA-Link</td><td>→ esce</td><td class="mono">wt0</td><td class="mono">443</td><td>gettone</td><td class="mono">2 min fa</td><td class="nota">vedi «Cosa esce»</td></tr>
+        <tr><td>Vulcan</td><td>→ esce</td><td class="mono">da-vulcan</td><td class="mono">443</td><td>gettone</td><td class="mono">4 min fa</td><td class="nota">vedi «Cosa esce»</td></tr>
+        <tr><td>Scanner-Edge</td><td>↔ interno</td><td class="mono">127.0.0.1</td><td class="mono">8080</td><td>gettone + impronta TLS</td><td class="mono">1 min fa</td><td></td></tr>
+        <tr><td>Collector «sede-2»</td><td>← entra</td><td class="mono">192.0.2.60</td><td class="mono">443</td><td>gettone</td><td class="mono">30 s fa</td><td><span class="btn">Togli</span></td></tr>
+        <tr><td>Agenti inventario</td><td>← entra</td><td class="mono">37 indirizzi</td><td class="mono">443</td><td>gettone</td><td class="mono">oggi</td><td><span class="btn">Elenco</span></td></tr>
+        <tr><td><span class="pill giallo">▲ Non riconosciuto</span></td><td>← entra</td><td class="mono">192.0.2.119</td><td class="mono">443</td><td>nessuna</td><td class="mono">12 min fa</td><td><span class="btn cian">Riconosci</span></td></tr>
+      </table>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">14</span><span class="nome">Moduli e container</span> Immagini e porte, modulo per modulo</h3>
+      <table>
+        <tr><th>Modulo</th><th>Container</th><th>Immagine</th><th>Porte pubblicate</th><th>Solo interne</th><th>Permessi in più</th><th></th></tr>
+        <tr><td>DA-IPAM</td><td>appliance-nginx</td><td class="mono">nginx:1.27</td><td class="mono">80 443 6443 7443 8443 9443</td><td>—</td><td>—</td><td><span class="btn">Vai alle porte</span></td></tr>
+        <tr><td>Scanner-Edge</td><td>appliance-edge</td><td class="mono">scanner-edge</td><td class="nota">rete della macchina</td><td class="mono">8080</td><td><span class="pill giallo">▲ rete, pacchetti grezzi</span></td><td><span class="btn">Vai alle porte</span></td></tr>
+        <tr><td>Scanner-Edge</td><td>gvmd, ospd, pg-gvm, redis +9</td><td class="mono">greenbone/*</td><td>—</td><td class="mono">5432 6379 9390</td><td>ospd: pacchetti grezzi</td><td></td></tr>
+        <tr><td>LibreNMS</td><td>librenms, dispatcher, db, redis</td><td class="mono">librenms:26.10</td><td>—</td><td class="mono">8000 514 162 3306</td><td>pacchetti grezzi</td><td><span class="btn">Vai alle porte</span></td></tr>
+        <tr><td>MeshCentral</td><td>meshcentral</td><td class="mono">meshcentral</td><td class="mono">4443</td><td class="mono">80 443</td><td>—</td><td><span class="btn">Vai alle porte</span></td></tr>
+        <tr><td>Wazuh · Graylog · MDM</td><td class="nota">non installati</td><td></td><td></td><td></td><td></td><td></td></tr>
+      </table>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">15</span><span class="nome">Esche</span> Finti servizi presentati alla rete</h3>
+      <table>
+        <tr><th>Esca</th><th>Porta</th><th>Stato</th><th>Su quali schede</th><th>Rallenta chi si collega</th><th>Contatti (24 h)</th><th></th></tr>
+        <tr><td>Telnet</td><td class="mono">23/tcp</td><td><span class="pill pieno">● accesa</span></td><td>eth0, eth0.20</td><td>sì</td><td class="mono">6 da 2</td><td><span class="btn">Spegni</span></td></tr>
+        <tr><td>Condivisione Windows (SMB)</td><td class="mono">445/tcp</td><td><span class="pill pieno">● accesa</span></td><td>eth0</td><td>sì</td><td class="mono">0</td><td><span class="btn">Spegni</span></td></tr>
+        <tr><td>Desktop remoto (RDP)</td><td class="mono">3389/tcp</td><td><span class="pill pieno">● accesa</span></td><td>eth0</td><td>no</td><td class="mono">1 da 1</td><td><span class="btn">Spegni</span></td></tr>
+        <tr><td>Database MySQL</td><td class="mono">3306/tcp</td><td><span class="pill pieno">● accesa</span></td><td>eth0</td><td>no</td><td class="mono">0</td><td><span class="btn">Spegni</span></td></tr>
+        <tr><td>FTP</td><td class="mono">21/tcp</td><td><span class="pill vuoto">○ spenta</span></td><td>—</td><td>—</td><td class="mono">—</td><td><span class="btn pri">Accendi</span></td></tr>
+        <tr><td>Pagina di login finta</td><td class="mono">8081/tcp</td><td><span class="pill vuoto">○ non disponibile</span></td><td colspan="3" class="nota">la porta è già di un modulo: un'esca non prende mai una porta vera</td><td></td></tr>
+      </table>
+      <div class="azioni"><span class="nota">Servizio isolato e senza privilegi · risponde il minimo · le password provate non si conservano mai</span></div>
+    </div>
+
+    <div class="pan" style="grid-column:1/-1">
+      <h3><span class="n">16</span><span class="nome">Intrusioni e blocchi</span> Chi ha toccato un'esca, e cosa ne abbiamo fatto</h3>
+      <table>
+        <tr><th>Indirizzo</th><th>Apparato in inventario</th><th>Esche toccate</th><th>Tentativi</th><th>Utenti provati</th><th>Primo · ultimo</th><th>Stato</th><th>Azioni</th></tr>
+        <tr><td class="mono">192.0.2.143</td><td>PC-AMM-07 · porta 14 di sw-piano1</td><td>Telnet, RDP</td><td class="mono">27</td><td class="mono">admin, root, user</td><td class="mono">15:02 · 15:09</td><td><span class="pill pieno">■ bloccato · scade 16:09</span></td><td><span class="btn">Sblocca</span> <span class="btn">Non bloccare mai</span> <span class="btn pri">Proponi isolamento della porta</span></td></tr>
+        <tr><td class="mono">203.0.113.90</td><td class="nota">sconosciuto</td><td>Telnet</td><td class="mono">4</td><td class="mono">admin</td><td class="mono">14:40 · 14:41</td><td><span class="pill giallo">▲ allerta</span></td><td><span class="btn pri">Blocca ora</span> <span class="btn">Non bloccare mai</span></td></tr>
+        <tr><td class="mono">192.0.2.8</td><td>questa appliance · Scanner-Edge</td><td>tutte</td><td class="mono">212</td><td>—</td><td class="mono">02:00 · 02:14</td><td><span class="pill vuoto">○ nostro scanner, non conta</span></td><td class="nota">nell'elenco «mai bloccati»</td></tr>
+      </table>
+      <div class="azioni"><span class="n">17</span><b>Soglie</b><span class="sel">Allerta: 3 contatti in 10 minuti</span><span class="sel">Blocco: 2 esche diverse o 10 tentativi</span><span class="sel">Durata: 1 ora, poi 24 ore, poi 7 giorni</span><span class="sel">Blocco automatico: spento</span><span class="sel">Avvisa: email + webhook</span><span class="nota" style="margin-left:auto">Conta solo chi ha completato la connessione · al massimo 500 bloccati</span></div>
+    </div>
+  </div>
+
+  <div class="spiega">
+    <p><span class="n">1</span><span>Voce nuova «Protezione» nel menu, dopo «Rete», solo per gli amministratori.</span></p>
+    <p><span class="n">2</span><span>Otto schede in una fila sola, niente seconda fila e niente riga di titolo. Due gruppi: Accessi, Esche.</span></p>
+    <p><span class="n">3</span><span>«Come si usa», in fondo alla fila come in Topologia e Rete; dice anche come sbloccarsi dalla console.</span></p>
+    <p><span class="n">4</span><span>Barra di stato uguale in tutte le schede: filtro spento · osserva · acceso; esche; i tre pulsanti che contano.</span></p>
+    <p><span class="n">5</span><span>Quattro numeri: porte presentate, aperte a tutti, chi resterebbe fuori, bloccati.</span></p>
+    <p><span class="n">6</span><span>Schede di rete con i loro indirizzi: sceglierne una filtra la tabella. NetBird si vede ma lo governa DA-Link.</span></p>
+    <p><span class="n">7</span><span>Ogni porta che la macchina presenta: chi la tiene, di quale modulo è, chi la raggiunge oggi.</span></p>
+    <p><span class="n">8</span><span>L'unica cosa che si cambia qui: da chi è raggiungibile (Tutti · Solo gli elenchi · Nessuno).</span></p>
+    <p><span class="n">9</span><span>Legenda dei segni: forma e chiaro/scuro, non solo colore.</span></p>
+    <p><span class="n">10</span><span>Gli elenchi di indirizzi, IPv4 e IPv6, con scadenza. In fondo chi resterebbe fuori, con «Ammetti».</span></p>
+    <p><span class="n">11</span><span>Utenti: da dove può entrare ognuno. Creare e cambiare password resta in Impostazioni › Utenti.</span></p>
+    <p><span class="n">12</span><span>Un registro solo: login, SSH, scarti del filtro, cambi alla protezione.</span></p>
+    <p><span class="n">13</span><span>Sistemi remoti nei due versi; quelli non riconosciuti si riconoscono con un clic.</span></p>
+    <p><span class="n">14</span><span>Per ogni modulo: container, immagine, porte fuori e dentro, permessi in più.</span></p>
+    <p><span class="n">15</span><span>Esche da un elenco chiuso; una porta vera non si può prendere.</span></p>
+    <p><span class="n">16</span><span>Chi ha toccato un'esca, legato all'apparato e alla porta dello switch quando l'inventario lo sa.</span></p>
+    <p><span class="n">17</span><span>Soglie, durata e avvisi in una riga; il blocco automatico nasce spento.</span></p>
+  </div>
+</main>
+</div>
+</body>
+</html>

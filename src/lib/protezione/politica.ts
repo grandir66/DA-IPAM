@@ -21,7 +21,7 @@ export const PORTE_GRUPPO: Readonly<Record<GruppoAccessi, { tcp: readonly number
   web: { tcp: [80, 443], udp: [] },
   ssh: { tcp: [22], udp: [] },
   console: { tcp: [6443, 7443, 8443, 9443], udp: [] },
-  dati: { tcp: [514, 1514, 1515, 4443], udp: [162, 514, 2055, 6343] },
+  dati: { tcp: [514, 1514, 1515, 4443, 10051], udp: [162, 514, 2055, 6343] },
 };
 
 export interface VoceGruppo {

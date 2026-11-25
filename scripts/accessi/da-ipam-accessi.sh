@@ -18,7 +18,7 @@
 #   ACCESSI_WEB=…       chi apre la pagina web (80, 443)
 #   ACCESSI_SSH=…       chi arriva a SSH (22)
 #   ACCESSI_CONSOLE=…   chi apre le console dei moduli (6443, 7443, 8443, 9443)
-#   ACCESSI_DATI=…      chi consegna dati ai moduli (syslog, trap, NetFlow, agenti)
+#   ACCESSI_DATI=…      chi consegna dati ai moduli (syslog, trap, NetFlow, agenti, proxy Zabbix 10051)
 # Un gruppo vale: un elenco di indirizzi IPv4/IPv6 separati da virgole o spazi; vuoto = nessuno
 # (restano i «sempre ammessi»); la parola `tutti` = aperto a chiunque, scritto apposta.
 #
@@ -46,7 +46,7 @@ SCHEDA_NETBIRD="wt0"
 PORTE_WEB="80, 443"
 PORTE_SSH="22"
 PORTE_CONSOLE="6443, 7443, 8443, 9443"
-PORTE_DATI_TCP="514, 1514, 1515, 4443"
+PORTE_DATI_TCP="514, 1514, 1515, 4443, 10051"
 PORTE_DATI_UDP="162, 514, 2055, 6343"
 # Mai dentro un gruppo: servono solo dentro la macchina (le chiude `inet dalink`, e qui restano fuori da tutto).
 PORTE_VIETATE="3001 8080"

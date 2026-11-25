@@ -41,6 +41,8 @@ const NOTE: Readonly<Record<string, Nota>> = {
   "tcp/1514": { gruppo: "Ricezione dati", modulo: "Wazuh" },
   "tcp/1515": { gruppo: "Ricezione dati", modulo: "Wazuh" },
   "tcp/55000": { gruppo: "Ricezione dati", modulo: "Wazuh" },
+  "tcp/10051": { gruppo: "Ricezione dati", modulo: "Proxy Zabbix" },
+  "tcp/10050": { gruppo: "Sistema", modulo: "Agente Zabbix" },
   "udp/51820": { gruppo: "Gestione Domarc", modulo: "NetBird" },
   "tcp/53": { gruppo: "Sistema", modulo: "DNS locale" },
   "udp/53": { gruppo: "Sistema", modulo: "DNS locale" },

@@ -15,7 +15,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { componiTavola } from "@/lib/topology/tavola/componi";
 import { disponiEInstrada } from "@/lib/topology/tavola/instrada";
 import { cercaInTavola } from "@/lib/topology/tavola/ricerca";
-import type { PortaComposta, TavolaView, TipoPorta } from "@/lib/topology/tavola/tipi";
+import type { PortaComposta, TavolaView, TipoPorta, VmComposta } from "@/lib/topology/tavola/tipi";
 import { LegendaTavola } from "./legenda";
 import { RiquadroScelta } from "./riquadro-scelta";
 import { TavolaSvg, scrittaVm, type Fuoco } from "./tavola-svg";
@@ -29,6 +29,19 @@ function leggi(k: string): string | null {
 }
 function scrivi(k: string, v: string): void {
   try { window.localStorage.setItem(k, v); } catch { /* memoria del browser non disponibile: si riparte dal predefinito */ }
+}
+
+/** Ciò che non ha un posto nella tavola: chiuso, per non occupare spazio. */
+function ElencoFuori({ titolo, voci }: { titolo: string; voci: readonly VmComposta[] }) {
+  if (voci.length === 0) return null;
+  return (
+    <details className="rounded-xl border bg-card px-4 py-2 text-[13px]">
+      <summary className="cursor-pointer font-semibold">{titolo} · {voci.length}</summary>
+      <ul className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-x-4">
+        {voci.map((v) => <li key={v.id} className="truncate">{v.scheda ? <Link href={v.scheda} className="hover:underline">{scrittaVm(v, 60)}</Link> : scrittaVm(v, 60)}</li>)}
+      </ul>
+    </details>
+  );
 }
 
 /** Porta al centro dello schermo una porta o un apparato della tavola. */
@@ -97,7 +110,7 @@ export function TavolaClient() {
     const { righe, disegno } = disponiEInstrada(apparati, composta.cavi, larghezza);
     const tipoCavo = new Map(composta.cavi.map((c) => [c.id, { tipo: c.tipo, dubbio: c.dubbio }]));
     const porte = apparati.flatMap((a) => a.porte);
-    return { apparati, righe, disegno, tipoCavo, porte, cavi: composta.cavi, nascosti: tutti - apparati.length, vmSenzaCasa: composta.vmSenzaCasa,
+    return { apparati, righe, disegno, tipoCavo, porte, cavi: composta.cavi, nascosti: tutti - apparati.length, vmSenzaCasa: composta.vmSenzaCasa, postazioniSenzaPorta: composta.postazioniSenzaPorta,
       quanteVm: composta.apparati.reduce((n, a) => n + (a.vms?.length ?? 0), composta.vmSenzaCasa.length) };
   }, [dati, libere, larghezza]);
 
@@ -205,14 +218,8 @@ export function TavolaClient() {
         </div>
       )}
 
-      {tavola && tavola.vmSenzaCasa.length > 0 && (
-        <section className="rounded-xl border bg-card px-4 py-3 text-[13px]">
-          <h2 className="font-semibold">Macchine virtuali senza hypervisor nella tavola · {tavola.vmSenzaCasa.length}</h2>
-          <ul className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4">
-            {tavola.vmSenzaCasa.map((v) => <li key={v.id} className="truncate">{v.scheda ? <Link href={v.scheda} className="hover:underline">{scrittaVm(v, 60)}</Link> : scrittaVm(v, 60)}</li>)}
-          </ul>
-        </section>
-      )}
+      {tavola && <ElencoFuori titolo="Macchine virtuali senza hypervisor nella tavola" voci={tavola.vmSenzaCasa} />}
+      {tavola && <ElencoFuori titolo="Postazioni senza una porta nota" voci={tavola.postazioniSenzaPorta} />}
 
       {tavola && (
         <RiquadroScelta collegamento={collegamento} porta={portaAperta} apparati={tavola.apparati} nomeDi={nomeDi}

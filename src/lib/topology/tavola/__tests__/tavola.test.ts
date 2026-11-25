@@ -222,3 +222,19 @@ test("VM: dentro il telaio del loro hypervisor, non apparati; sulla porta vince 
   assert.deepEqual(t.vmSenzaCasa.map((v) => v.nome), ["app-4"]);
   assert.deepEqual(cercaInTavola(t.apparati, "prova-sp"), [{ nodo: "dev:2", porta: null }]);
 });
+
+test("postazioni: nessun telaio, il nome sotto la porta; senza porta o dietro un altro apparato in elenco", () => {
+  const sw = nodo(1, "switch"), sw2 = nodo(2, "switch"), pc = nodo(3, "workstation"), wifi = nodo(4, "workstation"), dietro = nodo(5, "workstation"), letto = nodo(6, "workstation");
+  const t = componiTavola({
+    sito: SITO, nodi: [sw, sw2, pc, wifi, dietro, letto],
+    collegamenti: [coll("P1", "dev:1", "Port 1", "dev:3", "eth0"), coll("P2", "dev:1", "", "dev:4", ""), coll("P3", "dev:1", "Port 2", "dev:5", ""), coll("L1", "dev:1", "Port 2", "dev:2", "Port 1")],
+    apparati: [{ node: "dev:1", porte: [porta(1), porta(2), porta(3, { ipClient: "192.0.2.6" })] }, { node: "dev:2", porte: [porta(1)] }],
+  });
+  assert.deepEqual(t.apparati.map((a) => a.nodo), ["dev:1", "dev:2"]);
+  const porte = t.apparati[0].porte;
+  assert.deepEqual([porte[0].tipo, porte[0].destinazione], ["client", "app-3"]);
+  assert.equal(porte[1].destinazione, "app-2 p1");
+  assert.equal(porte.length, 3);
+  assert.deepEqual(t.postazioniSenzaPorta.map((v) => v.nome), ["app-4 (app-1)", "app-5 (app-1 p2)"]);
+  assert.deepEqual(t.cavi.map((c) => c.id), ["L1"]);
+});

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import type { MapLink } from "@/lib/topology/model-types";
 import { SOURCE_WORDS, seenWords, speedLabel } from "@/lib/topology/edge-look";
 import type { ApparatoComposto, PortaComposta } from "@/lib/topology/tavola/tipi";
+import { scheda } from "@/lib/topology/tavola/vm";
 import { NOME_TIPO } from "./stile-tavola";
 
 const STATO = { up: "accesa", down: "spenta", disabled: "disabilitata" } as const;
@@ -68,7 +69,7 @@ export function RiquadroScelta(p: {
               <Button key={i} variant="outline" className="h-9 w-full justify-between text-[13px]" title="Vai alla porta" onClick={() => p.onVai(dove[0].id)}>
                 {testo}<LocateFixed className="h-4 w-4 shrink-0" />
               </Button>
-            ) : <p key={i} className="flex h-9 items-center rounded-md border border-dashed px-3">{testo}<span className="ml-2 shrink-0 text-muted-foreground">non in questa tavola</span></p>;
+            ) : <p key={i} className="flex h-9 items-center rounded-md border border-dashed px-3">{testo}{scheda(x.nodo) ? <Link href={scheda(x.nodo)!} className="ml-auto shrink-0 pl-2 underline">Apri la scheda</Link> : <span className="ml-2 shrink-0 text-muted-foreground">non in questa tavola</span>}</p>;
           })}
           <p className="text-muted-foreground">
             {[c.sources.map((s) => SOURCE_WORDS[s]).join(" + "), seenWords(c), speedLabel(c.speedMbps),

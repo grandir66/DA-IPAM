@@ -44,7 +44,8 @@ export function ferroDelleVm(vms: readonly MapVm[]): Map<string, string | null> 
   return new Map([...diretto.keys()].map((id) => [id, sali(id)]));
 }
 
-function scheda(nodo: string | null): string | null {
+/** L'indirizzo della scheda di un apparato o di un host; null per gli altri nodi. */
+export function scheda(nodo: string | null): string | null {
   const m = /^(dev|host):(\d+)$/.exec(nodo ?? "");
   return m ? `/${m[1] === "dev" ? "devices" : "objects"}/${m[2]}` : null;
 }

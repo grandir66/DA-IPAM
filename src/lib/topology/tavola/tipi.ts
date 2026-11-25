@@ -67,7 +67,7 @@ export interface PortaComposta {
   letta?: PortaTavola | null;
 }
 
-/** Una VM scritta nel telaio del suo hypervisor. */
+/** Una VM scritta nel telaio del suo hypervisor, o una postazione nell'elenco in fondo. */
 export interface VmComposta {
   id: string;
   nome: string;
@@ -110,4 +110,6 @@ export interface TavolaComposta {
   cavi: CavoComposto[];
   /** VM di questa sede il cui hypervisor non è un apparato della tavola. */
   vmSenzaCasa: VmComposta[];
+  /** Postazioni di questa sede che nessuna porta della tavola nomina (senza fili, o porta non nota). */
+  postazioniSenzaPorta: VmComposta[];
 }

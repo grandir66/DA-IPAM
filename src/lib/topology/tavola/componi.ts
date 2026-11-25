@@ -8,7 +8,8 @@
 import { elencoDa, indiciInElenco, normale } from "@/lib/topology/cavi/porte";
 import type { MapLink, MapNode, MapVm } from "@/lib/topology/model-types";
 import { SENZA_SEDE, nelSito } from "./api";
-import { componiVm, ferroDelleVm } from "./vm";
+import { ePostazione } from "./postazioni";
+import { componiVm, ferroDelleVm, scheda } from "./vm";
 import type { ApparatoComposto, ApparatoPorte, CavoComposto, PortaComposta, PortaTavola, TavolaComposta, TipoPorta } from "./tipi";
 
 const RETE = new Set(["router", "firewall", "switch", "access_point", "ap", "gateway", "wireless", "l3_switch"]);
@@ -84,9 +85,10 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
   const nomeArmadio = new Map((input.armadi ?? []).map((a) => [a.id, a.name]));
   const vms = input.vms ?? [];
   const ferro = ferroDelleVm(vms);
+  const postazioni = new Set(input.nodi.filter((n) => !ferro.has(n.id) && ePostazione(n)).map((n) => n.id));
   const lavori = new Map<string, Lavoro>();
   for (const n of input.nodi) {
-    if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito) || ferro.has(n.id)) continue;
+    if (n.kind !== "device" || n.hidden || !nelSito(n, input.sito) || ferro.has(n.id) || postazioni.has(n.id)) continue;
     const righe = [...(porteDi.get(n.id) ?? [])].sort((x, y) => (x.indice ?? 1e9) - (y.indice ?? 1e9));
     const conIndice = righe.filter((r): r is PortaTavola & { indice: number } => r.indice !== null);
     const apparato: ApparatoComposto = { nodo: n.id, refId: n.refId, nome: n.name, tipo: n.type, ip: n.mgmtIp, rackId: n.rackId, armadio: n.rackId === null ? null : nomeArmadio.get(n.rackId) ?? null, rango: rangoDi(n), porte: [] };
@@ -153,8 +155,11 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
 
   const cavi: CavoComposto[] = [];
   const visti = new Set<string>();
-  // I collegamenti verso una VM dopo gli altri: sono visti attraverso il cavo del suo hypervisor, che sulla porta vince.
-  const ordinati = [...input.collegamenti].sort((x, y) => Number(ferro.has(x.a) || ferro.has(x.b)) - Number(ferro.has(y.a) || ferro.has(y.b)));
+  // I collegamenti verso una VM o una postazione dopo gli altri: quelli verso una VM sono visti attraverso il cavo del suo hypervisor, che sulla porta vince.
+  const peso = (l: MapLink) => (ferro.has(l.a) || ferro.has(l.b) ? 2 : postazioni.has(l.a) || postazioni.has(l.b) ? 1 : 0);
+  const scritte = new Set<string>();
+  const vistaSu = new Map<string, string>();
+  const ordinati = [...input.collegamenti].sort((x, y) => peso(x) - peso(y));
   for (const l of ordinati) {
     if (visti.has(l.id)) continue;
     visti.add(l.id);
@@ -171,6 +176,20 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
       if (p.collegamento !== null) continue;
       segna(p, l, "server", vm, "", w.righe[w.composte.indexOf(p)], null);
       if (casa !== null) p.destinazione = `${perId.get(casa)?.name ?? "hypervisor"} (${vm.name})`;
+      continue;
+    }
+    if (postazioni.has(l.a) || postazioni.has(l.b)) {
+      if (postazioni.has(l.a) && postazioni.has(l.b)) continue;
+      const [w, pc, porta] = postazioni.has(l.a) ? [wb, na, l.bPort] : [wa, nb, l.aPort];
+      if (!w || !pc) continue;
+      // Senza porta (senza fili), o dietro un altro apparato: il nome va nell'elenco in fondo, con dove è vista.
+      const p = porta.trim() === "" ? null : trova(w, porta, `${l.id}:pc`);
+      if (p === null || (p.altroNodo !== null && !postazioni.has(p.altroNodo))) {
+        vistaSu.set(pc.id, p === null ? w.apparato.nome : `${w.apparato.nome} p${p.numero}`);
+        continue;
+      }
+      segna(p, l, "client", pc, "", w.righe[w.composte.indexOf(p)], null);
+      scritte.add(pc.id);
       continue;
     }
     const tipo = tipoCollegamento(l, na, nb, input.sito);
@@ -198,5 +217,13 @@ export function componiTavola(input: { sito: number; nodi: readonly MapNode[]; c
     const n = v.nodeId !== null ? perId.get(v.nodeId) : undefined;
     return (h === null || !lavori.has(h)) && n !== undefined && n.kind === "device" && !n.hidden && nelSito(n, input.sito);
   }), perId);
-  return { apparati, cavi, vmSenzaCasa };
+  const lette = [...lavori.values()].flatMap((w) => w.composte.filter((p) => p.collegamento === null).map((p) => p.letta));
+  const ipLetti = new Set(lette.flatMap((r) => r?.ipClient ?? []));
+  const nomiLetti = new Set(lette.flatMap((r) => r?.nomeClient?.toLowerCase() ?? []));
+  const postazioniSenzaPorta = input.nodi
+    .filter((n) => postazioni.has(n.id) && !n.hidden && nelSito(n, input.sito) && !scritte.has(n.id)
+      && !(n.mgmtIp !== null && ipLetti.has(n.mgmtIp)) && !nomiLetti.has(n.name.toLowerCase()))
+    .map((n) => ({ id: n.id, nome: vistaSu.has(n.id) ? `${n.name} (${vistaSu.get(n.id)})` : n.name, ip: n.mgmtIp, accesa: null, scheda: scheda(n.id) }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it", { numeric: true }));
+  return { apparati, cavi, vmSenzaCasa, postazioniSenzaPorta };
 }

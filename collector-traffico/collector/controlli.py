@@ -244,7 +244,11 @@ def risposta_nome(proto: int, sport: int, carico: bytes) -> str | None:
     if sport == 5355:
         return nome_dns(carico)
     if sport == 137:
-        return _nome_netbios(carico)
+        # la risposta di stato (tipo 0x21, di solito al nome «*») la dà ogni macchina: non è un nome conteso
+        if carico[46:48] == b"\x00\x21":
+            return None
+        nome = _nome_netbios(carico)
+        return None if nome is None or nome.startswith("*") else nome
     return None
 
 

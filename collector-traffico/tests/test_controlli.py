@@ -135,6 +135,12 @@ class Controlli(unittest.TestCase):
         nb = bytes("".join(chr(65 + (b >> 4)) + chr(65 + (b & 15)) for b in b"FILESRV        \x20"), "ascii")
         netbios = struct.pack(">HHHHHH", 1, 0x8500, 0, 1, 0, 0) + b"\x20" + nb + b"\x00\x00\x20\x00\x01"
         self.assertEqual(risposta_nome(UDP, 137, netbios), "filesrv")
+        # richiesta di stato («*», nbtstat): risponde chiunque con lo stesso nome, non è conteso. 229 avvisi falsi il 25/11/2026
+        stella = b"CK" + b"A" * 30
+        stato = struct.pack(">HHHHHH", 1, 0x8400, 0, 1, 0, 0) + b"\x20" + stella + b"\x00\x00\x21\x00\x01"
+        self.assertIsNone(risposta_nome(UDP, 137, stato))
+        # lo stato chiesto per un nome vero resta fuori anche lui: è il tipo (0x21) che dice «stato»
+        self.assertIsNone(risposta_nome(UDP, 137, netbios[:-4] + b"\x00\x21\x00\x01"))
 
     def test_nessun_valore_esce(self):
         """Il fatto si salva, il valore mai: nessun dettaglio contiene la password o la comunità."""

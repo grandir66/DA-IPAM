@@ -111,8 +111,11 @@ traffico di pochi Mbit/s; 38 GB di RAM liberi; nessuna rete OVH censita in IPAM.
 - [x] `DA-COLLECTOR-OVH`: VM 207 su DA-PX-OVH, `192.168.51.250`, profilo Zeek, accessi coi nomi utente spenti
 - [x] `collector-mirror.sh`, modo BRIDGE: prova in uno spazio isolato sul DA-PX-05 (19 verdi, una vista fallire), poi acceso: 11 porte, SOLUTION-CLOUD e TSPLUS-CLOUD escluse (porta, VLAN 230 e rete, controllato con `tcpdump`)
 - [x] Censita `192.168.51.0/24` «OVH - VM Domarc», **senza credenziali** (la finestra proponeva le 13 di Dalton)
-- [ ] Riccardo: incollare il gettone e premere «Prova e registra» (scheda «Collector e controlli»)
-- [ ] Dopo la registrazione: prima lettura, copertura, e le porte di una VM che riparte (il riallineamento è provato solo sul banco)
+- [x] Registrata da Riccardo come `PX-OVH`; letta dalle 15:20 UTC del 25/11, copertura 1,0
+- [x] Riccardo, 25/11: «anche le altre due VM sono importanti… se una macchina fa traffico anomalo dovremmo saperlo»: esclusioni tolte, SOLUTION-CLOUD e TSPLUS-CLOUD si vedono (anche fra loro, sulla VLAN 230)
+- [x] Censite anche `192.168.230.0/24` e `192.168.240.0/24`, senza credenziali. `non_censito` dei loro host finché IPAM non li trova (dall'hub la 230 non risponde al ping)
+- [ ] Le porte di una VM che riparte: il riallineamento è provato solo sul banco
+- [ ] Difetto: «nome conteso» scatta sulle risposte di stato NetBIOS (nome `*`): 229 avvisi su 231 all'hub sono falsi, gravità alta. `collector/controlli.py`, `_nome_netbios`: il nome `*` non è un nome. Da correggere sui sei collector
 - [ ] MikroTik CHR 201 come router (ARP): serve una credenziale di Riccardo. Rete della VLAN 240: da censire se serve
 
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)

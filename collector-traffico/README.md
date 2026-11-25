@@ -226,7 +226,7 @@ entra da una porta sola, quindi si conta una volta, compreso il traffico fra due
 | Cosa | Dov'è |
 |---|---|
 | `DA-COLLECTOR-OVH` | VM 207 su DA-PX-OVH, Debian 12, 2 vCPU, 2 GB, 8 GB su `zfs`, parte col nodo. `net0` su `vmbr_vm`, `192.168.51.250`; `net1` dichiarata su `vmbr_vm` e staccata all'avvio. **Mai su `vmbr0`**: OVH non conosce quei MAC |
-| `/etc/collector-mirror.conf` | `BRIDGE=vmbr_vm`, `STACCA=1`, `VM_FUORI="301 302"`, `VLAN_FUORI="230"`, `RETI_FUORI="192.168.230.0/24"` |
+| `/etc/collector-mirror.conf` | `BRIDGE=vmbr_vm`, `STACCA=1`; `VM_FUORI`, `VLAN_FUORI` e `RETI_FUORI` vuoti: nessuna VM esclusa (Riccardo, 25/11: «se una macchina fa traffico anomalo dovremmo saperlo»). `VLAN_FUORI=` va scritto, di serie è 16 |
 | `collector-mirror@207.timer` | ogni minuto `collector-mirror.sh 207 riallinea`: le porte nascono e muoiono con le VM |
 
 - Escludere una VM vuol dire tutte e tre le cose: la sua porta (`VM_FUORI`), la sua VLAN (`VLAN_FUORI`, il router la

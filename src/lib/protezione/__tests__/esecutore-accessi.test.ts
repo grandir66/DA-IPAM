@@ -131,3 +131,15 @@ test("i comandi che scrivono non partono senza root, e la prova vuole una durata
   }
   assert.equal(lancia("", ["boh"]).codice, 1);
 });
+
+test("i moduli che la pagina importa nel browser non usano moduli di Node (compilazione fallita il 25/11/2026)", () => {
+  // `chi-puo-collegarsi.tsx` è un componente client: ciò che importa per valore finisce nel browser. `tsc` e le
+  // prove non se ne accorgono: se ne accorge solo `npm run build`, che sulle appliance fallisce e tiene la versione vecchia.
+  const pagina = fs.readFileSync(path.join(process.cwd(), "src/app/(dashboard)/protezione/accessi/chi-puo-collegarsi.tsx"), "utf8");
+  const perValore = [...pagina.matchAll(/^import (?!type )[^;]*? from "@\/lib\/protezione\/([\w-]+)";/gm)].map((m) => m[1]);
+  assert.ok(perValore.includes("politica"));
+  for (const modulo of perValore) {
+    const testo = fs.readFileSync(path.join(process.cwd(), `src/lib/protezione/${modulo}.ts`), "utf8");
+    assert.doesNotMatch(testo, /^import .* from "(node:[^"]+|fs|net|os|path|child_process)";/m, `${modulo}.ts va nel browser e usa un modulo di Node`);
+  }
+});

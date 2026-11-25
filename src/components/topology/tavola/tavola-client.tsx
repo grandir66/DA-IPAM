@@ -219,7 +219,7 @@ export function TavolaClient() {
       )}
 
       {tavola && <ElencoFuori titolo="Macchine virtuali senza hypervisor nella tavola" voci={tavola.vmSenzaCasa} />}
-      {tavola && <ElencoFuori titolo="Postazioni senza una porta nota" voci={tavola.postazioniSenzaPorta} />}
+      {tavola && <ElencoFuori titolo="Postazioni, stampanti, telefoni e telecamere senza una porta nota" voci={tavola.postazioniSenzaPorta} />}
 
       {tavola && (
         <RiquadroScelta collegamento={collegamento} porta={portaAperta} apparati={tavola.apparati} nomeDi={nomeDi}

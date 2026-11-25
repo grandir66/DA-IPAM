@@ -238,3 +238,14 @@ test("postazioni: nessun telaio, il nome sotto la porta; senza porta o dietro un
   assert.deepEqual(t.postazioniSenzaPorta.map((v) => v.nome), ["app-4 (app-1)", "app-5 (app-1 p2)"]);
   assert.deepEqual(t.cavi.map((c) => c.id), ["L1"]);
 });
+
+test("stampanti, telefoni e telecamere come le postazioni; un UPS resta un apparato; telefono e PC sulla stessa porta", () => {
+  const nodi = [nodo(1, "switch"), nodo(2, "stampante"), nodo(3, "voip"), nodo(4, "telecamera"), nodo(5, "ups"), nodo(6, "workstation")];
+  const t = componiTavola({
+    sito: SITO, nodi, collegamenti: [coll("T", "dev:1", "Port 1", "dev:3", ""), coll("W", "dev:1", "Port 1", "dev:6", ""), coll("S", "dev:1", "Port 2", "dev:2", "")],
+    apparati: [{ node: "dev:1", porte: [porta(1), porta(2)] }],
+  });
+  assert.deepEqual(t.apparati.map((a) => a.nodo), ["dev:1", "dev:5"]);
+  assert.deepEqual(t.apparati[0].porte.map((p) => p.destinazione), ["app-3 (+1)", "app-2"]);
+  assert.deepEqual(t.postazioniSenzaPorta.map((v) => v.nome), ["app-4"]);
+});

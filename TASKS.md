@@ -98,6 +98,19 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
   registrazioni e servono per dire cosa blocca il firewall, non dove sta una macchina.
 - Manca in DA-GEO una fonte C2 viva: **ThreatFox risponde 410**.
 
+## 2026-11-25 — Idea: sonda su DA-PX-OVH, letta da `192.168.4.8` (Riccardo, domanda; proposta, niente codice)
+
+Riccardo, 25/11: «se io volessi aggiungere una sonda sul server Proxmox in OVH per vedere il traffico di quel sito… vorrei mantenere
+l'IPAM solo su Domarc 192.168.4.8… il server di analisi può fungere da ponte per le reti remote da analizzare?».
+Visto in sola lettura: DA-PX-OVH (`192.168.51.252`) si raggiunge già dall'hub (17 ms, via `192.168.4.254`); le VM stanno su
+`vmbr_vm`, che non ha porte fisiche, quindi la copia dell'uplink non vedrebbe niente; rete `192.168.51.0/24`, VLAN 230 e 240;
+traffico di pochi Mbit/s; 38 GB di RAM liberi; nessuna rete OVH censita in IPAM.
+
+- [ ] Riccardo approva: `DA-COLLECTOR-OVH` (VM su DA-PX-OVH), scheda di gestione su `vmbr_vm`, mai su `vmbr0` (OVH: MAC non registrato)
+- [ ] `collector-mirror.sh`: modo nuovo, copia dell'ingresso di ogni `tap` del bridge (ogni pacchetto una volta sola), rimessa quando una VM riparte
+- [ ] Censire `192.168.51.0/24` e le reti delle VLAN 230 e 240; leggere il MikroTik CHR 201 come router (ARP)
+- [ ] Decisioni di Riccardo: quali VM escludere (SOLUTION-CLOUD e TSPLUS-CLOUD), accessi coi nomi utente spenti, profilo
+
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)
 
 Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (non si ricopia qui).

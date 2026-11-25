@@ -3,8 +3,8 @@
  * (Protezione, tappa 2; ADR 0041). Modulo puro. Il file è `chiave=valore`, mai eseguito; l'esecutore rivalida
  * tutto da capo: questa validazione serve a dire l'errore a chi scrive, non a proteggere la macchina.
  * Le regole sono le stesse dello script e una prova le confronta caso per caso.
+ * Va anche nel browser (la pagina «Chi può collegarsi»): niente moduli di Node, o la build non passa (25/11/2026).
  */
-import net from "node:net";
 
 export const GRUPPI = ["web", "ssh", "console", "dati"] as const;
 export type GruppoAccessi = (typeof GRUPPI)[number];
@@ -41,6 +41,15 @@ export const POLITICA_VUOTA: Politica = {
   gruppi: { web: { aperto: false, indirizzi: [] }, ssh: { aperto: false, indirizzi: [] }, console: { aperto: false, indirizzi: [] }, dati: { aperto: false, indirizzi: [] } },
 };
 
+/** Come `net.isIPv6` sugli indirizzi scritti solo con cifre esadecimali e due punti: una prova li confronta. */
+export function ipv6Valido(ip: string): boolean {
+  const meta = ip.split("::");
+  if (meta.length > 2) return false;
+  const gruppi = meta.flatMap((m) => (m === "" ? [] : m.split(":")));
+  if (gruppi.some((g) => !/^[0-9a-fA-F]{1,4}$/.test(g))) return false;
+  return meta.length === 1 ? gruppi.length === 8 : gruppi.length <= 7;
+}
+
 /** `ipv4`, `ipv6` o `null` se non è un indirizzo o una rete ammessa (IPv4 da /8 a /32, IPv6 da /16 a /128). */
 export function tipoIndirizzo(s: string): "ipv4" | "ipv6" | null {
   const [ip, pref, altro] = s.split("/");
@@ -52,7 +61,7 @@ export function tipoIndirizzo(s: string): "ipv4" | "ipv6" | null {
     if (ottetti.length !== 4 || ottetti.some((o) => !/^\d{1,3}$/.test(o) || Number(o) > 255) || Number(ottetti[0]) === 0) return null;
     return n === null || (n >= 8 && n <= 32) ? "ipv4" : null;
   }
-  if (/^[0-9a-fA-F:]+$/.test(ip) && ip.length <= 39 && net.isIPv6(ip)) return n === null || (n >= 16 && n <= 128) ? "ipv6" : null;
+  if (/^[0-9a-fA-F:]+$/.test(ip) && ip.length <= 39 && ipv6Valido(ip)) return n === null || (n >= 16 && n <= 128) ? "ipv6" : null;
   return null;
 }
 

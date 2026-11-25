@@ -88,7 +88,7 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
 - [x] Fase 1, Riccardo: incollare quel codice in IPAM (25/11, primo scarico alle 10:40 UTC)
 - [x] Riccardo, 25/11: «un riquadro in fondo non visibile… la procedura deve essere facile e guidata» → striscia in
   cima a «Verso l'esterno», finestra a tre passi, conferma in DA-GEO senza codici da copiare. Riccardo: «Sì, scrivilo».
-  Scritto e vista la resa a 1920; DA-GEO 1.7.0 in esercizio. Resta la conferma vera di un collegamento.
+  Scritto e vista la resa a 1920; DA-GEO 1.7.0 in esercizio. Giro intero provato fra le due app in locale.
 - [x] Fase 1, fonte al posto di ThreatFox: Emerging Threats «compromised» (Riccardo, 24/11), DA-GEO 1.6.0. Resta scoperto il traffico verso i C2
 - [ ] Riccardo approva le altre fasi (proposta): 1 (fatta nei dati) reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
       geoblocking»: confronto in locale, nessun indirizzo esce); 2 fornitore e servizio (tavola ASN → nome breve e categoria, più gli

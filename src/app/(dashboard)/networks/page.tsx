@@ -4,6 +4,7 @@ import { RetiProposte } from "./reti-proposte";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { retiProposte, type ReteProposta } from "@/lib/trunk/reti-proposte";
+import { proposteDaiCollector, unisciProposte } from "@/lib/traffico/reti-collector";
 import { auth } from "@/lib/auth";
 import { reteSenzaSegreti, ruoloAdmin } from "@/lib/networks/senza-segreti";
 
@@ -21,6 +22,11 @@ export default async function NetworksPage() {
     proposte = withTenant(tenantCode, () => retiProposte(networks.map((n) => n.cidr)));
   } catch (e) {
     console.error("[subnet] reti proposte dal trunk:", e);
+  }
+  try {
+    proposte = unisciProposte(proposte, withTenant(tenantCode, () => proposteDaiCollector()));
+  } catch (e) {
+    console.error("[subnet] reti proposte dai collector:", e instanceof Error ? e.message : e);
   }
   return (
     <NetworksListClient

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import { resolveDataDir } from "../data-dir";
 import { unisci } from "../percorsi";
+import { scriviTentativi } from "../protezione/tentativi";
 
 export const GIORNI_REGISTRO_ACCESSI = 400;
 
@@ -20,6 +21,8 @@ export interface RigaRegistroAccessi {
   utente: string;
   utenteId: number;
   da: string;
+  /** Da quale indirizzo, come lo passa nginx (25/11/2026, Protezione): assente dove non si sa. */
+  ip?: string;
 }
 
 const CHIAVE = Symbol.for("da-ipam.accesso.registro-accessi");
@@ -53,10 +56,21 @@ export function scriviRegistroAccessi(riga: RigaRegistroAccessi, adesso = new Da
  * journal, che ruota. Non lancia: un disco pieno non deve chiudere fuori tutti, ma si vede nel journal.
  * Il nome è quello scritto da chi prova, tagliato a 64 caratteri; mai la password, mai il codice.
  */
-export function registraAccesso(azione: "accesso_riuscito" | "accesso_rifiutato" | "accesso_bloccato", nome: string, utenteId = 0, via = "password"): void {
+export function registraAccesso(azione: "accesso_riuscito" | "accesso_rifiutato" | "accesso_bloccato", nome: string, utenteId = 0, via = "password", indirizzo: string | null = null): void {
+  const utente = nome.trim().slice(0, 64);
   try {
-    scriviRegistroAccessi({ azione, utente: nome.trim().slice(0, 64), utenteId, da: via });
+    scriviRegistroAccessi({ azione, utente, utenteId, da: via, ...(indirizzo ? { ip: indirizzo } : {}) });
   } catch (e) {
     console.error("[registro-accessi] accesso non registrato:", e);
   }
+  // Un accesso non riuscito è anche un tentativo (Protezione, tappa 3): finisce nel registro che fa partire gli avvisi.
+  if (azione !== "accesso_riuscito") {
+    scriviTentativi([{ il: new Date().toISOString(), fonte: "pagina", indirizzo, utente, porta: 443, cosa: azione === "accesso_bloccato" ? "utenza bloccata per troppi tentativi" : "accesso rifiutato" }]);
+  }
+}
+
+/** L'indirizzo di chi chiama dalle intestazioni che mette nginx; `null` se non ci sono. Serve al registro, non a decidere un permesso. */
+export function indirizzoDaIntestazioni(h: { get(nome: string): string | null } | null | undefined): string | null {
+  const v = (h?.get("x-real-ip") ?? h?.get("x-forwarded-for")?.split(",")[0] ?? "").trim().replace(/^::ffff:/, "");
+  return /^[0-9a-fA-F:.]{3,45}$/.test(v) ? v : null;
 }

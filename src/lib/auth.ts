@@ -136,8 +136,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
         codice: { label: "Codice", type: "text" },
       },
-      async authorize(credentials) {
-        const { registraAccesso } = await import("./accesso/registro-accessi");
+      async authorize(credentials, request) {
+        const { registraAccesso, indirizzoDaIntestazioni } = await import("./accesso/registro-accessi");
+        // Da dove arriva il tentativo (Protezione, 25/11/2026): va nel registro e fa partire gli avvisi.
+        const daDove = indirizzoDaIntestazioni(request?.headers);
         // Password, blocco dei tentativi (backoff incrementale e visibile: incidenti 99.50 del
         // 17/07 e appliance cliente A) e verifica in due passaggi per chi l'admin l'ha richiesta
         // stanno in una funzione sola, la stessa del passo 1 della pagina (ADR 0023).
@@ -152,13 +154,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         );
         if (esito.esito === "bloccato") {
           console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: login bloccato ancora ${esito.secondi}s`);
-          registraAccesso("accesso_bloccato", String(credentials?.username ?? ""));
+          registraAccesso("accesso_bloccato", String(credentials?.username ?? ""), 0, "password", daDove);
           return null;
         }
 
         // ── Utente di servizio Domarc (env var, accesso incondizionato, senza codice) ──
         if (esito.esito === "servizio") {
-          registraAccesso("accesso_riuscito", esito.username, 0, "utenza di servizio");
+          registraAccesso("accesso_riuscito", esito.username, 0, "utenza di servizio", daDove);
           const { getActiveTenants } = await import("./db-hub");
           const allTenants = getActiveTenants();
           return {
@@ -173,12 +175,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
         if (esito.esito !== "entra") {
           console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: accesso rifiutato (${esito.esito})`);
-          registraAccesso("accesso_rifiutato", String(credentials?.username ?? ""));
+          registraAccesso("accesso_rifiutato", String(credentials?.username ?? ""), 0, "password", daDove);
           return null;
         }
 
         const user = esito.utente;
-        registraAccesso("accesso_riuscito", user.username, user.id);
+        registraAccesso("accesso_riuscito", user.username, user.id, "password", daDove);
         const { getUserTenantAccess } = await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
         updateUserLastLogin(user.id);

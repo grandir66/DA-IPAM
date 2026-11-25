@@ -323,6 +323,14 @@ app.prepare().then(() => {
       console.error("WARNING: segnale DA-Link non avviato:", error);
     });
 
+    // Protezione (25/11/2026): raccoglie i tentativi di accesso falliti (sshd, filtro di rete) e manda gli avvisi.
+    // Sola lettura sul sistema; senza notifiche configurate registra e basta.
+    import("./src/lib/protezione/tentativi-job").then(({ avviaGiroTentativi }) => {
+      avviaGiroTentativi();
+    }).catch((error) => {
+      console.error("WARNING: giro dei tentativi di accesso non avviato:", error);
+    });
+
     // Dati ESET delle postazioni letti da DA-Link (17/11/2026): rilievi e software. Spento di serie,
     // cliente per cliente (`eset.da_dalink`); senza oggetto.env il giro non arriva alla rete.
     import("./src/lib/integrations/eset-dalink-job").then(({ avviaLetturaEset }) => {

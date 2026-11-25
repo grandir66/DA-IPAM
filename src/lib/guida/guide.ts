@@ -150,6 +150,17 @@ export const GUIDE: Readonly<Record<string, Guida>> = {
     fonte: "La politica scritta sulla macchina e gli indirizzi che il filtro ha visto arrivare negli ultimi 7 giorni.",
     vuota: "A filtro spento non si vede chi arriva: l'elenco si riempie da quando è in osservazione.",
   },
+  "/protezione/tentativi": {
+    serve: "Raccoglie in un elenco solo chi ha provato a entrare senza riuscirci: dalla pagina web, da SSH e dal filtro di rete.",
+    passi: [
+      "Guarda prima le righe con più tentativi e quelle «sconosciuto».",
+      "«Nostro» è questa macchina: lo Scanner-Edge prova le credenziali anche su di lei, e non fa scattare avvisi.",
+      "Per chiudere la porta a un indirizzo oggi si toglie dagli elenchi in «Chi può collegarsi».",
+    ],
+    segni: ["▲ sopra la soglia di avviso", "○ sotto la soglia", "● nostro, non conta"],
+    fonte: "I login falliti della pagina, il registro di sshd e gli indirizzi scartati dal filtro, letti ogni due minuti. Mai una password.",
+    vuota: "Vuoto vuol dire nessun tentativo negli ultimi 7 giorni. Gli avvisi partono solo se le notifiche sono accese in Impostazioni › Notifiche.",
+  },
   "/protezione/utenti": {
     serve: "Mostra chi può entrare in DA-IPAM, con quale ruolo e se usa la seconda verifica.",
     passi: ["Controlla gli amministratori con la seconda verifica spenta.", "Guarda chi non entra da molto: un'utenza che non serve si toglie.", "«Gestisci utenti» porta dove si creano e si cambiano."],

@@ -77,6 +77,7 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/protezione/utenti", etichetta: "Utenti", per: "admin" },
     { href: "/protezione/sistemi", etichetta: "Sistemi remoti", per: "admin" },
     { href: "/protezione/moduli", etichetta: "Moduli e container", per: "admin" },
+    { href: "/protezione/tentativi", etichetta: "Tentativi", per: "admin", stacco: true },
   ] },
   // Impostazioni e Config (Riccardo, 14/11/2026). Prima: «uniformare i tab… utenti, aggiornamenti, moduli, istanza sono
   // fondamentali», «inserendo dentro impostazioni anche le voci di menù opzioni e schedulazioni». Poi: «avere un menù

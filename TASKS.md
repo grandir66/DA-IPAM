@@ -115,7 +115,7 @@ traffico di pochi Mbit/s; 38 GB di RAM liberi; nessuna rete OVH censita in IPAM.
 - [x] Riccardo, 25/11: «anche le altre due VM sono importanti… se una macchina fa traffico anomalo dovremmo saperlo»: esclusioni tolte, SOLUTION-CLOUD e TSPLUS-CLOUD si vedono (anche fra loro, sulla VLAN 230)
 - [x] Censite anche `192.168.230.0/24` e `192.168.240.0/24`, senza credenziali. `non_censito` dei loro host finché IPAM non li trova (dall'hub la 230 non risponde al ping)
 - [ ] Le porte di una VM che riparte: il riallineamento è provato solo sul banco
-- [ ] Difetto: «nome conteso» scatta sulle risposte di stato NetBIOS (nome `*`): 229 avvisi su 231 all'hub sono falsi, gravità alta. `collector/controlli.py`, `_nome_netbios`: il nome `*` non è un nome. Da correggere sui sei collector
+- [x] «Nome conteso» sulle risposte di stato NetBIOS (nome `*`): corretto (v0.9.1354) e portato sui sei collector il 25/11 (Riccardo: «Sì, correggi»); tolti i 229 avvisi falsi, righe in `/root/avvisi-nome-conteso-20261125.csv` sull'hub. Snapshot `pre-nome-conteso-20261125` su 116, 115, 114, 533, 113, 102 e 207: da togliere fra qualche giorno
 - [ ] MikroTik CHR 201 come router (ARP): serve una credenziale di Riccardo. Rete della VLAN 240: da censire se serve
 
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)

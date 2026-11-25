@@ -73,8 +73,9 @@ Solo IPAM, nessun cambio al collector.
   colonne Pacchetti, Connessioni, Esterni, riquadro «Andamento, ultime 24 ore» (`traffico/andamento.tsx`).
   Verifica: `npx eslint "src/app/(dashboard)/traffico" src/lib/traffico` pulito, `npx tsc --noEmit` senza errori fuori da
   `.next/types` (23/11). **Non guardata resa**: in locale non ci sono dati di traffico.
-- [~] Sull'hub: «Ultima ora» diversa da «Oggi» verificata dal database il 23/11 alle 00:21 UTC (841 MB contro 1,28 GB);
-  resta il grafico a 24 ore e il conto delle righe di `traffico_ore` dopo un giorno.
+- [x] Sull'hub, dati: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). «Ultima ora» 20,9 GB contro «Oggi» 184,7 GB (regola del massimo fra collector); `traffico_ore` ha 24 ore
+  su 24 con righe nelle ultime 24 (82.212 righe), 213.672 in tabella da 61 ore, 5 collector (37.315, 69.174, 39.882, 43.530, 23.771).
+  **Resta a Riccardo**: guardare il grafico reso (nessuna pagina è stata guardata).
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.
 
@@ -95,6 +96,9 @@ Solo IPAM, nessun cambio al collector.
   con interruttore per rete, host per MAC nel caso 3). Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
   30 su 30, eslint e `tsc` puliti fuori da `.next/types` (23/11).
 - [ ] Rifare la misura su PX03 di giorno, poi portare il collector su PX01, PX02, PX04, PX05.
+- [~] Sull'hub: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). `traffico_identita` ha righe da tutti e 5 i collector (arp 240-278, dhcp 155-188, mdns 74-86, netbios 29-38,
+  ssdp 14-16, cdp 15, lldp 1 ciascuno); host con `hostname_source='collector'`: 4; host senza MAC: 0, quindi il caso «host senza MAC che lo
+  riceve» non si può più distinguere dai dati (i MAC c'erano già). IP doppio: provato sul banco il 23/11. Resta [~] per questo.
 - [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). «Come si presenta in rete» nel riquadro «Con chi
   parla» della scheda, i MAC sotto la frase di «IP doppio» e «MAC cambiato». Verifica: prove del traffico 31 su 31, eslint
   e `tsc` puliti (23/11). **Non guardata resa** (in locale non ci sono dati).
@@ -122,7 +126,8 @@ Solo IPAM, nessun cambio al collector.
   «Dai un nome», gruppo «Reti con nome, non censite» nel filtro di «Chi parla con chi». Verifica: eslint e `tsc` puliti
   (23/11). **Non guardata resa.** Scostamento dalla proposta: «Vedi le coppie» funziona solo per una rete che ha già un
   nome, perché il filtro di «Chi parla con chi» conosce le reti censite e gli oggetti, non un /24 qualunque.
-- [ ] Sull'hub: Riccardo dà un nome a una rete vista dall'ufficio e lo ritrova in «Fra reti».
+- [x] Sull'hub, dato: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). `traffico_oggetti` ha 1 riga: `192.168.99.0/24`, interno, nome «RETE RG», dato da riccardo il 23/11 02:25 UTC.
+  **Resta a Riccardo**: confermare che il nome compare in «Fra reti» (non guardata resa).
 
 **Fatto quando:** una rete non censita vista dall'ufficio ha un nome dato da Riccardo e quel nome compare in «Fra reti».
 
@@ -146,8 +151,11 @@ Solo IPAM, nessun cambio al collector.
 - [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). Scheda «Verso l'esterno» (`traffico/esterno.tsx`):
   quattro viste, riga gialla quando il tetto scatta, citazione di DB-IP nel piede, «Scarica l'archivio» per gli
   amministratori, «Dai un nome» a una destinazione. Verifica: eslint e `tsc` puliti (23/11). **Non guardata resa.**
-- [ ] Sull'hub: scaricare l'archivio, guardare la vista, contare le righe di `traffico_esterni` dopo un giorno.
-- [ ] Misura di giorno su PX03, poi gli altri quattro collector (insieme alla tappa 2).
+- [x] Sull'hub, numeri: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). `/opt/da-invent/data/geo/dbip.db` esiste (25 MB, scaricato il 23/11 01:59); `traffico_esterni` 113.573 righe,
+  13.185 indirizzi distinti; per giorno e collector (righe/ip): 23/11 891/576, 34.921/7.934, 489/362, 887/630, 78/64; 24/11 2.675/1.729,
+  38.039/9.089, 1.024/724, 1.697/1.089, 175/121; 25/11 (parziale) 1.661/1.031, 28.523/6.668, 670/496, 1.714/898, 129/94. Il collector 2
+  produce l'88% delle righe (circa 35.000 al giorno). `70791.db` pesa 1,35 GB (WAL 31 MB). **Resta a Riccardo**: guardare la vista resa.
+- [-] Misura di giorno su PX03, poi gli altri quattro collector: superata, tutti e cinque girano col codice nuovo (identità ed esterni presenti da tutti, vedi sopra).
 
 **Fatto quando:** «Verso l'esterno» mostra le destinazioni dell'ufficio con paese e fornitore, e l'archivio dell'hub non è
 cresciuto più del previsto (scrivere i numeri nel Registro).
@@ -379,6 +387,13 @@ chi ha fatto accesso a un server di prova.
   Le prove passavano perché non chiamano `main()`. Resta a Riccardo: accendere gli accessi sull'ufficio (interruttore
   in IPAM e `ACCESSI=1` su un collector) e fare un accesso a un server di prova. Il filtro leggero nuovo non è misurato
   di giorno su nessun collector (PX03 è passato a Zeek).
+
+- 2026-11-25 13:07 UTC, verifica tappe 1-4 sull'hub `192.168.4.8` (sola lettura, v0.9.1349, `70791.db` 1,35 GB). Tappa 1: 24 ore su 24
+  con righe, 82.212 righe nelle ultime 24, 213.672 in tutto (dal 23/11 00:00), «Ultima ora» 20,9 GB contro «Oggi» 184,7 GB: dati soddisfatti.
+  Un'ora anomala: 24/11 22:00 UTC con 518 GB (il resto 3-35 GB). Tappa 2: identità da tutti e 5 i collector, 4 host col nome dal collector,
+  0 host senza MAC (caso non più distinguibile). Tappa 3: 1 oggetto, 192.168.99.0/24 «RETE RG» (Riccardo, 23/11). Tappa 4: `dbip.db` 25 MB;
+  113.573 righe e 13.185 indirizzi in `traffico_esterni`, circa 35.000 righe al giorno dal solo collector 2. Nessuna pagina guardata resa:
+  restano a Riccardo il grafico a 24 ore, «RETE RG» in «Fra reti» e la vista «Verso l'esterno»; poi le tappe 1-4 passano a `[x]`.
 
 ## Consuntivo (tappe 5-7, 23/11/2026)
 

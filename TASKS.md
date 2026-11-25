@@ -104,22 +104,25 @@ Piano e registro: `docs/superpowers/plans/2026-11-23-collector-dati-in-piu.md` (
 
 - [x] Tappa 1, dati: coppie per ora (`traffico_ore`), «Ultima ora», pacchetti, connessioni, esterni, rotta dell'andamento
 - [x] Tappa 1, interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila») e scritta; non guardata resa (in locale non ci sono dati)
-- [ ] Tappa 1, sull'hub `192.168.4.8`: guardare «Ultima ora» contro «Oggi», il grafico a 24 ore, e contare le righe di `traffico_ore`
+- [x] Tappa 1, sull'hub (25/11 13:07 UTC): «Ultima ora» 20,9 GB contro «Oggi» 184,7 GB, `traffico_ore` 24 ore su 24, 213.672 righe
+- [ ] Tappa 1: Riccardo guarda il grafico a 24 ore reso
 - [x] Tappa 2, collector e IPAM: identità (MAC, IP, nome), aggancio agli host, «IP doppio» e «MAC cambiato»
 - [-] Tappa 2: misura di giorno su `DA-COLLECTOR-PX03`, poi gli altri quattro collector: superata il 23/11, la sessione «Sonda con Zeek» ha portato tutti e cinque a Zeek; la misura di giorno è la giornata di Zeek che si chiude il 24/11 (lettura notturna del 23/11 nella nota `misura-di-giorno-collector.md` delle sessioni)
 - [x] Tappa 2, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
 - [x] Tappa 2: IP doppio provocato sul banco del PX-NAS il 23/11, l'avviso nasce (dal codice, non dalla pagina)
-- [ ] Tappa 2, sull'hub `192.168.4.8`: un host senza MAC che lo riceve dal collector (l'hub non si era ancora aggiornato)
+- [-] Tappa 2, sull'hub (25/11): identità da tutti e 5 i collector, 0 host senza MAC: il caso non si distingue più dai dati
 - [x] Tappa 2, «MAC cambiato»: regole applicate (Riccardo, 24/11: «Sì, applicala»), in `macCambiati` (`traffico/identita.ts`), dopo la rilettura con 37 ore di ARP: 12 avvisi (erano 3). Tre tipi, tutti gravità bassa (più bassa non c'è): `mac_altrove` (il MAC è censito su un altro IP), `mac_mai_visto` (il censito non si è mai visto lì), `mac_cambiato` (visto e poi sostituito); stesso produttore e censito mai visto → niente avviso. Scostamento dalla proposta: coi prefissi delle VM e i MAC assegnati in locale la regola «stesso produttore» non vale, altrimenti `192.168.4.14` (caso vero) sarebbe sparito.
 - [x] (24/11, «Sì, toglili») I 12 avvisi «MAC cambiato» vecchi tolti dall'hub con la v0.9.1339 attiva (snapshot `pre-mac-cambiato-20261124` della 533 su DA-PX-03, righe in `/root/avvisi-mac-cambiato-20261124.csv`)
 - [ ] «MAC cambiato», sull'hub: guardare gli avvisi che nascono con le regole nuove (nei primi 11 minuti nessuno)
 - [ ] «MAC cambiato» e «IP doppio» dei nodi Proxmox: dalle 12:45 del 24/11 i nodi rispondono in ARP anche con altre loro schede (sul PX-05 il MAC è quello di `fwbr515i0`, il bridge del firewall della VM 515; `arp_ignore = 0`). È lo stesso apparato con più schede: proposta, non avvisare quando i MAC sono dello stesso host
 - [x] Tappa 3, dati: oggetti con nome (`traffico_oggetti`), reti viste, rotte; il nome entra in «Fra reti»
 - [x] Tappa 3, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
-- [ ] Tappa 3, sull'hub `192.168.4.8`: Riccardo dà un nome a una rete vista e lo ritrova in «Fra reti»
+- [x] Tappa 3, sull'hub (25/11): «RETE RG» (192.168.99.0/24) nome dato da Riccardo il 23/11
+- [ ] Tappa 3: Riccardo conferma che «RETE RG» compare in «Fra reti»
 - [x] Tappa 4, collector e IPAM: destinazioni esterne col tetto di 50, nomi, archivio paese e fornitore, «Paese nuovo»
 - [x] Tappa 4, interfaccia: approvata da Riccardo il 23/11 e scritta; non guardata resa
-- [ ] Tappa 4, sull'hub: scaricare l'archivio DB-IP (a mano, da amministratore) e contare `traffico_esterni` dopo un giorno
+- [x] Tappa 4, sull'hub (25/11): `dbip.db` 25 MB scaricato; `traffico_esterni` 113.573 righe, 13.185 indirizzi, ~35.000 righe al giorno dal collector 2
+- [ ] Tappa 4: Riccardo guarda la vista «Verso l'esterno» resa
 - [x] Riccardo (24/11): «DB-IP ogni mese». Dopo il primo scaricamento a mano l'archivio si aggiorna da solo: ogni mattina alle 5:23 si guarda se manca quello del mese (`aggiornaGeoSeServe`), solo dove c'è un collector attivo. Non ancora visto girare sull'hub: serve il primo scaricamento, poi il 1/12
 - [x] Tappa 5, collector e IPAM: connessioni senza risposta, rifiutate, tempi; servizi usati contro porte note
 - [x] Tappa 5: misura su PX03 (trovato e corretto il filtro che scartava SYN e RST), interfaccia approvata e scritta, servizio spento visto sul banco

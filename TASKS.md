@@ -6,8 +6,11 @@ Riccardo, 25/11: «vorrei che dall'UI si potesse gestire l'accesso al sistema im
 Piano: `docs/superpowers/plans/2026-11-25-sicurezza-accessi-honeypot.md`. Tavola: `docs/superpowers/tavole/2026-11-25-protezione.html`. Ramo `feat/sicurezza-accessi-honeypot` (da `origin/dev`, non pubblicato). **Niente codice finché Riccardo non approva.** Criterio: chiuso di serie. Lo strato «dati a riposo» resta nel piano del 14/11 qui sotto (P0-3, P0-4, P1-5): questo piano lo cita e ne mostra lo stato.
 - [x] Ramo, censimento del codice e della VM 533 in sola lettura (il censimento della macchina sta fuori dal repo, che è pubblico), piano e tavola a 1920 (25/11).
 - [x] Piano rifatto sullo scopo detto da Riccardo: minacce, tutte le strade d'ingresso con chiusura e avviso, strati con costo e priorità, scheda «Stato della protezione» (25/11).
-- [ ] Riccardo risponde alle nove domande del piano (§9).
-- [ ] Tappe: 0 ADR · 1 vedere · 2 chiudere la rete · 3 avvisare · 4 stringere l'accesso · 5 esche e blocco · 6 collaudo. Stima: circa 27 giornate, 6 settimane.
+- [x] Riccardo ha risposto alle nove domande (25/11; parole sue nel piano, §9): chiusura sempre a mano dopo l'osservazione, anche sulle installazioni nuove («sempre osservazione, chiusura manuale»); sempre ammessi solo NetBird/DA-Link («poi proponiamo»); contrasto solo «difesa»; seconda verifica «da abilitare opzionale, poi troveremo anche altri sistemi di autenticazione»; guasto del filtro: politica minima; esche tutte quelle proposte, «anche pagina login finta», su «ip abilitabile separato o quello di ipam»; menu sì.
+- [x] Tappa 0: ADR 0041 (25/11).
+- [ ] Da confermare con Riccardo: la lettura della risposta 7 (indirizzo separato per le esche); blocco automatico di un indirizzo interno (non risposto: per ora solo avviso e blocco a mano); durata della sessione admin e SSH solo da NetBird (non risposto: restano come sono).
+- [ ] Idea di Riccardo, 25/11, per dopo: «altri sistemi di autenticazione» oltre alla seconda verifica.
+- [ ] Tappe: 1 vedere · 2 chiudere la rete · 3 avvisare · 4 stringere l'accesso · 5 esche e blocco · 6 collaudo. Stima: circa 26 giornate, 6 settimane.
 - Da verificare alla fonte (non provato): che la catena sul prerouting a priorità −150 veda la porta vera delle porte pubblicate da Docker; la guardia di `/ws/ssh`; che `/api/setup` non risponda dopo la prima configurazione; tre colonne (`snmp_community`, `community_string`, `api_token`) senza suffisso cifrato.
 
 ## 2026-11-24 — IPAM ridotto su mini PC economico (Riccardo, analisi)

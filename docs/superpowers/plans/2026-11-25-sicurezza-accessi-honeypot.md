@@ -322,14 +322,33 @@ completo una volta, prima di `dev`.
 - **Docker cambia le sue catene**: per questo non ci si appoggia a `DOCKER-USER`.
 - **Uso quotidiano del tecnico**: seconda verifica e accesso solo da NetBird pesano: domande 2 e 5.
 
-## 9. Domande a Riccardo (25/11/2026)
+## 9. Decisioni di Riccardo (25/11/2026)
 
-1. Appliance dei clienti **già installate**: ricevono il filtro in «osserva» e le accendi tu una per una, o si accendono da sole dopo N giorni senza indirizzi rimasti fuori?
-2. Installazioni **nuove**, chi è ammesso alla pagina web di serie: solo NetBird/DA-Link, oppure NetBird più la rete locale dichiarata all'installazione?
-3. Sempre ammessi oltre a NetBird/DA-Link: quali reti dei tecnici? Gli avvisi vanno anche a DA-Link/Vulcan, oltre a email e webhook?
-4. «Traffico di contrasto»: solo difesa sul nostro lato (rifiuto, rallentamento, limite, isolamento della porta con conferma, avviso), niente traffico verso chi attacca. Va bene?
-5. Uso quotidiano: seconda verifica **obbligatoria** per tutti gli admin (anche i tuoi tecnici e il cliente)? Sessione admin da 8 ore a quanto? SSH solo da NetBird?
-6. Guasto del filtro al riavvio: politica minima (solo NetBird e sempre ammessi) con avviso, come proposto?
-7. Un indirizzo **interno** alla rete del cliente che tocca le esche: blocco automatico o solo avviso e blocco a mano?
-8. Quali esche: Telnet 23, FTP 21, SMB 445, RDP 3389, MySQL 3306, SSH finto 2222, pagina di login finta 8081?
-9. Sezione «Protezione» dopo «Rete», solo admin, nove schede: va bene nome e posto?
+Risposte alle nove domande, con le sue parole fra virgolette. Dove il testo delle sezioni sopra dice
+altro, **vale questa sezione** (ADR 0041).
+
+1. **Appliance già installate** («si»): ricevono il filtro in osserva e si accendono una per una, a mano.
+2. **Installazioni nuove** («sempre osservazione, chiusura manuale»): nascono anche loro in **osserva**;
+   nessuna chiusura automatica, mai. Chiude una persona, dalla pagina, dopo aver visto chi resterebbe
+   fuori. Finché è in osserva la pagina dice «NON protetta». Corregge la 4.3 (non nasce più acceso).
+3. **Sempre ammessi** («netbird/da-link poi proponiamo»): di serie solo NetBird/DA-Link. Altre reti si
+   proporranno dopo, dai dati dell'osservazione. Avvisi: email e webhook; verso DA-Link/Vulcan da proporre.
+4. **Contrasto** («difesa»): solo difesa sul nostro lato, come nella 4.6.
+5. **Seconda verifica** («da abilitare opzionale, poi troveremo anche altri sistemi di autenticazione»):
+   resta **facoltativa**, non si rende obbligatoria. «Stato della protezione» la segnala come debolezza
+   col pulsante per accenderla. La tappa 4 si riduce; altri sistemi di autenticazione sono un lavoro
+   futuro, da tenere aperto nel disegno. Sessione (8 ore) e SSH: non risposto, restano come sono; SSH
+   si chiude con il gruppo «SSH» quando si accende il filtro.
+6. **Guasto del filtro** («si»): politica minima nel codice (NetBird/DA-Link e ultimi «sempre ammessi») e avviso.
+7. **Esche** («ip abilitabile separato o quello di ipam»): le esche possono stare su un **indirizzo
+   separato**, che si abilita dalla scheda, oppure sull'indirizzo di IPAM. Letta così; da confermare.
+   Conseguenze: l'indirizzo in più lo mette l'esecutore sulla scheda di rete scelta (comando chiuso in
+   più, `indirizzo-esche`), si controlla prima che sia libero (ARP) e fuori dal DHCP; su quell'indirizzo
+   **non c'è conflitto di porte** coi servizi veri, e ogni connessione è per definizione un tentativo.
+   La domanda originale (blocco automatico di un indirizzo interno) resta senza risposta: vale la
+   proposta prudente, **solo avviso e blocco a mano**.
+8. **Quali esche** («quelli che proponi vanno bene anche pagina login finta»): Telnet 23, FTP 21, SMB 445,
+   RDP 3389, MySQL 3306, SSH finto 2222, pagina di login finta 8081.
+9. **Menu** («si»): sezione «Protezione» dopo «Rete», solo admin, nove schede.
+
+Stima aggiornata: tappa 4 da 3 a 1,5 giornate, tappa 5 da 5 a 5,5 (indirizzo separato): **circa 26 giornate**.

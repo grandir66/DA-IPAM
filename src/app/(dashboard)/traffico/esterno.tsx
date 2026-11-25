@@ -12,7 +12,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { formattaByte, nomePaese, protoPorta } from "@/lib/traffico/frasi";
 import type { EsternoTraffico, Per, RigaVista, Segnate, Servizio } from "@/lib/traffico/esterno";
 import type { StatoListe } from "@/lib/traffico/liste";
-import { ListeDaGeo, NumeroSegnate, SegniListe } from "./liste-dageo";
+import { NumeroSegnate, SegniListe, StrisciaDaGeo } from "./liste-dageo";
 import { Indirizzo } from "./pezzi";
 import { DaiUnNome } from "./reti-viste";
 
@@ -83,6 +83,9 @@ export function Esterno({ admin }: { admin: boolean }) {
     } else setErroreListe(r.message);
   }, []);
   useEffect(() => { void caricaListe(); }, [caricaListe]);
+  // stabili: la striscia ci appoggia il suo giro di controllo
+  const ricaricaListe = useCallback(() => { void caricaListe(); }, [caricaListe]);
+  const listeCambiate = useCallback((s: StatoListe) => { setListe(s); setSegnate(null); setPagina(1); void carica(); }, [carica]);
 
   const cambia = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPagina(1); };
   const cercaOra = (e: FormEvent) => { e.preventDefault(); setCerca(scritto.trim()); setPagina(1); };
@@ -106,13 +109,15 @@ export function Esterno({ admin }: { admin: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+      <StrisciaDaGeo
+        stato={liste} errore={erroreListe} admin={admin} compromesse={t?.compromesse ?? null} bloccherebbe={t?.bloccherebbe ?? null}
+        segnate={segnate} onSegnate={cambia(setSegnate)} onRicarica={ricaricaListe} onCambiato={listeCambiate}
+      />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Destinazioni" valore={t?.destinazioni ?? null} nota="indirizzi esterni con cui si è parlato" />
         <TesseraNumero titolo="Paesi" valore={archivio?.presente ? t?.paesi ?? null : null} nota={archivio && !archivio.presente ? "serve l'archivio dei paesi" : "dove stanno quegli indirizzi"} />
         <TesseraNumero titolo="Fornitori" valore={archivio?.presente ? t?.fornitori ?? null : null} nota={archivio && !archivio.presente ? "serve l'archivio dei paesi" : "le reti che li ospitano"} />
         <TesseraNumero titolo="Volume" valore={t ? formattaByte(t.byte) : null} nota={t ? `${numero(t.host)} host interni` : undefined} />
-        <TesseraNumero titolo="Compromesse" valore={haReputazione ? t?.compromesse ?? null : null} nota={haReputazione || !liste ? "in una lista di reputazione" : "serve una lista di DA-GEO"} />
-        <TesseraNumero titolo="Taglierebbe il geoblocking" valore={haGeo ? t?.bloccherebbe ?? null : null} nota={haGeo || !liste ? "nei paesi della lista" : "serve una lista di DA-GEO"} />
       </div>
 
       {archivio && !archivio.presente && (
@@ -142,13 +147,6 @@ export function Esterno({ admin }: { admin: boolean }) {
             {(Object.keys(NOME_PER) as Per[]).map((v) => (
               <Button key={v} size="sm" variant={per === v ? "default" : "outline"} onClick={() => cambia(setPer)(v)}>{NOME_PER[v]}</Button>
             ))}
-            {(conListe || segnate !== null) && (
-              <>
-                <span aria-hidden className="h-6 w-px bg-border" />
-                {(haReputazione || segnate === "compromesse") && <Button size="sm" variant={segnate === "compromesse" ? "default" : "outline"} aria-pressed={segnate === "compromesse"} onClick={() => cambia(setSegnate)(segnate === "compromesse" ? null : "compromesse")}>Solo compromesse</Button>}
-                {(haGeo || segnate === "bloccate") && <Button size="sm" variant={segnate === "bloccate" ? "default" : "outline"} aria-pressed={segnate === "bloccate"} onClick={() => cambia(setSegnate)(segnate === "bloccate" ? null : "bloccate")}>Solo da geoblocking</Button>}
-              </>
-            )}
             <span aria-hidden className="h-6 w-px bg-border" />
             <form onSubmit={cercaOra} className="flex items-center gap-1.5">
               <Input value={scritto} onChange={(e) => setScritto(e.target.value)} placeholder="Nome, indirizzo, paese, fornitore" aria-label="Cerca un nome, un indirizzo, un paese o un fornitore" className="h-7 w-56" />
@@ -269,7 +267,6 @@ export function Esterno({ admin }: { admin: boolean }) {
           </Table>
         )}
       </Pannello>
-      {admin && <ListeDaGeo stato={liste} errore={erroreListe} onRicarica={() => void caricaListe()} onCambiato={(s) => { setListe(s); setSegnate(null); setPagina(1); void carica(); }} />}
       {daNominare && (
         <DaiUnNome
           rete={{ chiave: `${daNominare.chiave}/32`, nome: daNominare.a_mano ? daNominare.nome : null, nota: "" }}

@@ -85,7 +85,10 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
       `/api/traffico/liste`, avviso `indirizzo_compromesso`, filtro `segnate` in «Verso l'esterno», giro alle 5:41
 - [x] Fase 1, interfaccia (Riccardo, 24/11: «Sì, scrivila»), vista a 1920 in locale con dati finti: destinazioni, vista per host col filtro, riquadro delle liste. Non provati: salvataggio di un codice vero, finestra «Togli», tema scuro
 - [x] (25/11) In DA-GEO creati il cliente 70791, tre liste (paesi, Spamhaus, Emerging Threats) e il dispositivo «IPAM 192.168.4.8»
-- [ ] Fase 1, Riccardo: incollare quel codice in IPAM
+- [x] Fase 1, Riccardo: incollare quel codice in IPAM (25/11, primo scarico alle 10:40 UTC)
+- [x] Riccardo, 25/11: «un riquadro in fondo non visibile… la procedura deve essere facile e guidata» → striscia in
+  cima a «Verso l'esterno», finestra a tre passi, conferma in DA-GEO senza codici da copiare. Riccardo: «Sì, scrivilo».
+  Scritto e vista la resa a 1920; DA-GEO 1.7.0 in esercizio. Resta la conferma vera di un collegamento.
 - [x] Fase 1, fonte al posto di ThreatFox: Emerging Threats «compromised» (Riccardo, 24/11), DA-GEO 1.6.0. Resta scoperto il traffico verso i C2
 - [ ] Riccardo approva le altre fasi (proposta): 1 (fatta nei dati) reputazione e liste da DA-GEO (avviso «destinazione compromessa», «la taglierebbe il
       geoblocking»: confronto in locale, nessun indirizzo esce); 2 fornitore e servizio (tavola ASN → nome breve e categoria, più gli

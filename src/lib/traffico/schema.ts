@@ -100,7 +100,12 @@ export function assicuraTabelleTraffico(db: Database.Database): void {
       voci INTEGER NOT NULL, generato TEXT NOT NULL, in_errore INTEGER NOT NULL DEFAULT 0, scaricata_il TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS traffico_liste_reti (
       lista TEXT NOT NULL, inizio INTEGER NOT NULL, fine INTEGER NOT NULL, PRIMARY KEY (lista, inizio)) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS traffico_liste_richiesta (
+      id INTEGER PRIMARY KEY, url TEXT NOT NULL, numero TEXT NOT NULL, segreto_enc TEXT NOT NULL, scade TEXT NOT NULL);
   `);
+  // collegamento guidato (25/11): di che cliente è il dispositivo, come lo dice DA-GEO
+  if (!(db.prepare("PRAGMA table_info(traffico_liste_fonte)").all() as { name: string }[]).some((c) => c.name === "cliente"))
+    db.exec("ALTER TABLE traffico_liste_fonte ADD COLUMN cliente TEXT NOT NULL DEFAULT ''");
   db.exec(`
     -- ZONA ROSSA (tappa 7, 23/11): nomi utente degli accessi. 90 giorni, solo amministratori, mai negli export.
     CREATE TABLE IF NOT EXISTS traffico_accessi (

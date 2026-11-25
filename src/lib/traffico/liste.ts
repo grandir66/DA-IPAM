@@ -28,7 +28,7 @@ const CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 
 export interface ListaDichiarata { nome: string; tipo: TipoLista; titolo: string; fonte: string; voci: number; generato: string; in_errore: boolean }
 export interface StatoLista extends ListaDichiarata { scaricata_il: string; vecchia: boolean }
-export interface StatoListe { configurato: boolean; url: string; ultimo_giro: string | null; errore: string | null; liste: StatoLista[] }
+export interface StatoListe { configurato: boolean; url: string; cliente: string; ultimo_giro: string | null; errore: string | null; liste: StatoLista[] }
 export interface SegnoLista { nome: string; titolo: string; tipo: TipoLista }
 
 /** `https://host/percorso` senza barra finale. Null se non è https o porta credenziali, parametri o frammenti. */
@@ -97,13 +97,13 @@ async function scaricaTesto(url: string): Promise<string> {
   return Buffer.concat(pezzi).toString("utf8");
 }
 
-interface RigaFonte { url: string; codice_enc: string; ultimo_giro: string | null; errore: string | null }
-const fonte = (d: Database.Database): RigaFonte | undefined => d.prepare("SELECT url, codice_enc, ultimo_giro, errore FROM traffico_liste_fonte WHERE id = 1").get() as RigaFonte | undefined;
+interface RigaFonte { url: string; cliente: string; codice_enc: string; ultimo_giro: string | null; errore: string | null }
+const fonte = (d: Database.Database): RigaFonte | undefined => d.prepare("SELECT url, cliente, codice_enc, ultimo_giro, errore FROM traffico_liste_fonte WHERE id = 1").get() as RigaFonte | undefined;
 
 /** Registra (o cambia) l'indirizzo e il codice. Il codice si salva cifrato e non esce più. */
-export function impostaFonte(url: string, codice: string): void {
-  dbTraffico().prepare(`INSERT INTO traffico_liste_fonte (id, url, codice_enc) VALUES (1, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET url = excluded.url, codice_enc = excluded.codice_enc, errore = NULL`).run(url, encrypt(codice));
+export function impostaFonte(url: string, codice: string, cliente = ""): void {
+  dbTraffico().prepare(`INSERT INTO traffico_liste_fonte (id, url, codice_enc, cliente) VALUES (1, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET url = excluded.url, codice_enc = excluded.codice_enc, cliente = excluded.cliente, errore = NULL`).run(url, encrypt(codice), cliente);
 }
 
 export function togliFonte(): void {
@@ -186,7 +186,7 @@ export function statoListe(adesso: Date = new Date()): StatoListe {
   const righe = d.prepare("SELECT nome, tipo, titolo, fonte, voci, generato, in_errore, scaricata_il FROM traffico_liste ORDER BY tipo DESC, nome").all() as (Omit<StatoLista, "in_errore" | "vecchia"> & { in_errore: number })[];
   const limite = adesso.getTime() - GIORNI_VECCHIA * 86_400_000;
   return {
-    configurato: f !== undefined, url: f?.url ?? URL_DI_SERIE, ultimo_giro: f?.ultimo_giro ?? null, errore: f?.errore ?? null,
+    configurato: f !== undefined, url: f?.url ?? URL_DI_SERIE, cliente: f?.cliente ?? "", ultimo_giro: f?.ultimo_giro ?? null, errore: f?.errore ?? null,
     liste: righe.map((r) => {
       const t = Date.parse(`${r.generato.slice(0, 10)}T${r.generato.slice(11, 16) || "00:00"}:00Z`);
       // una data che non si legge vale come vecchia: una lista senza data è indistinguibile da una morta

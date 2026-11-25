@@ -2,7 +2,6 @@
  * L'anteprima di una politica degli accessi, in parole (Protezione, tappa 2; piano §4.3): cosa cambia rispetto
  * a quella in vigore, e chi resterebbe fuori fra gli indirizzi che si sono visti arrivare. Modulo puro.
  */
-import net from "node:net";
 import { GRUPPI, NOME_GRUPPO, PORTE_GRUPPO, type GruppoAccessi, type Politica } from "./politica";
 import { inRete } from "./sistemi";
 
@@ -23,7 +22,7 @@ export function gruppoDellaPorta(porta: number): GruppoAccessi | null {
 export function inElenco(indirizzo: string, elenco: readonly string[]): boolean {
   return elenco.some((v) => {
     if (v === indirizzo) return true;
-    if (net.isIPv4(indirizzo) && !v.includes(":")) return inRete(indirizzo, v.includes("/") ? v : `${v}/32`);
+    if (!indirizzo.includes(":") && !v.includes(":")) return inRete(indirizzo, v.includes("/") ? v : `${v}/32`);
     return false;
   });
 }

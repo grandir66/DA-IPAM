@@ -163,7 +163,7 @@ export const GUIDE: Readonly<Record<string, Guida>> = {
   },
   "/protezione/utenti": {
     serve: "Mostra chi può entrare in DA-IPAM, con quale ruolo e se usa la seconda verifica.",
-    passi: ["Controlla gli amministratori con la seconda verifica spenta.", "Guarda chi non entra da molto: un'utenza che non serve si toglie.", "«Gestisci utenti» porta dove si creano e si cambiano."],
+    passi: ["Controlla gli amministratori con la seconda verifica spenta.", "Guarda chi non entra da molto: un'utenza che non serve si toglie.", "«Cambia» nella colonna «Solo da» limita gli indirizzi da cui quell'utente può entrare; vuoto vuol dire ovunque.", "«Gestisci utenti» porta dove si creano e si cambiano."],
     segni: ["▲ amministratore senza seconda verifica", "○ accesa", "– spenta, utente senza diritti di amministratore"],
     fonte: "Gli utenti di questa installazione e la data dell'ultimo accesso.",
     vuota: "C'è sempre almeno l'utente con cui stai guardando.",

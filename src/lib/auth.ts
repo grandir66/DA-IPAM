@@ -98,8 +98,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               `ruolo ${traduzione.ruolo}, clienti [${(traduzione.tenant ?? []).join(", ") || "nessuno"}]`,
           );
         }
+        // «Solo da questi indirizzi» vale anche per chi entra con l'account Domarc (Protezione, tappa 4).
+        const registro = await import("./accesso/registro-accessi");
+        const daDove = registro.indirizzoDaIntestazioni(request?.headers);
+        const { indirizziDellUtente, puoEntrareDa } = await import("./accesso/indirizzi-utente");
+        if (!puoEntrareDa(indirizziDellUtente(user.id), daDove)) {
+          console.warn(`[Auth] ${user.username}: accesso rifiutato, indirizzo ${daDove ?? "non letto"} non ammesso per questo utente`);
+          registro.registraAccesso("accesso_rifiutato", user.username, user.id, "indirizzo non ammesso per questo utente", daDove);
+          return null;
+        }
         updateUserLastLogin(user.id);
-        (await import("./accesso/registro-accessi")).registraAccesso("accesso_riuscito", user.username, user.id, "account Domarc");
+        registro.registraAccesso("accesso_riuscito", user.username, user.id, "account Domarc", daDove);
 
         // ⚠️ Ruolo e tenant vengono dalla riga LOCALE, non da DA-Auth. I due
         // sistemi parlano vocabolari diversi (DA-IPAM ha `superadmin` e
@@ -180,6 +189,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         const user = esito.utente;
+        // «Solo da questi indirizzi» (Protezione, tappa 4): password giusta, ma da un indirizzo che per questo utente
+        // non è ammesso. Si rifiuta come una password sbagliata, senza dire perché a chi prova; il motivo sta nel registro.
+        const { indirizziDellUtente, puoEntrareDa } = await import("./accesso/indirizzi-utente");
+        if (!puoEntrareDa(indirizziDellUtente(user.id), daDove)) {
+          console.warn(`[Auth] ${user.username}: accesso rifiutato, indirizzo ${daDove ?? "non letto"} non ammesso per questo utente`);
+          registraAccesso("accesso_rifiutato", user.username, user.id, "indirizzo non ammesso per questo utente", daDove);
+          return null;
+        }
         registraAccesso("accesso_riuscito", user.username, user.id, "password", daDove);
         const { getUserTenantAccess } = await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");

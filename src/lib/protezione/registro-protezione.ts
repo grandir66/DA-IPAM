@@ -8,7 +8,7 @@ import { resolveDataDir } from "../data-dir";
 import { unisci } from "../percorsi";
 
 export interface RigaRegistroProtezione {
-  azione: "osserva" | "prova" | "conferma" | "annulla" | "spegni";
+  azione: "osserva" | "prova" | "conferma" | "annulla" | "spegni" | "indirizzi_utente";
   utente: string;
   /** Indirizzo di chi ha chiesto l'azione, come lo vede l'applicazione. */
   da: string | null;

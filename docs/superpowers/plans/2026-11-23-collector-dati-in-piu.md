@@ -9,7 +9,7 @@ sicuramente le network sconosciute, dando un nome agli oggetti pur non inserendo
 voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 **Viene dopo:** `docs/superpowers/plans/2026-11-20-collector-traffico.md` (collector, lettura, anomalie, interfaccia: fatti).
 **Livello di controllo:** leggero per le tappe 1-6; la tappa 7 è zona rossa (dati personali).
-**Stato:** tappe 5, 6 e 7 chiuse; 1-4 scritte e pubblicate, da chiudere sull'hub (vedi «Dove riprendere» nel Registro) · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** tutte e sette le tappe chiuse il 25/11 · **Ultimo aggiornamento:** 2026-11-25
 
 ## Dove siamo
 
@@ -57,7 +57,7 @@ voci con mia decisione». Piano approvato da lui lo stesso giorno («sì»).
 
 ---
 
-### [~] Tappa 1 — Quello che c'è già e non si vede
+### [x] Tappa 1 — Quello che c'è già e non si vede
 
 Solo IPAM, nessun cambio al collector.
 
@@ -79,7 +79,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** sull'hub «Ultima ora» mostra numeri diversi da «Oggi» e il grafico ha le ultime 24 ore.
 
-### [~] Tappa 2 — Chi è un indirizzo
+### [x] Tappa 2 — Chi è un indirizzo
 
 - Collector: nuova tabella `identita` (visto, mac, ip, vlan, fonte, nome, tipo). Fonti: ARP, DHCP (nome dell'host, classe del
   produttore, opzioni chieste), mDNS, NetBIOS, SSDP, LLDP/CDP (apparato vicino e porta). Una riga per coppia MAC-IP, aggiornata,
@@ -95,8 +95,10 @@ Solo IPAM, nessun cambio al collector.
 - [x] IPAM: `traffico_identita`, `identita.ts` (aggancio agli host solo dove il campo è vuoto, `ip_doppio`, `mac_cambiato`
   con interruttore per rete, host per MAC nel caso 3). Verifica: `node --import tsx --test "src/lib/traffico/**/*.test.ts"`
   30 su 30, eslint e `tsc` puliti fuori da `.next/types` (23/11).
-- [ ] Rifare la misura su PX03 di giorno, poi portare il collector su PX01, PX02, PX04, PX05.
-- [~] Sull'hub: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). `traffico_identita` ha righe da tutti e 5 i collector (arp 240-278, dhcp 155-188, mdns 74-86, netbios 29-38,
+- [-] Rifare la misura su PX03 di giorno, poi portare il collector su PX01, PX02, PX04, PX05: superata, i cinque
+  collector sono passati a Zeek (sessione «Sonda con Zeek»), che tiene la sua misura di giorno. Il profilo leggero di giorno
+  resta non misurato.
+- [x] Sull'hub: Verifica 25/11 13:07 UTC, `ssh root@192.168.4.8` + `sqlite3 -readonly` su `70791.db` (v0.9.1349). `traffico_identita` ha righe da tutti e 5 i collector (arp 240-278, dhcp 155-188, mdns 74-86, netbios 29-38,
   ssdp 14-16, cdp 15, lldp 1 ciascuno); host con `hostname_source='collector'`: 4; host senza MAC: 0, quindi il caso «host senza MAC che lo
   riceve» non si può più distinguere dai dati (i MAC c'erano già). IP doppio: provato sul banco il 23/11. Resta [~] per questo.
 - [x] Interfaccia: approvata da Riccardo il 23/11 («Sì, scrivila»). «Come si presenta in rete» nel riquadro «Con chi
@@ -109,7 +111,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** un host dell'ufficio senza MAC in IPAM lo riceve dal collector, e un IP doppio provocato sul banco compare.
 
-### [~] Tappa 3 — Reti sconosciute e oggetti con nome
+### [x] Tappa 3 — Reti sconosciute e oggetti con nome
 
 - IPAM: tabella `traffico_oggetti` (chiave: rete o indirizzo, interno non censito o esterno; nome, nota, chi e quando).
   **Non è la tabella `networks`**: niente scansioni, niente host creati, non entra fra le subnet interne.
@@ -131,7 +133,7 @@ Solo IPAM, nessun cambio al collector.
 
 **Fatto quando:** una rete non censita vista dall'ufficio ha un nome dato da Riccardo e quel nome compare in «Fra reti».
 
-### [~] Tappa 4 — L'esterno per nome, paese e fornitore
+### [x] Tappa 4 — L'esterno per nome, paese e fornitore
 
 - Collector: oggi tutto ciò che è fuori diventa `esterno`. Tenere la destinazione per le prime N esterne per host e finestra
   (N da misurare, partire da 50), il resto resta `esterno` e si conta. Nome da DNS e SNI già raccolti.
@@ -394,6 +396,17 @@ chi ha fatto accesso a un server di prova.
   0 host senza MAC (caso non più distinguibile). Tappa 3: 1 oggetto, 192.168.99.0/24 «RETE RG» (Riccardo, 23/11). Tappa 4: `dbip.db` 25 MB;
   113.573 righe e 13.185 indirizzi in `traffico_esterni`, circa 35.000 righe al giorno dal solo collector 2. Nessuna pagina guardata resa:
   restano a Riccardo il grafico a 24 ore, «RETE RG» in «Fra reti» e la vista «Verso l'esterno»; poi le tappe 1-4 passano a `[x]`.
+
+- 2026-11-25, pagine guardate rese sull'hub (Chrome, sessione di Riccardo, v0.9.1349, sola lettura), tappe 1, 3 e 4 chiuse.
+  Tappa 1: grafico con le 24 ore (715 GB; l'ora fuori scala è tagliata e porta il suo valore), «Ultima ora» con 92 righe
+  «Fra reti» dalle 13:00. Tappa 3: «RETE RG» (192.168.99.0/24) compare in «Fra reti» in più righe. Tappa 4: 6.728 destinazioni,
+  62 paesi, 288 fornitori, riga gialla del tetto, citazione di DB-IP. L'ora da 518 GB del 24/11 22:00 UTC è la copia notturna
+  (192.168.4.187 verso la VLAN 16, 452 GB fra quattro coppie; stessa coppia la notte prima).
+  **Tappa 2, chiusa con uno scostamento**: il MAC messo dal collector non si può mostrare sull'hub (0 host senza MAC su 383);
+  lì si è visto il nome (4 host con `hostname_source = 'collector'`: 192.168.5.241, 20.13, 40.138, 15.25), messo dalla stessa
+  funzione `agganciaHost`; il MAC è provato dal codice e l'IP doppio dal banco.
+- 2026-11-25, «IP doppio» dei nodi Proxmox: corretto nella v0.9.1350 (`smorzaStessoApparato`). Gli avvisi sul MAC nati con le
+  regole nuove sono 12, tutti di gravità bassa: 9 sono nodi Proxmox o switch con più schede o con l'anagrafe da correggere, 3 host.
 
 ## Consuntivo (tappe 5-7, 23/11/2026)
 

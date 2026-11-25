@@ -234,7 +234,7 @@ banco una volta sola `chiaro_ftp`, `chiaro_http_basic`, `snmp_vecchio`, `impiant
 
 ---
 
-### [~] Task 5 — Installazione, freno sul disco, stato, una giornata sul DA-PX-03
+### [x] Task 5 — Installazione, freno sul disco, stato, una giornata sul DA-PX-03
 
 **Dipende da:** Task 4.
 
@@ -267,6 +267,9 @@ riavvia Zeek e lascia il segno `DATI/zeek-freno`; niente polkit né sudo, perch�
 `NoNewPrivileges` e una Debian minima non ha polkit. Zeek gira da root (cattura), scrive in `DATI/zeek` di
 proprietà di `collector`, che legge e cancella. Nella riga del collector: «sonda avanzata · Zeek 9.0.1» e, col
 freno tirato, «▲ Zeek fermo per il disco pieno» (un testo nella riga che c'era, nessun cambio di layout).
+
+Verifica (25/11): `/root/giornata-zeek.log` → 24 ore su tutti e cinque i collector, scartati 0, disco al più 25%;
+`traffico_collector` sull'IPAM `192.168.4.8` → nessun `ultimo_errore`.
 
 ---
 
@@ -402,8 +405,29 @@ ora `SSH_ASKPASS`.
   **Da portare su PX03 e PX05** a giornata finita (25/11 dalle 13:40 UTC); sul PX03 c'è più traffico: riguardare la
   memoria nella prima ora.
 
+- 2026-11-25, **Task 5 chiuso**. Giornata di PX03 e PX05 finita alle 13:39 UTC (CPU media 2% e 0%, RAM 415 e 257 MB, disco
+  25% e 15%, scartati 0). Alle 13:40 UTC snapshot `pre-vive-zeek-20261125` e installazione delle connessioni vive su
+  tutti e due (`ACCESSI=1` rimasto sul PX03, `RITORNO_LEGGERO=0` su tutti e due). `SONDE_NOTE` sui cinque ha in più
+  192.168.5.8, 192.168.20.8 e 192.168.30.8, gli altri indirizzi dell'IPAM `192.168.4.8`: la scansione del 24/11 era
+  quella settimanale di vulnerabilità dello Scanner-Edge (`vuln_scan_runs` 152). Verifica alle 14:40 UTC, 11 o più finestre
+  intere su ognuno: 0 coppie dai sei indirizzi (sul PX03 erano 333 in quella delle 13:30), nessun riavvio, nessuna
+  uccisione per memoria, IPAM legge senza errori (copertura minima 99,70% sul PX05). Snapshot tolti su tutte e cinque.
+
 ## Consuntivo
 ### Fatto
+- Profilo avanzato del collector con Zeek 9.0.1, sei task chiusi, in esercizio sui cinque collector dell'ufficio: filtri
+  per campo provati da `test_non_fuga.py`, adattatore, controlli senza doppie fonti, installazione col profilo, freno sul
+  disco, stato in IPAM, certificati, avvisi e programmi.
+- Fuori piano, approvato da Riccardo: profilo avanzato su tutti e cinque, sonde note e tetto per finestra, ritorno al
+  leggero spento in ufficio, connessioni vive.
 ### Mancante
+- Parser S7 e BACnet (Zeek 9.0.1 non li ha); tempo fra SYN e SYN-ACK; SMB1 e NTLM1 restano all'ascolto.
+- Decisioni di Riccardo: nome del profilo, tenere i registri grezzi per qualche ora.
 ### Scostamenti dal piano
+- Giornata su cinque collector invece che sul solo DA-PX-03, finita due giorni dopo per la scansione del 24/11.
+- Caso 3 (connessioni lunghe): pesava molto più del previsto (46 GB su 109 sul PX03), chiuso con le connessioni vive.
+- Freno sul disco da root con un timer, niente polkit né sudo.
 ### Consigli di sviluppo
+- Su un impianto nuovo mettere in `SONDE_NOTE` **tutti** gli indirizzi delle macchine che scandiscono, anche quelli sulle
+  VLAN: IPAM conosce i propri da solo, il collector no.
+- Alzare il tetto di righe che l'hub legge per giro (`PAGINE_PER_GIRO`) se un collector resta indietro.

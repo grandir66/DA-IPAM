@@ -89,7 +89,7 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
   SYN-ACK non c'è (`ms_minimo`/`ms_mediano` = -1, «non misurato»). S7 e BACnet non li legge. SMB1 e NTLM1 restano
   all'ascolto finché una cattura vera non mostra che Zeek li distingue.
 - **Dati di prova**: `tests/dati/zeek/` (cattura del banco, LEGGIMI); la prova di non-fuga è `tests/test_non_fuga.py`.
-- **Giornata intera (sorvegliante `banco/giornata-zeek.sh`)**, letta il 24/11 alle 19:05 UTC:
+- **Giornata intera (sorvegliante `banco/giornata-zeek.sh`)**, chiusa su tutti il 25/11 alle 13:39 UTC:
 
   | Collector | Durata | CPU di Zeek, media e massimo (una vCPU) | RAM massima di Zeek | Disco massimo | Scartati |
   |---|---|---|---|---|---|
@@ -97,9 +97,9 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
   | PX02 | 24 h, chiusa | 0%, 1% | 287 MB | 15% | 0 |
   | PX04 | 24 h, chiusa | 1%, 3% | 511 MB | 16% | 0 |
   | PX03, primo giro | 19 h 30, interrotto dalla scansione | 2,7%, 10% | 405 MB | 30% | 0 |
-  | PX03, secondo giro | 5 h 20 di 24, in corso | 2,7%, 3% | 364 MB | 25% | 0 |
+  | PX03, secondo giro | 24 h, chiusa | 2%, 6% | 415 MB | 25% | 0 |
   | PX05, primo giro | 18 h 20, interrotto dalla scansione | 0%, 1% | 1.060 MB | 16% | 0 |
-  | PX05, secondo giro | 5 h 20 di 24, in corso | 0%, 0% | 257 MB | 14% | 0 |
+  | PX05, secondo giro | 24 h, chiusa | 0%, 0% | 257 MB | 15% | 0 |
 
 - **Coppie, profilo leggero contro avanzato** (22 ore contro 22 ore, 18 sul PX03; 22-23/11 contro 23-24/11): le righe
   calano da 341.869 a 105.920 (PX01), da 349.772 a 86.143 (PX02), da 347.256 a 181.462 (PX04) per due motivi.
@@ -110,9 +110,11 @@ Piano `docs/superpowers/plans/2026-11-23-sonda-avanzata-zeek.md`, spec `…/spec
   (46 GB su 109). Fra queste: telefoni SIP (17/5060), syslog (6/5140), connessioni 443 di giorni, annunci MikroTik
   (17/5678); gli agenti Wazuh (6/1514) ci sono ma in meno di un quarto delle finestre. Il conto è per eccesso: una
   parte degli assenti ha il verso rovesciato o ha cambiato protocollo (ICMPv6 ora conta come ICMP, IGMP non c'è).
-  **Corretto il 24/11** (connessioni vive). Finestre da 5 minuti prima e dopo (19:00 e 19:30 UTC), coppie: PX02 Wazuh
+  **Corretto il 24/11** (connessioni vive; PX03 e PX05 il 25/11). Finestre da 5 minuti prima e dopo (19:00 e 19:30 UTC), coppie: PX02 Wazuh
   da 1 a 28, syslog da 2 a 10, MikroTik da 0 a 16; PX01 SIP da 0 a 19, Wazuh da 0 a 4; PX04 Wazuh da 0 a 5, syslog
-  da 1 a 3, MikroTik da 0 a 16. Memoria di Zeek e di `collector-traffico` uguale a prima.
+  da 1 a 3, MikroTik da 0 a 16; PX03 (25/11) Wazuh da 1 a 8, syslog da 1 a 4, MikroTik da 0 a 16, byte per finestra da
+  321 MB a 600-2.200 MB; PX05 MikroTik da 0 a 17. Memoria di Zeek e di `collector-traffico` uguale a prima; sul PX03,
+  nella prima ora, Zeek fermo a 201 MB e `collector-traffico` a 51.
 
 ## Nomi e controlli sul contenuto (`collector-ascolto`)
 
@@ -192,7 +194,7 @@ della VM (quindi anche dopo un riavvio del nodo). File in `proxmox/`.
 
 | Cosa | Dov'è |
 |---|---|
-| `DA-COLLECTOR-PX04` | VM 113 su DA-PX-04, Debian 12 (immagine cloud), 2 vCPU, 1 GB, 8 GB su `zfs`, parte col nodo. `net0` di gestione su `vmbr_int` VLAN 4 in DHCP (il 20/11: 192.168.4.185); `net1` su `vmbr0`, un bridge senza porte, così riceve solo la copia |
+| `DA-COLLECTOR-PX04` | VM 113 su DA-PX-04, Debian 12 (immagine cloud), 2 vCPU, 2 GB (dal 23/11, come gli altri quattro), 8 GB su `zfs`, parte col nodo. `net0` di gestione su `vmbr_int` VLAN 4 in DHCP (il 20/11: 192.168.4.185); `net1` su `vmbr0`, un bridge senza porte, così riceve solo la copia |
 | `DA-COLLECTOR-PX03` | VM 114 su DA-PX-03 (il 20/11: 192.168.4.186). Come la 113, ma `net1` sta su `vmbr10GB`: su quel nodo `vmbr0` è il bridge di gestione e non va usato |
 | `DA-COLLECTOR-PX02` | VM 115 su DA-PX-02 (il 20/11: 192.168.4.190), `net1` su `vmbr0` |
 | `DA-COLLECTOR-PX01` | VM 116 su DA-PX-01 (il 22/11: 192.168.4.192), `net1` su `vmbr0`. Sul nodo gira la 423: non è stata toccata |

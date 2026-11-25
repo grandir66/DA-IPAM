@@ -405,7 +405,8 @@ chi ha fatto accesso a un server di prova.
   **Tappa 2, chiusa con uno scostamento**: il MAC messo dal collector non si può mostrare sull'hub (0 host senza MAC su 383);
   lì si è visto il nome (4 host con `hostname_source = 'collector'`: 192.168.5.241, 20.13, 40.138, 15.25), messo dalla stessa
   funzione `agganciaHost`; il MAC è provato dal codice e l'IP doppio dal banco.
-- 2026-11-25, «IP doppio» dei nodi Proxmox: corretto nella v0.9.1350 (`smorzaStessoApparato`). Gli avvisi sul MAC nati con le
+- 2026-11-25, «IP doppio» dei nodi Proxmox: corretto nella v0.9.1350 (`smorzaStessoApparato`). Verifica sull'hub, 25/11 13:35 UTC:
+  192.168.15.5 sceso da gravità 3 a 1 («reti»: 3); 16.5 e 40.5 scendono alla prossima vista; 192.168.1.251, conflitto vero, resta 3. Gli avvisi sul MAC nati con le
   regole nuove sono 12, tutti di gravità bassa: 9 sono nodi Proxmox o switch con più schede o con l'anagrafe da correggere, 3 host.
 
 ## Consuntivo (tappe 5-7, 23/11/2026)

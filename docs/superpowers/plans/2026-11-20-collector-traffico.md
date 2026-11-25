@@ -7,7 +7,7 @@
 **Architettura:** sulla VM `pmacct` conta, un servizio Python senza dipendenze tiene le righe in SQLite e le espone su un'API HTTPS col cursore. IPAM legge ogni 5 minuti (schema di `src/lib/trunk/sensore-trunk.ts`), tiene coppie e abitudini nel database del tenant e calcola le anomalie. I controlli sul contenuto sono un secondo processo sulla VM che guarda solo l'inizio delle connessioni.
 **Spec:** `docs/superpowers/specs/2026-11-20-collector-traffico-design.md`
 **Livello di controllo:** leggero (proposto nella spec, approvata da Riccardo il 20/11/2026).
-**Stato:** completato salvo il Task 7 (fermo: serve un apparato vero) · **Ultimo aggiornamento:** 2026-11-22
+**Stato:** CHIUSO il 2026-11-25 (Riccardo: «chiudi tutti i rami terminati»). Il Task 7 resta sospeso, serve un apparato vero: sta in `TASKS.md`, sezione del 20/11 · **Ultimo aggiornamento:** 2026-11-25
 
 ## Vincoli globali
 

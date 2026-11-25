@@ -7,7 +7,7 @@
 **Architettura:** sulla VM Zeek scrive registri JSON che chiude ogni 5 minuti; un adattatore Python (nel servizio `collector-traffico` che c'è già) li traduce nelle tabelle dell'archivio e li cancella. `collector-ascolto` resta acceso per l'identità (ARP, CDP, LLDP) e per i controlli che Zeek non copre, scelti da un elenco unico. IPAM riceve due colonne facoltative in più e qualche tipo di fatto nuovo.
 **Spec:** `docs/superpowers/specs/2026-11-23-sonda-avanzata-zeek-design.md`
 **Livello di controllo:** leggero (approvato da Riccardo il 23/11/2026 con la spec). La tappa 5 della spec (utenti, zona rossa) è **fuori da questo piano**.
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-11-23
+**Stato:** CHIUSO il 2026-11-25, 24 ore di Zeek passate su tutti e cinque i collector · **Ultimo aggiornamento:** 2026-11-25
 
 ## Vincoli globali
 

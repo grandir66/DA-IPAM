@@ -137,6 +137,19 @@ export const GUIDE: Readonly<Record<string, Guida>> = {
     fonte: "Le porte in ascolto della macchina e quelle pubblicate dai container, lette adesso.",
     vuota: "Senza l'elenco delle porte la pagina dice «non letto»: succede solo fuori da un'appliance.",
   },
+  "/protezione/accessi": {
+    serve: "Decide da quali indirizzi si arriva alle porte della macchina, gruppo per gruppo, e accende o spegne il filtro.",
+    passi: [
+      "Premi «Metti in osservazione»: il filtro conta chi arriva e non scarta nessuno.",
+      "Dopo qualche giorno guarda «Chi resterebbe fuori» e premi «Ammetti» su chi deve entrare.",
+      "«Anteprima» dice cosa cambia e ti avvisa se resteresti fuori tu.",
+      "«Applica in prova» chiude davvero per due minuti: se la pagina risponde ancora premi «Conferma», altrimenti tornano da sole le regole di prima.",
+      "Chiuso fuori lo stesso? Dalla console della macchina: bash /opt/da-ipam/scripts/accessi/da-ipam-accessi.sh spegni",
+    ],
+    segni: ["○ NetBird / DA-Link passa sempre", "▲ gruppo aperto a tutti, o porta fuori dai gruppi"],
+    fonte: "La politica scritta sulla macchina e gli indirizzi che il filtro ha visto arrivare negli ultimi 7 giorni.",
+    vuota: "A filtro spento non si vede chi arriva: l'elenco si riempie da quando è in osservazione.",
+  },
   "/protezione/utenti": {
     serve: "Mostra chi può entrare in DA-IPAM, con quale ruolo e se usa la seconda verifica.",
     passi: ["Controlla gli amministratori con la seconda verifica spenta.", "Guarda chi non entra da molto: un'utenza che non serve si toglie.", "«Gestisci utenti» porta dove si creano e si cambiano."],

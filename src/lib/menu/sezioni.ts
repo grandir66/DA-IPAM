@@ -69,10 +69,11 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/arp-table/trunk", etichetta: "Apparati annunciati", ancora: "annunci" },
   ] },
   // Protezione dell'installazione (Riccardo, 25/11/2026; ADR 0041): cosa è chiuso, cosa resta debole. Solo admin.
-  // Tappa 1: le cinque schede che si leggono soltanto; Chi può collegarsi, Esche, Tentativi e Registro arrivano dopo.
+  // Le schede che si leggono soltanto più «Chi può collegarsi» (tappa 2); Esche, Tentativi e Registro arrivano dopo.
   { nome: "Protezione", schede: [
     { href: "/protezione", etichetta: "Stato della protezione", per: "admin" },
     { href: "/protezione/porte", etichetta: "Porte presentate", per: "admin" },
+    { href: "/protezione/accessi", etichetta: "Chi può collegarsi", per: "admin" },
     { href: "/protezione/utenti", etichetta: "Utenti", per: "admin" },
     { href: "/protezione/sistemi", etichetta: "Sistemi remoti", per: "admin" },
     { href: "/protezione/moduli", etichetta: "Moduli e container", per: "admin" },

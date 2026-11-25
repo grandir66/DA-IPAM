@@ -243,6 +243,23 @@ modo_caricato() {
   nft list table $TABELLA 2>/dev/null | sed -n 's/.*comment "da-ipam-accessi modo=\([a-z]*\)".*/\1/p' | head -n 1
 }
 
+# L'unità che ricarica le regole all'accensione: la installa lo script stesso la prima volta che servono
+# (osserva, conferma), dal modello in deploy/. Se non ci riesce lo dice e va avanti: le regole sono già caricate.
+assicura_avvio() {
+  local unita="/etc/systemd/system/da-ipam-accessi.service" qui modello app
+  [ -d /etc/systemd/system ] || return 0
+  qui="$(cd "$(dirname "$0")" && pwd)" || return 0
+  app="$(cd "$qui/../.." && pwd)" || return 0
+  modello="$app/deploy/da-ipam-accessi.service"
+  [ -f "$modello" ] || { echo "da-ipam-accessi: modello dell'unità assente ($modello): al riavvio le regole non tornano" >&2; return 0; }
+  case "$app" in *[!A-Za-z0-9_./-]*) echo "da-ipam-accessi: percorso dell'app non adatto a un'unità: $app" >&2; return 0 ;; esac
+  if [ ! -f "$unita" ] || ! grep -q -F "$app/scripts/accessi/da-ipam-accessi.sh avvio" "$unita"; then
+    sed "s|@APP_DIR@|$app|g" "$modello" > "$unita" || return 0
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  systemctl enable da-ipam-accessi.service >/dev/null 2>&1 || echo "da-ipam-accessi: unità d'avvio non abilitata: al riavvio le regole non tornano" >&2
+}
+
 disarma() { systemctl stop "$UNITA_RITORNO.timer" "$UNITA_RITORNO.service" >/dev/null 2>&1 || true; }
 
 COMANDO="${1:-anteprima}"
@@ -269,6 +286,7 @@ case "$COMANDO" in
     disarma
     carica "$RULESET" || errore "nft ha rifiutato il ruleset: niente è cambiato"
     mkdir -p "$(dirname "$BUONE")" && printf '%s\n' "$RULESET" > "$BUONE"
+    assicura_avvio
     echo "da-ipam-accessi: in osservazione (nessun pacchetto scartato)"
     ;;
   prova)
@@ -304,6 +322,7 @@ case "$COMANDO" in
     disarma
     mkdir -p "$(dirname "$BUONE")" && cp "$STATO_DIR/in-prova.nft" "$BUONE" || errore "non ho salvato le ultime buone in $BUONE"
     rm -f "$STATO_DIR/in-prova.nft" "$STATO_DIR/prima.nft"
+    assicura_avvio
     echo "da-ipam-accessi: confermato, filtro acceso"
     ;;
   annulla)

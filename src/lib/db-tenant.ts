@@ -3984,6 +3984,20 @@ export function getHostByIp(ip: string): Host | undefined {
   return db().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }
 
+/** Quante credenziali per tipo (Protezione › Stato): solo conteggi, mai un valore. */
+export function getConteggioCredenzialiPerTipo(): Array<{ tipo: string; n: number }> {
+  return db().prepare("SELECT credential_type AS tipo, COUNT(*) AS n FROM credentials GROUP BY credential_type").all() as Array<{ tipo: string; n: number }>;
+}
+
+/** Nome e IP degli host con uno di questi indirizzi (Protezione › Sistemi remoti): una query sola. */
+export function getNomiHostPerIp(indirizzi: readonly string[]): Array<{ ip: string; nome: string | null }> {
+  if (indirizzi.length === 0) return [];
+  const lista = indirizzi.slice(0, 500);
+  return db()
+    .prepare(`SELECT ip, COALESCE(NULLIF(custom_name, ''), NULLIF(hostname, '')) AS nome FROM hosts WHERE ip IN (${lista.map(() => "?").join(",")})`)
+    .all(...lista) as Array<{ ip: string; nome: string | null }>;
+}
+
 export function getHostById(id: number): HostDetail | undefined {
   const host = db().prepare(`
     SELECT h.*, n.cidr as network_cidr, n.name as network_name

@@ -123,6 +123,41 @@ export const GUIDE: Readonly<Record<string, Guida>> = {
     fonte: "I messaggi che MikroTik, Ubiquiti e Cisco mandano da soli, sentiti dalla sonda trunk.",
     vuota: "Gli annunci arrivano entro un paio di minuti. Alcuni apparati non si annunciano o hanno la funzione spenta.",
   },
+  "/protezione": {
+    serve: "Dice in una riga per strato cosa protegge questa installazione e cosa resta debole, col rimedio.",
+    passi: ["Leggi dall'alto: le righe gravi stanno in cima.", "Dove c'è un pulsante, porta alla pagina in cui si rimedia.", "Ricarica la pagina per rifare i controlli."],
+    segni: ["■ grave", "▲ da sistemare", "○ a posto", "? non letto su questa macchina"],
+    fonte: "Controlli fatti in questo momento sulla macchina: porte in ascolto, firewall, utenti, file della chiave. Mai un valore segreto.",
+    vuota: "«Non letto» vuol dire che il controllo non si è potuto fare, non che va bene. In fondo c'è l'elenco di ciò che la pagina non controlla ancora.",
+  },
+  "/protezione/porte": {
+    serve: "Elenca ogni porta su cui la macchina risponde, chi la tiene e chi oggi la può raggiungere.",
+    passi: ["Guarda prima le righe «Tutti»: sono le porte aperte a chiunque arrivi alla macchina.", "Una porta «Interna» aperta a tutti è da chiudere.", "Una porta «Non attribuita» è un servizio che DA-IPAM non conosce: va capito di chi è."],
+    segni: ["● aperta a tutti", "◐ solo NetBird", "○ solo la macchina", "▲ da guardare"],
+    fonte: "Le porte in ascolto della macchina e quelle pubblicate dai container, lette adesso.",
+    vuota: "Senza l'elenco delle porte la pagina dice «non letto»: succede solo fuori da un'appliance.",
+  },
+  "/protezione/utenti": {
+    serve: "Mostra chi può entrare in DA-IPAM, con quale ruolo e se usa la seconda verifica.",
+    passi: ["Controlla gli amministratori con la seconda verifica spenta.", "Guarda chi non entra da molto: un'utenza che non serve si toglie.", "«Gestisci utenti» porta dove si creano e si cambiano."],
+    segni: ["▲ amministratore senza seconda verifica", "○ accesa", "– spenta, utente senza diritti di amministratore"],
+    fonte: "Gli utenti di questa installazione e la data dell'ultimo accesso.",
+    vuota: "C'è sempre almeno l'utente con cui stai guardando.",
+  },
+  "/protezione/sistemi": {
+    serve: "Mostra i sistemi che in questo momento hanno una connessione aperta con la macchina, nei due versi.",
+    passi: ["Guarda le righe «Non riconosciuto»: sono indirizzi fuori dall'inventario.", "«← entra» è chi ha chiamato una nostra porta; «→ esce» chi abbiamo chiamato noi.", "«Cosa esce verso Domarc» spiega le uscite verso DA-Link, Vulcan e Zabbix."],
+    segni: ["● riconosciuto", "▲ non riconosciuto"],
+    fonte: "Le connessioni aperte adesso; i nomi vengono dall'inventario.",
+    vuota: "È una fotografia: ricarica per rifarla. Chi parla ogni tanto può non comparire.",
+  },
+  "/protezione/moduli": {
+    serve: "Elenca i container dei moduli con l'immagine, le porte e i permessi che hanno.",
+    passi: ["«Porte pubblicate» rispondono alla rete: sono le stesse di Porte presentate.", "«Solo interne» le vedono solo gli altri container.", "Guarda chi ha permessi in più o usa la rete della macchina."],
+    segni: ["■ privilegiato", "▲ permessi in più o rete della macchina"],
+    fonte: "Docker, letto adesso. Le variabili d'ambiente dei container non si leggono mai.",
+    vuota: "Senza Docker la pagina dice «non letto».",
+  },
 };
 
 /** La guida di una scheda; con `parte` quella della parte aperta, se c'è, altrimenti quella della scheda. */

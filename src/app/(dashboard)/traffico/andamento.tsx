@@ -81,8 +81,8 @@ export function Andamento({ rete, host, descrizione, onTogliHost }: { rete: stri
             <span className="flex items-center gap-1.5"><span aria-hidden className="inline-block size-3.5 rounded-sm border border-[#0D2537]" style={{ backgroundImage: TRATTEGGIO }} />Da o verso fuori</span>
           </div>
           <div className="flex gap-2">
-            <div className="relative w-16 shrink-0 text-right font-mono text-[13px] text-muted-foreground" aria-hidden>
-              {[1, 0.5, 0].map((q) => <span key={q} className="absolute right-0 translate-y-1/2 whitespace-nowrap" style={{ bottom: q * ALTEZZA }}>{q === 0 ? "0" : formattaByte(cima * q)}</span>)}
+            <div className="relative w-16 shrink-0 self-start text-right font-mono text-[13px] text-muted-foreground" style={{ height: ALTEZZA + (tagliate ? 28 : 8) }} aria-hidden>
+              {[1, 0.5, 0].map((q) => <span key={q} className="absolute right-0 translate-y-1/2 whitespace-nowrap" style={{ bottom: q * ALTEZZA }}>{q === 0 ? "0" : formattaByte(cima * q).replace(",0 ", " ")}</span>)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="relative flex items-end gap-1 border-b" style={{ height: ALTEZZA + (tagliate ? 28 : 8) }} role="img" aria-label={`Volume per ora nelle ultime 24 ore, ${formattaByte(totale)} in tutto`}>

@@ -56,6 +56,30 @@ export function formattaByte(n: number): string {
   return `${i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1).replace(".", ",")} ${unita[i]}`;
 }
 
+/** Il primo valore tondo (in unità da 1024) che contiene `n`: la cima di una scala. */
+function cimaTonda(n: number): number {
+  let unita = 1;
+  while (n / unita > 1000 && unita < 1024 ** 4) unita *= 1024;
+  const v = n / unita;
+  const dieci = 10 ** Math.floor(Math.log10(v));
+  const passo = [1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((x) => x * dieci >= v) ?? 10;
+  return passo * dieci * unita;
+}
+
+/**
+ * La cima della scala di un grafico a colonne, e se qualche colonna ne resta fuori.
+ * Le colonne più alte (al massimo tre, e non più di un quarto) che superano di oltre 3 volte quella subito sotto si tagliano:
+ * il 24/11 un'ora di backup da 516 GB rendeva illeggibili le altre ventitré.
+ */
+export function scalaColonne(valori: number[]): { cima: number; tagliate: boolean } {
+  const v = valori.filter((x) => x > 0).sort((a, b) => b - a);
+  if (v.length === 0) return { cima: 0, tagliate: false };
+  for (let i = Math.min(3, Math.floor(v.length / 4)) - 1; i >= 0; i--) {
+    if (v[i] > v[i + 1] * 3) return { cima: cimaTonda(v[i + 1]), tagliate: true };
+  }
+  return { cima: cimaTonda(v[0]), tagliate: false };
+}
+
 /** Protocollo e porta come si leggono: «tcp/502», «udp/53», «—» quando l'anomalia non ha una porta. */
 export function protoPorta(proto: number, porta: number): string {
   if (!porta) return "—";

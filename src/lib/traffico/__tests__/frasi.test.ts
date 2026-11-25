@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TIPI_ANOMALIA } from "../anomalie";
-import { fraseAnomalia, formattaByte, macAnomalia, NOME_TIPO, protoPorta, TIPI } from "../frasi";
+import { fraseAnomalia, formattaByte, macAnomalia, NOME_TIPO, protoPorta, scalaColonne, TIPI } from "../frasi";
 
 describe("parole dell'interfaccia del traffico", () => {
   it("ogni tipo di anomalia ha un nome e una frase (un tipo nuovo in anomalie.ts non resta muto)", () => {
@@ -40,5 +40,20 @@ describe("sonda avanzata (23/11)", () => {
     assert.equal(fraseAnomalia({ tipo: "tls_certificato", client: "", server: "10.0.0.2", dettaglio: { motivo: "autofirmato" } }), "Servizio con certificato autofirmato");
     assert.match(fraseAnomalia({ tipo: "password_ssh_provate", client: "10.0.0.1", server: "", dettaglio: { connessioni: 30 } }), /30 tentativi/);
     assert.equal(fraseAnomalia({ tipo: "sql_injection", client: "10.0.0.1", server: "10.0.0.2", dettaglio: {} }), "Manda richieste web con un'iniezione SQL");
+  });
+});
+
+describe("scala del grafico a colonne", () => {
+  const GB = 1024 ** 3;
+  const giorno = [2.5, 3.3, 1.2, 5.1, 6.2, 7.3, 13.2, 10.9, 28.8, 20.2, 15, 2.2].map((x) => x * GB);
+  it("un'ora di backup si taglia e le altre decidono la scala", () => {
+    assert.deepEqual(scalaColonne([...giorno, 480 * GB]), { cima: 30 * GB, tagliate: true });
+  });
+  it("senza picchi non si taglia niente", () => {
+    assert.deepEqual(scalaColonne(giorno), { cima: 30 * GB, tagliate: false });
+  });
+  it("poche colonne non si tagliano, e senza dati la cima è zero", () => {
+    assert.equal(scalaColonne([500, 1]).tagliate, false);
+    assert.deepEqual(scalaColonne([0, 0]), { cima: 0, tagliate: false });
   });
 });

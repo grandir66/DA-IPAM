@@ -352,3 +352,14 @@ altro, **vale questa sezione** (ADR 0041).
 9. **Menu** («si»): sezione «Protezione» dopo «Rete», solo admin, nove schede.
 
 Stima aggiornata: tappa 4 da 3 a 1,5 giornate, tappa 5 da 5 a 5,5 (indirizzo separato): **circa 26 giornate**.
+
+## 10. Scostamenti in corso d'opera
+
+- **Tappa 2, 25/11**: il file della politica è `/etc/da-ipam/accessi.conf` in forma `chiave=valore`, non
+  `accessi.json`: l'esecutore è bash come `firewall-wt0.sh` e un file a righe si rilegge e si rivalida
+  senza un interprete JSON. I comandi dell'esecutore sono `anteprima`, `minima`, `stato`, `osserva`,
+  `prova`, `conferma`, `annulla`, `spegni`, `avvio` (`blocca`/`sblocca` arrivano con la tappa 5).
+- La catena sta a priorità `mangle + 5`, subito prima di `inet dalink` (`mangle + 10`, letta sull'hub),
+  non a `mangle` secca.
+- Una porta diretta alla macchina fuori da ogni gruppo, a filtro acceso, non risponde (catena «altre»):
+  in osserva finisce fra chi «resterebbe fuori», così si vede prima di chiudere.

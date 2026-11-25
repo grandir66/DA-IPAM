@@ -117,7 +117,12 @@ export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: s
     case "ntlm1": return "Accesso con NTLM versione 1";
     case "nome_conteso": return typeof d.nome === "string" ? `Due host rispondono per il nome ${d.nome}` : "Due host rispondono per lo stesso nome";
     case "impianto_scrittura": return "Comando di scrittura verso un impianto";
-    case "ip_doppio": return "Due apparati rispondono per lo stesso indirizzo";
+    case "ip_doppio": {
+      const reti = numero("reti");
+      return reti !== null && reti >= 2
+        ? `Due schede rispondono per lo stesso indirizzo: probabilmente un apparato solo, la coppia risponde in ${reti} reti`
+        : "Due apparati rispondono per lo stesso indirizzo";
+    }
     case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
     case "mac_mai_visto": return "Risponde un apparato diverso da quello censito, che in rete non si è mai visto: la scheda è forse vecchia";
     case "mac_altrove": return typeof d.altrove === "string" && /^[0-9.]{7,15}$/.test(d.altrove) ? `Risponde col MAC già censito su ${d.altrove}` : "Risponde col MAC già censito su un altro indirizzo";

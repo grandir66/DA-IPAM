@@ -275,6 +275,7 @@ export function scriviAnomalie(d: Database.Database, quando: string, anomalie: A
     ON CONFLICT(tipo, client, server, proto, porta) DO UPDATE SET
       conteggio = traffico_anomalie.conteggio + 1,
       ultima_vista = MAX(traffico_anomalie.ultima_vista, excluded.ultima_vista),
+      gravita = excluded.gravita,
       dettaglio = excluded.dettaglio`);
   for (const a of anomalie) ins.run(a.tipo, a.gravita, a.client, a.server, a.proto, a.porta, JSON.stringify(a.dettaglio), quando, quando);
 }

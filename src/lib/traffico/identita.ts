@@ -84,6 +84,19 @@ export function ipDoppi(viste: VistaArp[], finestraS = FINESTRA_DOPPIO_S): Anoma
   return [...uscite.values()];
 }
 
+/**
+ * La stessa coppia di MAC che risponde su indirizzi di reti /24 diverse è un apparato solo con più schede (24/11/2026:
+ * un nodo Proxmox rispondeva in ARP anche col MAC di un suo bridge, su tre reti). L'avviso resta, a gravità bassa e con
+ * la sua frase: toglierlo nasconderebbe chi si spaccia per un altro. Pura; `reti(a, b)` = in quante /24 la coppia risponde.
+ */
+export function smorzaStessoApparato(doppi: AnomaliaNuova[], reti: (macA: string, macB: string) => number): AnomaliaNuova[] {
+  return doppi.map((a) => {
+    if (a.dettaglio.quanti !== 2) return a;
+    const quante = reti(String(a.dettaglio.mac_a), String(a.dettaglio.mac_b));
+    return quante >= 2 ? { ...a, gravita: 1, dettaglio: { ...a.dettaglio, reti: quante } } : a;
+  });
+}
+
 /** Stesso produttore vero: le prime tre coppie uguali, e il prefisso dice davvero chi ha fatto la scheda. */
 const stessoProduttore = (a: string, b: string): boolean => a.slice(0, 8) === b.slice(0, 8) && !macSenzaProduttore(a);
 
@@ -171,11 +184,17 @@ export function agganciaHost(d: Database.Database, righe: IdentitaCollector[]): 
 export function anomalieIdentita(d: Database.Database, righe: IdentitaCollector[], spento: (ip: string, tipo: "ip_doppio" | TipoMac | "vlan_sbagliata") => boolean): AnomaliaNuova[] {
   const ip = [...new Set(righe.filter((r) => r.fonte === "arp" && r.ip).map((r) => r.ip))];
   const reti = d.prepare("SELECT cidr, vlan_id FROM networks WHERE vlan_id IS NOT NULL AND vlan_id > 0").all() as { cidr: string; vlan_id: number }[];
+  const ipDiMac = d.prepare("SELECT DISTINCT ip FROM traffico_identita WHERE mac = ? AND fonte = 'arp' AND ip <> ''");
+  const retiDellaCoppia = (a: string, b: string): number => {
+    const diB = new Set((ipDiMac.all(b) as { ip: string }[]).map((r) => r.ip));
+    const comuni = (ipDiMac.all(a) as { ip: string }[]).filter((r) => diB.has(r.ip));
+    return new Set(comuni.map((r) => r.ip.slice(0, r.ip.lastIndexOf(".")))).size;
+  };
   const uscite: AnomaliaNuova[] = vlanSbagliate(righe.filter((r) => r.fonte === "arp" && r.ip), reti).filter((a) => !spento(a.client, "vlan_sbagliata"));
   for (const blocco of aBlocchi(ip)) {
     const q = blocco.map(() => "?").join(",");
     const viste = d.prepare(`SELECT ip, mac, vlan, MAX(ultima_vista) AS ultima_vista FROM traffico_identita WHERE fonte = 'arp' AND ip IN (${q}) GROUP BY ip, mac, vlan`).all(...blocco) as VistaArp[];
-    const doppi = ipDoppi(viste).filter((a) => !spento(a.client, "ip_doppio"));
+    const doppi = smorzaStessoApparato(ipDoppi(viste).filter((a) => !spento(a.client, "ip_doppio")), retiDellaCoppia);
     const conDoppio = new Set(doppi.map((a) => a.client));
     const noti = new Map((d.prepare(`SELECT ip, mac FROM hosts WHERE mac IS NOT NULL AND mac <> '' AND ip IN (${q})`).all(...blocco) as { ip: string; mac: string }[]).map((h) => [h.ip, h.mac]));
     const macVisti = [...new Set(viste.map((v) => v.mac))];

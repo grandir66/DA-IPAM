@@ -142,3 +142,25 @@ test("tappa 6: i tre fatti nuovi del collector diventano anomalie con la loro gr
   assert.deepEqual(a.map((x) => [x.tipo, x.gravita]), [["tls_certificato", 2], ["dns_errori", 1]]);
   assert.equal(fraseAnomalia(a[0]), "Servizio con certificato scaduto il 01/01/2025");
 });
+
+test("IP doppio: la stessa coppia di MAC in reti diverse è un apparato solo, gravità bassa; un conflitto vero resta alto", async () => {
+  const T2 = "TRAFFIDSCHEDE";
+  try {
+    await withTenant(T2, async () => {
+      const d = dbTraffico();
+      creaCollector({ nome: "banco", sede: "", url: "https://192.168.99.89:8477", gettone: "g", impronta: "AA" });
+      const avvisi = () => d.prepare("SELECT client, gravita FROM traffico_anomalie WHERE tipo = 'ip_doppio' ORDER BY client").all();
+      const coppia = (ip: string, a = "dd:dd:dd:dd:dd:01", b = "dd:dd:dd:dd:dd:02") => [voce(a, ip, "arp"), voce(b, ip, "arp")];
+      // una rete sola: potrebbe essere un conflitto vero; due indirizzi nella stessa rete non bastano
+      const prime = [...coppia("10.7.1.5"), ...coppia("10.7.1.6"), ...coppia("10.7.1.9", "ee:ee:ee:ee:ee:01", "ee:ee:ee:ee:ee:02")];
+      await sincronizzaTraffico(finto(prime));
+      assert.deepEqual(avvisi(), [{ client: "10.7.1.5", gravita: 3 }, { client: "10.7.1.6", gravita: 3 }, { client: "10.7.1.9", gravita: 3 }]);
+      // la coppia compare in un'altra rete: gli avvisi già nati scendono alla prossima vista
+      await sincronizzaTraffico(finto([...prime, ...coppia("10.7.2.5"), ...coppia("10.7.1.5")]));
+      assert.deepEqual(avvisi(), [{ client: "10.7.1.5", gravita: 1 }, { client: "10.7.1.6", gravita: 3 }, { client: "10.7.1.9", gravita: 3 }, { client: "10.7.2.5", gravita: 1 }]);
+    });
+  } finally {
+    closeTenantDb(T2);
+    deleteTenantDatabase(T2);
+  }
+});

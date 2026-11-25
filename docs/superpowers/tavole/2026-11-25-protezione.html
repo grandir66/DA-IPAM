@@ -72,17 +72,16 @@ h2 small{font-weight:400;color:var(--mf);font-size:14px}
   <!-- fila unica di schede -->
   <div class="fila">
     <span class="n">2</span>
-    <span class="grp">Accessi</span>
+    <span class="sch">Stato della protezione</span>
     <span class="sch on">Porte presentate</span>
     <span class="sch">Chi può collegarsi</span>
     <span class="sch">Utenti</span>
-    <span class="sch">Registro accessi</span>
     <span class="sch">Sistemi remoti</span>
     <span class="sch">Moduli e container</span>
     <span class="stacco"></span>
-    <span class="grp">Esche</span>
     <span class="sch">Esche</span>
-    <span class="sch">Intrusioni e blocchi</span>
+    <span class="sch">Tentativi e blocchi</span>
+    <span class="sch">Registro accessi</span>
     <span class="sch aiuto"><span class="n">3</span>ⓘ Come si usa</span>
   </div>
 
@@ -91,11 +90,11 @@ h2 small{font-weight:400;color:var(--mf);font-size:14px}
     <span class="n">4</span>
     <b>Filtro degli accessi</b>
     <span class="pill giallo">◐ Osserva</span>
-    <span class="nota">conta chi resterebbe fuori, non blocca nessuno · dal 25/11 09:10</span>
+    <span class="nota">installazione NON ancora protetta: conta chi resterebbe fuori</span>
     <span class="stacco"></span>
     <b>Esche</b>
     <span class="pill pieno">● Accese · 4</span>
-    <span class="nota">blocco automatico: spento</span>
+    <span class="stacco"></span><b>Tentativi oggi</b><span class="pill giallo">▲ 41 · 2 bloccati</span>
     <span style="margin-left:auto;display:flex;gap:8px">
       <span class="btn">Anteprima</span>
       <span class="btn pri">Applica in prova (2 minuti)</span>
@@ -140,8 +139,27 @@ h2 small{font-weight:400;color:var(--mf);font-size:14px}
     </div>
   </div>
 
-  <h2>Le altre sette schede <small>stessa fila, stessa barra di stato; qui il centro di ognuna</small></h2>
+  <h2>Le altre otto schede <small>stessa fila, stessa barra di stato; qui il centro di ognuna</small></h2>
   <div class="griglia">
+
+    <div class="pan" style="grid-column:1/-1">
+      <h3><span class="n">18</span><span class="nome">Stato della protezione</span> Cosa è chiuso, cosa resta debole e come si rimedia <small>ogni riga è calcolata su questa macchina</small></h3>
+      <table>
+        <tr><th>Strato</th><th>Stato</th><th>Cosa vuol dire, in parole semplici</th><th>Gravità</th><th>Rimedio</th></tr>
+        <tr><td><b>Filtro di rete</b></td><td><span class="pill giallo">▲ osserva</span></td><td>Chiunque nella rete arriva a 7 porte di questa macchina.</td><td><span class="pill pieno">■ alta</span></td><td><span class="btn pri">Accendi il filtro</span></td></tr>
+        <tr><td><b>Porte interne</b></td><td><span class="pill pieno">● chiuse</span></td><td>DA-IPAM e lo Scanner-Edge rispondono solo dentro la macchina.</td><td>—</td><td></td></tr>
+        <tr><td><b>Seconda verifica</b></td><td><span class="pill giallo">▲ 1 admin senza</span></td><td>Un amministratore entra con la sola password.</td><td><span class="pill pieno">■ alta</span></td><td><span class="btn pri">Rendila obbligatoria</span></td></tr>
+        <tr><td><b>SSH</b></td><td><span class="pill giallo">▲ da ogni indirizzo</span></td><td>Solo a chiave, ma la porta risponde a tutta la rete.</td><td><span class="pill giallo">▲ media</span></td><td><span class="btn">Solo dai canali di gestione</span></td></tr>
+        <tr><td><b>Chiave delle credenziali</b></td><td><span class="pill giallo">▲ sullo stesso disco</span></td><td>Chi copia la macchina o un suo backup ha i dati e la chiave per leggerli.</td><td><span class="pill pieno">■ alta</span></td><td><span class="btn">Apri il vault a slot</span> <span class="nota">volume cifrato: nelle installazioni nuove</span></td></tr>
+        <tr><td><b>Backup</b></td><td><span class="pill pieno">● cifrato</span></td><td>Ultimo ripristino di prova: mai fatto.</td><td><span class="pill giallo">▲ media</span></td><td><span class="btn">Prova il ripristino</span></td></tr>
+        <tr><td><b>Segreti in chiaro</b></td><td><span class="pill giallo">▲ 2 trovati</span></td><td>Due file di un modulo contengono una password leggibile. <span class="nota">Mostra dove, mai il valore.</span></td><td><span class="pill giallo">▲ media</span></td><td><span class="btn">Vedi dove</span></td></tr>
+        <tr><td><b>Credenziali dei sistemi</b></td><td><span class="pill giallo">▲ 3 rilievi</span></td><td>Una password è usata su 14 apparati · 6 apparati letti con SNMP v2c · 1 con telnet.</td><td><span class="pill giallo">▲ media</span></td><td><span class="btn">Vai alle credenziali</span></td></tr>
+        <tr><td><b>Aggiornamenti</b></td><td><span class="pill pieno">● firmati</span></td><td>Entra solo codice con la firma di Domarc.</td><td>—</td><td></td></tr>
+        <tr><td><b>Registro</b></td><td><span class="pill pieno">● in sola aggiunta</span></td><td>Chi prende l'applicazione non cancella le proprie tracce; copia fuori dalla macchina.</td><td>—</td><td></td></tr>
+        <tr><td><b>Servizio</b></td><td><span class="pill giallo">▲ gira come root</span></td><td>Un difetto dell'applicazione vale tutta la macchina.</td><td><span class="pill giallo">▲ media</span></td><td class="nota">in programma (piano del 14/11)</td></tr>
+      </table>
+      <div class="azioni"><span class="btn">Ricontrolla ora</span><span class="nota">ultimo controllo 16:40 · 4 strati a posto, 7 da sistemare</span></div>
+    </div>
 
     <div class="pan">
       <h3><span class="n">10</span><span class="nome">Chi può collegarsi</span> Elenchi di indirizzi per gruppo di porte</h3>
@@ -170,7 +188,7 @@ h2 small{font-weight:400;color:var(--mf);font-size:14px}
     </div>
 
     <div class="pan">
-      <h3><span class="n">12</span><span class="nome">Registro accessi</span> Tutto in una tabella, 400 giorni</h3>
+      <h3><span class="n">12</span><span class="nome">Registro accessi</span> Chi è entrato e chi ha cambiato cosa, 400 giorni</h3>
       <table>
         <tr><th>Quando</th><th>Cosa</th><th>Chi</th><th>Da</th><th>Dove</th><th>Esito</th></tr>
         <tr><td class="mono">16:02:11</td><td>Login</td><td>m.rossi</td><td class="mono">198.51.100.14</td><td>Pagina web</td><td><span class="pill pieno">● riuscito</span></td></tr>
@@ -223,34 +241,38 @@ h2 small{font-weight:400;color:var(--mf);font-size:14px}
     </div>
 
     <div class="pan" style="grid-column:1/-1">
-      <h3><span class="n">16</span><span class="nome">Intrusioni e blocchi</span> Chi ha toccato un'esca, e cosa ne abbiamo fatto</h3>
+      <h3><span class="n">16</span><span class="nome">Tentativi e blocchi</span> Ogni tentativo, da tutte le strade, e cosa ne abbiamo fatto</h3>
       <table>
-        <tr><th>Indirizzo</th><th>Apparato in inventario</th><th>Esche toccate</th><th>Tentativi</th><th>Utenti provati</th><th>Primo · ultimo</th><th>Stato</th><th>Azioni</th></tr>
-        <tr><td class="mono">192.0.2.143</td><td>PC-AMM-07 · porta 14 di sw-piano1</td><td>Telnet, RDP</td><td class="mono">27</td><td class="mono">admin, root, user</td><td class="mono">15:02 · 15:09</td><td><span class="pill pieno">■ bloccato · scade 16:09</span></td><td><span class="btn">Sblocca</span> <span class="btn">Non bloccare mai</span> <span class="btn pri">Proponi isolamento della porta</span></td></tr>
-        <tr><td class="mono">203.0.113.90</td><td class="nota">sconosciuto</td><td>Telnet</td><td class="mono">4</td><td class="mono">admin</td><td class="mono">14:40 · 14:41</td><td><span class="pill giallo">▲ allerta</span></td><td><span class="btn pri">Blocca ora</span> <span class="btn">Non bloccare mai</span></td></tr>
-        <tr><td class="mono">192.0.2.8</td><td>questa appliance · Scanner-Edge</td><td>tutte</td><td class="mono">212</td><td>—</td><td class="mono">02:00 · 02:14</td><td><span class="pill vuoto">○ nostro scanner, non conta</span></td><td class="nota">nell'elenco «mai bloccati»</td></tr>
+        <tr><th>Indirizzo</th><th>Apparato in inventario</th><th>Strada</th><th>Tentativi</th><th>Utenti provati</th><th>Primo · ultimo</th><th>Stato</th><th>Azioni</th></tr>
+        <tr><td class="mono">192.0.2.143</td><td>PC-AMM-07 · porta 14 di sw-piano1</td><td>Esche: Telnet, RDP</td><td class="mono">27</td><td class="mono">admin, root, user</td><td class="mono">15:02 · 15:09</td><td><span class="pill pieno">■ bloccato · scade 16:09</span></td><td><span class="btn">Sblocca</span> <span class="btn">Non bloccare mai</span> <span class="btn pri">Proponi isolamento della porta</span></td></tr>
+        <tr><td class="mono">203.0.113.90</td><td class="nota">sconosciuto</td><td>Esca: Telnet</td><td class="mono">4</td><td class="mono">admin</td><td class="mono">14:40 · 14:41</td><td><span class="pill giallo">▲ allerta</span></td><td><span class="btn pri">Blocca ora</span> <span class="btn">Non bloccare mai</span></td></tr>
+        <tr><td class="mono">203.0.113.77</td><td class="nota">sconosciuto</td><td>Pagina web: login</td><td class="mono">12</td><td class="mono">admin</td><td class="mono">15:55 · 15:58</td><td><span class="pill pieno">■ bloccato · scade 16:58</span></td><td><span class="btn">Sblocca</span> <span class="btn">Non bloccare mai</span></td></tr>
+        <tr><td class="mono">192.0.2.119</td><td>NAS-UFFICIO</td><td>API: gettone sbagliato</td><td class="mono">40</td><td>—</td><td class="mono">13:10 · 15:50</td><td><span class="pill giallo">▲ allerta</span></td><td><span class="btn pri">Blocca ora</span> <span class="btn">Non bloccare mai</span></td></tr>
+        <tr><td class="mono">198.51.100.201</td><td class="nota">sconosciuto</td><td>SSH · filtro di rete</td><td class="mono">31</td><td class="mono">root</td><td class="mono">15:41 · 15:44</td><td><span class="pill vuoto">○ scartato dal filtro</span></td><td><span class="btn pri">Blocca ora</span></td></tr>
+        <tr><td class="mono">192.0.2.8</td><td>questa appliance · Scanner-Edge</td><td>Esche: tutte</td><td class="mono">212</td><td>—</td><td class="mono">02:00 · 02:14</td><td><span class="pill vuoto">○ nostro scanner, non conta</span></td><td class="nota">nell'elenco «mai bloccati»</td></tr>
       </table>
-      <div class="azioni"><span class="n">17</span><b>Soglie</b><span class="sel">Allerta: 3 contatti in 10 minuti</span><span class="sel">Blocco: 2 esche diverse o 10 tentativi</span><span class="sel">Durata: 1 ora, poi 24 ore, poi 7 giorni</span><span class="sel">Blocco automatico: spento</span><span class="sel">Avvisa: email + webhook</span><span class="nota" style="margin-left:auto">Conta solo chi ha completato la connessione · al massimo 500 bloccati</span></div>
+      <div class="azioni"><span class="n">17</span><b>Soglie</b><span class="sel">Strada: tutte</span><span class="sel">Allerta: 3 contatti in 10 minuti</span><span class="sel">Blocco: 2 esche diverse o 10 tentativi</span><span class="sel">Durata: 1 ora, poi 24 ore, poi 7 giorni</span><span class="sel">Blocco automatico: spento</span><span class="sel">Avvisa: email + webhook</span><span class="nota" style="margin-left:auto">Conta solo chi ha completato la connessione · al massimo 500 bloccati</span></div>
     </div>
   </div>
 
   <div class="spiega">
     <p><span class="n">1</span><span>Voce nuova «Protezione» nel menu, dopo «Rete», solo per gli amministratori.</span></p>
-    <p><span class="n">2</span><span>Otto schede in una fila sola, niente seconda fila e niente riga di titolo. Due gruppi: Accessi, Esche.</span></p>
+    <p><span class="n">2</span><span>Nove schede in una fila sola, niente seconda fila e niente riga di titolo.</span></p>
     <p><span class="n">3</span><span>«Come si usa», in fondo alla fila come in Topologia e Rete; dice anche come sbloccarsi dalla console.</span></p>
-    <p><span class="n">4</span><span>Barra di stato uguale in tutte le schede: filtro spento · osserva · acceso; esche; i tre pulsanti che contano.</span></p>
+    <p><span class="n">4</span><span>Barra di stato uguale in tutte le schede: filtro osserva · acceso · emergenza; esche; tentativi di oggi; i tre pulsanti che contano.</span></p>
     <p><span class="n">5</span><span>Quattro numeri: porte presentate, aperte a tutti, chi resterebbe fuori, bloccati.</span></p>
     <p><span class="n">6</span><span>Schede di rete con i loro indirizzi: sceglierne una filtra la tabella. NetBird si vede ma lo governa DA-Link.</span></p>
     <p><span class="n">7</span><span>Ogni porta che la macchina presenta: chi la tiene, di quale modulo è, chi la raggiunge oggi.</span></p>
-    <p><span class="n">8</span><span>L'unica cosa che si cambia qui: da chi è raggiungibile (Tutti · Solo gli elenchi · Nessuno).</span></p>
+    <p><span class="n">8</span><span>L'unica cosa che si cambia qui: da chi è raggiungibile (Solo gli elenchi · Nessuno; «Tutti» solo con conferma).</span></p>
     <p><span class="n">9</span><span>Legenda dei segni: forma e chiaro/scuro, non solo colore.</span></p>
     <p><span class="n">10</span><span>Gli elenchi di indirizzi, IPv4 e IPv6, con scadenza. In fondo chi resterebbe fuori, con «Ammetti».</span></p>
     <p><span class="n">11</span><span>Utenti: da dove può entrare ognuno. Creare e cambiare password resta in Impostazioni › Utenti.</span></p>
-    <p><span class="n">12</span><span>Un registro solo: login, SSH, scarti del filtro, cambi alla protezione.</span></p>
+    <p><span class="n">12</span><span>Registro: chi è entrato, cambi alla protezione, scarichi. L'applicazione non lo può riscrivere.</span></p>
     <p><span class="n">13</span><span>Sistemi remoti nei due versi; quelli non riconosciuti si riconoscono con un clic.</span></p>
     <p><span class="n">14</span><span>Per ogni modulo: container, immagine, porte fuori e dentro, permessi in più.</span></p>
     <p><span class="n">15</span><span>Esche da un elenco chiuso; una porta vera non si può prendere.</span></p>
-    <p><span class="n">16</span><span>Chi ha toccato un'esca, legato all'apparato e alla porta dello switch quando l'inventario lo sa.</span></p>
+    <p><span class="n">16</span><span>Tutti i tentativi: pagina web, API, SSH, filtro, esche; legati all'apparato e alla porta dello switch quando l'inventario lo sa.</span></p>
+    <p><span class="n">18</span><span>La prima scheda: ogni strato di difesa e ogni debolezza che resta, con gravità e rimedio. Mai un valore segreto a schermo.</span></p>
     <p><span class="n">17</span><span>Soglie, durata e avvisi in una riga; il blocco automatico nasce spento.</span></p>
   </div>
 </main>

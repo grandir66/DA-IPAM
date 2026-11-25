@@ -1,13 +1,14 @@
 # TASKS — DA-IPAM
 
-## 2026-11-25 — Protezione dell'appliance: accessi ed esche (Riccardo, da approvare; zona rossa → livello completo)
+## 2026-11-25 — Protezione delle installazioni: accessi chiusi, avvisi, esche (Riccardo, da approvare; zona rossa → livello completo)
 
-Riccardo, 25/11: «vorrei aprire un ramo per una funzione di sicurezza di da-ipam. vorrei che dall'UI si potesse gestire l'accesso al sistema impostando filtri sugli ip che possono collegarsi e le porte presentate. vorrei schede in cui le funzioni di sicurezza di IPAM sono chiare e modificabili» (A: IP e porte presentate, IP ammessi, utenti, log degli accessi, sistemi remoti, immagini interne con le porte; B: honeypot con log, alert, ban e «traffico di contrasto»).
-Piano: `docs/superpowers/plans/2026-11-25-sicurezza-accessi-honeypot.md`. Tavola: `docs/superpowers/tavole/2026-11-25-protezione.html`. Ramo `feat/sicurezza-accessi-honeypot` (da `origin/dev`, non pubblicato su `dev`). **Niente codice finché Riccardo non approva.**
-- [x] Ramo, censimento del codice e della VM 533 in sola lettura (25/11; il censimento della macchina sta fuori dal repo, che è pubblico), piano e tavola a 1920.
-- [ ] Riccardo risponde alle otto domande del piano (§7): dove si accende, moduli nel perimetro, cosa intende per contrasto (proposta: solo difesa sul nostro lato, niente traffico verso chi attacca), chi è sempre ammesso, quali esche, guasto aperto o chiuso, blocco degli indirizzi interni, nome e posto nel menu.
-- [ ] Tappa 0: ADR. Tappa 1: schede in sola lettura. Tappa 2: esecutore e filtro con prova a tempo. Tappa 3: esche in solo allerta. Tappa 4: blocco. Tappa 5: collaudo (laboratorio, poi hub in «osserva» una settimana). Stima: circa 20 giornate, 4-5 settimane.
-- Da verificare alla fonte nella tappa 2: che la catena sul prerouting a priorità −150 veda la porta vera delle porte pubblicate da Docker; non si è provato niente, nessun firewall è stato toccato.
+Riccardo, 25/11: «vorrei che dall'UI si potesse gestire l'accesso al sistema impostando filtri sugli ip che possono collegarsi e le porte presentate. vorrei schede in cui le funzioni di sicurezza di IPAM sono chiare e modificabili» (A accessi, B honeypot con log, alert, ban e «traffico di contrasto»). Poi: «vorrei garantire che gli ipam installati non siano facilmente vulnerabili chiudendo ogni strada di accesso a chi non è autorizzato e fornendo anche sistemi di alert delle tentate violazioni»; «deve essere un sistema estremamente protetto, contiene troppe informazioni critiche». Sulle credenziali: non un gestore in più, ma le debolezze che restano nella loro conservazione, col rimedio.
+Piano: `docs/superpowers/plans/2026-11-25-sicurezza-accessi-honeypot.md`. Tavola: `docs/superpowers/tavole/2026-11-25-protezione.html`. Ramo `feat/sicurezza-accessi-honeypot` (da `origin/dev`, non pubblicato). **Niente codice finché Riccardo non approva.** Criterio: chiuso di serie. Lo strato «dati a riposo» resta nel piano del 14/11 qui sotto (P0-3, P0-4, P1-5): questo piano lo cita e ne mostra lo stato.
+- [x] Ramo, censimento del codice e della VM 533 in sola lettura (il censimento della macchina sta fuori dal repo, che è pubblico), piano e tavola a 1920 (25/11).
+- [x] Piano rifatto sullo scopo detto da Riccardo: minacce, tutte le strade d'ingresso con chiusura e avviso, strati con costo e priorità, scheda «Stato della protezione» (25/11).
+- [ ] Riccardo risponde alle nove domande del piano (§9).
+- [ ] Tappe: 0 ADR · 1 vedere · 2 chiudere la rete · 3 avvisare · 4 stringere l'accesso · 5 esche e blocco · 6 collaudo. Stima: circa 27 giornate, 6 settimane.
+- Da verificare alla fonte (non provato): che la catena sul prerouting a priorità −150 veda la porta vera delle porte pubblicate da Docker; la guardia di `/ws/ssh`; che `/api/setup` non risponda dopo la prima configurazione; tre colonne (`snmp_community`, `community_string`, `api_token`) senza suffisso cifrato.
 
 ## 2026-11-24 — IPAM ridotto su mini PC economico (Riccardo, analisi)
 

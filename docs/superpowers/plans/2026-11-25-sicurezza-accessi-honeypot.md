@@ -1,22 +1,69 @@
-# Protezione dell'appliance: accessi ed esche — censimento e piano
+# Protezione delle installazioni di DA-IPAM: accessi chiusi, avvisi, esche — censimento e piano
 
 > Riccardo, 25/11/2026: «vorrei che dall'UI si potesse gestire l'accesso al sistema impostando
 > filtri sugli ip che possono collegarsi e le porte presentate. vorrei schede in cui le funzioni di
-> sicurezza di IPAM sono chiare e modificabili»: A) gestione degli accessi (1 IP e porte presentate,
-> 2 IP che possono accedere, 3 utenti, 4 log degli accessi, 5 sistemi remoti che parlano, 6 immagini
-> interne con le porte, tutti i moduli); B) honeypot (1 finti servizi, 2 log di chi si collega, alert
-> su violazioni multiple, ban, «traffico di contrasto»).
+> sicurezza di IPAM sono chiare e modificabili» (A accessi, B honeypot). Poi, lo stesso giorno:
+> «vorrei garantire che gli ipam installati non siano facilmente vulnerabili chiudendo ogni strada di
+> accesso a chi non è autorizzato e fornendo anche sistemi di alert delle tentate violazioni» e
+> «deve essere un sistema estremamente protetto, contiene troppe informazioni critiche».
+> Sulle credenziali: non un gestore in più, ma dire in chiaro **quali punti deboli restano** nella
+> loro conservazione, col rimedio.
 >
-> **Solo piano: niente codice applicativo finché Riccardo non approva** le domande della §7, la
+> **Solo piano: niente codice applicativo finché Riccardo non approva** le domande della §9, la
 > tavola (`docs/superpowers/tavole/2026-11-25-protezione.html`) e il livello.
 > Ramo `feat/sicurezza-accessi-honeypot`, da `origin/dev`. Niente su `dev` prima del suo sì.
-> Livello proposto: **Completo** (zona rossa: accesso, autenticazione, appliance dei clienti).
-> Il repo è pubblico: il censimento della macchina vera (porte, indirizzi, cosa oggi è aperto) sta
-> fuori da git, nelle note della sessione; qui solo ciò che vale per ogni installazione.
+> Livello proposto: **Completo** (zona rossa: accesso, autenticazione, cifratura, appliance dei clienti).
+> Il repo è pubblico: i punti deboli veri di una macchina vera non stanno in file versionati; si
+> vedono a schermo nell'app e nel resoconto a Riccardo. Qui solo ciò che vale per ogni installazione.
 
-## 1. Censimento (25/11/2026, `dev` a `6df040e7`)
+## 0. Scopo e criterio
 
-### Cosa c'è già nel codice
+Proteggere **le installazioni** (le appliance dai clienti, non solo l'hub). Criterio di progetto:
+**chiuso di serie**. Tutto è negato tranne ciò che è dichiarato ammesso: indirizzi, porte, utenti,
+sistemi remoti. Dove oggi una cosa è aperta per comodità, sta nella tabella della §2 con la sua chiusura.
+Ogni strada ha anche il suo **avviso** quando qualcuno ci prova.
+
+Questo piano è lo strato «perimetro e avvisi». Lo strato «dati a riposo» è il **piano del 14/11**
+(`TASKS.md`, «Piano di sicurezza: appliance autonoma»: P0-3 volume cifrato, P0-4 backup cifrati,
+P1-5 servizio non root): non si ricopia, si cita, e la scheda «Stato della protezione» ne mostra l'avanzamento.
+
+## 1. Cosa si protegge, da chi
+
+Da proteggere: credenziali dei sistemi dei clienti · mappa della rete e inventario · vulnerabilità
+trovate · gettoni verso Vulcan, DA-Link, Edge · il registro stesso.
+
+| Chi attacca | Cosa c'è già | Cosa manca (questo piano, salvo nota) |
+| --- | --- | --- |
+| Uno nella rete del cliente | login con freno ai tentativi, seconda verifica possibile, rotte tutte censite con la loro guardia, SSH solo a chiave | filtro per indirizzo sulle porte (oggi le reti locali le vedono tutte), avviso sui tentativi, esche |
+| Una macchina del cliente compromessa (ha un indirizzo «buono») | come sopra | elenchi stretti per gruppo di porte, limite di velocità, seconda verifica obbligatoria, «solo da questi indirizzi» per utente, esche e blocco |
+| Chi ruba la VM o un suo backup | cifratura AES-256-GCM dei segreti nel database, vault locale a slot (ADR 0034) dove acceso | chiave sullo stesso disco finché non c'è il volume cifrato: **piano 14/11, P0-3 e P0-4**. Qui: dirlo a schermo |
+| Un utente dell'app con pochi diritti | due ruoli, proiezioni per ruolo (P0-1), conferma per le azioni gravi | il terminale e le console dei moduli restano strade larghe: elenco per utente, registro che l'app non può riscrivere |
+| Chi manomette l'aggiornamento | rilasci firmati, guardia «blocca» di serie (ADR 0039, 0040) | avviso quando una firma è rifiutata |
+| Chi arriva da un canale di gestione (NetBird) | `inet dalink`: su `wt0` solo 22, 443 (6443 con l'edge), sorgenti dichiarabili | avviso su ciò che `inet dalink` scarta |
+
+## 2. Tutte le strade d'ingresso di un'installazione
+
+Com'è fatta un'appliance uscita dall'installatore (quello che è aperto su una macchina vera sta nelle
+note fuori dal repo).
+
+| Strada | Aperta a chi, di serie | Come si chiude | Avviso su |
+| --- | --- | --- | --- |
+| Pagina web e API (443, nginx in container) | ogni indirizzo che raggiunge la macchina | gruppo «Pagina web»: solo gli elenchi | login rifiutati e bloccati (già registrati), connessioni scartate |
+| Rotte senza sessione: `health`, `version`, `setup`, `lock-state`, `passo-uno`, script d'installazione dell'agente | chiunque arrivi alla 443 | stesso filtro di rete; `setup` risponde solo finché non esiste un utente (da verificare alla fonte) | chiamate ripetute, `setup` chiamata dopo la prima configurazione |
+| Rotte a gettone: consegna dell'inventario, collector, edge | chi ha un gettone, da qualunque indirizzo | gruppo «Ricezione dati»: indirizzi dei sistemi riconosciuti | gettone sbagliato, gettone giusto da indirizzo nuovo |
+| Terminale SSH nel browser (`/ws/ssh`, fuori dal filtro di sessione delle pagine: guardia sua, da verificare alla fonte) | chi ha una sessione | elenco di chi può usarlo, conferma recente | ogni apertura |
+| SSH (22) | ogni indirizzo; solo a chiave | gruppo «SSH»: solo canali di gestione | tentativi falliti (journal di sshd), accesso riuscito da indirizzo nuovo |
+| Console dei moduli (una porta per modulo: Edge, LibreNMS, MeshCentral, Wazuh, Graylog, MDM) | ogni indirizzo | gruppo «Console dei moduli»: solo gli elenchi | connessioni scartate |
+| Ricezione dati dei moduli (syslog, trap SNMP, NetFlow/sFlow, agenti) | ogni indirizzo | gruppo «Ricezione dati»: solo gli apparati dell'inventario e i sistemi riconosciuti | sorgente non in inventario |
+| Porte interne (3001 di DA-IPAM, 8080 dell'Edge) | dipende da `DALINK_FW_PORTE_INTERNE` (nasce «aperte») | diventa «chiuse» di serie | connessioni scartate |
+| NetBird / DA-Link (`wt0`) | ciò che ammette `inet dalink` | resta di DA-Link; sorgenti dichiarate | scarti su `wt0` |
+| Aggiornamento automatico (timer, git) | esce verso l'origine; entra solo codice firmato | già chiuso (firma) | firma rifiutata |
+| Uscite: DA-Link, Vulcan, Zabbix, DNS, feed | — | non si filtrano in questa tappa; elenco in «Sistemi remoti» | destinazione mai vista (tappa successiva) |
+| Console della VM | chi ha il Proxmox | fuori dal perimetro: è la via di salvataggio | — |
+| File sul disco (`.env.local`, database, chiavi, `.env` dei moduli) | root; l'app è root | piano 14/11 (P0-3, P1-5); qui: controllo dei permessi e riga in «Stato della protezione» | permessi cambiati |
+| Credenziali dell'installatore | `ENCRYPTION_KEY` e `AUTH_SECRET` nascono casuali; primo avvio col codice (P0-2) | controllo che non restino password iniziali o di fabbrica dei moduli | — |
+
+## 3. Cosa c'è già nel codice (censimento, `dev` a `6df040e7`)
 
 | Area | Dove | Cosa fa oggi |
 | --- | --- | --- |
@@ -31,24 +78,32 @@
 | Servizio | `deploy/da-invent.service` | l'app gira **come root** (serve a nmap); nginx in container termina il TLS e passa `X-Real-IP` |
 | Interfaccia | `components/shared/console.tsx`, `forma-scheda.ts`, `come-si-usa.tsx`, `lib/menu/sezioni.ts` | mattoni, fila unica di schede, «Come si usa» |
 
-Non c'è niente di: filtro sugli indirizzi per le reti locali, elenco delle porte presentate, esche, blocco
-di indirizzi, fail2ban.
+| Credenziali dei sistemi | `credentials`, `host_credentials`, `device_credential_bindings`, `src/lib/credentials/`, `crypto.ts` | AES-256-GCM, chiave derivata da `ENCRYPTION_KEY` di `.env.local` (stesso disco) oppure chiave dei dati aperta dagli slot del vault locale (`DA_VAULT_LOCALE=1`, ADR 0034); maschere in uscita (`maschera.ts`) |
+| Vault | `src/lib/vault/` | archivio locale, lettura da DA-Link (`dalink.ts`), esportazione KeePass, ricifra, recupero |
+| Scarichi | `accesso/registro-scarichi.ts` | chi ha scaricato database o pacchetto |
+| Rotte | `lib/permessi/rotte.ts`, `docs/auth-matrix.md` | ogni rotta censita con la sua guardia; una prova fallisce se una resta scoperta |
+| Sessione | `auth.config.ts`, `accesso/sessione.ts` | 8 ore, revoca vera (uscita, ruolo, utente tolto) |
+| Aggiornamento | `deploy/da-invent-update.*`, ADR 0039-0040 | timer, rilasci firmati, guardia «blocca» |
 
-### Cosa si è visto sulla macchina (in generale, vale per le appliance fatte come l'hub)
+Colonne nel database con un segreto: una ventina fra istanza e hub, tutte col suffisso cifrato o
+con l'impronta, **tranne tre nomi da verificare alla fonte** (`snmp_community`, `community_string`,
+`api_token`: se sono in chiaro è una riga della scheda «Stato della protezione», non di questo file).
 
-- Le porte dei moduli sono **pubblicate da Docker** (nginx: 80, 443 e una porta per modulo). Docker le
-  inoltra con un DNAT nel prerouting: **non passano dalla catena INPUT**, passano dal FORWARD. Una
-  regola su INPUT (o UFW) non le filtra. La catena `DOCKER-USER` c'è ed è vuota.
-- Sulle reti locali non c'è un filtro per indirizzo sorgente; il solo filtro vero è quello su `wt0`.
-- NetBird mette un `accept` di `wt0` in cima alle catene di input che trova (visto sul pilota il 15/10):
-  per questo `inet dalink` sta sul prerouting.
-- IPv6 è acceso (solo link-local), e Docker ascolta anche su `[::]`.
-- Lo Scanner-Edge è un container in rete `host` con `NET_ADMIN`/`NET_RAW`: le sue scansioni escono
-  dalla macchina stessa.
+Non c'è niente di: filtro per indirizzo sulle reti locali, elenco delle porte presentate, avvisi sui
+tentativi, esche, blocco di indirizzi, registro che l'app non possa riscrivere.
 
-## 2. Architettura proposta
+### Cosa vale per ogni appliance fatta come l'hub
 
-### 2.1 Dove si filtra: una tabella nostra sul prerouting
+- Le porte dei moduli sono **pubblicate da Docker** con un DNAT nel prerouting: **non passano da
+  INPUT**, passano dal FORWARD. Una regola su INPUT o UFW non le filtra. `DOCKER-USER` c'è ed è vuota.
+- NetBird mette un `accept` di `wt0` in cima alle catene di input che trova (pilota, 15/10): per
+  questo `inet dalink` sta sul prerouting.
+- IPv6 è acceso (solo link-local) e Docker ascolta anche su `[::]`.
+- Lo Scanner-Edge è un container in rete `host` con `NET_ADMIN`/`NET_RAW`.
+
+## 4. Architettura proposta
+
+### 4.1 Dove si filtra: una tabella nostra sul prerouting
 
 Una tabella nftables propria, `inet daipam_accessi`, con una catena sul **prerouting a priorità
 mangle (−150)**, cioè **prima del DNAT di Docker**. Lì il pacchetto ha ancora la porta e l'indirizzo
@@ -67,7 +122,7 @@ Forma della catena, sempre in quest'ordine (l'ordine è nel codice, non in confi
 1. `iifname "lo"`, bridge di Docker, connessioni già aperte o correlate → passano.
 2. `iifname "wt0"` → passa: di NetBird si occupa `inet dalink`, che resta com'è.
 3. ICMP, ICMPv6 (scoperta dei vicini compresa), DHCP → passano.
-4. Indirizzi in **«sempre ammessi»** → passano (salvagente, vedi 2.3).
+4. Indirizzi in **«sempre ammessi»** → passano (salvagente, vedi 4.3).
 5. Indirizzi nel set **bloccati** (a tempo) → rifiuto o scarto, contato.
 6. Per ogni **gruppo di porte** (Pagina web · SSH · Console dei moduli · Ricezione dati · Esche):
    sorgente nel set di quel gruppo → passa; altrimenti scarta e conta.
@@ -76,7 +131,7 @@ Forma della catena, sempre in quest'ordine (l'ordine è nel codice, non in confi
 Le uscite non si filtrano (scansioni, DNS, aggiornamenti, Vulcan, Zabbix): nessun `notrack`,
 conntrack non si tocca, il DNS di riserva e `/etc/hosts` restano fuori dal perimetro.
 
-### 2.2 Chi applica: un esecutore con comandi chiusi
+### 4.2 Chi applica: un esecutore con comandi chiusi
 
 L'app oggi è root. Non le si dà comunque `nft` in mano: il confine si mette adesso così regge anche
 il giorno in cui l'app girerà con un'utenza sua.
@@ -93,11 +148,13 @@ il giorno in cui l'app girerà con un'utenza sua.
 - Con l'utenza dedicata: una riga di sudoers per quel solo eseguibile, senza argomenti liberi.
 - L'app lo chiama con `execFile` (mai una shell), e scrive ogni chiamata nel registro.
 
-### 2.3 Non chiudersi fuori
+### 4.3 Non chiudersi fuori
 
-- **Nasce spento**, su ogni installazione, anche dopo l'aggiornamento. Tre stati: spento → **osserva**
-  (regole caricate che contano e basta: «con queste regole, negli ultimi 7 giorni sarebbero rimasti
-  fuori questi indirizzi») → acceso.
+- **Chiuso di serie, senza chiudere fuori chi c'è già**: un'installazione **nuova** nasce col filtro
+  acceso e gli elenchi dichiarati dall'installatore (domanda 2). Un'installazione **esistente**
+  riceve il filtro in **osserva** (regole caricate che contano e basta: «con queste regole, negli
+  ultimi 7 giorni sarebbero rimasti fuori questi indirizzi») e la pagina dice «NON protetta» finché
+  non si accende; non resta mai spento in silenzio.
 - **Anteprima** prima di applicare: le differenze in parole («192.0.2.14 non aprirà più la pagina
   web») e gli indirizzi oggi collegati che resterebbero fuori.
 - **Prova a tempo**: «Applica in prova» carica le regole e arma un timer di systemd (120 s) che
@@ -108,13 +165,14 @@ il giorno in cui l'app girerà con un'utenza sua.
   «sempre ammessi» modificabile, che non può restare vuoto finché il filtro è acceso.
 - **Console**: `da-ipam-accessi spegni` dalla console della VM (Proxmox) toglie la tabella. È scritto
   nel «Come si usa» e nella schermata di console dell'appliance.
-- **Guasto = aperto, e lo dice**: se al riavvio il file non è valido o `nft` rifiuta, la tabella non
-  si carica, la pagina mostra «Filtro NON attivo» e parte una notifica. Scelta proposta perché una
-  appliance chiusa fuori sta dal cliente; se Riccardo preferisce il contrario è la domanda 6.
+- **Guasto del filtro**: se al riavvio il file non è valido o `nft` rifiuta, proposta: si carica la
+  **politica minima nel codice** (solo NetBird/DA-Link e «sempre ammessi» dell'ultima politica
+  buona, salvata a parte), la pagina dice «Filtro in emergenza» e parte un avviso. Non aperto a
+  tutti (non sarebbe «estremamente protetto»), non chiuso del tutto (l'appliance sta dal cliente). Domanda 6.
 - **Registro**: ogni cambio (chi, quando, da dove, cosa prima e cosa dopo, confermato o tornato
   indietro) in `<DATA_DIR>/audit/protezione-*.jsonl`, 400 giorni, visibile nella scheda 4.
 
-### 2.4 Indirizzo vero di chi si collega
+### 4.4 Indirizzo vero di chi si collega
 
 Due piani distinti, e la pagina li tiene distinti:
 
@@ -127,7 +185,7 @@ Due piani distinti, e la pagina li tiene distinti:
   Pagina web e Ricezione dati): un collector o un agente ammesso a consegnare dati non per questo
   apre la pagina di login.
 
-### 2.5 Esche (honeypot)
+### 4.5 Esche (honeypot)
 
 - Un servizio a parte, `da-ipam-esche.service`: utenza effimera (`DynamicUser`), nessuna capability,
   `NoNewPrivileges`, file di sistema in sola lettura, memoria e numero di connessioni limitati, nessun
@@ -153,10 +211,10 @@ Due piani distinti, e la pagina li tiene distinti:
   scadenza e dimensione massima) e al ritmo dei nuovi blocchi: sopra il tetto si avvisa e basta.
   Gateway, DNS e i «sempre ammessi» non si bloccano mai.
 - **Notifiche**: attraverso `dispatchNotification` (email e webhook già configurati), un evento per
-  allerta e uno per blocco, col riepilogo giornaliero che c'è già. Verso Vulcan/SIEM: domanda 4.
+  allerta e uno per blocco, col riepilogo giornaliero che c'è già. Verso Vulcan/SIEM: domanda 3.
 - Parte in **solo allerta**; il blocco automatico si accende a parte.
 
-### 2.6 «Traffico di contrasto»: solo difesa sul nostro lato
+### 4.6 «Traffico di contrasto»: solo difesa sul nostro lato
 
 Proposta, in ordine di forza, tutto dentro l'appliance o la rete del cliente:
 
@@ -170,75 +228,108 @@ Proposta, in ordine di forza, tutto dentro l'appliance o la rete del cliente:
 **Non si progetta traffico verso la sorgente** (saturazione, exploit, scansioni di ritorsione).
 L'indirizzo può essere falsificato o essere il PC compromesso di un cliente: si colpirebbe una vittima,
 ed è un reato (accesso abusivo e danneggiamento, artt. 615-ter e 635-bis c.p.) anche se «ha
-cominciato lui». Se per «contrasto» si intendeva altro, è la domanda 3.
+cominciato lui». Se per «contrasto» si intendeva altro, è la domanda 4.
 
-## 3. Le schede: cosa si vede, cosa si cambia, da dove viene
+### 4.7 Avvisi su tutte le strade, non solo sulle esche
 
-Una sezione nuova «Protezione» (solo admin), otto schede in **una fila sola**, senza seconda fila e
+Un solo raccoglitore di «tentativi», una sola tabella, una sola politica di avviso:
+
+| Fonte | Evento | Da dove si legge |
+| --- | --- | --- |
+| Pagina web | login rifiutato, bloccato, seconda verifica sbagliata, accesso riuscito da indirizzo nuovo | registro accessi (c'è) |
+| API | gettone sbagliato, rotta di amministrazione rifiutata, `setup` dopo la prima configurazione | guardie di `api-auth.ts` (da agganciare in un punto solo) |
+| SSH | tentativo fallito, accesso riuscito da indirizzo nuovo | journal di sshd |
+| Filtro di rete | connessione da indirizzo non ammesso (contata, con limite di ritmo) | contatori e log della tabella |
+| NetBird | scarti di `inet dalink` | contatori della tabella |
+| Esche | contatto, tentativo | servizio esche |
+| Sistema | firma dell'aggiornamento rifiutata, permessi di un file segreto cambiati, filtro in emergenza | guardie esistenti, controllo periodico |
+
+Soglie per fonte, stesso blocco a tempo delle esche (fail2ban non serve: è lo stesso set), avvisi con
+`dispatchNotification`. **Registro che l'app non riscrive**: oltre al JSONL, ogni evento va al
+journal di sistema e, dove c'è DA-Link o un SIEM, fuori dalla macchina; file del registro in sola
+aggiunta (`chattr +a`, posto dall'esecutore). Chi prende l'app non cancella le proprie tracce.
+
+### 4.8 Strati di difesa: cosa c'è, cosa manca, costo, priorità
+
+| # | Strato | Oggi | Proposta | Costo | Priorità |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Filtro di rete sull'host | solo `wt0` | tabella chiusa di serie (4.1-4.3) | 6 g | **1** |
+| 2 | Avvisi sui tentativi | registro dei login, nessun avviso | 4.7 | 3 g | **1** |
+| 3 | Porte interne | «aperte» di serie | «chiuse» di serie, anche sulle esistenti | 0,5 g | **1** |
+| 4 | Seconda verifica | possibile, non obbligatoria | obbligatoria per gli admin (domanda 5) | 1 g | **2** |
+| 5 | Sessioni | 8 ore | più corte per gli admin, conferma recente già presente per le azioni gravi (domanda 5) | 0,5 g | 2 |
+| 6 | SSH | a chiave, da ogni indirizzo | solo dai canali di gestione (gruppo SSH) | nel punto 1 | **1** |
+| 7 | Ruoli al minimo | admin, viewer | «solo da questi indirizzi» per utente; chi può usare terminale e console | 1,5 g | 2 |
+| 8 | Registro non riscrivibile | JSONL scrivibile dall'app | 4.7 | 1 g | 2 |
+| 9 | Esche e blocco | niente | 4.5 | 5 g | 3 |
+| 10 | Servizio senza root, restrizioni di systemd | root | **piano 14/11, P1-5**; qui l'esecutore nasce già separato | là | là |
+| 11 | Dati e backup cifrati, chiave non sullo stesso disco | chiave in `.env.local` o vault a slot | **piano 14/11, P0-3 e P0-4** | là | là |
+| 12 | Aggiornamenti con origine verificata | fatto (ADR 0039-0040) | solo l'avviso | 0,2 g | 2 |
+
+## 5. Le schede: cosa si vede, cosa si cambia, da dove viene
+
+Sezione nuova «Protezione» (solo admin), nove schede in **una fila sola**, senza seconda fila e
 senza riga di titolo; «Come si usa» in fondo alla fila. Indirizzi: `/protezione/<scheda>`.
-In cima a ogni scheda la stessa `BarraStato`: Filtro spento · osserva · acceso, e Esche spente · accese.
+In cima a ogni scheda la stessa `BarraStato`: filtro (osserva · acceso · emergenza), esche, tentativi di oggi.
 
-| # | Scheda | Si vede | Si cambia | Dato |
-| --- | --- | --- | --- | --- |
-| A1 | **Porte presentate** | per ogni scheda di rete: indirizzi; per ogni porta in ascolto: protocollo, chi la tiene (servizio o modulo), su quali schede, da chi è raggiungibile oggi (tutti · elenco · solo macchina), connessioni viste | il gruppo a cui la porta appartiene è fisso; si sceglie **da chi** (Tutti · Solo gli elenchi · Nessuno) per scheda di rete | `/proc/net`, `ss`, `docker ps`, tabella caricata (`nft -j`) |
-| A2 | **Chi può collegarsi** | gli elenchi di indirizzi per gruppo di porte (Pagina web · SSH · Console dei moduli · Ricezione dati), «Sempre ammessi», chi è collegato adesso, chi resterebbe fuori | aggiungi/togli indirizzo o rete (IPv4, IPv6, nota, scadenza), **Anteprima**, **Applica in prova**, **Conferma**, **Spegni il filtro** | `accessi.json`, contatori della tabella |
-| A3 | **Utenti** | chi può entrare: nome, ruolo, tipo (locale · Domarc · servizio · emergenza), seconda verifica, ultimo accesso e da dove, blocchi in corso | «Solo da questi indirizzi» per utente; il resto (crea, ruolo, password) resta in Impostazioni › Utenti, con un pulsante che ci porta | `users`, registro accessi |
-| A4 | **Registro accessi** | una tabella sola: login riusciti/rifiutati/bloccati, SSH, connessioni scartate dal filtro, cambi alla protezione; filtri per tipo, indirizzo, utente, periodo | niente (sola lettura); **Scarica CSV** | `audit/accessi-*.jsonl`, `audit/protezione-*.jsonl`, journal di sshd, contatori |
-| A5 | **Sistemi remoti** | chi ci parla e a chi parliamo: sistema, verso (entra · esce), indirizzo, porta, come si autentica, ultimo contatto; segnati quelli **non riconosciuti** | **Riconosci** (dà un nome e lo mette nell'elenco giusto), **Togli**; le uscite verso Domarc restano spiegate in «Cosa esce» | gettoni (`vuln_scanners`, `tenant_agents`, `inventory_ingest_tokens`), `quadro.ts`, connessioni aperte |
-| A6 | **Moduli e container** | per modulo: container, immagine e versione, porte pubblicate/solo interne/rete host, capability in più, da chi è raggiungibile | la raggiungibilità si cambia in A1/A2 (un posto solo); qui **Vai alla porta** | `docker ps`/`inspect`, `registry.ts` (da estendere con le porte attese) |
-| B1 | **Esche** | i finti servizi possibili, quali sono accesi, su quale porta e scheda, contatti delle ultime 24 ore; perché una porta non è disponibile | **Accendi/Spegni** per esca, su quali schede di rete, rallentamento sì/no | elenco chiuso nel codice, stato del servizio esche |
-| B2 | **Intrusioni e blocchi** | chi ha toccato un'esca: indirizzo (e apparato dell'inventario, se noto), esche toccate, tentativi, primo/ultimo; allerte; bloccati con scadenza | soglie, durata, **Blocca ora**, **Sblocca**, **Non bloccare mai**, **Proponi isolamento della porta**; blocco automatico sì/no | eventi del servizio esche, set dei bloccati, inventario |
+| Scheda | Si vede | Si cambia | Dato |
+| --- | --- | --- | --- |
+| **Stato della protezione** | gli strati della 4.8 uno per riga: a posto o no, perché, rimedio; e le **debolezze che restano** nella conservazione delle credenziali, in parole semplici con gravità e rimedio (chiave sullo stesso disco, volume non cifrato, backup non cifrato o mai provato, segreti in chiaro in un file o in una colonna, permessi larghi su un file segreto, password iniziali rimaste, credenziali riusate su molti apparati, SNMP v1/v2c e telnet ancora usati, seconda verifica assente). Ogni riga è **calcolata sulla macchina**, non scritta a mano | il rimedio è un pulsante che porta dove si fa («Accendi il filtro», «Rendi obbligatoria la seconda verifica», «Apri il vault»); **Ricontrolla ora** | controlli in sola lettura: permessi dei file, stato del vault e del volume, conteggi sul database (mai valori), tabella caricata |
+| **Porte presentate** (A1) | per scheda di rete: indirizzi; per porta in ascolto: protocollo, chi la tiene, modulo, da chi è raggiungibile oggi, connessioni viste | **da chi** (Solo gli elenchi · Nessuno; «Tutti» solo con conferma e resta segnato ▲) | `/proc/net`, `ss`, `docker ps`, `nft -j` |
+| **Chi può collegarsi** (A2) | elenchi di indirizzi per gruppo (Pagina web · SSH · Console dei moduli · Ricezione dati), «Sempre ammessi», chi è collegato, chi resterebbe fuori | aggiungi/togli (IPv4, IPv6, nota, scadenza), **Anteprima**, **Applica in prova**, **Conferma** | `accessi.json`, contatori |
+| **Utenti** (A3) | nome, ruolo, tipo, seconda verifica, ultimo accesso e da dove, blocchi, chi può usare terminale e console | «Solo da questi indirizzi»; il resto resta in Impostazioni › Utenti | `users`, registro |
+| **Sistemi remoti** (A5) | chi ci parla e a chi parliamo: verso, indirizzo, porta, come si autentica, ultimo contatto; **non riconosciuti** | **Riconosci**, **Togli** | gettoni, `quadro.ts`, connessioni |
+| **Moduli e container** (A6) | per modulo: container, immagine e versione, porte pubblicate/interne/rete host, permessi in più | si cambia in Porte presentate; qui **Vai alle porte** | `docker ps`/`inspect`, `registry.ts` esteso con le porte attese |
+| **Esche** (B1) | finti servizi possibili, accesi, porta e scheda, contatti; perché una porta non è disponibile | **Accendi/Spegni**, schede di rete, rallentamento | elenco chiuso, servizio esche |
+| **Tentativi e blocchi** (B2 + avvisi) | ogni tentativo da **tutte** le strade (4.7): fonte, indirizzo, apparato dell'inventario se noto, quanti, primo/ultimo, stato; i bloccati con scadenza | soglie per fonte, durata, **Blocca ora**, **Sblocca**, **Non bloccare mai**, **Proponi isolamento della porta**, a chi vanno gli avvisi | raccoglitore dei tentativi, set dei bloccati |
+| **Registro accessi** (A4) | accessi riusciti, cambi alla protezione, scarichi, aperture del terminale; filtri | niente; **Scarica CSV** | `audit/*.jsonl`, journal |
 
-Menu (`sezioni.ts`): sezione «Protezione» dopo «Rete», `per: "admin"`, stacco fra A6 e B1 coi nomi di
-gruppo «Accessi» ed «Esche». `/settings/cosa-esce` resta dov'è, A5 ci rimanda.
+Menu (`sezioni.ts`): sezione «Protezione» dopo «Rete», `per: "admin"`. `/settings/cosa-esce` resta
+dov'è, «Sistemi remoti» ci rimanda. Daltonismo: ogni stato ha segno e forma oltre al fondo, con
+legenda. Azioni come pulsanti con nome.
 
-Daltonismo: ogni stato ha segno e forma oltre al fondo (● aperta a tutti, ◐ solo elenchi, ○ chiusa,
-▲ non riconosciuto, ■ bloccato), con legenda. Azioni come pulsanti con nome.
-
-## 4. Tappe
+## 6. Tappe, in ordine di rischio
 
 | # | Tappa | Fatto quando | Stima |
 | --- | --- | --- | --- |
-| 0 | Decisioni e ADR (risposte §7, ADR «filtro sul prerouting, esecutore chiuso, guasto = aperto») | ADR scritto, tavola approvata | 0,5 g |
-| 1 | **Sola lettura**: schede A1, A3, A4, A5, A6 senza modifiche al sistema; menu, guida | le cinque schede mostrano il vero su laboratorio e hub; nessun comando che scrive | 4 g |
-| 2 | **Esecutore e filtro**: `da-ipam-accessi`, politica, stato «osserva», anteprima, prova a tempo, registro; A2 e modifica in A1 | prove in netns con Docker (viste fallire): porte pubblicate filtrate, moduli vivi, IPv6, ritorno automatico senza conferma; `nft -c` verde | 6 g |
-| 3 | **Esche, solo allerta**: servizio isolato, B1, B2 in lettura, notifiche, esclusione dei nostri scanner | uno scanner di prova genera l'allerta; Edge e Zabbix no; nessuna password su disco (prova che la cerca) | 4 g |
-| 4 | **Blocco e contrasto difensivo**: set a tempo, soglie, tetti, sblocco, rallentamento, proposta di isolamento | blocco e sblocco provati; sorgente falsificata non blocca; tetto rispettato | 3 g |
-| 5 | **Collaudo**: appliance di laboratorio (snapshot prima), poi hub 533 in «osserva» una settimana, poi acceso; manuale, `CONTEXT`, `CHANGELOG`, scheda-mappa, consuntivo | una settimana senza moduli rotti né falsi blocchi; sblocco da console provato davvero | 2,5 g + la settimana |
+| 0 | Decisioni e ADR | ADR scritto, tavola approvata | 0,5 g |
+| 1 | **Vedere**: Stato della protezione, Porte presentate, Moduli, Sistemi remoti, Utenti in sola lettura | le schede dicono il vero su laboratorio e hub; nessun comando che scrive; ogni riga di «Stato» ha la sua prova | 5 g |
+| 2 | **Chiudere la rete**: esecutore, filtro, osserva, anteprima, prova a tempo, porte interne chiuse, SSH dai canali di gestione | prove in netns con Docker (viste fallire): porte pubblicate filtrate, moduli vivi, IPv6, ritorno automatico senza conferma, politica minima al guasto | 6,5 g |
+| 3 | **Avvisare**: raccoglitore dei tentativi da pagina, API, SSH, filtro, sistema; registro non riscrivibile; Tentativi e blocchi, Registro | un login sbagliato, un gettone sbagliato, un SSH fallito e una connessione non ammessa generano ognuno il suo avviso | 4 g |
+| 4 | **Stringere l'accesso**: seconda verifica obbligatoria, sessioni, «solo da questi indirizzi», chi usa terminale e console (secondo le risposte) | prove viste fallire; nessun utente esistente chiuso fuori (migrazione con avviso) | 3 g |
+| 5 | **Esche e blocco**: servizio isolato, soglie, set a tempo, rallentamento, proposta di isolamento | scanner di prova bloccato; Edge e Zabbix no; nessuna password su disco; sorgente falsificata non blocca | 5 g |
+| 6 | **Collaudo**: laboratorio (snapshot prima), hub 533 in osserva una settimana, poi acceso; installatore (Deploy-Appliance) che dichiara gli elenchi; manuale, `CONTEXT`, `CHANGELOG`, consuntivo | una settimana senza moduli rotti né falsi blocchi; sblocco da console provato davvero | 3 g + la settimana |
 
-**Totale: circa 20 giornate di lavoro, 4-5 settimane di calendario** contando la settimana in
-«osserva». Le tappe 1 e 3 possono andare in parallelo alla 2 (file diversi). Su `main` (appliance dei
-clienti) arriva spento; si accende cliente per cliente.
+**Totale: circa 27 giornate di lavoro, 6 settimane di calendario** contando la settimana in osserva.
+Fuori dal conto: volume cifrato, backup, servizio non root (piano 14/11). Le tappe 1 e 3 possono
+andare in parallelo alla 2 (file diversi). Dopo la tappa 3 l'installazione è già chiusa e avvisa:
+le tappe 4 e 5 alzano il livello.
 
-## 5. Livello di controllo: Completo
+## 7. Livello di controllo: Completo
 
-Prova vista fallire per esecutore, filtro, lettura di `X-Real-IP`, password delle esche, blocco. Prove
-in netns sul modello di `prova-firewall-netns.sh`. Snapshot della VM prima di ogni prova sul vero.
-Una revisione del ramo prima di `dev`. Resa a 1920 per ogni scheda. Cancello completo una volta, prima
-di `dev`.
+Prova vista fallire per esecutore, filtro, lettura di `X-Real-IP`, raccoglitore, password delle
+esche, blocco. Prove in netns sul modello di `prova-firewall-netns.sh`. Snapshot della VM prima di
+ogni prova sul vero. Una revisione del ramo prima di `dev`. Resa a 1920 per ogni scheda. Cancello
+completo una volta, prima di `dev`.
 
-## 6. Rischi
+## 8. Rischi
 
-- **Chiudersi fuori** dall'appliance di un cliente: §2.3; si accende prima sul laboratorio e sull'hub.
-- **Rompere un modulo**: syslog, trap SNMP, NetFlow/sFlow, agenti Wazuh e inventario arrivano da molti
-  indirizzi: il gruppo «Ricezione dati» nasce «Tutti» e si stringe solo dopo aver visto in «osserva»
-  chi consegna davvero.
-- **Bloccare un cliente o noi stessi**: elenchi «mai bloccati», blocco automatico spento all'inizio,
-  conta solo il TCP completato, tetti.
-- **Docker cambia le sue catene** a ogni versione: per questo non ci si appoggia a `DOCKER-USER`.
-- **Aggiornamenti**: chi scrive la tabella al riavvio è un servizio nostro (`After=` Docker e
-  `dalink-firewall`); un aggiornamento dell'app non riscrive la politica.
+- **Chiudersi fuori** dall'appliance di un cliente: §4.3.
+- **Rompere un modulo**: syslog, trap, NetFlow, agenti arrivano da molti indirizzi: «Ricezione dati»
+  si stringe solo dopo aver visto in osserva chi consegna davvero; l'elenco nasce dall'inventario.
+- **Bloccare un cliente o noi stessi**: «mai bloccati», blocco automatico acceso a parte, solo TCP completato, tetti.
+- **Troppi avvisi**: soglie per fonte e riepilogo giornaliero; un avviso che nessuno legge non protegge.
+- **Docker cambia le sue catene**: per questo non ci si appoggia a `DOCKER-USER`.
+- **Uso quotidiano del tecnico**: seconda verifica e accesso solo da NetBird pesano: domande 2 e 5.
 
-## 7. Domande a Riccardo (25/11/2026)
+## 9. Domande a Riccardo (25/11/2026)
 
-1. Dove: solo hub e laboratorio adesso, e le appliance dei clienti dopo, spente finché non le accendi?
-2. Moduli nel perimetro: tutti quelli dell'appliance (edge, LibreNMS, Wazuh, Graylog, MeshCentral, MDM,
-   collector, proxy Zabbix), o si parte da pagina web, SSH ed edge?
-3. «Traffico di contrasto»: va bene solo difesa (rifiuto, rallentamento, limite, isolamento con
-   conferma, avviso)? Niente traffico verso chi attacca.
-4. Sempre ammessi oltre a NetBird/DA-Link: quali reti dei tecnici? E gli avvisi vanno anche a Vulcan?
-5. Quali esche: Telnet 23, FTP 21, SMB 445, RDP 3389, MySQL 3306, SSH finto 2222, pagina di login
-   finta 8081: tutte o alcune?
-6. Guasto del filtro al riavvio: aperto con allarme (proposto) o chiuso?
-7. Blocco di un indirizzo **interno** alla rete del cliente: automatico, o solo allerta e blocco a mano?
-8. Nome e posto: sezione «Protezione» dopo «Rete», solo admin: va bene?
+1. Appliance dei clienti **già installate**: ricevono il filtro in «osserva» e le accendi tu una per una, o si accendono da sole dopo N giorni senza indirizzi rimasti fuori?
+2. Installazioni **nuove**, chi è ammesso alla pagina web di serie: solo NetBird/DA-Link, oppure NetBird più la rete locale dichiarata all'installazione?
+3. Sempre ammessi oltre a NetBird/DA-Link: quali reti dei tecnici? Gli avvisi vanno anche a DA-Link/Vulcan, oltre a email e webhook?
+4. «Traffico di contrasto»: solo difesa sul nostro lato (rifiuto, rallentamento, limite, isolamento della porta con conferma, avviso), niente traffico verso chi attacca. Va bene?
+5. Uso quotidiano: seconda verifica **obbligatoria** per tutti gli admin (anche i tuoi tecnici e il cliente)? Sessione admin da 8 ore a quanto? SSH solo da NetBird?
+6. Guasto del filtro al riavvio: politica minima (solo NetBird e sempre ammessi) con avviso, come proposto?
+7. Un indirizzo **interno** alla rete del cliente che tocca le esche: blocco automatico o solo avviso e blocco a mano?
+8. Quali esche: Telnet 23, FTP 21, SMB 445, RDP 3389, MySQL 3306, SSH finto 2222, pagina di login finta 8081?
+9. Sezione «Protezione» dopo «Rete», solo admin, nove schede: va bene nome e posto?

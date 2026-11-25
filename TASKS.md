@@ -128,7 +128,9 @@ estendere questa feature». I dati ci sono (`traffico_identita`, ARP e DHCP: VLA
 - Regole: una rete vista senza tag e con un tag solo conta sul tag (VM Proxmox con `tag=` e firewall); solo ARP e DHCP, non il
   traffico instradato; 255.255.255.x e 169.254 non sono reti
 - [x] In più: in una rete già censita «Aggiungi gli host che mancano». Visto a 1920 in locale con dati finti
-- [ ] Guardarlo sull'hub coi dati veri; gli host di OVH non sono ancora entrati (lo decide Riccardo dal pulsante)
+- [x] Guardato sull'hub coi dati veri (v0.9.1358, 25/11): Dalton 14 VLAN e 24 reti, OVH 3 e 3; proposte unite a quelle del trunk
+- [ ] Riccardo: «Aggiungi gli host che mancano» sulle tre reti di OVH (15 host)
+- [x] Hub fermo alla 0.9.1354: la 0.9.1357 non si compilava (`node:net` in `protezione/politica.ts`, che va nel browser). Riccardo: «Sì, correggila»; corretta nella 0.9.1358 con la prova di equivalenza con `net.isIPv6`
 
 ## 2026-11-25 — Sonda su DA-PX-OVH, letta da `192.168.4.8` (Riccardo: «Sì, preparala»)
 

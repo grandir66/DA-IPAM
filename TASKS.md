@@ -114,16 +114,18 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
   registrazioni e servono per dire cosa blocca il firewall, non dove sta una macchina.
 - Manca in DA-GEO una fonte C2 viva: **ThreatFox risponde 410**.
 
-## 2026-11-25 — Reti viste dai collector come quelle viste dal trunk (Riccardo; proposta, aspetta il sì)
+## 2026-11-25 — Reti viste dai collector come quelle viste dal trunk (Riccardo: «Sì, scrivilo»)
 
 Riccardo, 25/11: «le reti viste dal collector non vengono presentate come le VLAN viste dal trunk diretto, sarebbe utile
 estendere questa feature». I dati ci sono (`traffico_identita`, ARP e DHCP: VLAN, IP, MAC); mancano le pagine.
 
-- [ ] «VLAN e indirizzi»: scelta del punto di ascolto (sonda trunk, collector per sede); le VLAN di sedi diverse non si mescolano
-- [ ] «Reti viste, da confermare» (Subnet): anche dai collector, una riga per rete con chi la vede; le reti da un indirizzo solo e le 169.254 a parte
-- [ ] «Porta in DA-IPAM» da un collector: rete e host con MAC e nome, senza giro ARP e senza credenziali
+- [x] «VLAN e indirizzi»: scelta del punto di ascolto (sonda trunk, collector per sede); le VLAN di sedi diverse non si mescolano
+- [x] «Reti viste, da confermare» (Subnet): anche dai collector, una riga per rete con chi la vede; le reti da un indirizzo solo e le 169.254 a parte
+- [x] «Porta in DA-IPAM» da un collector: rete e host con MAC e nome, senza giro ARP e senza credenziali
 - Regole: una rete vista senza tag e con un tag solo conta sul tag (VM Proxmox con `tag=` e firewall); solo ARP e DHCP, non il
   traffico instradato; 255.255.255.x e 169.254 non sono reti
+- [x] In più: in una rete già censita «Aggiungi gli host che mancano». Visto a 1920 in locale con dati finti
+- [ ] Guardarlo sull'hub coi dati veri; gli host di OVH non sono ancora entrati (lo decide Riccardo dal pulsante)
 
 ## 2026-11-25 — Sonda su DA-PX-OVH, letta da `192.168.4.8` (Riccardo: «Sì, preparala»)
 

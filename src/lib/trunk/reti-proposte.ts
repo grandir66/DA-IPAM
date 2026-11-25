@@ -20,6 +20,10 @@ export interface ReteProposta {
   ip: number;
   /** Ultimo giorno con indirizzi attivi, dalla serie del sensore (ultimi 14 giorni). */
   ultimoGiorno: string | null;
+  /** Solo se la vedono i collector e non la sonda trunk: la loro sede (25/11). */
+  sede?: string;
+  /** Chi la vede, per la pagina Subnet. */
+  viste?: string[];
 }
 
 function intervallo(cidr: string): [number, number] | null {

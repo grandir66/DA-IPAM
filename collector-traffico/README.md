@@ -218,6 +218,24 @@ Cose da sapere:
 - Sul nodo il GRO resta acceso (è in produzione): i byte sono giusti, i pacchetti contati sono meno di quelli veri.
 - Per toglierla: `qm set 113 --delete hookscript`, poi `qm stop 113 && qm destroy 113`; il `clsact` vuoto su `bond10` si toglie con `tc qdisc del dev bond10 clsact`.
 
+## Su un nodo Proxmox con le VM su un bridge senza schede fisiche (DA-PX-OVH, 25/11/2026)
+
+Lì la copia dell'uplink non vedrebbe niente: si copia **ciò che entra nel bridge da ogni sua porta**. Ogni pacchetto
+entra da una porta sola, quindi si conta una volta, compreso il traffico fra due VM dello stesso nodo.
+
+| Cosa | Dov'è |
+|---|---|
+| `DA-COLLECTOR-OVH` | VM 207 su DA-PX-OVH, Debian 12, 2 vCPU, 2 GB, 8 GB su `zfs`, parte col nodo. `net0` su `vmbr_vm`, `192.168.51.250`; `net1` dichiarata su `vmbr_vm` e staccata all'avvio. **Mai su `vmbr0`**: OVH non conosce quei MAC |
+| `/etc/collector-mirror.conf` | `BRIDGE=vmbr_vm`, `STACCA=1`, `VM_FUORI="301 302"`, `VLAN_FUORI="230"`, `RETI_FUORI="192.168.230.0/24"` |
+| `collector-mirror@207.timer` | ogni minuto `collector-mirror.sh 207 riallinea`: le porte nascono e muoiono con le VM |
+
+- Escludere una VM vuol dire tutte e tre le cose: la sua porta (`VM_FUORI`), la sua VLAN (`VLAN_FUORI`, il router la
+  rivede) e la sua rete (`RETI_FUORI`, le altre VM che le parlano, anche etichettate con un'altra VLAN).
+- Se un'esclusione non si riesce a mettere, quella porta non si copia.
+- Una VM con `tag=` e il firewall di Proxmox entra nel bridge senza etichetta: la sua VLAN non si vede, l'indirizzo sì.
+- Ciò che parte dal nodo stesso e il lato pubblico (`vmbr0`) non si copiano.
+- Prova: `tests/prova-mirror-bridge.sh`, da root su un Linux, in uno spazio di rete isolato (19 controlli, sul DA-PX-05).
+
 ## Banco su PX-NAS (20/11/2026)
 
 Tutto sul PX-NAS (`192.168.99.1`), rete 99, bridge `vmbr0`. Mai su reti di clienti.

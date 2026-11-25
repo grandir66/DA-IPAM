@@ -100,7 +100,7 @@ fornitore in DB-IP, 347 fornitori, i primi dieci fanno l'89% dei byte in uscita;
   registrazioni e servono per dire cosa blocca il firewall, non dove sta una macchina.
 - Manca in DA-GEO una fonte C2 viva: **ThreatFox risponde 410**.
 
-## 2026-11-25 — Idea: sonda su DA-PX-OVH, letta da `192.168.4.8` (Riccardo, domanda; proposta, niente codice)
+## 2026-11-25 — Sonda su DA-PX-OVH, letta da `192.168.4.8` (Riccardo: «Sì, preparala»)
 
 Riccardo, 25/11: «se io volessi aggiungere una sonda sul server Proxmox in OVH per vedere il traffico di quel sito… vorrei mantenere
 l'IPAM solo su Domarc 192.168.4.8… il server di analisi può fungere da ponte per le reti remote da analizzare?».
@@ -108,10 +108,12 @@ Visto in sola lettura: DA-PX-OVH (`192.168.51.252`) si raggiunge già dall'hub (
 `vmbr_vm`, che non ha porte fisiche, quindi la copia dell'uplink non vedrebbe niente; rete `192.168.51.0/24`, VLAN 230 e 240;
 traffico di pochi Mbit/s; 38 GB di RAM liberi; nessuna rete OVH censita in IPAM.
 
-- [ ] Riccardo approva: `DA-COLLECTOR-OVH` (VM su DA-PX-OVH), scheda di gestione su `vmbr_vm`, mai su `vmbr0` (OVH: MAC non registrato)
-- [ ] `collector-mirror.sh`: modo nuovo, copia dell'ingresso di ogni `tap` del bridge (ogni pacchetto una volta sola), rimessa quando una VM riparte
-- [ ] Censire `192.168.51.0/24` e le reti delle VLAN 230 e 240; leggere il MikroTik CHR 201 come router (ARP)
-- [ ] Decisioni di Riccardo: quali VM escludere (SOLUTION-CLOUD e TSPLUS-CLOUD), accessi coi nomi utente spenti, profilo
+- [x] `DA-COLLECTOR-OVH`: VM 207 su DA-PX-OVH, `192.168.51.250`, profilo Zeek, accessi coi nomi utente spenti
+- [x] `collector-mirror.sh`, modo BRIDGE: prova in uno spazio isolato sul DA-PX-05 (19 verdi, una vista fallire), poi acceso: 11 porte, SOLUTION-CLOUD e TSPLUS-CLOUD escluse (porta, VLAN 230 e rete, controllato con `tcpdump`)
+- [x] Censita `192.168.51.0/24` «OVH - VM Domarc», **senza credenziali** (la finestra proponeva le 13 di Dalton)
+- [ ] Riccardo: incollare il gettone e premere «Prova e registra» (scheda «Collector e controlli»)
+- [ ] Dopo la registrazione: prima lettura, copertura, e le porte di una VM che riparte (il riallineamento è provato solo sul banco)
+- [ ] MikroTik CHR 201 come router (ARP): serve una credenziale di Riccardo. Rete della VLAN 240: da censire se serve
 
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)
 

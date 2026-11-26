@@ -102,7 +102,8 @@ Zabbix prima del rilascio, e approvazione a parte.
   rete/VLAN, marca, modello, MAC e credenziale valida. *Fatto quando*: su IPAM `192.168.4.8` i 474 apparati si
   filtrano per rete e famiglia, le colonne scelte restano dopo un nuovo accesso, una schermata a 1920.
   Stima: mezza giornata.
-- [ ] **T2 — Scheda di lato, Modelli e Agenti** (IPAM). Scheda dell'apparato, schede «Modelli» (per famiglia, chi
+- [x] **T2 — Scheda di lato, Modelli, Agenti, Centro e proxy** (26/11: fatta; verifica: prove di `zabbix-lettura`, `menu` e `manuale` verdi, tsc e lint puliti; **non guardata a schermo**). La scheda di lato apre le finestre esistenti per modelli, famiglia e agente (con la loro prova a vuoto); «Togli» accanto a ogni modello e «Torna all'automatico» restano per T4, che porta il dato «famiglia forzata». Guide scritte per le quattro pagine; la schermata di `zabbix-apparati` è ancora quella vecchia.
+  Testo della tappa: **Scheda di lato, Modelli e Agenti** (IPAM). Scheda dell'apparato, schede «Modelli» (per famiglia, chi
   li ha) e «Agenti» (serve, da installare, installato, comando). *Fatto quando*: aggiunta e tolta di un modello e
   comando dell'agente si fanno dalla scheda, con la prova a vuoto. Stima: mezza giornata.
 - [ ] **T3 — Aggiunta in massa con coda** (IPAM). Rispetta 10/min e 100/giorno, mostra avanzamento e residuo,

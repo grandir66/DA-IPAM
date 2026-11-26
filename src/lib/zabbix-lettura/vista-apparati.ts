@@ -9,7 +9,7 @@ import type { ApparatoElenco } from "./apparati";
 
 export type IdColonna =
   | "stato" | "nome" | "ip" | "rete" | "marca" | "modello" | "famiglia" | "modelloZabbix" | "altriModelli"
-  | "agente" | "credenziale" | "proxy" | "problemi" | "mac" | "nomeZabbix";
+  | "agente" | "credenziale" | "proxy" | "problemi" | "mac" | "nomeZabbix" | "sistema";
 
 export interface Colonna {
   id: IdColonna;
@@ -47,6 +47,7 @@ export const COLONNE: readonly Colonna[] = [
   { id: "proxy", etichetta: "Proxy", diSerie: false, testo: (a) => a.proxy ?? "" },
   { id: "mac", etichetta: "MAC", diSerie: false, testo: (a) => a.mac ?? "" },
   { id: "nomeZabbix", etichetta: "Nome in Zabbix", diSerie: false, testo: (a) => a.hostTecnico ?? "" },
+  { id: "sistema", etichetta: "Sistema", diSerie: false, testo: (a) => (a.sistema === "windows" ? "Windows" : a.sistema === "linux" ? "Linux" : "") },
 ];
 const PER_ID = new Map(COLONNE.map((c) => [c.id, c]));
 export const colonna = (id: IdColonna): Colonna => PER_ID.get(id)!;
@@ -72,23 +73,30 @@ export const VISTA_DI_SERIE: Vista = {
   ordine: { colonna: "nome", verso: "su" },
 };
 
+/** La scheda «Agenti»: le stesse righe, viste dal lato dell'agente (chi ne ha bisogno, per sistema). */
+export const VISTA_AGENTI: Vista = {
+  colonne: ["agente", "nome", "ip", "sistema", "nomeZabbix", "stato", "rete", "proxy"],
+  gruppo: "nessuno",
+  ordine: { colonna: "agente", verso: "su" },
+};
+
 /** La vista salvata, ripulita: ciò che non si riconosce torna quello di serie, le colonne fisse ci sono sempre. */
-export function leggiVista(salvata: string | null | undefined): Vista {
-  if (!salvata) return VISTA_DI_SERIE;
+export function leggiVista(salvata: string | null | undefined, diSerie: Vista = VISTA_DI_SERIE): Vista {
+  if (!salvata) return diSerie;
   let v: unknown;
   try {
     v = JSON.parse(salvata);
   } catch {
-    return VISTA_DI_SERIE;
+    return diSerie;
   }
-  if (!v || typeof v !== "object") return VISTA_DI_SERIE;
+  if (!v || typeof v !== "object") return diSerie;
   const o = v as { colonne?: unknown; gruppo?: unknown; ordine?: { colonna?: unknown; verso?: unknown } };
   const viste = Array.isArray(o.colonne)
     ? o.colonne.filter((x, i, a): x is IdColonna => typeof x === "string" && PER_ID.has(x as IdColonna) && a.indexOf(x) === i)
     : [];
-  const colonne = viste.length ? viste : VISTA_DI_SERIE.colonne.slice();
+  const colonne = viste.length ? viste : diSerie.colonne.slice();
   for (const c of COLONNE) if (c.fissa && !colonne.includes(c.id)) colonne.unshift(c.id);
-  const gruppo = GRUPPI.some((g) => g.id === o.gruppo) ? (o.gruppo as IdGruppo) : VISTA_DI_SERIE.gruppo;
+  const gruppo = GRUPPI.some((g) => g.id === o.gruppo) ? (o.gruppo as IdGruppo) : diSerie.gruppo;
   const col = typeof o.ordine?.colonna === "string" && PER_ID.has(o.ordine.colonna as IdColonna) ? (o.ordine.colonna as IdColonna) : "nome";
   return { colonne, gruppo, ordine: { colonna: col, verso: o.ordine?.verso === "giu" ? "giu" : "su" } };
 }

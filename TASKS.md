@@ -11,7 +11,12 @@ Piano, censimento e tavola: `docs/superpowers/plans/2026-11-26-apparati-zabbix-p
 - [ ] Con la chiave di scrittura: provare la coda su 20 apparati di una sonda di prova (533 o 79993) e guardare la pagina a 1920
 - [ ] T5 resto: rifare le schermate delle guide Zabbix (`scripts/manuale/schermate.cjs`; quella di `zabbix-apparati` è della pagina vecchia), decidere se togliere `/zabbix/aggiungi` ora che è confluita
 - [ ] Riccardo, 26/11: «la stessa UI dovrebbe essere presente anche in zabbix per la gestione dei device dei singoli clienti; proviamo ad uniformare l'esperienza» → T6 del piano, nel repo DA-Zabbix (da scrivere anche nel suo `TASKS.md`), dopo che ha visto la T1
-- [ ] Decisione 5 (chiave automatica): DA-Link deve emettere la chiave di scrittura e consegnarla a IPAM; finché non c'è, «Inserisci la chiave» porta alla configurazione del modulo
+- [ ] Decisione 5 (chiave automatica), Riccardo 26/11: «Prima la chiave». Censito il 26/11, **in attesa della sua scelta fra A e B** (zona rossa: chiavi, tre repo, DA-Link sul live → livello Completo):
+  - Com'è oggi la chiave di **lettura**: DA-Link la chiede a DA-Zabbix (`/api/dalink/chiave-lettura`, `dalink/kit/segreti.py`) e la mette nel kit (passo 3), nel file d'avvio dell'appliance da immagine («Riconfigura») e, per le istanze già collegate, in un blocco da incollare come root (`dalink/kit/lettura.py`). I file `zabbix-lettura.*` in `/etc/da-appliance/secrets` li porta a IPAM `lib/connect.sh` di Deploy-Appliance (`connect_zabbix_lettura` → `PUT /api/zabbix/config`).
+  - Per la **scrittura** in DA-Zabbix la rotta c'è (`/api/dalink/chiave-scrittura[/revoca]`); in DA-Link e in Deploy-Appliance non c'è niente; in IPAM `PUT /api/zabbix/scrittura` c'è già.
+  - Strada A (consigliata): la stessa strada della lettura, con un quarto file `zabbix-scrittura.key`; lavoro in DA-Link e Deploy-Appliance, niente in IPAM. Le già collegate incollano una volta il blocco.
+  - Strada B: IPAM la chiede da sé a DA-Link col suo gettone. Zero incolla, ma contraddice la decisione 22 del segnale (`src/lib/dalink/invio.ts`: «nessuna risposta di DA-Link cambia il livello o la configurazione»): serve un ADR nuovo.
+  - Finché non c'è, «Inserisci la chiave» porta alla configurazione del modulo.
 - [ ] T4, in DA-Zabbix (lavoro a parte, livello Completo per le scritture): proposta dei modelli in blocco, `famiglia_forzata` e `agente_versione` in lettura, rotte sospendi/rinomina/togli
 - Trovato strada facendo: «Come si usa» non c'è più (tolto il 26/11, c'è il «?»); DatIA Mon non ha la riga di schede in `sezioni.ts`; DA-Link non emette ancora la chiave di scrittura (aperto in DA-Zabbix dal 13/11); con i tetti del centro (10/min, 100/giorno) 474 aggiunte chiedono cinque giorni.
 

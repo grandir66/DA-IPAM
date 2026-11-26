@@ -1,4 +1,4 @@
-# DA-IPAM — Manuale utente
+# Manuale utente (archivio, fino a novembre 2026)
 
 > **Versione di riferimento:** 0.3.116
 > **Ultima modifica:** 2026-10-12

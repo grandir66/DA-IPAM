@@ -7,19 +7,20 @@ import { MarkdownViewer } from "@/components/manual/markdown-viewer";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, FileCode, FolderOpen } from "lucide-react";
 import { unisci, risolvi } from "@/lib/percorsi";
+import { leggiGuida } from "@/lib/manuale/formato";
 
 /** Cartelle dentro docs/ accettate. Tutto il resto è ignorato (sicurezza).
  *  modules/interni + modules/esterni: documentazione per-modulo (docs/modules),
  *  prima presente su disco ma non visibile in /manual. */
-const ALLOWED_DIRS = ["", "adr", "playbooks", "modules/interni", "modules/esterni"] as const;
+const ALLOWED_DIRS = ["", "adr", "playbooks", "modules/interni", "modules/esterni", "manuale", "manuale/pagine", "archivio"] as const;
 
 /** Documento di default mostrato all'accesso a /manual senza ?doc=. */
-const DEFAULT_DOC = "manuale-utente";
+const DEFAULT_DOC = "manuale";
 
 interface DocEntry {
   slug: string;          // es. "manuale-utente" o "playbooks__dr"
   filePath: string;      // path assoluto sul filesystem
-  category: "Manuali" | "Moduli" | "Architettura (ADR)" | "Playbook";
+  category: "Il prodotto" | "Pagine" | "Manuali tecnici" | "Moduli" | "Architettura (ADR)" | "Playbook" | "Archivio";
   title: string;         // primo H1 del file, o filename pulito
   filename: string;      // basename per UI
   relPath: string;       // path relativo a docs/ (per il link GitHub, anche annidato)
@@ -47,19 +48,29 @@ async function listDocs(): Promise<DocEntry[]> {
       const filePath = unisci(dirPath, f);
       const base = f.replace(/\.md$/i, "");
       // Slug senza slash (i dir annidati come "modules/interni" userebbero "/").
-      const slug = (dir ? `${dir.replace(/\//g, "-")}__${base}` : base).toLowerCase();
+      // Manuale per pagina (26/11): l'indice è «manuale», ogni guida «pagina__<nome>» (lo usa il pulsante «?»).
+      if (dir === "manuale" && base.toUpperCase() !== "INDICE") continue;
+      const slug = dir === "manuale" ? "manuale"
+        : dir === "manuale/pagine" ? `pagina__${base}`.toLowerCase()
+        : (dir ? `${dir.replace(/\//g, "-")}__${base}` : base).toLowerCase();
       const category: DocEntry["category"] =
+        dir === "manuale" ? "Il prodotto" :
+        dir === "manuale/pagine" ? "Pagine" :
+        dir === "archivio" ? "Archivio" :
         dir === "adr" ? "Architettura (ADR)" :
         dir === "playbooks" ? "Playbook" :
         dir.startsWith("modules") ? "Moduli" :
-        "Manuali";
+        "Manuali tecnici";
 
       // Estrae il primo H1 come titolo
       let title = base.replace(/[-_]/g, " ");
       try {
         const content = await readFile(filePath, "utf-8");
+        const guida = dir === "manuale/pagine" ? leggiGuida(base, content) : null;
+        if (dir === "manuale/pagine" && !guida) continue; // senza intestazione non è una guida
         const h1 = content.match(/^#\s+(.+)$/m);
-        if (h1) title = h1[1].trim();
+        if (guida) title = guida.titolo;
+        else if (h1) title = h1[1].trim();
       } catch { /* ignore */ }
 
       entries.push({ slug, filePath, category, title, filename: f, relPath: dir ? `${dir}/${f}` : f });
@@ -68,20 +79,29 @@ async function listDocs(): Promise<DocEntry[]> {
 
   // Ordine: Manuali (specifico), Moduli (alfabetico), ADR (per numero), Playbook.
   const manualPriority: Record<string, number> = {
-    "manuale-utente": 1,
-    "stati-host-e-discovery": 2,
-    "manuale-sviluppatore": 3,
+    "stati-host-e-discovery": 1,
+    "manuale-sviluppatore": 9,
   };
   return entries.sort((a, b) => {
-    const catOrder = (c: DocEntry["category"]) =>
-      c === "Manuali" ? 0 : c === "Moduli" ? 1 : c === "Architettura (ADR)" ? 2 : 3;
+    const catOrder = (c: DocEntry["category"]) => CATEGORIE.indexOf(c);
     const co = catOrder(a.category) - catOrder(b.category);
     if (co !== 0) return co;
-    if (a.category === "Manuali") {
+    if (a.category === "Manuali tecnici") {
       return (manualPriority[a.slug] ?? 99) - (manualPriority[b.slug] ?? 99);
     }
     return a.title.localeCompare(b.title, "it");
   });
+}
+
+const CATEGORIE: readonly DocEntry["category"][] = ["Il prodotto", "Pagine", "Manuali tecnici", "Moduli", "Architettura (ADR)", "Playbook", "Archivio"];
+
+/** Una guida per pagina si mostra col suo titolo e la versione, senza l'intestazione fra le righe `---`. */
+function testoDaMostrare(entry: DocEntry, content: string): string {
+  if (entry.category !== "Pagine") return content;
+  const g = leggiGuida(entry.slug, content);
+  if (!g) return content;
+  const quando = [g.versione && `v${g.versione}`, g.aggiornata].filter(Boolean).join(" · ");
+  return `# ${g.titolo}\n\n${quando ? `*Aggiornata alla ${quando} · pagina ${g.percorsi.join(", ")}*\n\n` : ""}${g.testo}`;
 }
 
 /** Sicuro: traduce uno slug (es. "playbooks__dr") in un path verificato dentro docs/.
@@ -135,13 +155,13 @@ export default async function ManualPage({
               <BookOpen className="h-4 w-4 text-primary" />
               <h2 className="font-semibold text-sm">Documentazione</h2>
             </div>
-            {(["Manuali", "Moduli", "Architettura (ADR)", "Playbook"] as const).map((cat) => {
+            {CATEGORIE.map((cat) => {
               const items = grouped[cat] ?? [];
               if (items.length === 0) return null;
-              const Icon = cat === "Manuali" ? FileText : cat === "Architettura (ADR)" ? FileCode : FolderOpen;
+              const Icon = cat === "Il prodotto" ? BookOpen : cat === "Manuali tecnici" || cat === "Pagine" ? FileText : cat === "Architettura (ADR)" ? FileCode : FolderOpen;
               return (
                 <div key={cat}>
-                  <div className="flex items-center gap-1.5 px-2 mb-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                  <div className="flex items-center gap-1.5 px-2 mb-1 text-[13px] uppercase tracking-wider text-muted-foreground font-semibold">
                     <Icon className="h-3 w-3" />
                     {cat}
                   </div>
@@ -151,7 +171,7 @@ export default async function ManualPage({
                         <Link
                           href={`/manual?doc=${e.slug}`}
                           className={cn(
-                            "block px-2 py-1.5 rounded text-xs leading-tight hover:bg-muted",
+                            "block px-2 py-1.5 rounded text-[13px] leading-tight hover:bg-muted",
                             e.slug === slug
                               ? "bg-primary/10 text-primary font-medium"
                               : "text-foreground/80"
@@ -173,7 +193,7 @@ export default async function ManualPage({
       <main className="flex-1 min-w-0">
         <Card>
           <CardContent className="p-6 lg:p-8">
-            <div className="mb-4 pb-3 border-b text-xs text-muted-foreground flex items-center justify-between flex-wrap gap-2">
+            <div className="mb-4 pb-3 border-b text-[13px] text-muted-foreground flex items-center justify-between flex-wrap gap-2">
               <span className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 <span className="font-mono">{data.entry.category} / {data.entry.relPath}</span>
@@ -187,7 +207,7 @@ export default async function ManualPage({
                 Vedi su GitHub ↗
               </a>
             </div>
-            <MarkdownViewer content={data.content} currentSlug={slug} />
+            <MarkdownViewer content={testoDaMostrare(data.entry, data.content)} currentSlug={slug} />
           </CardContent>
         </Card>
       </main>

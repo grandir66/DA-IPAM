@@ -8,19 +8,16 @@
  * in questa fila. L'àncora si legge dall'indirizzo e si segue con `hashchange`; la pagina fa lo stesso.
  *
  * Dal 14/11 anche Impostazioni: le sue schede si scelgono con `?tab=`, alcune le vede solo chi può (`per`), e una
- * riga verticale separa i gruppi (`stacco`). Dal 24/11 un gruppo può avere il nome (`gruppo`) e, dove c'è una guida
- * (`lib/guida/guide.ts`), in fondo alla fila sta «Come si usa».
+ * riga verticale separa i gruppi (`stacco`). Dal 24/11 un gruppo può avere il nome (`gruppo`). La spiegazione
+ * della scheda sta nel manuale della pagina (pulsante «?», dal 26/11).
  */
 import { Fragment, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { indirizzoScheda, sezioneDelPercorso, type SchedaSezione } from "@/lib/menu/sezioni";
-import { guidaDi } from "@/lib/guida/guide";
 import { eAdmin } from "@/lib/permessi/ruolo";
 import { cn } from "@/lib/utils";
-import { ComeSiUsa } from "./come-si-usa";
-import { useParteAperta } from "./parte-guida";
 import { FILA_SCHEDE, SCHEDA_ACCESA, SCHEDA_BASE, SCHEDA_SPENTA } from "./forma-scheda";
 
 /** `useSearchParams` vuole un confine `Suspense`: sta qui, così il layout non cambia. */
@@ -37,7 +34,6 @@ function Fila() {
   const tab = useSearchParams()?.get("tab") ?? "";
   const { data } = useSession();
   const utente = data?.user as { role?: string; tenants?: unknown[] } | undefined;
-  const parte = useParteAperta();
   const [ancora, setAncora] = useState("");
   useEffect(() => {
     const leggi = () => setAncora(window.location.hash.slice(1));
@@ -54,7 +50,6 @@ function Fila() {
   // prima che vede della stessa pagina, che è quella che la pagina gli mostra.
   const accesa = siVede(trovata.scheda) ? trovata.scheda : schede.find((s) => s.href === trovata.scheda.href);
   if (schede.length === 0) return null;
-  const guida = accesa ? guidaDi(accesa.href, accesa.ancora, parte) : null;
   return (
     <nav aria-label={`Schede di ${trovata.sezione.nome}`} className={cn("mb-3", FILA_SCHEDE)}>
       {schede.map((s, i) => {
@@ -91,7 +86,6 @@ function Fila() {
           </Fragment>
         );
       })}
-      {guida && accesa && <ComeSiUsa titolo={accesa.etichetta} guida={guida} />}
     </nav>
   );
 }

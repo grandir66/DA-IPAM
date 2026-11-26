@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Quale parte della pagina è aperta, per «Come si usa»: il pulsante sta nella fila di schede, fuori dalla pagina, quindi
- * la pagina lo dichiara qui con `useParteGuida` e la fila lo legge con `useParteAperta`.
+ * Quale parte della pagina è aperta, per il «?» del manuale: il pulsante sta nel guscio, fuori dalla pagina, quindi
+ * la pagina lo dichiara qui con `useParteGuida` e il pulsante lo legge con `useParteAperta` (scorre a `{#parte}`).
  */
 import { useEffect, useSyncExternalStore } from "react";
 

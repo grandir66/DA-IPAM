@@ -1,0 +1,12 @@
+[
+  { "file": "pagina", "percorso": "/discovery",
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='Cerca IP']" },
+      { "n": 2, "cerca": "button:has-text('Filtri')" },
+      { "n": 3, "cerca": "button:has-text('Tutti')" },
+      { "n": 4, "cerca": "th:has-text('Profilo')" },
+      { "n": 5, "cerca": "th:has-text('Stato')" }
+    ] },
+  { "file": "azioni-riga", "percorso": "/discovery", "altezza": 900,
+    "prima": [{ "clic": "tbody tr >> nth=0 >> button >> nth=0", "attesa": 800 }] }
+]

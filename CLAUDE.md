@@ -13,7 +13,7 @@ DA-INVENT (alias DA-IPAM): IPAM multi-tenant Next.js 16. Gestisce reti, scansion
 - **Stile dell'interfaccia: [docs/STILE-UI.md](docs/STILE-UI.md)** ← vincolante per ogni pagina (regola 15)
 - Rules file-scoped: [.claude/rules/](.claude/rules/)
 - ADR: [docs/adr/](docs/adr/) (template: `0000-template.md`)
-- Manuali: [docs/MANUALE-SVILUPPATORE.md](docs/MANUALE-SVILUPPATORE.md), [docs/MANUALE-UTENTE.md](docs/MANUALE-UTENTE.md)
+- Manuali: [docs/MANUALE-SVILUPPATORE.md](docs/MANUALE-SVILUPPATORE.md), manuale per pagina in [docs/manuale/](docs/manuale/INDICE.md) (una guida per pagina, pulsante «?»; il vecchio [MANUALE-UTENTE](docs/archivio/MANUALE-UTENTE.md) è in archivio)
 - Regole comuni a tutti i progetti: `~/.claude/CLAUDE.md`
 
 ## Stack vincolante

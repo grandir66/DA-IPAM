@@ -7,6 +7,7 @@ import { SidebarProvider, useSidebar } from "./sidebar-context";
 import { PageTransition } from "./page-transition";
 import { UpdateChecker } from "./update-checker";
 import { GiriProvider } from "./giri-context";
+import { PulsanteManuale } from "./pulsante-manuale";
 
 export function AppShell({ children, fascia }: { children: React.ReactNode; fascia?: React.ReactNode }) {
   const router = useRouter();
@@ -81,7 +82,10 @@ function AppShellInner({ children, fascia }: { children: React.ReactNode; fascia
           {fascia}
           {/* Niente barra in alto (Riccardo, 20/10): tema e utente stanno in fondo al menu, la
               ricerca nelle tabelle che la chiedono. Sul telefono 3,5rem in alto per il pulsante del menu. */}
-          <div className="flex-1 overflow-auto px-2 pt-14 pb-2 md:px-3 md:py-3">
+          {/* Il «?» del manuale della pagina (26/11): in alto a destra, sempre nello stesso punto; da scrivania la
+              pagina lascia 3rem a destra perché non copra i pulsanti dell'intestazione. */}
+          <div className="relative flex-1 overflow-auto px-2 pt-14 pb-2 md:py-3 md:pl-3 md:pr-14">
+            <PulsanteManuale />
             <PageTransition>{children}</PageTransition>
           </div>
         </main>

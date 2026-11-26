@@ -2,7 +2,8 @@
 
 ## 2026-11-26 — Manuale per pagina con il «?» (Riccardo: «sì a tutto»)
 - [x] Riccardo, 26/11 sera: «le guide sono molto limitate nelle voci, non mostrano l'uso delle schede, dei pulsanti, del menu destro; serve un modulo per le parti comuni». Fatto: `docs/manuale/INTERFACCIA.md` (v0.9.1366) e `pagine/discovery.md` riscritta come modello.
-- [ ] Portare le altre 85 guide al livello di `discovery.md`: ogni scheda, ogni pulsante e voce di menu presi dal codice, il menu della riga per ruolo, le azioni su più righe, «Come si fa» con casi veri, schermate dei menu aperti. In attesa dell'ok di Riccardo per 4 agenti, uno per gruppo di menu.
+- [x] Riccardo, 26/11 sera: «il simbolo e non la descrizione» e «solo la zona del display». Fatto in v0.9.1367: `icona:nome` / `tasto:nome` nel testo (elenco in `src/lib/manuale/icone.ts`, la prova fallisce su un nome che non c'è) e `ritaglio` nelle schermate; rifatte Apparati e INTERFACCIA.
+- [ ] Portare le altre 85 guide al livello di `discovery.md` (con icone vere e schermate ritagliate): ogni scheda, ogni pulsante e voce di menu presi dal codice, il menu della riga per ruolo, le azioni su più righe, «Come si fa» con casi veri, schermate dei menu aperti. In attesa dell'ok di Riccardo per 4 agenti, uno per gruppo di menu.
 
 - [x] Formato della guida (`src/lib/manuale/formato.ts`), API `/api/manuale/pagina`, pulsante «?» nel guscio, àncore `{#parte}`
 - [x] Script delle schermate con IP/MAC/email/nomi PC finti (`scripts/manuale/schermate.cjs`); i nomi degli host restano (Riccardo, 26/11)

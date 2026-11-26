@@ -159,7 +159,7 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
                         {inCambio === m.id ? "…" : "Scegli come principale"}
                       </Button>
                     )}
-                    {!isCurrent && (
+                    {isAdmin && !isCurrent && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -177,10 +177,10 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Nessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.
+            Nessun altro IP aggregato.{isAdmin && " Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente."}
           </p>
         )}
-        <div className="flex gap-2">
+        {isAdmin && <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => apriCollegaIp()} disabled={!host}>
             <Link2 className="h-3.5 w-3.5 mr-1.5" />
             Collega altro IP
@@ -196,7 +196,7 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
               Esci dal cluster
             </Button>
           )}
-        </div>
+        </div>}
       </div>
     </Section>
   );

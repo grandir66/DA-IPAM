@@ -99,7 +99,7 @@ function CollegamentiEsterni({ ctx }: { ctx: ContestoScheda }) {
           ) : (
             <RigaCollegamento
               ok={false} nome="LibreNMS" stato="non abbinato"
-              azione={<Button type="button" size="sm" variant="outline" onClick={() => void abbinaLibreNms(host.id, ricarica)}>Aggiungi</Button>}
+              azione={isAdmin ? <Button type="button" size="sm" variant="outline" onClick={() => void abbinaLibreNms(host.id, ricarica)}>Aggiungi</Button> : undefined}
             />
           )
         )}
@@ -153,7 +153,7 @@ function ReteESnmp({ ctx }: { ctx: ContestoScheda }) {
 
 /** Host non gestito (Discovery): classificazione, inventario e note, asset NIS2 e collegamenti. Niente credenziali né accesso. */
 function GestioneHost({ ctx }: { ctx: ContestoScheda }) {
-  const { host, isAsset, asset, slugsClassificazione, etichettaClassificazione, ricarica, salvaCampoHost, creaAsset } = ctx;
+  const { host, isAsset, asset, slugsClassificazione, etichettaClassificazione, ricarica, salvaCampoHost, creaAsset, isAdmin } = ctx;
   const [classe, setClasse] = useState(host.classification && host.classification !== "unknown" ? host.classification : "unknown");
   const [seriale, setSeriale] = useState(host.serial_number ?? "");
   const [inventario, setInventario] = useState(host.inventory_code ?? "");
@@ -172,7 +172,7 @@ function GestioneHost({ ctx }: { ctx: ContestoScheda }) {
           <div className="space-y-3">
             <div className="space-y-1">
               <Label htmlFor="ed-classification" className="text-[13px] font-semibold text-muted-foreground">Classificazione</Label>
-              <Select value={classe} onValueChange={(v) => {
+              <Select value={classe} disabled={!isAdmin} onValueChange={(v) => {
                 const next = v ?? "unknown";
                 setClasse(next);
                 void salvaCampoHost({ classification: next }).then(() => ricarica());
@@ -201,19 +201,19 @@ function GestioneHost({ ctx }: { ctx: ContestoScheda }) {
           <div className="mt-3 space-y-3">
             <div className="space-y-1">
               <Label htmlFor="ed-serial" className="text-[13px] font-semibold text-muted-foreground">Seriale</Label>
-              <Input id="ed-serial" value={seriale} onChange={(e) => setSeriale(e.target.value)}
+              <Input id="ed-serial" value={seriale} disabled={!isAdmin} onChange={(e) => setSeriale(e.target.value)}
                 onBlur={() => void salvaCampoHost({ serial_number: seriale || null })}
                 placeholder="Inserisci a mano se non rilevato" className="font-mono text-sm" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="inv-code" className="text-[13px] font-semibold text-muted-foreground">N. inventario</Label>
-              <Input id="inv-code" value={inventario} onChange={(e) => setInventario(e.target.value)}
+              <Input id="inv-code" value={inventario} disabled={!isAdmin} onChange={(e) => setInventario(e.target.value)}
                 onBlur={() => void salvaCampoHost({ inventory_code: inventario || null })}
                 placeholder="Es: INV-2026-001" className="font-mono text-sm" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="inv-notes" className="text-[13px] font-semibold text-muted-foreground">Note</Label>
-              <Textarea id="inv-notes" value={note} onChange={(e) => setNote(e.target.value)}
+              <Textarea id="inv-notes" value={note} disabled={!isAdmin} onChange={(e) => setNote(e.target.value)}
                 onBlur={() => void salvaCampoHost({ notes: note })}
                 placeholder="Annotazioni libere su questo host…" rows={2} className="max-h-40 overflow-y-auto text-sm" />
             </div>
@@ -227,10 +227,12 @@ function GestioneHost({ ctx }: { ctx: ContestoScheda }) {
           ) : (
             <Riquadro titolo="Asset NIS2">
               <p className="mb-3 text-sm text-muted-foreground">Questo host non è ancora nell&apos;inventario NIS2.</p>
-              <Button type="button" variant="outline" onClick={() => void creaAsset()}>
-                <PackagePlus className="mr-2 h-4 w-4" />
-                Crea asset NIS2
-              </Button>
+              {isAdmin && (
+                <Button type="button" variant="outline" onClick={() => void creaAsset()}>
+                  <PackagePlus className="mr-2 h-4 w-4" />
+                  Crea asset NIS2
+                </Button>
+              )}
             </Riquadro>
           )}
           <CollegamentiEsterni ctx={ctx} />
@@ -247,7 +249,7 @@ export function TabGestione({ ctx }: { ctx: ContestoScheda }) {
 }
 
 function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
-  const { host, device, asset, isAsset, runtimeSummary, slugsClassificazione, etichettaClassificazione, versioneBinding, alCambioBinding, ricarica, salvaCampoHost, creaAsset } = ctx;
+  const { host, device, asset, isAsset, runtimeSummary, slugsClassificazione, etichettaClassificazione, versioneBinding, alCambioBinding, ricarica, salvaCampoHost, creaAsset, isAdmin } = ctx;
 
   // Campi editabili: stato locale, riletto quando la pagina ricarica l'host.
   const [seriale, setSeriale] = useState(host.serial_number ?? "");
@@ -313,19 +315,19 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
           <div className="mt-3 space-y-3">
             <div className="space-y-1">
               <Label htmlFor="ed-serial" className="text-[13px] font-semibold text-muted-foreground">Seriale</Label>
-              <Input id="ed-serial" value={seriale} onChange={(e) => setSeriale(e.target.value)}
+              <Input id="ed-serial" value={seriale} disabled={!isAdmin} onChange={(e) => setSeriale(e.target.value)}
                 onBlur={() => void salvaCampoHost({ serial_number: seriale || null })}
                 placeholder="Inserisci a mano se non rilevato" className="font-mono text-sm" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="inv-code" className="text-[13px] font-semibold text-muted-foreground">N. inventario</Label>
-              <Input id="inv-code" value={inventario} onChange={(e) => setInventario(e.target.value)}
+              <Input id="inv-code" value={inventario} disabled={!isAdmin} onChange={(e) => setInventario(e.target.value)}
                 onBlur={() => void salvaCampoHost({ inventory_code: inventario || null })}
                 placeholder="Es: INV-2026-001" className="font-mono text-sm" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="inv-notes" className="text-[13px] font-semibold text-muted-foreground">Note</Label>
-              <Textarea id="inv-notes" value={note} onChange={(e) => setNote(e.target.value)}
+              <Textarea id="inv-notes" value={note} disabled={!isAdmin} onChange={(e) => setNote(e.target.value)}
                 onBlur={() => void salvaCampoHost({ notes: note })}
                 placeholder="Annotazioni libere su questo apparato…" rows={2} className="max-h-40 overflow-y-auto text-sm" />
             </div>
@@ -398,10 +400,12 @@ function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
           ) : (
             <Riquadro titolo="Asset NIS2">
               <p className="mb-3 text-sm text-muted-foreground">Questo apparato non è ancora nell&apos;inventario NIS2.</p>
-              <Button type="button" variant="outline" onClick={() => void creaAsset()}>
-                <PackagePlus className="mr-2 h-4 w-4" />
-                Crea asset NIS2
-              </Button>
+              {isAdmin && (
+                <Button type="button" variant="outline" onClick={() => void creaAsset()}>
+                  <PackagePlus className="mr-2 h-4 w-4" />
+                  Crea asset NIS2
+                </Button>
+              )}
             </Riquadro>
           )}
           <CollegamentiEsterni ctx={ctx} />

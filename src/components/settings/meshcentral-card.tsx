@@ -181,9 +181,11 @@ export function MeshCentralCard({
                 <Button variant="outline" size="sm" disabled={loading} onClick={() => void fetchState()}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 </Button>
-                <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
-                  Disinstalla e cancella i dati…
-                </Button>
+                {isAdmin && (
+                  <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
+                    Disinstalla e cancella i dati…
+                  </Button>
+                )}
               </>
             ) : (
               <Button disabled={installBusy || !isAdmin} onClick={() => void onInstall()}>

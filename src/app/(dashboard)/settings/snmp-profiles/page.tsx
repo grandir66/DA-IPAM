@@ -33,6 +33,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -182,6 +183,9 @@ function oidPrefixesToJson(prefixes: OidPrefixEntry[]): string {
 }
 
 export default function SnmpProfilesPage() {
+  // Importa, Nuovo profilo, Reset Builtin, Esporta in cartelle (scrive sul server), Modifica, Elimina e
+  // l'interruttore acceso/spento scrivono: solo amministratori (26/11/2026). Esporta JSON e Copia restano.
+  const admin = useEAdmin();
   const [profiles, setProfiles] = useState<SnmpProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -671,6 +675,8 @@ export default function SnmpProfilesPage() {
                 <Download className="h-4 w-4 mr-1" />
                 Esporta JSON
               </Button>
+              {admin && (
+              <>
               <Button
                 variant="outline"
                 size="sm"
@@ -689,8 +695,10 @@ export default function SnmpProfilesPage() {
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Reset Builtin
               </Button>
+              </>
+              )}
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4 mr-1" />Nuovo profilo</Button>} onClick={handleOpenCreate} />
+                {admin && <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4 mr-1" />Nuovo profilo</Button>} onClick={handleOpenCreate} />}
                 <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-none">
                   <DialogHeader>
                     <DialogTitle>
@@ -1018,6 +1026,7 @@ export default function SnmpProfilesPage() {
                           <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                             <Switch
                               checked={profile.enabled === 1}
+                              disabled={!admin}
                               onCheckedChange={() => handleToggleEnabled(profile)}
                             />
                           </div>
@@ -1069,6 +1078,7 @@ export default function SnmpProfilesPage() {
                             >
                               {copied === profile.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                             </Button>
+                            {admin && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1077,7 +1087,8 @@ export default function SnmpProfilesPage() {
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            {profile.builtin === 0 && (
+                            )}
+                            {admin && profile.builtin === 0 && (
                               <Button
                                 variant="ghost"
                                 size="sm"

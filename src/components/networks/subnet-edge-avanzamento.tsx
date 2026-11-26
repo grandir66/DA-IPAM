@@ -21,6 +21,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { oraItaliana } from "@/lib/vuln/finestra";
 import { daQuanto, percentoBarra, testoDurata, type AvanzamentoRete, type RispostaHostLenti } from "@/lib/vuln/avanzamento";
 import type { StatoHostLenti } from "@/lib/vuln/edge-subnet-bridge";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 const OGNI_MS = 30_000;
 const NOTA = "text-[13px] text-muted-foreground";
@@ -169,6 +170,7 @@ export function AvanzamentoDellaRete({ networkId, nome, cidr }: { networkId: num
 }
 
 export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: number; lettura: Lettura<StatoHostLenti>; posto: "sopra" | "fondo" }) {
+  const admin = useEAdmin();
   const [salvando, setSalvando] = useState(false);
   const d = lettura.dati;
 
@@ -203,7 +205,7 @@ export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: numb
         <Switch
           id={`escludi-lenti-${networkId}`}
           checked={d.escludi_lenti}
-          disabled={salvando}
+          disabled={salvando || !admin}
           onCheckedChange={(v) => void salva({ escludi_lenti: v })}
           className="mt-0.5"
         />
@@ -218,7 +220,7 @@ export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: numb
         <Switch
           id={`job-lenti-${networkId}`}
           checked={d.job_lenti}
-          disabled={salvando}
+          disabled={salvando || !admin}
           onCheckedChange={(v) => void salva({ job_lenti: v })}
           className="mt-0.5"
         />
@@ -240,9 +242,11 @@ export function BloccoHostLenti({ networkId, lettura, posto }: { networkId: numb
             <span className="font-mono">{h.ip}</span>
             <span className="text-muted-foreground">ultima durata {testoDurata(h.durata_s)}</span>
             <span className="text-muted-foreground">visto {h.volte} {h.volte === 1 ? "volta" : "volte"}</span>
-            <Button type="button" variant="outline" size="sm" className="min-h-8" disabled={salvando} onClick={() => void salva({ togli_ip: h.ip })}>
-              Riporta nella scansione
-            </Button>
+            {admin && (
+              <Button type="button" variant="outline" size="sm" className="min-h-8" disabled={salvando} onClick={() => void salva({ togli_ip: h.ip })}>
+                Riporta nella scansione
+              </Button>
+            )}
           </li>
         ))}
       </ul>

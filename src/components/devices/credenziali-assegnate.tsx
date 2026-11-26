@@ -15,6 +15,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { BadgeAvviso, BadgeEsito, type StatoEsito } from "@/components/devices/rendi-apparato-esito";
 import { fetchJson } from "@/lib/fetch-json";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { cn } from "@/lib/utils";
 import { righeAssegnate, senzaCredenzialeProvata, type BindingPerEsito } from "@/lib/devices/credenziali-assegnate";
 import { nomeFonteUsata, type UsataAdesso } from "@/lib/devices/usata-adesso";
@@ -88,6 +89,7 @@ export function CredenzialiAssegnate({
   onProvata?: () => void;
   onCambia?: () => void;
 }) {
+  const admin = useEAdmin();
   const [bindings, setBindings] = useState<BindingPerEsito[] | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [inProva, setInProva] = useState<number | null>(null);
@@ -148,7 +150,7 @@ export function CredenzialiAssegnate({
                 <th className="py-1.5 pr-3">Credenziale</th>
                 <th className="py-1.5 pr-3">Per</th>
                 <th className="py-1.5 pr-3">Ultimo esito</th>
-                <th className="py-1.5" />
+                {admin && <th className="py-1.5" />}
               </tr>
             </thead>
             <tbody>
@@ -167,7 +169,7 @@ export function CredenzialiAssegnate({
                   <td className="py-2 pr-3">
                     <BadgeEsito esito={{ stato: inProva === r.bindingId && r.bindingId != null ? "in_corso" : STATO_BADGE[r.esito], quando: r.testedAt }} />
                   </td>
-                  <td className="py-2 text-right">
+                  {admin && <td className="py-2 text-right">
                     <span className="inline-flex gap-2">
                       <Button
                         type="button"
@@ -183,7 +185,7 @@ export function CredenzialiAssegnate({
                         Cambia
                       </Button>
                     </span>
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>
@@ -220,6 +222,7 @@ export function ClassificazioneApparato({
   scelte?: ReadonlyArray<{ slug: string; label: string }>;
   onCambiata: () => void;
 }) {
+  const admin = useEAdmin();
   const [occupato, setOccupato] = useState(false);
 
   async function scegli(slug: string) {
@@ -277,7 +280,7 @@ export function ClassificazioneApparato({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">Classificazione</span>
-        {scelte ? (
+        {scelte && admin ? (
           <Select value={classificazione || "unknown"} disabled={occupato} onValueChange={(v) => void scegli(String(v ?? "unknown"))}>
             <SelectTrigger aria-label="Classificazione" className="min-w-44 text-sm font-semibold">
               <SelectValue placeholder="Seleziona…" />
@@ -292,7 +295,7 @@ export function ClassificazioneApparato({
           <span className="text-sm font-semibold">{etichetta}</span>
         )}
         {aMano && <BadgeAMano />}
-        {aMano && (
+        {aMano && admin && (
           <Button type="button" size="sm" variant="outline" disabled={occupato} onClick={() => void tornaAutomatica()}>
             Torna automatica
           </Button>
@@ -310,7 +313,7 @@ export function ClassificazioneApparato({
                   key={r}
                   type="button"
                   aria-pressed={attivo}
-                  disabled={occupato}
+                  disabled={occupato || !admin}
                   onClick={() => void alternaRuolo(r)}
                   className={cn(
                     "inline-flex h-8 items-center gap-1.5 rounded-md border-2 px-2.5 text-[13px] font-semibold transition-colors disabled:opacity-60",

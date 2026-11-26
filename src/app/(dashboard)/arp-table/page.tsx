@@ -32,6 +32,7 @@ import type { MacIpMapping } from "@/types";
 import type { Network } from "@/types";
 import { useClientTableSort } from "@/hooks/use-table-sort";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
+import { SoloAdmin } from "@/components/shared/solo-admin";
 
 /** Tetto della lista: oltre, la pagina lo dice (UI-5) invece di tagliare in silenzio. */
 const ARP_LIMIT = 500;
@@ -215,6 +216,7 @@ export default function ArpTablePage() {
                   ))}
                 </SelectContent>
               </Select>
+              <SoloAdmin>
               <Button
                 variant="outline"
                 size="sm"
@@ -225,6 +227,7 @@ export default function ArpTablePage() {
                 <RadioTower className={`h-4 w-4 mr-1.5 ${polling ? "animate-pulse" : ""}`} />
                 {polling ? "Poll…" : "Forza poll router"}
               </Button>
+              </SoloAdmin>
               <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/arp-table/trunk" />} title="VLAN e MAC visti dal sensore sulla porta trunk">
                 VLAN dal trunk
               </Button>

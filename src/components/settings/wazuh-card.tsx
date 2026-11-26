@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink, Download } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface WazuhConfig {
   enabled: boolean;
@@ -57,6 +58,9 @@ interface TestResult {
 }
 
 export function WazuhCard() {
+  // Chi è in sola lettura legge la configurazione ma non la cambia né la prova (26/11/2026):
+  // sync, config, test, verifica repliche e script dell'agente sono requireAdmin sul server.
+  const admin = useEAdmin();
   const perBrowser = useUrlPerBrowser();
   const [cfg, setCfg] = useState<WazuhConfig | null>(null);
   const [status, setStatus] = useState<WazuhStatus | null>(null);
@@ -413,10 +417,12 @@ export function WazuhCard() {
           )}
 
           <div className="flex gap-2 pt-1 flex-wrap">
+            {admin && (
             <Button size="sm" onClick={handleSync} disabled={syncing}>
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
               Sincronizza ora
             </Button>
+            )}
             {cfg!.url && (
               <a
                 href={perBrowser(cfg!.url.replace(/:55000(\/.*)?$/, ""))}
@@ -427,14 +433,20 @@ export function WazuhCard() {
                 <ExternalLink className="h-3.5 w-3.5" /> Apri Dashboard Wazuh
               </a>
             )}
-            <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
-              Modifica credenziali
-            </Button>
-            <Button size="sm" variant="destructive" onClick={handleDelete}>
-              <Trash2 className="h-3.5 w-3.5 mr-1" /> Disabilita
-            </Button>
+            {admin && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
+                  Modifica credenziali
+                </Button>
+                <Button size="sm" variant="destructive" onClick={handleDelete}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Disabilita
+                </Button>
+              </>
+            )}
           </div>
         </div>
+      ) : !admin ? (
+        <p className="text-sm text-muted-foreground">Wazuh non è configurato. Lo collega un amministratore.</p>
       ) : (
         /* ──────────────── Form (nuova config o modifica) ──────────────── */
         <div className="space-y-3">
@@ -578,7 +590,7 @@ export function WazuhCard() {
           Servizio separato dal Manager Wazuh: espone lo stato dell&apos;archivio immutabile e
           delle repliche. Il token è write-only — non viene mai ripopolato in lettura.
         </p>
-        <fieldset className="border rounded-md p-3 space-y-2">
+        <fieldset disabled={!admin} className="border rounded-md p-3 space-y-2">
           <legend className="text-xs font-semibold px-1 text-muted-foreground">Endpoint di stato</legend>
           <label className="text-sm space-y-1 block">
             <span>URL</span>
@@ -614,6 +626,7 @@ export function WazuhCard() {
           </div>
         </fieldset>
 
+        {admin && (
         <div className="flex gap-2 flex-wrap">
           <Button size="sm" onClick={handleSaveStore} disabled={storeSaving}>
             {storeSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
@@ -624,6 +637,7 @@ export function WazuhCard() {
             Verifica
           </Button>
         </div>
+        )}
 
         {replicationResult && (
           <div
@@ -644,7 +658,7 @@ export function WazuhCard() {
       </div>
 
       {/* ──────────── Script install AGENTE per sistema operativo ──────────── */}
-      {configured && (
+      {configured && admin && (
         <div className="border-t pt-3 mt-1 space-y-2">
           <div className="text-sm font-medium flex items-center gap-1.5">
             <Download className="h-3.5 w-3.5" /> Script install agente (per sistema operativo)

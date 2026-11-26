@@ -46,6 +46,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, RefreshCw, Pencil, ArrowLeft, Link2, Server, ExternalLink, Settings2, ShieldCheck, Check, X, Database } from "lucide-react";
 import { useClientTableSort } from "@/hooks/use-table-sort";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -134,6 +135,7 @@ const STORAGE_ALIASES = ["nas", "nas_synology", "nas_qnap"];
 
 export function DeviceListByClassification({ classification }: DeviceListByClassificationProps) {
   const router = useRouter();
+  const admin = useEAdmin();
 
   // Redirect vecchie voci storage unificate
   useEffect(() => {
@@ -798,6 +800,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
   const SCANNABLE_CLASSIFICATIONS = ["router", "switch", "hypervisor", "server", "workstation", "notebook", "storage", "access_point", "firewall", "iot", "stampante", "telecamera", "voip", "vm"];
   const showAddButton = SCANNABLE_CLASSIFICATIONS.includes(effectiveClassification);
+  // Chi è in sola lettura non vede i pulsanti che scrivono (26/11/2026): la colonna Azioni resta solo se ha ancora
+  // qualcosa da aprire (la scheda dell'host, i dati Proxmox).
+  const colonnaAzioni = admin || devices.some((d) => isHostItem(d) || (showAddButton && isProxmoxDevice(d)));
   const isHypervisor = effectiveClassification === "hypervisor";
 
   return (
@@ -812,7 +817,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
             <p className="text-muted-foreground mt-1">{meta.description}</p>
           </div>
         </div>
-        {showAddButton && (
+        {showAddButton && admin && (
           <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) azzeraNuovo(); }}>
             <DialogTrigger render={<Button><Plus className="h-4 w-4 mr-2" />Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>} />
             <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
@@ -886,12 +891,12 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         </Card>
       ) : (
         <>
-          {isHypervisor && devices.some((d) => !isHostItem(d) && !isProxmoxDevice(d)) && (
+          {admin && isHypervisor && devices.some((d) => !isHostItem(d) && !isProxmoxDevice(d)) && (
             <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
               Per gli hypervisor già presenti: clicca <strong>Proxmox</strong> per impostarli come host Proxmox e abilitare lo scan. In Modifica usa <strong>Protocollo SSH</strong> (porta 22) per evitare problemi SSL, oppure API (porta 8006).
             </div>
           )}
-        {selectedIds.size > 0 && (
+        {admin && selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 px-4 py-2">
             <span className="text-sm font-medium">{selectedIds.size} selezionati</span>
             {selectedHostItems.length > 0 && (
@@ -946,13 +951,15 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
           <Table fissa>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={selectedIds.size === devices.length && devices.length > 0}
-                    onCheckedChange={toggleAll}
-                    aria-label="Seleziona tutti"
-                  />
-                </TableHead>
+                {admin && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={selectedIds.size === devices.length && devices.length > 0}
+                      onCheckedChange={toggleAll}
+                      aria-label="Seleziona tutti"
+                    />
+                  </TableHead>
+                )}
                 <SortableTableHead columnId="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
                   Nome
                 </SortableTableHead>
@@ -1001,7 +1008,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 <SortableTableHead columnId="status" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>
                   Stato
                 </SortableTableHead>
-                <TableHead className="w-40 min-w-[140px]">Azioni</TableHead>
+                {colonnaAzioni && <TableHead className="w-40 min-w-[140px]">Azioni</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1013,13 +1020,15 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   className="cursor-pointer"
                   onClick={() => isHostItem(dev) ? router.push(`/hosts/${dev.host_id}`) : router.push(`/devices/${dev.id}`)}
                 >
-                  <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
-                    <Checkbox
-                      checked={selectedIds.has(key)}
-                      onCheckedChange={() => toggleSelection(key)}
-                      aria-label={`Seleziona ${dev.name}`}
-                    />
-                  </TableCell>
+                  {admin && (
+                    <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                      <Checkbox
+                        checked={selectedIds.has(key)}
+                        onCheckedChange={() => toggleSelection(key)}
+                        aria-label={`Seleziona ${dev.name}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">{dev.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="font-normal">
@@ -1107,11 +1116,11 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
+                  {colonnaAzioni && <TableCell>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       {isHostItem(dev) ? (
                         <>
-                          {showAddButton && (
+                          {showAddButton && admin && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1134,28 +1143,34 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                         <>
                           {showAddButton && (
                             <>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => { setEditingDevice(dev); setEditDialogOpen(true); }}
-                                title="Modifica / Assegna credenziali"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
+                              {admin && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => { setEditingDevice(dev); setEditDialogOpen(true); }}
+                                  title="Modifica / Assegna credenziali"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
                               {isProxmoxDevice(dev) ? (
                                 <>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxScan(dev.id)} disabled={proxmoxScanning !== null} title="Scan Proxmox">
-                                    <RefreshCw className={`h-4 w-4 ${proxmoxScanning === dev.id ? "animate-spin" : ""}`} />
-                                  </Button>
+                                  {admin && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxScan(dev.id)} disabled={proxmoxScanning !== null} title="Scan Proxmox">
+                                      <RefreshCw className={`h-4 w-4 ${proxmoxScanning === dev.id ? "animate-spin" : ""}`} />
+                                    </Button>
+                                  )}
                                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => loadProxmoxResult(dev)} disabled={!dev.last_proxmox_scan_result} title="Visualizza dati">
                                     <Server className="h-4 w-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxMatch(dev.id)} disabled={!dev.last_proxmox_scan_result || proxmoxMatching !== null} title="Abbina inventario">
-                                    <Link2 className="h-4 w-4" />
-                                  </Button>
+                                  {admin && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleProxmoxMatch(dev.id)} disabled={!dev.last_proxmox_scan_result || proxmoxMatching !== null} title="Abbina inventario">
+                                      <Link2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </>
-                              ) : isHypervisor && !isProxmoxDevice(dev) ? (
+                              ) : !admin ? null : isHypervisor && !isProxmoxDevice(dev) ? (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1197,19 +1212,21 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                               )}
                             </>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                            onClick={() => handleDelete(dev.id, dev.name)}
-                            title="Elimina"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {admin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                              onClick={() => handleDelete(dev.id, dev.name)}
+                              title="Elimina"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>
-                  </TableCell>
+                  </TableCell>}
                 </TableRow>
               );
               })}

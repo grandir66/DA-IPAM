@@ -9,8 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Ban, RotateCcw, Loader2 } from "lucide-react";
 import type { ExcludedIpWithNetwork } from "@/types";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 export function ExcludedIpsClient() {
+  const admin = useEAdmin();
   const [items, setItems] = useState<ExcludedIpWithNetwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -101,7 +103,7 @@ export function ExcludedIpsClient() {
                   <TableHead>Motivo</TableHead>
                   <TableHead>Eliminato da</TableHead>
                   <TableHead>Data</TableHead>
-                  <TableHead className="w-32">Azione</TableHead>
+                  {admin && <TableHead className="w-32">Azione</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -119,7 +121,7 @@ export function ExcludedIpsClient() {
                       <TableCell className="text-xs text-muted-foreground">
                         {parseDbDate(it.excluded_at).toLocaleString("it-IT")}
                       </TableCell>
-                      <TableCell>
+                      {admin && <TableCell>
                         <Button
                           variant="outline"
                           size="sm"
@@ -135,7 +137,7 @@ export function ExcludedIpsClient() {
                             </>
                           )}
                         </Button>
-                      </TableCell>
+                      </TableCell>}
                     </TableRow>
                   );
                 })}

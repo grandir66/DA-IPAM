@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,8 @@ function StatoAd({ r }: { r: RigaElencoAssegnatari }) {
 }
 
 export default function AssetAssigneesPage() {
+  // Sola lettura (26/11/2026): Nuovo, Importa, matita e cestino solo all'amministratore; il server li rifiuta già.
+  const admin = useEAdmin();
   const [dati, setDati] = useState<ElencoAssegnatari | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [pagina, setPagina] = useState(1);
@@ -132,6 +135,9 @@ export default function AssetAssigneesPage() {
   const da = totale === 0 ? 0 : (pagina - 1) * PER_PAGINA + 1;
   const a = Math.min(pagina * PER_PAGINA, totale);
 
+  // La colonna di destra serve al viewer solo per «Riassegna» (apre l'elenco degli asset, non scrive).
+  const colonnaAzioni = admin || !!dati?.righe.some((r) => !!r.ad_disattivato_il && r.asset > 0);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -142,6 +148,8 @@ export default function AssetAssigneesPage() {
           <h1 className="text-2xl font-bold">Assegnatari asset</h1>
           <p className="text-muted-foreground text-sm">Le persone a cui si assegnano gli asset; da Active Directory o inserite a mano</p>
         </div>
+        {admin && (
+        <>
         <Link href="/inventory/assignees/import-ad">
           <Button variant="outline" className="min-h-11"><Users className="h-4 w-4 mr-2" />Importa da Active Directory</Button>
         </Link>
@@ -149,6 +157,8 @@ export default function AssetAssigneesPage() {
           <Plus className="h-4 w-4 mr-2" />
           Nuovo assegnatario
         </Button>
+        </>
+        )}
       </div>
 
       {daAbbinare > 0 && (
@@ -201,7 +211,9 @@ export default function AssetAssigneesPage() {
               <p className="text-muted-foreground py-8 text-center">
                 {cercaAttiva || origine !== "tutte" || soloUsciti
                   ? "Nessun assegnatario con questi filtri."
-                  : "Nessun assegnatario. Importali da Active Directory o crea il primo con «Nuovo assegnatario»."}
+                  : admin
+                    ? "Nessun assegnatario. Importali da Active Directory o crea il primo con «Nuovo assegnatario»."
+                    : "Nessun assegnatario."}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -215,7 +227,7 @@ export default function AssetAssigneesPage() {
                       <TableHead>Origine</TableHead>
                       <TableHead>Stato in AD</TableHead>
                       <TableHead className="text-right">Asset</TableHead>
-                      <TableHead className="w-32"></TableHead>
+                      {colonnaAzioni && <TableHead className="w-32"></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -231,6 +243,7 @@ export default function AssetAssigneesPage() {
                             <TableCell>{r.origine === "ad" ? "Active Directory" : "Inserito a mano"}</TableCell>
                             <TableCell><StatoAd r={r} /></TableCell>
                             <TableCell className="text-right tabular-nums">{r.asset}</TableCell>
+                            {colonnaAzioni && (
                             <TableCell>
                               <div className="flex items-center justify-end gap-1">
                                 {uscito && (
@@ -238,14 +251,19 @@ export default function AssetAssigneesPage() {
                                     Riassegna
                                   </Button>
                                 )}
-                                <Button variant="ghost" size="icon" aria-label={`Modifica ${r.name}`} onClick={() => openEdit(r)}><Pencil className="h-4 w-4" /></Button>
-                                <Button variant="ghost" size="icon" aria-label={`Elimina ${r.name}`} onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                {admin && (
+                                  <>
+                                    <Button variant="ghost" size="icon" aria-label={`Modifica ${r.name}`} onClick={() => openEdit(r)}><Pencil className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" aria-label={`Elimina ${r.name}`} onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                  </>
+                                )}
                               </div>
                             </TableCell>
+                            )}
                           </TableRow>
                           {aperto === r.id && (
                             <TableRow className="bg-[#FFFBE6] dark:bg-[#3A3415]">
-                              <TableCell colSpan={8} className="text-sm">
+                              <TableCell colSpan={colonnaAzioni ? 8 : 7} className="text-sm">
                                 Asset di {r.name} da riassegnare:{" "}
                                 {(dati.assetDegliUsciti[r.id] ?? []).map((x, i) => (
                                   <Fragment key={x.id}>

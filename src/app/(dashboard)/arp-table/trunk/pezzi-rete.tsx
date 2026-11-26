@@ -57,10 +57,15 @@ export function BadgeMaschera({ m }: { m: TrunkMaschera }) {
   );
 }
 
-/** Senza `onGiro` e `onMaschera` (i collector: ascoltano soltanto) quelle due azioni non ci sono. */
-export function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabilitata, onGiro, onPorta, onMaschera, perche: percheDetto, azioni, etichetta }: {
+/**
+ * Senza `onGiro` e `onMaschera` (i collector: ascoltano soltanto) quelle due azioni non ci sono.
+ * `soloLettura` (chi non è amministratore, 26/11/2026): niente Giro ARP, «correggi», «Torna alla dedotta» né
+ * «Porta in DA-IPAM», che scrivono; i numeri restano gli stessi. Senza `onPorta` il pulsante non c'è.
+ */
+export function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabilitata, onGiro, onPorta, onMaschera, soloLettura = false, perche: percheDetto, azioni, etichetta }: {
   rete: TrunkReteMatrice; giorni: string[]; inIpam: boolean; giroDisabilitato?: boolean; portaDisabilitata: boolean;
   onGiro?: () => void; onPorta?: () => void; onMaschera?: (prefisso: number | null) => void;
+  soloLettura?: boolean;
   /** Da dove viene la maschera, se non lo dice già il suo tipo. */
   perche?: string;
   azioni?: ReactNode;
@@ -87,7 +92,7 @@ export function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabil
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
         <BadgeMaschera m={rete.maschera} />
         <span>{percheDetto ?? perche[rete.maschera]}</span>
-        {onMaschera && rete.maschera !== "dhcp" && (
+        {onMaschera && !soloLettura && rete.maschera !== "dhcp" && (
           <label className="ml-1 flex items-center gap-1.5">
             correggi
             <select value={prefisso} onChange={(e) => onMaschera(Number(e.target.value))}
@@ -96,7 +101,7 @@ export function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabil
             </select>
           </label>
         )}
-        {onMaschera && rete.maschera === "config" && (
+        {onMaschera && !soloLettura && rete.maschera === "config" && (
           <Button size="sm" variant="outline" onClick={() => onMaschera(null)}>Torna alla dedotta</Button>
         )}
       </div>
@@ -108,14 +113,14 @@ export function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabil
       <Occupazione rete={rete} />
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
-        {onGiro && (
+        {onGiro && !soloLettura && (
           <Button size="sm" variant="outline" className="border-[#C9A800]" disabled={giroDisabilitato} onClick={onGiro}
             title="Trova gli apparati che non parlano: stampanti, PLC, telecamere">
             <Zap className="h-4 w-4" /> Giro ARP
           </Button>
         )}
         {azioni}
-        {inIpam ? <Etichetta mono={false}>✓ in DA-IPAM</Etichetta> : (
+        {inIpam ? <Etichetta mono={false}>✓ in DA-IPAM</Etichetta> : soloLettura || !onPorta ? <Etichetta mono={false}>● non in DA-IPAM</Etichetta> : (
           <Button size="sm" onClick={onPorta} disabled={portaDisabilitata} className="text-[#0D2537]" title={rete.maschera === "incerta" ? "La maschera è incerta: correggila prima" : undefined}>
             Porta in DA-IPAM
           </Button>

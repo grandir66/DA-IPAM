@@ -31,6 +31,7 @@ import { vociPerProtocollo } from "@/lib/credential-protocol-map";
 import { etichettaTipo } from "@/lib/credentials/tipi";
 import { Etichetta } from "@/components/shared/console";
 import { Segno } from "@/components/credentials/segno-stato";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { aspettoDelMotivo, azioneDelMotivo, comeMotivo, parolaDelMotivo } from "@/lib/credentials/motivi-accesso";
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -111,6 +112,7 @@ export function HostCredentialsDialog({
   availableCredentials,
   onCredentialsChanged,
 }: HostCredentialsDialogProps) {
+  const admin = useEAdmin();
   const [credentials, setCredentials] = useState<HostCredential[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -241,13 +243,16 @@ export function HostCredentialsDialog({
                   <TableHead>Nome</TableHead>
                   <TableHead className="w-14">Porta</TableHead>
                   <TableHead className="w-40">Esito</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  {admin && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {credentials.map((c, idx) => (
                   <TableRow key={c.id}>
                     <TableCell>
+                      {!admin ? (
+                        <span className="font-mono text-xs text-muted-foreground">{idx + 1}</span>
+                      ) : (
                       <div className="flex items-center gap-0.5">
                         <Button
                           type="button"
@@ -272,6 +277,7 @@ export function HostCredentialsDialog({
                           <ArrowDown className="h-3 w-3" />
                         </Button>
                       </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Etichetta mono={false}>{PROTOCOL_LABELS[c.protocol_type] || c.protocol_type}</Etichetta>
@@ -286,24 +292,26 @@ export function HostCredentialsDialog({
                     <TableCell>
                       <EsitoRiga riga={c} />
                     </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => void handleRemove(c.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
+                    {admin && (
+                      <TableCell>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => void handleRemove(c.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
 
-          {!showAdd ? (
+          {!admin ? null : !showAdd ? (
             <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => setShowAdd(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               Aggiungi credenziale

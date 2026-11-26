@@ -52,6 +52,7 @@ import { InterruttoreChocoAutomatico } from "@/components/settings/interruttore-
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
+import { SoloAdmin } from "@/components/shared/solo-admin";
 import { useJobPolling } from "@/hooks/use-job-polling";
 import type { PassoPolling } from "@/lib/integrations/polling-job";
 import type { ModuleKey } from "@/lib/modules/registry";
@@ -130,7 +131,11 @@ function ModuleSection({
             </Badge>
           )}
         </h3>
-        {moduleKey && <ModuleJsonImport presetModule={moduleKey} size="sm" />}
+        {moduleKey && (
+          <SoloAdmin>
+            <ModuleJsonImport presetModule={moduleKey} size="sm" />
+          </SoloAdmin>
+        )}
       </div>
       {children}
     </section>
@@ -310,9 +315,11 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
               <h2 className="sr-only">Moduli</h2>
               <p className="text-sm text-muted-foreground">Ogni modulo si configura e si verifica nella sua pagina («Apri»).</p>
             </div>
-            <div className="shrink-0">
-              <ModuleJsonImport />
-            </div>
+            <SoloAdmin>
+              <div className="shrink-0">
+                <ModuleJsonImport />
+              </div>
+            </SoloAdmin>
           </div>
 
           <ElencoModuli />
@@ -358,7 +365,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
               </div>
               <div className="shrink-0">
                 {patchInstalled ? (
-                  <Button
+                  isAdmin && <Button
                     variant="outline"
                     disabled={patchBusy}
                     onClick={() =>
@@ -369,12 +376,12 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
                     {patchBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                     Disinstalla e cancella i dati…
                   </Button>
-                ) : (
+                ) : isAdmin ? (
                   // Si installa da Opzioni (22/10): qui il rimando.
                   <Link href="/settings/opzioni#modulo.patch_management" className="text-[14px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
                     Installa da Opzioni ›
                   </Link>
-                )}
+                ) : null}
               </div>
             </div>
           </CardHeader>
@@ -473,6 +480,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="font-medium">Docker non trovato su questo host.</span>
           </div>
+          {isAdmin && (
           <div className="flex items-center gap-3">
             <Button
               size="sm"
@@ -493,6 +501,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
               Oppure installa manualmente e ricarica la pagina
             </span>
           </div>
+          )}
           {dockerJobAvviso && (
             <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-white/60 dark:bg-black/20 px-3 py-2 text-xs">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />

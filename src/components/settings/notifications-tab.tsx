@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Mail, Send, Webhook } from "lucide-react";
 
 interface ConfigDto {
@@ -32,6 +33,7 @@ interface ConfigDto {
 }
 
 export function NotificationsTab() {
+  const admin = useEAdmin();
   const [cfg, setCfg] = useState<ConfigDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -137,6 +139,7 @@ export function NotificationsTab() {
               <Input
                 id="smtpHost"
                 value={cfg.smtpHost}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpHost: e.target.value })}
                 placeholder="smtp.dominio.it"
               />
@@ -147,6 +150,7 @@ export function NotificationsTab() {
                 id="smtpPort"
                 type="number"
                 value={cfg.smtpPort}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpPort: Number(e.target.value) })}
               />
             </div>
@@ -154,6 +158,7 @@ export function NotificationsTab() {
               <Switch
                 id="smtpSecure"
                 checked={cfg.smtpSecure}
+                disabled={!admin}
                 onCheckedChange={(v: boolean) => patch({ smtpSecure: v })}
               />
               <Label htmlFor="smtpSecure">TLS implicito (porta 465)</Label>
@@ -163,6 +168,7 @@ export function NotificationsTab() {
               <Input
                 id="smtpUser"
                 value={cfg.smtpUser}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpUser: e.target.value })}
                 placeholder="lascia vuoto se il relay non richiede auth"
               />
@@ -173,6 +179,7 @@ export function NotificationsTab() {
                 id="smtpPassword"
                 type="password"
                 value={cfg.smtpPassword}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpPassword: e.target.value })}
                 placeholder="lascia vuoto per non modificarla"
               />
@@ -182,6 +189,7 @@ export function NotificationsTab() {
               <Input
                 id="smtpFrom"
                 value={cfg.smtpFrom}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpFrom: e.target.value })}
                 placeholder="da-ipam@dominio.it"
               />
@@ -191,6 +199,7 @@ export function NotificationsTab() {
               <Input
                 id="smtpTo"
                 value={cfg.smtpTo}
+                disabled={!admin}
                 onChange={(e) => patch({ smtpTo: e.target.value })}
                 placeholder="uno o più indirizzi separati da virgola"
               />
@@ -212,6 +221,7 @@ export function NotificationsTab() {
             <Input
               id="webhookUrl"
               value={cfg.webhookUrl}
+              disabled={!admin}
               onChange={(e) => patch({ webhookUrl: e.target.value })}
               placeholder="https://… (Teams, Slack, automazione)"
             />
@@ -222,6 +232,7 @@ export function NotificationsTab() {
               id="webhookAuthHeader"
               type="password"
               value={cfg.webhookAuthHeader}
+              disabled={!admin}
               onChange={(e) => patch({ webhookAuthHeader: e.target.value })}
               placeholder="lascia vuoto per non modificarlo"
             />
@@ -242,6 +253,8 @@ export function NotificationsTab() {
         </CardContent>
       </Card>
 
+      {/* Salva e la prova scrivono/inviano: solo amministratori; chi è in sola lettura legge i campi (26/11/2026). */}
+      {admin && (
       <div className="flex gap-3">
         <Button onClick={handleSave} disabled={saving}>
           {saving ? "Salvataggio…" : "Salva"}
@@ -251,6 +264,7 @@ export function NotificationsTab() {
           {testing ? "Invio…" : "Invia notifica di prova"}
         </Button>
       </div>
+      )}
     </div>
   );
 }

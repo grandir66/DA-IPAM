@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Boxes, Download, RefreshCw, ScanSearch } from "lucide-react";
+import { SoloAdmin } from "@/components/shared/solo-admin";
 import type {
   Credential,
   SoftwareInventoryRow,
@@ -460,15 +461,17 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
               <RefreshCw className="h-3.5 w-3.5" />
               Aggiorna
             </Button>
-            <Button
-              size="sm"
-              onClick={() => setScanDialogOpen(true)}
-              disabled={disableScanButton}
-              className="gap-1.5"
-            >
-              <ScanSearch className="h-3.5 w-3.5" />
-              Scansiona ora
-            </Button>
+            <SoloAdmin>
+              <Button
+                size="sm"
+                onClick={() => setScanDialogOpen(true)}
+                disabled={disableScanButton}
+                className="gap-1.5"
+              >
+                <ScanSearch className="h-3.5 w-3.5" />
+                Scansiona ora
+              </Button>
+            </SoloAdmin>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">

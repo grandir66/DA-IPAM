@@ -392,3 +392,98 @@ servizio. Lezioni in `~/.claude/lezioni/DA-IPAM.md` e nel `CONTEXT.md`.
 **Consigli**: prima di accendere il filtro su un'appliance di un cliente, una settimana di osservazione e
 l'elenco «mai bloccati» con i nostri scanner; una revisione del ramo da parte di un'altra sessione (zona rossa,
 non fatta); decidere l'aggiornamento di Next.js, segnalato come vulnerabile.
+
+## 12. Parte D — Archivio delle credenziali con interfaccia tipo KeePass (26/11/2026, da approvare)
+
+> Riccardo, 26/11: «integrato al database kdbx interno dovremmo registrare anche un sistema per archiviare in modo
+> sicuro le credenziali in generale per dare una UI che gestisce. vorrei poter avere una UI per keepass con
+> credenziali aggiuntive richieste per accedere al DB».
+> **Solo piano e tavola** (`docs/superpowers/tavole/2026-11-26-archivio-credenziali.html`): niente codice prima del
+> suo sì. Zona rossa (credenziali, cifratura): livello Completo.
+
+### 12.1 Cosa c'è già (letto nel codice il 26/11)
+
+| Pezzo | Dove | Stato |
+| --- | --- | --- |
+| Formato «vault Domarc v1»: KDBX 4 aperto da un key file, gruppi annidati dal percorso, campi protetti, storico di 10 versioni, un solo scrittore col lucchetto, scrittura atomica e copia di prima | `src/lib/vault/kdbx.ts` | **scritto e provato (prove incrociate con DA-Link), ma nessuno lo usa**: nessun modulo dell'app lo importa |
+| Credenziali degli apparati | tabelle `credentials`, `host_credentials`… cifrate con `encrypt()` | in uso; le leggono scansioni e giri senza una persona davanti |
+| Archivio a slot (chiave dei dati dentro slot cliente, Domarc, TPM) | `vault/archivio.ts`, `locale.ts` | dietro `DA_VAULT_LOCALE=1`, spento di serie; ADR 0034 lo dichiara superato dal vault semplice KDBX (27/10) |
+| Hub: credenziali lette da DA-Link | `vault/dalink.ts` | dietro `DA_VAULT_DALINK=1`; la fonte è il `domarc.kdbx` di DA-Link, IPAM legge e scrive dalle sue rotte |
+| «Mostra password» | `vault/mostra.ts` | chiede la seconda verifica dell'utente, vale 5 minuti, ogni lettura nel registro `vault_visualizzazioni` |
+| «Esporta in KeePass» | `vault/keepass.ts` | solo esportazione, con passphrase del cliente più key file |
+| Pagina | Impostazioni › Vault | stato, sblocco, registro, esportazione: **non** un'interfaccia per voci e gruppi |
+
+Quindi **«database kdbx interno» nel codice non è univoco**: può essere il formato KDBX locale di `kdbx.ts` (pronto,
+non usato), oppure il `domarc.kdbx` di DA-Link visto dall'hub. È la domanda D1.
+
+### 12.2 Proposta
+
+Una scheda nuova, **«Archivio»**, nella sezione Protezione:
+
+- **Albero dei gruppi** a sinistra, **voci** al centro, **dettaglio** a destra: titolo, utente, segreto nascosto, URL,
+  note, campi in più, allegati; cerca su titolo, utente, URL e note (mai sui segreti).
+- **Aggiungi, modifica, sposta, elimina** (nel cestino, come KeePass); **storico** della voce con ripristino.
+- **Mostra** e **Copia** a tempo (il valore torna nascosto dopo 30 secondi; la copia si prova a togliere dagli
+  appunti dopo 30 secondi, dove il browser lo permette).
+- **Registro di ogni lettura** (chi, quale voce, quale campo, quando, da dove), visibile nella scheda e non
+  cancellabile dall'app.
+- Credenziali «in generale»: non solo quelle di un apparato. Una voce può essere **legata** a un apparato
+  dell'inventario, ma non è obbligatorio.
+- **Generatore** di password e segnale per le voci deboli, vecchie o doppie (alimenta «Stato della protezione»).
+
+### 12.3 «Credenziali aggiuntive per accedere al DB»: tre varianti
+
+| Variante | Come si apre | Pro | Contro |
+| --- | --- | --- | --- |
+| **A. Password principale dell'archivio** | il KDBX è cifrato con key file **più** una password principale; chi apre la scrive | il file rubato con tutto il disco non si apre; è KeePass com'è | una password condivisa fra chi la conosce: nel registro si vede l'utente dell'app, ma il segreto è uno solo; se si perde serve il recupero |
+| **B. Secondo fattore dell'utente** | l'archivio si apre col key file tenuto dalla macchina; a ogni apertura l'utente dà il suo codice (come «Mostra password» oggi) | nessun segreto nuovo, ognuno risponde del suo | a riposo protegge quanto il key file: chi ruba disco e key file apre |
+| **C. Tutte e due (proposta)** | password principale per decifrare **e** codice dell'utente per ogni apertura | a riposo forte, e si sa chi ha aperto | due passi a ogni apertura; chi non ha la seconda verifica non entra |
+
+In ogni variante: l'apertura è **separata dal login** dell'app; vale per quell'utente, in memoria del server, e si
+**richiude da sola** (proposta: 10 minuti senza gesti, 60 al massimo, «Chiudi ora» sempre); la password principale e la
+chiave non stanno mai sul disco né nel browser (niente cookie, niente `localStorage`); un riavvio richiude; i tentativi
+sbagliati si contano, bloccano con attesa crescente e finiscono in «Tentativi e blocchi» con avviso, come le altre strade.
+
+### 12.4 Punti da trattare in chiaro
+
+- **Lavori automatici.** Scansioni e giri leggono oggi le credenziali degli apparati senza nessuno davanti. Con un
+  archivio che si apre solo con una password scritta da una persona non potrebbero. Proposta: **due scomparti**.
+  «Di servizio» resta com'è oggi (tabelle cifrate, o lo scomparto aperto dalla macchina) e lo usano i lavori;
+  «Riservato» è l'archivio nuovo, chiuso finché una persona non lo apre, e i lavori non lo leggono mai. Una voce si
+  sposta da uno all'altro con un gesto esplicito. È la domanda D3.
+- **Chi scrive il file.** Un solo scrittore col lucchetto e scrittura atomica ci sono già in `kdbx.ts`; due persone
+  sulla stessa voce: vince chi salva per primo, l'altra vede «è cambiata» (versione della voce), mai una
+  sovrascrittura muta.
+- **Rapporto con DA-Link.** Regola della fonte (02/11): le credenziali di macchine e clienti di Domarc stanno nel
+  `domarc.kdbx` di DA-Link. Sull'**hub** un secondo archivio locale sarebbe un doppione che diverge: lì la scheda
+  dovrebbe essere una finestra sul vault di DA-Link (le sue rotte hanno già lettura, scrittura con versione attesa,
+  cancellazione). Sulle **appliance dei clienti** l'archivio è locale e del cliente. È la domanda D2.
+- **Backup.** Il file KDBX è già cifrato: entra nel backup così com'è; il key file **no**, sta a parte (e nel
+  recupero). Ripristino provato su un'altra macchina prima di dichiararlo fatto.
+- **Niente segreti fuori posto.** Mai nei log, mai negli errori, nelle risposte delle API solo il campo chiesto e
+  solo ad archivio aperto; elenco e ricerca non portano i valori protetti; nessun esempio vero nel repo pubblico.
+- **Importare ed esportare.** Importa un `.kdbx` esistente (con la sua password, usata e dimenticata); l'esportazione
+  è quella che c'è già.
+
+### 12.5 Tappe
+
+| # | Tappa | Fatto quando | Stima |
+| --- | --- | --- | --- |
+| D0 | Decisioni (D1-D6) e ADR | ADR scritto, tavola approvata | 0,5 g |
+| D1 | Motore: apertura con le credenziali in più, richiusura a tempo, tentativi contati, registro delle letture | prove viste fallire: archivio chiuso non dà niente, la chiave non è su disco, il tempo richiude | 4 g |
+| D2 | Scheda in sola lettura: albero, voci, dettaglio, cerca, Mostra/Copia a tempo | a 1920 sul laboratorio, con un archivio di prova | 3 g |
+| D3 | Scrittura: aggiungi, modifica, sposta, cestino, storico, conflitti | due sessioni sulla stessa voce non si sovrascrivono | 3 g |
+| D4 | Importazione, generatore, voci deboli in «Stato della protezione», legame con gli apparati | importato un `.kdbx` di KeePassXC e riaperto là | 2,5 g |
+| D5 | Hub: finestra sul vault di DA-Link (se D2 dice così) | lettura e scrittura provate contro DA-Link di prova | 3 g |
+| D6 | Collaudo, backup e ripristino, manuale | ripristino su un'altra macchina | 2 g |
+
+**Totale: circa 18 giornate** (15 senza la tappa D5).
+
+### 12.6 Domande a Riccardo
+
+- **D1.** «Database kdbx interno»: intendi un archivio KDBX locale a ogni installazione di IPAM, o il `domarc.kdbx` di DA-Link?
+- **D2.** Sull'hub: la scheda è una finestra sul vault di DA-Link (nessun secondo archivio), e sulle appliance dei clienti l'archivio è locale?
+- **D3.** Due scomparti («Di servizio» per i lavori automatici, «Riservato» chiuso finché una persona non lo apre): va bene, o le credenziali degli apparati devono entrare anche loro nell'archivio chiuso?
+- **D4.** Credenziali in più per aprire: A (password principale), B (codice dell'utente), C (tutte e due, proposta)?
+- **D5.** Richiusura: 10 minuti senza gesti e 60 al massimo vanno bene?
+- **D6.** Chi può aprirlo: solo gli amministratori, o un ruolo a parte («custode») diverso da admin?

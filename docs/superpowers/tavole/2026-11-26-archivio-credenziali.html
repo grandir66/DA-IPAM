@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Tavola — Archivio delle credenziali (DA-IPAM), 26/11/2026</title>
+<!-- Tavola di progetto, non codice dell'app. Dati finti. -->
+<link href="https://fonts.googleapis.com/css2?family=Signika:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0D2537;--cian:#00A7E7;--cian-testo:#006C96;--giallo:#FFD400;--bg:#EDEDED;--muted:#E7EAEB;--mf:#5A6B75;--bordo:#CFD3D7}
+*{box-sizing:border-box}
+body{margin:0;width:1920px;background:var(--bg);color:var(--navy);font:15px/1.4 Signika,system-ui,sans-serif}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:14px}
+.app{display:flex}
+.lato{width:232px;background:var(--navy);color:#E7EAEB;padding:18px 0;min-height:1320px}
+.lato b{display:block;padding:0 20px 16px;font-size:20px;color:#fff}
+.lato div{padding:9px 20px}
+.lato .qui{background:var(--cian);color:var(--navy);font-weight:600}
+.corpo{flex:1;padding:18px 24px 28px}
+.fila{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--bordo);padding-bottom:8px}
+.sch{height:40px;display:inline-flex;align-items:center;padding:0 14px;border:2px solid var(--bordo);border-radius:8px;background:#f3f4f5;font-weight:500;white-space:nowrap}
+.sch.on{background:var(--cian);border-color:var(--cian);font-weight:600}
+.stacco{width:2px;height:28px;background:var(--bordo);margin:0 4px}
+.aiuto{margin-left:auto;background:#fff;border-color:#0D253766}
+.n{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:13px;background:var(--giallo);color:var(--navy);font-weight:700;font-size:14px;border:2px solid var(--navy);margin-right:6px;flex:none}
+.stato{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--bordo);border-left:6px solid var(--navy);border-radius:8px;padding:10px 14px;margin-top:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:6px;font-weight:600;border:2px solid var(--navy);white-space:nowrap}
+.pill.pieno{background:var(--navy);color:#fff}.pill.giallo{background:var(--giallo)}.pill.vuoto{background:#fff}
+.btn{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:8px;border:2px solid var(--navy);background:#fff;font:600 15px Signika,sans-serif;color:var(--navy);white-space:nowrap}
+.btn.pri{background:var(--navy);color:#fff}.btn.cian{background:var(--cian);border-color:var(--cian)}.btn.p{height:30px;padding:0 10px;font-size:14px}
+.nota{color:var(--mf);font-size:14px}
+.pan{background:#fff;border:1px solid var(--bordo);border-radius:8px;overflow:hidden}
+.pan h3{margin:0;padding:10px 14px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--cian-testo);border-bottom:1px solid var(--bordo);display:flex;align-items:center;gap:6px}
+.pan h3 small{font-weight:400;color:var(--mf);font-size:14px;text-transform:none;letter-spacing:0;margin-left:6px}
+.tre{display:grid;grid-template-columns:300px 1fr 560px;gap:12px;margin-top:12px}
+.alb div{padding:7px 14px;display:flex;justify-content:space-between;border-bottom:1px solid var(--muted)}
+.alb .on{background:#E5F6FD;border-left:4px solid var(--navy);font-weight:600}
+.alb .f1{padding-left:34px}.alb .f2{padding-left:54px}
+table{width:100%;border-collapse:collapse}
+th{font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--mf);text-align:left;padding:7px 10px;border-bottom:1px solid var(--bordo);background:#f6f7f8;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--muted);white-space:nowrap}
+tr.on td{background:#E5F6FD;font-weight:600}
+.campo{display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--muted)}
+.campo>span:first-child{color:var(--mf);font-size:14px}
+.in{height:34px;border:2px solid var(--bordo);border-radius:6px;display:flex;align-items:center;padding:0 10px;background:#fff}
+h2{font-size:18px;margin:26px 0 0;display:flex;align-items:center;gap:10px}
+h2 small{font-weight:400;color:var(--mf);font-size:14px}
+.due{display:grid;grid-template-columns:560px 1fr;gap:12px;margin-top:10px}
+.chiuso{padding:22px 26px}
+.spiega{margin-top:22px;background:#fff;border:2px solid var(--navy);border-radius:8px;padding:14px 18px;columns:2;column-gap:40px}
+.spiega p{margin:0 0 7px;break-inside:avoid;display:flex;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="lato">
+  <b>DA-IPAM</b>
+  <div>Dashboard</div><div>Apparati</div><div>Topologia</div><div>Credenziali</div><div>Scansioni</div><div>Rete</div>
+  <div class="qui">Protezione</div>
+  <div>Impostazioni</div><div>Config</div>
+</aside>
+<main class="corpo">
+  <div class="fila">
+    <span class="sch">Stato della protezione</span><span class="sch">Porte presentate</span><span class="sch">Chi può collegarsi</span><span class="sch">Utenti</span><span class="sch">Sistemi remoti</span><span class="sch">Moduli e container</span>
+    <span class="stacco"></span><span class="sch">Esche</span><span class="sch">Tentativi e blocchi</span>
+    <span class="stacco"></span><span class="sch on"><span class="n">1</span>Archivio</span>
+    <span class="sch aiuto">ⓘ Come si usa</span>
+  </div>
+
+  <div class="stato">
+    <span class="n">2</span><b>Archivio delle credenziali</b>
+    <span class="pill pieno">● Aperto da m.rossi</span>
+    <span class="pill giallo">▲ si richiude fra 08:41</span>
+    <span class="nota">aperto con password principale + codice · 214 voci in 18 gruppi · ultimo salvataggio 11:02</span>
+    <span style="margin-left:auto;display:flex;gap:8px"><span class="btn">Importa .kdbx</span><span class="btn">Esporta</span><span class="btn pri">Chiudi ora</span></span>
+  </div>
+
+  <div class="tre">
+    <div class="pan">
+      <h3><span class="n">3</span>1. Gruppi <small>18</small></h3>
+      <div class="alb">
+        <div><span>▸ Riservato</span><span class="mono">96</span></div>
+        <div class="f1"><span>▾ Fornitori</span><span class="mono">31</span></div>
+        <div class="f2 on"><span>Operatori e linee</span><span class="mono">7</span></div>
+        <div class="f2"><span>Licenze</span><span class="mono">12</span></div>
+        <div class="f2"><span>Portali</span><span class="mono">12</span></div>
+        <div class="f1"><span>▸ Amministrazione</span><span class="mono">22</span></div>
+        <div class="f1"><span>▸ Servizi cloud</span><span class="mono">43</span></div>
+        <div><span>▸ Di servizio <span class="nota">(lo usano i lavori)</span></span><span class="mono">118</span></div>
+        <div class="f1"><span>▸ Apparati di rete</span><span class="mono">64</span></div>
+        <div class="f1"><span>▸ Server</span><span class="mono">54</span></div>
+        <div><span>🗑 Cestino</span><span class="mono">3</span></div>
+      </div>
+      <div style="padding:10px 14px;display:flex;gap:8px"><span class="btn p">+ Gruppo</span><span class="btn p">Rinomina</span></div>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">4</span>2. Voci di «Operatori e linee» <small>7 · i segreti non compaiono mai in elenco</small></h3>
+      <div style="padding:10px 14px;display:flex;gap:8px;border-bottom:1px solid var(--bordo)">
+        <span class="in" style="flex:1"><span class="nota"><span class="n">5</span>Cerca in titolo, utente, URL, note…</span></span>
+        <span class="btn cian">+ Aggiungi voce</span>
+      </div>
+      <table>
+        <tr><th>Titolo</th><th>Utente</th><th>URL</th><th>Cambiata</th><th>Legata a</th><th>Segni</th></tr>
+        <tr class="on"><td>Portale fibra sede</td><td class="mono">admin.sede</td><td class="mono">portale.operatore.example</td><td>12 giorni fa</td><td>router-sede</td><td></td></tr>
+        <tr><td>Linea di riserva 4G</td><td class="mono">sim-0042</td><td class="mono">—</td><td>3 mesi fa</td><td>—</td><td></td></tr>
+        <tr><td>Centralino cloud</td><td class="mono">tecnico</td><td class="mono">pbx.example</td><td>14 mesi fa</td><td>—</td><td><span class="pill giallo">▲ vecchia</span></td></tr>
+        <tr><td>Area clienti operatore</td><td class="mono">amministrazione</td><td class="mono">clienti.operatore.example</td><td>2 mesi fa</td><td>—</td><td><span class="pill giallo">▲ uguale a un'altra</span></td></tr>
+        <tr><td>Router di riserva</td><td class="mono">admin</td><td class="mono">192.0.2.254</td><td>5 mesi fa</td><td>router-riserva</td><td><span class="pill giallo">▲ debole</span></td></tr>
+        <tr><td>DNS pubblico</td><td class="mono">dns-admin</td><td class="mono">dns.example</td><td>1 mese fa</td><td>—</td><td></td></tr>
+        <tr><td>Certificati</td><td class="mono">cert@example</td><td class="mono">ca.example</td><td>20 giorni fa</td><td>—</td><td></td></tr>
+      </table>
+    </div>
+
+    <div class="pan">
+      <h3><span class="n">6</span>3. Portale fibra sede <small>versione 4</small></h3>
+      <div class="campo"><span>Titolo</span><span class="in">Portale fibra sede</span><span></span></div>
+      <div class="campo"><span>Utente</span><span class="in mono">admin.sede</span><span class="btn p">Copia</span></div>
+      <div class="campo"><span><span class="n">7</span>Password</span><span class="in mono">••••••••••••••••</span><span style="display:flex;gap:6px"><span class="btn p">Mostra 30 s</span><span class="btn p">Copia</span></span></div>
+      <div class="campo"><span>URL</span><span class="in mono">https://portale.operatore.example</span><span class="btn p">Apri</span></div>
+      <div class="campo"><span>Note</span><span class="in" style="height:54px">Contratto 2026, referente ufficio tecnico.</span><span></span></div>
+      <div class="campo"><span>Campi in più</span><span class="in mono">codice cliente · PIN ••••</span><span class="btn p">+ Campo</span></div>
+      <div class="campo"><span>Allegati</span><span class="in">contratto.pdf · 212 kB</span><span class="btn p">+ Allegato</span></div>
+      <div class="campo"><span>Legata a</span><span class="in">router-sede (192.0.2.1)</span><span class="btn p">Cambia</span></div>
+      <div style="padding:10px 14px;display:flex;gap:8px;border-bottom:1px solid var(--bordo)"><span class="btn pri">Salva</span><span class="btn">Genera password</span><span class="btn">Sposta</span><span class="btn" style="margin-left:auto">Nel cestino</span></div>
+      <h3><span class="n">8</span>Storico <small>4 versioni, al massimo 10</small></h3>
+      <table>
+        <tr><td class="mono">v4 · 14/11 09:20</td><td>m.rossi</td><td>password</td><td><span class="nota">corrente</span></td></tr>
+        <tr><td class="mono">v3 · 02/09 16:05</td><td>m.rossi</td><td>note</td><td><span class="btn p">Ripristina</span></td></tr>
+        <tr><td class="mono">v2 · 11/03 10:44</td><td>l.bianchi</td><td>password</td><td><span class="btn p">Ripristina</span></td></tr>
+      </table>
+      <h3><span class="n">9</span>Chi l'ha letta <small>non si cancella</small></h3>
+      <table>
+        <tr><td class="mono">26/11 11:04</td><td>m.rossi</td><td>password · mostrata</td><td class="mono">198.51.100.14</td></tr>
+        <tr><td class="mono">14/11 09:19</td><td>m.rossi</td><td>password · copiata</td><td class="mono">198.51.100.14</td></tr>
+        <tr><td class="mono">30/10 15:31</td><td>l.bianchi</td><td>PIN · mostrato</td><td class="mono">192.0.2.31</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>Quando è chiuso <small>la scheda mostra solo questo: nessun nome di voce, nessun gruppo</small></h2>
+  <div class="due">
+    <div class="pan">
+      <h3><span class="n">10</span>Apri l'archivio <small>separato dal login di DA-IPAM</small></h3>
+      <div class="chiuso">
+        <div class="pill vuoto" style="margin-bottom:14px">○ Chiuso · richiuso da solo alle 10:12 dopo 10 minuti senza gesti</div>
+        <div class="campo" style="border:0;padding:6px 0"><span>Password principale</span><span class="in mono">••••••••••••••••••••</span><span></span></div>
+        <div class="campo" style="border:0;padding:6px 0"><span>Codice a 6 cifre</span><span class="in mono">• • • • • •</span><span></span></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><span class="btn pri">Apri per 10 minuti</span><span class="nota">La password non viene salvata: né sul disco, né nel browser.</span></div>
+        <div class="pill giallo" style="margin-top:14px">▲ 2 tentativi sbagliati oggi · al quinto si blocca per 15 minuti e parte un avviso</div>
+      </div>
+    </div>
+    <div class="pan">
+      <h3><span class="n">11</span>Due scomparti <small>perché le scansioni girano senza nessuno davanti</small></h3>
+      <table>
+        <tr><th>Scomparto</th><th>Chi lo apre</th><th>Chi lo legge</th><th>Cosa ci sta</th></tr>
+        <tr><td><b>Riservato</b></td><td>una persona, con password principale e codice</td><td>solo persone, ad archivio aperto; ogni lettura nel registro</td><td>fornitori, portali, licenze, amministrazione</td></tr>
+        <tr><td><b>Di servizio</b></td><td>la macchina all'avvio</td><td>scansioni e giri; le persone come sopra per «Mostra»</td><td>credenziali degli apparati usate dai lavori automatici</td></tr>
+      </table>
+      <div style="padding:10px 14px" class="nota">Una voce si sposta da uno scomparto all'altro con «Sposta», mai da sola. Sull'hub lo scomparto «Di servizio» è il vault di DA-Link: nessun doppione.</div>
+    </div>
+  </div>
+
+  <div class="spiega">
+    <p><span class="n">1</span><span>Scheda nuova «Archivio» nella sezione Protezione, dopo «Tentativi e blocchi».</span></p>
+    <p><span class="n">2</span><span>Barra di stato: aperto da chi, fra quanto si richiude, «Chiudi ora».</span></p>
+    <p><span class="n">3</span><span>Albero dei gruppi con i due scomparti e il cestino.</span></p>
+    <p><span class="n">4</span><span>Le voci del gruppo scelto: mai un segreto in elenco.</span></p>
+    <p><span class="n">5</span><span>Cerca su titolo, utente, URL e note; non sui segreti.</span></p>
+    <p><span class="n">6</span><span>Dettaglio della voce: tutti i campi di KeePass, più il legame con un apparato.</span></p>
+    <p><span class="n">7</span><span>«Mostra 30 s» e «Copia»: il valore torna nascosto da solo.</span></p>
+    <p><span class="n">8</span><span>Storico con ripristino, come in KeePass.</span></p>
+    <p><span class="n">9</span><span>Registro di ogni lettura della voce: chi, cosa, quando, da dove.</span></p>
+    <p><span class="n">10</span><span>Apertura separata dal login, con le credenziali in più; tentativi sbagliati contati e avvisati.</span></p>
+    <p><span class="n">11</span><span>Due scomparti: uno chiuso finché una persona non lo apre, uno per i lavori automatici.</span></p>
+  </div>
+</main>
+</div>
+</body>
+</html>

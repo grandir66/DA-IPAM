@@ -1,7 +1,7 @@
 ---
 percorso: /client-config
 titolo: Configurazione Cliente — la scheda infrastrutturale del cliente
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -12,17 +12,18 @@ linee dati, WiFi, VPN, server, virtualizzazione, posta, centralino, backup, gest
 documentazione per chi interviene dal cliente, e si esporta in un documento di testo. Non c'è una voce nel menu:
 si apre dall'indirizzo `/client-config`, con un'istanza scelta.
 
-Per questa pagina non c'è una schermata nel manuale: contiene dati del cliente e credenziali.
+Per questa pagina non c'è una schermata nel manuale, per scelta: contiene dati del cliente e credenziali. Le parti
+comuni sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
 ## Le voci della pagina
 
 In alto, il titolo **Configurazione Cliente** con il codice del cliente, e tre pulsanti:
 
-- **Importa JSON**: carica una scheda da un file JSON preparato prima.
-- **Esporta MD**: scarica la scheda come documento Markdown, da stampare o allegare.
-- **Salva**: registra le modifiche. C'è anche in fondo alla pagina.
+- `tasto:upload` **Importa JSON**: carica una scheda da un file JSON preparato prima.
+- `tasto:download` **Esporta MD**: scarica la scheda come documento Markdown, da stampare o allegare.
+- `tasto:save` **Salva**: registra le modifiche. C'è anche in fondo alla pagina.
 
-Le sezioni si aprono e chiudono con un clic sul titolo.
+Le sezioni si aprono e chiudono con un clic sul titolo: `icona:chevron-right` chiusa, `icona:chevron-down` aperta.
 
 **Sezioni sempre presenti**: **Dati Cliente** (nome, referenti tecnici, codice), **Accesso Servizi Cliente** (come
 ci si collega: RDP, TeamViewer, VPN), **Network (VLAN)** (per ogni VLAN: ID, subnet, gateway, DNS, note),
@@ -34,13 +35,23 @@ ci si collega: RDP, TeamViewer, VPN), **Network (VLAN)** (per ogni VLAN: ID, sub
 Aggiuntivi**, **Gestione Licenze**. Ognuna ha un pulsante accanto al titolo che la include o la esclude dalla
 scheda: si legge **Attiva** quando è inclusa, **Disattiva** quando non lo è.
 
-Negli elenchi (switch, VLAN, linee, nodi…) **Aggiungi** mette una voce nuova e **Rimuovi ultimo** toglie l'ultima.
+Negli elenchi (switch, VLAN, linee, nodi…) `tasto:plus` **Aggiungi** mette una voce nuova e `tasto:trash` **Rimuovi
+ultimo** toglie l'ultima.
 
-## Come si usa
+La pagina non distingue i ruoli: il salvataggio lo accetta il programma secondo le regole dell'istanza; chi è in sola
+lettura usa la scheda per consultarla ed esportarla.
 
-1. Scegli l'istanza del cliente in **Impostazioni › Istanza**, poi apri `/client-config`.
-2. Compila le sezioni sempre presenti, includi le opzionali che servono, **Salva**.
-3. Per consegnare la scheda: **Esporta MD**.
+## Come si fa
+
+- **Compilare la scheda di un cliente nuovo**: scegli la sua istanza in **Impostazioni › Istanza**, apri
+  `/client-config`, compila **Dati Cliente**, **Network (VLAN)**, **Switch**, **Firewall** e **Linee Dati**,
+  `tasto:save` **Salva**.
+- **Aggiungere la parte di virtualizzazione**: sezione **Virtualizzazione**, pulsante **Disattiva** accanto al titolo
+  (diventa **Attiva**), scegli la **Piattaforma** e aggiungi host o nodi con `tasto:plus` **Aggiungi**.
+- **Registrare una VLAN nuova**: sezione **Network (VLAN)**, `tasto:plus` **Aggiungi**, scrivi ID, subnet, gateway,
+  DNS, **Salva**.
+- **Consegnare la scheda a un collega o al cliente**: `tasto:download` **Esporta MD** e allega il file.
+- **Ripartire da una scheda preparata altrove**: `tasto:upload` **Importa JSON**, controlla, **Salva**.
 
 ## Da dove arrivano i dati
 

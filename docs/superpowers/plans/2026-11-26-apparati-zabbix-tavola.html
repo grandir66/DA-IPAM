@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Tavola — Apparati di DatIA Mon (proposta 26/11/2026)</title>
+<style>
+/* Tavola di proposta, non codice dell'app. Dati finti (reti 10.20.x). Larghezza di riferimento 1920. */
+*{box-sizing:border-box}body{margin:0;width:1920px;font:14px/1.35 Signika,"Segoe UI",system-ui,sans-serif;color:#0D2537;background:#EDEDED}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.lato{position:absolute;left:0;top:0;bottom:0;width:210px;background:#0D2537;color:#c9d6df;padding:18px 16px}
+.lato b{color:#fff;display:block;margin:16px 0 6px;font-size:12px;letter-spacing:.08em}
+.lato div{padding:5px 8px;border-radius:6px}.lato .qui{background:#00A7E7;color:#0D2537;font-weight:600}
+main{margin-left:210px;padding:14px 20px 20px;position:relative}
+.riga{display:flex;align-items:center;gap:8px}
+.btn{border:1px solid #9fb0bb;background:#fff;border-radius:7px;padding:5px 11px;font:inherit;font-size:13.5px;white-space:nowrap}
+.btn.pieno{background:#00A7E7;border-color:#0087bd;color:#0D2537;font-weight:600}
+.btn.scheda{padding:7px 14px;font-size:14.5px}.btn.scheda.qui{background:#0D2537;color:#fff;border-color:#0D2537;font-weight:600}
+.btn.off{color:#7d8b94;border-style:dashed;background:#f6f6f6}
+.btn.rosso{border-color:#8a1c1c;color:#8a1c1c}
+.stato{display:inline-flex;align-items:center;gap:6px;border:1px solid #b9c5cd;border-radius:999px;padding:3px 10px;background:#fff;font-size:13px}
+.stato.manca{border:2px dashed #0D2537;background:#FFF6BF;font-weight:600}
+.sel{border:1px solid #9fb0bb;background:#fff;border-radius:7px;padding:5px 26px 5px 10px;font-size:13.5px;position:relative;white-space:nowrap}
+.sel:after{content:"▾";position:absolute;right:8px;top:4px;color:#51626d}
+.sel.acceso{background:#0D2537;color:#fff;border-color:#0D2537}.sel.acceso:after{color:#fff}
+.pannello{background:#fff;border:1px solid #cfd8de;border-radius:10px}
+.n{position:absolute;width:26px;height:26px;border-radius:50%;background:#FFD400;border:2px solid #0D2537;color:#0D2537;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;z-index:9}
+table{border-collapse:collapse;width:100%}th{font-size:12.5px;text-align:left;color:#3c4d58;font-weight:600;padding:7px 8px;border-bottom:2px solid #cfd8de;white-space:nowrap}
+td{padding:6px 6px;border-bottom:1px solid #e3e8ec;white-space:nowrap;font-size:13.5px}
+tr.scelta td{background:#E3F5FC}tr.gruppo td{background:#F1F4F6;font-weight:600;border-top:2px solid #0D2537;padding:8px}
+.b{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:1px 8px;font-size:12.5px;border:1px solid #0D2537}
+.b.si{background:#0D2537;color:#fff}.b.da{border-style:dashed;background:#fff}.b.at{background:#FFD400}.b.fe{background:#fff;border-width:2px;font-weight:700}
+.mano{border:2px dashed #0D2537;border-radius:6px;padding:0 6px;background:#FFF6BF;font-weight:600}
+.tenue{color:#5d6d77}.nuova{font-size:11.5px;border:1px solid #0D2537;border-radius:4px;padding:0 4px;margin-left:4px;background:#fff}
+.menu{position:absolute;background:#fff;border:1px solid #0D2537;border-radius:8px;box-shadow:0 8px 24px #0004;padding:5px;width:300px;z-index:5;font-size:13.5px}
+.menu div{padding:5px 10px;border-radius:5px;display:flex;justify-content:space-between}.menu hr{border:0;border-top:1px solid #dfe5e9;margin:4px 0}
+.menu .t{font-size:11.5px;color:#5d6d77;letter-spacing:.06em;padding-bottom:1px}
+h3{margin:0 0 6px;font-size:13px;letter-spacing:.06em;color:#3c4d58}
+.dato{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eef1f3;font-size:13.5px}
+.legenda{margin-top:14px;padding:10px 14px;font-size:13px;display:flex;gap:26px;flex-wrap:wrap}
+tr:not(.gruppo) td:nth-child(14),th:nth-child(14){display:none} /* Proxy: fuori dalle colonne di serie, si accende da «Colonne» */
+.dato{gap:10px}.dato>*:last-child{text-align:right}
+</style></head><body>
+<div class="lato"><div style="font-size:18px;color:#fff;font-weight:700">DA-IPAM</div>
+<b>NETWORK</b><div>Apparati</div><div>Topologia</div><b>SICUREZZA</b><div>Findings</div>
+<b>DATIA MON</b><div class="qui">Monitoraggio</div><b>INVENTARIO</b><div>Asset</div><b>SISTEMA</b><div>Impostazioni</div></div>
+<main>
+<!-- 1+2: una sola riga in cima: schede a sinistra, stato a destra -->
+<div class="riga" style="margin-bottom:10px"><span class="n" style="position:static;flex:none">1</span>
+  <span class="btn scheda qui">Apparati <span style="opacity:.75">474</span></span>
+  <span class="btn scheda">Modelli</span><span class="btn scheda">Agenti <span class="tenue">34</span></span>
+  <span class="btn scheda">Abbinamenti</span><span class="btn scheda">Per il cliente</span><span class="btn scheda">Centro e proxy</span>
+  <span style="flex:1"></span>
+  <span class="n" style="position:static;flex:none">2</span>
+  <span class="stato">● Centro letto 2 min fa</span><span class="stato">● Proxy in linea</span>
+  <span class="stato manca">▲ Sola lettura: manca la chiave di scrittura</span><span class="btn pieno">Inserisci la chiave</span>
+  <span class="stato">Aggiunti oggi 0 di 100</span><span class="btn" title="Guida della pagina">?</span>
+</div>
+<!-- 3: filtri -->
+<div class="pannello" style="padding:9px 12px;margin-bottom:8px">
+ <div class="riga">
+  <span class="n" style="position:static;flex:none">3</span><span class="sel" style="width:250px;color:#7d8b94">Cerca nome, IP, MAC, modello</span>
+  <span class="btn">Tutti 474</span><span class="btn">● In monitoraggio 0</span><span class="btn pieno">○ Da aggiungere 474</span><span class="btn">▲ Con problemi 0</span><span class="btn">Agente da installare 34</span>
+  <span style="flex:1"></span>
+  <span class="n" style="position:static;flex:none">4</span>
+  <span class="sel">Raggruppa per: Famiglia</span><span class="btn">Colonne</span><span class="sel">Vista: la mia</span>
+ </div>
+ <div class="riga" style="margin-top:8px;padding-left:34px"><span class="tenue">Filtri</span>
+  <span class="sel">Famiglia</span><span class="sel acceso">Rete: 10.20.40.0/24 · VLAN 40</span><span class="sel">Marca</span><span class="sel">Modello Zabbix</span><span class="sel">Agente</span><span class="sel">Credenziale</span>
+  <span class="btn">Togli i filtri</span><span class="tenue">1 filtro acceso · 96 apparati</span>
+ </div>
+</div>
+<!-- 5: azioni sulla selezione, stessa riga sempre presente -->
+<div class="pannello riga" style="padding:8px 12px;margin-bottom:8px">
+  <span class="n" style="position:static;flex:none">5</span><b>2 selezionati</b><span class="btn pieno">Aggiungi a Zabbix (2)</span><span class="btn">Prova a vuoto</span>
+  <span class="sel">Modelli</span><span class="sel">Famiglia</span><span class="btn">Prepara l'agente</span>
+  <span class="btn off">Sospendi <span class="nuova">◆</span></span><span class="btn off">Rinomina <span class="nuova">◆</span></span><span class="btn off rosso">Togli da Zabbix <span class="nuova">◆</span></span>
+  <span class="btn">Togli la selezione</span><span style="flex:1"></span><span class="tenue">Tasto destro su una riga: le stesse azioni</span>
+</div>
+<div style="display:flex;gap:12px;align-items:flex-start">
+<!-- 6: tabella -->
+<div class="pannello" style="flex:1;position:relative;min-height:1070px;min-width:0">
+<span class="n" style="left:6px;top:4px">6</span>
+<table>
+<tr><th style="width:34px"></th><th>Stato ▾</th><th>Apparato ▲</th><th>IP</th><th>Rete · VLAN</th><th>Marca</th><th>Modello</th><th>Famiglia</th><th>Modello Zabbix</th><th>Altri</th><th>Agente</th><th>Versione</th><th>Credenziale</th><th>Proxy</th><th>Problemi</th></tr>
+<tr class="gruppo"><td>☐</td><td colspan="14">▾ SWITCH &nbsp;79 <span class="tenue" style="font-weight:400">· 0 in monitoraggio · 79 da aggiungere</span> &nbsp; <span class="btn" style="font-weight:400">Aggiungi i 79 a Zabbix</span></td></tr>
+<tr><td>☐</td><td><span class="b da">○ Da aggiungere</span></td><td><b>sw-core-1</b></td><td class="mono">10.20.40.241</td><td>Server · 40</td><td>Aruba</td><td>6300M</td><td>switch</td><td class="tenue">Aruba CX SNMP <i>(proposto)</i></td><td class="tenue">—</td><td class="tenue">non serve</td><td class="tenue">—</td><td>● SNMP valida</td><td class="tenue">—</td><td class="tenue">—</td></tr>
+<tr class="scelta"><td>☑</td><td><span class="b da">○ Da aggiungere</span></td><td><b>sw-piano-1</b></td><td class="mono">10.20.40.51</td><td>Server · 40</td><td>HPE</td><td>2530-48G</td><td>switch</td><td class="tenue">HP Enterprise Switch SNMP <i>(proposto)</i></td><td class="tenue">—</td><td class="tenue">non serve</td><td class="tenue">—</td><td>● SNMP valida</td><td class="tenue">—</td><td class="tenue">—</td></tr>
+<tr class="scelta"><td>☑</td><td><span class="b da">○ Da aggiungere</span></td><td><b>10.20.40.226</b></td><td class="mono">10.20.40.226</td><td>Server · 40</td><td class="tenue">—</td><td class="tenue">—</td><td><span class="mano">✎ switch</span></td><td class="tenue">Generic SNMP <i>(proposto)</i></td><td class="tenue">—</td><td class="tenue">non serve</td><td class="tenue">—</td><td>▲ nessuna</td><td class="tenue">—</td><td class="tenue">—</td></tr>
+<tr><td>☐</td><td><span class="b si">● In monitoraggio</span></td><td><b>sw-magazzino</b></td><td class="mono">10.20.40.62</td><td>Server · 40</td><td>HPE</td><td>2530-24G</td><td>switch</td><td>HP Enterprise Switch SNMP</td><td>+1</td><td class="tenue">non serve</td><td class="tenue">—</td><td>● SNMP valida</td><td>px-sede</td><td class="tenue">0</td></tr>
+<tr><td>☐</td><td><span class="b at">▲ Attenzione</span></td><td><b>sw-uffici-2</b></td><td class="mono">10.20.40.52</td><td>Server · 40</td><td>HPE</td><td>2530-48G</td><td>switch</td><td>HP Enterprise Switch SNMP</td><td class="tenue">—</td><td class="tenue">non serve</td><td class="tenue">—</td><td>● SNMP valida</td><td>px-sede</td><td><b>2</b></td></tr>
+<tr class="gruppo"><td>☐</td><td colspan="14">▾ WINDOWS &nbsp;34 <span class="tenue" style="font-weight:400">· 0 in monitoraggio · 34 da aggiungere · 34 con agente da installare</span> &nbsp; <span class="btn" style="font-weight:400">Prepara l'agente per i 34</span></td></tr>
+<tr><td>☐</td><td><span class="b da">○ Da aggiungere</span></td><td><b>srv-file-01</b></td><td class="mono">10.20.40.11</td><td>Server · 40</td><td>Dell</td><td>PowerEdge R650</td><td>windows</td><td class="tenue">Windows by Zabbix agent active <i>(proposto)</i></td><td class="tenue">—</td><td><span class="b da">○ Da installare</span></td><td class="tenue">—</td><td>● WinRM valida</td><td class="tenue">—</td><td class="tenue">—</td></tr>
+<tr><td>☐</td><td><span class="b fe">■ Fermo</span></td><td><b>srv-db-02</b></td><td class="mono">10.20.40.12</td><td>Server · 40</td><td>Dell</td><td>PowerEdge R650</td><td><span class="mano">✎ linux</span></td><td>Linux by Zabbix agent active</td><td>+2</td><td><span class="b si">● Installato</span></td><td>7.0.22 <span class="nuova">◆</span></td><td>● SSH valida</td><td>px-sede</td><td><b>1</b></td></tr>
+<tr><td>☐</td><td><span class="b si">● In monitoraggio</span></td><td><b>srv-dc-01</b></td><td class="mono">10.20.40.10</td><td>Server · 40</td><td>Dell</td><td>PowerEdge R450</td><td>windows</td><td>Windows by Zabbix agent active</td><td>+1</td><td><span class="b si">● Installato</span></td><td>7.0.30 <span class="nuova">◆</span></td><td>● WinRM valida</td><td>px-sede</td><td class="tenue">0</td></tr>
+<tr class="gruppo"><td>☐</td><td colspan="14">▸ FIREWALL &nbsp;3 <span class="tenue" style="font-weight:400">· 3 in monitoraggio</span></td></tr>
+<tr class="gruppo"><td>☐</td><td colspan="14">▸ WIFI &nbsp;41 <span class="tenue" style="font-weight:400">· 0 in monitoraggio · 41 da aggiungere</span></td></tr>
+<tr><td colspan="15" class="tenue" style="padding:9px 10px;border:0">Righe 1–100 di 474 · 100 per pagina &nbsp; ‹ 1 2 3 4 5 ›</td></tr>
+</table>
+<div class="tenue" style="position:absolute;left:760px;top:575px;width:420px">7 e 8 sono disegnati qui sotto per non coprire le righe: nella pagina il menu si apre sotto il puntatore e «Colonne» sotto il suo pulsante.</div>
+<!-- 7: menu col tasto destro -->
+<span class="n" style="left:20px;top:560px">7</span>
+<div class="menu" style="left:50px;top:570px">
+ <div class="t">10.20.40.226 · 2 SELEZIONATI</div>
+ <div><b>Aggiungi a Zabbix (2)</b></div><div>Prova a vuoto: cosa farebbe</div><hr>
+ <div>Aggiungi un modello…</div><div>Togli un modello…</div>
+ <div>Cambia famiglia <span>▸</span></div><div>Torna alla famiglia automatica</div>
+ <div>Prepara l'agente</div><hr>
+ <div class="tenue">Sospendi il monitoraggio <span class="nuova">◆</span></div><div class="tenue">Rinomina in Zabbix… <span class="nuova">◆</span></div><div class="tenue">Togli da Zabbix… <span class="nuova">◆</span></div><hr>
+ <div>Apri la scheda dell'apparato</div><div>Filtra per «Server · 40»</div><div>Copia l'IP</div>
+</div>
+<!-- 8: scelta delle colonne -->
+<span class="n" style="left:420px;top:560px">8</span>
+<div class="menu" style="left:450px;top:570px;width:270px">
+ <div class="t">COLONNE · TRASCINA PER ORDINARE</div>
+ <div>⠿ ☑ Stato</div><div>⠿ ☑ Apparato <span class="tenue">fissa</span></div><div>⠿ ☑ IP</div><div>⠿ ☑ Rete · VLAN</div><div>⠿ ☑ Marca</div><div>⠿ ☑ Modello</div><div>⠿ ☑ Famiglia</div><div>⠿ ☑ Modello Zabbix</div><div>⠿ ☑ Agente</div><div>⠿ ☑ Credenziale</div>
+ <div>⠿ ☐ Proxy</div><div>⠿ ☐ MAC</div><div>⠿ ☐ Nome in Zabbix</div><div>⠿ ☐ Ultimo dato</div><div>⠿ ☐ Misure vive</div><hr>
+ <div><span class="btn">Come all'inizio</span><span class="btn pieno">Salva la vista</span></div>
+</div>
+</div>
+<!-- 9: scheda di lato dell'apparato -->
+<div class="pannello" style="width:400px;flex:none;padding:14px 16px;position:relative">
+<span class="n" style="right:8px;top:8px">9</span>
+<div style="font-size:17px;font-weight:700">srv-db-02</div><div class="mono tenue" style="margin-bottom:10px">10.20.40.12 · in Zabbix come «srv-db-02»</div>
+<h3>FAMIGLIA</h3>
+<div class="dato"><span><span class="mano">✎ linux</span> scelta a mano</span><span class="btn">Torna all'automatico</span></div>
+<h3 style="margin-top:12px">MODELLI IN ZABBIX · 3</h3>
+<div class="dato"><span>Linux by Zabbix agent active</span><span class="btn">Togli</span></div>
+<div class="dato"><span>PostgreSQL by Zabbix agent 2</span><span class="btn">Togli</span></div>
+<div class="dato"><span>ICMP Ping</span><span class="btn">Togli</span></div>
+<div class="riga" style="margin-top:6px"><span class="sel" style="flex:1">Scegli fra i modelli adatti a «linux»</span><span class="btn pieno">Aggiungi</span></div>
+<h3 style="margin-top:14px">AGENTE</h3>
+<div class="dato"><span>Serve</span><b>sì (Linux)</b></div><div class="dato"><span>Stato</span><span class="b si">● Installato</span></div>
+<div class="dato"><span>Versione <span class="nuova">◆</span></span><b>7.0.22</b></div><div class="dato"><span>Manda i dati a</span><span class="mono">10.20.40.5</span></div>
+<div class="riga" style="margin-top:6px"><span class="btn">Prepara l'agente</span><span class="btn">Copia il comando</span></div>
+<h3 style="margin-top:14px">CREDENZIALE E PARAMETRI</h3>
+<div class="dato"><span>Credenziale valida in IPAM</span><b>● SSH «linux-admin»</b></div>
+<div class="dato"><span>Credenziale usata da Zabbix</span><span class="tenue">in DA-Zabbix ↗</span></div>
+<div class="dato"><span>Parametri del modello (macro) <span class="nuova">◆</span></span><span class="tenue">tappa successiva</span></div>
+<h3 style="margin-top:14px">STATO</h3>
+<div class="dato"><span>Disponibilità</span><span class="b fe">■ Fermo da 12 min</span></div><div class="dato"><span>Problemi aperti</span><b>1 · agente muto</b></div>
+<div class="dato"><span>Misure vive</span><b>0 di 84</b></div>
+<div class="riga" style="margin-top:10px"><span class="btn">Apri la scheda in IPAM</span><span class="btn">Apri in DA-Zabbix ↗</span></div>
+</div>
+</div>
+<div class="pannello legenda">
+ <span><b>Segni</b></span><span><span class="b si">● pieno</span> in monitoraggio</span><span><span class="b da">○ tratteggiato</span> da aggiungere / da installare</span><span><span class="b at">▲</span> attenzione</span><span><span class="b fe">■</span> fermo</span>
+ <span><span class="mano">✎ a mano</span> famiglia forzata</span><span><span class="nuova">◆</span> serve una rotta nuova in DA-Zabbix (oggi il pulsante resta spento con il motivo)</span><span class="tenue"><i>(proposto)</i> modello che il centro collegherebbe</span>
+</div>
+</main></body></html>

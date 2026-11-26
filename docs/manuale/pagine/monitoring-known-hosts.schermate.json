@@ -1,8 +1,13 @@
 [
-  { "file": "pagina", "percorso": "/monitoring/known-hosts",
+  { "file": "barra", "percorso": "/monitoring/known-hosts",
+    "ritaglio": ["main h1", "button:has-text('Verifica ora')"], "margine": 20,
+    "segni": [ { "n": 1, "cerca": "button:has-text('Verifica ora')" } ] },
+  { "file": "tabella", "percorso": "/monitoring/known-hosts",
+    "ritaglio": ["thead", "tbody tr:nth-child(4)"],
     "nascondi": ["tbody td:nth-child(3)"],
     "segni": [
-      { "n": 1, "cerca": "button:has-text('Verifica ora')" },
-      { "n": 2, "cerca": "th:has-text('Stato')" }
+      { "n": 1, "cerca": "th:has-text('Stato')" },
+      { "n": 2, "cerca": "th:has-text('Latenza')" },
+      { "n": 3, "cerca": "tbody tr:nth-child(1) td:last-child a" }
     ] }
 ]

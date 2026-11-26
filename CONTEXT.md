@@ -90,7 +90,7 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 - **Trappola, «è arrivato?»**: un aggiornamento si dichiara arrivato solo se `ActiveEnterTimestamp` di `da-ipam` è
   dopo il push e il journal di `da-ipam-update` dice «Aggiornamento completato»; commit e `/api/version` da soli
   mentono durante un aggiornamento che poi torna indietro.
-- **Hub in osservazione dal 26/11** (politica vuota, non scarta niente): si rilegge dal 03/12, vedi `TASKS.md`.
+- **Hub in osservazione dal 26/11**: si rilegge dal 03/12, vedi `TASKS.md`. Il 26/11, acceso sull'hub per nove ore con una politica quasi vuota, ha chiuso SSH a tutte le sessioni che lavorano lì: **prima di accenderlo su una macchina su cui lavorano altri, mettere in elenco chi ci entra** (dalle reti locali SSH passa solo se è nel gruppo SSH). Le risposte alle scansioni a pacchetti grezzi non si contano più (corretto il 26/11) e non erano un danno per le scansioni. **L'indirizzo «da cui arrivo» dietro NetBird, una VPN o un NAT è quello dell'instradatore**, comune a tutti quelli che passano di lì.
 - Ogni installazione nasce col filtro spento e lo accende una persona; la seconda verifica resta facoltativa;
   il blocco di un indirizzo lo decide una persona (decisioni di Riccardo, piano §9).
 

@@ -1,7 +1,7 @@
 ---
 percorso: /vulnerabilities
 titolo: Findings — tutte le vulnerabilità trovate, in un elenco solo
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -16,18 +16,30 @@ Si arriva da **Sicurezza › Findings** nel menu. Compaiono solo i rilievi **cri
 ultimi 30 giorni: i bassi, gli informativi e gli host non scansionati di recente restano fuori (il titolo lo ricorda
 passandoci sopra col mouse).
 
-![La pagina Findings](/manuale/vulnerabilities/pagina.png)
+Ricerca, filtri, tabelle e pagine dell'elenco funzionano come altrove: vedi le
+[parti comuni dell'interfaccia](../INTERFACCIA.md). Le immagini di questa guida tengono chiusa la sintesi e non
+mostrano i rilievi.
 
-## Le voci della pagina
+## La testata
+
+![La testata di Findings](/manuale/vulnerabilities/testata.png)
+
+Accanto al titolo: **Critici, alti e medi degli ultimi 30 giorni** (passa il mouse per la nota intera) e la data
+dell'ultimo aggiornamento dei **dati sugli exploit** (CISA KEV, Exploit-DB, EPSS). Un amministratore ha accanto
+`tasto:refresh` **Aggiorna ora**, che li riscarica subito. A destra **Lancia un giro** porta alle
+[Scansioni interne](pagine/scans.md).
 
 Sopra il titolo possono comparire delle righe di stato: le fonti che non hanno risposto («Fonti non disponibili»),
-quelle lette solo in parte («Risultati e contatori parziali») e, se c'è ESET, quante macchine sono state lette e
-quante sono **da abbinare** a un host (vedi più sotto). Accanto al titolo c'è la data dell'ultimo aggiornamento dei
-**dati sugli exploit** (CISA KEV, Exploit-DB, EPSS) e, per chi è amministratore, **Aggiorna ora**. A destra **Lancia
-un giro** porta alle [Scansioni interne](pagine/scans.md).
+quelle lette solo in parte («Risultati e contatori parziali») e, se c'è ESET, quante macchine sono state lette da
+DA-Link, quante agganciate a un host e il collegamento **N macchine ESET da abbinare** (vedi
+[Macchine ESET da abbinare](#eset)).
 
-1. **Dove guardare**: la fascia di sintesi. Si chiude e si riapre con un clic sul titolo (la pagina ricorda la
-   scelta). Dentro ci sono quattro riquadri, ognuno è anche un filtro:
+## La sintesi e la barra dell'elenco
+
+![La sintesi chiusa e la barra dell'elenco](/manuale/vulnerabilities/barra.png)
+
+1. `icona:chevron-right` **Dove guardare**: la fascia di sintesi. Si apre (`icona:chevron-down`) e si chiude con un
+   clic sul titolo; la pagina ricorda la scelta. Chiusa, mostra i numeri in una riga. Dentro ci sono quattro riquadri, ognuno è anche un filtro:
    - **Da rivedere**: quanti rilievi nessuno ha ancora deciso, e quanti sono già decisi. Un clic mostra solo quelli.
    - **Sfruttate attivamente**: le CVE che la CISA dà come usate davvero negli attacchi, e su quanti host. Un clic
      filtra l'elenco su di loro.
@@ -37,8 +49,9 @@ un giro** porta alle [Scansioni interne](pagine/scans.md).
 
    A destra, **Cose da sistemare per rete**: una barra per rete, divisa per gravità. Conta un pacchetto o un rilievo
    per host, non le singole CVE. Un clic su una rete filtra l'elenco; un secondo clic toglie il filtro.
-2. **Cerca IP, titolo, rete**: scrivi e premi Invio. Cerca nell'indirizzo, nel titolo del rilievo e nel nome della
-   rete. **Espandi tutto** apre il dettaglio di tutte le righe della pagina.
+2. `icona:search` **Cerca IP, titolo, rete**: scrivi e premi **Invio**. Cerca nell'indirizzo, nel titolo del rilievo
+   e nel nome della rete. **Espandi tutto** apre il dettaglio di tutte le righe della pagina; accanto la legenda delle
+   tacche di gravità.
 3. **Raggruppa per**: come si legge l'elenco.
    - **Rilievo**: una riga per rilievo, la vista normale.
    - **Cosa aggiornare**: i rilievi raccolti per programma da aggiornare. Una riga dice quanti host tocca, le versioni
@@ -49,20 +62,25 @@ un giro** porta alle [Scansioni interne](pagine/scans.md).
    DA-IPAM e allarmi della sonda trunk), **Edge (VA)** (scansioni di vulnerabilità), **Wazuh**, **ESET**. Con ESET
    compare la spunta **Anche le potenziali dal software**: aggiunge le vulnerabilità calcolate dalla versione dei
    programmi che ESET elenca. Non le ha viste l'agente, sono meno certe, e non entrano nei conteggi di gravità.
-5. **Filtri**: apre il pannello dei filtri.
+5. `tasto:filter` **Filtri**: apre il pannello dei filtri.
+
+   ![Il pannello dei filtri](/manuale/vulnerabilities/filtri.png)
+
    - **Exploit**: **Sfruttate attivamente** (nella lista CISA KEV) ed **Exploit pubblico** (c'è un exploit in
      Exploit-DB).
    - **Stato**: lo stato del triage, **Da rivedere**, **In corso**, **Rivisto**, **Ignorato**.
    - **Sistema**: **Windows**, **Linux**, **Apple**, **Sistema non noto**.
 
-   Il pulsante in fondo al pannello dice quanti rilievi restano («Mostra N rilievi»). Ogni filtro acceso diventa
-   un'etichetta sopra l'elenco, con la ✕ per toglierlo. A destra della barra ci sono i tre bollini di gravità
+   Il pulsante in fondo al pannello dice quanti rilievi restano («Mostra N rilievi»); **Togli tutti** li azzera. Ogni
+   filtro acceso diventa un'etichetta accanto a `tasto:filter`, con la sua `icona:x` per toglierlo. A destra della barra ci sono i tre bollini di gravità
    (**Critica**, **Alta**, **Media**) con il loro numero: un clic filtra su quella gravità, un altro clic la toglie.
 
 Sotto i filtri, a destra, **N di M rivisti** con la barra verde: quanti rilievi hanno già una decisione. Passando il
 mouse si leggono i numeri per stato.
 
 ## Le colonne dell'elenco
+
+![Le intestazioni dell'elenco](/manuale/vulnerabilities/colonne.png)
 
 - **Stato**: lo stato del triage (● Da rivedere, In corso, Rivisto, Ignorato).
 - **Rilievo**: il codice CVE o il titolo del problema.
@@ -73,14 +91,16 @@ mouse si leggono i numeri per stato.
 - **Dove**: l'host (e quanti altri, se il rilievo è su più indirizzi) o la rete.
 - **Visto**: quando è stato visto l'ultima volta.
 
-Le colonne con le frecce si ordinano con un clic sull'intestazione.
+Le colonne con `icona:arrow-up-down` si ordinano con un clic sull'intestazione; `icona:arrow-down` dice su quale
+colonna è ordinato l'elenco (di serie, la gravità).
 
 ## Il dettaglio di una riga
 
-La freccia **›** all'inizio della riga apre il dettaglio:
+`icona:chevron-right` all'inizio della riga apre il dettaglio (`icona:chevron-down` lo richiude):
 
-- **Triage**: lo stato del rilievo e una nota. Chi è amministratore sceglie lo stato, scrive nel campo **Cosa hai
-  provato, cosa hai trovato** e preme **Salva la nota**. Lo stato è lo stesso che si vede in
+- **Triage**: lo stato del rilievo e una nota. Chi è in sola lettura li vede soltanto, con chi e quando li ha
+  cambiati. Un amministratore sceglie lo stato con i pulsanti **Da rivedere**, ▲ **In corso**, ✓ **Rivisto**,
+  **Ignorato** (si salva al clic), scrive nel campo **Cosa hai provato, cosa hai trovato** e preme **Salva la nota**. Lo stato è lo stesso che si vede in
   [Porte e servizi](pagine/servizi-rete.md) per i rilievi di una porta.
 - **Prova**: cosa ha visto lo strumento (la risposta, la versione, il dettaglio tecnico).
 - **Rimedio**: cosa fare per chiuderlo.
@@ -92,33 +112,43 @@ Chi è amministratore vede una casella all'inizio di ogni riga. Spuntando delle 
 prende tutta la pagina) compare la barra **N selezionati · imposta stato:** con un pulsante per ogni stato del triage
 e **Deseleziona**.
 
-Nelle viste raggruppate ogni gruppo ha in fondo alla riga **Prendi in carico** (mette «In corso» sui rilievi del
-gruppo ancora da rivedere, solo amministratori) e **Apri l'elenco**, che torna alla vista **Rilievo** filtrata su quel gruppo. La colonna **Rivisti**
-dice quanti rilievi del gruppo hanno già una decisione.
+Nelle viste raggruppate ogni riga è un gruppo: `icona:chevron-right` lo apre e mostra i suoi rilievi. In fondo alla
+riga **Apri l'elenco** torna alla vista **Rilievo** filtrata su quel gruppo («Riga per riga» quando il gruppo non si
+può filtrare). In **Cosa aggiornare** un amministratore ha al suo posto **Prendi in carico**, che mette «In corso» sui
+rilievi del gruppo ancora da rivedere. La colonna **Rivisti** dice quanti rilievi del gruppo hanno già una decisione
+(«N di M», e quanti in corso).
 
-## Macchine ESET da abbinare
+## Macchine ESET da abbinare {#eset}
 
 Se ESET conosce macchine che DA-IPAM non riesce ad agganciare a un host (nessun host con lo stesso MAC, seriale o
-nome), compare il riquadro **Macchine ESET da abbinare**. Finché restano lì, i loro rilievi e il loro software non
-compaiono nell'elenco. Per ogni macchina: **Macchina**, **Servizio**, **IP in ESET**, **Seriale**, **Perché non è
-agganciata** e, per l'amministratore, il campo **IP o nome dell'host** con **Abbina**. Gli altri pulsanti: **Riprova
-in automatico** rimette la macchina nell'abbinamento automatico, **Non è fra gli host** la toglie dal riquadro.
+nome), nella riga di stato in cima compare il collegamento **N macchine ESET da abbinare**, che apre la finestra
+**Macchine ESET da abbinare**. Finché restano lì, i loro rilievi e il loro software non compaiono nell'elenco. Per
+ogni macchina: **Macchina**, **Servizio**, **IP in ESET**, **Seriale**, **Perché non è agganciata** e, nella colonna
+**Host**, il campo **IP o nome dell'host** con **Abbina**. Gli altri pulsanti: **Riprova in automatico** rimette la
+macchina nell'abbinamento automatico, **Non è fra gli host** la toglie dall'elenco. Sono azioni da amministratore.
 
 ## CVE potenziali
 
 In fondo alla pagina c'è la tabella **CVE potenziali**: CVE dedotte dalla versione che un servizio dichiara quando
 risponde, confrontata con l'archivio NVD. Sono da verificare e **non entrano nei report**. Colonne: **CVE**,
 **Gravità**, **CVSS**, **Prodotto dichiarato**, **Host**, **Exploit**, **EPSS**. Si cerca con **CVE, prodotto,
-IP…**. L'archivio NVD si scarica ogni mattina; **Aggiorna NVD** lo scarica subito (il primo scaricamento prende
-qualche minuto).
+IP…** (`icona:search`). L'archivio NVD si scarica ogni mattina; un amministratore ha `tasto:refresh` **Aggiorna NVD**,
+che lo scarica subito (il primo scaricamento prende qualche minuto).
 
-## Come si usa
+## Come si fa
 
-1. Apri **Dove guardare** e parti da **Sfruttate attivamente**: sono le più urgenti.
-2. Passa a **Raggruppa per › Cosa aggiornare**: spesso un aggiornamento solo chiude decine di rilievi.
-3. Per un host o una rete, usa la barra della rete o **Raggruppa per › Host**.
-4. Apri una riga, leggi **Prova** e **Rimedio**, poi segna lo stato nel **Triage** con una nota.
-5. Quando un gruppo è affidato a qualcuno, **Prendi in carico**: gli altri vedono «In corso».
+- **Partire dalle più urgenti**: apri **Dove guardare** e clic su **Sfruttate attivamente**: l'elenco resta con le
+  sole CVE usate davvero negli attacchi.
+- **Decidere cosa aggiornare per primo**: **Raggruppa per › Cosa aggiornare**: in cima i programmi il cui
+  aggiornamento chiude più rilievi; un amministratore li assegna con **Prendi in carico**.
+- **Vedere tutto di un server**: scrivi il suo indirizzo in `icona:search` **Cerca** e premi **Invio**, oppure
+  **Raggruppa per › Host** e apri il suo gruppo.
+- **Portare in riunione i critici di una rete**: clic sulla rete in **Cose da sistemare per rete**, poi il bollino
+  **Critica** a destra della barra dei filtri.
+- **Chiudere un rilievo sistemato** (amministratore): apri la riga con `icona:chevron-right`, ✓ **Rivisto**, scrivi
+  cosa hai fatto e **Salva la nota**. Per molti insieme: spunta le righe e, nella barra **N selezionati**, il
+  pulsante dello stato.
+- **Guardare solo quello che ha visto l'Edge**: **Fonte › Edge (VA)**.
 
 ## Cosa vogliono dire i segni
 
@@ -138,4 +168,4 @@ exploit (CISA KEV, Exploit-DB, EPSS) si scaricano ogni giorno; lo scaricamento s
 ## Se la pagina è vuota
 
 Compare **Nessun finding**: serve almeno un giro di rete o una scansione VA. Si lancia da **Lancia un giro**. I
-certificati scaduti e gli allarmi del trunk compaiono da soli. Se ci sono filtri accesi, toglili con la ✕.
+certificati scaduti e gli allarmi del trunk compaiono da soli. Se ci sono filtri accesi, toglili con la loro `icona:x`.

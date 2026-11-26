@@ -1,4 +1,19 @@
 [
-  { "file": "pagina", "percorso": "/settings/moduli/patch_management", "zona": "main", "intera": true,
-    "nascondi": ["main input", "main code"] }
+  { "file": "pagina", "percorso": "/settings/moduli/patch_management",
+    "ritaglio": ["main a:has-text('Tutti i moduli')", "main [data-slot=card] >> nth=0"],
+    "segni": [
+      { "n": 1, "cerca": "main a:has-text('Tutti i moduli')" },
+      { "n": 2, "cerca": "main button:has-text('Importa JSON')" },
+      { "n": 3, "cerca": "main [data-slot=card] >> nth=0" }
+    ] },
+  { "file": "collegamento", "percorso": "/settings/moduli/librenms",
+    "ritaglio": ["main >> text=Docker disponibile", "main [data-slot=card] >> nth=0"],
+    "nascondi": ["main input", "main code", "main span.text-\\[14px\\]"],
+    "segni": [
+      { "n": 1, "cerca": "main button:text-is('Salva')" },
+      { "n": 2, "cerca": "main button:has-text('Test connessione')" }
+    ] },
+  { "file": "verifica", "percorso": "/settings/moduli/librenms",
+    "ritaglio": ["main >> text=Verifica: API e apertura per il browser", "main button:text-is('Verifica')", "main >> text=Prova l'indirizzo che usa il browser"],
+    "margine": 20 }
 ]

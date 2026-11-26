@@ -23,6 +23,7 @@ import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
 import { WazuhHealthBand } from "@/components/integrations/wazuh-health-band";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { splitCategories } from "@/lib/integrations/wazuh-alerts-stats";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import {
   AlertsOverTime,
   DiagnosticStrip,
@@ -143,6 +144,8 @@ function formatDate(iso: string): string {
 }
 
 export function SecurityAlertsClient() {
+  // «Aggiorna ora» (poll da Wazuh) e «Prendi in carico» scrivono: solo amministratori (26/11/2026).
+  const admin = useEAdmin();
   const [data, setData] = useState<AlertsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -348,10 +351,12 @@ export function SecurityAlertsClient() {
             {autoRefresh ? <Pause className="mr-1 h-3 w-3" /> : <Play className="mr-1 h-3 w-3" />}
             Auto
           </Button>
-          <Button size="sm" onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Aggiornamento…" : "Aggiorna ora"}
-          </Button>
+          {admin && (
+            <Button size="sm" onClick={handleSync} disabled={syncing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Aggiornamento…" : "Aggiorna ora"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -514,7 +519,9 @@ export function SecurityAlertsClient() {
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {daDc
                   ? "Nessun evento dai domain controller in questo periodo."
-                  : "Nessun evento in questo periodo. Se l'integrazione Wazuh è appena stata configurata, usa «Aggiorna ora» per il primo poll."}
+                  : admin
+                    ? "Nessun evento in questo periodo. Se l'integrazione Wazuh è appena stata configurata, usa «Aggiorna ora» per il primo poll."
+                    : "Nessun evento in questo periodo."}
               </p>
             ) : (
               <Table fissa riserva={16}>
@@ -526,7 +533,7 @@ export function SecurityAlertsClient() {
                     <TableHead>Dettagli</TableHead>
                     <TableHead className="text-right">Occorrenze</TableHead>
                     <TableHead>Ultimo</TableHead>
-                    <TableHead className="text-right">Azione</TableHead>
+                    <TableHead className="text-right">{admin ? "Azione" : "Presa in carico"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -576,11 +583,13 @@ export function SecurityAlertsClient() {
                             <span className="text-[13px] text-muted-foreground">
                               preso in carico{e.acknowledged_by ? ` da ${e.acknowledged_by}` : ""}
                             </span>
-                          ) : (
+                          ) : admin ? (
                             <Button size="sm" variant="outline" onClick={() => handleAck(e.id)}>
                               <Check className="mr-1 h-3 w-3" />
                               Prendi in carico
                             </Button>
+                          ) : (
+                            <span className="text-[13px] text-muted-foreground">non ancora</span>
                           )}
                         </TableCell>
                       </TableRow>

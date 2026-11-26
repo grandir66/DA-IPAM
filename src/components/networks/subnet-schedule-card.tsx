@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Clock, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import type { ScheduledJob } from "@/types";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface SubnetScheduleCardProps {
   networkId: number;
@@ -46,6 +47,7 @@ function intervalLabel(min: number): string {
 }
 
 export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
+  const admin = useEAdmin();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -150,6 +152,16 @@ export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
       : `sospesa (${intervalLabel(job.interval_minutes).toLowerCase()})`;
   // Sul pulsante della barra lo stato in parole (Riccardo è daltonico: mai solo il colore).
   const buttonState = !job ? null : isActive ? `ogni ${intervalLabel(job.interval_minutes).toLowerCase()}` : "sospesa";
+
+  // Chi è in sola lettura vede lo stato in parole, senza pulsante: la finestra serve solo a cambiarla (26/11/2026).
+  if (!admin) {
+    return loading ? null : (
+      <span className="inline-flex h-8 items-center px-2.5 text-xs text-muted-foreground" title={`Scansione veloce periodica della subnet: ${summary}`}>
+        <Clock className="h-3.5 w-3.5 mr-1 shrink-0" />
+        Scansione periodica · {buttonState ?? "nessuna"}
+      </span>
+    );
+  }
 
   // Pulsante nella barra delle scansioni (20/10): prima era una riga pieghevole sotto la barra.
   return (

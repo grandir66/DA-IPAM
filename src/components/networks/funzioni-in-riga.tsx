@@ -10,6 +10,7 @@ import { Check, ChevronDown, ChevronRight, Plus, RotateCcw } from "lucide-react"
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { gruppiFunzioni } from "@/lib/classification/funzioni";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { PilloleFunzioni, type FunzioneInRiga } from "@/components/networks/funzioni-host";
 
 function piatto(s: string): string {
@@ -26,6 +27,7 @@ export function FunzioniInRiga({
   quantiHost: number;
   onCambia: (funzione: string, azione: "metti" | "togli" | "automatica") => void | Promise<void>;
 }) {
+  const admin = useEAdmin();
   const [aperto, setAperto] = useState(false);
   const [cerca, setCerca] = useState("");
   const [gruppoAperto, setGruppoAperto] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export function FunzioniInRiga({
   return (
     <span className="mt-0.5 flex flex-wrap items-center gap-1">
       <PilloleFunzioni funzioni={funzioni} />
+      {admin && (
       <Popover open={aperto} onOpenChange={setAperto}>
         <PopoverTrigger
           render={
@@ -119,6 +122,7 @@ export function FunzioniInRiga({
           </div>
         </PopoverContent>
       </Popover>
+      )}
     </span>
   );
 }

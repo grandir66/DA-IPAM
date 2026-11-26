@@ -24,6 +24,7 @@ import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -164,6 +165,9 @@ function formatDate(iso: string | null): string {
 
 // ─── home ────────────────────────────────────────────────────────────────
 export default function PatchManagementHomePage() {
+  // Sola lettura (26/11/2026): «Calcola matching» e le azioni bulk sugli host solo all'amministratore;
+  // il server le rifiuta già, qui si tolgono i pulsanti.
+  const admin = useEAdmin();
   const [matchingBusy, setMatchingBusy] = useState(false);
   // Bump per forzare il refresh dei tab dopo "Calcola matching" (rimonta sub-tree).
   const [refreshKey, setRefreshKey] = useState(0);
@@ -213,6 +217,7 @@ export default function PatchManagementHomePage() {
             installato; entra nel dettaglio per pianificare un&apos;operazione.
           </p>
         </div>
+        {admin && (
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="default"
@@ -229,6 +234,7 @@ export default function PatchManagementHomePage() {
             Calcola matching
           </Button>
         </div>
+        )}
       </div>
 
       {/* Tabs (key bump → refetch dopo matching) */}
@@ -260,6 +266,7 @@ export default function PatchManagementHomePage() {
 const MAX_BULK_SELECTION = 50;
 
 function DeviceTab() {
+  const admin = useEAdmin();
   const [items, setItems] = useState<DeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -632,6 +639,7 @@ function DeviceTab() {
           <Table fissa>
             <TableHeader>
               <TableRow>
+                {admin && (
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allSelectableSelected}
@@ -640,6 +648,7 @@ function DeviceTab() {
                     disabled={selectableHosts.length === 0}
                   />
                 </TableHead>
+                )}
                 <TableHead>Host</TableHead>
                 <TableHead className="w-32">IP</TableHead>
                 <TableHead className="w-48">OS</TableHead>
@@ -657,6 +666,7 @@ function DeviceTab() {
                     key={d.hostId}
                     className="hover:bg-muted/50 cursor-pointer"
                   >
+                    {admin && (
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selected.has(d.hostId)}
@@ -670,6 +680,7 @@ function DeviceTab() {
                         }
                       />
                     </TableCell>
+                    )}
                     <TableCell>
                       <Link
                         href={`/patch-management/device/${d.hostId}`}
@@ -795,7 +806,7 @@ function DeviceTab() {
       )}
 
       {/* Bulk action bar — sticky bottom */}
-      {!moduleMissing && !error && items.length > 0 && (
+      {admin && !moduleMissing && !error && items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur py-3 border-t">
           <div className="text-sm text-muted-foreground mr-auto">
             {selected.size > 0

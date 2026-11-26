@@ -1,2 +1,61 @@
-[{ "file": "pagina", "percorso": "/topology/tavola", "altezza": 1000, "attesa": 3000,
- "segni": [{"n":1,"cerca":"select >> nth=0"},{"n":2,"cerca":"text=da verificare >> nth=0"},{"n":3,"cerca":"text=Mostra porte libere"},{"n":4,"cerca":"input[placeholder^=\"Trova porta\"]"},{"n":5,"cerca":"text=Linea / fuori sede"}] }]
+[
+ {
+  "file": "barra",
+  "percorso": "/topology/tavola",
+  "attesa": 3000,
+  "larghezza": 1920,
+  "ritaglio": [
+   "main h1",
+   "main input[placeholder^='Trova porta']",
+   "main :text('da verificare') >> nth=0"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main label:has-text('Sede')"
+   },
+   {
+    "n": 2,
+    "cerca": "main :text('da verificare') >> nth=0"
+   },
+   {
+    "n": 3,
+    "cerca": "main label:has-text('Mostra porte libere')"
+   },
+   {
+    "n": 4,
+    "cerca": "main input[placeholder^='Trova porta']"
+   }
+  ]
+ },
+ {
+  "file": "legenda",
+  "percorso": "/topology/tavola",
+  "attesa": 3000,
+  "larghezza": 1920,
+  "zona": "main div.rounded-xl:has(> span:has-text('Linea / fuori sede'))"
+ },
+ {
+  "file": "apparato",
+  "percorso": "/topology/tavola",
+  "attesa": 3000,
+  "larghezza": 1920,
+  "ritaglio": [
+   "svg[aria-label='Tavola di cablaggio'] > g[id^='tavola-'] >> nth=0"
+  ],
+  "margine": 10
+ },
+ {
+  "file": "porta",
+  "percorso": "/topology/tavola",
+  "attesa": 3000,
+  "larghezza": 1920,
+  "prima": [
+   {
+    "clic": "svg[aria-label='Tavola di cablaggio'] g[id^='tavola-'] g[id^='tavola-']:has-text('13') >> nth=0",
+    "attesa": 1200
+   }
+  ],
+  "zona": "main section[aria-label='Collegamento'], main section[aria-label='Porta']"
+ }
+]

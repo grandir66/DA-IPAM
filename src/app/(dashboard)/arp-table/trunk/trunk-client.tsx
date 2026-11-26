@@ -293,11 +293,11 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
               `letta dal ${sonda.fonte === "socket" ? "socket locale" : "Scanner-Edge"}`,
               ...(statoLettura.segno === "✓" ? [`dati ${fa(ultimoEsito?.quando ?? r.aggiornato)}`] : []),
             ] : ["non risponde"]}
-            azioni={
+            azioni={admin ? (
               <Button size="sm" variant={attiva ? "outline" : "default"} render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
                 {attiva ? "Impostazioni" : "Accendi in Opzioni"}
               </Button>
-            }
+            ) : undefined}
           />
           {statoLettura.segno !== "✓" && <AvvisoLettura {...statoLettura} />}
         </>
@@ -456,7 +456,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
             {reteScelta ? (
               <Dettaglio key={chiaveRete(reteScelta)} rete={reteScelta} giorni={matrice.giorni} inIpam={retiIpam.includes(reteScelta.cidr)}
                 giroDisabilitato={inCorso || !attiva} portaDisabilitata={inCorso} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
-                onMaschera={(p) => void correggiMaschera(reteScelta, p)} />
+                onMaschera={(p) => void correggiMaschera(reteScelta, p)} soloLettura={!admin} />
             ) : (
               <Pannello numero={3} titolo="Dettaglio della rete" conteggio="—">
                 <p className="py-8 text-center text-[13px] text-muted-foreground">Scegli una rete a sinistra per vedere gateway, crescita e occupazione.</p>

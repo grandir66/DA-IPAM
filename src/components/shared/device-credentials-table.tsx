@@ -33,6 +33,7 @@ import { Key, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, CheckCircle, XCircle,
 import { toast } from "sonner";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { etichettaTipo } from "@/lib/credentials/tipi";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface CredentialBinding {
   id: number;
@@ -93,6 +94,7 @@ export function DeviceCredentialsTable({
   /** I binding a ogni caricamento: la finestra di modifica ne prende la porta SSH (16/10). */
   onBindingsChange?: (bindings: CredentialBinding[]) => void;
 }) {
+  const admin = useEAdmin();
   const [bindings, setBindings] = useState<CredentialBinding[]>([]);
   const [credentials, setCredentials] = useState<ArchiveCredential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -315,6 +317,8 @@ export function DeviceCredentialsTable({
             </CardTitle>
             <CardDescription>Credenziali assegnate al dispositivo, ordinate per priorità</CardDescription>
           </div>
+          {/* Chi è in sola lettura vede le credenziali, non le cambia (26/11: il server rifiutava già). */}
+          {admin && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => { setAddMode("archive"); setShowAddDialog(true); }}>
               <Archive className="h-3.5 w-3.5 mr-1" />Da archivio
@@ -323,6 +327,7 @@ export function DeviceCredentialsTable({
               <Plus className="h-3.5 w-3.5 mr-1" />Nuova
             </Button>
           </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -337,7 +342,7 @@ export function DeviceCredentialsTable({
                 <TableHead>Nome / Origine</TableHead>
                 <TableHead>Porta</TableHead>
                 <TableHead>Stato Test</TableHead>
-                <TableHead className="text-right">Azioni</TableHead>
+                {admin && <TableHead className="text-right">Azioni</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -404,7 +409,7 @@ export function DeviceCredentialsTable({
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
+                  {admin && <TableCell>
                     <div className="flex items-center gap-1 justify-end">
                       <Button size="icon" variant="ghost" className="h-7 w-7" disabled={idx === 0} onClick={() => handleMove(b.id, "up")}>
                         <ArrowUp className="h-3.5 w-3.5" />
@@ -429,7 +434,7 @@ export function DeviceCredentialsTable({
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  </TableCell>
+                  </TableCell>}
                 </TableRow>
               ))}
             </TableBody>

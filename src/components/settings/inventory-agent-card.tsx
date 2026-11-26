@@ -302,9 +302,11 @@ export function InventoryAgentCard({
                   <Button variant="outline" size="sm" disabled={loading} onClick={() => void fetchState()}>
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   </Button>
-                  <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
-                    Disinstalla e cancella i dati…
-                  </Button>
+                  {isAdmin && (
+                    <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
+                      Disinstalla e cancella i dati…
+                    </Button>
+                  )}
                 </>
               ) : (
                 // Si installa da Opzioni (22/10): qui il rimando.

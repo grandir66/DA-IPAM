@@ -8,6 +8,7 @@ import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
 import { DnsDiHost } from "@/components/shared/dns-di-host";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -400,6 +401,7 @@ function EmptyState({ icon: Icon, title, description }: { icon: React.ElementTyp
 }
 
 function DeviceInventoryCard({ deviceId, onRefresh }: { deviceId: number; onRefresh: () => void }) {
+  const admin = useEAdmin();
   const [asset, setAsset] = useState<{ id: number; asset_tag: string | null; serial_number: string | null; stato: string | null; fine_garanzia: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -446,12 +448,12 @@ function DeviceInventoryCard({ deviceId, onRefresh }: { deviceId: number; onRefr
           {asset ? (
             <Link href={`/inventory/${asset.id}`}>
               <Button variant="outline" size="sm">
-                <Pencil className="h-3.5 w-3.5 mr-1" />
-                Modifica
+                {admin && <Pencil className="h-3.5 w-3.5 mr-1" />}
+                {admin ? "Modifica" : "Apri"}
                 <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </Link>
-          ) : (
+          ) : !admin ? null : (
             <Button variant="outline" size="sm" onClick={handleCreateAsset} disabled={creating}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               {creating ? "Creazione..." : "Collega asset"}
@@ -493,7 +495,7 @@ function DeviceInventoryCard({ deviceId, onRefresh }: { deviceId: number; onRefr
             )}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Nessun asset collegato. Clicca &quot;Collega asset&quot; per creare una scheda inventario.</p>
+          <p className="text-sm text-muted-foreground">Nessun asset collegato.{admin && <> Clicca &quot;Collega asset&quot; per creare una scheda inventario.</>}</p>
         )}
       </CardContent>
     </Card>
@@ -533,6 +535,7 @@ export default function DevicePage() {
 }
 
 function DeviceDetailPage() {
+  const admin = useEAdmin();
   const params = useParams();
   const router = useRouter();
   const [device, setDevice] = useState<DeviceDetail | null>(null);
@@ -940,7 +943,7 @@ function DeviceDetailPage() {
             <p className="text-muted-foreground font-mono text-sm mt-1">{device.host}:{device.port} ({device.protocol})</p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0 flex-wrap">
+        {admin && <div className="flex gap-2 shrink-0 flex-wrap">
           <Button
             variant="outline"
             onClick={handleTestConnection}
@@ -958,7 +961,7 @@ function DeviceDetailPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${querying ? "animate-spin" : ""}`} />
             {querying ? "Aggiornamento..." : "Aggiorna tutto"}
           </Button>
-        </div>
+        </div>}
       </div>
 
       {/* Il DNS di Active Directory per l'indirizzo dell'apparato (Riccardo, 20/11/2026: qui non si vedeva niente). */}
@@ -2120,7 +2123,7 @@ function DeviceDetailPage() {
                         <CardTitle className="text-base">DHCP Leases ({mikrotikData.leases.length})</CardTitle>
                         <CardDescription>Client con lease DHCP attivi o recenti</CardDescription>
                       </div>
-                      <Button
+                      {admin && <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleImportDhcpLeases()}
@@ -2128,7 +2131,7 @@ function DeviceDetailPage() {
                       >
                         <Database className="h-4 w-4 mr-1" />
                         {mikrotikImporting ? "Importazione..." : "Importa in IPAM"}
-                      </Button>
+                      </Button>}
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">

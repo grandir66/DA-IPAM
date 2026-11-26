@@ -1,27 +1,22 @@
 [
- {
-  "file": "pagina",
-  "percorso": "/settings/schedulazioni",
-  "nascondi": [
-   "h1.sr-only + span"
-  ],
-  "segni": [
-   {
-    "n": 1,
-    "cerca": "[aria-label='Filtro per stato']"
-   },
-   {
-    "n": 2,
-    "cerca": "[aria-label='Filtro per famiglia']"
-   },
-   {
-    "n": 3,
-    "cerca": "button:has-text('Nuovo job')"
-   },
-   {
-    "n": 4,
-    "cerca": "text=Prossimo ▲"
-   }
-  ]
- }
+  { "file": "barra", "percorso": "/settings/schedulazioni",
+    "ritaglio": ["main h1.sr-only + span", "button:has-text('Nuovo job')", "input[aria-label='Cerca una schedulazione']"],
+    "nascondi": ["h1.sr-only + span"],
+    "segni": [
+      { "n": 1, "cerca": "[aria-label='Filtro per stato']" },
+      { "n": 2, "cerca": "[aria-label='Filtro per famiglia']" },
+      { "n": 3, "cerca": "input[aria-label='Cerca una schedulazione']" },
+      { "n": 4, "cerca": "button:has-text('Nuovo job')" }
+    ] },
+  { "file": "righe", "percorso": "/settings/schedulazioni",
+    "ritaglio": ["main div:text-is('Stato')", "main div:text-is('Azioni')", "main button:has-text('Esegui ora') >> nth=3"],
+    "segni": [
+      { "n": 1, "cerca": "main div:text-is('Stato')" },
+      { "n": 2, "cerca": "main div:text-is('Prossimo ▲')" },
+      { "n": 3, "cerca": "main div:text-is('Ultimo esito')" },
+      { "n": 4, "cerca": "main div:text-is('Azioni')" }
+    ] },
+  { "file": "nuovo-job", "percorso": "/settings/schedulazioni",
+    "prima": [{ "clic": "button:has-text('Nuovo job')", "attesa": 700 }],
+    "zona": "[role=dialog]" }
 ]

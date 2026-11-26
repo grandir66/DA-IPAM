@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,8 @@ const DEP_TYPES = [
 ];
 
 export default function ServiceDetailPage() {
+  // Sola lettura (26/11/2026): anagrafica non modificabile, niente Elimina/Salva/Collega/scollega per il viewer; il server li rifiuta già.
+  const admin = useEAdmin();
   const params = useParams();
   const router = useRouter();
   const id = Number(params.id);
@@ -176,9 +179,11 @@ export default function ServiceDetailPage() {
             <p className="text-muted-foreground text-sm">Servizio NIS2 — {service.dependencies.length} asset linkati ({primariCount} primari)</p>
           </div>
         </div>
+        {admin && (
         <Button variant="outline" className="text-destructive" onClick={handleDelete}>
           <Trash2 className="h-4 w-4 mr-1.5" />Elimina
         </Button>
+        )}
       </div>
 
       {noAssetsWarning && (
@@ -186,7 +191,7 @@ export default function ServiceDetailPage() {
           <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
           <span>
             <b>Servizio in scope NIS2 senza asset primari</b>: una mappa di dipendenze accurata è richiesta per impact analysis (art. 21 NIS2).
-            Collega almeno un asset critico come <i>primario</i>.
+            {admin && <> Collega almeno un asset critico come <i>primario</i>.</>}
           </span>
         </div>
       )}
@@ -194,7 +199,8 @@ export default function ServiceDetailPage() {
       <Card>
         <CardHeader><CardTitle>Anagrafica servizio</CardTitle></CardHeader>
         <CardContent>
-          <form onSubmit={handleSave} className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSave}>
+          <fieldset disabled={!admin} className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Nome</Label><Input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required /></div>
             <div className="col-span-2"><Label>Descrizione</Label><Textarea rows={2} value={form.description ?? ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} /></div>
             <div>
@@ -243,9 +249,12 @@ export default function ServiceDetailPage() {
             </div>
             <div className="col-span-2"><Label>URL SLA</Label><Input value={form.sla_url ?? ""} onChange={(e) => setForm((f) => ({ ...f, sla_url: e.target.value || null }))} placeholder="https://..." /></div>
             <div className="col-span-2"><Label>Note</Label><Textarea rows={2} value={form.note ?? ""} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value || null }))} /></div>
+            {admin && (
             <div className="col-span-2 flex justify-end">
               <Button type="submit" disabled={saving}><Save className="h-4 w-4 mr-1.5" />{saving ? "Salvataggio..." : "Salva"}</Button>
             </div>
+            )}
+          </fieldset>
           </form>
         </CardContent>
       </Card>
@@ -254,14 +263,16 @@ export default function ServiceDetailPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Asset di cui il servizio dipende ({service.dependencies.length})</CardTitle>
+            {admin && (
             <Button size="sm" onClick={() => setAddOpen(true)} disabled={availableAssets.length === 0}>
               <Plus className="h-4 w-4 mr-1.5" />Collega asset
             </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
           {service.dependencies.length === 0 ? (
-            <div className="text-muted-foreground py-8 text-center">Nessun asset collegato. Aggiungi le dipendenze per abilitare l&apos;impact analysis.</div>
+            <div className="text-muted-foreground py-8 text-center">Nessun asset collegato.{admin && <> Aggiungi le dipendenze per abilitare l&apos;impact analysis.</>}</div>
           ) : (
             <Table>
               <TableHeader>
@@ -270,7 +281,7 @@ export default function ServiceDetailPage() {
                   <TableHead>Tipo dipendenza</TableHead>
                   <TableHead>Criticità asset</TableHead>
                   <TableHead>Note</TableHead>
-                  <TableHead></TableHead>
+                  {admin && <TableHead></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -288,11 +299,13 @@ export default function ServiceDetailPage() {
                     </TableCell>
                     <TableCell className="text-sm">{d.criticita_nis2 ?? "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{d.note ?? "—"}</TableCell>
+                    {admin && (
                     <TableCell>
                       <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDetach(d.asset_id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

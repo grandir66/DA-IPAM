@@ -1,7 +1,6 @@
-[ { "file": "pagina", "percorso": "/inventory/assignees/import-ad", "attesa": 3000,
-    "nascondi": ["tbody td", "details li"],
-    "segni": [
-      { "n": 1, "cerca": "text=Solo account abilitati" },
-      { "n": 2, "cerca": "text=nuovi, proposti" },
-      { "n": 3, "cerca": "text=Rileggi da AD" }
-    ] } ]
+[
+  {"file": "filtri", "percorso": "/inventory/assignees/import-ad", "attesa": 3000, "ritaglio": ["main a[href='/inventory/assignees'] button", "a:has-text('Rileggi da AD')", "label:has-text('Solo account abilitati')", "label:has-text('Unità organizzativa')"], "segni": [{"n": 1, "cerca": "main a[href='/inventory/assignees'] button"}, {"n": 2, "cerca": "a:has-text('Rileggi da AD')"}, {"n": 3, "cerca": "label:has-text('Solo account abilitati')"}, {"n": 4, "cerca": "label:has-text('Con nome e cognome')"}, {"n": 5, "cerca": "label:has-text('Accesso negli ultimi')"}, {"n": 6, "cerca": "label:has-text('Unità organizzativa')"}]},
+  {"file": "riquadri", "percorso": "/inventory/assignees/import-ad", "attesa": 3000, "ritaglio": ["text=nuovi, proposti", "text=esclusi (servizio"], "margine": 40},
+  {"file": "tabella", "percorso": "/inventory/assignees/import-ad", "attesa": 3000, "nascondi": ["tbody td:nth-child(n+2):nth-child(-n+9)"], "ritaglio": ["text=Utenti proposti", "thead", "tbody tr:nth-child(4)"]},
+  {"file": "conferma", "percorso": "/inventory/assignees/import-ad", "attesa": 3000, "ritaglio": ["text=Selezionati:", "button:has-text('Importa ')"]}
+]

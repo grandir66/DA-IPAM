@@ -1,1 +1,10 @@
-[{ "file": "pagina", "percorso": "/topology/dati", "altezza": 1000 }]
+[
+  { "file": "numeri", "percorso": "/topology/dati", "attesa": 2500,
+    "zona": "main .grid > div:nth-child(1)" },
+  { "file": "sedi", "percorso": "/topology/dati", "attesa": 2500,
+    "ritaglio": ["main .grid > div:nth-child(2) :text('Sedi')", "main button:has-text('Salva')"], "margine": 20,
+    "segni": [ { "n": 1, "cerca": "main label[for='soglia']" }, { "n": 2, "cerca": "main button:has-text('Salva')" } ] },
+  { "file": "proposte", "percorso": "/topology/dati", "attesa": 2500,
+    "ritaglio": ["main :text('Proposte «promuovi ad apparato»') >> nth=-1", "main a:has-text('Promuovi') >> nth=2"],
+    "segni": [ { "n": 1, "cerca": "main a:has-text('Promuovi') >> nth=0" } ] }
+]

@@ -1,9 +1,4 @@
 [
-  { "file": "pagina", "percorso": "/services",
-    "nascondi": ["tbody td:nth-child(7)"],
-    "segni": [
-      { "n": 1, "cerca": "input[placeholder='Cerca per nome...']" },
-      { "n": 2, "cerca": "button:has-text('Nuovo servizio')" },
-      { "n": 3, "cerca": "th:has-text('Criticità')" }
-    ] }
+  {"file": "barra", "percorso": "/services", "attesa": 2000, "ritaglio": ["main h1", "input[placeholder='Cerca per nome...']", "button:has-text('Nuovo servizio')"], "segni": [{"n": 1, "cerca": "input[placeholder='Cerca per nome...']"}, {"n": 2, "cerca": "main button:has-text('Stato')"}, {"n": 3, "cerca": "main button:has-text('Scope NIS2')"}, {"n": 4, "cerca": "button:has-text('Nuovo servizio')"}]},
+  {"file": "nuovo", "percorso": "/services", "attesa": 2000, "altezza": 1000, "prima": [{"clic": "button:has-text('Nuovo servizio')", "attesa": 800}], "zona": "[role=dialog]"}
 ]

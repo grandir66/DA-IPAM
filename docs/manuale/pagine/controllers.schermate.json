@@ -1,2 +1,13 @@
-[{ "file": "pagina", "percorso": "/controllers", "altezza": 700,
- "segni": [{"n":1,"cerca":"tbody tr >> nth=0 >> td >> nth=0"},{"n":2,"cerca":"th:has-text(\"Stato\")"},{"n":3,"cerca":"th:has-text(\"Pianificazione\")"}] }]
+[
+  { "file": "tabella", "percorso": "/controllers",
+    "ritaglio": ["main h1", "thead", "tbody tr:nth-child(1)"],
+    "segni": [
+      { "n": 1, "cerca": "tbody tr:nth-child(1) td:nth-child(1)" },
+      { "n": 2, "cerca": "th:has-text('Stato')" },
+      { "n": 3, "cerca": "th:has-text('Pianificazione')" },
+      { "n": 4, "cerca": "th:has-text('Azioni')" }
+    ] },
+  { "file": "dettaglio", "percorso": "/controllers",
+    "prima": [{ "clic": "tbody tr:nth-child(1) td:nth-child(1)", "attesa": 2500 }],
+    "ritaglio": ["tbody tr:nth-child(1)", "text=Certificato del controller fissato"], "margine": 24 }
+]

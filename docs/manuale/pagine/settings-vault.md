@@ -1,7 +1,7 @@
 ---
 percorso: /settings/vault
 titolo: Vault — le credenziali dell'appliance, chi le ha viste, l'esportazione in KeePass
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -11,7 +11,9 @@ Raccoglie in un posto lo **stato dell'archivio delle credenziali** dell'applianc
 quale password** e l'**esportazione in KeePass**. Si arriva da **Config › Sistema › Vault ›**. È riservata agli
 amministratori dell'istanza.
 
-Per questa pagina non c'è una schermata nel manuale.
+Per questa pagina non c'è una schermata nel manuale, per scelta: mostrerebbe lo stato delle chiavi e i nomi di chi
+ha visto le password. Chi non è amministratore vede solo «Pagina riservata agli amministratori di questa istanza».
+Le parti comuni sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
 ## Le voci della pagina
 
@@ -39,12 +41,17 @@ cliente più un file chiave.
 **Chi ha visto cosa**: ogni password mostrata, ogni esportazione e ogni file chiave scaricato, con **Quando**,
 **Chi**, **Cosa** e **Credenziale**. **Precedenti** e **Successivi** scorrono le pagine.
 
-## Come si usa
+## Come si fa
 
-1. Dopo un riavvio senza TPM le scansioni sono in pausa: scrivi la passphrase del cliente in **Sblocca**.
-2. Per consegnare le credenziali al cliente: **Scarica .kdbx** e, una volta sola, **Scarica key file**; consegnali
-   separati.
-3. Per sapere chi ha guardato una password: leggi **Chi ha visto cosa**.
+- **Le scansioni sono in pausa dopo un riavvio**: l'archivio è bloccato (macchina senza TPM). Scrivi la **Passphrase
+  del cliente** nel riquadro **Sblocca** e premi **Sblocca**; la riga **Scansioni in pausa** sparisce.
+- **Consegnare le credenziali al cliente**: scrivi la passphrase in **Esporta in KeePass**, **Scarica .kdbx** e,
+  una volta sola, **Scarica key file**; consegnali separati.
+- **Sapere chi ha guardato una password**: leggi **Chi ha visto cosa**; **Precedenti** e **Successivi** scorrono le
+  pagine più vecchie.
+- **Capire con quali chiavi si apre l'archivio**: leggi la riga **Slot** del riquadro Stato.
+- **L'archivio remoto non risponde**: se lo stato dice **con la cache**, le scansioni continuano con le copie locali;
+  se dice **non disponibile**, avvisa chi gestisce il server.
 
 ## Da dove arrivano i dati
 

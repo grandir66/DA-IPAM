@@ -1,2 +1,27 @@
-[{ "file": "pagina", "percorso": "/active-directory", "altezza": 1000,
- "segni": [{"n":1,"cerca":"button:has-text(\"domarc.it\")"},{"n":2,"cerca":"text=Abilitata"},{"n":3,"cerca":"button:has-text(\"Sincronizza\")"},{"n":4,"cerca":"button:has-text(\"Guide\")"},{"n":5,"cerca":"button:has-text(\"Computer (\")"},{"n":6,"cerca":"button:has-text(\"Attivi (90gg)\")"},{"n":7,"cerca":"th:has-text(\"Collegato\")"}] }]
+[
+  { "file": "barra", "percorso": "/active-directory", "larghezza": 1920,
+    "ritaglio": ["main :text('Ultima sincronizzazione') >> nth=0", "main button:has-text('Nuova integrazione')"], "margine": 20,
+    "segni": [
+      { "n": 1, "cerca": "main :text('Ultima sincronizzazione') >> nth=0" },
+      { "n": 2, "cerca": "main label:has([aria-label='Integrazione abilitata'])" },
+      { "n": 3, "cerca": "main button:has-text('Sincronizza')" },
+      { "n": 4, "cerca": "main button[aria-label^='Altre azioni']" },
+      { "n": 5, "cerca": "main button:has-text('Guide')" },
+      { "n": 6, "cerca": "main button:has-text('Nuova integrazione')" }
+    ] },
+  { "file": "menu-azioni", "percorso": "/active-directory", "larghezza": 1920,
+    "prima": [{ "clic": "main button[aria-label^='Altre azioni']", "attesa": 700 }],
+    "ritaglio": ["main button[aria-label^='Altre azioni']", "[role=menu]"] },
+  { "file": "menu-guide", "percorso": "/active-directory", "larghezza": 1920,
+    "prima": [{ "clic": "main button:has-text('Guide')", "attesa": 700 }],
+    "ritaglio": ["main button:has-text('Guide')", "[role=menu]"] },
+  { "file": "computer", "percorso": "/active-directory", "larghezza": 1920,
+    "ritaglio": ["main [role=tablist]", "main table >> nth=0 >> tbody tr:nth-child(3)"],
+    "nascondi": ["main tbody td:nth-child(1)", "main tbody td:nth-child(2)", "main tbody td:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "main [role=tablist]" },
+      { "n": 2, "cerca": "main input[placeholder^='Cerca computer']" },
+      { "n": 3, "cerca": "main button:has-text('Attivi')" },
+      { "n": 4, "cerca": "main th:has-text('Collegato')" }
+    ] }
+]

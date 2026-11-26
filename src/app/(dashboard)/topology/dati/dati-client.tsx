@@ -105,14 +105,18 @@ export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
             </TableBody>
           </Table>
           <Altri n={m.sites.length} />
-          <div className="mt-4 flex items-end gap-2">
-            <div>
-              <label htmlFor="soglia" className="text-sm">Soglia «non visto» (giorni)</label>
-              <Input id="soglia" type="number" min={1} max={30} value={soglia} onChange={(e) => setSoglia(e.target.value)} className="w-24" />
+          {isAdmin ? (
+            <div className="mt-4 flex items-end gap-2">
+              <div>
+                <label htmlFor="soglia" className="text-sm">Soglia «non visto» (giorni)</label>
+                <Input id="soglia" type="number" min={1} max={30} value={soglia} onChange={(e) => setSoglia(e.target.value)} className="w-24" />
+              </div>
+              <Button variant="outline" onClick={salvaSoglia}>Salva</Button>
+              {esitoSoglia && <span className="text-sm">{esitoSoglia}</span>}
             </div>
-            <Button variant="outline" onClick={salvaSoglia}>Salva</Button>
-            {esitoSoglia && <span className="text-sm">{esitoSoglia}</span>}
-          </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">Soglia «non visto»: {m.staleDays} giorni</p>
+          )}
         </CardContent>
       </Card>
 

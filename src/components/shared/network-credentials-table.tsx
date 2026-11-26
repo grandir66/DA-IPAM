@@ -31,6 +31,7 @@ import { Key, Plus, Trash2, ArrowUp, ArrowDown, Archive, Copy } from "lucide-rea
 import { toast } from "sonner";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
 import { vociDAccesso } from "@/lib/credential-protocol-map";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 export interface CredentialRow {
   id: number;
@@ -81,6 +82,7 @@ export function NetworkCredentialsTable({
   networkId,
   availableSources,
 }: NetworkCredentialsTableProps) {
+  const admin = useEAdmin();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addMode, setAddMode] = useState<"archive" | "inline">("archive");
   const [addCredentialId, setAddCredentialId] = useState("");
@@ -233,7 +235,7 @@ export function NetworkCredentialsTable({
           </h3>
           <p className="text-xs text-muted-foreground">Lista unificata, ordinate per priorità. Usate durante la validazione credenziali sugli host.</p>
         </div>
-        <div className="flex gap-2">
+        {admin && <div className="flex gap-2">
           {availableSources && availableSources.length > 0 && (
             <Button type="button" size="sm" variant="outline" onClick={() => setShowCopyDialog(true)}>
               <Copy className="h-3.5 w-3.5 mr-1" />Importa
@@ -245,12 +247,12 @@ export function NetworkCredentialsTable({
           <Button type="button" size="sm" variant="outline" onClick={() => { setAddMode("inline"); setShowAddDialog(true); }}>
             <Plus className="h-3.5 w-3.5 mr-1" />Nuova
           </Button>
-        </div>
+        </div>}
       </div>
       <div className="px-4 py-2">
         {credentialIds.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            Nessuna credenziale assegnata. Aggiungine dall&apos;archivio o creane una nuova.
+            Nessuna credenziale assegnata.{admin && <> Aggiungine dall&apos;archivio o creane una nuova.</>}
           </p>
         ) : (
           <Table>
@@ -259,7 +261,7 @@ export function NetworkCredentialsTable({
                 <TableHead className="w-8">#</TableHead>
                 <TableHead className="w-20">Tipo</TableHead>
                 <TableHead>Nome</TableHead>
-                <TableHead className="text-right">Azioni</TableHead>
+                {admin && <TableHead className="text-right">Azioni</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -280,7 +282,7 @@ export function NetworkCredentialsTable({
                         <span className="text-sm font-medium">{cred?.name ?? `ID ${credId}`}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    {admin && <TableCell>
                       <div className="flex items-center gap-1 justify-end">
                         <Button type="button" size="icon" variant="ghost" className="h-7 w-7" disabled={idx === 0} onClick={() => handleMove(credId, "up")}>
                           <ArrowUp className="h-3.5 w-3.5" />
@@ -292,7 +294,7 @@ export function NetworkCredentialsTable({
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                    </TableCell>
+                    </TableCell>}
                   </TableRow>
                 );
               })}

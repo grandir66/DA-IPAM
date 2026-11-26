@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Upload, Database, AlertTriangle } from "lucide-react";
+import { useEAdmin } from "@/hooks/use-e-admin";
+import { Vuoto } from "@/components/shared/console";
 import { righeConversioni, righeSaltate, righeIgnorate, type RigaConversione } from "@/lib/transfer/esito-import";
 
 const TIER_OPTIONS: { value: string; label: string }[] = [
@@ -17,6 +19,8 @@ const TIER_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function TransferPage() {
+  // Esportare e importare il tenant è solo da amministratori (26/11/2026): chi è in sola lettura vede un riquadro.
+  const admin = useEAdmin();
   // --- Export state ---
   const [expPass, setExpPass] = useState("");
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
@@ -128,6 +132,15 @@ export default function TransferPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!admin) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold tracking-tight">Trasferimento dati tenant</h1>
+        <Vuoto titolo="Questa pagina è riservata agli amministratori." />
+      </div>
+    );
   }
 
   return (

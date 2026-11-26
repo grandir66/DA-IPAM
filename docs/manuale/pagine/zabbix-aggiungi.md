@@ -1,7 +1,7 @@
 ---
 percorso: /zabbix/aggiungi
 titolo: Aggiungi a Zabbix
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -15,35 +15,38 @@ torna alla pagina [Zabbix](pagine/zabbix.md).
 
 ![La pagina Aggiungi a Zabbix](/manuale/zabbix-aggiungi/pagina.png)
 
+Le parti comuni (menu, tabelle, selezione) sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
+
 ## Le voci della pagina
 
-Il riquadro **Apparati non abbinati**, con il numero di apparati, ha in alto a destra:
+Il riquadro **Apparati non abbinati**, col numero di apparati:
 
-- **Filtra per nome, IP o tipo**: filtra l'elenco mentre scrivi.
-- **Prova (N)**: chiede al centro cosa farebbe per gli apparati selezionati. Non scrive niente.
-- **Aggiungi (N)**: aggiunge davvero quelli che il centro ha accettato nella prova. Resta grigio finché non c'è una
-  prova con almeno un apparato accettato.
+1. **Filtra per nome, IP o tipo**: filtra l'elenco mentre scrivi.
+2. **Prova (N)**: chiede al centro che cosa farebbe per gli apparati selezionati. Non scrive niente. Grigio finché non
+   ne scegli almeno uno.
+3. **Aggiungi (N)**: aggiunge davvero quelli che il centro ha accettato nella prova. Resta grigio finché non c'è una
+   prova con almeno un apparato accettato.
+4. **Cosa dice il centro**: l'esito della prova o dell'aggiunta. Per esempio «Entra con …» (il modello che userebbe),
+   «Entra con …, poi serve l'agente», «Fuori perimetro» con il motivo, «Aggiunto», «C'era già», «Aggiunto, manca
+   l'agente». Quando serve l'agente compare **script ›**, che apre la finestra **Agente per …** con lo script da
+   lanciare a mano sulla macchina, da copiare con `tasto:copy` o scaricare con `tasto:download`.
 
-Le colonne:
-
-- **La casella**: si scelgono al massimo 50 apparati alla volta.
-- **Apparato**: il nome (un clic apre la scheda dell'host).
-- **IP**, **Tipo** (la classificazione in DA-IPAM: Access Point, Firewall, Hypervisor…), **Stato** (acceso, spento, non
-  so).
-- **Cosa dice il centro**: l'esito della prova o dell'aggiunta. Per esempio «Entra con …» (il modello che userebbe),
-  «Entra con …, poi serve l'agente», «Fuori perimetro» con il motivo, «Aggiunto», «C'era già», «Aggiunto, manca
-  l'agente». Quando serve l'agente compare **script ›**, che apre la finestra **Agente per …** con lo script da lanciare
-  a mano sulla macchina.
+Le altre colonne: la **casella** (al massimo 50 apparati alla volta), **Apparato** (il nome: un clic apre la scheda
+dell'host), **IP**, **Tipo** (la classificazione in DA-IPAM: Access Point, Firewall, Hypervisor…), **Stato** (acceso,
+spento, non so).
 
 Il centro accetta un numero limitato di aggiunte al minuto: se dice di aspettare, la pagina aspetta il tempo indicato e
 riprende da sola.
 
-## Come si usa
+## Come si fa
 
-1. Spunta gli apparati da monitorare (usa il filtro per trovarli).
-2. Premi **Prova** e leggi la colonna **Cosa dice il centro**.
-3. Premi **Aggiungi**: entrano solo quelli accettati.
-4. Per Windows e Linux apri **script ›** e fai lanciare lo script sulla macchina.
+- **Aggiungere i nuovi access point**: scrivi «Access Point» in **Filtra**, spunta le righe, **Prova**, leggi la
+  colonna **Cosa dice il centro**, poi **Aggiungi**.
+- **Capire perché un apparato non entra**: dopo la **Prova** leggi il motivo accanto a «Fuori perimetro».
+- **Completare un server che ha bisogno dell'agente**: dopo l'aggiunta apri **script ›** sulla sua riga, copia o
+  scarica lo script e fallo lanciare sulla macchina.
+- **Lavorare anche su modelli e famiglie**: usa [Apparati di DatIA Mon](pagine/zabbix-apparati.md), che fa le stesse
+  aggiunte e in più il resto.
 
 ## Da dove arrivano i dati
 

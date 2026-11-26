@@ -1,7 +1,7 @@
 ---
 percorso: /objects/[id], /hosts/[id]
 titolo: Scheda dell'oggetto — tutto quello che si sa di un host o di un apparato
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -9,55 +9,99 @@ aggiornata: 2026-11-26
 
 È la **scheda unica** di un host o di un apparato: in una pagina sola c'è tutto quello che DA-IPAM sa di lui, diviso in
 schede. Da qui si legge dove sta in rete, che cosa è, cosa gira, quali vulnerabilità ha, chi lo gestisce e cosa gli è
-successo nel tempo. Ci si arriva da quasi ovunque: **⋮ › Apri la scheda** dall'elenco degli
-[Apparati](pagine/discovery.md), la freccia nella [pagina di una subnet](pagine/networks-id.md), il nome di un oggetto
-nei [Cambiamenti](pagine/network-changes.md). Il vecchio indirizzo `/hosts/<numero>` apre questa stessa scheda.
+successo nel tempo. Ci si arriva da quasi ovunque: `icona:more-vertical` › **Apri la scheda** dall'elenco degli
+[Apparati](pagine/discovery.md), `icona:external-link` nella [pagina di una subnet](pagine/networks-id.md), il nome di
+un oggetto nei [Cambiamenti](pagine/network-changes.md). Il vecchio indirizzo `/hosts/<numero>` apre questa stessa
+scheda.
 
-![La scheda di un host](/manuale/objects-id/pagina.png)
+Menu e schede funzionano come in tutte le pagine: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-## Le voci della pagina
+## La testata
 
-1. **La testata**: il nome, l'indirizzo, il tipo (**Host** per un indirizzo visto in rete, oppure il tipo di apparato
-   gestito: switch, router, server…), lo stato (**✓ online** o offline) e il produttore. La freccia a sinistra torna
-   alla pagina da cui sei arrivato.
-2. **DNS**: com'è l'host nel DNS di Active Directory, con la data dell'ultima lettura. Per esempio «DA-IPAM lo conosce
-   per nome, nel DNS manca». **Apri la scheda DNS** porta ai dettagli del DNS di quell'host.
-3. **Le schede**. Quelle che ci sono dipendono da che cosa è l'oggetto:
-   - **Panoramica**: lo stato e la rete. Nel riquadro **Rete** ci sono la subnet, la **porta dello switch** a cui è
-     attaccato, il router che lo vede, e gli altri indirizzi dello stesso apparato su altre reti («Stesso apparato su
-     altre reti», con il motivo per cui DA-IPAM li ha riconosciuti come lo stesso).
-   - **Sicurezza**: vulnerabilità, porte aperte e rilievi di quell'oggetto.
-   - **Gestione**: i dati di inventario: categoria e criticità NIS2, sede, reparto, posizione fisica, quando è stato
-     scoperto e visto l'ultima volta, se è un host noto.
-   - **Storico**: i cambiamenti di quell'oggetto nel tempo (indirizzi, MAC, porte, stati).
-   - Gli apparati gestiti hanno schede in più secondo il tipo. Uno switch: **Porte**, **VLAN**, **Vicini**. Un router
-     o firewall: anche **Interfacce**, **Routing**, **DHCP**, **Configurazione**. Un server Windows o Linux:
-     **Sistema**, **Servizi**, **Aggiornamenti**, **Software**, **Utenti** (e **AD** sui domain controller). Un
-     hypervisor: **VM**, **Nodi**, lo storage e la rete del cluster. Una stampante: **Materiali**. Un NAS: **Dischi**,
-     **Volumi**, servizi. Gli altri: **Dettagli**.
-4. **Rendi apparato**: per un host che è in realtà un apparato da gestire (uno switch, un server, una stampante…).
-   Apre la finestra in cui si sceglie il tipo e le credenziali: da quel momento DA-IPAM lo interroga e la scheda si
-   arricchisce. Per un apparato già gestito, al suo posto compaiono **Aggiorna** (rilegge subito l'apparato) e **Prova
-   credenziali** (prova SSH, SNMP, WinRM o API con un accesso vero).
-5. **Dati da**: le fonti della scheda e quando hanno parlato l'ultima volta, per esempio «Discovery 26/11, 01:00» o
-   «LibreNMS: non abbinato».
+![La testata della scheda](/manuale/objects-id/testata.png)
 
-Il pulsante **⋯** in alto a destra apre le altre azioni: **Modifica** (nome, classificazione e dati dell'apparato
-gestito), **Crea asset NIS2** (se l'oggetto non è ancora nell'inventario) e **Togli apparato** (lo riporta a semplice
-host, solo per gli amministratori). Chi è in sola lettura vede la scheda ma non può usare le azioni che cambiano
-qualcosa.
+Nella schermata i nomi nel DNS sono sfocati.
 
-## Come si usa
+1. `icona:arrow-left` **Indietro** torna alla pagina da cui sei arrivato. Accanto: il nome, l'indirizzo, il tipo
+   (**Host** per un indirizzo visto in rete, oppure il tipo di apparato gestito: Server Windows, switch, router…), i
+   ruoli (per esempio **DC**), lo stato (**✓ online** con la latenza, o offline), poi marca, modello e firmware o,
+   per una macchina virtuale, «VM n su …» con il collegamento all'hypervisor. **✓ credenziale provata** vuol dire che
+   DA-IPAM entra davvero nell'apparato; durante una scansione automatica compare il suo stato, con il collegamento al
+   lavoro.
+2. **DNS**: com'è l'host nel DNS di Active Directory (**✓** coincide, **∅** manca, **≠** il nome è diverso), i nomi e
+   il reverse, i rilievi (per esempio «Stesso IP, più nomi») e la data dell'ultima lettura. **Apri la scheda DNS**
+   porta alla scheda DNS di [Active Directory](pagine/active-directory.md) già filtrata su quell'indirizzo.
+3. **Le schede** (vedi sotto).
+4. Per un host: `tasto:package-plus` **Rendi apparato**, per uno che è in realtà un apparato da gestire (uno switch,
+   un server, una stampante…): apre la finestra in cui si sceglie il tipo e le credenziali; da quel momento DA-IPAM lo
+   interroga e la scheda si arricchisce. Per un apparato già gestito, al suo posto ci sono `tasto:refresh` **Aggiorna**
+   (rilegge subito l'apparato) e `tasto:key` **Prova credenziali** (prova SSH, SNMP, WinRM o API con un accesso vero).
+5. **Dati da**: le fonti della scheda e quando hanno parlato l'ultima volta, per esempio «✓ Discovery 26/11, 10:31»
+   o «LibreNMS: non abbinato». Sta sotto il primo riquadro della Panoramica.
+6. `tasto:more-horizontal` **Altre azioni** (vedi sotto).
 
-1. Per sapere dove è attaccato un apparato guarda **Panoramica › Rete › Porta dello switch**.
-2. Per sapere se è vulnerabile apri **Sicurezza**.
-3. Se è uno switch, un server o una stampante che vuoi gestire davvero, premi **Rendi apparato**.
-4. Per correggere nome o categoria usa **⋯ › Modifica**.
+Rendi apparato, Aggiorna e Prova credenziali si vedono anche in sola lettura, ma li esegue solo un
+**amministratore**.
+
+### Altre azioni
+
+![Il menu Altre azioni](/manuale/objects-id/altre-azioni.png)
+
+- `icona:pencil` **Modifica** (per gli apparati gestiti): nome, classificazione e dati dell'apparato;
+- `icona:package-plus` **Crea asset NIS2**, se l'oggetto non è ancora nell'inventario;
+- `icona:trash` **Togli apparato**, solo per gli amministratori: lo riporta a semplice host.
+
+## Le schede {#schede}
+
+Quelle che ci sono dipendono da che cosa è l'oggetto. Tutti hanno **Panoramica** e, dopo la riga verticale,
+**Sicurezza**, **Gestione** e **Storico**:
+
+- **Panoramica**: lo stato, le porte aperte e la rete (sotto).
+- **Sicurezza**: vulnerabilità, porte aperte e rilievi di quell'oggetto.
+- **Gestione**: i dati di inventario: categoria e criticità NIS2, sede, reparto, posizione fisica, quando è stato
+  scoperto e visto l'ultima volta, se è un host noto.
+- **Storico**: i cambiamenti di quell'oggetto nel tempo (indirizzi, MAC, porte, stati).
+
+Gli apparati gestiti hanno schede in più secondo il tipo:
+
+| Tipo | Schede in più |
+|---|---|
+| Switch | **Porte**, **VLAN**, **Vicini** |
+| Router o firewall | **Porte**, **VLAN**, **Vicini**, **Interfacce**, **Routing**, **DHCP**, **Configurazione** (sui MikroTik anche **Bridge** e **Dispositivi**) |
+| Server Windows o Linux | **Sistema**, **Servizi**, **Aggiornamenti**, **Software**, **Utenti**; sui domain controller **Active Directory**; dove ci sono, **Sensori** e **Rilievi** |
+| Hypervisor | **VM**, **Nodi**, lo storage e la rete del cluster, **Porte** |
+| NAS | **Dischi**, **Volumi**, i servizi del NAS |
+| Stampante | **Materiali** (toner e carta) |
+| UPS | lo stato dell'UPS |
+| Gli altri | **Dettagli** |
+
+### La Panoramica
+
+![La Panoramica](/manuale/objects-id/panoramica.png)
+
+1. **Dati da**: le fonti, come sopra.
+2. **Rete**: la **Subnet**, la **Porta dello switch** a cui è attaccato, il router che lo vede (**Visto dal router**),
+   e gli altri indirizzi dello stesso apparato su altre reti («Stesso apparato su altre reti», con il motivo per cui
+   DA-IPAM li ha riconosciuti come lo stesso).
+
+Accanto, **Porte aperte** con le porte TCP e UDP viste all'ultima scansione; sotto, secondo il tipo, Active Directory,
+l'utente abituale e gli altri riquadri.
+
+## Come si fa
+
+- **Sapere dove è attaccato un apparato**: **Panoramica** › **Rete** › **Porta dello switch**.
+- **Sapere se è vulnerabile**: scheda **Sicurezza**.
+- **Gestire davvero uno switch, un server o una stampante**: `tasto:package-plus` **Rendi apparato**, scegli tipo e
+  credenziale; poi `tasto:refresh` **Aggiorna**.
+- **Controllare che la credenziale funzioni ancora**: `tasto:key` **Prova credenziali**.
+- **Correggere nome o categoria di un apparato**: `tasto:more-horizontal` › **Modifica**.
+- **Metterlo nell'inventario NIS2**: `tasto:more-horizontal` › **Crea asset NIS2**.
 
 ## Cosa vogliono dire i segni
 
 - **✓ online** con la spunta, offline col pallino vuoto: lo stato si legge dal segno oltre che dal colore.
 - Nel riquadro DNS: **∅** manca nel DNS, **≠** il nome nel DNS è diverso, **✓** coincide.
+- **✓ credenziale provata**: DA-IPAM entra nell'apparato con una credenziale che ha funzionato.
 
 ## Da dove arrivano i dati
 

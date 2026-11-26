@@ -1,10 +1,7 @@
 [
-  { "file": "pagina", "percorso": "/inventory",
-    "prima": [{ "clic": "tbody tr >> nth=0 >> a", "attesa": 2000 }],
-    "nascondi": ["[role=combobox]", "input"],
-    "segni": [
-      { "n": 1, "cerca": "button:has-text('Sync da discovery')" },
-      { "n": 2, "cerca": "[role=tab] >> nth=0" },
-      { "n": 3, "cerca": "button:has-text('Salva modifiche')" }
-    ] }
+  {"file": "testata", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) td:last-child a", "attesa": 2500}], "ritaglio": ["main h1", "div:has(> label[for='inventory-view-toggle'])", "[role=tablist]"], "segni": [{"n": 1, "cerca": "main a[href='/inventory'] button"}, {"n": 2, "cerca": "button:has-text('Sync da discovery')"}, {"n": 3, "cerca": "button:has-text('Force')"}, {"n": 4, "cerca": "label[for='inventory-view-toggle']"}, {"n": 5, "cerca": "[role=tab] >> nth=0"}]},
+  {"file": "responsabilita", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) td:last-child a", "attesa": 2500}], "nascondi": ["[data-slot=card]:has([data-slot=card-title]:text-is('Responsabilità')) [role=combobox]", "[data-slot=card]:has([data-slot=card-title]:text-is('Responsabilità')) button:not([title])"], "ritaglio": ["[data-slot=card]:has([data-slot=card-title]:text-is('Responsabilità'))"], "segni": [{"n": 1, "cerca": "button[title='Aggiungi assegnatario']"}]},
+  {"file": "checklist", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) td:last-child a", "attesa": 2500}], "ritaglio": ["[data-slot=card]:has([data-slot=card-title]:text-is('Checklist protezione (NIS2 art. 21)'))"]},
+  {"file": "licenze", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) td:last-child a", "attesa": 2500}, {"clic": "[role=tab]:has-text('Licenze')", "attesa": 900}], "ritaglio": ["[role=tablist]", "[data-slot=card]:has-text('Licenze software assegnate')"]},
+  {"file": "storico", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) td:last-child a", "attesa": 2500}, {"clic": "[role=tab]:has-text('Storico')", "attesa": 900}], "nascondi": ["tbody td:nth-child(4)", "tbody td:nth-child(5)"], "ritaglio": ["[role=tablist]", "[data-slot=card]:has-text('Storico modifiche')"]}
 ]

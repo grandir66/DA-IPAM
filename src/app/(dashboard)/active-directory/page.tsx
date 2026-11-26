@@ -50,6 +50,7 @@ import {
 import { parseVociArchivio, type VoceArchivio } from "@/components/controllers/controllers-model";
 import { stessoDc } from "@/lib/ad/account-ldap";
 import { fetchJson } from "@/lib/fetch-json";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { indirizzoHealthSpostata } from "@/lib/menu/sicurezza-dominio";
 
 interface AdIntegration {
@@ -160,6 +161,7 @@ export default function ActiveDirectoryPage() {
 const SCHEDE_AD = new Set(["computers", "users", "groups", "dhcp", "dns"]);
 
 function PaginaActiveDirectory() {
+  const admin = useEAdmin();
   const searchParams = useSearchParams();
   const tabRichiesta = searchParams.get("tab");
   const [scheda, setScheda] = useState(() => (tabRichiesta && SCHEDE_AD.has(tabRichiesta) ? tabRichiesta : "computers"));
@@ -616,14 +618,17 @@ function PaginaActiveDirectory() {
                   }`}
                   title="Accende o spegne l'integrazione; accesa, si sincronizza da sola ogni 6 ore"
                 >
-                  <Switch
-                    checked={!!selectedIntegration.enabled}
-                    disabled={commutando}
-                    onCheckedChange={(c) => handleAbilita(selectedIntegration, !!c)}
-                    aria-label="Integrazione abilitata"
-                  />
+                  {admin && (
+                    <Switch
+                      checked={!!selectedIntegration.enabled}
+                      disabled={commutando}
+                      onCheckedChange={(c) => handleAbilita(selectedIntegration, !!c)}
+                      aria-label="Integrazione abilitata"
+                    />
+                  )}
                   {selectedIntegration.enabled ? "✓ Abilitata" : "– Disabilitata"}
                 </label>
+                {admin && (<>
                 <Button
                   size="sm"
                   onClick={() => handleSync(selectedIntegration.id)}
@@ -651,6 +656,7 @@ function PaginaActiveDirectory() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </>)}
               <span className="mx-1 h-6 w-px bg-border" aria-hidden />
             </>
           )}
@@ -670,6 +676,7 @@ function PaginaActiveDirectory() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        {admin && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button><Plus className="w-4 h-4 mr-2" />Nuova integrazione</Button>} />
           <DialogContent className="sm:max-w-[540px]">
@@ -780,6 +787,7 @@ function PaginaActiveDirectory() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        )}
         </div>
       </div>
 
@@ -910,7 +918,7 @@ function PaginaActiveDirectory() {
           <CardContent className="py-12 text-center text-muted-foreground">
             <FolderTree className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p>Nessuna integrazione Active Directory configurata.</p>
-            <p className="text-sm mt-2">Clicca &quot;Nuova integrazione&quot; per iniziare.</p>
+            {admin && <p className="text-sm mt-2">Clicca &quot;Nuova integrazione&quot; per iniziare.</p>}
           </CardContent>
         </Card>
       ) : (

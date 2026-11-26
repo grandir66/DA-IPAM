@@ -1,40 +1,29 @@
 [
-  {
-    "file": "pagina",
-    "percorso": "/vulnerabilities",
-    "attesa": 2500,
+  { "file": "testata", "percorso": "/vulnerabilities", "attesa": 2500,
+    "prima": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 700 }],
+    "dopo": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 500 }],
+    "nascondi": ["span.truncate.font-mono.text-xl", "tbody", "button[aria-expanded] > span.text-foreground"],
+    "ritaglio": ["main h1", "a:has-text('Lancia un giro')"] },
+  { "file": "barra", "percorso": "/vulnerabilities?s=1", "attesa": 2500,
+    "prima": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 700 }],
+    "dopo": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 500 }],
+    "nascondi": ["span.truncate.font-mono.text-xl", "tbody", "button[aria-expanded] > span.text-foreground"],
+    "ritaglio": ["button[aria-expanded]:has-text('Dove guardare')", "[role=tablist][aria-label='Fonte']", "button:has-text('Filtri')"],
     "segni": [
-      {
-        "n": 1,
-        "cerca": "button[aria-expanded]:has-text('Dove guardare')"
-      },
-      {
-        "n": 2,
-        "cerca": "input[placeholder^='Cerca IP, titolo']"
-      },
-      {
-        "n": 3,
-        "cerca": "[role=tablist][aria-label='Raggruppa per']"
-      },
-      {
-        "n": 4,
-        "cerca": "[role=tablist][aria-label='Fonte']"
-      },
-      {
-        "n": 5,
-        "cerca": "button:has-text('Filtri')"
-      }
-    ],
-    "nascondi": [
-      "span.truncate.font-mono.text-xl",
-      "tbody td:nth-child(8)",
-      "button[aria-expanded] > span.text-foreground"
-    ],
-    "prima": [
-      {
-        "clic": "button[aria-expanded]:has-text('Dove guardare')",
-        "attesa": 700
-      }
-    ]
-  }
+      { "n": 1, "cerca": "button[aria-expanded]:has-text('Dove guardare')" },
+      { "n": 2, "cerca": "input[placeholder^='Cerca IP, titolo']" },
+      { "n": 3, "cerca": "[role=tablist][aria-label='Raggruppa per']" },
+      { "n": 4, "cerca": "[role=tablist][aria-label='Fonte']" },
+      { "n": 5, "cerca": "button:has-text('Filtri')" }
+    ] },
+  { "file": "filtri", "percorso": "/vulnerabilities?s=2", "attesa": 2500, "altezza": 800,
+    "prima": [{ "clic": "button:has-text('Filtri')", "attesa": 800 }],
+    "nascondi": ["span.truncate.font-mono.text-xl", "tbody"],
+    "ritaglio": ["[role=dialog] >> text=Exploit", "[role=dialog] button:has-text('Mostra')", "[role=dialog] >> text=Sistema non noto"],
+    "margine": 20 },
+  { "file": "colonne", "percorso": "/vulnerabilities?s=3", "attesa": 2500,
+    "prima": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 700 }],
+    "dopo": [{ "clic": "button[aria-expanded]:has-text('Dove guardare')", "attesa": 500 }],
+    "nascondi": ["span.truncate.font-mono.text-xl", "tbody", "button[aria-expanded] > span.text-foreground"],
+    "ritaglio": ["table thead"] }
 ]

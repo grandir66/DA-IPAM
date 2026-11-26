@@ -25,6 +25,8 @@ const ALLOWED_KEYS = new Set([
   "discovery-filters",
   "discovery-presets",
   "objects-tab-prefs",
+  "zabbix-apparati-vista",
+  "zabbix-agenti-vista",
 ]);
 
 function userScope(email: string | null | undefined, key: string): string {

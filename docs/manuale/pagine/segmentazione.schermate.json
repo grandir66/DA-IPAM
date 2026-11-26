@@ -1,24 +1,12 @@
 [
-  {
-    "file": "pagina",
-    "percorso": "/segmentazione",
-    "attesa": 2000,
+  { "file": "misura", "percorso": "/segmentazione", "attesa": 2000,
+    "ritaglio": ["div.rounded-xl.border.bg-card:has-text('ultimo giro') >> nth=0", "text=connessioni provate nel giro"] },
+  { "file": "matrice", "percorso": "/segmentazione?s=1", "attesa": 2000,
+    "ritaglio": ["[role=tablist][aria-label='Chi raggiunge cosa']", "table thead", "table tbody tr:nth-child(3)"],
     "segni": [
-      {
-        "n": 1,
-        "cerca": "text=Rete × rete >> nth=0"
-      },
-      {
-        "n": 2,
-        "cerca": "text=Servizio × rete sorgente >> nth=0"
-      },
-      {
-        "n": 3,
-        "cerca": "text=Da \\ verso"
-      }
+      { "n": 1, "cerca": "[role=tab]:has-text('Rete × rete')" },
+      { "n": 2, "cerca": "[role=tab]:has-text('Servizio × rete sorgente')" },
+      { "n": 3, "cerca": "text=Da \\ verso" }
     ],
-    "nascondi": [
-      "table tbody td:not(:first-child)"
-    ]
-  }
+    "nascondi": ["table tbody td:not(:first-child)"] }
 ]

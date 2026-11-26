@@ -1,7 +1,7 @@
 ---
 percorso: /settings/snmp-profiles
 titolo: Profili SNMP Vendor — come si riconoscono e si leggono gli apparati via SNMP
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -11,41 +11,68 @@ Un **profilo SNMP** dice a DA-IPAM come riconoscere un apparato di un certo prod
 Aruba o un firewall Fortinet) dalle risposte SNMP, e quali dati leggergli: modello, numero di serie, firmware. È la
 prima fase del riconoscimento (vedi **Config › Identificazione › Pipeline** nella guida
 [Impostazioni e Config](pagine/settings.md#identificazione)). Si arriva da **Config › Identificazione › Profili SNMP
-dei vendor ›**. In alto a sinistra **Impostazioni** torna indietro.
+dei vendor ›**. In alto a sinistra **Impostazioni** torna indietro. Le parti comuni
+sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-![La pagina Profili SNMP](/manuale/settings-snmp-profiles/pagina.png)
+## La libreria OID
 
-## Le voci della pagina
+![La libreria OID](/manuale/settings-snmp-profiles/libreria.png)
 
-1. **Libreria OID (file)**: i file con gli identificativi SNMP che stanno sul server, nella cartella della
-   libreria: un file comune per gli identificativi di base, un file per categoria di apparato e un file per profilo
-   per gli elenchi lunghi. La tabella dice **Tipo** (comuni, categoria, dispositivo), **File** e **Dettaglio**.
-   **Aggiorna elenco** rilegge la cartella: i file nuovi compaiono da soli.
-2. **Esporta JSON**: scarica tutti i profili in un file. Accanto: **Esporta in cartelle** (un file per profilo),
-   **Importa** (carica profili da un JSON; si può scegliere di **sovrascrivere i profili esistenti**, mai quelli di
-   serie) e **Reset Builtin** (rimette i profili di serie come erano).
-3. **Nuovo profilo**: crea un profilo. I campi: **ID Profilo** (solo lettere minuscole, numeri, trattino e trattino
-   basso), nome, **Categoria**, **Confidenza (0-1)** (quanto è sicuro il riconoscimento), **Prefissi OID Enterprise**
-   (gli identificativi del produttore), **Pattern sysDescr** (un'espressione sulla descrizione dell'apparato,
-   facoltativa), **Campi OID** (i dati da leggere, ognuno col suo identificativo) e **Abilitato**.
-4. **Mostra builtin**: mostra o nasconde i profili di serie. Accanto, **Cerca per ID, nome o OID…** e il menu
-   **Tutte le categorie** filtrano l'elenco.
+**Libreria OID (file)**: i file con gli identificativi SNMP che stanno sul server, nella cartella della libreria: un
+file comune per gli identificativi di base (`common.json`), un file per categoria di apparato e un file per profilo
+per gli elenchi lunghi. La tabella dice **Tipo** (comuni, categoria, dispositivo), **File** e **Dettaglio** (la
+categoria o il profilo a cui vale). Sopra la tabella, **Revisione file** cambia quando cambia un file.
 
-Ogni riga dell'elenco **Profili** ha:
+1. `tasto:refresh` **Aggiorna elenco** rilegge la cartella: i file nuovi compaiono da soli.
 
-- la freccia a sinistra, che apre il dettaglio: prefissi OID, pattern, campi salvati e campi presi dai file della
-  libreria, note;
-- la levetta, che accende o spegne il profilo;
-- nome, etichetta **builtin** se è di serie, ID;
-- a destra la categoria, quanti OID e quanti campi ha, la confidenza in percentuale;
-- **Copia JSON**, **Modifica** (matita) ed **Elimina** (solo per i profili non di serie).
+## La barra dei profili
 
-## Come si usa
+![La barra dei profili](/manuale/settings-snmp-profiles/barra.png)
 
-1. Un apparato non viene riconosciuto: cerca il produttore con **Cerca**. Se il profilo c'è, aprilo e controlla
-   i prefissi OID; se non c'è, **Nuovo profilo**.
-2. Per portare i profili su un'altra installazione: **Esporta JSON** qui, **Importa** là.
-3. Dopo aver cambiato un profilo, gli apparati già trovati si aggiornano alla scansione successiva.
+Il titolo **Profili (N)** dice quanti profili ci sono.
+
+1. `tasto:download` **Esporta JSON**: scarica tutti i profili in un file.
+2. **Esporta in cartelle**: scrive sul server una cartella con un file per profilo (e per categoria), più un elenco
+   riassuntivo; serve a chi mantiene la libreria.
+3. `tasto:upload` **Importa**: apre la finestra **Importa profili SNMP**, dove si sceglie un file JSON; con la casella
+   per **sovrascrivere i profili esistenti** quelli con lo stesso ID vengono rimpiazzati (mai quelli di serie).
+4. `tasto:rotate-ccw` **Reset Builtin**: rimette i profili di serie come erano, perdendo le modifiche fatte a quelli.
+5. `tasto:plus` **Nuovo profilo**: crea un profilo. I campi: **ID Profilo** (solo lettere minuscole, numeri,
+   trattino e trattino basso), nome, **Categoria**, **Confidenza (0-1)** (quanto è sicuro il riconoscimento),
+   **Prefissi OID Enterprise** (gli identificativi del produttore; `tasto:plus` ne aggiunge un altro), **Pattern
+   sysDescr** (un'espressione sulla descrizione dell'apparato, facoltativa), **Campi OID** (i dati da leggere, ognuno
+   col suo identificativo; `icona:trash` toglie un campo) e **Abilitato**.
+6. `icona:search` **Cerca per ID, nome o OID…**, con accanto il menu **Tutte le categorie**: filtrano l'elenco.
+7. **Mostra builtin**: mostra o nasconde i profili di serie.
+
+Importare, esportare in cartelle, creare, cambiare ed eliminare spetta all'amministratore: chi è in sola lettura vede
+i pulsanti, ma il programma rifiuta la modifica.
+
+## L'elenco dei profili
+
+![Le righe dei profili](/manuale/settings-snmp-profiles/riga.png)
+
+1. `icona:chevron-right` apre il dettaglio (`icona:chevron-down` lo chiude): prefissi OID, pattern, **Campi salvati
+   nel database**, **OID effettivi a runtime** (quelli presi anche dai file della libreria, che vincono su quelli del
+   database), note.
+2. La levetta accende o spegne il profilo; un profilo spento è sbiadito.
+3. `icona:copy` **Copia JSON**: copia il profilo, per incollarlo altrove (diventa `icona:check` per un attimo).
+4. `icona:pencil` **Modifica**: apre la stessa finestra di Nuovo profilo. I profili non di serie hanno anche
+   `icona:trash` **Elimina**.
+
+In mezzo: nome, etichetta **builtin** se è di serie, ID; a destra la categoria, quanti OID e quanti campi ha, la
+confidenza in percentuale.
+
+## Come si fa
+
+- **Un apparato non viene riconosciuto**: cerca il produttore con `icona:search`. Se il profilo c'è, aprilo con
+  `icona:chevron-right` e controlla i prefissi OID; se non c'è, `tasto:plus` **Nuovo profilo**.
+- **Leggere il seriale di un modello che non lo dà**: `icona:pencil` sul profilo, aggiungi in **Campi OID** il campo
+  col suo identificativo, salva. Gli apparati già trovati si aggiornano alla scansione successiva.
+- **Portare i profili su un'altra installazione**: `tasto:download` **Esporta JSON** qui, `tasto:upload` **Importa**
+  là.
+- **Escludere un profilo che riconosce male**: spegni la sua levetta, invece di eliminarlo.
+- **Tornare ai profili di serie dopo prove sbagliate**: `tasto:rotate-ccw` **Reset Builtin**.
 
 ## Da dove arrivano i dati
 

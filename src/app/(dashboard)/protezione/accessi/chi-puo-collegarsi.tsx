@@ -154,6 +154,8 @@ export function ChiPuoCollegarsi() {
         dettagli={[
           stato.tabella === "acceso" && !inProva ? "installazione protetta" : inProva ? "senza conferma tornano le regole di prima" : "installazione NON protetta",
           quadro.tuoIndirizzo ? `tu arrivi da ${quadro.tuoIndirizzo}` : "il tuo indirizzo non si legge",
+          // Hub, 26/11/2026: «il mio» era 192.168.30.10, l'instradatore di NetBird. Ammetterlo ha ammesso tutti quelli che passano di lì.
+          "se passi da NetBird, una VPN o un NAT quell'indirizzo è dell'instradatore, comune a tutti quelli che passano di lì",
         ]}
         azioni={
           inProva ? (
@@ -243,7 +245,7 @@ export function ChiPuoCollegarsi() {
                   <Input value={nuovo[e]} onChange={(ev) => setNuovo({ ...nuovo, [e]: ev.target.value })} placeholder="192.0.2.10 oppure 192.0.2.0/24" className="max-w-xs font-mono" disabled={inProva} aria-label={`Indirizzo da aggiungere a ${NOME_ELENCO[e]}`} />
                   <Button type="submit" size="sm" variant="outline" disabled={inProva || !nuovo[e].trim()}>Aggiungi</Button>
                   {quadro.tuoIndirizzo && !elencoDi(e).includes(quadro.tuoIndirizzo) && (e === "sempre" || e === "web") && (
-                    <Button type="button" size="sm" variant="outline" disabled={inProva} onClick={() => aggiungi(e, quadro.tuoIndirizzo ?? "")}>Aggiungi il mio ({quadro.tuoIndirizzo})</Button>
+                    <Button type="button" size="sm" variant="outline" disabled={inProva} onClick={() => aggiungi(e, quadro.tuoIndirizzo ?? "")} title="Se passi da NetBird, una VPN o un NAT è l'indirizzo dell'instradatore: vale per tutti quelli che passano di lì.">Aggiungi quello da cui arrivo ({quadro.tuoIndirizzo})</Button>
                   )}
                 </form>
               </section>

@@ -1,4 +1,15 @@
 [
-  { "file": "pagina", "percorso": "/settings/mdm", "zona": "main",
-    "nascondi": ["main input"] }
+  { "file": "pagina", "percorso": "/settings/mdm",
+    "zona": "main [data-slot=card]:has-text('Connessione Headwind MDM') >> nth=-1",
+    "nascondi": ["main input", "main a[target=_blank]", "main span.text-\\[14px\\]"],
+    "segni": [
+      { "n": 1, "cerca": "label[for=mdm-base-url]" },
+      { "n": 2, "cerca": "label[for=mdm-username]" },
+      { "n": 3, "cerca": "text=Campo utente" },
+      { "n": 4, "cerca": "main label:text-is('Stato')" },
+      { "n": 5, "cerca": "button:has-text('Salva')" },
+      { "n": 6, "cerca": "button:has-text('Sincronizza ora')" }
+    ] },
+  { "file": "stato", "percorso": "/settings/mdm",
+    "zona": "main [data-slot=card]:has-text('Stato sincronizzazione') >> nth=-1" }
 ]

@@ -1,25 +1,28 @@
 [
-  {
-    "file": "reti",
-    "percorso": "/arp-table/trunk#reti",
-    "attesa": 3000,
-    "altezza": 1200,
+  { "file": "schede", "percorso": "/arp-table/trunk?s=1#reti", "attesa": 3000,
+    "ritaglio": ["nav[aria-label='Schede di Rete']", "div.rounded-xl.border.bg-card:has-text('Sonda trunk') >> nth=0"],
+    "nascondi": ["[aria-label='Punto di ascolto'] button[title]"],
     "segni": [
-      {
-        "n": 1,
-        "cerca": "[role=group][aria-label='Punto di ascolto']"
-      },
-      {
-        "n": 2,
-        "cerca": "text=VLAN viste sul trunk"
-      },
-      {
-        "n": 3,
-        "cerca": "text=Dettaglio della rete"
-      }
+      { "n": 1, "cerca": "nav[aria-label='Schede di Rete'] >> text=Allarmi di rete" },
+      { "n": 2, "cerca": "nav[aria-label='Schede di Rete'] >> text=VLAN e indirizzi" },
+      { "n": 3, "cerca": "nav[aria-label='Schede di Rete'] >> text=Apparati annunciati" },
+      { "n": 4, "cerca": "div.rounded-xl.border.bg-card:has-text('Sonda trunk') >> nth=0" }
+    ] },
+  { "file": "vlan", "percorso": "/arp-table/trunk?s=2#reti", "attesa": 3000,
+    "ritaglio": ["section:has(h2:has-text('VLAN viste sul trunk'))"],
+    "nascondi": ["[aria-label='Punto di ascolto'] button[title]"] },
+  { "file": "reti", "percorso": "/arp-table/trunk?s=3#reti", "attesa": 3000, "altezza": 1400,
+    "prima": [
+      { "clic": "section:has(h2:has-text('2. Reti')) [role=button] >> nth=0", "attesa": 1500 }
     ],
-    "nascondi": [
-      "[aria-label='Punto di ascolto'] button[title]"
-    ]
-  }
+    "ritaglio": ["section:has(h2:has-text('2. Reti'))", "section:has(h2:has-text('3. '))"] },
+  { "file": "indirizzi", "percorso": "/arp-table/trunk?s=4#reti", "attesa": 3000, "altezza": 2400,
+    "ritaglio": ["section:has(h2:has-text('Indirizzi IP e MAC')) header", "section:has(h2:has-text('Indirizzi IP e MAC')) tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "[role=group][aria-label='Come è stato trovato']" },
+      { "n": 2, "cerca": "input[placeholder='Cerca IP, MAC, nome']" },
+      { "n": 3, "cerca": "[role=group][aria-label='Appartenenza']" }
+    ] },
+  { "file": "annunci", "percorso": "/arp-table/trunk?s=5#annunci", "attesa": 3500,
+    "ritaglio": ["section:has(h2:has-text('Apparati annunciati')) header", "[role=group][aria-label='Stato in DA-IPAM']"] }
 ]

@@ -1,2 +1,24 @@
-[{ "file": "pagina", "percorso": "/topology", "altezza": 1000, "attesa": 4000,
- "segni": [{"n":1,"cerca":"button:has-text(\"Elenco\")"},{"n":2,"cerca":"button:has-text(\"Tutto automatico\")"},{"n":3,"cerca":"text=Testa:"},{"n":4,"cerca":"button:has-text(\"Verticale\")"},{"n":5,"cerca":"text=Mostra ridondanze"},{"n":6,"cerca":"text=Hypervisor come riquadri"},{"n":7,"cerca":"button:has-text(\"Adatta\")"},{"n":8,"cerca":"input[placeholder^=\"Cerca nome\"]"}] }]
+[
+  { "file": "barra", "percorso": "/topology", "attesa": 4000, "larghezza": 1920,
+    "ritaglio": ["main button:has-text('Elenco')", "main button:has-text('draw.io')", "main label:has-text('Hypervisor come riquadri')"],
+    "segni": [
+      { "n": 1, "cerca": "main button:has-text('Elenco')" },
+      { "n": 2, "cerca": "main [aria-label='Tipo di mappa']" },
+      { "n": 3, "cerca": "main :text('Testa:')" },
+      { "n": 4, "cerca": "main [aria-label='Orientamento della mappa']" },
+      { "n": 5, "cerca": "main label:has-text('Mostra ridondanze')" },
+      { "n": 6, "cerca": "main label:has-text('Hypervisor come riquadri')" },
+      { "n": 7, "cerca": "main button[aria-label='Rimpicciolisci']" },
+      { "n": 8, "cerca": "main button:has-text('draw.io')" }
+    ] },
+  { "file": "mappa", "percorso": "/topology", "attesa": 4000,
+    "ritaglio": [".react-flow__node:has-text('MK-RTR-CORE')", ".react-flow__node:has-text('SW-CED-AGG-243')"], "margine": 40 },
+  { "file": "elenco", "percorso": "/topology", "attesa": 4000,
+    "ritaglio": ["main input[aria-label='Cerca negli oggetti']", "main aside :text('nella mappa') >> nth=2"], "margine": 12 },
+  { "file": "tasto-destro", "percorso": "/topology", "attesa": 4000,
+    "prima": [{ "destro": ".react-flow__node:has-text('MK-RTR-CORE')", "attesa": 900 }],
+    "ritaglio": [".react-flow__node:has-text('MK-RTR-CORE')", "[role=menu]"] },
+  { "file": "dettagli", "percorso": "/topology", "attesa": 4000,
+    "prima": [{ "clic": ".react-flow__node:has-text('SW-CED-AGG-243')", "attesa": 2500 }],
+    "zona": "main aside >> nth=-1" }
+]

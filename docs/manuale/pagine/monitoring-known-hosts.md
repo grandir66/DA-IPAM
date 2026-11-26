@@ -1,7 +1,7 @@
 ---
 percorso: /monitoring/known-hosts
 titolo: Monitoraggio host conosciuti
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -9,34 +9,50 @@ aggiornata: 2026-11-26
 
 Elenca gli **host conosciuti**, cioè quelli che qualcuno ha segnato come da tenere d'occhio (server, apparati di rete,
 stampanti importanti), con lo stato dell'ultimo controllo: se rispondono, quando hanno risposto l'ultima volta e con
-quanta latenza. Gli host che non rispondono sono evidenziati. Si arriva dalla **Dashboard**, dal riquadro degli host
-monitorati o dal collegamento «Segna gli host da tenere d'occhio».
+quanta latenza. Gli host che non rispondono sono evidenziati. Si arriva dalla [Dashboard](pagine/dashboard.md), dal
+riquadro degli host monitorati o dal collegamento «Segna gli host da tenere d'occhio».
 
-![La pagina Monitoraggio host conosciuti](/manuale/monitoring-known-hosts/pagina.png)
+Le tabelle funzionano come in tutte le pagine: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md). Questa
+pagina non ha ricerca, filtri né tasto destro: è un elenco corto da guardare a colpo d'occhio.
 
-## Le voci della pagina
+## Il pulsante in cima
 
-1. **Verifica ora**: fa subito il controllo (ping e prova TCP) su tutti gli host dell'elenco, come il lavoro programmato
-   «Monitoraggio host conosciuti». Con molti host può richiedere un po' di tempo; il pulsante dice «Verifica in corso…»
-   finché non ha finito.
-2. **Stato**: **Online** se l'host ha risposto all'ultimo controllo, **Offline** se no. Accanto agli host che non
-   rispondono compare il segno **Irraggiungibile** e la riga ha il fondo rosato.
+![Il pulsante Verifica ora](/manuale/monitoring-known-hosts/barra.png)
 
-Le altre colonne:
+1. `tasto:activity` **Verifica ora**: fa subito il controllo (ping e prova TCP) su tutti gli host dell'elenco, come il
+   lavoro programmato «Monitoraggio host conosciuti». Con molti host può richiedere un po' di tempo: il pulsante dice
+   «Verifica in corso…» finché non ha finito, poi un messaggio in basso a destra dà l'esito e la tabella si aggiorna.
+   Il pulsante si vede anche in sola lettura, ma la verifica la avvia solo un **amministratore**; è spento se l'elenco
+   è vuoto.
 
-- **Rete**: il nome e l'indirizzo della subnet.
-- **IP**: un clic lo copia.
-- **Hostname / nome**: il nome dato a mano, oppure quello letto dalla rete o dal DNS inverso.
-- **Ultimo contatto**: data e ora dell'ultima risposta.
-- **Latenza ms**: il tempo di risposta all'ultimo controllo, in millisecondi.
-- **La freccia** in fondo alla riga apre la scheda dell'host.
+## La tabella
 
-## Come si usa
+![La tabella degli host conosciuti](/manuale/monitoring-known-hosts/tabella.png)
 
-1. Per sapere se un server importante è giù, cerca la riga con **Irraggiungibile**.
-2. Dopo aver riacceso un apparato, premi **Verifica ora** per aggiornare lo stato senza aspettare il prossimo giro.
-3. Per aggiungere host all'elenco, apri la scheda della rete (**Network › Subnet**), seleziona gli indirizzi e usa
-   **Segna come conosciuti**.
+Nella schermata la colonna dei nomi è sfocata.
+
+1. **Stato**: ● **Online** se l'host ha risposto all'ultimo controllo, **Offline** se no. Accanto agli host che non
+   rispondono (o mai provati) compare il segno **Irraggiungibile** e la riga ha il fondo rosato.
+2. **Latenza ms**: il tempo di risposta all'ultimo controllo, in millisecondi.
+3. `icona:external-link` apre la [scheda dell'host](pagine/objects-id.md).
+
+| Colonna | Che cosa dice |
+|---|---|
+| **Rete** | Il nome della subnet e il suo indirizzo. |
+| **IP** | L'indirizzo. Un clic lo copia. |
+| **Hostname / nome** | Il nome dato a mano, oppure quello letto dalla rete o dal DNS inverso. |
+| **Stato** | Online, Offline o Sconosciuto, più **Irraggiungibile** quando non risponde. |
+| **Ultimo contatto** | Data e ora dell'ultima risposta. |
+| **Latenza ms** | Il tempo di risposta all'ultimo controllo. |
+
+## Come si fa
+
+- **Sapere se un server importante è giù**: cerca le righe col fondo rosato e il segno **Irraggiungibile**.
+- **Controllare un apparato appena riacceso**: `tasto:activity` **Verifica ora**, senza aspettare il prossimo giro.
+- **Aggiungere host all'elenco**: apri la [pagina della subnet](pagine/networks-id.md) (**Network › Subnet**),
+  seleziona gli indirizzi e usa **Segna come conosciuti**.
+- **Capire da quanto non risponde**: guarda **Ultimo contatto**; per lo storico della latenza apri la scheda con
+  `icona:external-link`.
 
 ## Cosa vogliono dire i segni
 
@@ -46,7 +62,7 @@ Le altre colonne:
 ## Da dove arrivano i dati
 
 Dal lavoro programmato «Monitoraggio host conosciuti», che prova gli host a intervalli regolari con ping e connessioni
-TCP. Gli orari si cambiano dalle Schedulazioni nelle impostazioni.
+TCP. Gli orari si cambiano dalle [Schedulazioni](pagine/settings-schedulazioni.md) nelle impostazioni.
 
 ## Se la pagina è vuota
 

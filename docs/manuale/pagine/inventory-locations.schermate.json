@@ -1,8 +1,4 @@
 [
-  { "file": "pagina", "percorso": "/inventory/locations",
-    "nascondi": ["tbody td:nth-child(1)", "tbody td:nth-child(2)", "tbody td:nth-child(3)"],
-    "segni": [
-      { "n": 1, "cerca": "button:has-text('Nuova ubicazione')" },
-      { "n": 2, "cerca": "tbody button:has-text('Mappa')" }
-    ] }
+  {"file": "elenco", "percorso": "/inventory/locations", "attesa": 2000, "nascondi": ["tbody td:nth-child(1)", "tbody td:nth-child(2)", "tbody td:nth-child(3)"], "ritaglio": ["main a[href='/inventory'] button", "button:has-text('Nuova ubicazione')", "main [data-slot=card]"], "segni": [{"n": 1, "cerca": "main a[href='/inventory'] button"}, {"n": 2, "cerca": "button:has-text('Nuova ubicazione')"}]},
+  {"file": "nuova", "percorso": "/inventory/locations", "attesa": 2000, "prima": [{"clic": "button:has-text('Nuova ubicazione')", "attesa": 800}], "zona": "[role=dialog]"}
 ]

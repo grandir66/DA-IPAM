@@ -1,7 +1,7 @@
 ---
 percorso: /tenants
 titolo: Istanze — un'istanza per cliente sull'hub (Profili sul PC del tecnico)
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -14,21 +14,22 @@ amministratore**, dalla voce **Istanze** in cima al menu; per tutti gli altri la
 Per scegliere su quale istanza lavorare non si usa questa pagina ma **Impostazioni › Istanza** (vedi
 [Impostazioni e Config](pagine/settings.md#istanza)).
 
-Per questa pagina non c'è una schermata nel manuale: mostra i nomi dei clienti.
+Per questa pagina non c'è una schermata nel manuale, per scelta: mostra i nomi dei clienti. Le parti comuni
+(menu, tabelle) sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
 ## Le voci della pagina
 
-- **Nuovo Cliente**, in alto a destra: apre il modulo per creare un'istanza. Obbligatori **Codice Cliente** (per
+- `tasto:plus` **Nuovo Cliente**, in alto a destra: apre il modulo per creare un'istanza. Obbligatori **Codice Cliente** (per
   esempio ACME01) e **Ragione Sociale**; facoltativi **Indirizzo**, **Città**, **Provincia**, **CAP**,
   **Telefono**, **Email**, **Partita IVA**, **Codice Fiscale**, **Referente** e **Note**. La levetta **Cliente
-  attivo** dice se l'istanza è in uso.
+  attivo** dice se l'istanza è in uso. Il codice non si cambia dopo la creazione: è il nome dell'istanza.
 - **Clienti (N)**: la tabella con **Codice**, **Ragione Sociale**, **Città**, **Referente**, **Email**, **Stato**
   (**Attivo** o **Disattivato**) e **Azioni**.
 - **Azioni** di ogni riga:
-  - **Configura**: passa a quell'istanza e apre la configurazione guidata del primo avvio (credenziali, router,
+  - `tasto:wand` **Configura**: passa a quell'istanza e apre la configurazione guidata del primo avvio (credenziali, router,
     DNS, Active Directory, prima subnet).
-  - la **matita** (**Modifica anagrafica**) riapre il modulo con i dati del cliente;
-  - il **cestino** (**Elimina**) cancella il cliente **con tutti i suoi dati**, dopo una conferma. Non si torna
+  - `icona:pencil` **Modifica anagrafica** riapre il modulo con i dati del cliente;
+  - `icona:trash` **Elimina** cancella il cliente **con tutti i suoi dati**, dopo una conferma. Non si torna
     indietro.
 
 ## Sul PC del tecnico: Profili
@@ -37,15 +38,21 @@ Sull'installazione portatile del tecnico la stessa voce di menu si chiama **Prof
 profilo per cliente, col codice del gestionale, e i dati restano su quel PC, cifrati.
 
 - In cima: **Profili** (quanti sono), **Host in tutti i profili**, **Ultimo invio al centrale**.
-- **Nuovo profilo**: si scrivono **Codice cliente** e **Ragione sociale**.
+- `tasto:plus` **Nuovo profilo**: si scrivono **Codice cliente** e **Ragione sociale**.
 - La tabella: **Codice**, **Ragione sociale**, **Host**, **Ultima scansione**, **Invio al centrale**, **Azioni**.
   **Apri** passa a quel cliente per lavorarci; la modifica cambia la ragione sociale (**Salva il profilo**).
 
-## Come si usa
+## Come si fa
 
-1. Nuovo cliente sull'hub: **Nuovo Cliente**, codice e ragione sociale, salva.
-2. Premi **Configura** sulla sua riga per fare i primi passi.
-3. Per lavorarci in seguito, scegli l'istanza in **Impostazioni › Istanza**.
+- **Aggiungere un cliente all'hub**: `tasto:plus` **Nuovo Cliente**, scrivi **Codice Cliente** e **Ragione
+  Sociale**, salva; poi `tasto:wand` **Configura** sulla sua riga per i primi passi (credenziali, router, prima
+  subnet).
+- **Lavorare su un cliente già presente**: scegli l'istanza in **Impostazioni › Istanza**, non da qui.
+- **Aggiornare il referente o l'email**: `icona:pencil` sulla riga, cambia i campi, salva.
+- **Mettere in pausa un cliente senza cancellarlo**: `icona:pencil`, spegni **Cliente attivo**, salva: lo stato
+  diventa **Disattivato** e i dati restano.
+- **Sul PC del tecnico, cominciare da un cliente nuovo**: `tasto:plus` **Nuovo profilo** col codice del gestionale,
+  poi **Apri**.
 
 ## Da dove arrivano i dati
 

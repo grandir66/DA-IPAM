@@ -20,6 +20,7 @@ import {
 import { Pagination } from "@/components/shared/pagination";
 import { RefreshCw, AlertTriangle, CheckCircle2, Play } from "lucide-react";
 import type { AnomalyEvent, AnomalyType, AnomalySeverity } from "@/types";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 // ---------------------------------------------------------------------------
 
@@ -121,6 +122,7 @@ function DetailContent({ ev }: { ev: AnomalyEvent }) {
 // ---------------------------------------------------------------------------
 
 export default function AnalyticsPage() {
+  const admin = useEAdmin();
   const [events, setEvents] = useState<AnomalyEventEnriched[]>([]);
   const [total, setTotal] = useState(0);
   const [unacked, setUnacked] = useState(0);
@@ -218,10 +220,12 @@ export default function AnalyticsPage() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Aggiorna
           </Button>
-          <Button size="sm" onClick={() => void runCheck()} disabled={running}>
-            <Play className={`h-3.5 w-3.5 mr-1.5 ${running ? "animate-spin" : ""}`} />
-            Esegui check
-          </Button>
+          {admin && (
+            <Button size="sm" onClick={() => void runCheck()} disabled={running}>
+              <Play className={`h-3.5 w-3.5 mr-1.5 ${running ? "animate-spin" : ""}`} />
+              Esegui check
+            </Button>
+          )}
         </div>
       </div>
 
@@ -275,20 +279,20 @@ export default function AnalyticsPage() {
                 <TableCell className="font-medium text-xs text-muted-foreground">Descrizione</TableCell>
                 <TableCell className="font-medium text-xs text-muted-foreground w-36">Rilevato</TableCell>
                 <TableCell className="font-medium text-xs text-muted-foreground w-24">Stato</TableCell>
-                <TableCell className="w-20" />
+                {admin && <TableCell className="w-20" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {error && !loading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="p-4">
+                  <TableCell colSpan={admin ? 6 : 5} className="p-4">
                     <LoadError what="le anomalie" message={error} onRetry={() => void fetchEvents()} />
                   </TableCell>
                 </TableRow>
               )}
               {events.length === 0 && !loading && !error && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                  <TableCell colSpan={admin ? 6 : 5} className="text-center text-sm text-muted-foreground py-8">
                     Nessun evento trovato
                   </TableCell>
                 </TableRow>
@@ -327,7 +331,7 @@ export default function AnalyticsPage() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="py-2">
+                  {admin && <TableCell className="py-2">
                     {!ev.acknowledged && (
                       <Button
                         variant="ghost"
@@ -338,7 +342,7 @@ export default function AnalyticsPage() {
                         Gestisci
                       </Button>
                     )}
-                  </TableCell>
+                  </TableCell>}
                 </TableRow>
               ))}
             </TableBody>
@@ -370,7 +374,7 @@ export default function AnalyticsPage() {
                     Gestito da {selected.acknowledged_by ?? "—"} il {selected.acknowledged_at ? parseDbDate(selected.acknowledged_at).toLocaleString("it-IT") : "—"}
                   </p>
                 )}
-                {!selected.acknowledged && (
+                {admin && !selected.acknowledged && (
                   <Button size="sm" onClick={() => void acknowledge(selected.id)}>
                     <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
                     Segna come gestito

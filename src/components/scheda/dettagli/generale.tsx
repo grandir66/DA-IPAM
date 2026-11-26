@@ -44,7 +44,7 @@ export function DettagliGenerale({ ctx }: { ctx: ContestoScheda }) {
 
 /** LibreNMS (fatti e grafici), se configurato. Esportato: la scheda switch lo riusa in «Porte», senza «Dettagli». */
 export function SezioneLibreNms({ ctx }: { ctx: ContestoScheda }) {
-  const { host, librenms, ricarica } = ctx;
+  const { host, librenms, ricarica, isAdmin } = ctx;
   const perBrowser = useUrlPerBrowser();
   if (!librenms?.configured) return null;
   return (
@@ -89,7 +89,7 @@ export function SezioneLibreNms({ ctx }: { ctx: ContestoScheda }) {
             <p className="text-sm text-muted-foreground">
               LibreNMS configurato ma questo host non è ancora mappato — quindi nessun grafico disponibile.
             </p>
-            <Button
+            {isAdmin && <Button
               variant="outline"
               size="sm"
               onClick={async () => {
@@ -114,7 +114,7 @@ export function SezioneLibreNms({ ctx }: { ctx: ContestoScheda }) {
             >
               <Activity className="h-3.5 w-3.5 mr-1.5" />
               Aggiungi a LibreNMS
-            </Button>
+            </Button>}
           </div>
         )}
       </Section>

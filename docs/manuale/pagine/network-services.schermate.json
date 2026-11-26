@@ -1,1 +1,4 @@
-[ { "file": "pagina", "percorso": "/network-services" } ]
+[
+  { "file": "pagina", "percorso": "/network-services",
+    "ritaglio": ["main h1:has-text('Network Services')", "main h2:has-text('Modulo non disponibile') >> xpath=../../.."] }
+]

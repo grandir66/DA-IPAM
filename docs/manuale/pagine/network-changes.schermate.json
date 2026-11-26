@@ -1,2 +1,22 @@
-[{ "file": "pagina", "percorso": "/network-changes", "altezza": 1000,
- "segni": [{"n":1,"cerca":"a:has-text(\"Oggetti nuovi\")"},{"n":2,"cerca":"select >> nth=0"},{"n":3,"cerca":"select >> nth=2"},{"n":4,"cerca":"text=Mostra anche il rumore"},{"n":5,"cerca":"text=Disponibilità e latenza anomale"}] }]
+[
+  { "file": "tipi", "percorso": "/network-changes",
+    "ritaglio": ["nav[aria-label='Tipo di cambiamento']"] },
+  { "file": "barra", "percorso": "/network-changes",
+    "ritaglio": ["main select[aria-label='Periodo']", "main a:has-text('Disponibilità e latenza')"], "margine": 20,
+    "segni": [
+      { "n": 1, "cerca": "main select[aria-label='Periodo']" },
+      { "n": 2, "cerca": "main select[aria-label='Subnet']" },
+      { "n": 3, "cerca": "main select[aria-label='Stato']" },
+      { "n": 4, "cerca": "main label:has-text('Mostra anche il rumore')" },
+      { "n": 5, "cerca": "main button:has-text('Filtra')" },
+      { "n": 6, "cerca": "main a:has-text('Disponibilità e latenza')" }
+    ] },
+  { "file": "tabella", "percorso": "/network-changes?stato=tutti&giorni=30", "larghezza": 1920, "nascondi": ["main tbody td:nth-child(3)"],
+    "ritaglio": ["main thead", "main tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "main th:has-text('Tipo')" },
+      { "n": 2, "cerca": "main th:has-text('Oggetto')" },
+      { "n": 3, "cerca": "main th:has-text('Prima')" },
+      { "n": 4, "cerca": "main th:has-text('Stato')" }
+    ] }
+]

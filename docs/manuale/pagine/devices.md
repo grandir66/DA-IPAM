@@ -1,7 +1,7 @@
 ---
 percorso: /devices
 titolo: Dispositivi — gli apparati gestiti, tutti insieme
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -13,38 +13,67 @@ credenziali (switch, router, server, NAS, hypervisor, access point, PC). Rispett
 con il protocollo usato, le credenziali attive e l'eventuale collegamento a LibreNMS.
 
 La pagina non ha una voce nel menu: ci si arriva dalla freccia «indietro» degli elenchi per tipo
-([Switch, Router e gli altri](pagine/devices-id.md)) o scrivendo l'indirizzo `/devices`.
+([Switch, Router e gli altri](pagine/devices-id.md)) o scrivendo l'indirizzo `/devices`. Le tabelle funzionano come
+in tutte le pagine: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-![La pagina Dispositivi](/manuale/devices/pagina.png)
+## Il titolo e i tipi
 
-## Le voci della pagina
+![Il titolo e i tipi](/manuale/devices/testata.png)
+
+Sotto il titolo, quanti dispositivi ci sono e `icona:chevrons-left` `icona:chevron-left` `icona:chevron-right`
+`icona:chevrons-right` per sfogliare le pagine. A destra `tasto:refresh` **Aggiorna** rilegge l'elenco.
 
 1. **I tipi**: **Tutti** e un pulsante per ogni tipo presente (Server, PC, Switch, NAS / Storage, Hypervisor, Access
-   Point, Router, Windows…), col numero. Un clic mostra solo quel tipo.
-2. **Filtri e ricerca**: la casella **Cerca per nome, IP, vendor, profilo prodotto, classificazione…** filtra mentre
-   scrivi; accanto tre menu: **Tutti gli stati** (Online, Offline, Sconosciuto), **Tutti i vendor**, **Tutti i
-   profili**.
-3. **Acquisizione**: la data dell'ultima lettura completa dell'apparato (inventario, porte, sistema). Vuota vuol dire
+   Point, Router, Windows…), con la sua icona e il numero. Un clic mostra solo quel tipo.
+
+## I filtri
+
+![I filtri](/manuale/devices/filtri.png)
+
+1. `icona:search` **Cerca per nome, IP, vendor, profilo prodotto, classificazione…**: filtra mentre scrivi.
+2. **Tutti gli stati**: Online, Offline, Sconosciuto.
+3. **Tutti i vendor**: un produttore solo.
+4. **Tutti i profili**: un profilo di prodotto solo (compare se ce ne sono).
+
+Con un filtro acceso compare `icona:x`, che li toglie tutti.
+
+## La tabella
+
+![La tabella dei dispositivi](/manuale/devices/tabella.png)
+
+Nella schermata la colonna Nome è sfocata.
+
+1. **Acquisizione**: la data dell'ultima lettura completa dell'apparato (inventario, porte, sistema). Vuota vuol dire
    che non è ancora stata fatta.
-4. **Cred.**: le credenziali che funzionano, una etichetta per protocollo (**SNMP**, **WinRM**, **SSH**…).
-5. **LibreNMS**: se l'apparato è già monitorato in LibreNMS c'è il collegamento; altrimenti il pulsante **Aggiungi**
-   lo aggiunge (con SNMP se l'apparato ha una community, altrimenti solo col ping).
-6. **Azioni**: la freccia apre la scheda dell'apparato ([scheda dell'oggetto](pagine/objects-id.md)), il cestino lo
-   elimina dopo una conferma.
+2. **Cred.**: le credenziali che funzionano, una etichetta per protocollo (**SNMP**, **WinRM**, **SSH**…).
+3. **LibreNMS**: se l'apparato è già monitorato c'è `icona:activity` con il suo numero in LibreNMS; altrimenti
+   `tasto:plus-circle` **Aggiungi** lo aggiunge (con SNMP se l'apparato ha una community, altrimenti solo col ping).
+4. **Azioni**: `icona:external-link` **Dettagli** apre la scheda dell'apparato
+   ([Switch, Router e gli altri](pagine/devices-id.md)), `icona:trash` **Elimina** lo toglie dopo una conferma.
 
-Le altre colonne: **Tipo**, **Nome**, **IP**, **Vendor**, **Profilo** (il profilo di prodotto riconosciuto, per esempio
-«Client» o «Storage»), **MAC**, **Stato** (Online, Unreachable, Transient, Sconosciuto, con da quanto tempo). Un clic
-sull'intestazione di una colonna con le frecce ordina l'elenco. In alto a destra **Aggiorna** rilegge l'elenco, e le
-frecce accanto al numero di dispositivi sfogliano le pagine.
+| Colonna | Che cosa dice |
+|---|---|
+| **Tipo** | L'etichetta del tipo, con l'icona. |
+| **Nome** | Il nome dell'apparato. |
+| **IP** | L'indirizzo con cui viene letto. |
+| **Vendor** | Il produttore. |
+| **Profilo** | Il profilo di prodotto riconosciuto (per esempio «Client» o «Storage»); passa il mouse per il dettaglio. |
+| **Acquisizione** | L'ultima lettura completa. |
+| **MAC** | L'indirizzo della scheda di rete. |
+| **Stato** | Online, Unreachable, Transient, Sconosciuto, con da quanto tempo. |
+| **Cred.**, **LibreNMS**, **Azioni** | Vedi sopra. |
 
-Aggiungere a LibreNMS ed eliminare spetta a chi ha il ruolo di amministratore.
+Ogni intestazione con `icona:arrow-up-down` ordina con un clic. **Aggiungi** ed **Elimina** si vedono anche in sola
+lettura, ma li esegue solo un **amministratore**.
 
-## Come si usa
+## Come si fa
 
-1. Per vedere solo gli switch, o solo i server, clicca il tipo in alto.
-2. Per trovare un apparato scrivi nella ricerca una parte del nome o dell'indirizzo.
-3. Per aprire la scheda clicca la freccia nella colonna **Azioni**.
-4. Per mettere un apparato sotto monitoraggio premi **Aggiungi** nella colonna LibreNMS.
+- **Vedere solo gli switch**: pulsante **Switch** in alto (oppure apri **Network › Switch** se il menu lo mostra).
+- **Trovare un apparato**: scrivi nella ricerca una parte del nome o dell'indirizzo.
+- **Aprire la scheda**: `icona:external-link` nella colonna **Azioni**.
+- **Mettere un apparato sotto monitoraggio**: `tasto:plus-circle` **Aggiungi** nella colonna LibreNMS.
+- **Trovare gli apparati senza credenziali che funzionano**: scegli il tipo e scorri la colonna **Cred.**: le righe
+  senza etichette vanno sistemate assegnando una credenziale dalla loro scheda.
 
 ## Cosa vogliono dire i segni
 
@@ -60,4 +89,4 @@ loro credenziali (SNMP, SSH, WinRM, API).
 ## Se la pagina è vuota
 
 Nessun apparato è ancora stato reso gestito: apri un host dalla [scheda dell'oggetto](pagine/objects-id.md) e premi
-**Rendi apparato**. Se ci sono filtri attivi, rimettili su «Tutti».
+**Rendi apparato**. Se ci sono filtri attivi, toglili con `icona:x`.

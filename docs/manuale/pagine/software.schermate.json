@@ -1,2 +1,22 @@
-[{ "file": "pagina", "percorso": "/software", "altezza": 1000,
- "segni": [{"n":1,"cerca":"input[placeholder^=\"Cerca nome\"]"},{"n":2,"cerca":"button:has-text(\"Wazuh\") >> nth=0"},{"n":3,"cerca":"button:has-text(\"Windows\")"},{"n":4,"cerca":"text=Solo con vulnerabilità"},{"n":5,"cerca":"th:has-text(\"CVE\")"}] }]
+[
+  { "file": "filtri", "percorso": "/software",
+    "ritaglio": ["main h1", "main input[placeholder^='Cerca nome']", "main label:has-text('Solo con vulnerabilità')"],
+    "segni": [
+      { "n": 1, "cerca": "main input[placeholder^='Cerca nome']" },
+      { "n": 2, "cerca": "main button:has-text('Wazuh') >> nth=0" },
+      { "n": 3, "cerca": "main button:has-text('Windows')" },
+      { "n": 4, "cerca": "main label:has-text('Solo con vulnerabilità')" }
+    ] },
+  { "file": "tabella", "percorso": "/software",
+    "ritaglio": ["main thead", "main tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "main tbody tr:nth-child(1) td:nth-child(1)" },
+      { "n": 2, "cerca": "main th:has-text('Versioni')" },
+      { "n": 3, "cerca": "main th:has-text('Sorgenti')" },
+      { "n": 4, "cerca": "main th:has-text('CVE')" }
+    ] },
+  { "file": "riga-aperta", "percorso": "/software",
+    "prima": [{ "clic": "main tbody tr:nth-child(1) td:nth-child(2)", "attesa": 1500 }],
+    "ritaglio": ["main tbody tr:nth-child(1)", "main tbody tr:nth-child(2)"],
+    "nascondi": ["main tbody tr:nth-child(2) a"] }
+]

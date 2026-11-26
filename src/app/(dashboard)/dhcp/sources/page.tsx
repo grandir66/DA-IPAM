@@ -30,6 +30,7 @@ import {
   Database,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import Link from "next/link";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
@@ -86,6 +87,8 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export default function DhcpPage() {
+  // «Sincronizza tutti» e «Sync» scrivono i lease: solo amministratori (26/11/2026).
+  const admin = useEAdmin();
   const [leases, setLeases] = useState<DhcpLease[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -253,12 +256,14 @@ export default function DhcpPage() {
             .
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleSyncAll} disabled={syncing || sources.length === 0}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizzazione..." : "Sincronizza tutti"}
-          </Button>
-        </div>
+        {admin && (
+          <div className="flex gap-2">
+            <Button onClick={handleSyncAll} disabled={syncing || sources.length === 0}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Sincronizzazione..." : "Sincronizza tutti"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -308,7 +313,7 @@ export default function DhcpPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Host</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead className="w-32">Azioni</TableHead>
+                  {admin && <TableHead className="w-32">Azioni</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -323,17 +328,19 @@ export default function DhcpPage() {
                     <TableCell>
                       <Badge variant="outline">{SOURCE_TYPE_LABELS[source.type]?.label || source.type}</Badge>
                     </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSyncDevice(source.id)}
-                        disabled={syncingDevice === source.id}
-                      >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${syncingDevice === source.id ? "animate-spin" : ""}`} />
-                        Sync
-                      </Button>
-                    </TableCell>
+                    {admin && (
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSyncDevice(source.id)}
+                          disabled={syncingDevice === source.id}
+                        >
+                          <RefreshCw className={`h-3 w-3 mr-1 ${syncingDevice === source.id ? "animate-spin" : ""}`} />
+                          Sync
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -419,7 +426,9 @@ export default function DhcpPage() {
             <div className="text-center py-12 text-muted-foreground">
               <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p className="text-lg">Nessun lease DHCP trovato</p>
-              <p className="text-sm mt-1">Clicca &quot;Sincronizza tutti&quot; per acquisire i lease dai router</p>
+              <p className="text-sm mt-1">
+                {admin ? <>Clicca &quot;Sincronizza tutti&quot; per acquisire i lease dai router</> : "I lease li acquisisce un amministratore dai router."}
+              </p>
             </div>
           ) : (() => {
               // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,

@@ -1,1 +1,5 @@
-[ { "file": "pagina", "percorso": "/rmm", "attesa": 2000 } ]
+[
+  {"file": "testata", "percorso": "/rmm", "attesa": 2500, "ritaglio": ["main h1", "button:has-text('Console MeshCentral')", "main p >> nth=0"], "segni": [{"n": 1, "cerca": "main button:has(svg.lucide-refresh-cw)"}, {"n": 2, "cerca": "button:has-text('Sincronizza ora')"}, {"n": 3, "cerca": "button:has-text('Console MeshCentral')"}]},
+  {"file": "endpoint", "percorso": "/rmm", "attesa": 2500, "nascondi": ["main tbody td:nth-child(1)"], "ritaglio": ["main [data-slot=card] >> nth=0"], "segni": [{"n": 1, "cerca": "main th:has-text('Stato')"}, {"n": 2, "cerca": "main button:has-text('Controllo remoto')"}]},
+  {"file": "nodi", "percorso": "/rmm", "attesa": 2500, "nascondi": ["main [data-slot=card]:last-child tbody td:nth-child(1)"], "ritaglio": ["main [data-slot=card] >> nth=-1"]}
+]

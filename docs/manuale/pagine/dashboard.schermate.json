@@ -1,4 +1,8 @@
-[{ "file": "pagina", "percorso": "/", "segni": [
- {"n":1,"cerca":"text=Health >> nth=0"},{"n":2,"cerca":"text=Critiche da sistemare"},{"n":3,"cerca":"text=Cose da sistemare per rete"},
- {"n":4,"cerca":"text=Stato host nel tempo"},{"n":5,"cerca":"text=Host conosciuti offline"},{"n":6,"cerca":"text=Transizioni recenti"},
- {"n":7,"cerca":"text=Accessi falliti >> nth=1"},{"n":8,"cerca":"text=Moduli >> nth=-1"}] }]
+[
+  {"file": "indicatori", "percorso": "/", "larghezza": 1920, "ritaglio": ["main span.rounded-md.border:has-text('Health') >> nth=0", "main span.rounded-md.border:has-text('Monitorati') >> nth=0"], "margine": 12},
+  {"file": "sicurezza", "percorso": "/", "larghezza": 1920, "ritaglio": ["main :text('Critiche da sistemare') >> xpath=ancestor::a[1]", "main :text('Health AD') >> xpath=ancestor::a[1]"], "margine": 12},
+  {"file": "per-rete", "percorso": "/", "larghezza": 1920, "zona": "main [data-slot=card]:has-text('Cose da sistemare per rete')"},
+  {"file": "stato-tempo", "percorso": "/", "larghezza": 1920, "attesa": 2500, "zona": "main [data-slot=card]:has-text('Stato host nel tempo')"},
+  {"file": "accessi", "percorso": "/", "larghezza": 1920, "attesa": 2500, "zona": "main [data-slot=card]:has(a:has-text('Alert →'))"},
+  {"file": "moduli", "percorso": "/", "larghezza": 1920, "zona": "main [data-slot=card]:has-text('Moduli') >> nth=-1"}
+]

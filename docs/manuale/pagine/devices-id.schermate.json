@@ -1,2 +1,70 @@
-[{ "file": "pagina", "percorso": "/devices/switch", "altezza": 900,
- "segni": [{"n":1,"cerca":"button:has-text(\"Aggiungi Switch\")"},{"n":2,"cerca":"th:has-text(\"DNS\")"},{"n":3,"cerca":"th:has-text(\"Protocollo\")"},{"n":4,"cerca":"th:has-text(\"Stato\")"},{"n":5,"cerca":"th:has-text(\"Azioni\")"}] }]
+[
+ {
+  "file": "testata",
+  "percorso": "/devices/switch",
+  "larghezza": 1920,
+  "ritaglio": [
+   "main h1",
+   "main button:has-text('Aggiungi Switch')",
+   "main :text('Dispositivi per mappatura')"
+  ],
+  "margine": 20,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main button:has-text('Aggiungi Switch')"
+   }
+  ]
+ },
+ {
+  "file": "tabella",
+  "percorso": "/devices/switch",
+  "larghezza": 1920,
+  "ritaglio": [
+   "main thead",
+   "main tbody tr:nth-child(4)"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main th:has-text('DNS')"
+   },
+   {
+    "n": 2,
+    "cerca": "main th:has-text('Protocollo')"
+   },
+   {
+    "n": 3,
+    "cerca": "main th:has-text('Credenziali')"
+   },
+   {
+    "n": 4,
+    "cerca": "main th:has-text('Stato')"
+   },
+   {
+    "n": 5,
+    "cerca": "main th:has-text('Azioni')"
+   }
+  ]
+ },
+ {
+  "file": "selezione",
+  "percorso": "/devices/switch",
+  "larghezza": 1920,
+  "prima": [
+   {
+    "clic": "main tbody tr:nth-child(1) td:first-child [role=checkbox]",
+    "attesa": 300
+   },
+   {
+    "clic": "main tbody tr:nth-child(2) td:first-child [role=checkbox]",
+    "attesa": 700
+   }
+  ],
+  "ritaglio": [
+   "main button:has-text('Assegna caratteristiche')",
+   "main button:has-text('Annulla selezione')"
+  ],
+  "margine": 80
+ }
+]

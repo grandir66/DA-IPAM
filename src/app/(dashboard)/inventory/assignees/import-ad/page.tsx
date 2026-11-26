@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadError } from "@/components/shared/load-error";
 import { BadgeSegno, quando, type TipoSegno } from "@/components/assegnatari/segni";
 import { fetchJson } from "@/lib/fetch-json";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import type { Anteprima, EsitoImport, MotivoEsclusione, RigaImport } from "@/lib/assegnatari/importa";
 
 const PER_PAGINA = 50;
@@ -31,6 +32,8 @@ function Esito({ r }: { r: RigaImport }) {
 const selectCls = "h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground";
 
 export default function ImportaDaAdPage() {
+  // Sola lettura (26/11/2026): il viewer vede l'anteprima ma non le spunte né «Importa»; il server rifiuta già il POST.
+  const admin = useEAdmin();
   const router = useRouter();
   const [abilitati, setAbilitati] = useState(true);
   const [nomeCognome, setNomeCognome] = useState(true);
@@ -167,7 +170,7 @@ export default function ImportaDaAdPage() {
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center gap-3 space-y-0">
               <CardTitle className="flex-1">Utenti proposti</CardTitle>
-              <span className="text-[13px] text-muted-foreground">la spunta è già messa sui nuovi e su quelli da aggiornare</span>
+              {admin && <span className="text-[13px] text-muted-foreground">la spunta è già messa sui nuovi e su quelli da aggiornare</span>}
             </CardHeader>
             <CardContent>
               {dati.righe.length === 0 ? (
@@ -177,10 +180,12 @@ export default function ImportaDaAdPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {admin && (
                         <TableHead className="w-10">
                           <input type="checkbox" className="size-4 accent-[#00A7E7]" aria-label="Seleziona tutti quelli della pagina" checked={tuttiPagina}
                             onChange={(e) => righePagina.forEach((r) => cambia(r.chiave, e.target.checked))} />
                         </TableHead>
+                        )}
                         <TableHead>Nome</TableHead>
                         <TableHead>Cognome</TableHead>
                         <TableHead>Account</TableHead>
@@ -195,9 +200,11 @@ export default function ImportaDaAdPage() {
                     <TableBody>
                       {dati.righe.map((r) => (
                         <TableRow key={r.chiave} className={r.esito === "controlla" ? "bg-[#FFFBE6] dark:bg-[#3A3415]" : undefined}>
+                          {admin && (
                           <TableCell>
                             <input type="checkbox" className="size-4 accent-[#00A7E7]" aria-label={`Seleziona ${r.account}`} checked={scelti.has(r.chiave)} onChange={(e) => cambia(r.chiave, e.target.checked)} />
                           </TableCell>
+                          )}
                           <TableCell>{r.nome ?? <span className="font-semibold text-[#8E1B20] dark:text-[#E8625A]">—</span>}</TableCell>
                           <TableCell>{r.cognome ?? <span className="font-semibold text-[#8E1B20] dark:text-[#E8625A]">—</span>}</TableCell>
                           <TableCell>{r.account}</TableCell>
@@ -236,6 +243,7 @@ export default function ImportaDaAdPage() {
             </details>
           )}
 
+          {admin && (
           <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border bg-card px-4 py-3">
             <span className="flex-1 text-sm">
               Selezionati: <strong className="font-semibold">{conteggio.totale}</strong> — {conteggio.creare} da creare, {conteggio.aggiornare} da aggiornare. Nessun asset viene toccato.
@@ -245,6 +253,7 @@ export default function ImportaDaAdPage() {
               {importando ? "Importazione…" : `Importa ${conteggio.totale} ${conteggio.totale === 1 ? "utente" : "utenti"}`}
             </Button>
           </div>
+          )}
         </>
       )}
     </div>

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface Macchina { uuid: string; nome: string; hostname: string | null; ip_locale: string | null; seriale: string | null; console: string | null; motivo: string; a_mano: boolean }
 interface Stato {
@@ -23,6 +24,9 @@ interface Stato {
 const CONSOLE: Record<string, string> = { edr: "EDR/XDR", mdr: "MDR" };
 
 export function EsetDaAbbinare({ alCambio }: { alCambio: () => void }) {
+  // Abbina, Riprova in automatico e Non è fra gli host scrivono: solo amministratori (26/11/2026).
+  // Chi è in sola lettura vede l'elenco, senza la colonna «Host».
+  const admin = useEAdmin();
   const [stato, setStato] = useState<Stato | null>(null);
   const [aperto, setAperto] = useState(false);
   const [host, setHost] = useState<Record<string, string>>({});
@@ -81,7 +85,9 @@ export function EsetDaAbbinare({ alCambio }: { alCambio: () => void }) {
             <DialogTitle>Macchine ESET da abbinare</DialogTitle>
             <DialogDescription>
               ESET le conosce, ma nessun host ha lo stesso MAC, seriale o nome. Finché restano qui i loro rilievi e il loro software non compaiono.
-              Scrivi l&apos;IP o il nome dell&apos;host a cui corrispondono, oppure segna che non sono fra gli host.
+              {admin
+                ? <>Scrivi l&apos;IP o il nome dell&apos;host a cui corrispondono, oppure segna che non sono fra gli host.</>
+                : "Le aggancia a mano un amministratore."}
             </DialogDescription>
           </DialogHeader>
           {errore && <p role="alert" className="text-[13px] font-semibold">✕ {errore}</p>}
@@ -94,7 +100,7 @@ export function EsetDaAbbinare({ alCambio }: { alCambio: () => void }) {
                   <TableHead>IP in ESET</TableHead>
                   <TableHead>Seriale</TableHead>
                   <TableHead>Perché non è agganciata</TableHead>
-                  <TableHead>Host</TableHead>
+                  {admin && <TableHead>Host</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -105,6 +111,7 @@ export function EsetDaAbbinare({ alCambio }: { alCambio: () => void }) {
                     <TableCell className="text-[13px] font-mono">{m.ip_locale ?? "—"}</TableCell>
                     <TableCell className="text-[13px] font-mono">{m.seriale ?? "—"}</TableCell>
                     <TableCell className="text-[13px]">{m.motivo}</TableCell>
+                    {admin && (
                     <TableCell>
                       <form
                         className="flex items-center gap-2"
@@ -132,6 +139,7 @@ export function EsetDaAbbinare({ alCambio }: { alCambio: () => void }) {
                         )}
                       </form>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

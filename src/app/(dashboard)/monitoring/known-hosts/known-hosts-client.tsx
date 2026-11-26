@@ -19,6 +19,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { ExternalLink, Activity } from "lucide-react";
 import { toast } from "sonner";
 import type { KnownHostWithNetworkRow } from "@/types";
+import { SoloAdmin } from "@/components/shared/solo-admin";
 
 type Row = KnownHostWithNetworkRow;
 
@@ -50,6 +51,7 @@ export function KnownHostsClient({ initialRows }: { initialRows: Row[] }) {
 
   return (
     <div className="space-y-3">
+      <SoloAdmin>
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => void runCheck()} disabled={running || initialRows.length === 0}>
           <Activity className={`h-4 w-4 mr-2 ${running ? "animate-pulse" : ""}`} />
@@ -59,6 +61,7 @@ export function KnownHostsClient({ initialRows }: { initialRows: Row[] }) {
           Esegue ping/TCP come il job «Monitoraggio host conosciuti» (può richiedere tempo).
         </span>
       </div>
+      </SoloAdmin>
 
       {initialRows.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center border rounded-md">

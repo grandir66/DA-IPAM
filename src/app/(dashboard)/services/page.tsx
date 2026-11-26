@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,8 @@ const criticitaColor: Record<string, string> = {
 };
 
 export default function ServicesPage() {
+  // Sola lettura (26/11/2026): «Nuovo servizio» solo all'amministratore; «Apri» resta. Il server rifiuta già il POST.
+  const admin = useEAdmin();
   const [services, setServices] = useState<ServiceWithDeps[]>([]);
   const [assignees, setAssignees] = useState<AssetAssignee[]>([]);
   const [q, setQ] = useState("");
@@ -155,9 +158,11 @@ export default function ServicesPage() {
                   <SelectItem value="0">Fuori scope</SelectItem>
                 </SelectContent>
               </Select>
+              {admin && (
               <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
                 <Plus className="h-4 w-4" /> Nuovo servizio
               </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -166,7 +171,7 @@ export default function ServicesPage() {
             <div className="text-muted-foreground py-12 text-center">Caricamento...</div>
           ) : services.length === 0 ? (
             <div className="text-muted-foreground py-12 text-center">
-              Nessun servizio. Clicca <b>Nuovo servizio</b> per cominciare.
+              {admin ? <>Nessun servizio. Clicca <b>Nuovo servizio</b> per cominciare.</> : "Nessun servizio."}
             </div>
           ) : (
             <Table fissa>

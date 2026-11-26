@@ -24,9 +24,13 @@ export async function GET() {
       .prepare(
         `SELECT h.id, h.ip, COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), h.ip) AS nome,
                 h.classification AS classificazione,
+                n.name AS rete, n.vlan_id AS vlan, NULLIF(TRIM(h.mac), '') AS mac, NULLIF(TRIM(h.model), '') AS modello,
+                COALESCE(NULLIF(TRIM(h.device_manufacturer), ''), NULLIF(TRIM(h.vendor), '')) AS marca,
+                (SELECT group_concat(DISTINCT c.protocol_type) FROM host_credentials c
+                   WHERE c.host_id = h.id AND c.validated = 1) AS credenziali,
                 (SELECT group_concat(x.ip) FROM hosts x WHERE h.physical_device_id IS NOT NULL
                    AND x.physical_device_id = h.physical_device_id AND x.id <> h.id) AS altri
-         FROM hosts h WHERE h.ip IS NOT NULL AND h.ip <> '' ORDER BY nome LIMIT 3000`,
+         FROM hosts h LEFT JOIN networks n ON n.id = h.network_id WHERE h.ip IS NOT NULL AND h.ip <> '' ORDER BY nome LIMIT 3000`,
       )
       .all() as RigaIpam[];
     const modelli = await leggiModelliCentro(d);
@@ -39,6 +43,7 @@ export async function GET() {
         famiglie: l.famiglie.famiglie,
         apparati: elencoApparati({ host: l.centro.host, famiglie: l.famiglie.host, problemi: l.centro.problemi.problemi, vecchio: l.centro.vecchio, ipam }),
         modelliAdatti: modelli?.famiglie ?? null,
+        proxy: l.centro.cliente.proxy.map((p) => ({ nome: p.nome, inLinea: p.in_linea })),
         scrittura: scrittura ? { possibile: false, motivo: scrittura } : { possibile: true },
       },
       { headers: { "Cache-Control": "no-store" } },

@@ -28,6 +28,21 @@ export interface ApparatoElenco {
   agente: StatoAgente;
   /** Per l'agente: che sistema è, se si sa. */
   sistema: "windows" | "linux" | null;
+  /**
+   * Quello che DA-IPAM sa dell'apparato (26/11/2026, tabella nuova): serve a filtrare e raggruppare. Per chi è in
+   * Zabbix si prende dalla riga di DA-IPAM con lo stesso IP; null quando DA-IPAM non lo conosce.
+   */
+  schedaIpam: number | null;
+  rete: string | null;
+  vlan: number | null;
+  marca: string | null;
+  modello: string | null;
+  mac: string | null;
+  /** I protocolli con una credenziale provata valida in DA-IPAM, in ordine alfabetico. */
+  credenziali: string[];
+  /** Il proxy che lo interroga, e i problemi aperti: solo per chi è in Zabbix. */
+  proxy: string | null;
+  problemi: number;
 }
 
 export interface RigaIpam {
@@ -37,6 +52,25 @@ export interface RigaIpam {
   classificazione: string | null;
   /** Gli altri IP dello stesso apparato fisico, separati da virgola. */
   altri: string | null;
+  rete?: string | null;
+  vlan?: number | null;
+  marca?: string | null;
+  modello?: string | null;
+  mac?: string | null;
+  /** Protocolli con credenziale valida, separati da virgola. */
+  credenziali?: string | null;
+}
+
+function datiIpam(r: RigaIpam | undefined): Pick<ApparatoElenco, "schedaIpam" | "rete" | "vlan" | "marca" | "modello" | "mac" | "credenziali"> {
+  return {
+    schedaIpam: r?.id ?? null,
+    rete: r?.rete ?? null,
+    vlan: r?.vlan ?? null,
+    marca: r?.marca ?? null,
+    modello: r?.modello ?? null,
+    mac: r?.mac ?? null,
+    credenziali: [...new Set((r?.credenziali ?? "").split(",").filter(Boolean))].sort(),
+  };
 }
 
 /** La famiglia di un apparato di DA-IPAM, dalla sua classificazione (stessi nomi delle famiglie del centro). */
@@ -73,6 +107,13 @@ export function elencoApparati(i: {
 }): ApparatoElenco[] {
   const ipDi = new Map(i.host.map((h) => [h.hostid, h.ip]));
   const tecnicoDi = new Map(i.host.map((h) => [h.hostid, h.host]));
+  const proxyDi = new Map(i.host.map((h) => [h.hostid, h.proxy ?? null]));
+  // La riga di DA-IPAM di un IP: anche gli altri IP dello stesso apparato fisico portano alla stessa riga.
+  const rigaDi = new Map<string, RigaIpam>();
+  for (const r of i.ipam) {
+    if (!rigaDi.has(r.ip)) rigaDi.set(r.ip, r);
+    for (const x of (r.altri ?? "").split(",").filter(Boolean)) if (!rigaDi.has(x)) rigaDi.set(x, r);
+  }
   const problemiDi = new Map<string, ProblemaDelCentro[]>();
   for (const p of i.problemi) problemiDi.set(p.hostid, [...(problemiDi.get(p.hostid) ?? []), p]);
   // Le righe ricavate (VM del Proxmox, dominio, database, datastore) non sono host di Zabbix:
@@ -92,6 +133,9 @@ export function elencoApparati(i: {
       modelli: o.modelli,
       agente: o.agente,
       sistema: sistemaDi(o.famiglia, o.modelli),
+      ...datiIpam((ipDi.get(o.hostid) ?? []).map((x) => rigaDi.get(x)).find(Boolean)),
+      proxy: proxyDi.get(o.hostid) ?? null,
+      problemi: (problemiDi.get(o.hostid) ?? []).length,
     };
   });
   const ipZbx = new Set(i.host.flatMap((h) => h.ip));
@@ -114,6 +158,9 @@ export function elencoApparati(i: {
       modelli: [],
       agente: sistema ? "da_installare" : "non_serve",
       sistema,
+      ...datiIpam(r),
+      proxy: null,
+      problemi: 0,
     });
   }
   return elenco;

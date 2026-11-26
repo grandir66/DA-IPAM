@@ -1,11 +1,14 @@
 # TASKS — DA-IPAM
 
-## 2026-11-26 — Apparati di DatIA Mon: punto d'ingresso della gestione di Zabbix (PROPOSTA, in attesa del sì)
+## 2026-11-26 — Apparati di DatIA Mon: punto d'ingresso della gestione di Zabbix (approvato il 26/11)
 Riccardo, 26/11: «la tabella è quasi un prototipo: non ci sono filtri, colonne modificabili, utilizzo del tasto destro, raggruppamenti gestibili e da forzare, gestione dei modelli e degli agenti… il punto di ingresso della gestione della integrazione, senza l'esigenza di passare dalla UI di da-zabbix».
 Piano, censimento e tavola: `docs/superpowers/plans/2026-11-26-apparati-zabbix-punto-di-ingresso.md`. Nessun codice applicativo finché non approva la tavola.
 - [x] Censimento (pagina, rotte, contratto con DA-Zabbix, cosa obbliga a passare di là, tabelle da riusare) e tavola a 1920
-- [ ] Risposte di Riccardo alle sei domande del piano (schede, togli/sospendi/rinomina, tetto dei 100 al giorno, credenziali, chiave da DA-Link, colonne di serie)
-- [ ] T1 tabella nuova in sola lettura · T2 scheda di lato, Modelli e Agenti · T3 aggiunta in massa con coda · T5 guide e pulizia
+- [x] Riccardo, 26/11: 1 sì (sei schede) · 2 sì (togli/sospendi/rinomina da IPAM, T4) · 3 «va bene 100» · 4 sì (credenziali restano in DA-Zabbix) · 5 «sistema automatico» (la chiave la emette DA-Link e IPAM la riceve da sola: lavoro in DA-Link + ricezione in IPAM) · 6 sì (colonne della tavola)
+- [x] T1 tabella nuova (26/11): riga di schede «DatIA Mon», stato in una riga con «Inserisci la chiave», filtri (stato, famiglia, rete, marca, modello Zabbix, agente, credenziale), raggruppa per, colonne scelte e ordinate salvate per utente, ordinamento, 100 righe per pagina, tasto destro. Prove `vista-apparati.test.ts` + `apparati.test.ts` verdi, tsc e lint puliti. **Non guardata a schermo.**
+- [ ] T2 scheda di lato, Modelli e Agenti · T3 aggiunta in massa con coda · T5 guide (`docs/manuale/pagine/zabbix-apparati.md` descrive ancora la pagina vecchia) e pulizia
+- [ ] Riccardo, 26/11: «la stessa UI dovrebbe essere presente anche in zabbix per la gestione dei device dei singoli clienti; proviamo ad uniformare l'esperienza» → T6 del piano, nel repo DA-Zabbix (da scrivere anche nel suo `TASKS.md`), dopo che ha visto la T1
+- [ ] Decisione 5 (chiave automatica): DA-Link deve emettere la chiave di scrittura e consegnarla a IPAM; finché non c'è, «Inserisci la chiave» porta alla configurazione del modulo
 - [ ] T4, in DA-Zabbix (lavoro a parte, livello Completo per le scritture): proposta dei modelli in blocco, `famiglia_forzata` e `agente_versione` in lettura, rotte sospendi/rinomina/togli
 - Trovato strada facendo: «Come si usa» non c'è più (tolto il 26/11, c'è il «?»); DatIA Mon non ha la riga di schede in `sezioni.ts`; DA-Link non emette ancora la chiave di scrittura (aperto in DA-Zabbix dal 13/11); con i tetti del centro (10/min, 100/giorno) 474 aggiunte chiedono cinque giorni.
 

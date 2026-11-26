@@ -1,6 +1,12 @@
 # Apparati di DatIA Mon: il punto d'ingresso della gestione di Zabbix
 
-**Stato: proposta, in attesa del sì di Riccardo. Nessun codice applicativo scritto.**
+**Stato: approvato da Riccardo il 26/11/2026; in esecuzione dalla tappa 1.**
+
+Decisioni di Riccardo, 26/11 (risposte alle sei domande in fondo): 1 sì, le sei schede con «Aggiungi» dentro
+Apparati · 2 sì, togliere, sospendere e rinominare si fanno da IPAM (rotte nuove nel centro, T4) · 3 il tetto resta
+100 al giorno, con la coda · 4 sì, le credenziali che usa Zabbix restano in DA-Zabbix · 5 la chiave di scrittura
+arriva da sola («sistema automatico»): la emette DA-Link, IPAM la riceve, niente incolla · 6 sì, le colonne di
+serie sono quelle della tavola.
 
 Riccardo, 26/11/2026: «la tabella è quasi un prototipo: non ci sono filtri, colonne modificabili, utilizzo del
 tasto destro, raggruppamenti gestibili e da forzare, gestione dei modelli e degli agenti, impostazioni varie.
@@ -90,7 +96,8 @@ Livello **Leggero** per le tappe 1-3 e 5 (interfaccia e lettura). Le rotte nuove
 sospendi, rinomina, togli) toccano dati di produzione del centro: **livello Completo**, snapshot della VM di
 Zabbix prima del rilascio, e approvazione a parte.
 
-- [ ] **T1 — Tabella nuova in sola lettura** (IPAM). Schede di sezione, stato in riga, filtri, colonne e viste
+- [x] **T1 — Tabella nuova** (26/11: fatta; verifica: `vista-apparati.test.ts` e `apparati.test.ts` verdi, tsc e lint puliti; **non guardata a schermo**). Dalla tavola mancano ancora: le viste con nome, il trascinamento delle colonne (ci sono le frecce), la scheda di lato (T2), il segno «a mano» sulla famiglia (T4).
+  Testo della tappa: **Tabella nuova in sola lettura** (IPAM). Schede di sezione, stato in riga, filtri, colonne e viste
   salvate, raggruppamenti, paginazione, tasto destro con le azioni che esistono già. La rotta `apparati` porta
   rete/VLAN, marca, modello, MAC e credenziale valida. *Fatto quando*: su IPAM `192.168.4.8` i 474 apparati si
   filtrano per rete e famiglia, le colonne scelte restano dopo un nuovo accesso, una schermata a 1920.
@@ -105,6 +112,13 @@ Zabbix prima del rilascio, e approvazione a parte.
   pulsanti spenti di IPAM si accendono. Stima: una giornata là, 2-3 ore qui.
 - [ ] **T5 — Guide e pulizia** (IPAM): `docs/manuale/pagine/zabbix*.md`, tolte le pagine confluite, `CHANGELOG`,
   `CONTEXT`. Stima: 1-2 ore.
+
+- [ ] **T6 — La stessa tabella in DA-Zabbix** (Riccardo, 26/11: «la stessa UI dovrebbe essere presente anche in zabbix
+  per la gestione dei device dei singoli clienti; proviamo ad uniformare l'esperienza»). Altro repo
+  (`/Users/riccardo/Progetti/DA-Zabbix`, FastAPI + Jinja): la pagina degli oggetti del cliente prende la stessa
+  disposizione (stato in riga, filtri, raggruppa, colonne salvate, azioni sulla selezione, tasto destro), gli stessi
+  nomi di colonne e stati e gli stessi segni. Si fa dopo che Riccardo ha visto la T1 su IPAM, che fa da modello.
+  Stima: una giornata là. Da proporre con la sua tavola.
 
 **Totale realistico: 2 giornate di sessioni per IPAM (T1-T3, T5), più una per DA-Zabbix (T4).**
 

@@ -40,6 +40,13 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/arp-table", etichetta: "Tabella ARP" },
     { href: "/topology/dati", etichetta: "Dati della mappa" },
   ] },
+  // DatIA Mon (Riccardo, 26/11/2026: «il punto di ingresso della gestione della integrazione»): le pagine di Zabbix in
+  // una fila sola. «Aggiungi» è confluita in Apparati (filtro «Da aggiungere»); Modelli, Agenti e «Centro e proxy»
+  // arrivano con la tappa 2 del piano `2026-11-26-apparati-zabbix-punto-di-ingresso.md`.
+  { nome: "DatIA Mon", schede: [
+    { href: "/zabbix/apparati", etichetta: "Apparati", per: "admin", anche: ["/zabbix/aggiungi"] },
+    { href: "/zabbix", etichetta: "Abbinamenti" },
+  ] },
   { nome: "Credenziali", schede: [
     { href: "/credentials", etichetta: "Credenziali" },
     { href: "/controllers", etichetta: "Controller di rete" },

@@ -14,7 +14,10 @@ import { ErroreApi, TESTO_CODICE_ERRORE } from "./api";
 import { ErroreLettura, type TrasportoPost } from "./trasporto";
 
 /** Il testo quando la rotta nuova non c'è sul centro (404): la pagina spegne i pulsanti nuovi e lo dice. */
-export const TESTO_CENTRO_VECCHIO = "Il centro non è ancora aggiornato";
+// Sta in `provvisori.ts`, che la pagina può importare: questo file porta con sé il trasporto del server
+// (26/11: importato come valore dalla pagina, la build dell'hub è caduta su `node:net`).
+import { TESTO_CENTRO_VECCHIO } from "./provvisori";
+export { TESTO_CENTRO_VECCHIO };
 /** Codici che hanno un testo nostro anche per le rotte in cui il centro motiva da sé. */
 const CODICI_DI_SISTEMA = new Set(["troppe_richieste", "chiave_non_valida", "api_spenta", "tetto_giornaliero", "apparato_sconosciuto"]);
 

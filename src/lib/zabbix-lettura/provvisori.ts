@@ -40,3 +40,6 @@ export function conProvvisori(letti: readonly ApparatoElenco[], provvisori: Prov
   }
   return { elenco, superati };
 }
+
+/** Il testo con cui la scrittura dice «rotta assente sul centro»: qui perché lo legge anche la pagina. */
+export const TESTO_CENTRO_VECCHIO = "Il centro non è ancora aggiornato";

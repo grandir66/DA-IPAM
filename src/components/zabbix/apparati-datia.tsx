@@ -26,13 +26,13 @@ import {
 } from "@/components/ui/context-menu";
 import { fetchJson } from "@/lib/fetch-json";
 import { attesaPrima, durata, eTettoDelGiorno, giorniPer, leggiCoda, registraChiamata, tolto, type Coda } from "@/lib/zabbix-lettura/coda-aggiunta";
-import { conProvvisori } from "@/lib/zabbix-lettura/provvisori";
+import { TESTO_CENTRO_VECCHIO, conProvvisori } from "@/lib/zabbix-lettura/provvisori";
 import {
   CAMPI_FILTRO, COLONNE, FILTRI_VUOTI, GRUPPI, NESSUNO, STATI, TESTO_AGENTE, VISTA_AGENTI, VISTA_DI_SERIE, colonna, conColonna, leggiVista, passa, raggruppa,
   nonVisto, spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
 } from "@/lib/zabbix-lettura/vista-apparati";
 import { piuVecchioDelCentro, type ApparatoElenco, type StatoAgente, type StatoApparato } from "@/lib/zabbix-lettura/apparati";
-import { TESTO_CENTRO_VECCHIO, type EsitoAgente, type EsitoFamiglia, type EsitoModelli, type EsitoProponi, type EsitoRinomina, type EsitoScrittura, type EsitoStato, type EsitoTogli } from "@/lib/zabbix-lettura/scrittura";
+import type { EsitoAgente, EsitoFamiglia, EsitoModelli, EsitoProponi, EsitoRinomina, EsitoScrittura, EsitoStato, EsitoTogli } from "@/lib/zabbix-lettura/scrittura";
 
 interface Risposta {
   letto: boolean;

@@ -96,6 +96,18 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 
 - **Manuale per pagina (26/11)**: il «?» in alto a destra di ogni pagina (`components/shared/pulsante-manuale.tsx`, messo dal guscio) apre `docs/manuale/pagine/<nome>.md`, letto da disco a ogni apertura; `/manual` si apre su `docs/manuale/INDICE.md`, il manuale unico è in `docs/archivio/`. **Chi cambia una pagina riscrive la sua guida** e rifà le schermate con `node scripts/manuale/schermate.cjs <nome>` (IPAM 192.168.4.8 in sola lettura, IP/MAC/email/nomi PC finti; colonne con persone o debolezze in `nascondi`; /protezione senza schermate). `copertura.test.ts` fallisce se una pagina nuova non ha guida. Le àncore `{#parte}` seguono `useParteGuida` e `?tab=`.
 
+### Archivio degli utenti (26/11, ADR 0043)
+
+Pagina `/archivio` (Sicurezza › Archivio), codice in `src/lib/archivio-utenti/`: un KDBX per le persone del cliente,
+separato dalle credenziali che DA-IPAM usa (scansioni e giri non lo leggono). **Regole da non rompere**: il ruolo
+nell'installazione non dà nessun potere, comanda il codice dell'amministratore dell'archivio; la chiave dell'archivio
+vive solo in memoria (sessioni di 10/60 minuti), sul disco ci sono le serrature per persona; elenco e dettaglio non
+portano mai un segreto, ogni lettura lascia una riga in `audit/archivio-*.jsonl`; la chiave privata di recupero delle
+copie (`copia.ts`, age) non si scrive mai sul disco e non si rimostra. **Trappole**: i moduli importati dal componente
+client non possono toccare `node:*` (prova di guardia in `protezione/__tests__/esecutore-accessi`); le copie stanno in
+`<dati>/archivio-utenti-copie`, cioè sullo stesso disco, finché non le porta via il salvataggio (`DA_ARCHIVIO_COPIE_DIR`).
+**Aperto**: allegati, ripristino di una copia dalla pagina, parte E (disco cifrato con TPM, domande E1-E5 a Riccardo).
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile); ogni modifica: `git add <file>` → `npm run version:release -- --staged-only` → `git pull --rebase origin dev` → `git push origin HEAD:dev`. **Un push di codice su `dev` è un rilascio**: hub 533 e DTS (71734) lo prendono entro 15 minuti (`da-ipam-update.timer`). Un commit di soli `.md` non riavvia.

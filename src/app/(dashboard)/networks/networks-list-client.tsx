@@ -513,7 +513,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
 
   return (
     <div className="space-y-6">
-      {selectedIds.size > 0 && (
+      {eAdmin && selectedIds.size > 0 && (
         <Card size="sm">
           <CardContent className="py-3 flex items-center justify-between gap-4">
             <CardDescription>
@@ -611,10 +611,12 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
             }
           }}
         >
-          <DialogTrigger render={<Button />}>
-            <Plus className="h-4 w-4 mr-2" />
-            Aggiungi Rete
-          </DialogTrigger>
+          {eAdmin && (
+            <DialogTrigger render={<Button />}>
+              <Plus className="h-4 w-4 mr-2" />
+              Aggiungi Rete
+            </DialogTrigger>
+          )}
           <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
             <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
               <DialogTitle>Nuova Rete</DialogTitle>
@@ -808,7 +810,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
           <CardContent className="py-12 text-center">
             <Network className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
             <p className="text-muted-foreground">Nessuna rete configurata</p>
-            <p className="text-sm text-muted-foreground mt-1">Clicca &quot;Aggiungi Rete&quot; per iniziare</p>
+            {eAdmin && <p className="text-sm text-muted-foreground mt-1">Clicca &quot;Aggiungi Rete&quot; per iniziare</p>}
           </CardContent>
         </Card>
       ) : (
@@ -816,13 +818,15 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
           <Table fissa>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={networks.length > 0 && selectedIds.size === networks.length}
-                    onCheckedChange={toggleSelectAll}
-                    aria-label="Seleziona tutte"
-                  />
-                </TableHead>
+                {eAdmin && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={networks.length > 0 && selectedIds.size === networks.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Seleziona tutte"
+                    />
+                  </TableHead>
+                )}
                 <SortableTableHead columnId="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
                   Nome
                 </SortableTableHead>
@@ -847,7 +851,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
                 <SortableTableHead columnId="last_scan" sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSortColumn}>
                   Ultima Scansione
                 </SortableTableHead>
-                <TableHead className="w-12"></TableHead>
+                {eAdmin && <TableHead className="w-12"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -857,13 +861,15 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
                   className="cursor-pointer"
                   onClick={() => router.push(`/networks/${net.id}`)}
                 >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.has(net.id)}
-                      onCheckedChange={() => toggleSelect(net.id)}
-                      aria-label={`Seleziona ${net.name}`}
-                    />
-                  </TableCell>
+                  {eAdmin && (
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(net.id)}
+                        onCheckedChange={() => toggleSelect(net.id)}
+                        aria-label={`Seleziona ${net.name}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">{net.name}</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="font-mono">{net.cidr}</Badge>
@@ -876,19 +882,21 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters, s
                   <TableCell className="text-xs text-muted-foreground">
                     {net.last_scan ? parseDbDate(net.last_scan).toLocaleString("it-IT") : "Mai"}
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(net.id, net.name);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+                  {eAdmin && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(net.id, net.name);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

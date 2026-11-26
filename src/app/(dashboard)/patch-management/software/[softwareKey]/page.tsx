@@ -95,6 +95,7 @@ import {
   type HostActionOperation,
 } from "@/components/patch/host-action-modal";
 import { PinFixDialog } from "@/components/patch/pin-fix-dialog";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 // ─── tipi ────────────────────────────────────────────────────────────────
 interface SoftwareCve {
@@ -278,6 +279,9 @@ function ChocoStatusCell({ host }: { host: SoftwareHost }) {
 
 // ─── pagina ──────────────────────────────────────────────────────────────
 export default function SoftwareDetailPage() {
+  // Sola lettura (26/11/2026): pin, selezione host e azioni bulk (probe, bootstrap, upgrade) solo all'amministratore;
+  // il server le rifiuta già. Restano «Aggiorna», filtri e i collegamenti ai device.
+  const admin = useEAdmin();
   const params = useParams<{ softwareKey: string }>();
   const softwareKeyRaw = params?.softwareKey ?? "";
 
@@ -718,7 +722,7 @@ export default function SoftwareDetailPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {detail && !detail.chocoId && detail.cves.length > 0 && (
+                  {admin && detail && !detail.chocoId && detail.cves.length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -830,10 +834,12 @@ export default function SoftwareDetailPage() {
                 Solo con WinRM
               </label>
 
+              {admin && (
               <div className="ml-auto text-sm text-muted-foreground">
                 {selected.size} selezionati di {filteredHosts.length} • max{" "}
                 {MAX_SELECTION}
               </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -847,8 +853,8 @@ export default function SoftwareDetailPage() {
                 Host con questo pacchetto ({filteredHosts.length})
               </CardTitle>
               <CardDescription>
-                Solo host Windows con il pacchetto installato. Checkbox
-                disabilitata se WinRM non è validato.
+                Solo host Windows con il pacchetto installato.
+                {admin && " Checkbox disabilitata se WinRM non è validato."}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0">
@@ -867,6 +873,7 @@ export default function SoftwareDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {admin && (
                       <TableHead className="w-10">
                         <Checkbox
                           checked={allSelectableSelected}
@@ -875,6 +882,7 @@ export default function SoftwareDetailPage() {
                           disabled={selectableHosts.length === 0}
                         />
                       </TableHead>
+                      )}
                       <TableHead>Hostname</TableHead>
                       <TableHead className="w-36">IP</TableHead>
                       <TableHead>OS</TableHead>
@@ -894,6 +902,7 @@ export default function SoftwareDetailPage() {
                             isSelected ? "bg-muted/40" : "hover:bg-muted/30"
                           }
                         >
+                          {admin && (
                           <TableCell>
                             {checkboxDisabled ? (
                               <Tooltip>
@@ -922,6 +931,7 @@ export default function SoftwareDetailPage() {
                               />
                             )}
                           </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             <Link
                               href={`/patch-management/device/${h.hostId}`}
@@ -956,7 +966,7 @@ export default function SoftwareDetailPage() {
         )}
 
         {/* Bottoni azione bulk (sticky) */}
-        {!moduleMissing && !notFound && detail && filteredHosts.length > 0 && (
+        {admin && !moduleMissing && !notFound && detail && filteredHosts.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur py-3 border-t">
             <div className="text-sm text-muted-foreground mr-auto">
               {selected.size > 0

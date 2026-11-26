@@ -35,6 +35,8 @@ export function AzioniScheda({
   onCreaAsset: () => void;
   onTogli: () => void;
 }) {
+  // Tutto qui scrive: chi è in sola lettura non vede la barra (26/11/2026).
+  if (!isAdmin) return null;
   const hoVoci = gestito || !haAsset;
   return (
     <>

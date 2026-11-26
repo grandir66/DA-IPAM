@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogScrollableArea
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
 import type { SiteTopologyView } from "@/lib/topology/api-input";
 
@@ -25,6 +26,8 @@ export function SiteTopologyDialog({ location, open, onOpenChange }: {
   const [head, setHead] = useState<string>(NESSUNA);
   const [nets, setNets] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  // Sola lettura (26/11/2026): il viewer vede testa e subnet della sede ma non le cambia; il PUT lo rifiuta già il server.
+  const admin = useEAdmin();
 
   const load = useCallback(async () => {
     setError(null);
@@ -92,7 +95,7 @@ export function SiteTopologyDialog({ location, open, onOpenChange }: {
             </p>
           )}
           {view && (
-            <div className="space-y-6">
+            <fieldset disabled={!admin} className="space-y-6">
               <div className="space-y-2">
                 <Label>Apparato di testa</Label>
                 <Select value={head} onValueChange={(v) => setHead(v ?? NESSUNA)}>
@@ -128,12 +131,12 @@ export function SiteTopologyDialog({ location, open, onOpenChange }: {
                   ))}
                 </ul>
               </div>
-            </div>
+            </fieldset>
           )}
         </DialogScrollableArea>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Chiudi</Button>
-          <Button onClick={save} disabled={!view || saving}>{saving ? "Salvataggio…" : "Salva"}</Button>
+          {admin && <Button onClick={save} disabled={!view || saving}>{saving ? "Salvataggio…" : "Salva"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Pencil, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import {
   DEVICE_CLASSIFICATIONS,
   DEVICE_CLASSIFICATIONS_ORDERED,
@@ -57,6 +58,8 @@ function slugify(label: string): string {
 }
 
 export default function ClassificationsPage() {
+  // Aggiungi, Modifica ed Elimina scrivono: solo amministratori (26/11/2026). Chi è in sola lettura vede gli elenchi.
+  const admin = useEAdmin();
   const [items, setItems] = useState<CustomItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -174,7 +177,7 @@ export default function ClassificationsPage() {
                 Lo slug è immutabile dopo la creazione perché referenziato da <code>hosts.classification</code>.
               </CardDescription>
             </div>
-            <Button onClick={openCreate} size="sm"><Plus className="h-4 w-4 mr-1" />Aggiungi</Button>
+            {admin && <Button onClick={openCreate} size="sm"><Plus className="h-4 w-4 mr-1" />Aggiungi</Button>}
           </div>
         </CardHeader>
         <CardContent>
@@ -182,7 +185,7 @@ export default function ClassificationsPage() {
             <p className="text-sm text-muted-foreground">Caricamento…</p>
           ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nessuna classification custom. Utile quando vuoi distinguere una sotto-categoria di un built-in
+              Nessuna classification custom.{admin ? "" : " Le aggiunge un amministratore."} Utile quando vuoi distinguere una sotto-categoria di un built-in
               (es. <code>server_postgres</code> figlio di <code>server</code>).
             </p>
           ) : (
@@ -193,7 +196,7 @@ export default function ClassificationsPage() {
                   <TableHead>Slug</TableHead>
                   <TableHead>Parent</TableHead>
                   <TableHead>Macro-categoria</TableHead>
-                  <TableHead className="text-right">Azioni</TableHead>
+                  {admin && <TableHead className="text-right">Azioni</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -207,10 +210,12 @@ export default function ClassificationsPage() {
                     <TableCell className="text-xs text-muted-foreground">
                       {DEVICE_CATEGORY_GROUP_LABELS[getDeviceCategoryGroup(it.parent_slug)]}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(it)} title="Modifica"><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(it)} title="Elimina" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                    </TableCell>
+                    {admin && (
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(it)} title="Modifica"><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => remove(it)} title="Elimina" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

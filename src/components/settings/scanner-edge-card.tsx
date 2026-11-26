@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
 import { edgeRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface ScannerRow {
   id: number;
@@ -109,6 +110,8 @@ function EdgePanel({ scanner }: { scanner: ScannerRow }) {
 }
 
 export function ScannerEdgeCard() {
+  // Riattiva, Sincronizza, Rimuovi, Test e Salva scrivono: solo amministratori (26/11/2026).
+  const admin = useEAdmin();
   const [scanner, setScanner] = useState<ScannerRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ name: "Scanner-Edge", base_url: "", token: "" });
@@ -350,6 +353,7 @@ export function ScannerEdgeCard() {
               {scanner.ultima_non_riuscita.error_message && <div>{scanner.ultima_non_riuscita.error_message}</div>}
             </div>
           )}
+          {admin && (
           <div className="flex gap-2 pt-1 flex-wrap">
             {scanner.enabled !== 1 ? (
               <Button size="sm" onClick={handleReactivate} disabled={reactivating}>
@@ -366,9 +370,12 @@ export function ScannerEdgeCard() {
               <Trash2 className="h-3.5 w-3.5 mr-1" /> Rimuovi
             </Button>
           </div>
+          )}
 
           <EdgePanel scanner={scanner} />
         </div>
+      ) : !admin ? (
+        <p className="text-sm text-muted-foreground">Nessuno scanner-edge configurato. Lo collega un amministratore.</p>
       ) : (
         <div className="space-y-2">
           <div className="grid gap-2">

@@ -34,6 +34,7 @@ import { InventoryNis2Scheda } from "@/components/inventory/inventory-nis2-sched
 import { AssetServicesPanel } from "@/components/inventory/asset-services-panel";
 import { PropostaAssegnatario } from "@/components/assegnatari/proposta-assegnatario";
 import { useInventoryViewMode } from "@/lib/inventory/inventory-view-mode";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 const CATEGORIE = ["Desktop", "Laptop", "Server", "Switch", "Firewall", "NAS", "Stampante", "VM", "Licenza", "Access Point", "Router", "Other"];
 const STATI = ["Attivo", "In magazzino", "In riparazione", "Dismesso", "Rubato"];
@@ -163,6 +164,8 @@ export default function InventoryAssetPage() {
   const params = useParams();
   const id = params.id as string;
   const { viewMode, setViewMode, isNis2View, hydrated } = useInventoryViewMode();
+  // Chi è in sola lettura vede la scheda ma non i comandi che scrivono (26/11/2026): il server li rifiuta già.
+  const admin = useEAdmin();
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -350,6 +353,8 @@ export default function InventoryAssetPage() {
         </div>
         {hydrated && (
           <div className="flex items-center gap-2">
+            {admin && (
+            <>
             <Button
               type="button"
               variant="outline"
@@ -371,6 +376,8 @@ export default function InventoryAssetPage() {
             >
               Force
             </Button>
+            </>
+            )}
             <InventoryViewToggle viewMode={viewMode} onViewModeChange={setViewMode} compact />
           </div>
         )}
@@ -403,18 +410,20 @@ export default function InventoryAssetPage() {
             )}
           </TabsList>
 
+          {/* Campi in sola lettura per il viewer: il fieldset disabilita input, select e i «+» di AddableSelect. */}
+          <fieldset disabled={!admin} className="contents">
           {isNis2View && (
             <TabsContent value="nis2">
               <InventoryNis2Scheda
                 form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations}
-                dopoResponsabilita={
+                dopoResponsabilita={admin ? (
                   <Card>
                     <CardHeader><CardTitle>Assegnatario proposto dagli accessi</CardTitle></CardHeader>
                     <CardContent>
                       <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} />
                     </CardContent>
                   </Card>
-                }
+                ) : undefined}
               />
               {(asset as { technical_data?: string | null }).technical_data && (
                 <div className="mt-4">
@@ -487,10 +496,10 @@ export default function InventoryAssetPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {assignees.length === 0 && (
+                  {admin && assignees.length === 0 && (
                     <p className="text-sm text-muted-foreground">Nessun assegnatario. Aggiungine da <Link href="/inventory/assignees" className="underline">Inventario → Assegnatari</Link>.</p>
                   )}
-                  <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} onScegliAltro={scegliAltro} />
+                  {admin && <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} onScegliAltro={scegliAltro} />}
                 </div>
               </CardContent>
             </Card>
@@ -603,6 +612,7 @@ export default function InventoryAssetPage() {
           </TabsContent>
           </>
           )}
+          </fieldset>
           <TabsContent value="servizi">
             <AssetServicesPanel assetId={asset.id} />
           </TabsContent>
@@ -613,6 +623,7 @@ export default function InventoryAssetPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Licenze software assegnate</CardTitle>
+                  {admin && (
                   <Select value={assignLicenseId} onValueChange={(v) => { setAssignLicenseId(v ?? ""); if (v) handleAssignLicense(Number(v)); }}>
                     <SelectTrigger className="w-[220px]"><SelectValue placeholder="Assegna licenza..." /></SelectTrigger>
                     <SelectContent>
@@ -625,6 +636,7 @@ export default function InventoryAssetPage() {
                       )}
                     </SelectContent>
                   </Select>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -636,7 +648,7 @@ export default function InventoryAssetPage() {
                       <TableRow>
                         <TableHead>Licenza</TableHead>
                         <TableHead>Assegnato il</TableHead>
-                        <TableHead className="w-12"></TableHead>
+                        {admin && <TableHead className="w-12"></TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -644,11 +656,13 @@ export default function InventoryAssetPage() {
                         <TableRow key={s.id}>
                           <TableCell className="font-medium">{s.license_name ?? `Licenza #${s.license_id}`}</TableCell>
                           <TableCell className="text-muted-foreground">{parseDbDate(s.assigned_at).toLocaleDateString("it-IT")}</TableCell>
+                          {admin && (
                           <TableCell>
                             <Button variant="ghost" size="icon" onClick={() => handleUnassignLicense(s.id)} title="Rimuovi assegnazione">
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                           </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -693,12 +707,14 @@ export default function InventoryAssetPage() {
           </TabsContent>
         </Tabs>
 
+        {admin && (
         <div className="mt-6">
           <Button type="submit" disabled={saving}>
             <Save className="h-4 w-4 mr-2" />
             {saving ? "Salvataggio..." : "Salva modifiche"}
           </Button>
         </div>
+        )}
       </form>
     </div>
   );

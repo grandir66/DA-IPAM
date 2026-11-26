@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadError } from "@/components/shared/load-error";
 import { BadgeSegno, quando } from "@/components/assegnatari/segni";
 import { fetchJson } from "@/lib/fetch-json";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import type { Abbinamenti, EsitoConferma, GruppoAbbinamento, VoceAbbinamento } from "@/lib/assegnatari/abbinamenti";
 
 const PER_PAGINA = 50;
@@ -34,6 +35,8 @@ function Accessi({ v }: { v: VoceAbbinamento }) {
 }
 
 export default function AbbinamentiPage() {
+  // Sola lettura (26/11/2026): il viewer vede le proposte ma non spunte, scelte né «Conferma»; il server rifiuta già il POST.
+  const admin = useEAdmin();
   const [filtro, setFiltro] = useState<Filtro>("proposto");
   const [senzaAsset, setSenzaAsset] = useState(false);
   const [cerca, setCerca] = useState("");
@@ -186,7 +189,7 @@ export default function AbbinamentiPage() {
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center gap-3 space-y-0">
               <CardTitle className="flex-1">{ETICHETTA[filtro]}</CardTitle>
-              {filtro === "proposto" && <span className="text-[13px] text-muted-foreground">la spunta è già messa su tutti: si toglie da quelli che non vanno</span>}
+              {admin && filtro === "proposto" && <span className="text-[13px] text-muted-foreground">la spunta è già messa su tutti: si toglie da quelli che non vanno</span>}
             </CardHeader>
             <CardContent>
               {dati.voci.length === 0 ? (
@@ -196,7 +199,7 @@ export default function AbbinamentiPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-10"><span className="sr-only">Scelta</span></TableHead>
+                        {admin && <TableHead className="w-10"><span className="sr-only">Scelta</span></TableHead>}
                         <TableHead>PC</TableHead>
                         <TableHead>Asset</TableHead>
                         <TableHead>Usato da</TableHead>
@@ -209,17 +212,19 @@ export default function AbbinamentiPage() {
                     <TableBody>
                       {dati.voci.map((v) => {
                         const scelta = scelti.get(v.hostId);
-                        const spuntabile = (v.gruppo === "proposto" || v.gruppo === "da_rivedere") && !!v.persona;
+                        const spuntabile = admin && (v.gruppo === "proposto" || v.gruppo === "da_rivedere") && !!v.persona;
                         const conOmonimi = !v.asset && v.omonimi.length > 0;
                         const collegaQui = typeof scelta?.asset === "number";
                         const daScegliere = !v.asset && ((conOmonimi && scelta?.asset === undefined) || (!v.categoriaProposta && !collegaQui));
                         return (
                           <TableRow key={v.hostId} className={daScegliere && spuntabile ? "bg-[#FFFBE6] dark:bg-[#3A3415]" : undefined}>
+                            {admin && (
                             <TableCell>
                               {spuntabile && (
                                 <input type="checkbox" className="size-4 accent-[#00A7E7]" aria-label={`Abbina ${v.pc}`} checked={!!scelta} onChange={(e) => spunta(v, e.target.checked)} />
                               )}
                             </TableCell>
+                            )}
                             <TableCell>
                               <span className="font-semibold">{v.pc}</span>{" "}
                               <span className="text-[13px] text-muted-foreground">· {v.ip}{v.classificazione && daScegliere ? ` · classificato «${v.classificazione}»` : ""}</span>
@@ -283,12 +288,12 @@ export default function AbbinamentiPage() {
               <div className="overflow-x-auto rounded-md bg-white dark:bg-card">
                 <Table>
                   <TableHeader>
-                    <TableRow><TableHead>Sostituisci</TableHead><TableHead>PC</TableHead><TableHead>Assegnato a</TableHead><TableHead>Usato da</TableHead><TableHead>Accessi</TableHead></TableRow>
+                    <TableRow>{admin && <TableHead>Sostituisci</TableHead>}<TableHead>PC</TableHead><TableHead>Assegnato a</TableHead><TableHead>Usato da</TableHead><TableHead>Accessi</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
                     {rivedere.map((v) => (
                       <TableRow key={v.hostId}>
-                        <TableCell><input type="checkbox" className="size-4 accent-[#00A7E7]" aria-label={`Sostituisci su ${v.pc}`} checked={scelti.has(v.hostId)} onChange={(e) => spunta(v, e.target.checked)} /></TableCell>
+                        {admin && <TableCell><input type="checkbox" className="size-4 accent-[#00A7E7]" aria-label={`Sostituisci su ${v.pc}`} checked={scelti.has(v.hostId)} onChange={(e) => spunta(v, e.target.checked)} /></TableCell>}
                         <TableCell className="font-semibold">{v.pc}</TableCell>
                         <TableCell>{v.assegnato?.nome}{v.assegnato?.origine === "manuale" ? <span className="text-[13px] text-muted-foreground"> · a mano</span> : null}</TableCell>
                         <TableCell>{v.persona?.nome ?? "—"}</TableCell>
@@ -298,7 +303,7 @@ export default function AbbinamentiPage() {
                   </TableBody>
                 </Table>
               </div>
-              <p className="text-[13px]">Senza spunta di serie: l&apos;assegnazione resta finché non la sostituisci tu.</p>
+              {admin && <p className="text-[13px]">Senza spunta di serie: l&apos;assegnazione resta finché non la sostituisci tu.</p>}
             </section>
           )}
 
@@ -316,6 +321,7 @@ export default function AbbinamentiPage() {
             </details>
           )}
 
+          {admin && (
           <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border bg-card px-4 py-3">
             <span className="flex-1 text-sm">
               Selezionati: <strong className="font-semibold">{riepilogo.totale}</strong> — {riepilogo.asset} asset da creare,
@@ -328,6 +334,7 @@ export default function AbbinamentiPage() {
               {confermando ? "Conferma…" : `Conferma ${riepilogo.totale} ${riepilogo.totale === 1 ? "abbinamento" : "abbinamenti"}`}
             </Button>
           </div>
+          )}
         </>
       )}
     </div>

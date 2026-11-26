@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,8 @@ import { SiteTopologyDialog } from "@/components/topology/site-topology-dialog";
 import type { Location } from "@/types";
 
 export default function LocationsPage() {
+  // Sola lettura (26/11/2026): Nuova, matita e cestino solo all'amministratore; «Mappa» resta (si consulta, il Salva dentro è suo).
+  const admin = useEAdmin();
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -94,6 +97,9 @@ export default function LocationsPage() {
     } catch { toast.error("Errore di rete"); }
   }
 
+  // Per il viewer la colonna serve solo a «Mappa», che c'è sulle sedi di primo livello.
+  const colonnaAzioni = admin || locations.some((l) => l.parent_id === null);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -111,14 +117,14 @@ export default function LocationsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>{locations.length} ubicazioni</CardTitle>
-            <Button onClick={openCreate} className="gap-1.5"><Plus className="h-4 w-4" />Nuova ubicazione</Button>
+            {admin && <Button onClick={openCreate} className="gap-1.5"><Plus className="h-4 w-4" />Nuova ubicazione</Button>}
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="text-muted-foreground py-8 text-center">Caricamento...</div>
           ) : locations.length === 0 ? (
-            <div className="text-muted-foreground py-8 text-center">Nessuna ubicazione. Clicca <b>Nuova ubicazione</b> per aggiungere.</div>
+            <div className="text-muted-foreground py-8 text-center">{admin ? <>Nessuna ubicazione. Clicca <b>Nuova ubicazione</b> per aggiungere.</> : "Nessuna ubicazione."}</div>
           ) : (
             <Table fissa>
               <TableHeader>
@@ -126,7 +132,7 @@ export default function LocationsPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Indirizzo</TableHead>
                   <TableHead>Parent</TableHead>
-                  <TableHead></TableHead>
+                  {colonnaAzioni && <TableHead></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -135,15 +141,21 @@ export default function LocationsPage() {
                     <TableCell className="font-medium">{loc.name}</TableCell>
                     <TableCell className="text-sm">{loc.address ?? "—"}</TableCell>
                     <TableCell className="text-sm">{loc.parent_id ? locations.find((l) => l.id === loc.parent_id)?.name ?? `#${loc.parent_id}` : "—"}</TableCell>
+                    {colonnaAzioni && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         {loc.parent_id === null && (
                           <Button variant="outline" size="sm" onClick={() => setMappaPer(loc)}>Mappa</Button>
                         )}
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(loc)}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(loc)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        {admin && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(loc)}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(loc)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IntestazionePagina, Pannello, Vuoto } from "@/components/shared/console";
 import { IpContesiDialog } from "@/components/networks/ip-contesi-dialog";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import { ETICHETTA_FAMIGLIA, type Famiglia, type Rilievo, type Sicurezza } from "@/lib/classification/controllo";
 
@@ -34,6 +35,7 @@ const SEGNO: Record<Sicurezza, string> = { alta: "●●●", media: "●●○"
 const chiave = (v: Voce) => `${v.host_id}:${v.rilievo.famiglia}`;
 
 export default function ControlloClassificazionePage() {
+  const admin = useEAdmin();
   const [voci, setVoci] = useState<Voce[] | null>(null);
   const [righe, setRighe] = useState(0);
   const [famiglia, setFamiglia] = useState<Famiglia | "">("");
@@ -137,12 +139,14 @@ export default function ControlloClassificazionePage() {
                 Fonti in disaccordo
               </Button>
             )}
+            {admin && (<>
             <Button variant="outline" size="sm" disabled={occupato} onClick={() => void ricalcola()} title="Rilancia il riconoscimento di oggi su tutte le righe. Le scelte a mano non cambiano.">
               Ricalcola col motore di oggi
             </Button>
             <Button size="sm" disabled={occupato || nSpuntate === 0} onClick={() => void applica()}>
               {nSpuntate === 0 ? "Applica alle righe spuntate" : `Applica a ${nSpuntate} righe`}
             </Button>
+            </>)}
           </>
         }
       />
@@ -177,13 +181,15 @@ export default function ControlloClassificazionePage() {
             <table className="w-full text-[13px]">
               <thead className="border-b text-left text-muted-foreground">
                 <tr>
-                  <th className="w-10 px-3 py-2">
-                    <Checkbox
-                      aria-label="Spunta tutte le proposte"
-                      checked={tutteSpuntate}
-                      onCheckedChange={(v) => setSpuntate(v === true ? new Set(inBlocco.map(chiave)) : new Set())}
-                    />
-                  </th>
+                  {admin && (
+                    <th className="w-10 px-3 py-2">
+                      <Checkbox
+                        aria-label="Spunta tutte le proposte"
+                        checked={tutteSpuntate}
+                        onCheckedChange={(v) => setSpuntate(v === true ? new Set(inBlocco.map(chiave)) : new Set())}
+                      />
+                    </th>
+                  )}
                   <th className="px-3 py-2 font-medium">Indirizzo</th>
                   <th className="px-3 py-2 font-medium">Nome</th>
                   <th className="px-3 py-2 font-medium">Produttore</th>
@@ -196,11 +202,13 @@ export default function ControlloClassificazionePage() {
               <tbody>
                 {visibili.map((v) => (
                   <tr key={chiave(v)} className="border-b last:border-0 hover:bg-muted/40">
-                    <td className="px-3 py-1.5">
-                      {v.rilievo.proposta !== null && (
-                        <Checkbox aria-label={`Spunta ${v.ip}`} checked={spuntate.has(chiave(v))} onCheckedChange={(s) => spunta(v, s === true)} />
-                      )}
-                    </td>
+                    {admin && (
+                      <td className="px-3 py-1.5">
+                        {v.rilievo.proposta !== null && (
+                          <Checkbox aria-label={`Spunta ${v.ip}`} checked={spuntate.has(chiave(v))} onCheckedChange={(s) => spunta(v, s === true)} />
+                        )}
+                      </td>
+                    )}
                     <td className="whitespace-nowrap px-3 py-1.5 font-mono">
                       <Link className="underline-offset-2 hover:underline" href={`/hosts/${v.host_id}`}>{v.ip}</Link>
                     </td>

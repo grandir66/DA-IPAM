@@ -62,6 +62,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
+import { SoloAdmin } from "@/components/shared/solo-admin";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import { PRODUCT_PROFILE_LABELS, type ProductProfileId } from "@/lib/device-product-profiles";
 import type { NetworkDevice, Host } from "@/types";
@@ -656,6 +657,7 @@ export default function DevicesUnifiedPage() {
                             );
                           }
                           return (
+                            <SoloAdmin altrimenti={<span className="text-xs text-muted-foreground">—</span>}>
                             <Button
                               variant="outline"
                               size="sm"
@@ -672,6 +674,7 @@ export default function DevicesUnifiedPage() {
                               {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
                               Aggiungi
                             </Button>
+                            </SoloAdmin>
                           );
                         })()}
                       </TableCell>
@@ -687,6 +690,7 @@ export default function DevicesUnifiedPage() {
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                           {item.source === "device" && (
+                            <SoloAdmin>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -696,6 +700,7 @@ export default function DevicesUnifiedPage() {
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
+                            </SoloAdmin>
                           )}
                         </div>
                       </TableCell>

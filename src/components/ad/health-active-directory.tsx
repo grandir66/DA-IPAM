@@ -489,10 +489,13 @@ export function HealthActiveDirectory({ integrazione }: { integrazione: Integraz
         dettagli={dettagliBarra}
         azioni={
           <>
-            <Button onClick={esegui} disabled={inEsecuzione || !integrazione?.enabled} title={integrazione?.enabled ? undefined : "L'integrazione con il dominio è spenta"}>
-              {inEsecuzione ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
-              Esegui healthcheck
-            </Button>
+            {/* Esegue e registra un'analisi nuova (POST): solo amministratori (26/11/2026). */}
+            {eAdmin && (
+              <Button onClick={esegui} disabled={inEsecuzione || !integrazione?.enabled} title={integrazione?.enabled ? undefined : "L'integrazione con il dominio è spenta"}>
+                {inEsecuzione ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
+                Esegui healthcheck
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => run?.id && window.open(`/api/ad/healthcheck/export?runId=${run.id}`, "_blank")}
@@ -522,7 +525,7 @@ export function HealthActiveDirectory({ integrazione }: { integrazione: Integraz
       ) : !score ? (
         <Vuoto
           titolo="Nessun healthcheck eseguito su questo dominio"
-          testo="«Esegui healthcheck» legge il dominio in sola lettura via LDAP e impiega circa due minuti."
+          testo={eAdmin ? "«Esegui healthcheck» legge il dominio in sola lettura via LDAP e impiega circa due minuti." : "Lo esegue un amministratore: legge il dominio in sola lettura via LDAP."}
         />
       ) : (
         <>

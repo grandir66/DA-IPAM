@@ -390,6 +390,7 @@ export default function InventoryPage() {
               Elenco asset
             </CardTitle>
             <div className="flex flex-wrap gap-2">
+              {eAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -409,6 +410,7 @@ export default function InventoryPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
               <Button variant="outline" size="icon" onClick={handleExport} disabled={!eAdmin} title={!eAdmin ? "Le esportazioni le scarica solo un amministratore" : isNis2View ? "Esporta CSV NIS2" : "Esporta CSV ITAM"}>
                 <Download className="h-4 w-4" />
               </Button>
@@ -463,7 +465,7 @@ export default function InventoryPage() {
         </CardHeader>
         <CardContent className="p-0">
           {/* ── Barra selezione ── */}
-          {selectedIds.size > 0 && (
+          {eAdmin && selectedIds.size > 0 && (
             <div className="flex items-center gap-3 px-4 py-2 bg-primary/5 border-b">
               <span className="text-sm font-medium">
                 {selectedIds.size} asset selezionat{selectedIds.size === 1 ? "o" : "i"}
@@ -503,12 +505,14 @@ export default function InventoryPage() {
               <Table fissa>
                 <TableHeader>
                   <TableRow>
+                    {eAdmin && (
                     <TableHead className="w-10">
                       <Checkbox
                         checked={visibleAssets.length > 0 && selectedIds.size === visibleAssets.length}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
+                    )}
                     {isNis2View ? (
                       <>
                         <TableHead>Asset Tag</TableHead>
@@ -537,12 +541,14 @@ export default function InventoryPage() {
                 <TableBody>
                   {visibleAssets.map((a) => (
                     <TableRow key={a.id} className={selectedIds.has(a.id) ? "bg-primary/5" : undefined}>
+                      {eAdmin && (
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.has(a.id)}
                           onCheckedChange={() => toggleSelect(a.id)}
                         />
                       </TableCell>
+                      )}
                       {isNis2View ? (
                         <>
                           <TableCell className="font-medium">{a.asset_tag ?? "—"}</TableCell>

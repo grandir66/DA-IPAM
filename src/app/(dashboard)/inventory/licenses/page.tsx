@@ -3,6 +3,7 @@ import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,8 @@ import { toast } from "sonner";
 import type { License } from "@/types";
 
 export default function LicensesPage() {
+  // Sola lettura (26/11/2026): Nuova, matita e cestino solo all'amministratore; il server li rifiuta già.
+  const admin = useEAdmin();
   const [licenses, setLicenses] = useState<(License & { used_seats?: number; free_seats?: number })[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -144,17 +147,19 @@ export default function LicensesPage() {
             <p className="text-muted-foreground text-sm">Gestione licenze e assegnazioni a asset</p>
           </div>
         </div>
+        {admin && (
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
           Nuova licenza
         </Button>
+        )}
       </div>
 
       <Card>
         <CardHeader><CardTitle>Elenco ({licenses.length})</CardTitle></CardHeader>
         <CardContent>
           {licenses.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center">Nessuna licenza. Clicca &quot;Nuova licenza&quot; per aggiungerne.</p>
+            <p className="text-muted-foreground py-8 text-center">{admin ? <>Nessuna licenza. Clicca &quot;Nuova licenza&quot; per aggiungerne.</> : "Nessuna licenza."}</p>
           ) : (
             <Table fissa>
               <TableHeader>
@@ -163,7 +168,7 @@ export default function LicensesPage() {
                   <TableHead>Categoria</TableHead>
                   <TableHead>Posti</TableHead>
                   <TableHead>Scadenza</TableHead>
-                  <TableHead className="w-24"></TableHead>
+                  {admin && <TableHead className="w-24"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -180,12 +185,14 @@ export default function LicensesPage() {
                     <TableCell className="text-muted-foreground">
                       {l.expiration_date ? parseDbDate(l.expiration_date).toLocaleDateString("it-IT") : "—"}
                     </TableCell>
+                    {admin && (
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(l)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDelete(l.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

@@ -110,6 +110,7 @@ import {
   type HostActionOperation,
 } from "@/components/patch/host-action-modal";
 import { PinFixDialog } from "@/components/patch/pin-fix-dialog";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 // ─── tipi ────────────────────────────────────────────────────────────────
 interface DeviceCve {
@@ -343,6 +344,9 @@ function CveCountInline({
 
 // ─── pagina ──────────────────────────────────────────────────────────────
 export default function DeviceDetailPage() {
+  // Sola lettura (26/11/2026): probe, bootstrap, installazioni, patch, disinstalla e pin solo all'amministratore;
+  // il server li rifiuta già. Restano «Aggiorna» (GET), filtri e il collegamento all'host.
+  const admin = useEAdmin();
   const params = useParams<{ hostId: string }>();
   const hostIdRaw = params?.hostId ?? "";
   const hostId = useMemo(() => Number(hostIdRaw), [hostIdRaw]);
@@ -1040,6 +1044,8 @@ export default function DeviceDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="flex flex-wrap items-center gap-2">
+              {admin && (
+              <>
               <Button
                 variant="outline"
                 size="sm"
@@ -1144,6 +1150,8 @@ export default function DeviceDetailPage() {
                 )}
                 GLPI Agent (choco)
               </Button>
+              </>
+              )}
               {detail && (
                 <a
                   href={`/hosts/${detail.hostId}`}
@@ -1193,10 +1201,12 @@ export default function DeviceDetailPage() {
                 Solo con CVE
               </label>
 
+              {admin && (
               <div className="ml-auto text-sm text-muted-foreground">
                 {selected.size} selezionati di {filteredSoftware.length} • max{" "}
                 {MAX_SELECTION}
               </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1209,11 +1219,13 @@ export default function DeviceDetailPage() {
                 <Package className="h-4 w-4" />
                 Software installati ({filteredSoftware.length})
               </CardTitle>
+              {admin && (
               <CardDescription>
                 Solo software con CVE patchabili (Chocolatey id presente) può
                 essere selezionato per il batch. Per software senza fix:
                 &quot;Pin manuale&quot; in colonna azioni.
               </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="px-0">
               {loading ? (
@@ -1233,6 +1245,7 @@ export default function DeviceDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {admin && (
                       <TableHead className="w-10">
                         <Checkbox
                           checked={allSelectableSelected}
@@ -1241,12 +1254,13 @@ export default function DeviceDetailPage() {
                           disabled={selectableInFiltered.length === 0}
                         />
                       </TableHead>
+                      )}
                       <TableHead>Software</TableHead>
                       <TableHead className="w-24">Versione</TableHead>
                       <TableHead className="w-40">Publisher</TableHead>
                       <TableHead className="w-56">CVE</TableHead>
                       <TableHead className="w-40">Choco</TableHead>
-                      <TableHead className="w-28 text-right">Azioni</TableHead>
+                      {admin && <TableHead className="w-28 text-right">Azioni</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1261,6 +1275,7 @@ export default function DeviceDetailPage() {
                             isSelected ? "bg-muted/40" : "hover:bg-muted/30"
                           }
                         >
+                          {admin && (
                           <TableCell>
                             {checkboxDisabled ? (
                               <Tooltip>
@@ -1293,6 +1308,7 @@ export default function DeviceDetailPage() {
                               />
                             )}
                           </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             <div className="flex flex-col gap-0.5">
                               <span title={sw.name}>{sw.name}</span>
@@ -1330,7 +1346,7 @@ export default function DeviceDetailPage() {
                                   ? `${sw.chocoId.slice(0, 16)}…`
                                   : sw.chocoId}
                               </Badge>
-                            ) : sw.cves.length > 0 ? (
+                            ) : admin && sw.cves.length > 0 ? (
                               <Button
                                 variant="outline"
                                 size="xs"
@@ -1345,6 +1361,7 @@ export default function DeviceDetailPage() {
                               </span>
                             )}
                           </TableCell>
+                          {admin && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               {sw.patchable && sw.chocoId && (
@@ -1398,6 +1415,7 @@ export default function DeviceDetailPage() {
                               </Tooltip>
                             </div>
                           </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
@@ -1409,7 +1427,7 @@ export default function DeviceDetailPage() {
         )}
 
         {/* Bottone bulk sticky */}
-        {!moduleMissing && !notFound && detail && filteredSoftware.length > 0 && (
+        {admin && !moduleMissing && !notFound && detail && filteredSoftware.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur py-3 border-t">
             <div className="text-sm text-muted-foreground mr-auto">
               {selected.size > 0

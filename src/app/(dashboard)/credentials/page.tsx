@@ -213,10 +213,12 @@ export default function CredentialsPage() {
             <CardTitle>Elenco credenziali</CardTitle>
             <CardDescription>Una voce in uso non si elimina e non cambia tipo: «Usata da» dice dove serve.</CardDescription>
           </div>
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nuova credenziale
-          </Button>
+          {eAdmin && (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuova credenziale
+            </Button>
+          )}
           <CredentialFormDialog
             open={dialogOpen}
             onOpenChange={setDialogOpen}
@@ -267,7 +269,7 @@ export default function CredentialsPage() {
           ) : caricamento.fase === "errore" ? (
             <LoadError what="le credenziali" message={caricamento.messaggio} onRetry={() => void fetchCredentials()} />
           ) : credentials.length === 0 ? (
-            <p className="text-muted-foreground">Nessuna credenziale. Clicca &quot;Nuova credenziale&quot; per aggiungerne una.</p>
+            <p className="text-muted-foreground">Nessuna credenziale.{eAdmin && <> Clicca &quot;Nuova credenziale&quot; per aggiungerne una.</>}</p>
           ) : (
             <Table fissa>
               <TableHeader>
@@ -277,7 +279,7 @@ export default function CredentialsPage() {
                   <TableHead>Username</TableHead>
                   <TableHead>Porta</TableHead>
                   <TableHead>Usata da</TableHead>
-                  <TableHead className="w-[100px]">Azioni</TableHead>
+                  {eAdmin && <TableHead className="w-[100px]">Azioni</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -304,9 +306,9 @@ export default function CredentialsPage() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    {eAdmin && <TableCell>
                       <div className="flex gap-2">
-                        {eAdmin && c.credential_type === "windows" && (
+                        {c.credential_type === "windows" && (
                           <Button
                             variant={voceDiritti?.id === c.id ? "secondary" : "ghost"}
                             size="sm"
@@ -340,7 +342,7 @@ export default function CredentialsPage() {
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
-                    </TableCell>
+                    </TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
@@ -375,6 +377,7 @@ export default function CredentialsPage() {
                   usi={finestraUsi.usi}
                   totale={finestraUsi.totale}
                   eliminando={eliminando}
+                  puoEliminare={eAdmin}
                   onElimina={() => void elimina(finestraUsi.voce)}
                 />
               )}
@@ -394,28 +397,32 @@ function ElencoUsi({
   usi,
   totale,
   eliminando,
+  puoEliminare,
   onElimina,
 }: {
   usi: UsiCredenziale;
   totale: number;
   eliminando: boolean;
+  puoEliminare: boolean;
   onElimina: () => void;
 }) {
   if (totale === 0) {
     return (
       <div className="space-y-4">
-        <p className="text-sm">Non è più in uso: si può eliminare.</p>
+        <p className="text-sm">{puoEliminare ? "Non è più in uso: si può eliminare." : "Non è più in uso."}</p>
         {usi.scansioniSoftware > 0 && (
           <p className="text-[13px] text-muted-foreground">
             È servita a {usi.scansioniSoftware} {usi.scansioniSoftware === 1 ? "scansione software passata" : "scansioni software passate"}: la storia resta, senza la credenziale.
           </p>
         )}
-        <div className="flex justify-end">
-          <Button variant="destructive" onClick={onElimina} disabled={eliminando}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Elimina
-          </Button>
-        </div>
+        {puoEliminare && (
+          <div className="flex justify-end">
+            <Button variant="destructive" onClick={onElimina} disabled={eliminando}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Elimina
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

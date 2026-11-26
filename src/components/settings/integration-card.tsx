@@ -24,6 +24,7 @@ import {
 } from "@/lib/integrations/scheda-integrazione";
 import { CONFERMA_CONVERSIONE_LIBRENMS } from "@/lib/integrations/librenms-modo";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
@@ -45,6 +46,8 @@ interface ApiState {
 }
 
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
+  // Chi è in sola lettura legge la configurazione ma non la cambia (26/11/2026).
+  const admin = useEAdmin();
   const perBrowser = useUrlPerBrowser();
   const [state, setState] = useState<ApiState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -349,11 +352,14 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Campi: chi è in sola lettura li vede ma non li modifica (il server rifiuta comunque). */}
+        <fieldset disabled={!admin} className="contents">
         {/* Modalità */}
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label className="text-xs text-muted-foreground">Modalità</Label>
             <Select
+              disabled={!admin}
               value={localConfig.mode}
               items={voci.map((v) => ({ value: v.value, label: v.label }))}
               onValueChange={(v) => setLocalConfig((c) => ({ ...c, mode: v as IntegrationMode }))}
@@ -508,6 +514,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             )}
           </>
         )}
+        </fieldset>
 
         {/* Ricaricamento fallito con dati vecchi a schermo: lo si dice. */}
         {loadError && state && (
@@ -526,7 +533,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
         )}
 
         {/* Passo 5: LibreNMS è solo locale; una riga «external» si converte solo da qui. */}
-        {proponiConversione && (
+        {proponiConversione && admin && (
           <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-300 space-y-2">
             <p>
               Questa configurazione è «Istanza esterna», una modalità che per LibreNMS non si
@@ -588,10 +595,12 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
         {/* Azioni */}
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-            Salva
-          </Button>
+          {admin && (
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Salva
+            </Button>
+          )}
 
           {!isDisabled && (
             <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}>
@@ -600,7 +609,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </Button>
           )}
 
-          {isManaged && containerRunning && (
+          {/* Log, installazione, avvio/arresto, rimozione e sincronizzazione: solo amministratori (il server li rifiuta agli altri). */}
+          {admin && isManaged && containerRunning && (
             <>
               <Button size="sm" variant="outline" onClick={() => handleShowLogs("docker")} disabled={loadingLogs}>
                 {loadingLogs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Terminal className="h-3.5 w-3.5 mr-1" />}
@@ -615,7 +625,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </>
           )}
 
-          {vista.mostraInstalla && (
+          {admin && vista.mostraInstalla && (
             <Button size="sm" variant="outline" onClick={handleInstall}>
               Installa / Reinstalla
             </Button>
@@ -628,7 +638,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </Button>
           )}
 
-          {isManaged && containerRunning && (
+          {admin && isManaged && containerRunning && (
             <>
               <Button size="sm" variant="outline" onClick={() => handleAction("stop")}>
                 <Square className="h-3.5 w-3.5 mr-1" />
@@ -641,14 +651,14 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </>
           )}
 
-          {isManaged && !containerRunning && state?.containerStatus !== null && !installing && (
+          {admin && isManaged && !containerRunning && state?.containerStatus !== null && !installing && (
             <Button size="sm" variant="outline" onClick={() => handleAction("start")}>
               <Play className="h-3.5 w-3.5 mr-1" />
               Avvia
             </Button>
           )}
 
-          {isManaged && !installing && (
+          {admin && isManaged && !installing && (
             <>
               {state?.containerStatus !== null && (
                 <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-500" onClick={() => handleAction("remove")}>
@@ -663,7 +673,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </>
           )}
 
-          {showSyncButton && !isDisabled && (
+          {admin && showSyncButton && !isDisabled && (
             <Button size="sm" variant="outline" onClick={handleSyncInventory} disabled={syncing}>
               {syncing
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />

@@ -778,9 +778,10 @@ export function NetworkDetailClient({
                 Copia il valore
               </ContextMenuItem>
             )}
-            <ContextMenuSeparator />
+            {eAdmin && <ContextMenuSeparator />}
           </>
         )}
+        {eAdmin && (<>
         <ContextMenuItem onClick={() => { selezionaPerMenu(host); setCategoriaOpen(true); }}>
           <Tag className="h-3.5 w-3.5" />
           {n > 1 ? `Categoria ai ${n} selezionati…` : "Categoria…"}
@@ -802,6 +803,7 @@ export function NetworkDetailClient({
           <Trash2 className="h-3.5 w-3.5" />
           {n > 1 ? `Elimina ${n}…` : "Elimina…"}
         </ContextMenuItem>
+        </>)}
       </>
     );
   }
@@ -1298,10 +1300,12 @@ export function NetworkDetailClient({
               CSV
             </Button>
             <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (open) void refreshCredentialsList(); }}>
-              <DialogTrigger render={<Button variant="outline" size="sm" />}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Modifica
-              </DialogTrigger>
+              {eAdmin && (
+                <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Modifica
+                </DialogTrigger>
+              )}
               <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
                 <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
                   <DialogTitle>Modifica Rete</DialogTitle>
@@ -1392,6 +1396,7 @@ export function NetworkDetailClient({
             gli host selezionati — e le ore dell'ultima esecuzione stanno nei menu. */}
         <div className="space-y-2">
           <div className="rounded-lg border bg-card p-1.5 flex flex-wrap items-center gap-1.5">
+            {eAdmin && (<>
             <Button
               size="default"
               variant="default"
@@ -1517,6 +1522,7 @@ export function NetworkDetailClient({
               <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
               {hostScope ? `Accedi a ${selectedHostIds.size} host` : "Accesso agli host"}
             </Button>
+            </>)}
 
             {/* Un modo solo per la classificazione (Riccardo, 12/11/2026): il pulsante apre la pagina «Attribuzione»
                 ristretta a questa rete; le righe con fonti in disaccordo si aprono da lì. */}
@@ -1541,9 +1547,9 @@ export function NetworkDetailClient({
             <SubnetScheduleCard networkId={network.id} />
 
             {/* VA Scan a parte: scansione invasiva dall'edge, con la sua pianificazione */}
-            <div>
+            {eAdmin && <div>
               <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
-            </div>
+            </div>}
             {/* Una barra sola divisa in aree (13/11/2026): a sinistra le azioni sulla rete, a destra filtri, conteggio e
                 cambio di vista. Prima stavano su una riga loro, sotto. */}
             <div className="ml-auto flex min-w-0 items-center gap-2 border-l pl-3">
@@ -1587,7 +1593,7 @@ export function NetworkDetailClient({
                   <option key={o.value} value={o.value}>{o.value === 0 ? "Aggiorna: mai" : `Aggiorna: ${o.label}`}</option>
                 ))}
               </select>
-              {autoRefreshInterval > 0 && (
+              {eAdmin && autoRefreshInterval > 0 && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Switch id="auto-scan" checked={autoScanPing} onCheckedChange={setAutoScanPing} />
                   <Label htmlFor="auto-scan" className="text-[13px] font-normal text-muted-foreground">Scoperta periodica</Label>
@@ -1650,7 +1656,7 @@ export function NetworkDetailClient({
               )}
             </div>
 
-            {view === "list" && selectedHostIds.size > 0 && (
+            {eAdmin && view === "list" && selectedHostIds.size > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/50 bg-primary/5 px-2 py-1.5">
                 <span className="mr-1 text-[13px] font-semibold tabular-nums">{selectedHostIds.size} righe spuntate</span>
                     <Button
@@ -1830,7 +1836,7 @@ export function NetworkDetailClient({
             <CardTitle className="text-sm">Mappa degli Indirizzi IP</CardTitle>
           </CardHeader>
           <CardContent className="overflow-visible p-3">
-            <IpGrid cidr={network.cidr} hosts={hosts} gateway={network.gateway} onCategoria={categoriaDallaGriglia} onAutomatica={automaticaDallaGriglia} />
+            <IpGrid cidr={network.cidr} hosts={hosts} gateway={network.gateway} onCategoria={eAdmin ? categoriaDallaGriglia : undefined} onAutomatica={eAdmin ? automaticaDallaGriglia : undefined} />
             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-success inline-block" /> Online</span>
               <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-destructive inline-block" /> Offline</span>
@@ -1895,13 +1901,15 @@ export function NetworkDetailClient({
           <Table fissa>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={displayHosts.length > 0 && selectedHostIds.size === displayHosts.length}
-                    onCheckedChange={toggleSelectAllHosts}
-                    aria-label="Seleziona tutti"
-                  />
-                </TableHead>
+                {eAdmin && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={displayHosts.length > 0 && selectedHostIds.size === displayHosts.length}
+                      onCheckedChange={toggleSelectAllHosts}
+                      aria-label="Seleziona tutti"
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="w-12 text-center" title="Apri scheda host">Dettagli</TableHead>
                 <SortableTableHead columnId="ip" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
                   IP
@@ -1943,9 +1951,9 @@ export function NetworkDetailClient({
             <ContextMenuTrigger render={<TableBody />}>
               {displayHosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={18} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={eAdmin ? 18 : 17} className="text-center text-muted-foreground py-8">
                     {hosts.length === 0
-                      ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi."
+                      ? (eAdmin ? "Nessun host trovato. Avvia una scansione per scoprire i dispositivi." : "Nessun host trovato.")
                       : "Nessun host corrisponde ai filtri."}
                   </TableCell>
                 </TableRow>
@@ -1962,13 +1970,15 @@ export function NetworkDetailClient({
                       setCassettoId(host.id);
                     }}
                   >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedHostIds.has(host.id)}
-                        onCheckedChange={() => toggleSelectHost(host.id)}
-                        aria-label={`Seleziona ${host.ip}`}
-                      />
-                    </TableCell>
+                    {eAdmin && (
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedHostIds.has(host.id)}
+                          onCheckedChange={() => toggleSelectHost(host.id)}
+                          aria-label={`Seleziona ${host.ip}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell onClick={(e) => e.stopPropagation()} className="text-center">
                       <Button
                         variant="ghost"
@@ -2006,6 +2016,7 @@ export function NetworkDetailClient({
                       <Switch
                         checked={!!host.known_host}
                         onCheckedChange={(v) => saveHostField(host.id, "known_host", v ? 1 : 0)}
+                        disabled={!eAdmin}
                         title="Host conosciuto: monitoraggio continuo"
                       />
                     </TableCell>
@@ -2031,7 +2042,7 @@ export function NetworkDetailClient({
                     </TableCell>
                     <TableCell
                       className="min-w-[120px] cursor-text"
-                      onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("input")) { setEditingHostId(host.id); setEditingField("custom_name"); } }}
+                      onClick={(e) => { e.stopPropagation(); if (eAdmin && !(e.target as HTMLElement).closest("input")) { setEditingHostId(host.id); setEditingField("custom_name"); } }}
                     >
                       {editingHostId === host.id && editingField === "custom_name" ? (
                         <Input
@@ -2064,7 +2075,7 @@ export function NetworkDetailClient({
                         const det = parseDetectedDeviceFromDetectionJson(host.detection_json);
                         return det ? `Scegli la categoria · impronta delle porte: ${det.label}${det.confidence != null ? ` (${Math.round(det.confidence * 100)}%)` : ""}` : "Scegli la categoria";
                       })()}
-                      onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
+                      onClick={(e) => { e.stopPropagation(); if (eAdmin && !(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
                     >
                       {editingHostId === host.id && editingField === "classification" ? (
                         <Popover open onOpenChange={(open) => { if (!open) { setEditingHostId(null); setEditingField(null); } }}>
@@ -2185,7 +2196,7 @@ export function NetworkDetailClient({
                     <TableCell className="text-sm">{host.vendor || "—"}</TableCell>
                     <TableCell
                       className="min-w-[120px] max-w-[180px] cursor-text"
-                      onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("input, textarea")) { setEditingHostId(host.id); setEditingField("notes"); } }}
+                      onClick={(e) => { e.stopPropagation(); if (eAdmin && !(e.target as HTMLElement).closest("input, textarea")) { setEditingHostId(host.id); setEditingField("notes"); } }}
                     >
                       {editingHostId === host.id && editingField === "notes" ? (
                         <Input

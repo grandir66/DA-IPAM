@@ -78,6 +78,7 @@ import {
   type HostActionOperation,
 } from "@/components/patch/host-action-modal";
 import { PinFixDialog } from "@/components/patch/pin-fix-dialog";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface CveMatch {
   softwareId: number;
@@ -233,6 +234,9 @@ function WinrmCell({ host }: { host: VulnHost }) {
 }
 
 export default function CveDetailPage() {
+  // Sola lettura (26/11/2026): matching, pin, selezione host e azioni bulk solo all'amministratore;
+  // il server le rifiuta già. Restano «Aggiorna» e i collegamenti agli host.
+  const admin = useEAdmin();
   const params = useParams<{ cveId: string }>();
   const cveIdRaw = params?.cveId ?? "";
   const cveId = useMemo(() => decodeURIComponent(cveIdRaw), [cveIdRaw]);
@@ -708,8 +712,8 @@ export default function CveDetailPage() {
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground mt-1">
-                        Nessun fix automatico associato. Usa &quot;Triggera
-                        matching&quot; o &quot;Pin manuale&quot;.
+                        Nessun fix automatico associato.
+                        {admin && <> Usa &quot;Triggera matching&quot; o &quot;Pin manuale&quot;.</>}
                       </p>
                     )}
                   </div>
@@ -720,7 +724,7 @@ export default function CveDetailPage() {
         )}
 
         {/* Toolbar azioni globali */}
-        {!moduleMissing && (
+        {admin && !moduleMissing && (
           <Card>
             <CardContent className="py-4 flex flex-wrap items-center gap-3">
               <Button
@@ -761,8 +765,8 @@ export default function CveDetailPage() {
                 Host vulnerabili ({hosts.length})
               </CardTitle>
               <CardDescription>
-                Solo host Windows con software inventory popolato. Checkbox
-                disabilitata se WinRM non è configurato.
+                Solo host Windows con software inventory popolato.
+                {admin && " Checkbox disabilitata se WinRM non è configurato."}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0">
@@ -781,6 +785,7 @@ export default function CveDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {admin && (
                       <TableHead className="w-10">
                         <Checkbox
                           checked={allSelectableSelected}
@@ -789,6 +794,7 @@ export default function CveDetailPage() {
                           disabled={selectableHosts.length === 0}
                         />
                       </TableHead>
+                      )}
                       <TableHead>Hostname</TableHead>
                       <TableHead className="w-36">IP</TableHead>
                       <TableHead>OS</TableHead>
@@ -811,6 +817,7 @@ export default function CveDetailPage() {
                             isSelected ? "bg-muted/40" : "hover:bg-muted/30"
                           }
                         >
+                          {admin && (
                           <TableCell>
                             {checkboxDisabled ? (
                               <Tooltip>
@@ -839,6 +846,7 @@ export default function CveDetailPage() {
                               />
                             )}
                           </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             <Link
                               href={`/hosts/${h.hostId}`}
@@ -888,7 +896,7 @@ export default function CveDetailPage() {
         )}
 
         {/* Bottoni azione bulk */}
-        {!moduleMissing && hosts.length > 0 && (
+        {admin && !moduleMissing && hosts.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur py-3 border-t">
             <Button
               variant="outline"

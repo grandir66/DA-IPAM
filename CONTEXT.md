@@ -94,6 +94,8 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 - Ogni installazione nasce col filtro spento e lo accende una persona; la seconda verifica resta facoltativa;
   il blocco di un indirizzo lo decide una persona (decisioni di Riccardo, piano §9).
 
+- **Manuale per pagina (26/11)**: il «?» in alto a destra di ogni pagina (`components/shared/pulsante-manuale.tsx`, messo dal guscio) apre `docs/manuale/pagine/<nome>.md`, letto da disco a ogni apertura; `/manual` si apre su `docs/manuale/INDICE.md`, il manuale unico è in `docs/archivio/`. **Chi cambia una pagina riscrive la sua guida** e rifà le schermate con `node scripts/manuale/schermate.cjs <nome>` (IPAM 192.168.4.8 in sola lettura, IP/MAC/email/nomi PC finti; colonne con persone o debolezze in `nascondi`; /protezione senza schermate). `copertura.test.ts` fallisce se una pagina nuova non ha guida. Le àncore `{#parte}` seguono `useParteGuida` e `?tab=`.
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile); ogni modifica: `git add <file>` → `npm run version:release -- --staged-only` → `git pull --rebase origin dev` → `git push origin HEAD:dev`. **Un push di codice su `dev` è un rilascio**: hub 533 e DTS (71734) lo prendono entro 15 minuti (`da-ipam-update.timer`). Un commit di soli `.md` non riavvia.

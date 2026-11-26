@@ -34,6 +34,11 @@
 # - Restringe soltanto: un accept di questa catena non scavalca le altre tabelle. NetBird (`wt0`)
 #   passa e lo governa `inet dalink`; Docker, `lo`, le connessioni già aperte, ICMP e DHCP passano;
 #   si tocca solo ciò che è diretto a questa macchina (`fib daddr type local`). Le uscite non si filtrano.
+# - Si guardano solo i TENTATIVI DI APRIRE una connessione: un pacchetto TCP che non è un SYN, o un UDP verso una
+#   porta alta, passa. Sono le risposte alle scansioni a pacchetti grezzi che partono da questa macchina (nmap -sS,
+#   naabu): il conntrack non le conosce, e il 26/11 sull'hub sono finite a migliaia fra chi «resterebbe fuori»
+#   (256 indirizzi su ognuna di quattro porte alte). Lo scanner le legge comunque prima del filtro: non erano un
+#   danno per la scansione, erano rumore nell'elenco e nei contatori.
 # - Le porte dei gruppi stanno qui nel codice, non in configurazione. Una porta diretta alla macchina
 #   che non è in nessun gruppo, a filtro chiuso, non risponde (chiuso di serie).
 # - Chi resta fuori finisce nei set `fuori4`/`fuori6` (indirizzo e porta, 7 giorni): in «osserva»
@@ -230,7 +235,9 @@ genera_ruleset() {
 		udp dport { 68, 546 } accept
 		udp dport 51820 accept
 		ip saddr @sempre4 accept
-		ip6 saddr @sempre6 accept${riga_esche:+
+		ip6 saddr @sempre6 accept
+		tcp flags & (fin | syn | rst | ack) != syn accept
+		udp dport >= 32768 accept${riga_esche:+
 		$riga_esche}
 		tcp dport { $PORTE_WEB } jump g_web
 		tcp dport { $PORTE_SSH } jump g_ssh

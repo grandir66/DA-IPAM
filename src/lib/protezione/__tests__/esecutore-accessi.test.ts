@@ -73,6 +73,23 @@ test("la catena sta sul prerouting prima del DNAT di Docker e prima di inet dali
   assert.doesNotMatch(out, /notrack|hook (input|forward|output)/);
 });
 
+test("si guardano solo i tentativi di aprire una connessione: le risposte alle nostre scansioni non sono «chi resta fuori»", () => {
+  // Hub, 26/11/2026: a filtro acceso, 19.000 pacchetti contati sulle «altre porte» e 256 indirizzi su ognuna di
+  // quattro porte alte fra i visti. Erano i SYN-ACK e i RST di risposta alle scansioni a pacchetti grezzi.
+  for (const args of [["anteprima"], ["anteprima", "osserva"], ["minima"]]) {
+    const righe = catena(lancia(scriviPolitica(POLITICA), args).out, "ingresso").split("\n").map((x) => x.trim());
+    const i = (inizio: string) => righe.findIndex((x) => x.startsWith(inizio));
+    const nonSyn = i("tcp flags & (fin | syn | rst | ack) != syn accept");
+    const udpAlto = i("udp dport >= 32768 accept");
+    assert.ok(nonSyn > 0 && udpAlto > 0, args.join(" "));
+    // Prima di ogni gruppo e delle «altre porte», dopo i salvagente.
+    for (const dopo of ["tcp dport { 80, 443 } jump g_web", "tcp dport { 22 } jump g_ssh", "meta l4proto { tcp, udp } jump g_altre"]) assert.ok(nonSyn < i(dopo) && udpAlto < i(dopo), dopo);
+    assert.ok(i("ct state established,related accept") < nonSyn);
+  }
+  // Le porte UDP dei moduli stanno tutte sotto la soglia: non vengono aperte da questa regola.
+  for (const g of GRUPPI) for (const p of PORTE_GRUPPO[g].udp) assert.ok(p < 32768, `udp ${p}`);
+});
+
 test("acceso scarta chi è fuori dall'elenco; osserva non scarta mai niente; minima lascia solo i sempre ammessi", () => {
   const acceso = lancia(scriviPolitica(POLITICA)).out;
   assert.match(catena(acceso, "g_web"), /ip saddr @web4 accept[\s\S]*update @fuori4[\s\S]*counter drop$/);

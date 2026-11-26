@@ -80,6 +80,8 @@ export const HostDelCentro = z.object({
     .catch({ complessiva: "non_so", interfacce: [] }),
   /** Assente = non affidabile: un «sì» del proxy fermo è la fotografia di prima (§6). */
   dati_affidabili: z.boolean().catch(false),
+  /** Disabilitato in Zabbix (26/11/2026). Il centro li dà solo a chi chiede `sospesi=1`. */
+  sospeso: z.boolean().catch(false),
 });
 export type HostDelCentro = z.infer<typeof HostDelCentro>;
 

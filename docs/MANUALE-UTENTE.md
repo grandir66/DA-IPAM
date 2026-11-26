@@ -1033,6 +1033,41 @@ Classificazione **manuale** (impostata dall'utente dalla scheda host) prevale su
 
 ---
 
+## 31. Protezione dell'installazione
+
+Sicurezza › **Protezione**, solo per gli amministratori. Serve a chiudere le strade d'accesso alla macchina di
+DA-IPAM a chi non è autorizzato e a sapere chi ci prova. Ogni scheda ha il pulsante **Come si usa**.
+
+| Scheda | A cosa serve |
+| --- | --- |
+| Stato della protezione | Una riga per strato: cosa è a posto, cosa resta debole, quanto è grave, come si rimedia |
+| Porte presentate | Ogni porta su cui la macchina risponde, chi la tiene e chi oggi la raggiunge |
+| Chi può collegarsi | Gli indirizzi ammessi per gruppo di porte, e i gesti sul filtro |
+| Utenti | Chi può entrare, da dove è entrato l'ultima volta, «Solo da» certi indirizzi |
+| Sistemi remoti | Chi ha una connessione aperta con la macchina in questo momento |
+| Moduli e container | Immagini, porte e permessi dei container |
+| Esche | Finti servizi: chi li tocca sta cercando qualcosa che non dovrebbe |
+| Tentativi e blocchi | Chi ha provato a entrare senza riuscirci, e il blocco di un indirizzo |
+
+**Accendere il filtro, in ordine.** (1) In «Chi può collegarsi» premi **Metti in osservazione**: da quel momento
+il filtro conta chi arriva e non scarta nessuno. (2) Dopo qualche giorno guarda «Chi resterebbe fuori» e premi
+**Ammetti in…** su chi deve entrare. (3) **Anteprima** dice cosa cambia e avvisa se resteresti fuori tu.
+(4) **Applica in prova (2 minuti)**: se la pagina risponde ancora premi **Conferma: tieni il filtro acceso**;
+se non confermi tornano da sole le regole di prima. NetBird/DA-Link passa sempre.
+
+**Se resti chiuso fuori.** Dalla console della macchina (Proxmox): `bash /opt/da-ipam/scripts/accessi/da-ipam-accessi.sh spegni`.
+Toglie il filtro; gli elenchi scritti restano.
+
+**Esche.** «Accendi» su quelle che vuoi, poi **Applica**. Le serve un processo a parte senza privilegi; le
+password provate non si conservano, resta solo quanto erano lunghe. Chi le tocca compare in «Tentativi e blocchi».
+
+**Blocco.** In «Tentativi e blocchi»: **Blocca 1 ora** (o 24 ore, 7 giorni) scarta tutto ciò che arriva da
+quell'indirizzo; **Sblocca** lo libera; **Non bloccare mai** è per i nostri scanner e il monitoraggio. Un riavvio
+della macchina libera tutti i bloccati. Non c'è blocco automatico: lo decide una persona.
+
+**Avvisi.** Con le notifiche accese (Impostazioni › Notifiche) parte un avviso quando un indirizzo, in 10 minuti,
+fa 5 login falliti, 5 tentativi SSH, tocca 3 porte chiuse dal filtro o 3 volte le esche.
+
 ## Risorse correlate
 
 - [Stati host e Discovery — deep dive](STATI-HOST-E-DISCOVERY.md)

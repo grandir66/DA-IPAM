@@ -363,3 +363,32 @@ Stima aggiornata: tappa 4 da 3 a 1,5 giornate, tappa 5 da 5 a 5,5 (indirizzo sep
   non a `mangle` secca.
 - Una porta diretta alla macchina fuori da ogni gruppo, a filtro acceso, non risponde (catena «altre»):
   in osserva finisce fra chi «resterebbe fuori», così si vede prima di chiudere.
+
+## 11. Consuntivo al 26/11/2026 (il collaudo è in corso)
+
+**Fatto** (in `dev`, 0.9.1361; laboratorio aggiornato): tappa 0 (ADR 0041); tappa 1, cinque schede in sola lettura;
+tappa 2, esecutore, filtro e «Chi può collegarsi», provati sui pacchetti veri del laboratorio compreso un
+riavvio; tappa 3, registro dei tentativi da pagina, SSH e filtro, con avvisi; tappa 4, «Solo da questi
+indirizzi» per utente; tappa 5, esche e blocco a mano. Tappa 6: hub 533 in osservazione dal 26/11 con politica
+vuota (snapshot `pre-filtro-osserva-20261126` su DA-PX-03), manuale, `CONTEXT.md`, scheda-mappa.
+
+**Mancante**: la settimana di osservazione sull'hub e la sua accensione; la prova dei gesti dalla pagina da
+parte di Riccardo (le schede sono state provate dallo script e sui pacchetti, non a schermo); modifica degli
+elenchi da «Porte presentate»; conferma d'identità prima di «Applica in prova»; chiamate API rifiutate e
+gettoni sbagliati fra i tentativi; registro in sola aggiunta e copia fuori dalla macchina; scheda «Registro
+accessi»; chi può usare terminale e console dei moduli; indirizzo separato per le esche; proposta di isolamento
+della porta dello switch; blocchi che sopravvivono al riavvio; IPv6 e UDP dei moduli provati sui pacchetti;
+controlli di «Stato della protezione» su volume cifrato, backup, segreti nei file, password riusate.
+
+**Scostamenti**: §10. In più: nessun blocco automatico e seconda verifica facoltativa (decisioni di Riccardo);
+la tavola aveva nove schede, ne sono uscite otto («Registro accessi» non fatta, i suoi dati stanno in «Tentativi»
+e nei file di audit). Tempo: sei tappe in due giorni di sessione contro 26 giornate stimate; la stima contava
+verifiche a schermo e una revisione del ramo che non sono state fatte.
+
+**Errori da non ripetere**: pubblicato su `dev` senza compilazione completa (25/11: appliance ferme alla versione
+di prima per un'ora); dichiarato «arrivato» un aggiornamento guardando il commit e non la ripartenza del
+servizio. Lezioni in `~/.claude/lezioni/DA-IPAM.md` e nel `CONTEXT.md`.
+
+**Consigli**: prima di accendere il filtro su un'appliance di un cliente, una settimana di osservazione e
+l'elenco «mai bloccati» con i nostri scanner; una revisione del ramo da parte di un'altra sessione (zona rossa,
+non fatta); decidere l'aggiornamento di Next.js, segnalato come vulnerabile.

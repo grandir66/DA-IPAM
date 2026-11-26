@@ -69,6 +69,31 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 - **Servizi di rete e identità** (`/servizi-rete`): stessa impronta SSH/TLS/engineID o stesso nome NTLM = proposta «stesso apparato», mai fusione automatica. **Matrice** `/segmentazione`: la sonda trunk prova i servizi noti da dentro ogni VLAN (`/raggiungibilita` in DA-Vul-can). Handoff `docs/handoff/2026-11-09-servizi-rete-parti-rimaste.md`.
 - **Installazione «tecnico»** (`DA_PROFILO`, letto solo in `lib/profilo.ts`; piano `plans/2026-11-08-installazione-tecnico.md`): cifratura a disco (LUKS), non DB cifrato. Trappole: un tenant nuovo non ha job fino al riavvio; superadmin con più tenant entra su `__ALL__`; sessione senza tenant → `DEFAULT`; su macOS un processo senza permesso «Rete locale» non apre TCP verso la LAN (per questo è servizio di sistema). Prossimo: freno su Debian con LUKS, Task 6 in Deploy-Appliance.
 
+### Protezione dell'installazione (25-26/11, ADR 0041)
+
+Sezione «Protezione» (Sicurezza › Protezione, solo admin): Stato della protezione, Porte presentate, Chi può
+collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocchi. Piano e scostamenti:
+`docs/superpowers/plans/2026-11-25-sicurezza-accessi-honeypot.md`; stato e cose aperte in `TASKS.md`, sezione del 25/11.
+
+- **Chi applica le regole è `scripts/accessi/da-ipam-accessi.sh`**, non l'app: l'app scrive `/etc/da-ipam/accessi.conf`
+  (e `esche.conf`) e lancia uno dei comandi chiusi. Tre tabelle nftables nostre, tutte sul prerouting:
+  `inet daipam_accessi` (filtro, `mangle + 5`), `inet daipam_blocco` (`mangle + 3`), `inet daipam_esche` (redirect).
+  `inet dalink` (NetBird) resta di DA-Link e non si tocca.
+- **Sblocco dalla console**: `bash /opt/da-ipam/scripts/accessi/da-ipam-accessi.sh spegni` (sull'hub `/opt/da-invent`).
+- **Trappola, Docker**: le porte pubblicate dai container non passano dalla catena INPUT; un filtro lì (o UFW) non le
+  vede. Per questo si filtra sul prerouting prima del DNAT.
+- **Trappola, compilazione**: un file di `src/lib` importato per valore da un componente `"use client"` non può usare
+  moduli di Node né `db-*`: `tsc` e le prove passano, `npm run build` no, e le appliance restano alla versione di
+  prima (25/11). Una `readdirSync` con percorso variabile scritta nel modulo fa tracciare `data/`: si passa da
+  `elencaCartella` di `percorsi.ts` (26/11). **Prima di un push su `dev` che tocca una pagina: `npm run build`**
+  (nel worktree con `npm ci`, non col collegamento a `node_modules`).
+- **Trappola, «è arrivato?»**: un aggiornamento si dichiara arrivato solo se `ActiveEnterTimestamp` di `da-ipam` è
+  dopo il push e il journal di `da-ipam-update` dice «Aggiornamento completato»; commit e `/api/version` da soli
+  mentono durante un aggiornamento che poi torna indietro.
+- **Hub in osservazione dal 26/11** (politica vuota, non scarta niente): si rilegge dal 03/12, vedi `TASKS.md`.
+- Ogni installazione nasce col filtro spento e lo accende una persona; la seconda verifica resta facoltativa;
+  il blocco di un indirizzo lo decide una persona (decisioni di Riccardo, piano §9).
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile); ogni modifica: `git add <file>` → `npm run version:release -- --staged-only` → `git pull --rebase origin dev` → `git push origin HEAD:dev`. **Un push di codice su `dev` è un rilascio**: hub 533 e DTS (71734) lo prendono entro 15 minuti (`da-ipam-update.timer`). Un commit di soli `.md` non riavvia.

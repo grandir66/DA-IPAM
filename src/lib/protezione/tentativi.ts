@@ -8,8 +8,8 @@ import fs from "node:fs";
 import { resolveDataDir } from "../data-dir";
 import { unisci } from "../percorsi";
 
-export type Fonte = "pagina" | "ssh" | "filtro" | "esca";
-export const NOME_FONTE: Readonly<Record<Fonte, string>> = { pagina: "Pagina web", ssh: "SSH", filtro: "Filtro di rete", esca: "Esca" };
+export type Fonte = "pagina" | "ssh" | "filtro" | "esca" | "archivio";
+export const NOME_FONTE: Readonly<Record<Fonte, string>> = { pagina: "Pagina web", ssh: "SSH", filtro: "Filtro di rete", esca: "Esca", archivio: "Archivio" };
 
 export interface Tentativo {
   il: string;
@@ -107,7 +107,7 @@ export function aggrega(tentativi: readonly Tentativo[]): Aggregato[] {
 /** Soglie di avviso nella finestra: quanti tentativi (pagina, SSH) o quante porte diverse (filtro). */
 export const FINESTRA_MS = 10 * 60_000;
 // Esche: nessuno ha un motivo buono per toccarle, quindi la soglia è la più bassa.
-export const SOGLIA: Readonly<Record<Fonte, number>> = { pagina: 5, ssh: 5, filtro: 3, esca: 3 };
+export const SOGLIA: Readonly<Record<Fonte, number>> = { pagina: 5, ssh: 5, filtro: 3, esca: 3, archivio: 3 };
 /** Dopo un avviso, per quanto non se ne manda un altro per la stessa strada e lo stesso indirizzo. */
 export const SILENZIO_MS = 60 * 60_000;
 
@@ -178,7 +178,7 @@ export function leggiTentativi(giorni: number, adesso = new Date(), tetto = 2000
       if (!r) continue;
       try {
         const t = JSON.parse(r) as Tentativo;
-        if (typeof t.il === "string" && (t.fonte === "pagina" || t.fonte === "ssh" || t.fonte === "filtro" || t.fonte === "esca")) righe.push(t);
+        if (typeof t.il === "string" && (t.fonte === "pagina" || t.fonte === "ssh" || t.fonte === "filtro" || t.fonte === "esca" || t.fonte === "archivio")) righe.push(t);
       } catch {
         // una riga rotta non ferma la lettura delle altre
       }

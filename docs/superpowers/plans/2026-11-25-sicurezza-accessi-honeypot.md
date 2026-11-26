@@ -550,6 +550,24 @@ Domande rimaste:
 - **D8.** La copia cifrata: solo sulla macchina, o anche fuori (cartella di rete del cliente, PBS, DA-Link)?
 - **D9.** La chiave privata di recupero la tiene solo il cliente, o una seconda copia anche Domarc?
 
+### 12.9 Terze decisioni di Riccardo (26/11/2026): il codice dell'amministratore dell'archivio
+
+«Sì, confermo» a D7-D9 (password personale, copia automatica più a mano, chiave di recupero solo al cliente). Poi:
+«l'admin di quell'archivio è un codice nuovo e solo chi lo possiede può resettare le credenziali»; «neppure il
+superadmin dell'installazione può accedere senza il suo codice che può essere revocabile»; «quell'archivio è una
+nuova feature riservata per il cliente e non necessariamente condivisa».
+
+Quindi, al posto del recupero dal superadmin della §12.8: **comanda chi ha il codice dell'amministratore
+dell'archivio** (ADR 0043, punto 5). Il ruolo nell'installazione non apre e non resetta niente. Chi crea l'archivio
+non ha accesso alle voci finché non se lo dà con quel codice. Il codice si sostituisce, e il vecchio muore.
+Da dire a schermo, grande, alla creazione: se il codice si perde nessuno potrà più dare o ridare un accesso.
+
+**Stato al 26/11**: tappa D0 (ADR 0043) e **D1, motore, fatte sul ramo** (`src/lib/archivio-utenti/`): serrature
+personali, apertura con password e codice a sei cifre, richiusura a 10 e 60 minuti, tentativi contati e mandati fra
+i tentativi della Protezione, registro, codice dell'amministratore con sostituzione. Non ancora collegato a
+nessuna pagina né rotta. Restano D2 (scheda in lettura), D3 (scrittura), D4 (importazione, generatore), la copia
+cifrata, D6 (collaudo).
+
 ## 13. Parte E — Disco cifrato con TPM virtuale (26/11/2026, da approvare)
 
 > Riccardo, 26/11: «sugli ipam sicuramente servirebbe un disco cifrato con tpm virtuale nel caso», e subito dopo

@@ -65,6 +65,15 @@ test("immagini e rimandi delle guide esistono, il prodotto si chiama DA-IPAM", (
   }
 });
 
+test("le parti comuni dell'interfaccia hanno le loro immagini e rimandano a guide vere", () => {
+  const testo = readFileSync(join(RADICE, "docs", "manuale", "INTERFACCIA.md"), "utf-8");
+  const nomi = new Set(readdirSync(GUIDE).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")));
+  for (const [, src] of testo.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
+    assert.ok(existsSync(join(RADICE, "public", src)), `INTERFACCIA.md: manca l'immagine public${src}`);
+  }
+  for (const [, nome] of testo.matchAll(/\]\(pagine\/([a-z0-9-]+)\.md/g)) assert.ok(nomi.has(nome), `INTERFACCIA.md: manca pagine/${nome}.md`);
+});
+
 test("il percorso con tratti variabili riconosce gli indirizzi veri, il fisso vince", () => {
   const g = (nome: string, percorso: string) => ({ nome, percorsi: [percorso], titolo: nome, versione: "", aggiornata: "", testo: "" });
   const elenco = [g("scheda", "/devices/[id]"), g("elenco", "/devices"), g("home", "/"), g("cve", "/patch-management/cve/[cveId]")];

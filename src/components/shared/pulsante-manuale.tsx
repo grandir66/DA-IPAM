@@ -91,7 +91,11 @@ export function PulsanteManuale() {
             <div ref={corpo}>
               <MarkdownViewer content={stato.guida.testo} />
             </div>
-            <div className="border-t pt-3 text-right text-sm">
+            <div className="flex flex-wrap justify-between gap-2 border-t pt-3 text-sm">
+              {/* Menu, schede, filtri, tasto destro: stanno una volta sola nella guida comune (26/11). */}
+              <Link href="/manual?doc=manuale__interfaccia" className="text-cian-testo underline" onClick={() => setAperta(false)}>
+                Le parti comuni dell&apos;interfaccia
+              </Link>
               <Link href={`/manual?doc=pagina__${stato.guida.nome}`} className="text-cian-testo underline" onClick={() => setAperta(false)}>
                 Apri nel manuale completo →
               </Link>

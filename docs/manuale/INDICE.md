@@ -35,6 +35,10 @@ In cima al menu a sinistra c'è la [Dashboard](pagine/dashboard.md), poi i grupp
 
 I gruppi Inventario, Network Services e Applicativi compaiono, o restano grigi, secondo i moduli accesi.
 
+Quello che vale in tutte le pagine (il menu, le schede, la ricerca e i filtri, le colonne, il tasto destro sulle
+righe, la selezione di più righe, i segni e i colori) è spiegato una volta sola nelle
+[parti comuni dell'interfaccia](INTERFACCIA.md).
+
 Molte pagine hanno in cima una **fila di schede**: sono le pagine sorelle della stessa sezione (per esempio Apparati ha
 Elenco, Attribuzione, Cambiamenti, IP esclusi). Ogni scheda ha la sua parte di guida.
 
@@ -114,7 +118,7 @@ La [Panoramica](pagine/network-services.md), il [DNS](pagine/dns.md) e il [DHCP]
   e [Cosa esce](pagine/settings-cosa-esce.md).
 - [In esecuzione](pagine/in-esecuzione.md): i lavori in corso (scansioni, letture, sincronizzazioni).
 - Integrazioni e Appliance: oggi sono schede di [Impostazioni](pagine/settings.md).
-- Il **Manuale**, cioè queste pagine.
+- Il **Manuale**, cioè queste pagine, con le [parti comuni dell'interfaccia](INTERFACCIA.md).
 
 ## La vista cliente
 

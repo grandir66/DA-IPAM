@@ -49,8 +49,9 @@ async function listDocs(): Promise<DocEntry[]> {
       const base = f.replace(/\.md$/i, "");
       // Slug senza slash (i dir annidati come "modules/interni" userebbero "/").
       // Manuale per pagina (26/11): l'indice è «manuale», ogni guida «pagina__<nome>» (lo usa il pulsante «?»).
-      if (dir === "manuale" && base.toUpperCase() !== "INDICE") continue;
-      const slug = dir === "manuale" ? "manuale"
+      // Dal 26/11 sera anche INTERFACCIA.md, le parti comuni dell'interfaccia (Riccardo: «serve un modulo per le parti comuni»).
+      if (dir === "manuale" && !["INDICE", "INTERFACCIA"].includes(base.toUpperCase())) continue;
+      const slug = dir === "manuale" ? (base.toUpperCase() === "INDICE" ? "manuale" : `manuale__${base}`.toLowerCase())
         : dir === "manuale/pagine" ? `pagina__${base}`.toLowerCase()
         : (dir ? `${dir.replace(/\//g, "-")}__${base}` : base).toLowerCase();
       const category: DocEntry["category"] =
@@ -86,6 +87,8 @@ async function listDocs(): Promise<DocEntry[]> {
     const catOrder = (c: DocEntry["category"]) => CATEGORIE.indexOf(c);
     const co = catOrder(a.category) - catOrder(b.category);
     if (co !== 0) return co;
+    // Nel «prodotto» l'indice viene prima, poi le parti comuni.
+    if (a.category === "Il prodotto") return (a.slug === "manuale" ? 0 : 1) - (b.slug === "manuale" ? 0 : 1);
     if (a.category === "Manuali tecnici") {
       return (manualPriority[a.slug] ?? 99) - (manualPriority[b.slug] ?? 99);
     }

@@ -61,6 +61,7 @@ export function MarkdownViewer({ content }: MarkdownViewerProps) {
               const guida = path.match(/(?:^|\/)pagine\/([a-z0-9-]+)$/i);
               const slug = guida ? `pagina__${guida[1].toLowerCase()}`
                 : /(?:^|\/)(?:manuale\/)?INDICE$/i.test(path) ? "manuale"
+                : /(?:^|\/)(?:manuale\/)?INTERFACCIA$/i.test(path) ? "manuale__interfaccia"
                 : path.toLowerCase().replace(/\//g, "__");
               return (
                 <Link href={`/manual?doc=${slug}${hash}`} {...props}>

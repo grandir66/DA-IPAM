@@ -17,7 +17,9 @@
  *      "segni": [{ "n": 1, "cerca": "text=Raggruppa per" }],
  *      "zona": "main" }]
  * `cerca` e `clic` sono selettori di Playwright; `zona` ritaglia lo scatto su un elemento; `segni` mette un cerchio
- * numerato sull'angolo dell'elemento, da citare nel testo come ①②③; `nascondi` è un elenco di selettori CSS da
+ * numerato sull'angolo dell'elemento, da citare nel testo come ①②③; in `prima` ci sono anche `destro` (clic col tasto
+ * destro), `sopra` (il mouse passa sopra) e `tasto` (un tasto premuto); `dopo` sono clic fatti dopo lo scatto per
+ * rimettere com'era quello che il browser ricorda (il menu compresso); `nascondi` è un elenco di selettori CSS da
  * sfocare (colonne con nomi di persone: assegnatari, utenti di Active Directory, accessi).
  *
  * Ambiente: IPAM_URL (predefinito https://192.168.4.8), IPAM_UTENZA (file con righe `utente=` e `password=`,
@@ -136,6 +138,9 @@ async function main() {
         await page.waitForTimeout(s.attesa ?? 1200);
         for (const p of s.prima || []) {
           if (p.clic) await page.locator(p.clic).first().click({ timeout: 10000 });
+          if (p.destro) await page.locator(p.destro).first().click({ button: "right", timeout: 10000 });
+          if (p.sopra) await page.locator(p.sopra).first().hover({ timeout: 10000 });
+          if (p.tasto) await page.keyboard.press(p.tasto);
           if (p.scrivi) await page.locator(p.scrivi.in).first().fill(p.scrivi.testo);
           await page.waitForTimeout(p.attesa ?? 600);
         }
@@ -151,6 +156,12 @@ async function main() {
         if (s.zona) await page.locator(s.zona).first().screenshot({ path: destinazione });
         else await page.screenshot({ path: destinazione, fullPage: !!s.intera });
         console.log(`✓ ${nome}/${s.file}.png`);
+        // `dopo`: rimette com'era quello che lo scatto ha cambiato e il browser ricorda (il menu compresso).
+        await page.evaluate(() => document.querySelectorAll("[data-segno-manuale]").forEach((n) => n.remove()));
+        for (const p of s.dopo || []) {
+          if (p.clic) await page.locator(p.clic).first().click({ timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(p.attesa ?? 400);
+        }
       } catch (e) {
         console.error(`✕ ${nome}/${s.file}: ${e.message.split("\n")[0]}`);
         errori++;

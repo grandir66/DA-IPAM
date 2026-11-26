@@ -52,7 +52,7 @@ before(async () => {
 test("sul disco non ci sono la chiave dell'archivio, il codice dell'amministratore né una password", async () => {
   await daiAccesso({ chi: SUPER, codiceAmministratore: CODICE, a: UTENTE, passwordProvvisoria: PW_PROVV }, dip);
   const file = fs.readdirSync(cartellaArchivio()).sort();
-  assert.deepEqual(file.filter((f) => !f.endsWith(".lock") && !f.endsWith(".prec")), ["amministratore.json", "serrature.json", "utenti.kdbx"]);
+  assert.deepEqual(file.filter((f) => !f.endsWith(".lock") && !f.endsWith(".prec")), ["amministratore.json", "recupero.pub", "serrature.json", "utenti.kdbx"]);
   assert.equal(file.some((f) => f.endsWith(".keyx")), false, "il key file non deve stare sul disco");
   const tutto = [...file.map((f) => path.join(cartellaArchivio(), f)), ...fs.readdirSync(path.join(DIR, "audit")).map((f) => path.join(DIR, "audit", f))].map((f) => fs.readFileSync(f).toString("latin1")).join("\n");
   for (const segreto of [CODICE, CODICE.replace(/-/g, ""), PW_PROVV]) assert.equal(tutto.includes(segreto), false);

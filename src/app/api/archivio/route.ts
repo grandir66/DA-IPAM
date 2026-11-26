@@ -3,10 +3,13 @@ import { z } from "zod";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { indirizzoDaIntestazioni } from "@/lib/accesso/registro-accessi";
 import { getUserById } from "@/lib/db-hub";
-import { apriArchivio, chiHaAccesso, chiudiArchivio, creaArchivio, daiAccesso, sostituisciCodiceAmministratore, statoArchivio, togliAccesso, type Dipendenze, type Esito, type Persona } from "@/lib/archivio-utenti/motore";
+import { copiaConFrase, difettoFrase, statoCopie } from "@/lib/archivio-utenti/copia";
+import { leggiRegistroArchivio, scriviRegistroArchivio } from "@/lib/archivio-utenti/deposito";
+import { IMPORTA_MAX_BYTE, importaKdbx } from "@/lib/archivio-utenti/importa";
+import { apriArchivio, chiHaAccesso, chiudiArchivio, creaArchivio, daiAccesso, sostituisciChiaveRecupero, sostituisciCodiceAmministratore, statoArchivio, togliAccesso, type Dipendenze, type Esito, type Persona } from "@/lib/archivio-utenti/motore";
 import { haSecondoFattore, verificaCodiceUtente } from "@/lib/archivio-utenti/secondo-fattore";
-import { MASSIMO_MS, SENZA_GESTI_MS } from "@/lib/archivio-utenti/sessioni";
-import { cancellaVoce, dettaglioVoce, elencoVoci, leggiCampo, scriviVoce } from "@/lib/archivio-utenti/voci";
+import { MASSIMO_MS, SENZA_GESTI_MS, chiaveAperta } from "@/lib/archivio-utenti/sessioni";
+import { cancellaVoce, dettaglioVoce, elencoVoci, leggiCampo, ripristinaVersione, scriviVoce, spostaVoce, storicoVoce } from "@/lib/archivio-utenti/voci";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +38,14 @@ const schema = z.discriminatedUnion("azione", [
     note: testo(4000).optional(), segreti: z.record(testo(64), testo(2000)).optional(), versioneAttesa: z.number().int().nonnegative().optional(),
   }),
   z.object({ azione: z.literal("cancella"), percorso: testo(300), versioneAttesa: z.number().int().nonnegative().optional() }),
+  z.object({ azione: z.literal("sposta"), percorso: testo(300), gruppo: testo(200), versioneAttesa: z.number().int().nonnegative().optional() }),
+  z.object({ azione: z.literal("storico"), percorso: testo(300) }),
+  z.object({ azione: z.literal("ripristina"), percorso: testo(300), indietro: z.number().int().min(1).max(10), versioneAttesa: z.number().int().nonnegative().optional() }),
+  z.object({ azione: z.literal("registro") }),
+  z.object({ azione: z.literal("sostituisci_chiave_recupero"), codiceAmministratore: testo(80) }),
+  z.object({ azione: z.literal("scarica"), frase: testo(256), codice: testo(12) }),
+  // Il file arriva in base64: 5 MB di file sono circa 7 milioni di caratteri.
+  z.object({ azione: z.literal("importa"), file: z.string().max(Math.ceil(IMPORTA_MAX_BYTE * 1.4)), password: testo(256) }),
 ]);
 
 const rispondi = (e: Esito<object>) => (e.ok ? NextResponse.json(e) : NextResponse.json({ error: e.errore }, { status: e.stato }));
@@ -50,7 +61,7 @@ export async function GET() {
     const base = { stato, secondoFattore: haSecondoFattore(chi.id), puoCreare: chi.ruolo === "admin" || chi.ruolo === "superadmin", senzaGestiMs: SENZA_GESTI_MS, massimoMs: MASSIMO_MS, io: chi.id };
     if (!stato.aperto) return NextResponse.json(base);
     const voci = await elencoVoci(chi);
-    return NextResponse.json({ ...base, voci: voci.ok ? voci.voci : [], accessi: chiHaAccesso() });
+    return NextResponse.json({ ...base, voci: voci.ok ? voci.voci : [], accessi: chiHaAccesso(), copie: statoCopie() });
   } catch (e) {
     console.error("[archivio] stato:", e instanceof Error ? e.name : "errore");
     return NextResponse.json({ error: "Stato dell'archivio non letto" }, { status: 500 });
@@ -90,6 +101,35 @@ export async function POST(request: Request) {
       case "campo": return rispondi(await leggiCampo(chi, { percorso: d.percorso, campo: d.campo, modo: d.modo, indirizzo }));
       case "scrivi": return rispondi(await scriviVoce(chi, d, { indirizzo }));
       case "cancella": return rispondi(await cancellaVoce(chi, d.percorso, { versioneAttesa: d.versioneAttesa, indirizzo }));
+      case "sposta": return rispondi(await spostaVoce(chi, d, { indirizzo }));
+      case "storico": return rispondi(await storicoVoce(chi, d.percorso));
+      case "ripristina": return rispondi(await ripristinaVersione(chi, d, { indirizzo }));
+      case "sostituisci_chiave_recupero": return rispondi(await sostituisciChiaveRecupero({ chi, codiceAmministratore: d.codiceAmministratore }, dip));
+      case "registro": {
+        // Il registro lo legge chi ha l'archivio aperto: dentro ci sono i nomi delle voci.
+        if (!chiaveAperta(chi.id)) return NextResponse.json({ error: "L'archivio è chiuso" }, { status: 423 });
+        return NextResponse.json({ ok: true, righe: leggiRegistroArchivio() });
+      }
+      case "scarica": {
+        const aperta = chiaveAperta(chi.id);
+        if (!aperta) return NextResponse.json({ error: "L'archivio è chiuso" }, { status: 423 });
+        const difetto = difettoFrase(d.frase);
+        if (difetto) return NextResponse.json({ error: difetto }, { status: 400 });
+        // Portare fuori tutto l'archivio vuole di nuovo il codice a sei cifre, anche a sessione aperta.
+        if (!verificaCodiceUtente(chi.id, d.codice, Date.now())) return NextResponse.json({ error: "Codice a 6 cifre non valido" }, { status: 403 });
+        const file = await copiaConFrase(aperta.chiave, d.frase);
+        scriviRegistroArchivio({ azione: "copia_scaricata", utente: chi.nome, utenteId: chi.id, da: indirizzo });
+        return NextResponse.json({ ok: true, nome: `archivio-${new Date().toISOString().slice(0, 10)}.kdbx`, file: Buffer.from(file).toString("base64") });
+      }
+      case "importa": {
+        let dati: Buffer;
+        try {
+          dati = Buffer.from(d.file, "base64");
+        } catch {
+          return NextResponse.json({ error: "File non valido" }, { status: 400 });
+        }
+        return rispondi(await importaKdbx(chi, { dati: new Uint8Array(dati), password: d.password, indirizzo }));
+      }
     }
   } catch (e) {
     // Mai il messaggio dell'eccezione: potrebbe portare un valore.

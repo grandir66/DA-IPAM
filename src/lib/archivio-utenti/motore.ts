@@ -18,11 +18,14 @@
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { resolveDataDir } from "../data-dir";
 import { unisci } from "../percorsi";
 import { scriviTentativi } from "../protezione/tentativi";
 import { ArchivioKdbx, ErroreKdbx, creaArchivioKdbx } from "../vault/kdbx";
+import { faiCopia, nuovaChiaveRecupero, scriviChiavePubblicaRecupero } from "./copia";
+import { cartellaArchivio, scriviRegistroArchivio } from "./deposito";
 import { apriSerratura, creaSerratura, difettoPassword, type Serratura } from "./serrature";
+
+export { cartellaArchivio, scriviRegistroArchivio, type RigaRegistroArchivio } from "./deposito";
 import { apriSessione, chiaveAperta, chiudiSessione } from "./sessioni";
 
 const NOME = "utenti";
@@ -46,9 +49,6 @@ export interface Dipendenze {
 export type Esito<T = object> = ({ ok: true } & T) | { ok: false; stato: number; errore: string };
 const no = (stato: number, errore: string): { ok: false; stato: number; errore: string } => ({ ok: false, stato, errore });
 
-export function cartellaArchivio(): string {
-  return unisci(resolveDataDir(), "archivio-utenti");
-}
 const fileSerrature = (): string => unisci(cartellaArchivio(), "serrature.json");
 const fileKdbx = (): string => unisci(cartellaArchivio(), `${NOME}.kdbx`);
 const fileAmministratore = (): string => unisci(cartellaArchivio(), "amministratore.json");
@@ -104,26 +104,6 @@ export function nuovoCodiceAmministratore(): string {
 /** Il codice come lo scrive una persona: maiuscole, senza spazi; i trattini restano. */
 function normalizzaCodice(codice: string): string {
   return codice.trim().toUpperCase().replace(/\s+/g, "");
-}
-
-// ── Registro ─────────────────────────────────────────────────────────────────
-
-export interface RigaRegistroArchivio {
-  azione: "creato" | "aperto" | "chiuso" | "richiuso_da_solo" | "tentativo_fallito" | "bloccato" | "accesso_dato" | "accesso_tolto" | "password_cambiata" | "codice_amministratore_rifiutato" | "codice_amministratore_sostituito"
-    | "voce_letta" | "voce_creata" | "voce_cambiata" | "voce_cancellata";
-  utente: string;
-  utenteId: number;
-  da: string | null;
-  /** Su chi, quando l'azione riguarda un'altra persona. */
-  su?: string;
-  dettaglio?: string;
-}
-
-/** Lancia se non scrive: un'apertura dell'archivio non passa senza traccia. */
-export function scriviRegistroArchivio(riga: RigaRegistroArchivio, adesso: Date = new Date()): void {
-  const dir = unisci(resolveDataDir(), "audit");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(unisci(dir, `archivio-${adesso.toISOString().slice(0, 10)}.jsonl`), `${JSON.stringify({ il: adesso.toISOString(), ...riga })}\n`);
 }
 
 // ── Tentativi sbagliati ──────────────────────────────────────────────────────
@@ -190,7 +170,7 @@ async function conCodiceAmministratore(chi: Persona, codice: string, dip: Pick<D
  * momento chi comanda è chi tiene il codice: chi ha creato l'archivio non ha nessun accesso alle voci finché non se lo
  * dà con quel codice.
  */
-export async function creaArchivio(op: { chi: Persona; codice: string }, dip: Dipendenze): Promise<Esito<{ codiceAmministratore: string }>> {
+export async function creaArchivio(op: { chi: Persona; codice: string }, dip: Dipendenze): Promise<Esito<{ codiceAmministratore: string; chiaveRecupero: string }>> {
   const ora = dip.ora?.() ?? Date.now();
   if (op.chi.ruolo !== "superadmin" && op.chi.ruolo !== "admin") return no(403, "L'archivio lo crea un amministratore dell'installazione");
   if (fs.existsSync(fileKdbx())) return no(409, "L'archivio c'è già");
@@ -201,8 +181,12 @@ export async function creaArchivio(op: { chi: Persona; codice: string }, dip: Di
     const s = await creaSerratura(chiave, codiceAmministratore, { utenteId: ID_AMMINISTRATORE, utente: "amministratore dell'archivio", scrittaDa: op.chi.id, provvisoria: false, adesso: new Date(ora) });
     scriviAtomico(fileAmministratore(), JSON.stringify(s, null, 1));
     scriviSerrature([]);
+    // La chiave di recupero delle copie: la pubblica resta qui, la privata esce UNA volta e la tiene il cliente.
+    const recupero = await nuovaChiaveRecupero();
+    scriviChiavePubblicaRecupero(recupero.pubblica);
     scriviRegistroArchivio({ azione: "creato", utente: op.chi.nome, utenteId: op.chi.id, da: dip.indirizzo ?? null }, new Date(ora));
-    return { ok: true, codiceAmministratore };
+    await faiCopia(chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: dip.indirizzo });
+    return { ok: true, codiceAmministratore, chiaveRecupero: recupero.privata };
   } finally {
     chiave.fill(0);
   }
@@ -249,6 +233,7 @@ export async function apriArchivio(op: { chi: Persona; password: string; codice:
       scriviRegistroArchivio({ azione: "password_cambiata", utente: op.chi.nome, utenteId: op.chi.id, da }, new Date(ora));
     }
     tentativi().delete(op.chi.id);
+    await faiCopia(chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: da });
     const scade = apriSessione(op.chi.id, chiave, ora);
     scriviRegistroArchivio({ azione: "aperto", utente: op.chi.nome, utenteId: op.chi.id, da }, new Date(ora));
     return { ok: true, scade };
@@ -278,6 +263,7 @@ export async function daiAccesso(op: { chi: Persona; codiceAmministratore: strin
   try {
     const nuova = await creaSerratura(adm.chiave, op.passwordProvvisoria, { utenteId: op.a.id, utente: op.a.nome, scrittaDa: op.chi.id, provvisoria: true, adesso: new Date(ora) });
     scriviSerrature([...leggiSerrature().filter((s) => s.utenteId !== op.a.id), nuova]);
+    await faiCopia(adm.chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: dip.indirizzo });
   } finally {
     adm.chiave.fill(0);
   }
@@ -295,8 +281,9 @@ export async function togliAccesso(op: { chi: Persona; codiceAmministratore: str
   if (!tutte.some((s) => s.utenteId === op.a.id)) return no(404, "Questa persona non ha l'accesso");
   const adm = await conCodiceAmministratore(op.chi, op.codiceAmministratore, dip);
   if ("errore" in adm) return adm.errore;
-  adm.chiave.fill(0);
   scriviSerrature(tutte.filter((s) => s.utenteId !== op.a.id));
+  await faiCopia(adm.chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: dip.indirizzo });
+  adm.chiave.fill(0);
   chiudiSessione(op.a.id);
   scriviRegistroArchivio({ azione: "accesso_tolto", utente: op.chi.nome, utenteId: op.chi.id, da: dip.indirizzo ?? null, su: op.a.nome }, new Date(ora));
   return { ok: true };
@@ -315,6 +302,7 @@ export async function sostituisciCodiceAmministratore(op: { chi: Persona; codice
     const s = await creaSerratura(adm.chiave, nuovo, { utenteId: ID_AMMINISTRATORE, utente: "amministratore dell'archivio", scrittaDa: op.chi.id, provvisoria: false, adesso: new Date(ora) });
     scriviAtomico(fileAmministratore(), JSON.stringify(s, null, 1));
     scriviRegistroArchivio({ azione: "codice_amministratore_sostituito", utente: op.chi.nome, utenteId: op.chi.id, da: dip.indirizzo ?? null }, new Date(ora));
+    await faiCopia(adm.chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: dip.indirizzo });
     return { ok: true, codiceAmministratore: nuovo };
   } finally {
     adm.chiave.fill(0);
@@ -324,4 +312,24 @@ export async function sostituisciCodiceAmministratore(op: { chi: Persona; codice
 /** Chi ha l'accesso: mai niente della serratura, solo chi, da quando, se la password è provvisoria. */
 export function chiHaAccesso(): Array<{ utenteId: number; utente: string; dal: string; provvisoria: boolean }> {
   return leggiSerrature().map((s) => ({ utenteId: s.utenteId, utente: s.utente, dal: s.creata, provvisoria: s.provvisoria })).sort((a, b) => a.utente.localeCompare(b.utente));
+}
+
+/**
+ * Sostituisce la chiave di recupero delle copie: serve il codice dell'amministratore dell'archivio. Ne esce una
+ * privata nuova (mostrata una volta sola). Le copie già fatte restano apribili solo con la privata di prima; da
+ * adesso le nuove si aprono solo con questa. Se ne fa subito una.
+ */
+export async function sostituisciChiaveRecupero(op: { chi: Persona; codiceAmministratore: string }, dip: Pick<Dipendenze, "ora" | "indirizzo"> = {}): Promise<Esito<{ chiaveRecupero: string }>> {
+  const ora = dip.ora?.() ?? Date.now();
+  const adm = await conCodiceAmministratore(op.chi, op.codiceAmministratore, dip);
+  if ("errore" in adm) return adm.errore;
+  try {
+    const recupero = await nuovaChiaveRecupero();
+    scriviChiavePubblicaRecupero(recupero.pubblica);
+    scriviRegistroArchivio({ azione: "chiave_recupero_sostituita", utente: op.chi.nome, utenteId: op.chi.id, da: dip.indirizzo ?? null }, new Date(ora));
+    await faiCopia(adm.chiave, { adesso: new Date(ora), chi: op.chi, indirizzo: dip.indirizzo });
+    return { ok: true, chiaveRecupero: recupero.privata };
+  } finally {
+    adm.chiave.fill(0);
+  }
 }

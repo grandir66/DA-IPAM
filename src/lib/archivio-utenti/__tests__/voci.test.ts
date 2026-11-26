@@ -112,7 +112,11 @@ test("cancellare toglie la voce e lo scrive nel registro; titoli strani diventan
   const nuova = await scriviVoce(LUCA, { gruppo: "../../fuori", titolo: "Da cancellare" }, da);
   assert.ok(nuova.ok);
   assert.match(nuova.percorso, /^fuori\/da-cancellare-[0-9a-f]{6}$/);
-  assert.deepEqual(await cancellaVoce(LUCA, nuova.percorso, da), { ok: true });
+  assert.deepEqual(await cancellaVoce(LUCA, nuova.percorso, da), { ok: true, nelCestino: true });
+  const colCestino = await elencoVoci(LUCA);
+  const buttata = colCestino.ok ? colCestino.voci.find((v) => v.gruppo === "cestino") : undefined;
+  assert.ok(buttata);
+  assert.deepEqual(await cancellaVoce(LUCA, buttata.percorso, da), { ok: true, nelCestino: false });
   const elenco = await elencoVoci(LUCA);
   assert.deepEqual(elenco.ok && elenco.voci.map((v) => v.percorso), [percorso]);
   for (const a of ["voce_creata", "voce_cambiata", "voce_cancellata", "voce_letta"]) assert.ok(registro().some((r) => r.azione === a), a);

@@ -32,7 +32,10 @@
       }
     ],
     "nascondi": [
-      "tbody td:nth-child(2)"
+      "tbody td:nth-child(2)",
+      "tbody td:nth-child(6)",
+      "tbody td:nth-child(8)",
+      "button[aria-expanded] > span.text-foreground"
     ]
   },
   {

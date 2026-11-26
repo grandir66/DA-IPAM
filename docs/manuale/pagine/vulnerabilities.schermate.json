@@ -27,7 +27,8 @@
     ],
     "nascondi": [
       "span.truncate.font-mono.text-xl",
-      "tbody td:nth-child(8)"
+      "tbody td:nth-child(8)",
+      "button[aria-expanded] > span.text-foreground"
     ],
     "prima": [
       {

@@ -5,9 +5,11 @@
 - [x] Formato della guida (`src/lib/manuale/formato.ts`), API `/api/manuale/pagina`, pulsante «?» nel guscio, àncore `{#parte}`
 - [x] Script delle schermate con IP/MAC/email/nomi PC finti (`scripts/manuale/schermate.cjs`); i nomi degli host restano (Riccardo, 26/11)
 - [x] Indice «Il prodotto», manuale unico in archivio, guida d'esempio «Apparati»
-- [ ] Guide di tutte le pagine (4 agenti per gruppo di menu); /protezione senza schermate, repo pubblico
-- [ ] Togliere `lib/guida/guide.ts` dopo averne portato i testi nelle guide; prova di copertura verde; rilascio su `dev`
-- [ ] Non verificato: il «?» non copre i pulsanti delle intestazioni a tutte le larghezze (guardato solo a 1440)
+- [x] 86 guide per tutte le pagine (4 agenti per gruppo di menu); /protezione senza schermate, repo pubblico
+- [x] `lib/guida/guide.ts` tolto, testi e àncore nelle guide; prova di copertura verde; v0.9.1364 su `dev`
+- [x] Il «?» guardato sull'IPAM 192.168.4.8 a 1920: in alto a destra, apre la guida della pagina
+- [ ] Rotta `POST /api/devices/dns` con guardia auth invece di admin: fa fallire `rotte-censite.test.ts` già su `origin/dev` (non di questo lavoro)
+- [ ] Rilievi degli agenti sulle pagine da valutare con Riccardo: termini inglesi (Patch Management, Dispositivi, Anomalie, «tombstone», «Network Changes»), `/zabbix/aggiungi` e `/client-config` senza collegamenti, pulsanti di scrittura attivi per la sola lettura, colonne che escono a 1440 (Cambiamenti, Tabella ARP)
 
 ## 2026-11-25 — Protezione delle installazioni: accessi chiusi, avvisi, esche (Riccardo, da approvare; zona rossa → livello completo)
 

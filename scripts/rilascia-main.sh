@@ -9,19 +9,65 @@
 # Uso (dal Mac, nella cartella del repository):
 #   bash scripts/rilascia-main.sh            # prova a vuoto: fa la fusione firmata in una cartella a parte, la
 #                                            # controlla, mostra cosa uscirebbe, non pubblica niente
-#   bash scripts/rilascia-main.sh --applica  # come sopra, poi chiede «rilascia» e pubblica su origin/main
+#   bash scripts/rilascia-main.sh --applica  # come sopra, poi chiede «rilascia», fa compilare e firma la build per le
+#                                            # appliance (firma_build), poi pubblica su origin/main
+#   bash scripts/rilascia-main.sh --applica --senza-build   # senza build pronta (GitHub Actions giù)
 #
 # Chiave: ~/.ssh/da-ipam-rilasci (o DA_CHIAVE_RILASCI). La passphrase la chiede ssh-keygen, qui non passa.
 # Non tocca l'albero di lavoro né il ramo su cui sei: lavora in un worktree temporaneo di origin/main.
 set -euo pipefail
 
 APPLICA=false
+SENZA_BUILD=false
 for a in "$@"; do
   case "$a" in
     --applica) APPLICA=true ;;
-    *) echo "Opzione sconosciuta: $a (solo --applica)" >&2; exit 2 ;;
+    --senza-build) SENZA_BUILD=true ;;
+    *) echo "Opzione sconosciuta: $a (--applica, --senza-build)" >&2; exit 2 ;;
   esac
 done
+
+# IPAM precompilato (piano del 26/11/2026). Prima di muovere main: la fusione firmata va su rilascio/<versione>, che
+# le appliance non seguono; .github/workflows/build-appliance.yml la compila e allega i pacchetti alla Release
+# pacchetto-<commit>; qui si scaricano, se ne calcola lo sha256 e si firma il tag build-<commit> che le appliance
+# controllano (scripts/lib/build-firmata.sh). Se il CI fallisce main non si muove. --senza-build salta tutto questo
+# (CI giù): le appliance compilano da sole, come prima.
+firma_build() {
+  local commit="$1" ramo="rilascio/v$VERSIONE" id="" pacchi righe f sha
+  command -v gh >/dev/null 2>&1 || { echo "Errore: manca gh (GitHub CLI). Niente pubblicato. Oppure --senza-build." >&2; exit 1; }
+  echo ">>> spingo $ramo per la build (le appliance non lo seguono)..."
+  git -C "$LAVORO" push --quiet --force origin "$commit:refs/heads/$ramo"
+  echo ">>> aspetto che GitHub Actions compili (10-15 minuti)..."
+  for _ in $(seq 1 30); do
+    id="$(gh run list --workflow build-appliance.yml --commit "$commit" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+    [ -n "$id" ] && break
+    sleep 10
+  done
+  [ -n "$id" ] || { echo "Errore: GitHub Actions non ha avviato la build di $ramo. Niente pubblicato su main." >&2; exit 1; }
+  if ! gh run watch "$id" --exit-status --interval 30 >/dev/null; then
+    echo "Errore: la build di GitHub Actions è fallita (gh run view $id --log-failed). Niente pubblicato su main." >&2
+    exit 1
+  fi
+  pacchi="$(mktemp -d "${TMPDIR:-/tmp}/pacchi.XXXXXX")"
+  gh release download "pacchetto-$commit" --dir "$pacchi" --pattern 'ipam-build-*.tar.gz'
+  righe=""
+  for f in ipam-build-next-a.tar.gz ipam-build-next-b.tar.gz; do
+    [ -s "$pacchi/$f" ] || { echo "Errore: nella Release manca $f. Niente pubblicato su main." >&2; rm -rf "$pacchi"; exit 1; }
+    sha="$(shasum -a 256 "$pacchi/$f" | cut -d' ' -f1)"
+    righe="${righe}sha256 $sha $f"$'\n'
+    echo "    $f $(du -h "$pacchi/$f" | cut -f1) $sha"
+  done
+  rm -rf "$pacchi"
+  echo ">>> tag build-$commit firmato (ssh-keygen chiede di nuovo la passphrase)..."
+  git -C "$LAVORO" -c gpg.format=ssh -c "user.signingkey=$CHIAVE.pub" \
+    tag -s -f "build-$commit" -m "build appliance $commit"$'\n\n'"$righe" "$commit"
+  if ! git -C "$LAVORO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$FIRMATARI" verify-tag "build-$commit" >/dev/null 2>&1; then
+    echo "Errore: il tag build-$commit non passa il controllo delle appliance. Niente pubblicato su main." >&2
+    exit 1
+  fi
+  git -C "$LAVORO" push --quiet --force origin "refs/tags/build-$commit"
+  echo ">>> build pronta e firmata: le appliance la scaricano invece di compilare."
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
@@ -100,5 +146,11 @@ if [ "$RISPOSTA" != "rilascia" ]; then
   echo "Annullato: niente pubblicato."
   exit 1
 fi
+if [ "$SENZA_BUILD" = true ]; then
+  echo ">>> --senza-build: nessuna build pronta, le appliance compileranno da sole."
+else
+  firma_build "$NUOVO"
+fi
 git -C "$LAVORO" push origin "$NUOVO:refs/heads/main"
 echo ">>> pubblicato: origin/main = $(git rev-parse --short "$NUOVO")"
+git -C "$LAVORO" push --quiet origin --delete "refs/heads/rilascio/v$VERSIONE" 2>/dev/null || true

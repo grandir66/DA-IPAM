@@ -488,6 +488,31 @@ sbagliati si contano, bloccano con attesa crescente e finiscono in «Tentativi e
 - **D5.** Richiusura: 10 minuti senza gesti e 60 al massimo vanno bene?
 - **D6.** Chi può aprirlo: solo gli amministratori, o un ruolo a parte («custode») diverso da admin?
 
+### 12.7 Decisioni di Riccardo (26/11/2026)
+
+Parole sue: «un kdbx a disposizione degli utenti finali, slegato da quello di uso di ipam» e «una password
+principale e un 2fa per accedere personale e una registrazione degli accessi». Dove le sezioni sopra dicono altro,
+**vale questa**.
+
+- **D1, D2.** Un archivio KDBX **locale all'installazione**, per gli **utenti finali** (le persone del cliente), **slegato**
+  dalle credenziali che IPAM usa per lavorare. Non è una finestra sul vault di DA-Link e non tocca `credentials`,
+  `host_credentials` né il `domarc.kdbx`. Cade la tappa D5 (hub su DA-Link).
+- **D3.** Niente due scomparti: le credenziali degli apparati restano dove sono e i lavori automatici continuano a
+  leggerle come oggi. L'archivio contiene solo ciò che ci mettono le persone; i lavori non lo leggono mai. Cade
+  anche il legame obbligato con gli apparati (resta un campo facoltativo, da decidere se serve).
+- **D4.** Variante **C**: **password principale** dell'archivio **più secondo fattore personale** (il codice a 6 cifre
+  dell'utente) a ogni apertura, e **registro degli accessi** (aperture, chiusure, tentativi falliti, letture delle voci).
+- **D5, D6: non risposto.** Valgono le proposte finché non dice altro: richiusura dopo 10 minuti senza gesti e 60 al
+  massimo; lo aprono gli utenti che un amministratore abilita uno per uno («può usare l'archivio»), e solo se hanno
+  la seconda verifica accesa. Da confermare, perché «utenti finali» può voler dire anche chi oggi è in sola lettura.
+- Conseguenza da dire a schermo: la password principale è **una per l'archivio**, condivisa fra chi lo usa; il
+  secondo fattore e il registro dicono **chi** ha aperto. Se si perde la password principale l'archivio non si apre:
+  serve una procedura di recupero decisa prima (proposta: una chiave di recupero stampata alla creazione, da tenere
+  in busta; nessuna copia a Domarc, perché è l'archivio del cliente).
+
+Tappe aggiornate: D0 (ADR) · D1 motore (4 g) · D2 scheda in lettura (3 g) · D3 scrittura (3 g) · D4 importazione,
+generatore, voci deboli (2 g) · D6 collaudo, backup e ripristino, manuale (2 g). **Totale: circa 14,5 giornate.**
+
 ## 13. Parte E — Disco cifrato con TPM virtuale (26/11/2026, da approvare)
 
 > Riccardo, 26/11: «sugli ipam sicuramente servirebbe un disco cifrato con tpm virtuale nel caso», e subito dopo

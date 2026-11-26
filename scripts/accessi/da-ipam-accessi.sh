@@ -11,6 +11,11 @@
 #   annulla          rimette subito le regole di prima della prova (root)
 #   spegni           toglie la tabella e l'ultima buona: sblocco dalla console (root)
 #   avvio            all'accensione: ricarica le ultime buone; se nft le rifiuta, la minima (root)
+#   esche-anteprima  scrive la tabella delle esche, non tocca niente
+#   esche            applica /etc/da-ipam/esche.conf: tabella `inet daipam_esche` e servizio; senza esche li toglie (root)
+#   blocca <ip> <s>  scarta tutto ciò che arriva da un indirizzo per <s> secondi (60-604800) (root)
+#   sblocca <ip>     toglie il blocco (root)
+#   bloccati         elenca gli indirizzi bloccati con il tempo che resta
 #
 # Configurazione: /etc/da-ipam/accessi.conf (altro percorso con DAIPAM_ACCESSI_CONF), scritta da
 # DA-IPAM, letta riga per riga e MAI eseguita. Ogni valore si rivalida qui da capo:
@@ -50,6 +55,12 @@ PORTE_DATI_TCP="514, 1514, 1515, 4443, 10051"
 PORTE_DATI_UDP="162, 514, 2055, 6343"
 # Mai dentro un gruppo: servono solo dentro la macchina (le chiude `inet dalink`, e qui restano fuori da tutto).
 PORTE_VIETATE="3001 8080"
+
+# Le esche: elenco CHIUSO nome:porta-finta:porta-alta, lo stesso di scripts/esche/da-ipam-esche.mjs (una prova li confronta).
+ESCHE_CONF="${DAIPAM_ESCHE_CONF:-/etc/da-ipam/esche.conf}"
+ESCHE_NOTE="ftp:21:20021 telnet:23:20023 smb:445:20445 ssh:2222:22222 mysql:3306:23306 rdp:3389:23389 web:8081:28081"
+TABELLA_ESCHE="inet daipam_esche"
+TABELLA_BLOCCO="inet daipam_blocco"
 
 errore() {
   echo "da-ipam-accessi: $*" >&2
@@ -187,6 +198,11 @@ genera_ruleset() {
     leggi_gruppo ACCESSI_DATI; d4="$V4"; d6="$V6"; da="$APERTO"
   fi
 
+  # Le porte delle esche accese restano aperte a tutti anche a filtro chiuso: sono lì per farsi toccare.
+  local riga_esche=""
+  leggi_esche
+  if [ -n "$ESCHE_PORTE" ] && [ "$modo" != "minima" ]; then riga_esche="tcp dport { $ESCHE_PORTE } accept comment \"esche\""; fi
+
   printf 'table %s\ndelete table %s\ntable %s {\n' "$TABELLA" "$TABELLA" "$TABELLA"
   printf '\tcomment "da-ipam-accessi modo=%s"\n' "$modo"
   un_set sempre4 ipv4_addr "$s4"; un_set sempre6 ipv6_addr "$s6"
@@ -214,13 +230,126 @@ genera_ruleset() {
 		udp dport { 68, 546 } accept
 		udp dport 51820 accept
 		ip saddr @sempre4 accept
-		ip6 saddr @sempre6 accept
+		ip6 saddr @sempre6 accept${riga_esche:+
+		$riga_esche}
 		tcp dport { $PORTE_WEB } jump g_web
 		tcp dport { $PORTE_SSH } jump g_ssh
 		tcp dport { $PORTE_CONSOLE } jump g_console
 		tcp dport { $PORTE_DATI_TCP } jump g_dati
 		udp dport { $PORTE_DATI_UDP } jump g_dati
 		meta l4proto { tcp, udp } jump g_altre
+	}
+}
+EOF
+}
+
+# Le esche accese nel file: ESCHE_PORTE (per le regole del filtro) e ESCHE_MAPPA (porta finta : porta alta).
+ESCHE_PORTE=""; ESCHE_MAPPA=""
+leggi_esche() {
+  local grezzo n voce trovata
+  ESCHE_PORTE=""; ESCHE_MAPPA=""
+  [ -f "$ESCHE_CONF" ] || return 0
+  grezzo="$(CONF="$ESCHE_CONF" valore_conf ESCHE | tr ',' ' ')"
+  for n in $grezzo; do
+    trovata=""
+    for voce in $ESCHE_NOTE; do
+      if [ "${voce%%:*}" = "$n" ]; then trovata="${voce#*:}"; fi
+    done
+    [ -n "$trovata" ] || errore "esca sconosciuta: «${n}»"
+    case ", $ESCHE_PORTE," in *", ${trovata%%:*},"*) continue ;; esac
+    if [ -n "$ESCHE_PORTE" ]; then ESCHE_PORTE="$ESCHE_PORTE, ${trovata%%:*}"; ESCHE_MAPPA="$ESCHE_MAPPA, ${trovata%%:*} : ${trovata#*:}"
+    else ESCHE_PORTE="${trovata%%:*}"; ESCHE_MAPPA="${trovata%%:*} : ${trovata#*:}"; fi
+  done
+}
+
+# La tabella delle esche: porta le porte finte alle porte alte del servizio, solo per ciò che arriva da fuori
+# ed è diretto a questa macchina. NetBird, Docker e la macchina stessa non ci passano.
+genera_esche() {
+  leggi_esche
+  printf 'table %s\ndelete table %s\n' "$TABELLA_ESCHE" "$TABELLA_ESCHE"
+  [ -n "$ESCHE_PORTE" ] || return 0
+  cat <<EOF
+table $TABELLA_ESCHE {
+	chain porta {
+		type nat hook prerouting priority dstnat - 5; policy accept;
+		iifname "lo" return
+		iifname "$SCHEDA_NETBIRD" return
+		iifname "docker*" return
+		iifname "br-*" return
+		fib daddr type local tcp dport { $ESCHE_PORTE } counter redirect to :tcp dport map { $ESCHE_MAPPA }
+	}
+}
+EOF
+}
+
+# Un'esca non prende mai una porta vera: se la porta finta o quella alta è già di un altro servizio, ci si ferma.
+controlla_porte_esche() {
+  local voce finta alta chi
+  command -v ss >/dev/null 2>&1 || return 0
+  for voce in $ESCHE_NOTE; do
+    finta="${voce#*:}"; alta="${finta#*:}"; finta="${finta%%:*}"
+    case ", $ESCHE_PORTE," in *", $finta,"*) ;; *) continue ;; esac
+    if [ -n "$(ss -H -tln "sport = :$finta" 2>/dev/null)" ]; then errore "la porta $finta è già di un servizio vero: l'esca «${voce%%:*}» non si accende"; fi
+    chi="$(ss -H -tlnp "sport = :$alta" 2>/dev/null)"
+    case "$chi" in "" | *'"node"'* | *'"MainThread"'*) ;; *) errore "la porta alta $alta è già occupata da un altro servizio" ;; esac
+  done
+}
+
+installa_servizio_esche() {
+  local unita="/etc/systemd/system/da-ipam-esche.service" qui app modello nodo
+  qui="$(cd "$(dirname "$0")" && pwd)" || errore "non trovo la cartella dello script"
+  app="$(cd "$qui/../.." && pwd)" || errore "non trovo la cartella dell'app"
+  modello="$app/deploy/da-ipam-esche.service"
+  [ -f "$modello" ] || errore "modello dell'unità assente: $modello"
+  [ -f "$app/scripts/esche/da-ipam-esche.mjs" ] || errore "servizio delle esche assente in $app/scripts/esche"
+  nodo="$(command -v node)" || errore "node non trovato: il servizio delle esche non parte"
+  case "$app$nodo" in *[!A-Za-z0-9_./-]*) errore "percorso non adatto a un'unità: $app $nodo" ;; esac
+  sed -e "s|@APP_DIR@|$app|g" -e "s|@NODE@|$nodo|g" "$modello" > "$unita" || errore "non ho scritto $unita"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl enable da-ipam-esche.service >/dev/null 2>&1 || true
+  systemctl restart da-ipam-esche.service || errore "il servizio delle esche non parte: journalctl -u da-ipam-esche"
+}
+
+# Indirizzo singolo (niente reti) che si può bloccare: non NetBird, non questa macchina, non il gateway.
+bloccabile() {
+  local ip="$1" o1 o2 resto
+  case "$ip" in */*) errore "si blocca un indirizzo, non una rete: «${ip}»" ;; esac
+  if ipv4_valido "$ip"; then
+    o1="${ip%%.*}"; resto="${ip#*.}"; o2="${resto%%.*}"
+    if [ "$o1" -eq 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ]; then errore "«${ip}» è della rete NetBird/DA-Link: non si blocca mai"; fi
+    [ "$o1" -ne 127 ] || errore "«${ip}» è la macchina stessa"
+  elif ipv6_valido "$ip"; then
+    [ "$ip" != "::1" ] || errore "«${ip}» è la macchina stessa"
+  else
+    errore "«${ip}» non è un indirizzo"
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    if ip -o addr show 2>/dev/null | grep -q -F " $ip/"; then errore "«${ip}» è un indirizzo di questa macchina: non si blocca"; fi
+    if ip route show default 2>/dev/null | grep -q -F "via $ip "; then errore "«${ip}» è il gateway di questa macchina: non si blocca"; fi
+  fi
+}
+
+genera_blocco() {
+  cat <<EOF
+table $TABELLA_BLOCCO {
+	set bloccati4 {
+		type ipv4_addr
+		size 1024
+		flags timeout
+	}
+	set bloccati6 {
+		type ipv6_addr
+		size 1024
+		flags timeout
+	}
+	chain blocco {
+		type filter hook prerouting priority mangle + 3; policy accept;
+		iifname "lo" accept
+		iifname "$SCHEDA_NETBIRD" accept
+		iifname "docker*" accept
+		iifname "br-*" accept
+		ip saddr @bloccati4 counter drop
+		ip6 saddr @bloccati6 counter drop
 	}
 }
 EOF
@@ -356,5 +485,68 @@ case "$COMANDO" in
       exit 2
     fi
     ;;
-  *) errore "comando sconosciuto: $COMANDO (anteprima, minima, stato, osserva, prova, conferma, annulla, spegni, avvio)" ;;
+  esche-anteprima)
+    RULESET="$(genera_esche)" || exit 1
+    printf '%s\n' "$RULESET"
+    ;;
+  blocco-anteprima)
+    genera_blocco
+    ;;
+  esche)
+    vuole_root esche; vuole_nft
+    RULESET="$(genera_esche)" || exit 1
+    leggi_esche
+    if [ -z "$ESCHE_PORTE" ]; then
+      nft delete table $TABELLA_ESCHE 2>/dev/null || true
+      systemctl disable --now da-ipam-esche.service >/dev/null 2>&1 || true
+      echo "da-ipam-accessi: nessuna esca accesa, tabella e servizio tolti"
+    else
+      controlla_porte_esche
+      # Il servizio gira con un'utenza senza privilegi: deve poter leggere il suo file (solo nomi di esche, niente
+      # di riservato). La politica degli accessi accanto resta leggibile solo da root. Visto sul laboratorio il 26/11.
+      chmod 755 "$(dirname "$ESCHE_CONF")" && chmod 644 "$ESCHE_CONF" || errore "non ho reso leggibile $ESCHE_CONF al servizio delle esche"
+      installa_servizio_esche
+      TMP="$(mktemp "${TMPDIR:-/tmp}/daipam-esche.XXXXXX")" || errore "mktemp fallito"
+      printf '%s\n' "$RULESET" > "$TMP"
+      if ! nft -f "$TMP"; then rm -f "$TMP"; errore "nft ha rifiutato la tabella delle esche"; fi
+      rm -f "$TMP"
+      echo "da-ipam-accessi: esche accese sulle porte $ESCHE_PORTE"
+    fi
+    # Se il filtro è caricato va rigenerato: le porte delle esche devono restare raggiungibili (o tornare chiuse).
+    M="$(modo_caricato)"
+    case "$M" in
+      osserva | acceso)
+        RULESET="$(genera_ruleset "$M")" || exit 1
+        carica "$RULESET" || errore "filtro non rigenerato dopo il cambio delle esche"
+        [ ! -f "$BUONE" ] || printf '%s\n' "$RULESET" > "$BUONE"
+        ;;
+    esac
+    ;;
+  blocca)
+    vuole_root blocca; vuole_nft
+    IPB="${2:-}"; SEC="${3:-}"
+    [ -n "$IPB" ] || errore "blocca <indirizzo> <secondi>"
+    case "$SEC" in "" | *[!0-9]*) errore "blocca <indirizzo> <secondi> (60-604800)" ;; esac
+    [ "${#SEC}" -le 6 ] && [ "$SEC" -ge 60 ] && [ "$SEC" -le 604800 ] || errore "blocca <indirizzo> <secondi> (60-604800)"
+    bloccabile "$IPB"
+    if ! nft list table $TABELLA_BLOCCO >/dev/null 2>&1; then
+      genera_blocco | nft -f - || errore "nft ha rifiutato la tabella del blocco"
+    fi
+    if ipv4_valido "$IPB"; then SETB="bloccati4"; else SETB="bloccati6"; fi
+    nft delete element $TABELLA_BLOCCO "$SETB" "{ $IPB }" 2>/dev/null || true
+    nft add element $TABELLA_BLOCCO "$SETB" "{ $IPB timeout ${SEC}s }" || errore "blocco non riuscito (elenco pieno?)"
+    echo "da-ipam-accessi: ${IPB} bloccato per ${SEC}s"
+    ;;
+  sblocca)
+    vuole_root sblocca; vuole_nft
+    IPB="${2:-}"
+    if ipv4_valido "$IPB"; then SETB="bloccati4"; elif ipv6_valido "$IPB"; then SETB="bloccati6"; else errore "sblocca <indirizzo>"; fi
+    nft delete element $TABELLA_BLOCCO "$SETB" "{ $IPB }" 2>/dev/null || true
+    echo "da-ipam-accessi: ${IPB} non è più bloccato"
+    ;;
+  bloccati)
+    vuole_nft
+    nft -j list table $TABELLA_BLOCCO 2>/dev/null || true
+    ;;
+  *) errore "comando sconosciuto: $COMANDO (anteprima, minima, stato, osserva, prova, conferma, annulla, spegni, avvio, esche-anteprima, esche, blocca, sblocca, bloccati)" ;;
 esac

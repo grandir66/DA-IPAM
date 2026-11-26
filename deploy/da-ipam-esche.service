@@ -1,0 +1,34 @@
+# DA-IPAM — le esche: finti servizi su porte alte (Protezione, tappa 5; ADR 0041).
+# Utenza effimera senza alcun privilegio, niente accesso ai dati di DA-IPAM, memoria e processi limitati.
+# Le porte finte (23, 21, 445…) ce le porta la tabella nftables `inet daipam_esche`, non questo servizio.
+# Lo installa e lo avvia `scripts/accessi/da-ipam-accessi.sh esche`, che sostituisce @APP_DIR@ e @NODE@.
+[Unit]
+Description=DA-IPAM: esche (finti servizi)
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=da-ipam-esche
+StateDirectoryMode=0750
+Environment=ESCHE_CONF=/etc/da-ipam/esche.conf
+ExecStart=@NODE@ @APP_DIR@/scripts/esche/da-ipam-esche.mjs
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=128M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

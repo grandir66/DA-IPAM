@@ -88,7 +88,8 @@ export async function vistiFuori(): Promise<Visto[]> {
 }
 
 function scriviFile(percorso: string, testo: string): void {
-  fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+  // 755: nella cartella sta anche `esche.conf`, che il servizio delle esche legge con un'utenza sua. I file della politica restano 600.
+  fs.mkdirSync(DIR, { recursive: true, mode: 0o755 });
   const tmp = `${percorso}.tmp`;
   fs.writeFileSync(tmp, testo, { mode: 0o600 });
   fs.renameSync(tmp, percorso);

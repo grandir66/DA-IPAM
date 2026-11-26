@@ -513,6 +513,43 @@ principale e un 2fa per accedere personale e una registrazione degli accessi». 
 Tappe aggiornate: D0 (ADR) · D1 motore (4 g) · D2 scheda in lettura (3 g) · D3 scrittura (3 g) · D4 importazione,
 generatore, voci deboli (2 g) · D6 collaudo, backup e ripristino, manuale (2 g). **Totale: circa 14,5 giornate.**
 
+### 12.8 Seconde decisioni di Riccardo (26/11/2026) e la copia cifrata
+
+Parole sue: «richiusura automatica sì certo»; «solo utenti con una autorizzazione specifica non necessariamente
+admin»; «il recupero con il superadmin che può resettare l'utenza»; «vorrei trovare un sistema per avere una copia
+cifrata sicura dell'archivio».
+
+- **Richiusura automatica**: sì (10 minuti senza gesti, 60 al massimo).
+- **Chi lo apre**: chi ha un'**autorizzazione specifica** («può usare l'archivio»), data utente per utente; non
+  dipende dal ruolo, un utente in sola lettura può averla e un admin può non averla.
+- **Recupero dal superadmin**: perché «resettare l'utenza» ridia davvero l'accesso, la password principale non può
+  essere una sola condivisa (nessuno potrebbe ridarla a chi l'ha persa senza conoscerla). Proposta, **da confermare**:
+  **una serratura per utente**. L'archivio è cifrato con una chiave sua, casuale, che non sta mai in chiaro sul
+  disco; ogni utente autorizzato ha la propria **password principale personale**, che apre la sua serratura (la
+  chiave dell'archivio cifrata con la sua password, Argon2id). Il superadmin ha la sua serratura: «Reimposta
+  l'accesso di…» apre con la propria e ne scrive una nuova per l'utente, con una password provvisoria da cambiare
+  al primo uso, e gli azzera il secondo fattore. Togliere l'autorizzazione = cancellare la serratura. Nessun segreto
+  condiviso, e il registro dice chi ha aperto con certezza.
+  Limite da dire a schermo: **se tutte le serrature si perdono, l'archivio non si apre più**. Per questo la copia qui sotto.
+- **Copia cifrata sicura dell'archivio** (proposta, da decidere):
+
+| Variante | Come | Pro | Contro |
+| --- | --- | --- | --- |
+| **1. Copia automatica verso una chiave pubblica di recupero (proposta)** | ogni notte, e dopo ogni modifica, l'archivio viene copiato cifrato verso una chiave **pubblica**; la privata viene mostrata **una volta sola** alla creazione, da stampare e tenere fuori dalla macchina | sulla macchina non c'è niente che apra la copia; si fa da sola; chi ruba macchina e copie non legge | chi perde la chiave privata perde la copia; il ripristino va provato almeno una volta |
+| 2. «Scarica una copia» a mano | un file `.kdbx` standard, cifrato con una frase scelta in quel momento, che KeePassXC apre ovunque | indipendente da IPAM; semplice da capire | dipende da qualcuno che si ricordi di farla; la frase scelta può essere debole |
+| 3. Dentro il backup notturno dell'installazione | l'archivio entra nel backup cifrato che c'è già | nessun meccanismo nuovo | la chiave di quel backup sta nel vault della stessa macchina: non regge al furto di tutto |
+
+  Proposta: **1 e 2 insieme**. Le copie tengono le ultime 30 versioni; stanno sulla macchina fuori dalla cartella dati
+  e, se si vuole, anche fuori dalla macchina (una cartella di rete del cliente, il PBS, DA-Link). Ogni copia e ogni
+  scaricamento vanno nel registro. In «Stato della protezione» una riga dice quando è stata fatta l'ultima copia e
+  se un ripristino è mai stato provato.
+
+Domande rimaste:
+
+- **D7.** Password principale **personale** con una serratura per utente, così il superadmin può ridare l'accesso: è questo che intendi?
+- **D8.** La copia cifrata: solo sulla macchina, o anche fuori (cartella di rete del cliente, PBS, DA-Link)?
+- **D9.** La chiave privata di recupero la tiene solo il cliente, o una seconda copia anche Domarc?
+
 ## 13. Parte E — Disco cifrato con TPM virtuale (26/11/2026, da approvare)
 
 > Riccardo, 26/11: «sugli ipam sicuramente servirebbe un disco cifrato con tpm virtuale nel caso», e subito dopo

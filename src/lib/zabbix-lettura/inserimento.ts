@@ -11,6 +11,8 @@ import {
   cambiaFamiglia,
   cambiaModelli,
   cambiaStato,
+  proponiModelli,
+  rinomina,
   comandoAgente,
   mettiInMonitoraggio,
   togliDaZabbix,
@@ -18,6 +20,8 @@ import {
   type EsitoAgente,
   type EsitoFamiglia,
   type EsitoModelli,
+  type EsitoProponi,
+  type EsitoRinomina,
   type EsitoScrittura,
   type EsitoStato,
   type EsitoTogli,
@@ -144,9 +148,21 @@ export function cambiaModelliApparato(d: DipendenzeInserimento, c: CambioModelli
 /** La famiglia di un apparato in Zabbix (tag `famiglia`, 13/11/2026). */
 export function cambiaFamigliaApparato(
   d: DipendenzeInserimento,
-  c: { hostid: string; famiglia: string; prova?: boolean },
+  c: { hostid: string; famiglia: string | null; prova?: boolean },
 ): Promise<Esito<EsitoFamiglia>> {
   return colCentro(d, (l) => cambiaFamiglia(l, c));
+}
+
+/** Il nome mostrato di un apparato in Zabbix (26/11/2026); `prova` dice solo cosa farebbe. */
+export function rinominaApparato(d: DipendenzeInserimento, c: { hostid: string; nome: string; prova: boolean }): Promise<Esito<EsitoRinomina>> {
+  return colCentro(d, (l) => rinomina(l, c));
+}
+
+/** I modelli che il centro propone per un apparato già in Zabbix; non scrive (26/11/2026). */
+export function proponiModelliApparato(d: DipendenzeInserimento, c: { hostid: string; ipamId: number | null; ip: string | null }): Promise<Esito<EsitoProponi>> {
+  const oggetto = c.ipamId !== null ? oggettoDaHost(d.db, c.ipamId) : c.ip ? { ip: c.ip } : null;
+  if (!oggetto) return Promise.resolve({ ok: false, status: 404, errore: "Di questo apparato manca l'IP: il centro non può proporre i modelli" });
+  return colCentro(d, (l) => proponiModelli(l, oggetto, c.hostid));
 }
 
 /** Sospende o riattiva un apparato in Zabbix (26/11/2026). */

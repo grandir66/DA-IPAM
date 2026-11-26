@@ -15,7 +15,8 @@ import { trasportoTlsPost } from "@/lib/zabbix-lettura/trasporto";
 const Corpo = z
   .object({
     hostid: z.string().regex(/^\d{1,20}$/),
-    famiglia: z.string().regex(/^[a-z_]{0,30}$/),
+    // `null` = torna all'automatico (26/11/2026); `""` è la forma di prima e vale lo stesso.
+    famiglia: z.string().regex(/^[a-z_]{0,30}$/).nullable(),
     prova: z.boolean().optional(),
   })
   .strict();

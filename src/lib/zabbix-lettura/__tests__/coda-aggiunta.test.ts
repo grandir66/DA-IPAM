@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TESTO_SCRITTURA } from "../scrittura";
-import { durata, eTettoDelGiorno, giorniPer, leggiCoda, tolto } from "../coda-aggiunta";
+import { PASSO_MS, SUBITO, attesaPrima, durata, eTettoDelGiorno, giorniPer, leggiCoda, registraChiamata, tolto } from "../coda-aggiunta";
 
 const OGGI = new Date("2026-11-26T10:00:00Z");
 const DOMANI = new Date("2026-11-27T00:05:00Z");
@@ -34,4 +34,25 @@ test("stime: 474 apparati sono cinque giorni, e la durata si dice a parole", () 
   assert.equal(giorniPer(50, 50), 1);
   assert.equal(durata(5), "meno di un minuto");
   assert.equal(durata(100), "circa 10 minuti");
+});
+
+test("il passo tiene conto delle chiamate recenti anche tra una finestra e l'altra, prove comprese", () => {
+  const t0 = new Date("2026-11-26T10:00:00Z");
+  let c = leggiCoda(null, t0);
+  // Una coda vuota: le prime chiamate passano subito.
+  assert.equal(attesaPrima(c, t0), 0);
+  for (let i = 0; i < SUBITO; i++) c = registraChiamata(c, t0);
+  // La finestra si chiude e si riapre (nuova istanza, coda riletta dal browser): il conto non riparte da zero.
+  c = leggiCoda(JSON.stringify(c), new Date(t0.getTime() + 5_000));
+  assert.equal(c.chiamate?.length, SUBITO);
+  assert.equal(attesaPrima(c, new Date(t0.getTime() + 5_000)), PASSO_MS - 5_000);
+  assert.equal(attesaPrima(c, new Date(t0.getTime() + PASSO_MS)), 0);
+  // Passato un minuto le chiamate non contano più e torna il «subito».
+  const dopo = new Date(t0.getTime() + 61_000);
+  assert.equal(attesaPrima(leggiCoda(JSON.stringify(c), dopo), dopo), 0);
+  assert.equal(leggiCoda(JSON.stringify(c), dopo).chiamate, undefined);
+  // Uscire dalla coda non perde il conto delle chiamate.
+  assert.equal(tolto(c, "i:1", false, t0).chiamate?.length, SUBITO);
+  // Meno di SUBITO chiamate recenti: nessuna attesa.
+  assert.equal(attesaPrima(registraChiamata(leggiCoda(null, t0), t0), t0), 0);
 });

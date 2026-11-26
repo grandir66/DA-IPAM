@@ -23,7 +23,7 @@ export async function GET() {
     const ipam = d.db
       .prepare(
         `SELECT h.id, h.ip, COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), h.ip) AS nome,
-                h.classification AS classificazione, h.last_seen AS vistoIl,
+                h.classification AS classificazione, NULLIF(TRIM(h.hostname), '') AS hostname, NULLIF(TRIM(h.custom_name), '') AS nomePersonale, h.last_seen AS vistoIl,
                 n.name AS rete, n.vlan_id AS vlan, NULLIF(TRIM(h.mac), '') AS mac, NULLIF(TRIM(h.model), '') AS modello,
                 COALESCE(NULLIF(TRIM(h.device_manufacturer), ''), NULLIF(TRIM(h.vendor), '')) AS marca,
                 (SELECT group_concat(DISTINCT c.protocol_type) FROM host_credentials c
@@ -41,6 +41,7 @@ export async function GET() {
         lettoAlle: l.centro.cliente.letto_alle ?? null,
         vecchio: l.centro.vecchio || l.famiglie.vecchio,
         famiglie: l.famiglie.famiglie,
+        versioneCentro: l.famiglie.versione_centro,
         apparati: elencoApparati({ host: l.centro.host, famiglie: l.famiglie.host, problemi: l.centro.problemi.problemi, vecchio: l.centro.vecchio, ipam }),
         modelliAdatti: modelli?.famiglie ?? null,
         proxy: l.centro.cliente.proxy.map((p) => ({ nome: p.nome, inLinea: p.in_linea })),

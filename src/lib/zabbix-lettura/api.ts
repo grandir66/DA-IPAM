@@ -158,6 +158,12 @@ export const OggettoDiFamiglia = z.object({
   /** L'host è disabilitato in Zabbix (26/11/2026): niente raccolta e niente allarmi. Assente su un centro vecchio. */
   sospeso: z.boolean().catch(false),
   /**
+   * 26/11/2026: la famiglia è scelta da una persona (tag a mano) e la versione dell'agente installato. Assenti su un
+   * centro non aggiornato: schema tollerante, senza campo non c'è né segno né versione.
+   */
+  famiglia_forzata: z.boolean().catch(false),
+  agente_versione: z.string().nullable().catch(null),
+  /**
    * Righe ricavate (13/11/2026): VM e datastore dal Proxmox, il dominio dai servizi dei DC, i
    * database dai servizi dei server. Hanno l'`hostid` dell'host da cui vengono, una `riga`
    * propria e lo stato già deciso dal centro. Su un centro vecchio `riga` manca: vale l'hostid.
@@ -171,6 +177,8 @@ export const OggettoDiFamiglia = z.object({
 export type OggettoDiFamiglia = z.infer<typeof OggettoDiFamiglia>;
 
 export const RispostaFamiglie = Testa.extend({
+  /** La versione del centro (26/11/2026): serve a dire se un agente è più vecchio. Assente = non si confronta. */
+  versione_centro: z.string().nullable().catch(null),
   famiglie: z.array(z.object({ codice: z.string(), etichetta: z.string() })),
   host: z.array(OggettoDiFamiglia),
   tronca: z.boolean().catch(false),

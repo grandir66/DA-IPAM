@@ -8,8 +8,8 @@ import fs from "node:fs";
 import { resolveDataDir } from "../data-dir";
 import { unisci } from "../percorsi";
 
-export type Fonte = "pagina" | "ssh" | "filtro";
-export const NOME_FONTE: Readonly<Record<Fonte, string>> = { pagina: "Pagina web", ssh: "SSH", filtro: "Filtro di rete" };
+export type Fonte = "pagina" | "ssh" | "filtro" | "esca";
+export const NOME_FONTE: Readonly<Record<Fonte, string>> = { pagina: "Pagina web", ssh: "SSH", filtro: "Filtro di rete", esca: "Esca" };
 
 export interface Tentativo {
   il: string;
@@ -50,6 +50,28 @@ export function tentativoDaRigaSsh(riga: string): Tentativo | null {
   return null;
 }
 
+// ── Esche: le righe scritte dal servizio ─────────────────────────────────────
+
+/** Una riga del registro del servizio delle esche → tentativo, o `null` se non è una riga buona. La password non c'è già più. */
+export function tentativoDaEvento(riga: string): Tentativo | null {
+  let e: { il?: unknown; esca?: unknown; porta?: unknown; indirizzo?: unknown; utente?: unknown };
+  try {
+    e = JSON.parse(riga) as typeof e;
+  } catch {
+    return null;
+  }
+  if (typeof e.il !== "string" || Number.isNaN(new Date(e.il).getTime()) || typeof e.esca !== "string" || !/^[a-z]{2,12}$/.test(e.esca)) return null;
+  const indirizzo = typeof e.indirizzo === "string" && /^[0-9a-fA-F:.]{3,45}$/.test(e.indirizzo) ? e.indirizzo : null;
+  return {
+    il: new Date(e.il).toISOString(),
+    fonte: "esca",
+    indirizzo,
+    ...(typeof e.utente === "string" && e.utente ? { utente: e.utente.slice(0, 64) } : {}),
+    ...(typeof e.porta === "number" ? { porta: e.porta } : {}),
+    cosa: `esca ${e.esca}`,
+  };
+}
+
 // ── Aggregazione e soglie ────────────────────────────────────────────────────
 
 export interface Aggregato {
@@ -84,7 +106,8 @@ export function aggrega(tentativi: readonly Tentativo[]): Aggregato[] {
 
 /** Soglie di avviso nella finestra: quanti tentativi (pagina, SSH) o quante porte diverse (filtro). */
 export const FINESTRA_MS = 10 * 60_000;
-export const SOGLIA: Readonly<Record<Fonte, number>> = { pagina: 5, ssh: 5, filtro: 3 };
+// Esche: nessuno ha un motivo buono per toccarle, quindi la soglia è la più bassa.
+export const SOGLIA: Readonly<Record<Fonte, number>> = { pagina: 5, ssh: 5, filtro: 3, esca: 3 };
 /** Dopo un avviso, per quanto non se ne manda un altro per la stessa strada e lo stesso indirizzo. */
 export const SILENZIO_MS = 60 * 60_000;
 
@@ -113,7 +136,9 @@ export function daAvvisare(tentativi: readonly Tentativo[], adesso: Date, avvisa
     const testo =
       a.fonte === "filtro"
         ? `${da_dove} ha provato ${a.porte.length} porte chiuse dal filtro in 10 minuti (${a.porte.slice(0, 8).join(", ")}).`
-        : `${a.quanti} tentativi falliti su ${NOME_FONTE[a.fonte]} da ${da_dove} in 10 minuti${a.utenti.length ? ` (nomi provati: ${a.utenti.join(", ")})` : ""}.`;
+        : a.fonte === "esca"
+          ? `${da_dove} ha toccato ${a.quanti} volte le esche in 10 minuti (porte ${a.porte.slice(0, 8).join(", ")})${a.utenti.length ? `, provando i nomi: ${a.utenti.join(", ")}` : ""}.`
+          : `${a.quanti} tentativi falliti su ${NOME_FONTE[a.fonte]} da ${da_dove} in 10 minuti${a.utenti.length ? ` (nomi provati: ${a.utenti.join(", ")})` : ""}.`;
     avvisi.push({ chiave, aggregato: a, testo });
   }
   return avvisi;
@@ -153,7 +178,7 @@ export function leggiTentativi(giorni: number, adesso = new Date(), tetto = 2000
       if (!r) continue;
       try {
         const t = JSON.parse(r) as Tentativo;
-        if (typeof t.il === "string" && (t.fonte === "pagina" || t.fonte === "ssh" || t.fonte === "filtro")) righe.push(t);
+        if (typeof t.il === "string" && (t.fonte === "pagina" || t.fonte === "ssh" || t.fonte === "filtro" || t.fonte === "esca")) righe.push(t);
       } catch {
         // una riga rotta non ferma la lettura delle altre
       }
@@ -173,4 +198,18 @@ export function pulisciTentativi(adesso = new Date()): void {
   } catch {
     // la cartella può non esserci ancora
   }
+}
+
+/** Contatti con le esche nelle ultime 24 ore, per porta finta: quanti e da quanti indirizzi (scheda «Esche»). */
+export function contattiEsche(adesso = new Date()): Record<number, { quanti: number; indirizzi: number }> {
+  const da = new Date(adesso.getTime() - 86_400_000).toISOString();
+  const perPorta = new Map<number, { quanti: number; indirizzi: Set<string> }>();
+  for (const t of leggiTentativi(2, adesso)) {
+    if (t.fonte !== "esca" || t.il < da || t.porta === undefined) continue;
+    const v = perPorta.get(t.porta) ?? { quanti: 0, indirizzi: new Set<string>() };
+    v.quanti += 1;
+    v.indirizzi.add(t.indirizzo ?? "?");
+    perPorta.set(t.porta, v);
+  }
+  return Object.fromEntries([...perPorta].map(([porta, v]) => [porta, { quanti: v.quanti, indirizzi: v.indirizzi.size }]));
 }

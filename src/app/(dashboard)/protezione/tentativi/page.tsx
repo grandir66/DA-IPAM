@@ -3,7 +3,12 @@ import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant, getNomiHostPerIp } from "@/lib/db-tenant";
 import { FilaNumeri, Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AzioniBlocco } from "@/components/protezione/azioni-blocco";
 import { Segno, SoloAdmin } from "@/components/protezione/pezzi";
+import { inElenco } from "@/lib/protezione/anteprima";
+import { DURATE_BLOCCO } from "@/lib/protezione/blocco";
+import { bloccati as leggiBloccatiOra } from "@/lib/protezione/esecutore";
+import { maiBloccati } from "@/lib/protezione/mai-bloccati";
 import { getNotificationConfig } from "@/lib/notifications/config";
 import { eAdmin } from "@/lib/permessi/ruolo";
 import { indirizziNostri } from "@/lib/protezione/tentativi-job";
@@ -37,6 +42,11 @@ export default async function TentativiPage() {
   const notifiche = getNotificationConfig();
   const canali = notifiche.enabled ? [notifiche.smtpEnabled ? "email" : null, notifiche.webhookEnabled ? "webhook" : null].filter(Boolean).join(" + ") : "";
   const oggi = adesso.toISOString().slice(0, 10);
+  const bloccatiOra = await leggiBloccatiOra();
+  const bloccato = new Set(bloccatiOra.map((b) => b.indirizzo));
+  const mai = maiBloccati();
+  const durate = Object.keys(DURATE_BLOCCO);
+  const tempo = (s: number | null): string => (s === null ? "" : s >= 86400 ? `${Math.round(s / 86400)} g` : s >= 3600 ? `${Math.round(s / 3600)} h` : `${Math.max(1, Math.round(s / 60))} min`);
 
   return (
     <div className="space-y-3">
@@ -45,16 +55,44 @@ export default async function TentativiPage() {
         voci={[
           { titolo: "Tentativi (7 giorni)", valore: tentativi.length },
           { titolo: "Oggi", valore: tentativi.filter((t) => t.il.startsWith(oggi)).length },
-          { titolo: "Indirizzi diversi", valore: new Set(tentativi.map((t) => t.indirizzo ?? "?")).size },
+          { titolo: "Bloccati adesso", valore: bloccatiOra.length },
           { titolo: "Sopra soglia adesso", valore: caldi.size, aiuto: "Chi negli ultimi 10 minuti ha superato la soglia di avviso" },
         ]}
       />
+      {(bloccatiOra.length > 0 || mai.length > 0) && (
+        <div className="grid gap-3 xl:grid-cols-2">
+          <Pannello titolo="Bloccati adesso" conteggio={bloccatiOra.length} sottotitolo="Tutto ciò che arriva da questi indirizzi viene scartato fino alla scadenza. Un riavvio della macchina li libera.">
+            {bloccatiOra.length === 0 ? <p className="text-[13px] text-muted-foreground">Nessuno.</p> : (
+              <ul className="space-y-1.5">
+                {bloccatiOra.map((b) => (
+                  <li key={b.indirizzo} className="flex flex-wrap items-center justify-between gap-2">
+                    <span><Segno tono="pieno" segno="■">{b.indirizzo}</Segno> <span className="text-[13px] text-muted-foreground">{b.restano !== null ? `ancora ${tempo(b.restano)}` : ""}</span></span>
+                    <AzioniBlocco indirizzo={b.indirizzo} bloccato mai={false} durate={durate} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Pannello>
+          <Pannello titolo="Mai bloccati" conteggio={mai.length} sottotitolo="Oltre a NetBird/DA-Link, a questa macchina e ai «sempre ammessi» del filtro.">
+            {mai.length === 0 ? <p className="text-[13px] text-muted-foreground">Nessuno.</p> : (
+              <ul className="space-y-1.5">
+                {mai.map((m) => (
+                  <li key={m} className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono">{m}</span>
+                    <AzioniBlocco indirizzo={m} bloccato={false} mai durate={durate} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Pannello>
+        </div>
+      )}
       <Pannello
         titolo="Chi ha provato a entrare"
         conteggio={righe.length}
         sottotitolo="Una riga per strada e indirizzo, negli ultimi 7 giorni. Mai una password: solo il nome provato."
         corpoClassName="p-0"
-        piede={`Avviso quando in 10 minuti: ${SOGLIA.pagina} login falliti · ${SOGLIA.ssh} tentativi SSH · ${SOGLIA.filtro} porte diverse scartate dal filtro. Avvisi: ${canali || "spenti (si accendono in Impostazioni › Notifiche)"}.`}
+        piede={`Avviso quando in 10 minuti: ${SOGLIA.pagina} login falliti · ${SOGLIA.ssh} tentativi SSH · ${SOGLIA.filtro} porte diverse scartate dal filtro · ${SOGLIA.esca} contatti con le esche. Il blocco lo decide una persona. Avvisi: ${canali || "spenti (si accendono in Impostazioni › Notifiche)"}.`}
       >
         {righe.length === 0 ? (
           <div className="p-3">
@@ -73,6 +111,7 @@ export default async function TentativiPage() {
                 <TableHead>Primo</TableHead>
                 <TableHead>Ultimo</TableHead>
                 <TableHead>Stato</TableHead>
+                <TableHead>Azioni</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,7 +129,10 @@ export default async function TentativiPage() {
                     <TableCell><TempoRelativo data={r.primo} /></TableCell>
                     <TableCell><TempoRelativo data={r.ultimo} /></TableCell>
                     <TableCell>
-                      {nostro ? <Segno tono="vuoto" segno="●">nostro, non conta</Segno> : caldi.has(`${r.fonte}|${r.indirizzo ?? ""}`) ? <Segno tono="avviso" segno="▲">sopra soglia</Segno> : <Segno tono="vuoto" segno="○">sotto soglia</Segno>}
+                      {nostro ? <Segno tono="vuoto" segno="●">nostro, non conta</Segno> : r.indirizzo && bloccato.has(r.indirizzo) ? <Segno tono="pieno" segno="■">bloccato</Segno> : caldi.has(`${r.fonte}|${r.indirizzo ?? ""}`) ? <Segno tono="avviso" segno="▲">sopra soglia</Segno> : <Segno tono="vuoto" segno="○">sotto soglia</Segno>}
+                    </TableCell>
+                    <TableCell>
+                      {r.indirizzo && !nostro && <AzioniBlocco indirizzo={r.indirizzo} bloccato={bloccato.has(r.indirizzo)} mai={inElenco(r.indirizzo, mai)} durate={durate} />}
                     </TableCell>
                   </TableRow>
                 );

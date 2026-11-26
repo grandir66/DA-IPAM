@@ -132,14 +132,18 @@ test("i comandi che scrivono non partono senza root, e la prova vuole una durata
   assert.equal(lancia("", ["boh"]).codice, 1);
 });
 
-test("i moduli che la pagina importa nel browser non usano moduli di Node (compilazione fallita il 25/11/2026)", () => {
-  // `chi-puo-collegarsi.tsx` è un componente client: ciò che importa per valore finisce nel browser. `tsc` e le
-  // prove non se ne accorgono: se ne accorge solo `npm run build`, che sulle appliance fallisce e tiene la versione vecchia.
-  const pagina = fs.readFileSync(path.join(process.cwd(), "src/app/(dashboard)/protezione/accessi/chi-puo-collegarsi.tsx"), "utf8");
-  const perValore = [...pagina.matchAll(/^import (?!type )[^;]*? from "@\/lib\/protezione\/([\w-]+)";/gm)].map((m) => m[1]);
-  assert.ok(perValore.includes("politica"));
-  for (const modulo of perValore) {
-    const testo = fs.readFileSync(path.join(process.cwd(), `src/lib/protezione/${modulo}.ts`), "utf8");
-    assert.doesNotMatch(testo, /^import .* from "(node:[^"]+|fs|net|os|path|child_process)";/m, `${modulo}.ts va nel browser e usa un modulo di Node`);
+test("i moduli che le pagine di Protezione portano nel browser non usano moduli di Node (compilazione fallita il 25/11/2026)", () => {
+  // Un componente client porta nel browser tutto ciò che importa per valore. `tsc` e le prove non se ne accorgono:
+  // se ne accorge solo `npm run build`, che sulle appliance fallisce e tiene la versione vecchia.
+  const radici = ["src/app/(dashboard)/protezione", "src/components/protezione"].map((d) => path.join(process.cwd(), d));
+  const file = radici.flatMap((d) => fs.readdirSync(d, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".tsx")).map((f) => path.join(d, f)));
+  const client = file.filter((f) => /^"use client";/m.test(fs.readFileSync(f, "utf8")));
+  assert.ok(client.length >= 3, "trovati troppo pochi componenti client: la prova non sta guardando niente");
+  const moduli = new Set<string>();
+  for (const f of client) for (const m of fs.readFileSync(f, "utf8").matchAll(/^import (?!type )[^;]*? from "@\/lib\/(protezione|accesso)\/([\w-]+)";/gm)) moduli.add(`${m[1]}/${m[2]}`);
+  assert.ok(moduli.has("protezione/politica") && moduli.has("protezione/esche-elenco"));
+  for (const modulo of moduli) {
+    const testo = fs.readFileSync(path.join(process.cwd(), `src/lib/${modulo}.ts`), "utf8");
+    assert.doesNotMatch(testo, /^import .* from "(node:[^"]+|fs|net|os|path|child_process|@\/lib\/db[^"]*)";/m, `${modulo}.ts va nel browser e usa un modulo del server`);
   }
 });

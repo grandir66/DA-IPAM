@@ -12,12 +12,15 @@ import fs from "node:fs";
 import os from "node:os";
 import { unisci } from "@/lib/percorsi";
 import { leggiFuori, type Visto } from "./anteprima";
+import { leggiBloccati, type Bloccato } from "./blocco";
+import { leggiConfEsche, scriviConfEsche, type ConfEsche } from "./esche-elenco";
 import { POLITICA_VUOTA, leggiPolitica, scriviPolitica, type Politica } from "./politica";
 
 const DIR = "/etc/da-ipam";
 export const FILE_POLITICA = `${DIR}/accessi.conf`;
 export const FILE_IN_PROVA = `${DIR}/accessi.conf.prova`;
 export const SECONDI_PROVA = 120;
+export const FILE_ESCHE = `${DIR}/esche.conf`;
 
 const script = (): string => unisci(process.cwd(), "scripts", "accessi", "da-ipam-accessi.sh");
 
@@ -172,4 +175,58 @@ export async function spegni(): Promise<EsitoAzione> {
   const r = await lancia(["spegni"]);
   fs.rmSync(FILE_IN_PROVA, { force: true });
   return { ok: r.codice === 0, messaggio: r.codice === 0 ? "Filtro spento: l'installazione non è protetta." : r.err, prima, dopo: prima };
+}
+
+// ── Esche e blocco (tappa 5) ─────────────────────────────────────────────────
+
+/** Le esche scritte nel file; senza file, nessuna. */
+export function escheInVigore(): ConfEsche {
+  try {
+    return leggiConfEsche(fs.readFileSync(FILE_ESCHE, "utf8"));
+  } catch {
+    return { accese: [], lente: false };
+  }
+}
+
+/** Il servizio delle esche è attivo? `null` = non si può dire (non è Linux, systemd non risponde). */
+export function servizioEscheAttivo(): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    if (os.platform() !== "linux") return resolve(null);
+    execFile("systemctl", ["is-active", "da-ipam-esche.service"], { timeout: 8000 }, (_err, stdout) => resolve(stdout.trim() === "active"));
+  });
+}
+
+/** Scrive il file delle esche e lo applica; se l'esecutore rifiuta (una porta è già di un servizio vero) torna quello di prima. */
+export async function applicaEsche(c: ConfEsche): Promise<EsitoAzione> {
+  let prima = "";
+  try {
+    prima = fs.readFileSync(FILE_ESCHE, "utf8");
+  } catch {
+    // nessun file: prima non c'erano esche
+  }
+  const dopo = scriviConfEsche(c);
+  fs.mkdirSync(DIR, { recursive: true, mode: 0o755 });
+  fs.writeFileSync(FILE_ESCHE, dopo, { mode: 0o644 });
+  const r = await lancia(["esche"]);
+  if (r.codice !== 0) {
+    if (prima) fs.writeFileSync(FILE_ESCHE, prima, { mode: 0o644 });
+    else fs.rmSync(FILE_ESCHE, { force: true });
+    return { ok: false, messaggio: r.err || "L'esecutore ha rifiutato.", prima, dopo };
+  }
+  return { ok: true, messaggio: c.accese.length === 0 ? "Esche spente." : `Esche accese: ${c.accese.length}.`, prima, dopo };
+}
+
+export async function bloccati(): Promise<Bloccato[]> {
+  const r = await lancia(["bloccati"]);
+  return r.codice === 0 ? leggiBloccati(r.out) : [];
+}
+
+export async function blocca(indirizzo: string, secondi: number): Promise<{ ok: boolean; messaggio: string }> {
+  const r = await lancia(["blocca", indirizzo, String(secondi)]);
+  return { ok: r.codice === 0, messaggio: r.codice === 0 ? `${indirizzo} bloccato.` : r.err.replace(/^da-ipam-accessi: /, "") || "Blocco non riuscito." };
+}
+
+export async function sblocca(indirizzo: string): Promise<{ ok: boolean; messaggio: string }> {
+  const r = await lancia(["sblocca", indirizzo]);
+  return { ok: r.codice === 0, messaggio: r.codice === 0 ? `${indirizzo} non è più bloccato.` : r.err || "Sblocco non riuscito." };
 }

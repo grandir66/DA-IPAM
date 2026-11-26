@@ -11,11 +11,11 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import { resolveDataDir } from "../data-dir";
-import { unisci } from "../percorsi";
+import { elencaCartella, unisci } from "../percorsi";
 import { dispatchNotification } from "../notifications/notifier";
 import type { NotifiableEvent } from "../notifications/policy";
 import { statoFiltro, vistiFuori } from "./esecutore";
-import { daAvvisare, leggiTentativi, pulisciTentativi, scriviTentativi, tentativoDaRigaSsh, type Avviso, type Tentativo } from "./tentativi";
+import { daAvvisare, leggiTentativi, pulisciTentativi, scriviTentativi, tentativoDaEvento, tentativoDaRigaSsh, type Avviso, type Tentativo } from "./tentativi";
 
 export const OGNI_MS = 2 * 60_000;
 const PRIMO_MS = 90_000;
@@ -25,6 +25,8 @@ interface StatoGiro {
   sshFino: string | null;
   /** Coppie indirizzo|porta del filtro già registrate. */
   filtroVisti: string[];
+  /** Fin dove si è letto ogni file degli eventi delle esche: nome del file → byte. */
+  escheLetti: Record<string, number>;
   avvisati: Record<string, string>;
 }
 
@@ -33,9 +35,9 @@ const fileStato = (): string => unisci(resolveDataDir(), "audit", "tentativi-sta
 function leggiStato(): StatoGiro {
   try {
     const s = JSON.parse(fs.readFileSync(fileStato(), "utf8")) as Partial<StatoGiro>;
-    return { sshFino: typeof s.sshFino === "string" ? s.sshFino : null, filtroVisti: Array.isArray(s.filtroVisti) ? s.filtroVisti.filter((x) => typeof x === "string") : [], avvisati: s.avvisati && typeof s.avvisati === "object" ? s.avvisati : {} };
+    return { sshFino: typeof s.sshFino === "string" ? s.sshFino : null, filtroVisti: Array.isArray(s.filtroVisti) ? s.filtroVisti.filter((x) => typeof x === "string") : [], avvisati: s.avvisati && typeof s.avvisati === "object" ? s.avvisati : {}, escheLetti: s.escheLetti && typeof s.escheLetti === "object" ? s.escheLetti : {} };
   } catch {
-    return { sshFino: null, filtroVisti: [], avvisati: {} };
+    return { sshFino: null, filtroVisti: [], avvisati: {}, escheLetti: {} };
   }
 }
 
@@ -52,6 +54,48 @@ function esegui(comando: string, argomenti: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(comando, argomenti, { timeout: 15000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => resolve(err ? null : stdout));
   });
+}
+
+/** Dove systemd tiene lo stato del servizio delle esche (`StateDirectory`, con utenza effimera sta sotto `private`). */
+export const DIR_EVENTI_ESCHE = "/var/lib/private/da-ipam-esche";
+
+/**
+ * Le righe nuove di ogni file `eventi-*.jsonl`, e aggiorna `letti` (nome → byte). Al più 2000 righe per giro: un
+ * visitatore che martella le esche non riempie la memoria; il resto si legge al giro dopo.
+ */
+export function leggiEventiEsche(letti: Record<string, number>, dir = DIR_EVENTI_ESCHE): Map<string, string[]> {
+  const esito = new Map<string, string[]>();
+  let file: string[];
+  try {
+    file = elencaCartella(dir).filter((f) => /^eventi-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f)).sort();
+  } catch {
+    return esito;
+  }
+  let tetto = 2000;
+  for (const f of file) {
+    if (tetto <= 0) break;
+    const percorso = unisci(dir, f);
+    try {
+      const lungo = fs.statSync(percorso).size;
+      const da = Math.min(letti[f] ?? 0, lungo);
+      if (lungo === da) continue;
+      const fd = fs.openSync(percorso, "r");
+      const blocco = Buffer.alloc(Math.min(lungo - da, 2 * 1024 * 1024));
+      fs.readSync(fd, blocco, 0, blocco.length, da);
+      fs.closeSync(fd);
+      // Solo righe intere: l'ultima può essere a metà scrittura.
+      const fine = blocco.lastIndexOf(10);
+      if (fine < 0) continue;
+      const righe = blocco.subarray(0, fine).toString("utf8").split("\n").filter(Boolean).slice(0, tetto);
+      tetto -= righe.length;
+      esito.set(f, righe);
+      letti[f] = da + fine + 1;
+    } catch (e) {
+      console.error("[tentativi] eventi delle esche non letti:", e instanceof Error ? e.message : e);
+    }
+  }
+  for (const k of Object.keys(letti)) if (!file.includes(k)) delete letti[k];
+  return esito;
 }
 
 /** Gli indirizzi di questa macchina: i tentativi che partono da qui (lo Scanner-Edge) non sono intrusi. */
@@ -92,6 +136,16 @@ export async function giroTentativi(adesso = new Date()): Promise<EsitoGiroTenta
     stato.filtroVisti = visti.map((v) => `${v.indirizzo}|${v.porta}`);
   } else if (filtro.tabella !== "acceso") {
     stato.filtroVisti = [];
+  }
+
+  // Esche: le righe nuove dei file scritti dal servizio (cartella di systemd, leggibile solo da root).
+  for (const [nome, righe] of leggiEventiEsche(stato.escheLetti)) {
+    void nome;
+    for (const r of righe) {
+      const t = tentativoDaEvento(r);
+      // I contatti che partono da questa macchina (lo Scanner-Edge che scansiona se stesso) non sono tentativi.
+      if (t && !(t.indirizzo && indirizziNostri().has(t.indirizzo))) nuovi.push(t);
+    }
   }
 
   scriviTentativi(nuovi);

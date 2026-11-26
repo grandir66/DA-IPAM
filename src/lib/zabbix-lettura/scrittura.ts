@@ -207,6 +207,47 @@ export async function cambiaFamiglia(
   return posta(l, "/api/scrittura/v1/famiglia", corpo, EsitoFamiglia);
 }
 
+// ── Sospendere, riattivare e togliere (26/11/2026, Riccardo: «manca un comando per rimuovere un oggetto da zabbix…
+//    almeno dovremo pensare di metterlo in offline pausa o eliminarlo») ──
+
+export const EsitoStato = z.object({
+  esito: z.enum(["prova", "cambiato", "gia_cosi"]),
+  hostid: z.string(),
+  nome: z.string().catch(""),
+  host: z.string().catch(""),
+  attivo: z.boolean(),
+  prima: z.boolean().catch(true),
+});
+export type EsitoStato = z.infer<typeof EsitoStato>;
+
+/** Sospende (`attivo: false`) o riattiva un apparato: resta in Zabbix con configurazione e storico. */
+export async function cambiaStato(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  c: { hostid: string; attivo: boolean; prova?: boolean },
+): Promise<EsitoStato> {
+  const corpo: Record<string, unknown> = { hostid: c.hostid, attivo: c.attivo };
+  if (c.prova) corpo.prova = true;
+  return posta(l, "/api/scrittura/v1/stato", corpo, EsitoStato);
+}
+
+export const EsitoTogli = z.object({
+  esito: z.enum(["prova", "tolto"]),
+  hostid: z.string(),
+  nome: z.string().catch(""),
+  host: z.string().catch(""),
+});
+export type EsitoTogli = z.infer<typeof EsitoTogli>;
+
+/** Toglie un apparato da Zabbix: l'host e il suo storico si cancellano, non si torna indietro. */
+export async function togliDaZabbix(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  c: { hostid: string; prova?: boolean },
+): Promise<EsitoTogli> {
+  const corpo: Record<string, unknown> = { hostid: c.hostid };
+  if (c.prova) corpo.prova = true;
+  return posta(l, "/api/scrittura/v1/togli", corpo, EsitoTogli);
+}
+
 /** I testi nostri per i codici che solo la scrittura può dare. */
 export const TESTO_SCRITTURA: Readonly<Record<string, string>> = {
   api_spenta: "sul centro l'inserimento degli oggetti è spento",

@@ -12,7 +12,7 @@ function apparato(p: Partial<ApparatoElenco> & { chiave: string }): ApparatoElen
   return {
     hostid: null, hostIdIpam: null, nome: p.chiave, hostTecnico: null, ip: null, famiglia: "altro", stato: "da_aggiungere",
     motivo: null, modelli: [], agente: "non_serve", sistema: null, schedaIpam: null, rete: null, vlan: null, marca: null,
-    modello: null, mac: null, credenziali: [], proxy: null, problemi: 0, ...p,
+    modello: null, mac: null, credenziali: [], proxy: null, problemi: 0, nonVistoGiorni: null, ...p,
   };
 }
 
@@ -31,6 +31,20 @@ test("i filtri: stato, scelta, «nessuno» e testo", () => {
   assert.deepEqual(nomi({ ...FILTRI_VUOTI, scelte: { credenziale: NESSUNO } }), ["sw10", "pc"]);
   assert.deepEqual(nomi({ ...FILTRI_VUOTI, scelte: { modelloZabbix: "M2" } }), ["sw10"]);
   assert.deepEqual(nomi({ ...FILTRI_VUOTI, testo: "10.0.0" }), ["pc"]);
+});
+
+test("sospesi e non visti: un sospeso non è «in monitoraggio» né «con problemi», e non si segnala come non visto", () => {
+  const B = [
+    apparato({ chiave: "vivo", hostid: "1", stato: "funziona", nonVistoGiorni: 2 }),
+    apparato({ chiave: "sparito", hostid: "2", stato: "fermo", nonVistoGiorni: 30 }),
+    apparato({ chiave: "in-pausa", hostid: "3", stato: "sospeso", nonVistoGiorni: 90 }),
+    apparato({ chiave: "nuovo", nonVistoGiorni: null }),
+  ];
+  const nomi = (stato: Parameters<typeof passa>[1]["stato"]) => B.filter((a) => passa(a, { ...FILTRI_VUOTI, stato })).map((a) => a.chiave);
+  assert.deepEqual(nomi("monitorati"), ["vivo", "sparito"]);
+  assert.deepEqual(nomi("sospesi"), ["in-pausa"]);
+  assert.deepEqual(nomi("non_visti"), ["sparito"]);
+  assert.deepEqual(nomi("problemi"), ["sparito"]);
 });
 
 test("i valori di un filtro portano i conteggi e la voce di chi non ha il dato", () => {

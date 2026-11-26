@@ -23,7 +23,7 @@ export async function GET() {
     const ipam = d.db
       .prepare(
         `SELECT h.id, h.ip, COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), h.ip) AS nome,
-                h.classification AS classificazione,
+                h.classification AS classificazione, h.last_seen AS vistoIl,
                 n.name AS rete, n.vlan_id AS vlan, NULLIF(TRIM(h.mac), '') AS mac, NULLIF(TRIM(h.model), '') AS modello,
                 COALESCE(NULLIF(TRIM(h.device_manufacturer), ''), NULLIF(TRIM(h.vendor), '')) AS marca,
                 (SELECT group_concat(DISTINCT c.protocol_type) FROM host_credentials c

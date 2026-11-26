@@ -10,13 +10,17 @@ import { famigliaDaClassificazione } from "./apparati";
 import {
   cambiaFamiglia,
   cambiaModelli,
+  cambiaStato,
   comandoAgente,
   mettiInMonitoraggio,
+  togliDaZabbix,
   type CambioModelli,
   type EsitoAgente,
   type EsitoFamiglia,
   type EsitoModelli,
   type EsitoScrittura,
+  type EsitoStato,
+  type EsitoTogli,
   type OggettoDaMettere,
   type OpzioniScrittura,
 } from "./scrittura";
@@ -143,6 +147,19 @@ export function cambiaFamigliaApparato(
   c: { hostid: string; famiglia: string; prova?: boolean },
 ): Promise<Esito<EsitoFamiglia>> {
   return colCentro(d, (l) => cambiaFamiglia(l, c));
+}
+
+/** Sospende o riattiva un apparato in Zabbix (26/11/2026). */
+export function cambiaStatoApparato(
+  d: DipendenzeInserimento,
+  c: { hostid: string; attivo: boolean; prova?: boolean },
+): Promise<Esito<EsitoStato>> {
+  return colCentro(d, (l) => cambiaStato(l, c));
+}
+
+/** Toglie un apparato da Zabbix, con lo storico (26/11/2026). */
+export function togliApparatoDaZabbix(d: DipendenzeInserimento, c: { hostid: string; prova?: boolean }): Promise<Esito<EsitoTogli>> {
+  return colCentro(d, (l) => togliDaZabbix(l, c));
 }
 
 const CHIAVE_SERVER_ACTIVE = "zabbix.server_active";

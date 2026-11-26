@@ -1,7 +1,7 @@
 ---
 percorso: /zabbix/apparati
 titolo: Apparati di DatIA Mon
-versione: 0.9.1370
+versione: 0.9.1374
 aggiornata: 2026-11-26
 ---
 
@@ -27,7 +27,7 @@ chiede di nuovo i dati al centro.
 
 - **Cerca nome, IP, MAC, marca, modello**: filtra mentre scrivi.
 - I pulsanti di stato con i conteggi: **Tutti**, **In monitoraggio**, **Da aggiungere**, **Con problemi**,
-  **Agente da installare**.
+  **Agente da installare**, **Sospesi**, **Non visti da 14 giorni** (in Zabbix, ma DA-IPAM non li vede più rispondere).
 - Le tendine **Famiglia**, **Rete**, **Marca**, **Modello Zabbix**, **Agente**, **Credenziale**: ogni voce porta
   quanti apparati ha; «(nessuno)» sceglie chi quel dato non ce l'ha. Una tendina con un filtro acceso ha il bordo spesso.
 - **Togli i filtri** li azzera. A destra «N di M apparati».
@@ -41,10 +41,11 @@ colonna ordina per quella; un secondo clic inverte.
 
 **Le colonne**: Stato, Apparato, IP, Rete · VLAN, Marca, Modello, Famiglia, Modello Zabbix (il primo), Altri (quanti
 altri modelli ha: il nome compare passando sopra), Agente, Credenziale (i protocolli con una credenziale provata valida in
-DA-IPAM), Problemi. Da accendere: Proxy, MAC, Nome in Zabbix, Sistema.
+DA-IPAM), Problemi, Non visto da (▲ e i giorni, solo quando sono almeno 14). Da accendere: Proxy, MAC, Nome in Zabbix, Sistema.
 
 **Le azioni sui selezionati** (al massimo 500 alla volta): **Aggiungi a Zabbix (N)**, **Aggiungi un modello…**,
-**Togli un modello…**, **Cambia famiglia…**, **Prepara l'agente…**, **Togli la selezione**. Un pulsante grigio dice
+**Togli un modello…**, **Cambia famiglia…**, **Prepara l'agente…**, **Sospendi…**, **Riattiva…**, **Togli da Zabbix…**,
+**Togli la selezione**. Un pulsante grigio dice
 perché passando sopra. Ogni scrittura passa prima da una prova del centro e poi da una conferma.
 
 **Il tasto destro** su una riga dà le stesse azioni (sulla riga, o sui selezionati se la riga è fra quelli), più
@@ -59,6 +60,13 @@ azioni su quel solo apparato.
 questo**. Se si ferma (tetto del giorno, o fermata da te) dice quanti ne restano: nella pagina compare
 **Riprendi la coda (N)**, che li aggiunge senza rifare la prova, e **Svuota la coda** per rinunciare. La coda vive nel
 browser di chi l'ha lanciata e va avanti solo con la finestra aperta: niente parte da solo.
+
+**Sospendere e togliere.** **Sospendi…** lascia l'apparato in Zabbix con configurazione e storico, ma Zabbix non lo
+interroga più e non dà allarmi: lo stato diventa **‖ Sospeso** (bordo tratteggiato) e si torna indietro con
+**Riattiva…**. **Togli da Zabbix…** cancella l'apparato da Zabbix con le sue misure e il suo storico e non si torna
+indietro: la finestra elenca i nomi uno per uno, chiede una spunta di conferma e offre **Sospendi invece**. In DA-IPAM
+l'apparato resta e torna fra quelli da aggiungere. Per un apparato che non c'è più ma potrebbe tornare, sospendi.
+Niente viene sospeso o tolto da solo: la colonna **Non visto da** segnala, decide una persona.
 
 ## Come si usa
 

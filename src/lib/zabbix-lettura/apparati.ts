@@ -9,7 +9,8 @@
 import type { HostDelCentro, OggettoDiFamiglia, ProblemaDelCentro } from "./api";
 import { statoOggetto, type StatoOggetto } from "@/lib/cliente/monitoring";
 
-export type StatoApparato = StatoOggetto | "da_aggiungere";
+/** «sospeso» (26/11/2026): in Zabbix ma disabilitato, niente raccolta e niente allarmi. */
+export type StatoApparato = StatoOggetto | "da_aggiungere" | "sospeso";
 export type StatoAgente = "si" | "no" | "non_so" | "non_serve" | "da_installare";
 
 export interface ApparatoElenco {
@@ -43,6 +44,22 @@ export interface ApparatoElenco {
   /** Il proxy che lo interroga, e i problemi aperti: solo per chi è in Zabbix. */
   proxy: string | null;
   problemi: number;
+  /**
+   * Da quanti giorni DA-IPAM non lo vede rispondere, per chi è in Zabbix (26/11/2026: gli apparati spariti restano
+   * in Zabbix a dare errori). null = DA-IPAM non lo conosce o non ha la data.
+   */
+  nonVistoGiorni: number | null;
+}
+
+/** Oltre questi giorni senza risposta in DA-IPAM un apparato ancora in Zabbix si segnala (proposta del 26/11). */
+export const GIORNI_NON_VISTO = 14;
+
+/** I giorni interi passati da una data di SQLite (UTC, senza fuso); null se manca o non si legge. */
+export function giorniDa(dataSqlite: string | null | undefined, adesso: Date): number | null {
+  if (!dataSqlite) return null;
+  const t = Date.parse(`${dataSqlite.trim().replace(" ", "T")}Z`);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((adesso.getTime() - t) / 86_400_000));
 }
 
 export interface RigaIpam {
@@ -59,6 +76,8 @@ export interface RigaIpam {
   mac?: string | null;
   /** Protocolli con credenziale valida, separati da virgola. */
   credenziali?: string | null;
+  /** `hosts.last_seen`, data di SQLite in UTC. */
+  vistoIl?: string | null;
 }
 
 function datiIpam(r: RigaIpam | undefined): Pick<ApparatoElenco, "schedaIpam" | "rete" | "vlan" | "marca" | "modello" | "mac" | "credenziali"> {
@@ -104,7 +123,9 @@ export function elencoApparati(i: {
   problemi: readonly ProblemaDelCentro[];
   vecchio: boolean;
   ipam: readonly RigaIpam[];
+  adesso?: Date;
 }): ApparatoElenco[] {
+  const adesso = i.adesso ?? new Date();
   const ipDi = new Map(i.host.map((h) => [h.hostid, h.ip]));
   const tecnicoDi = new Map(i.host.map((h) => [h.hostid, h.host]));
   const proxyDi = new Map(i.host.map((h) => [h.hostid, h.proxy ?? null]));
@@ -119,7 +140,11 @@ export function elencoApparati(i: {
   // Le righe ricavate (VM del Proxmox, dominio, database, datastore) non sono host di Zabbix:
   // qui non hanno modelli né agente da gestire.
   const elenco: ApparatoElenco[] = i.famiglie.filter((o) => !o.derivata).map((o) => {
-    const { stato, motivo } = statoOggetto(o, problemiDi.get(o.hostid) ?? [], i.vecchio);
+    const letto = statoOggetto(o, problemiDi.get(o.hostid) ?? [], i.vecchio);
+    // Un host sospeso non è «fermo»: è spento apposta, e lo si dice con uno stato suo.
+    const stato: StatoApparato = o.sospeso ? "sospeso" : letto.stato;
+    const motivo = o.sospeso ? "sospeso in Zabbix: niente raccolta, niente allarmi" : letto.motivo;
+    const riga = (ipDi.get(o.hostid) ?? []).map((x) => rigaDi.get(x)).find(Boolean);
     return {
       chiave: `z:${o.hostid}`,
       hostid: o.hostid,
@@ -133,9 +158,10 @@ export function elencoApparati(i: {
       modelli: o.modelli,
       agente: o.agente,
       sistema: sistemaDi(o.famiglia, o.modelli),
-      ...datiIpam((ipDi.get(o.hostid) ?? []).map((x) => rigaDi.get(x)).find(Boolean)),
+      ...datiIpam(riga),
       proxy: proxyDi.get(o.hostid) ?? null,
       problemi: (problemiDi.get(o.hostid) ?? []).length,
+      nonVistoGiorni: giorniDa(riga?.vistoIl, adesso),
     };
   });
   const ipZbx = new Set(i.host.flatMap((h) => h.ip));
@@ -161,6 +187,7 @@ export function elencoApparati(i: {
       ...datiIpam(r),
       proxy: null,
       problemi: 0,
+      nonVistoGiorni: null,
     });
   }
   return elenco;

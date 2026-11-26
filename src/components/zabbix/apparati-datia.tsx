@@ -28,10 +28,10 @@ import { fetchJson } from "@/lib/fetch-json";
 import { PASSO_MS, SUBITO, durata, eTettoDelGiorno, giorniPer, leggiCoda, tolto, type Coda } from "@/lib/zabbix-lettura/coda-aggiunta";
 import {
   CAMPI_FILTRO, COLONNE, FILTRI_VUOTI, GRUPPI, NESSUNO, STATI, TESTO_AGENTE, VISTA_AGENTI, VISTA_DI_SERIE, colonna, conColonna, leggiVista, passa, raggruppa,
-  spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
+  nonVisto, spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
 } from "@/lib/zabbix-lettura/vista-apparati";
 import type { ApparatoElenco, StatoAgente, StatoApparato } from "@/lib/zabbix-lettura/apparati";
-import type { EsitoAgente, EsitoModelli, EsitoScrittura } from "@/lib/zabbix-lettura/scrittura";
+import type { EsitoAgente, EsitoModelli, EsitoScrittura, EsitoStato, EsitoTogli } from "@/lib/zabbix-lettura/scrittura";
 
 interface Risposta {
   letto: boolean;
@@ -45,8 +45,8 @@ interface Risposta {
   proxy?: Array<{ nome: string; inLinea: boolean }>;
 }
 
-const TONO: Record<StatoApparato, ToniStato> = { funziona: "ok", attenzione: "attenzione", fermo: "guasto", non_so: "da_verificare", da_aggiungere: "grigio" };
-const TESTO_STATO: Record<StatoApparato, string> = { funziona: "Funziona", attenzione: "Attenzione", fermo: "Fermo", non_so: "Non so", da_aggiungere: "Da aggiungere" };
+const TONO: Record<StatoApparato, ToniStato> = { funziona: "ok", attenzione: "attenzione", fermo: "guasto", non_so: "da_verificare", da_aggiungere: "grigio", sospeso: "grigio" };
+const TESTO_STATO: Record<StatoApparato, string> = { funziona: "Funziona", attenzione: "Attenzione", fermo: "Fermo", non_so: "Non so", da_aggiungere: "Da aggiungere", sospeso: "Sospeso" };
 const AGENTE: Record<StatoAgente, { tono: ToniStato | null; testo: string }> = {
   si: { tono: "ok", testo: "attivo" },
   no: { tono: "attenzione", testo: "non manda dati" },
@@ -60,6 +60,16 @@ function Badge({ tono, testo }: { tono: ToniStato; testo: string }) {
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[13px] font-semibold ${STILE_STATO[tono].classi}`}>
       <span aria-hidden>{STILE_STATO[tono].segno}</span>
       {testo}
+    </span>
+  );
+}
+
+/** «Sospeso» ha un segno suo: due barre, bordo tratteggiato spesso, fondo chiaro. Non si confonde con «Fermo» (pieno). */
+function BadgeSospeso() {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border-2 border-dashed border-foreground bg-background px-1.5 py-0.5 text-[13px] font-semibold text-foreground">
+      <span aria-hidden>‖</span>
+      Sospeso
     </span>
   );
 }
@@ -557,6 +567,122 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
   );
 }
 
+// ── Sospendere, riattivare, togliere (26/11/2026) ──
+
+function FinestraStato({ attivo, apparati, chiudi, fatto }: { attivo: boolean; apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void }) {
+  const [lavoro, setLavoro] = useState(false);
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+
+  async function applica() {
+    setLavoro(true);
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const r = await postaConAttesa<EsitoStato>("/api/zabbix/apparati/stato", { hostid: a.hostid, attivo });
+      m.set(a.chiave, r.ok ? (r.data.esito === "gia_cosi" ? "era già così" : attivo ? "riattivato" : "sospeso") : r.message);
+      setEsiti(new Map(m));
+    }
+    setLavoro(false);
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">{attivo ? "Riattiva" : "Sospendi"} · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            {attivo
+              ? "Zabbix riprende a interrogarli e a dare allarmi. Configurazione e storico sono rimasti com'erano."
+              : "Restano in Zabbix con configurazione e storico, ma Zabbix non li interroga più e non dà allarmi. Si torna indietro con «Riattiva»."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="px-4 py-3">
+          <ul className="divide-y text-sm">
+            {apparati.map((a) => (
+              <li key={a.chiave} className="flex gap-3 py-1.5">
+                <span className="w-56 min-w-0 truncate font-medium">{a.nome}</span>
+                <span className="w-32 font-mono text-[13px]">{a.ip ?? "—"}</span>
+                <span className="flex-1 text-muted-foreground">{esiti?.get(a.chiave) ?? (nonVisto(a) ? `DA-IPAM non lo vede da ${a.nonVistoGiorni} giorni` : "")}</span>
+              </li>
+            ))}
+          </ul>
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {!esiti && (
+            <Button type="button" disabled={lavoro} onClick={() => void applica()}>
+              {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}{attivo ? "Riattiva" : "Sospendi"} {apparati.length}
+            </Button>
+          )}
+          <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FinestraTogli({ apparati, chiudi, fatto, sospendiInvece }: { apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void; sospendiInvece: () => void }) {
+  const [lavoro, setLavoro] = useState(false);
+  const [letto, setLetto] = useState(false);
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+  const daSospendere = apparati.filter((a) => a.stato !== "sospeso").length;
+
+  async function applica() {
+    setLavoro(true);
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const r = await postaConAttesa<EsitoTogli>("/api/zabbix/apparati/togli", { hostid: a.hostid });
+      m.set(a.chiave, r.ok ? "tolto da Zabbix" : r.message);
+      setEsiti(new Map(m));
+    }
+    setLavoro(false);
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">Togli da Zabbix · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            Zabbix cancella l&apos;apparato con tutte le sue misure e il suo storico: <strong>non si torna indietro</strong>. In DA-IPAM
+            l&apos;apparato resta e torna fra quelli da aggiungere. Se può tornare, sospendilo.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="space-y-3 px-4 py-3">
+          <ul className="divide-y text-sm">
+            {apparati.map((a) => (
+              <li key={a.chiave} className="flex gap-3 py-1.5">
+                <span className="w-56 min-w-0 truncate font-semibold">{a.nome}</span>
+                <span className="w-32 font-mono text-[13px]">{a.ip ?? "—"}</span>
+                <span className="flex-1 text-muted-foreground">
+                  {esiti?.get(a.chiave) ?? (a.stato === "sospeso" ? "sospeso" : nonVisto(a) ? `DA-IPAM non lo vede da ${a.nonVistoGiorni} giorni` : "risponde in DA-IPAM")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!esiti && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={letto} onChange={(e) => setLetto(e.target.checked)} />
+              Ho letto i nomi: voglio cancellare da Zabbix questi {apparati.length} apparati e il loro storico.
+            </label>
+          )}
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {!esiti && (
+            <>
+              <Button type="button" variant="outline" disabled={lavoro || !daSospendere} title={daSospendere ? undefined : "Sono già tutti sospesi"} onClick={sospendiInvece}>Sospendi invece</Button>
+              <Button type="button" variant="destructive" disabled={lavoro || !letto} onClick={() => void applica()}>
+                {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}Togli {apparati.length} da Zabbix
+              </Button>
+            </>
+          )}
+          <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── La pagina ──
 
 // Dal 26/11 l'aggiunta va in coda entro i tetti del centro: si possono scegliere tutti gli apparati di una rete.
@@ -569,6 +695,8 @@ type Finestra =
   | { tipo: "agente"; apparati: ApparatoElenco[] }
   | { tipo: "famiglia"; apparati: ApparatoElenco[] }
   | { tipo: "modelli"; cambio: CambioModelli }
+  | { tipo: "stato"; attivo: boolean; apparati: ApparatoElenco[] }
+  | { tipo: "togli"; apparati: ApparatoElenco[] }
   | { tipo: "colonne" }
   | null;
 
@@ -576,6 +704,8 @@ type Finestra =
 function azioniSu(lista: ApparatoElenco[], scrive: boolean, motivo: string | undefined, apri: (f: Finestra) => void) {
   const daAggiungere = lista.filter((a) => a.hostid === null);
   const monitorati = lista.filter((a) => a.hostid !== null);
+  const sospesi = monitorati.filter((a) => a.stato === "sospeso");
+  const attivi = monitorati.filter((a) => a.stato !== "sospeso");
   const perche = (vuoto: boolean, cosa: string) => (!scrive ? motivo ?? "Non si può scrivere sul centro" : vuoto ? cosa : undefined);
   return [
     { id: "aggiungi", testo: `Aggiungi a Zabbix (${daAggiungere.length})`, spento: perche(!daAggiungere.length, "Nessuno dei selezionati è da aggiungere"), fai: () => apri({ tipo: "aggiungi", apparati: daAggiungere }) },
@@ -583,6 +713,9 @@ function azioniSu(lista: ApparatoElenco[], scrive: boolean, motivo: string | und
     { id: "modello_meno", testo: "Togli un modello…", spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "modelli", cambio: { tipo: "togli", apparati: monitorati } }) },
     { id: "famiglia", testo: "Cambia famiglia…", spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "famiglia", apparati: monitorati }) },
     { id: "agente", testo: "Prepara l'agente…", spento: perche(!lista.some((a) => a.sistema), "Serve solo a Windows e Linux"), fai: () => apri({ tipo: "agente", apparati: lista }) },
+    { id: "sospendi", testo: `Sospendi… (${attivi.length})`, spento: perche(!attivi.length, "Vale per chi è in Zabbix e non è già sospeso"), fai: () => apri({ tipo: "stato", attivo: false, apparati: attivi }) },
+    { id: "riattiva", testo: `Riattiva… (${sospesi.length})`, spento: perche(!sospesi.length, "Vale per chi è sospeso"), fai: () => apri({ tipo: "stato", attivo: true, apparati: sospesi }) },
+    { id: "togli", testo: `Togli da Zabbix… (${monitorati.length})`, spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "togli", apparati: monitorati }) },
   ];
 }
 
@@ -624,7 +757,10 @@ function Cella({ id, a }: { id: IdColonna; a: ApparatoElenco }) {
   const vuoto = <span className="text-muted-foreground">—</span>;
   switch (id) {
     case "stato":
-      return <span title={a.motivo ?? undefined}><Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} /></span>;
+      return <span title={a.motivo ?? undefined}>{a.stato === "sospeso" ? <BadgeSospeso /> : <Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />}</span>;
+    case "nonVisto":
+      // Segno e parola: il triangolo dice «da guardare», i giorni dicono da quanto.
+      return nonVisto(a) ? <span className="font-semibold">▲ {a.nonVistoGiorni} giorni</span> : vuoto;
     case "nome":
       return a.schedaIpam ? <Link href={`/hosts/${a.schedaIpam}`} className="font-semibold hover:underline">{a.nome}</Link> : <span className="font-semibold">{a.nome}</span>;
     case "ip":
@@ -677,6 +813,7 @@ function SchedaApparato({ a, scrive, motivo, apri, chiudi }: {
         azioni={
           <>
             {azioniSu([a], scrive, motivo, apri)
+              .filter((z) => !z.spento || z.id === "agente" || (z.id === "aggiungi") === (a.hostid === null))
               .filter((z) => (z.id === "aggiungi") === (a.hostid === null) || z.id === "agente")
               .map((z) => <Button key={z.id} size="sm" variant="outline" disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.id === "aggiungi" ? "Aggiungi a Zabbix…" : z.testo}</Button>)}
             {a.schedaIpam && <Button size="sm" variant="outline" nativeButton={false} render={<Link href={`/hosts/${a.schedaIpam}`} />}>Apri la scheda in DA-IPAM</Button>}
@@ -684,7 +821,7 @@ function SchedaApparato({ a, scrive, motivo, apri, chiudi }: {
           </>
         }
       >
-        <DatoDettaglio nome="Stato" valore={<><Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />{a.motivo && <span className="ml-2 font-normal">{a.motivo}</span>}</>} />
+        <DatoDettaglio nome="Stato" valore={<>{a.stato === "sospeso" ? <BadgeSospeso /> : <Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />}{a.motivo && <span className="ml-2 font-normal">{a.motivo}</span>}</>} />
         <DatoDettaglio nome="IP" valore={a.ip} mono />
         {a.hostTecnico && <DatoDettaglio nome="Nome in Zabbix (quello che l'agente dichiara)" valore={a.hostTecnico} mono />}
         <DatoDettaglio nome="Famiglia" valore={a.famiglia} />
@@ -696,6 +833,7 @@ function SchedaApparato({ a, scrive, motivo, apri, chiudi }: {
         <DatoDettaglio nome="Credenziale valida in DA-IPAM" valore={a.credenziali.length ? a.credenziali.join(", ") : a.schedaIpam ? "nessuna" : "—"} />
         {a.hostid && <DatoDettaglio nome="Proxy" valore={a.proxy} />}
         {a.hostid && <DatoDettaglio nome="Problemi aperti" valore={a.problemi} />}
+        {nonVisto(a) && <DatoDettaglio nome="DA-IPAM non lo vede rispondere da" valore={`▲ ${a.nonVistoGiorni} giorni: se non c'è più, sospendilo`} />}
         <DatoDettaglio nome="Rete" valore={a.rete ? testoRete(a) : null} />
         <DatoDettaglio nome="Marca e modello" valore={[a.marca, a.modello].filter(Boolean).join(" · ") || null} />
         {a.mac && <DatoDettaglio nome="MAC" valore={a.mac} mono />}
@@ -985,6 +1123,15 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
       {finestra?.tipo === "agente" && <FinestraAgente apparati={finestra.apparati} chiudi={() => setFinestra(null)} />}
       {finestra?.tipo === "famiglia" && <FinestraFamiglia apparati={finestra.apparati} famiglie={dati.famiglie ?? []} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
       {finestra?.tipo === "modelli" && <FinestraModelli cambio={finestra.cambio} adatti={dati.modelliAdatti ?? null} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "stato" && <FinestraStato attivo={finestra.attivo} apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "togli" && (
+        <FinestraTogli
+          apparati={finestra.apparati}
+          chiudi={() => setFinestra(null)}
+          fatto={dopoScrittura}
+          sospendiInvece={() => setFinestra({ tipo: "stato", attivo: false, apparati: finestra.apparati.filter((a) => a.stato !== "sospeso") })}
+        />
+      )}
       {finestra?.tipo === "colonne" && <FinestraColonne vista={vista} diSerie={diSerie} cambia={cambiaVista} chiudi={() => setFinestra(null)} />}
     </div>
   );

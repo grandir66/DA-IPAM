@@ -1,7 +1,7 @@
 ---
 percorso: /inventory/assignees
 titolo: Assegnatari — le persone a cui si assegnano gli asset
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -9,57 +9,93 @@ aggiornata: 2026-11-26
 
 È l'elenco delle **persone** a cui si assegnano gli asset: chi usa un PC, chi è responsabile di un server. Le persone
 arrivano da Active Directory oppure si inseriscono a mano. Da qui le si vede tutte, si scopre chi è uscito dall'azienda
-e ha ancora asset assegnati, e si correggono i dati. Si arriva da **Inventario › Assegnatari** nel menu; la freccia in
-alto a sinistra torna ad [Asset](pagine/inventory.md).
+e ha ancora asset assegnati, e si correggono i dati. Si arriva da **Inventario › Assegnatari** nel menu. La pagina non
+ha schede in cima.
 
-![La pagina Assegnatari](/manuale/inventory-assignees/pagina.png)
+Tabelle e segni funzionano come in tutte le pagine ([parti comuni dell'interfaccia](../INTERFACCIA.md)); qui c'è
+quello che Assegnatari ha di suo.
 
-## Le voci della pagina
+## La testata
 
-1. **Importa da Active Directory**: apre la pagina che propone gli utenti di AD da importare
+![La testata di Assegnatari](/manuale/inventory-assignees/testata.png)
+
+1. `icona:arrow-left` torna ad [Asset](pagine/inventory.md).
+2. `tasto:users` **Importa da Active Directory**: apre la pagina che propone gli utenti di AD da importare
    ([Importa da Active Directory](pagine/inventory-assignees-import-ad.md)).
-2. **Nuovo assegnatario**: apre la finestra per inserire una persona a mano, con Nome (obbligatorio), Email, Telefono,
-   Note.
-3. **Origine**: filtra l'elenco per provenienza: Tutte, Active Directory, Inserito a mano. Accanto, **Cerca nome, mail,
-   reparto** filtra mentre scrivi.
-4. **Stato in AD**: dice se la persona è ancora attiva in Active Directory (vedi i segni più sotto).
-
-Le altre colonne: **Nome e cognome**, **Mail**, **Reparto**, **Ruolo**, **Origine** (Active Directory o Inserito a mano),
-**Asset** (quanti asset ha assegnati). In fondo alla riga, la **matita** apre la modifica e il **cestino** elimina la
-persona: gli asset che aveva restano senza assegnatario.
-
-Per una persona importata da Active Directory, la finestra di modifica lo ricorda: nome, mail e telefono si riallineano
-a ogni lettura di AD, quindi una correzione fatta qui verrebbe sovrascritta.
+3. `tasto:plus` **Nuovo assegnatario**: apre la finestra per inserire una persona a mano (sotto).
 
 ## Le fasce sopra l'elenco
 
+![La fascia degli abbinamenti e la barra dell'elenco](/manuale/inventory-assignees/fasce.png)
+
 - **● N PC hanno un utente prevalente da abbinare**: ci sono PC per cui DA-IPAM sa chi li usa ma l'assegnazione non è
-  ancora fatta. **Abbinamenti ›** apre la pagina [Abbinamenti](pagine/inventory-abbinamenti.md).
-- **Attenzione — N assegnatari sono disattivati in Active Directory** e hanno ancora degli asset: vanno riassegnati.
-  **Mostra solo questi** lascia in elenco solo loro; **Mostra tutti** torna all'elenco intero.
+  ancora fatta. **Abbinamenti ›** apre [Abbinamenti](pagine/inventory-abbinamenti.md).
+- **▲ Attenzione — N assegnatari sono disattivati in Active Directory** e hanno ancora degli asset: vanno riassegnati.
+  **Mostra solo questi** lascia in elenco solo loro; **Mostra tutti** torna all'elenco intero. La fascia c'è solo
+  quando serve.
 
-Sotto l'elenco, «1–50 di N» con **pagina precedente** e **pagina successiva**.
+## L'elenco
 
-## Come si usa
+![L'elenco degli assegnatari](/manuale/inventory-assignees/tabella.png)
 
-1. La prima volta usa **Importa da Active Directory** per portare dentro le persone.
-2. Per chi non è in AD (un consulente, un fornitore) usa **Nuovo assegnatario**.
-3. Quando compare la fascia gialla, premi **Mostra solo questi**, apri gli asset di ogni persona uscita e assegnali a
-   qualcun altro.
-4. Per assegnare i PC a chi li usa, vai in [Abbinamenti](pagine/inventory-abbinamenti.md).
+Il titolo dice quante persone ci sono («Elenco (19)»).
+
+1. **Origine**: Tutte, Active Directory, Inserito a mano.
+2. **Cerca nome, mail, reparto**: filtra mentre scrivi.
+3. **Stato in AD**: se la persona è ancora attiva in Active Directory (vedi i segni più sotto).
+4. `icona:pencil` apre la finestra di modifica.
+5. `icona:trash` elimina la persona, dopo una conferma: gli asset che aveva restano senza assegnatario.
+
+| Colonna | Che cosa dice |
+|---|---|
+| **Nome e cognome** | La persona. |
+| **Mail** | L'indirizzo di posta. |
+| **Reparto**, **Ruolo** | Come scritti in Active Directory. |
+| **Origine** | Active Directory o Inserito a mano. |
+| **Stato in AD** | ✓ Attivo, ▲ Disattivato il …, ● Non in AD. |
+| **Asset** | Quanti asset ha assegnati. |
+
+Una persona disattivata in AD che ha ancora asset ha la riga gialla chiara e, in fondo, **Riassegna**: apre sotto la
+riga l'elenco dei suoi asset, ognuno col collegamento alla [scheda dell'asset](pagine/inventory-id.md), dove si
+cambia l'assegnatario.
+
+Sotto l'elenco, «1–50 di N» con **pagina precedente** e **pagina successiva**. La pagina non ha il menu
+`icona:more-vertical` né il tasto destro.
+
+## La finestra Nuovo assegnatario
+
+![La finestra Nuovo assegnatario](/manuale/inventory-assignees/nuovo.png)
+
+Campi: **Nome** (obbligatorio), **Email**, **Telefono**, **Note**. **Crea** salva. La stessa finestra, aperta con
+`icona:pencil`, si chiama **Modifica assegnatario** e salva con **Salva**. Per una persona importata da Active Directory
+la finestra lo ricorda: nome, mail e telefono si riallineano a ogni lettura di AD, quindi una correzione fatta qui
+verrebbe sovrascritta.
+
+Creare, modificare ed eliminare cambia i dati: riesce solo a un amministratore.
+
+## Come si fa
+
+- **Portare dentro le persone la prima volta**: `tasto:users` **Importa da Active Directory**.
+- **Aggiungere un consulente che non è in AD**: `tasto:plus` **Nuovo assegnatario**, nome e mail, **Crea**.
+- **Ripulire chi è uscito dall'azienda**: nella fascia gialla **Mostra solo questi**, poi **Riassegna** su ogni riga e
+  cambia l'assegnatario nella scheda di ciascun asset.
+- **Trovare tutti quelli dell'amministrazione**: scrivi il reparto in **Cerca**.
+- **Assegnare i PC a chi li usa**: **Abbinamenti ›** nella fascia, o la pagina
+  [Abbinamenti](pagine/inventory-abbinamenti.md).
 
 ## Cosa vogliono dire i segni
 
-- **✓ Attivo** (verde): la persona c'è in Active Directory ed è abilitata.
-- **▲ Disattivato il …** (giallo): l'account è stato disattivato in AD in quella data.
-- **● Non in AD** (grigio): inserita a mano, AD non la conosce.
+- ✓ **Attivo** (verde): la persona c'è in Active Directory ed è abilitata.
+- ▲ **Disattivato il …** (giallo): l'account è stato disattivato in AD in quella data.
+- ● **Non in AD** (grigio): inserita a mano, AD non la conosce.
 
 ## Da dove arrivano i dati
 
-Dagli utenti letti da Active Directory (pagina **Active Directory** del menu Network) e dagli inserimenti a mano. Il
-numero di asset viene dall'inventario.
+Dagli utenti letti da Active Directory (pagina [Active Directory](pagine/active-directory.md) del menu Network) e dagli inserimenti a
+mano. Il numero di asset viene dall'inventario.
 
 ## Se la pagina è vuota
 
-Non è stata ancora importata nessuna persona: usa **Importa da Active Directory** o **Nuovo assegnatario**. Se c'è un
-filtro di Origine o una ricerca, toglili.
+Non è stata ancora importata nessuna persona: usa **Importa da Active Directory** o **Nuovo assegnatario**. «Nessun
+assegnatario con questi filtri» vuol dire che c'è un filtro di Origine, una ricerca o «Mostra solo questi» attivo:
+toglili.

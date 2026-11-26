@@ -1,23 +1,78 @@
 [
  {
-  "file": "pagina",
+  "file": "libreria",
   "percorso": "/settings/snmp-profiles",
+  "zona": "main [data-slot=card]:has-text('Libreria OID (file)') >> nth=-1",
   "segni": [
    {
     "n": 1,
-    "cerca": "text=Libreria OID (file)"
-   },
+    "cerca": "button:has-text('Aggiorna elenco')"
+   }
+  ]
+ },
+ {
+  "file": "barra",
+  "percorso": "/settings/snmp-profiles",
+  "ritaglio": [
+   "button:has-text('Esporta JSON')",
+   "button:has-text('Nuovo profilo')",
+   "input[placeholder^='Cerca per ID']",
+   "text=Mostra builtin"
+  ],
+  "segni": [
    {
-    "n": 2,
+    "n": 1,
     "cerca": "button:has-text('Esporta JSON')"
    },
    {
+    "n": 2,
+    "cerca": "button:has-text('Esporta in cartelle')"
+   },
+   {
     "n": 3,
-    "cerca": "button:has-text('Nuovo profilo')"
+    "cerca": "button:has-text('Importa')"
    },
    {
     "n": 4,
+    "cerca": "button:has-text('Reset Builtin')"
+   },
+   {
+    "n": 5,
+    "cerca": "button:has-text('Nuovo profilo')"
+   },
+   {
+    "n": 6,
+    "cerca": "input[placeholder^='Cerca per ID']"
+   },
+   {
+    "n": 7,
     "cerca": "text=Mostra builtin"
+   }
+  ]
+ },
+ {
+  "file": "riga",
+  "percorso": "/settings/snmp-profiles",
+  "ritaglio": [
+   "main .space-y-2 > div >> nth=0",
+   "main .space-y-2 > div >> nth=2"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main .space-y-2 > div >> nth=0 >> svg >> nth=0"
+   },
+   {
+    "n": 2,
+    "cerca": "main .space-y-2 > div >> nth=0 >> [role=switch]"
+   },
+   {
+    "n": 3,
+    "cerca": "main button[title='Copia JSON'] >> nth=0"
+   },
+   {
+    "n": 4,
+    "cerca": "main button[title='Modifica'] >> nth=0"
    }
   ]
  }

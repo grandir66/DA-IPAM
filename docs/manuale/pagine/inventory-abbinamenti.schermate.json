@@ -1,9 +1,18 @@
 [
-  { "file": "pagina", "percorso": "/inventory/abbinamenti", "attesa": 3000,
-    "nascondi": ["tbody td:nth-child(2)", "tbody td:nth-child(3)", "tbody td:nth-child(4)", "details li"],
+  { "file": "riquadri", "percorso": "/inventory/abbinamenti", "attesa": 3000,
+    "ritaglio": ["main h1", "button:has-text('esclusi:')", "input[placeholder='Cerca PC o persona']"],
     "segni": [
       { "n": 1, "cerca": "button:has-text('proposti')" },
-      { "n": 2, "cerca": "label:has-text('Mostra')" },
-      { "n": 3, "cerca": "input[placeholder='Cerca PC o persona']" }
-    ] }
+      { "n": 2, "cerca": "button:has-text('da rivedere')" },
+      { "n": 3, "cerca": "button:has-text('pochi dati')" },
+      { "n": 4, "cerca": "button:has-text('esclusi:')" },
+      { "n": 5, "cerca": "label:has-text('Mostra')" },
+      { "n": 6, "cerca": "label:has-text('Solo PC senza asset')" },
+      { "n": 7, "cerca": "input[placeholder='Cerca PC o persona']" }
+    ] },
+  { "file": "tabella", "percorso": "/inventory/abbinamenti", "attesa": 3000,
+    "nascondi": ["tbody td:nth-child(2)", "tbody td:nth-child(4)", "tbody td:nth-child(5) span:not([class*=rounded])"],
+    "ritaglio": ["main [data-slot=card-title]", "main table >> nth=0 >> thead", "main table >> nth=0 >> tbody tr:nth-child(4)"] },
+  { "file": "conferma", "percorso": "/inventory/abbinamenti", "attesa": 3000,
+    "ritaglio": ["button:has-text('Conferma')", "text=Selezionati:"] }
 ]

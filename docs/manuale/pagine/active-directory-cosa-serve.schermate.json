@@ -1,1 +1,16 @@
-[{ "file": "pagina", "percorso": "/active-directory/cosa-serve", "altezza": 1000 }]
+[
+  { "file": "script", "percorso": "/active-directory/cosa-serve",
+    "ritaglio": ["main :text('Preparare il dominio in un colpo solo')", "main button:has-text('Copia') >> nth=1", "main pre >> nth=0"],
+    "segni": [
+      { "n": 1, "cerca": "main a:has-text('.ps1')" },
+      { "n": 2, "cerca": "main button:has-text('Copia') >> nth=0" }
+    ] },
+  { "file": "tabella", "percorso": "/active-directory/cosa-serve",
+    "ritaglio": ["main :text('Utente delle scansioni') >> nth=0", "main table >> nth=0 >> tbody tr:nth-child(2)"],
+    "segni": [
+      { "n": 1, "cerca": "main table >> nth=0 >> th:has-text('Cosa ottieni')" },
+      { "n": 2, "cerca": "main table >> nth=0 >> th:has-text('Cosa abilitare')" },
+      { "n": 3, "cerca": "main table >> nth=0 >> th:has-text('Dove')" },
+      { "n": 4, "cerca": "main table >> nth=0 >> th:has-text('Comando')" }
+    ] }
+]

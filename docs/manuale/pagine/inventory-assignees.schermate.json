@@ -1,10 +1,6 @@
 [
-  { "file": "pagina", "percorso": "/inventory/assignees", "attesa": 2000,
-    "nascondi": ["tbody td:nth-child(1)", "tbody td:nth-child(2)", "tbody td:nth-child(3)", "tbody td:nth-child(4)"],
-    "segni": [
-      { "n": 1, "cerca": "button:has-text('Importa da Active Directory')" },
-      { "n": 2, "cerca": "button:has-text('Nuovo assegnatario')" },
-      { "n": 3, "cerca": "label:has-text('Origine')" },
-      { "n": 4, "cerca": "th:has-text('Stato in AD')" }
-    ] }
+  {"file": "testata", "percorso": "/inventory/assignees", "attesa": 2000, "ritaglio": ["main h1", "button:has-text('Nuovo assegnatario')", "main a[href='/inventory'] button"], "segni": [{"n": 1, "cerca": "main a[href='/inventory'] button"}, {"n": 2, "cerca": "button:has-text('Importa da Active Directory')"}, {"n": 3, "cerca": "button:has-text('Nuovo assegnatario')"}]},
+  {"file": "fasce", "percorso": "/inventory/assignees", "attesa": 2000, "ritaglio": ["text=utente prevalente da abbinare", "a:has-text('Abbinamenti ›')", "text=Elenco ("]},
+  {"file": "tabella", "percorso": "/inventory/assignees", "attesa": 2000, "nascondi": ["tbody td:nth-child(1)", "tbody td:nth-child(2)", "tbody td:nth-child(3)", "tbody td:nth-child(4)"], "ritaglio": ["text=Elenco (", "input[placeholder='Cerca nome, mail, reparto']", "thead", "tbody tr:nth-child(4)"], "segni": [{"n": 1, "cerca": "label:has-text('Origine')"}, {"n": 2, "cerca": "input[placeholder='Cerca nome, mail, reparto']"}, {"n": 3, "cerca": "th:has-text('Stato in AD')"}, {"n": 4, "cerca": "tbody tr:nth-child(1) button[aria-label^='Modifica']"}, {"n": 5, "cerca": "tbody tr:nth-child(1) button[aria-label^='Elimina']"}]},
+  {"file": "nuovo", "percorso": "/inventory/assignees", "attesa": 2000, "prima": [{"clic": "button:has-text('Nuovo assegnatario')", "attesa": 800}], "zona": "[role=dialog]"}
 ]

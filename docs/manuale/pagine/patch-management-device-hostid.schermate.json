@@ -1,38 +1,5 @@
 [
-  {
-    "file": "pagina",
-    "percorso": "/patch-management",
-    "attesa": 3000,
-    "altezza": 1200,
-    "prima": [
-      {
-        "clic": "a[href^='/patch-management/device/'] >> nth=1",
-        "attesa": 3500
-      }
-    ],
-    "nascondi": [
-      "h1",
-      "h2",
-      "[data-slot=card-title]",
-      "tbody td:nth-child(5)"
-    ],
-    "segni": [
-      {
-        "n": 1,
-        "cerca": "button:has-text('Probe host')"
-      },
-      {
-        "n": 2,
-        "cerca": "button:has-text('Bootstrap choco')"
-      },
-      {
-        "n": 3,
-        "cerca": "input[placeholder^='Cerca software']"
-      },
-      {
-        "n": 4,
-        "cerca": "text=Solo con CVE patchabili"
-      }
-    ]
-  }
+  {"file": "testata", "percorso": "/patch-management", "attesa": 3000, "altezza": 1100, "prima": [{"clic": "a[href^='/patch-management/device/'] >> nth=1", "attesa": 3500}], "nascondi": ["main h1", "main h2", "main [data-slot=card-title]"], "ritaglio": ["main [data-slot=card] >> nth=0", "text=Vedi host in IPAM"], "segni": [{"n": 1, "cerca": "main button:has-text('Aggiorna')"}, {"n": 2, "cerca": "button:has-text('Probe host')"}, {"n": 3, "cerca": "button:has-text('Bootstrap choco')"}, {"n": 4, "cerca": "button:has-text('Installa Wazuh agent')"}, {"n": 5, "cerca": "button:has-text('MeshAgent (choco)')"}, {"n": 6, "cerca": "button:has-text('GLPI Agent (choco)')"}, {"n": 7, "cerca": "text=Vedi host in IPAM"}]},
+  {"file": "software", "percorso": "/patch-management", "attesa": 3000, "altezza": 1400, "prima": [{"clic": "a[href^='/patch-management/device/'] >> nth=1", "attesa": 3500}, {"clic": "label:has-text('Solo con CVE patchabili')", "attesa": 1200}], "nascondi": ["main tbody td:nth-child(5)"], "ritaglio": ["input[placeholder^='Cerca software']", "label:has-text('Solo con CVE patchabili')", "main thead", "main tbody tr:nth-child(4)"], "segni": [{"n": 1, "cerca": "input[placeholder^='Cerca software']"}, {"n": 2, "cerca": "label:has-text('Solo con CVE patchabili')"}, {"n": 3, "cerca": "label:text-is('Solo con CVE')"}, {"n": 4, "cerca": "main th:has-text('Azioni')"}]},
+  {"file": "barra", "percorso": "/patch-management", "attesa": 3000, "altezza": 1400, "prima": [{"clic": "a[href^='/patch-management/device/'] >> nth=1", "attesa": 3500}, {"clic": "label:has-text('Solo con CVE patchabili')", "attesa": 1200}], "ritaglio": ["main div.sticky.bottom-0"]}
 ]

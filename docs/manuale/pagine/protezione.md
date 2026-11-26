@@ -1,7 +1,7 @@
 ---
 percorso: /protezione
 titolo: Stato della protezione — cosa protegge questa installazione
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -11,39 +11,65 @@ Dice in una pagina sola **come è difesa questa installazione di DA-IPAM**: una 
 utenti, servizi, chiavi), con lo stato, cosa vuol dire, la gravità e il rimedio. Serve a vedere a colpo d'occhio cosa
 è a posto e cosa resta da sistemare, e ad andare dritti alla pagina dove si rimedia.
 
-Si arriva da **Sicurezza › Protezione**. La pagina e le sue schede le vedono solo gli amministratori. In cima ci
-sono le schede **Stato della protezione** (questa), [Porte presentate](pagine/protezione-porte.md),
-[Chi può collegarsi](pagine/protezione-accessi.md), [Utenti](pagine/protezione-utenti.md),
-[Sistemi remoti](pagine/protezione-sistemi.md), [Moduli e container](pagine/protezione-moduli.md),
-[Esche](pagine/protezione-esche.md) e [Tentativi e blocchi](pagine/protezione-tentativi.md).
+Si arriva da **Sicurezza › Protezione**. La pagina e tutte le sue schede le vede **solo un amministratore**: chi è in
+sola lettura trova la scritta «Pagina riservata agli amministratori di questa istanza». Tabelle e schede funzionano
+come altrove: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-Il manuale non mostra schermate di queste pagine: descrivono come è difesa l'installazione.
+Il manuale non mostra schermate di queste pagine e non descrive come è difesa una installazione vera: spiega soltanto
+che cosa fa ogni voce.
 
-## Le voci della pagina
+## Le schede di Protezione
 
-In cima tre numeri:
+| Scheda | A cosa serve |
+|---|---|
+| **Stato della protezione** | Questa pagina: il riepilogo di tutti gli strati. |
+| [Porte presentate](pagine/protezione-porte.md) | Ogni porta su cui la macchina risponde, chi la tiene e chi la raggiunge. |
+| [Chi può collegarsi](pagine/protezione-accessi.md) | Il filtro degli accessi: da quali indirizzi si arriva a quali porte. |
+| [Utenti](pagine/protezione-utenti.md) | Chi può entrare in DA-IPAM, con quale ruolo e da dove. |
+| [Sistemi remoti](pagine/protezione-sistemi.md) | Le connessioni aperte adesso, in entrata e in uscita. |
+| [Moduli e container](pagine/protezione-moduli.md) | I container dei moduli, con immagini, porte e permessi. |
+| [Esche](pagine/protezione-esche.md) | Finti servizi per scoprire chi esplora la rete. |
+| [Tentativi e blocchi](pagine/protezione-tentativi.md) | Chi ha provato a entrare senza riuscirci, e i blocchi. |
+
+Le prime sei si leggono e servono a capire; le ultime due, dopo la riga verticale, agiscono.
+
+## La riga del filtro degli accessi
+
+In cima a questa pagina e a quasi tutte le schede c'è la riga **Filtro degli accessi**: lo stato del filtro («acceso»,
+«osserva», «non c'è ancora» o «non letto»), se l'installazione è protetta, quante porte rispondono a tutti e a che ora
+sono stati letti i dati. Il filtro si governa in [Chi può collegarsi](pagine/protezione-accessi.md).
+
+## I numeri
 
 - **Da sistemare**: quante righe chiedono un intervento, e quante sono gravi.
-- **Non letti**: i controlli che su questa macchina non si sono potuti fare.
+- **A posto**: quante righe vanno bene.
+- **Non letti**: i controlli che su questa macchina non si sono potuti fare (passa il mouse per la spiegazione).
 - **Porte aperte a tutti**: quante porte rispondono a chiunque arrivi alla macchina.
 
-Sotto, il pannello **Cosa è chiuso e cosa resta debole**. Ogni riga è calcolata su questa macchina nel momento in cui
-si apre la pagina, e non mostra mai un valore segreto. Colonne:
+## Il pannello «Cosa è chiuso e cosa resta debole»
 
-- **Strato**: la parte della difesa (per esempio le porte, il filtro degli accessi, gli utenti, la chiave di
-  cifratura).
-- **Stato**: com'è adesso, col suo segno.
-- **Cosa vuol dire**: la spiegazione in parole semplici.
-- **Gravità**: quanto conta.
-- **Rimedio**: cosa fare. Dove c'è un pulsante, porta alla pagina in cui si rimedia.
+Ogni riga è calcolata su questa macchina nel momento in cui si apre la pagina, e non mostra mai un valore segreto.
 
-In fondo un elenco dice cosa la pagina **non controlla ancora**.
+| Colonna | Che cosa dice |
+|---|---|
+| **Strato** | La parte della difesa (per esempio le porte, il filtro degli accessi, gli utenti, la chiave di cifratura). |
+| **Stato** | Com'è adesso, col suo segno (vedi sotto). |
+| **Cosa vuol dire** | La spiegazione in parole semplici. |
+| **Gravità** | Quanto conta, con le tacche. |
+| **Rimedio** | Cosa fare. Dove c'è un pulsante riquadrato, porta alla scheda o all'impostazione in cui si rimedia. |
 
-## Come si usa
+In fondo al pannello una riga dice cosa la pagina **non controlla ancora**.
 
-1. Leggi dall'alto: le righe gravi stanno in cima.
-2. Dove c'è un pulsante nel **Rimedio**, seguilo: porta alla scheda giusta.
-3. Dopo aver sistemato, ricarica la pagina per rifare i controlli.
+## Come si fa
+
+- **Fare il punto della protezione**: leggi la riga del filtro, poi **Da sistemare**: le righe con ■ sono le prime da
+  guardare.
+- **Sistemare una riga**: premi il pulsante nella colonna **Rimedio**: porta alla scheda giusta. Poi torna qui e
+  ricarica la pagina per rifare i controlli.
+- **Capire un «non letto»**: il controllo non si è potuto fare su questa macchina. Su un'appliance completa i controlli
+  si fanno tutti; su un computer di sviluppo molti restano «non letto».
+- **Controllare chi entra**: scheda [Utenti](pagine/protezione-utenti.md), poi
+  [Tentativi e blocchi](pagine/protezione-tentativi.md) per chi ci ha provato.
 
 ## Cosa vogliono dire i segni
 

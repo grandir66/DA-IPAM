@@ -1,1 +1,10 @@
-[{ "file": "pagina", "percorso": "/excluded-ips", "altezza": 900, "nascondi": ["tbody td:nth-child(4)"] }]
+[
+  { "file": "tabella", "percorso": "/excluded-ips",
+    "ritaglio": ["thead", "tbody tr:nth-child(4)"],
+    "nascondi": ["tbody td:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "th:has-text('Rete')" },
+      { "n": 2, "cerca": "th:has-text('Motivo')" },
+      { "n": 3, "cerca": "tbody tr:nth-child(1) button:has-text('Rimuovi')" }
+    ] }
+]

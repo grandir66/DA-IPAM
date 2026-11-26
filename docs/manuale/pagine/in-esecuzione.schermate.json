@@ -1,3 +1,20 @@
 [
-  { "file": "pagina", "percorso": "/in-esecuzione", "zona": "main" }
+ {
+  "file": "pagina",
+  "percorso": "/in-esecuzione",
+  "ritaglio": [
+   "main .grid.grid-cols-2",
+   "main >> text=Elenco in memoria"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main .grid.grid-cols-2 > * >> nth=0"
+   },
+   {
+    "n": 2,
+    "cerca": "main :text-is('Attività')"
+   }
+  ]
+ }
 ]

@@ -1,9 +1,26 @@
 [
-  { "file": "pagina", "percorso": "/traffico", "attesa": 3000, "altezza": 1500, "nascondi": ["tbody td:nth-child(8)"],
+  { "file": "schede", "percorso": "/traffico", "attesa": 3000,
+    "ritaglio": ["div.rounded-xl.border.bg-card:has-text('Collector') >> nth=0", "[role=tablist][aria-label='Traffico']"],
+    "margine": 30,
     "segni": [
-      { "n": 1, "cerca": "button:has-text('Chi parla con chi')" },
-      { "n": 2, "cerca": "button:has-text('Ultima ora')" },
-      { "n": 3, "cerca": "button:has-text('Fra reti')" },
+      { "n": 1, "cerca": "[role=tab]:has-text('Chi parla con chi')" },
+      { "n": 2, "cerca": "[role=tab]:has-text('Verso l')" },
+      { "n": 3, "cerca": "[role=tab]:has-text('Cosa non va')" },
+      { "n": 4, "cerca": "[role=tab]:has-text('Anomalie')" },
+      { "n": 5, "cerca": "[role=tab]:has-text('Reti viste')" }
+    ] },
+  { "file": "comandi", "percorso": "/traffico?s=1", "attesa": 3000, "altezza": 1500,
+    "ritaglio": ["section:has(h2:has-text('Chi parla con chi')) header"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Ultima ora')" },
+      { "n": 2, "cerca": "button:has-text('Fra reti')" },
+      { "n": 3, "cerca": "[aria-label='Rete']" },
       { "n": 4, "cerca": "input[placeholder^='Host, indirizzo o porta']" }
-    ] }
+    ] },
+  { "file": "fra-reti", "percorso": "/traffico?s=2", "attesa": 3000, "altezza": 1500,
+    "nascondi": ["tbody td:nth-child(8)"],
+    "ritaglio": ["section:has(h2:has-text('Chi parla con chi')) thead", "section:has(h2:has-text('Chi parla con chi')) tbody tr:nth-child(4)"] },
+  { "file": "anomalie", "percorso": "/traffico?s=3", "attesa": 3000, "altezza": 1500,
+    "prima": [{ "clic": "[role=tab]:has-text('Anomalie')", "attesa": 1500 }],
+    "ritaglio": ["section:has(h2:has-text('Anomalie')) header"] }
 ]

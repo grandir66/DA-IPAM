@@ -1,2 +1,78 @@
-[{ "file": "pagina", "percorso": "/devices", "altezza": 1000,
- "segni": [{"n":1,"cerca":"text=/^Server \\(/"},{"n":2,"cerca":"input[placeholder^=\"Cerca per nome\"]"},{"n":3,"cerca":"th:has-text(\"Acquisizione\")"},{"n":4,"cerca":"th:has-text(\"Cred.\")"},{"n":5,"cerca":"th:has-text(\"LibreNMS\")"},{"n":6,"cerca":"th:has-text(\"Azioni\")"}] }]
+[
+ {
+  "file": "testata",
+  "percorso": "/devices",
+  "larghezza": 1920,
+  "ritaglio": [
+   "main h1",
+   "main button:has-text('Aggiorna'), main button:has(svg.lucide-refresh-cw)",
+   "main :text('Tutti') >> nth=0"
+  ],
+  "margine": 20,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main :text('Tutti') >> nth=0"
+   }
+  ]
+ },
+ {
+  "file": "filtri",
+  "percorso": "/devices",
+  "larghezza": 1920,
+  "ritaglio": [
+   "main input[placeholder^='Cerca per nome']",
+   "main button:has-text('Tutti i profili')",
+   "main button:has-text('Tutti i vendor')"
+  ],
+  "margine": 20,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main input[placeholder^='Cerca per nome']"
+   },
+   {
+    "n": 2,
+    "cerca": "main button:has-text('Tutti gli stati')"
+   },
+   {
+    "n": 3,
+    "cerca": "main button:has-text('Tutti i vendor')"
+   },
+   {
+    "n": 4,
+    "cerca": "main button:has-text('Tutti i profili')"
+   }
+  ]
+ },
+ {
+  "file": "tabella",
+  "percorso": "/devices",
+  "larghezza": 1920,
+  "ritaglio": [
+   "main thead",
+   "main tbody tr:nth-child(4)"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main th:has-text('Acquisizione')"
+   },
+   {
+    "n": 2,
+    "cerca": "main th:has-text('Cred.')"
+   },
+   {
+    "n": 3,
+    "cerca": "main th:has-text('LibreNMS')"
+   },
+   {
+    "n": 4,
+    "cerca": "main th:has-text('Azioni')"
+   }
+  ],
+  "nascondi": [
+   "main tbody td:nth-child(2)"
+  ]
+ }
+]

@@ -1,1 +1,66 @@
-[ { "file": "pagina", "percorso": "/zabbix", "attesa": 3000 } ]
+[
+ {
+  "file": "testa",
+  "percorso": "/zabbix",
+  "attesa": 3000,
+  "ritaglio": [
+   "main h1",
+   "main button:has-text('Aggiorna')"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main h1 [data-slot=badge] >> nth=-1"
+   },
+   {
+    "n": 2,
+    "cerca": "main a:has-text('DATIA MONITORING')"
+   },
+   {
+    "n": 3,
+    "cerca": "main button:has-text('Aggiorna')"
+   }
+  ]
+ },
+ {
+  "file": "riepilogo",
+  "percorso": "/zabbix",
+  "attesa": 3000,
+  "ritaglio": [
+   "main [data-slot=card] >> nth=0",
+   "main [data-slot=card] >> nth=1"
+  ]
+ },
+ {
+  "file": "problemi",
+  "percorso": "/zabbix",
+  "attesa": 3000,
+  "ritaglio": [
+   "main [data-slot=card-title]:has-text('Problemi aperti')",
+   "main [data-slot=card]:has-text('Problemi aperti') >> nth=-1 >> tbody tr >> nth=4"
+  ]
+ },
+ {
+  "file": "host",
+  "percorso": "/zabbix",
+  "attesa": 3000,
+  "ritaglio": [
+   "main [data-slot=card-title]:has-text('Host del cliente sul centro')",
+   "main [data-slot=card]:has-text('Host del cliente sul centro') >> nth=-1 >> tbody tr >> nth=5"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main th:has-text('Disponibilità')"
+   },
+   {
+    "n": 2,
+    "cerca": "main th:has-text('Misure')"
+   },
+   {
+    "n": 3,
+    "cerca": "main th:has-text('DA-IPAM')"
+   }
+  ]
+ }
+]

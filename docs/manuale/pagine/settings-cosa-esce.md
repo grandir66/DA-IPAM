@@ -1,7 +1,7 @@
 ---
 percorso: /settings/cosa-esce
 titolo: Cosa esce — i dati che questa istanza manda a Domarc
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -11,7 +11,8 @@ Mostra **tutto quello che esce da questa istanza verso Domarc**, e fa scegliere 
 La scelta vale all'origine: un dato che si decide di non mandare non parte proprio. Da Domarc non si può cambiare.
 Si arriva da **Config › Cosa esce**. È riservata agli amministratori dell'istanza; gli altri vedono solo un avviso.
 
-Per questa pagina non c'è una schermata nel manuale: mostra indirizzi e dati dell'installazione.
+Per questa pagina non c'è una schermata nel manuale, per scelta: mostra indirizzi e dati dell'installazione. Le
+parti comuni (menu, schede, pulsanti) sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
 ## Le voci della pagina
 
@@ -27,7 +28,8 @@ Per questa pagina non c'è una schermata nel manuale: mostra indirizzi e dati de
   l'esito dell'ultima scansione; mai l'inventario riga per riga. Sotto si legge chi ha fatto la scelta e quando.
 - **Cancellazione a Domarc**: dopo aver abbassato il livello compare **In attesa di conferma** finché DA-Link non
   conferma di aver cancellato i numeri; poi **Confermata**. La pagina si rilegge da sola.
-- **Invia adesso** manda subito un segnale, senza aspettare i 5 minuti.
+- `tasto:send` **Invia adesso** manda subito un segnale, senza aspettare i 5 minuti. È grigio finché il collegamento non è
+  configurato.
 
 **Cosa contiene il prossimo segnale** (o «Cosa conterrebbe il segnale» se il collegamento non è pronto): il
 contenuto esatto, letto in quel momento: cliente e nodo, versione, moduli accesi, salute di ciascuno, porte aperte,
@@ -37,7 +39,8 @@ ultimo errore e, se il livello lo prevede, i numeri dell'inventario.
 Directory dopo ogni esecuzione, un inventario al giorno (indirizzo, rete, sistema, porte) e i rilievi delle
 scansioni interne. Mai credenziali, note, utenti, licenze. Le righe dicono **Stato**, **Destinazione**, **Ultimo
 battito**, **Coda** (quanti invii aspettano e quanti sono falliti), **Ultimo AD Health**, **Ultimo inventario**,
-**Ultimo errore**. **Invia ora** fa partire subito l'invio e rimette in attesa quelli falliti.
+**Ultimo errore**. `tasto:send` **Invia ora** fa partire subito l'invio e rimette in attesa quelli falliti; è grigio se
+l'invio non è attivo.
 
 **Altri flussi verso Domarc**: i servizi che il cliente ha chiesto, che si fermano spegnendo il loro modulo:
 **Scanner-Edge → da-vulcan** (i risultati delle scansioni di vulnerabilità) e **Proxy Zabbix → DA-ZABBIX** (i dati
@@ -45,12 +48,19 @@ del monitoraggio), ognuno con **Acceso**, **Spento**, **Presente**, **Non rileva
 
 **Registro delle scelte**: ogni cambio di livello, con chi e quando (gli ultimi 20).
 
-## Come si usa
+## Come si fa
 
-1. Per sapere che cosa parte, leggi **Cosa contiene il prossimo segnale**.
-2. Per mandare meno: cambia il livello da Opzioni, poi aspetta che la riga **Cancellazione a Domarc** diventi
-   **Confermata**.
-3. Per controllare che il collegamento funzioni: **Invia adesso** e guarda **Ultimo invio**.
+- **Sapere che cosa parte verso Domarc**: leggi il riquadro **Cosa contiene il prossimo segnale**: è il contenuto
+  esatto, non un riassunto.
+- **Mandare meno**: in [Opzioni](pagine/settings-opzioni.md) scegli **Solo stato**, torna qui e aspetta che la riga
+  **Cancellazione a Domarc** passi da **In attesa di conferma** a **Confermata**.
+- **Controllare che il collegamento funzioni**: `tasto:send` **Invia adesso**, poi guarda **Ultimo invio**: deve dire
+  **Ricevuto** con l'ora di adesso.
+- **Rimettere in coda gli invii a DA-Vul-can falliti**: nel riquadro DA-Vul-can guarda **Coda**; se ci sono falliti,
+  `tasto:send` **Invia ora**.
+- **Fermare i dati del monitoraggio o delle scansioni di vulnerabilità**: spegni il modulo corrispondente
+  (Proxy Zabbix o Scanner-Edge) dalla scheda [Moduli](pagine/settings.md#moduli); in **Altri flussi** la riga passa a
+  **Spento**.
 
 ## Cosa vogliono dire i segni
 

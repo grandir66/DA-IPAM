@@ -1,7 +1,7 @@
 ---
 percorso: /dhcp
 titolo: DHCP — scope, lease e IP statici
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -15,19 +15,20 @@ apparato (**IP statici**). Si arriva da **Network Services › DHCP** nel menu, 
 In cima ci sono due schede: **DHCP** (questa pagina) e [Sorgenti](pagine/dhcp-sources.md), i lease letti dai router e
 dai server DHCP che non sono la VM.
 
-Nessuna schermata: sull'istanza usata per le immagini del manuale il modulo non è installato.
+Nessuna schermata: sull'istanza usata per le immagini del manuale il modulo non è installato. Le parti comuni
+(menu, schede, tabelle) sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
 ## Le voci della pagina
 
-In cima il titolo, l'indirizzo della VM e il pulsante per rileggere lo stato. Sotto, cinque schede.
+In cima il titolo, l'indirizzo della VM e il pulsante `tasto:refresh` per rileggere lo stato. Sotto, cinque schede.
 
 ### Panorama
 
-- **Servizio Kea DHCP4** con il segno **Attivo** o **Off**; un amministratore ha il pulsante **Abilita** /
-  **Disabilita**.
+- **Servizio Kea DHCP4** con il segno **Attivo** o **Off**; un amministratore ha il pulsante `tasto:power`
+  **Abilita** / **Disabilita**.
 - Tre riquadri con i numeri: **Scope configurati** (con **Gestisci scope →**), **Lease attivi** (con **Vedi lease →**),
   **IP statici** (con **Gestisci statici →**).
-- **Lease da router MikroTik / Active Directory**: il pulsante **Tabella sorgenti esterne** apre
+- **Lease da router MikroTik / Active Directory**: il pulsante **Tabella sorgenti esterne** `icona:external-link` apre
   [Sorgenti](pagine/dhcp-sources.md).
 
 ### Scope
@@ -52,11 +53,18 @@ Porta alla pagina [Sorgenti](pagine/dhcp-sources.md).
 
 Le modifiche le fa solo un amministratore. Se il servizio è spento, le schede dicono «DHCP disabilitato».
 
-## Come si usa
+## Come si fa
 
-1. Nel **Panorama** controlla che Kea sia **Attivo**.
-2. Per una rete nuova, in **Scope** indica rete, pool, gateway e DNS, poi **Salva**.
-3. Per dare sempre lo stesso indirizzo a una stampante, trovala in **Lease dinamici** e convertila in statico.
+- **Controllare che il DHCP funzioni**: scheda **Panorama**, Kea deve essere **Attivo** e **Lease attivi** non deve
+  restare a zero.
+- **Distribuire indirizzi in una rete nuova** (amministratore): scheda **Scope**, scrivi **Subnet (CIDR)**, **Pool
+  inizio** e **Pool fine**, gateway e DNS, **Salva**.
+- **Dare sempre lo stesso indirizzo a una stampante**: scheda **Lease dinamici**, trova la stampante per MAC o nome e
+  convertila in statico.
+- **Riservare un indirizzo a un apparato che non è ancora acceso**: scheda **IP statici**, scrivi IP, MAC e Hostname,
+  crea la riserva.
+- **Vedere chi ha preso indirizzi dai router MikroTik o dai server Windows**: **Tabella sorgenti esterne**, cioè
+  [Sorgenti](pagine/dhcp-sources.md).
 
 ## Da dove arrivano i dati
 

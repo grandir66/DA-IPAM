@@ -1,10 +1,17 @@
 [
-  { "file": "pagina", "percorso": "/dhcp/sources",
-    "nascondi": ["tbody td:nth-child(4)"],
+  { "file": "sorgenti", "percorso": "/dhcp/sources",
+    "ritaglio": ["button:has-text('Sincronizza tutti')", "main [data-slot=card]:has-text('Sorgenti DHCP') >> nth=-1"],
     "segni": [
       { "n": 1, "cerca": "button:has-text('Sincronizza tutti')" },
-      { "n": 2, "cerca": "input[placeholder^='Cerca per IP']" },
-      { "n": 3, "cerca": "label:has-text('Solo attivi negli ultimi')" },
+      { "n": 2, "cerca": "main button:text-is('Sync') >> nth=0" }
+    ] },
+  { "file": "lease", "percorso": "/dhcp/sources",
+    "ritaglio": ["main [data-slot=card-title]:has-text('Lease DHCP')", "main table >> nth=-1 >> thead", "main table >> nth=-1 >> tbody tr >> nth=5"],
+    "nascondi": ["main table tbody td:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='Cerca per IP']" },
+      { "n": 2, "cerca": "label:has-text('Solo attivi negli ultimi')" },
+      { "n": 3, "cerca": "th:has-text('Tipo') >> nth=-1" },
       { "n": 4, "cerca": "th:has-text('Ultimo visto')" }
     ] }
 ]

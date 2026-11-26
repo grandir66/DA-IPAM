@@ -1,7 +1,7 @@
 ---
 percorso: /estrazione-apparati
 titolo: Estrazione apparati — il prompt per leggere uno switch o un router con Claude Code
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -17,25 +17,29 @@ Serve per gli apparati che DA-IPAM non sa ancora leggere da solo. Si arriva dall
 parte alta del menu.
 
 La pagina non ha una schermata in questa guida perché l'installazione da cui sono prese le schermate non è di tipo
-«tecnico».
+«tecnico» (lì l'indirizzo dà «pagina non trovata»). Le parti comuni sono nelle
+[parti comuni dell'interfaccia](../INTERFACCIA.md). La pagina non ha differenze fra i ruoli: basta essere entrati.
 
 ## Le voci della pagina
 
 - **Il titolo e la frase sotto**: dicono a cosa serve il prompt.
-- **Copia**, in alto a destra: copia tutto il prompt negli appunti. Diventa «Copiato» per un momento. Se la copia non
+- `tasto:copy` **Copia**, in alto a destra: copia tutto il prompt negli appunti. Diventa `icona:check` «Copiato» per un momento. Se la copia non
   riesce, il messaggio chiede di selezionare il testo e copiarlo a mano.
 - **Prompt**: il testo intero, da leggere prima di usarlo. Sotto il titolo del riquadro c'è il file da cui è letto
   nell'installazione. Il prompt spiega a Claude Code le fasi: riconoscere l'apparato senza credenziali, cercare la
   documentazione ufficiale (senza mai scrivere nelle ricerche indirizzi, nomi o dati del cliente), chiedere le
   credenziali di sola lettura, leggere e scrivere il JSON nel formato che DA-IPAM importa.
 
-## Come si usa
+## Come si fa
 
-1. Premi **Copia**.
-2. Apri Claude Code sul PC del tecnico e incolla il prompt.
-3. Dai a Claude Code l'indirizzo dell'apparato (e vendor e modello se li sai) e rispondi alle sue domande.
-4. Quando il JSON è pronto, apri la [scheda dell'apparato](pagine/objects-id.md) in DA-IPAM e importalo con **Importa
-   estrazione**.
+- **Leggere uno switch che DA-IPAM non conosce**: premi `tasto:copy` **Copia**, apri Claude Code sul PC del tecnico, incolla il
+  prompt, dai l'indirizzo dell'apparato (e produttore e modello se li sai) e rispondi alle sue domande; le
+  credenziali devono essere di sola lettura.
+- **Portare il risultato in DA-IPAM**: quando il JSON è pronto, apri la [scheda dell'apparato](pagine/objects-id.md)
+  e importalo con **Importa estrazione**.
+- **Controllare che cosa farà Claude Code prima di usarlo**: leggi il riquadro **Prompt**, che riporta le fasi una
+  per una.
+- **La copia non riesce**: seleziona a mano il testo del riquadro **Prompt** e copialo.
 
 ## Se la pagina è vuota
 

@@ -1,7 +1,11 @@
 [
-  { "file": "pagina", "percorso": "/inventory/licenses",
+  { "file": "testata", "percorso": "/inventory/licenses", "attesa": 2000,
+    "ritaglio": ["main a[href='/inventory'] button", "button:has-text('Nuova licenza')", "main [data-slot=card]"],
     "segni": [
-      { "n": 1, "cerca": "button:has-text('Nuova licenza')" },
-      { "n": 2, "cerca": "th:has-text('Posti')" }
-    ] }
+      { "n": 1, "cerca": "main a[href='/inventory'] button" },
+      { "n": 2, "cerca": "button:has-text('Nuova licenza')" }
+    ] },
+  { "file": "nuova", "percorso": "/inventory/licenses", "attesa": 2000, "altezza": 1000,
+    "prima": [{ "clic": "button:has-text('Nuova licenza')", "attesa": 800 }],
+    "zona": "[role=dialog]" }
 ]

@@ -1,11 +1,23 @@
 [
-  { "file": "eventi", "percorso": "/sicurezza-dominio", "attesa": 3500, "altezza": 1300,
-    "nascondi": ["table tbody", "svg text"],
+  { "file": "schede", "percorso": "/sicurezza-dominio?tab=eventi", "attesa": 3500,
+    "ritaglio": ["main h1", "button:has-text('Ultimi 30 giorni')", "[role=tablist][aria-label='Sicurezza del dominio']"],
+    "margine": 30,
     "segni": [
-      { "n": 1, "cerca": "button:has-text('Eventi dei DC')" },
-      { "n": 2, "cerca": "button:has-text('Health AD')" },
-      { "n": 3, "cerca": "text=Lettura dei domain controller" },
-      { "n": 4, "cerca": "text=Allarmi nel tempo" },
-      { "n": 5, "cerca": "input[placeholder^='Cerca account']" }
+      { "n": 1, "cerca": "button:has-text('Ultime 24 ore')" },
+      { "n": 2, "cerca": "[role=tab]:has-text('Eventi dei DC')" },
+      { "n": 3, "cerca": "[role=tab]:has-text('Health AD')" }
+    ] },
+  { "file": "lettura", "percorso": "/sicurezza-dominio?tab=eventi&s=1", "attesa": 3500,
+    "ritaglio": ["div.rounded-xl.border.bg-card:has-text('Lettura dei domain controller') >> nth=0"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Leggi i DC adesso')" },
+      { "n": 2, "cerca": "button:has-text('Come configurare i DC')" },
+      { "n": 3, "cerca": "a:has-text('Opzioni ›')" }
+    ] },
+  { "file": "eventi", "percorso": "/sicurezza-dominio?tab=eventi&s=2", "attesa": 3500,
+    "ritaglio": ["section:has(input[placeholder^='Cerca account']) header"],
+    "segni": [
+      { "n": 1, "cerca": "section:has(input[placeholder^='Cerca account']) header [role=combobox]" },
+      { "n": 2, "cerca": "input[placeholder^='Cerca account']" }
     ] }
 ]

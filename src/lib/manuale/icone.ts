@@ -18,6 +18,15 @@ export const NOMI_ICONE = [
   "log-out", "dashboard", "network", "book", "settings",
   // pagine dell'elenco
   "chevrons-left", "chevron-left", "chevrons-right",
+  // le altre usate dalle guide delle pagine (26/11, secondo giro)
+  "alert-triangle", "arrow-left", "arrow-left-right", "arrow-right", "camera", "check-circle", "circle-alert",
+  "circle-check", "circle-help", "circle-off", "clipboard-copy", "database", "door-open", "eraser", "eye",
+  "fingerprint", "folder-open", "history", "info", "layout-grid", "list", "list-checks", "locate-fixed",
+  "microscope", "minus", "monitor-smartphone", "move-horizontal", "move-vertical", "pause", "phone", "pin", "play",
+  "plug", "plus", "power", "printer", "radar", "radio", "radio-tower", "rocket", "rotate-ccw", "rotate-cw", "save",
+  "scan", "send", "server", "server-cog", "settings-2", "shield-question", "smartphone", "sparkles",
+  "square-chevron-right", "tag", "tags", "terminal-square", "test-tube", "triangle-alert", "upload", "user-check",
+  "user-x", "users", "wand", "wifi", "zap",
 ] as const;
 
 export type NomeIcona = (typeof NOMI_ICONE)[number];
@@ -26,7 +35,7 @@ const INSIEME = new Set<string>(NOMI_ICONE);
 
 /** `icona:wrench` → { nome: "wrench", tasto: false }; `tasto:filter` → { nome: "filter", tasto: true }; altrimenti null. */
 export function leggiIcona(testo: string): { nome: NomeIcona; tasto: boolean } | null {
-  const m = /^(icona|tasto):([a-z-]+)$/.exec(testo.trim());
+  const m = /^(icona|tasto):([a-z0-9-]+)$/.exec(testo.trim());
   if (!m || !INSIEME.has(m[2])) return null;
   return { nome: m[2] as NomeIcona, tasto: m[1] === "tasto" };
 }

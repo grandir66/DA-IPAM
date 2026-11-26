@@ -1,7 +1,7 @@
 ---
 percorso: /topology/tavola
 titolo: Tavola di cablaggio — le porte degli apparati e i cavi fra loro
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -9,12 +9,17 @@ aggiornata: 2026-11-26
 
 Disegna gli apparati di rete **come sono davanti all'armadio**: per ogni router e switch la fila delle sue porte, e
 fra una porta e l'altra il cavo che le collega. Serve quando si mette mano al cablaggio: dice quale porta è libera,
-dove va un cavo, quali porte hanno qualcosa di strano. Si arriva da **Network › Topologia**, scheda **Tavola di
-cablaggio** in cima.
+dove va un cavo, quali porte hanno qualcosa di strano. La pagina è tutta in lettura: i cavi si correggono nella
+[Topologia](pagine/topology.md).
 
-![La tavola di cablaggio](/manuale/topology-tavola/pagina.png)
+Si arriva da **Network › Topologia**, scheda **Tavola di cablaggio** in cima (le altre schede:
+[Mappa](pagine/topology.md), [Porte](pagine/port-map.md), [Tabella ARP](pagine/arp-table.md),
+[Dati della mappa](pagine/topology-dati.md)). Menu e schede funzionano come in tutte le pagine: vedi le
+[parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-## Le voci della pagina
+## La barra in cima
+
+![La barra della tavola](/manuale/topology-tavola/barra.png)
 
 1. **Sede**: sceglie la sede di cui disegnare gli apparati. **Senza sede** raccoglie quelli a cui non è ancora stata
    assegnata una sede (si assegna dalla scheda dell'apparato).
@@ -22,20 +27,15 @@ cablaggio** in cima.
    riquadro rosso col punto esclamativo, quante porte sono **da verificare**.
 3. **Mostra porte libere**: spenta, le porte vuote spariscono e la tavola si accorcia; un apparato senza porte usate
    si nasconde.
-4. **Trova porta o apparato**: scrivi il nome di un apparato o di una porta e la tavola ci va.
-5. **La legenda** spiega ogni tipo di porta e di linea (vedi sotto).
+4. **Trova porta o apparato**: scrivi il nome di un apparato o di una porta e la tavola ci va, illuminando quello che
+   corrisponde. Con più risultati, `icona:chevron-left` `icona:chevron-right` passano al precedente e al successivo.
 
-Ogni riquadro è un apparato: il nome, il tipo e l'indirizzo, poi le porte numerate come sull'apparato (**S1**, **S2**
-sono le porte in fibra SFP). Sotto le porte usate c'è scritto cosa c'è attaccato: il nome dell'altro apparato e la
-sua porta, oppure quanti MAC si vedono (per esempio «58 MAC»).
+## La legenda
 
-Un clic su una porta o su un cavo apre a destra il riquadro **Porta** o **Collegamento**: stato, velocità, chi c'è
-attaccato (nome e indirizzo), da dove lo si sa, e i pulsanti **Vai alla porta** dell'altro capo e **Apri la scheda**
-dell'apparato. Per correggere un cavo il riquadro rimanda alla [Topologia](pagine/topology.md).
+![La legenda della tavola](/manuale/topology-tavola/legenda.png)
 
-## Cosa vogliono dire i segni
-
-Si distinguono per forma e tipo di linea, non solo per colore:
+Sotto la barra, un quadratino per tipo di porta con la sua linea. Si distinguono per forma e tipo di linea, non solo
+per colore:
 
 - quadratino **pieno scuro** e linea continua scura: **Linea / fuori sede**, la porta verso l'esterno o verso un'altra
   sede;
@@ -50,12 +50,42 @@ Si distinguono per forma e tipo di linea, non solo per colore:
 - porta con il **bordo rosso e il punto esclamativo**: **Da verificare**, cioè non vista di recente, porte diverse fra
   le fonti o porta giù.
 
-## Come si usa
+## Un apparato
 
-1. Scegli la sede in **Sede**.
-2. Per trovare una porta libera lascia **Mostra porte libere** acceso e cerca i quadratini tratteggiati.
-3. Per sapere dove va un cavo clicca la porta: il riquadro a destra dice cosa c'è all'altro capo.
-4. Guarda le porte col punto esclamativo: sono quelle da controllare sul posto.
+![Un apparato sulla tavola](/manuale/topology-tavola/apparato.png)
+
+Ogni riquadro è un apparato: il nome, il tipo e l'indirizzo, poi le porte numerate come sull'apparato (**S1**, **S2**
+sono le porte in fibra SFP). Sotto le porte usate c'è scritto cosa c'è attaccato: il nome dell'altro apparato e la
+sua porta, oppure quanti MAC si vedono (per esempio «58 MAC»). Sotto gli hypervisor c'è l'elenco delle loro macchine
+virtuali; un nome in azzurro apre la sua scheda.
+
+Passando il mouse su una porta o su un cavo, la tavola illumina il cavo e le due porte ai suoi capi.
+
+## Il riquadro della porta o del collegamento
+
+![Il riquadro Collegamento](/manuale/topology-tavola/porta.png)
+
+Un clic su una porta o su un cavo apre a destra il riquadro **Porta** o **Collegamento**:
+
+- i due capi del cavo, ognuno con `icona:locate-fixed` **Vai alla porta**, che porta la tavola su quella porta; un
+  capo che non è sulla tavola ha **Apri la scheda**;
+- la fonte (LLDP, controller, tabella MAC…), da quando è visto e la velocità;
+- le prove, scritte per esteso (chi vede chi, su quale porta, quando) e quanto è sicuro il collegamento;
+- **Per correggere questo cavo: Topologia**, il rimando alla mappa;
+- sotto, per la porta scelta: **Tipo**, **Stato**, **Velocità** e cosa c'è attaccato.
+
+`icona:x` **Chiudi** chiude il riquadro; un secondo clic sulla stessa porta anche.
+
+## Come si fa
+
+- **Trovare una porta libera su uno switch**: scegli la **Sede**, lascia **Mostra porte libere** acceso e cerca i
+  quadratini tratteggiati sotto lo switch.
+- **Sapere dove va un cavo**: clicca la porta; il riquadro a destra dice cosa c'è all'altro capo, e
+  `icona:locate-fixed` porta lì.
+- **Preparare un giro sul posto**: guarda le porte col punto esclamativo (il numero **da verificare** dice quante
+  sono) e aprile una per una per leggere il motivo.
+- **Trovare dove è attaccato un server**: scrivi il suo nome in **Trova porta o apparato**.
+- **Stampare la tavola di un armadio senza le porte vuote**: spegni **Mostra porte libere**, poi stampa dal browser.
 
 ## Da dove arrivano i dati
 

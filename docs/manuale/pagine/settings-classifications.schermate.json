@@ -1,7 +1,34 @@
 [
-  { "file": "pagina", "percorso": "/settings/classifications", "zona": "main", "intera": true,
-    "segni": [
-      { "n": 1, "cerca": "button:has-text('Aggiungi')" },
-      { "n": 2, "cerca": "text=Classification built-in (read-only)" }
-    ] }
+ {
+  "file": "pagina",
+  "percorso": "/settings/classifications",
+  "ritaglio": [
+   "main [data-slot=card] >> nth=0"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Aggiungi')"
+   }
+  ]
+ },
+ {
+  "file": "catalogo",
+  "percorso": "/settings/classifications",
+  "ritaglio": [
+   "main [data-slot=card] >> nth=1"
+  ],
+  "altezza": 1400
+ },
+ {
+  "file": "nuova",
+  "percorso": "/settings/classifications",
+  "prima": [
+   {
+    "clic": "button:has-text('Aggiungi')",
+    "attesa": 700
+   }
+  ],
+  "zona": "[role=dialog]"
+ }
 ]

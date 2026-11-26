@@ -23,7 +23,13 @@ Piano, censimento e tavola: `docs/superpowers/plans/2026-11-26-apparati-zabbix-p
 ## 2026-11-26 — Manuale per pagina con il «?» (Riccardo: «sì a tutto»)
 - [x] Riccardo, 26/11 sera: «le guide sono molto limitate nelle voci, non mostrano l'uso delle schede, dei pulsanti, del menu destro; serve un modulo per le parti comuni». Fatto: `docs/manuale/INTERFACCIA.md` (v0.9.1366) e `pagine/discovery.md` riscritta come modello.
 - [x] Riccardo, 26/11 sera: «il simbolo e non la descrizione» e «solo la zona del display». Fatto in v0.9.1367: `icona:nome` / `tasto:nome` nel testo (elenco in `src/lib/manuale/icone.ts`, la prova fallisce su un nome che non c'è) e `ritaglio` nelle schermate; rifatte Apparati e INTERFACCIA.
-- [ ] Portare le altre 85 guide al livello di `discovery.md` (con icone vere e schermate ritagliate): ogni scheda, ogni pulsante e voce di menu presi dal codice, il menu della riga per ruolo, le azioni su più righe, «Come si fa» con casi veri, schermate dei menu aperti. In attesa dell'ok di Riccardo per 4 agenti, uno per gruppo di menu.
+- [x] Le altre 85 guide al livello di `discovery.md`, con icone vere e schermate ritagliate (4 agenti, 26/11). Icone aggiunte a `icone.ts`; fascia di aggiornamento nascosta dallo script; identificativi SNMP non più storpiati.
+- [ ] Rilievi degli agenti sulle pagine, da proporre a Riccardo (non fatti):
+  - pulsanti che cambiano dati attivi anche in sola lettura (il server poi rifiuta): Credenziali, Subnet, IP esclusi, Active Directory, Anomalie, Tabella ARP, Dispositivi, Attribuzione, scheda oggetto, Reti dal trunk, Alert sicurezza, Notifiche, Classificazioni, Profili SNMP, Sorgenti DHCP, Asset, Assegnatari, Licenze, Ubicazioni, Servizi, Abbinamenti, Patch Management;
+  - da controllare lato server: Health AD «Esegui healthcheck», Findings › Macchine ESET (Abbina, Riprova, Non è fra gli host) e la pagina Trasferimento dati non verificano il ruolo;
+  - testi in inglese: Anomalie (MAC flip, Baseline, Z-score), Software, Active Directory, Classificazioni, Profili SNMP, Network Services (Refresh, Panorama), Patch Management (Severity, stati queued/running…), IP esclusi (tombstone, blacklist), Storico scansioni (network_discovery);
+  - Subnet: «2 retei selezionatae»; Storico scansioni: Porte aperte sempre «—»; Licenze ed «Esegui check» di Anomalie: errore mostrato come elenco vuoto o non mostrato;
+  - colonne che escono a 1440: Cambiamenti, Tabella ARP; Network Services: apici inversi a schermo e indirizzo IP fisso nel codice.
 
 - [x] Formato della guida (`src/lib/manuale/formato.ts`), API `/api/manuale/pagina`, pulsante «?» nel guscio, àncore `{#parte}`
 - [x] Script delle schermate con IP/MAC/email/nomi PC finti (`scripts/manuale/schermate.cjs`); i nomi degli host restano (Riccardo, 26/11)

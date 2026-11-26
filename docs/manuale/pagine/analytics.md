@@ -1,7 +1,7 @@
 ---
 percorso: /analytics
 titolo: Anomalie — disponibilità, latenza e cambi sospetti
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -12,54 +12,86 @@ cambia sullo stesso indirizzo, un host sconosciuto apparso, porte aperte o chius
 spesso del normale, una latenza molto più alta della media. Ogni riga è un evento da guardare e poi segnare come
 **gestito**.
 
-Si arriva dalla scheda **Cambiamenti** (sotto **Network › Apparati**) con il collegamento **Disponibilità e latenza
-anomale**; la scheda in cima resta accesa su «Cambiamenti».
+Si arriva dalla scheda [Cambiamenti](pagine/network-changes.md) (sotto **Network › Apparati**) con il collegamento
+**Disponibilità e latenza anomale**; la scheda in cima resta accesa su «Cambiamenti». Menu, schede e tabelle
+funzionano come in tutte le pagine: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-![La pagina Anomalie](/manuale/analytics/pagina.png)
+## La barra in cima
 
-## Le voci della pagina
+![La barra delle Anomalie](/manuale/analytics/barra.png)
 
-1. **Stato**: **Non gestiti** (di serie, gli eventi ancora aperti), **Gestiti**, **Tutti**.
+Accanto al titolo `icona:alert-triangle` **Anomalie**, il numero rosso conta gli eventi non gestiti.
+
+1. **Stato**: **Non gestiti** (all'apertura, gli eventi ancora aperti), **Gestiti**, **Tutti**.
 2. **Tipo**: **Tutti i tipi** oppure uno solo fra **MAC flip**, **Nuovo host**, **Cambio porte**, **Uptime anomalo**,
-   **Latenza anomala**. A destra c'è il numero di eventi che corrispondono.
-3. **Aggiorna**: rilegge l'elenco.
-4. **Esegui check**: rifà subito il controllo delle anomalie su tutti gli host, senza aspettare il giro programmato.
-5. **Gestisci**: segna l'evento come preso in carico. Esce dai «Non gestiti» e resta nello storico con chi l'ha
+   **Latenza anomala**. A destra, quanti eventi corrispondono.
+3. `tasto:refresh` **Aggiorna**: rilegge l'elenco.
+4. `tasto:play` **Esegui check**: rifà subito il controllo delle anomalie su tutti gli host, senza aspettare il giro
+   programmato.
+
+## La tabella
+
+![La tabella degli eventi](/manuale/analytics/tabella.png)
+
+1. **Severità**: **Alta**, **Media** o **Bassa**, sempre scritte per esteso.
+2. **Stato**: `icona:alert-triangle` **Aperto**, oppure `icona:check-circle` **Gestito**.
+3. **Gestisci**: segna l'evento come preso in carico. Esce dai «Non gestiti» e resta nello storico con chi l'ha
    gestito e quando.
 
-Il numero rosso accanto al titolo **Anomalie** conta gli eventi non gestiti. Le frecce in alto a destra della tabella
-sfogliano le pagine.
+| Colonna | Che cosa dice |
+|---|---|
+| **Tipo** | Che anomalia è (sotto). |
+| **Severità** | Alta, Media, Bassa. |
+| **Descrizione** | Cosa è successo, con indirizzi e valori. |
+| **Rilevato** | Quando è stato trovato. |
+| **Stato** | Aperto o Gestito. |
 
-Le colonne:
+I tipi:
 
-- **Tipo**: che anomalia è.
-  - **MAC flip**: sullo stesso indirizzo hanno risposto due schede di rete diverse. Può essere un apparato sostituito,
-    una macchina virtuale spostata o qualcuno che usa l'indirizzo di un altro.
-  - **Nuovo host**: un host mai visto, con il suo MAC e le porte aperte.
-  - **Cambio porte**: porte aperte o chiuse rispetto all'ultima volta.
-  - **Uptime anomalo**: l'host è offline molto più spesso del solito (per esempio «100% offline, di solito 46%»).
-  - **Latenza anomala**: l'host risponde molto più lentamente della sua media.
-- **Severità**: **Alta**, **Media** o **Bassa**, scritte per esteso.
-- **Descrizione**: cosa è successo, con indirizzi e valori.
-- **Rilevato**: quando è stato trovato.
-- **Stato**: **Aperto** col triangolo, oppure gestito.
+- **MAC flip**: sullo stesso indirizzo hanno risposto due schede di rete diverse. Può essere un apparato sostituito,
+  una macchina virtuale spostata o qualcuno che usa l'indirizzo di un altro.
+- **Nuovo host**: un host mai visto, con il suo MAC e le porte aperte.
+- **Cambio porte**: porte aperte o chiuse rispetto all'ultima volta.
+- **Uptime anomalo**: l'host è offline molto più spesso del solito (per esempio «100% offline, di solito 46%»).
+- **Latenza anomala**: l'host risponde molto più lentamente della sua media.
 
-Un clic su una riga apre il dettaglio: la descrizione per intero, i valori di prima e di adesso (MAC precedente e
-nuovo, porte aggiunte e rimosse, latenza attuale e media, percentuale di tempo offline) e il pulsante per gestirla.
+In alto a destra della tabella, `icona:chevron-left` `icona:chevron-right` sfogliano le pagine, cinquanta eventi per
+volta.
 
-## Come si usa
+**Esegui check**, **Gestisci** e **Segna come gestito** si vedono anche in sola lettura, ma li esegue solo un
+**amministratore**.
 
-1. Lascia **Non gestiti**: sono gli eventi da guardare.
-2. Apri una riga per leggere i valori. Per un **MAC flip** controlla se l'apparato è stato cambiato davvero.
-3. Quando hai capito, premi **Gestisci**.
-4. Per vedere solo un tipo di problema sceglilo nel secondo menu.
+## Il dettaglio di un evento
 
-Gestire un evento e lanciare il controllo spetta a chi ha il ruolo di amministratore.
+![Il dettaglio di un evento](/manuale/analytics/dettaglio.png)
+
+Un clic su una riga apre il dettaglio: la severità e il tipo in cima, la descrizione per intero e i valori di prima e
+di adesso. Secondo il tipo:
+
+- **MAC flip**: **MAC precedente** e **Nuovo MAC**, con il produttore;
+- **Cambio porte**: **Porte aggiunte** e **Porte rimosse**;
+- **Latenza anomala**: **Latenza attuale**, **Baseline** (la media, con lo scarto) e **Z-score** (quanto si allontana
+  dalla media: più è alto, più è strano);
+- **Uptime anomalo**: **Offline (recente)** e **Offline (baseline)**, in percentuale;
+- **Nuovo host**: **MAC** e **Porte aperte**.
+
+In fondo **Rilevato**, e `tasto:check-circle` **Segna come gestito**; un evento già gestito dice da chi e quando.
+
+## Come si fa
+
+- **Ripassare le anomalie della settimana**: lascia **Non gestiti**, apri ogni riga, e quando hai capito
+  **Gestisci**.
+- **Controllare un MAC flip**: apri la riga e confronta i produttori di **MAC precedente** e **Nuovo MAC**. Se
+  l'apparato è stato davvero sostituito, gestisci l'evento; se no, cerca l'indirizzo fra gli
+  [Apparati](pagine/discovery.md) e guarda chi è.
+- **Vedere solo i problemi di rete lenta**: secondo menu › **Latenza anomala**.
+- **Dopo aver sistemato un guasto**: `tasto:play` **Esegui check**, poi `tasto:refresh` **Aggiorna**.
+- **Ritrovare chi ha gestito un evento**: primo menu › **Gestiti**, apri la riga.
 
 ## Cosa vogliono dire i segni
 
 - **Alta**, **Media**, **Bassa**: la severità è sempre scritta, non solo colorata.
-- ⚠ **Aperto**: evento non ancora gestito.
+- `icona:alert-triangle` **Aperto**: evento non ancora gestito. `icona:check-circle` **Gestito**: preso in carico.
 
 ## Da dove arrivano i dati
 

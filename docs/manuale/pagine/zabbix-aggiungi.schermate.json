@@ -1,1 +1,10 @@
-[ { "file": "pagina", "percorso": "/zabbix/aggiungi", "attesa": 4000 } ]
+[
+  { "file": "pagina", "percorso": "/zabbix/aggiungi", "attesa": 4000,
+    "ritaglio": ["main >> text=Apparati non abbinati", "main button:has-text('Aggiungi (')", "main table thead", "main table tbody tr >> nth=4"],
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='Filtra per nome']" },
+      { "n": 2, "cerca": "main button:has-text('Prova (')" },
+      { "n": 3, "cerca": "main button:has-text('Aggiungi (')" },
+      { "n": 4, "cerca": "main th:has-text('Cosa dice il centro')" }
+    ] }
+]

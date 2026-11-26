@@ -66,7 +66,8 @@ function mascheraNellaPagina(reti) {
     if (!mappa.has(r)) mappa.set(r, `10.${20 + Math.floor(mappa.size / 250)}.${(mappa.size % 250) + 1}`);
     return mappa.get(r);
   };
-  const ip = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+  // Quattro numeri da soli, non un pezzo di un identificativo SNMP (1.3.6.1.4.1…): prima e dopo non c'è «.cifra».
+  const ip = /(?<!\d\.)\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b(?!\.\d)/g;
   const mac = /\b([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})\b/g;
   const email = /\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b/g;
   // I nomi dei portatili e dei PC portano spesso il cognome di chi li usa (NB-ROSSI): si tiene il prefisso.
@@ -145,8 +146,8 @@ async function main() {
           if (p.scrivi) await page.locator(p.scrivi.in).first().fill(p.scrivi.testo);
           await page.waitForTimeout(p.attesa ?? 600);
         }
-        // Il «?» del manuale non serve nelle schermate del manuale.
-        await page.addStyleTag({ content: "[aria-label='Manuale di questa pagina']{visibility:hidden!important}" });
+        // Il «?» del manuale, la fascia «Nuova versione disponibile» e gli avvisi a comparsa non servono nelle schermate.
+        await page.addStyleTag({ content: "[aria-label='Manuale di questa pagina']{visibility:hidden!important} div.fixed.top-0.left-0.right-0.z-50,[data-sonner-toaster]{display:none!important}" });
         reti = await page.evaluate(mascheraNellaPagina, reti);
         if (s.nascondi?.length) await page.addStyleTag({ content: `${s.nascondi.join(",")}{filter:blur(5px)!important}` });
         for (const g of s.segni || []) {

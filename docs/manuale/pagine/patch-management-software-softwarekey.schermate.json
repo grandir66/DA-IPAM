@@ -1,39 +1,5 @@
 [
-  {
-    "file": "pagina",
-    "percorso": "/patch-management",
-    "attesa": 3000,
-    "altezza": 1300,
-    "prima": [
-      {
-        "clic": "[role=tab]:has-text('Software')",
-        "attesa": 2500
-      },
-      {
-        "clic": "a[href^='/patch-management/software/'] >> nth=0",
-        "attesa": 3500
-      }
-    ],
-    "nascondi": [
-      "tbody td:nth-child(2)"
-    ],
-    "segni": [
-      {
-        "n": 1,
-        "cerca": "button:has-text('Pin manuale fix')"
-      },
-      {
-        "n": 2,
-        "cerca": "text=CVE rilevate"
-      },
-      {
-        "n": 3,
-        "cerca": "input[placeholder^='Cerca hostname']"
-      },
-      {
-        "n": 4,
-        "cerca": "text=Solo con WinRM"
-      }
-    ]
-  }
+  {"file": "testata", "percorso": "/patch-management", "attesa": 3000, "altezza": 1200, "prima": [{"clic": "[role=tab]:has-text('Software')", "attesa": 2500}, {"clic": "a[href^='/patch-management/software/'] >> nth=0", "attesa": 3500}], "nascondi": ["main a[href^='/patch-management/cve/']"], "ritaglio": ["main [data-slot=card] >> nth=0", "main [data-slot=card] >> nth=1"], "segni": [{"n": 1, "cerca": "button:has-text('Pin manuale fix')"}, {"n": 2, "cerca": "main [data-slot=card] >> nth=0 >> button:has-text('Aggiorna')"}, {"n": 3, "cerca": "text=CVE rilevate"}]},
+  {"file": "host", "percorso": "/patch-management", "attesa": 3000, "altezza": 1400, "prima": [{"clic": "[role=tab]:has-text('Software')", "attesa": 2500}, {"clic": "a[href^='/patch-management/software/'] >> nth=0", "attesa": 3500}], "nascondi": ["main tbody td:nth-child(2)"], "ritaglio": ["input[placeholder^='Cerca hostname']", "label:has-text('Solo con WinRM')", "main thead", "main tbody tr:nth-child(1)"], "segni": [{"n": 1, "cerca": "input[placeholder^='Cerca hostname']"}, {"n": 2, "cerca": "label:has-text('Solo con WinRM')"}]},
+  {"file": "azioni", "percorso": "/patch-management", "attesa": 3000, "altezza": 1400, "prima": [{"clic": "[role=tab]:has-text('Software')", "attesa": 2500}, {"clic": "a[href^='/patch-management/software/'] >> nth=0", "attesa": 3500}], "ritaglio": ["button:has-text('Probe selezionati')", "button:has-text('Upgrade selezionati')"]}
 ]

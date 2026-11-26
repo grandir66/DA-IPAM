@@ -1,155 +1,255 @@
 ---
 percorso: /arp-table/trunk
 titolo: Reti dal trunk — allarmi, VLAN e apparati sentiti in ascolto
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
 ## A cosa serve
 
-La **sonda trunk** è collegata a una porta dello switch che porta tutte le VLAN e ascolta, senza interrogare nessun
-apparato. Questa pagina mostra quello che sente, in tre parti che stanno come schede in cima, nel gruppo **Viste in
-ascolto** di **Sicurezza › Rete**:
+La **sonda trunk** è collegata a una porta dello switch che porta tutte le VLAN e **ascolta soltanto**: non interroga
+nessun apparato. Questa pagina mostra quello che sente: i problemi della rete, le VLAN e gli indirizzi che esistono
+davvero sul cavo, gli apparati che si presentano da soli. Si arriva da **Sicurezza › Rete**, poi una delle tre schede
+del gruppo **Viste in ascolto**.
 
-- **Allarmi di rete**: i problemi che la sonda sente (server DHCP non previsti, indirizzi contesi, protocolli
-  insicuri).
-- **VLAN e indirizzi**: le VLAN, le reti e gli indirizzi che esistono davvero sul cavo, senza leggere il router.
-- **Apparati annunciati**: gli apparati che si presentano da soli, con nome, modello e versione.
+Menu, schede, ricerca e tabelle funzionano come in tutte le pagine: sono spiegati nelle
+[parti comuni dell'interfaccia](../INTERFACCIA.md). Qui c'è quello che questa pagina ha di suo.
 
-In cima a ogni parte la riga **Sonda trunk** dice se la sonda è accesa, su quale scheda ascolta, quanti pacchetti al
-secondo vede, se legge i tag VLAN e quando sono arrivati gli ultimi dati. **Impostazioni** (o **Accendi in Opzioni**
-se la lettura è spenta) porta alle opzioni della sonda. Se qualcosa non va, sotto compare il perché: per esempio la
-sonda ascolta ma non vede tag VLAN (la porta dello switch forse non è un trunk), oppure funziona ma DA-IPAM non
-legge i suoi dati.
+## Le schede e la riga della sonda
+
+![Le schede di Rete e la riga della sonda](/manuale/arp-table-trunk/schede.png)
+
+Le schede di **Rete** sono in due gruppi. **Provate dalla sonda** mandano prove sulla rete:
+[Porte e servizi](pagine/servizi-rete.md) e [Chi raggiunge cosa](pagine/segmentazione.md). **Viste in ascolto**
+ascoltano soltanto: [Traffico](pagine/traffico.md) e le tre schede di questa pagina.
+
+1. **Allarmi di rete**: i problemi che la sonda sente (server DHCP non previsti, indirizzi contesi, protocolli
+   insicuri). Vedi [Allarmi di rete](#sicurezza).
+2. **VLAN e indirizzi**: le VLAN, le reti e gli indirizzi visti sul cavo, senza leggere il router. Vedi
+   [VLAN e indirizzi](#reti).
+3. **Apparati annunciati**: gli apparati che si presentano da soli, con nome, modello e versione. Vedi
+   [Apparati annunciati](#annunci).
+4. **La riga Sonda trunk**: ● acceso o spento, su quale scheda di rete ascolta, quanti pacchetti al secondo vede, se
+   legge i tag VLAN, da dove DA-IPAM legge i suoi dati e quando sono arrivati gli ultimi. **Impostazioni** porta alle
+   opzioni della sonda; se la lettura è spenta il pulsante dice **Accendi in Opzioni**.
+
+Se qualcosa non va, sotto la riga compare il perché, con ▲ (da guardare) o ✕ (bloccato):
+
+- ✕ **La sonda non risponde**: su questa macchina non è installata o è spenta; serve una seconda scheda di rete
+  collegata alla porta trunk.
+- ✕ **La sonda è installata ma non ascolta**.
+- ▲ **Non ha ancora visto pacchetti con il tag VLAN**: la porta dello switch forse non è configurata come trunk.
+- ▲ **La sonda funziona, ma DA-IPAM non legge i suoi dati**: si accende la lettura in Opzioni.
+- ▲ **Ultima lettura non riuscita**, con il motivo.
 
 ## Allarmi di rete {#sicurezza}
 
-Mostra i problemi che la sonda trunk sente sulla rete, senza interrogare nessun apparato.
+Mostra i problemi che la sonda sente sulla rete. In cima quattro riquadri:
 
-In cima quattro riquadri: **Allarmi** (cose successe da guardare subito: DHCP, IP contesi, indirizzi fuori rete; con
-quanti gravi sono da prendere), **Esposizioni** (come è fatta la rete, con cosa fare; per esempio quanti host usano
-LLMNR/NetBIOS), **Novità** (apparati e VLAN sconosciuti sentiti sulla rete), **Da prendere in carico** (senza
-nessuno che se ne occupa).
+| Riquadro | Che cosa conta |
+|---|---|
+| **Allarmi** | Cose successe da guardare subito (DHCP, IP contesi, indirizzi fuori rete); sotto, quanti gravi aspettano qualcuno. |
+| **Esposizioni** | Come è fatta la rete, con cosa fare; sotto, quanti host usano LLMNR/NetBIOS. |
+| **Novità** | Apparati e VLAN sconosciuti sentiti sulla rete. |
+| **Da prendere in carico** | I rilievi di cui nessuno si sta occupando. |
 
-Nel pannello **Allarmi di rete**:
+### Il pannello Allarmi di rete
 
-- I tipi di rilievo, divisi in **Allarmi**, **Esposizioni** e **Novità**, ognuno col suo conteggio: **Server DHCP non
-  previsto**, **Indirizzo IP conteso**, **Indirizzo fuori dalla sua rete**, **Usa LLMNR o NetBIOS**, **Stesso
-  apparato in più VLAN**, **Switch che si annuncia (CDP/LLDP)**, **Apparato non in inventario**, **VLAN non censita**.
-  Un clic su un tipo filtra l'elenco e in fondo compare **Cosa fare**.
-- **Quali rilievi**: **Tutti** o **Da prendere in carico**.
-- **Cerca IP, MAC, testo**, con Invio.
-- Colonne: **Rilievo**, **Indirizzo IP**, **MAC e produttore**, **Ultimo visto**, **Presa in carico** (chi e quando,
-  oppure «da prendere»).
+I tipi di rilievo stanno in tre colonne, ognuno con il segno della gravità e quanti sono:
 
-### Come si usa
+- **Allarmi**: **Server DHCP non previsto**, **Indirizzo IP conteso**, **Indirizzo fuori dalla sua rete**;
+- **Esposizioni**: **Usa LLMNR o NetBIOS**, **Stesso apparato in più VLAN**, **Switch che si annuncia (CDP/LLDP)**;
+- **Novità**: **Apparato non in inventario**, **VLAN non censita**.
 
-1. Parti dagli allarmi gravi.
-2. Scegli un tipo di rilievo: l'elenco si filtra e in fondo compare **Cosa fare**.
-3. **Prendi in carico** dice ai colleghi che te ne occupi; **Riapri** lo rimette in lista (solo amministratori).
-4. Con **Da prendere in carico** restano solo quelli senza nessuno.
+Un clic su un tipo filtra l'elenco sotto e in fondo al pannello compare **Cosa fare** per quel tipo; un altro clic
+toglie il filtro. «N presi» accanto al numero dice quanti sono già in mano a qualcuno; ✓ **nessuno** vuol dire che in
+quella colonna non c'è niente di aperto.
 
-### Cosa vogliono dire i segni
+In alto a destra nel pannello:
 
-- Gravità alta: grave, conta nel numero rosso accanto a **Rete** nel menu.
-- Gravità media: da controllare.
-- Gravità bassa: da sapere.
-- ✓ **nessuno**: per quel tipo non c'è niente di aperto.
+- **Quali rilievi**: **Tutti** o **Da prendere in carico** (solo quelli senza nessuno);
+- `icona:search` **Cerca IP, MAC, testo**: si cerca premendo **Invio**.
 
-### Da dove arrivano i dati
+Le colonne dell'elenco:
 
-La sonda trunk, in ascolto sulla porta con tutte le VLAN. Si calcola a ogni lettura, ogni 2 minuti. I rilievi
-compaiono anche in [Findings](pagine/vulnerabilities.md), fonte **IPAM / Nety**.
+| Colonna | Che cosa dice |
+|---|---|
+| **Gr.** | La gravità: alta, media o bassa, con le tacche (vedi [Segni e colori](../INTERFACCIA.md#segni)). |
+| **Rilievo** | Il dettaglio e, sotto, il tipo. |
+| **VLAN** | Dove è stato sentito: la VLAN, **Nativa** o «più VLAN». |
+| **Indirizzo IP** | L'indirizzo coinvolto. |
+| **MAC e produttore** | La scheda di rete e chi l'ha fatta. |
+| **Ultimo visto** | L'ultima volta che la sonda l'ha sentito. |
+| **Presa in carico** | ✓ con il nome di chi se ne occupa (passa il mouse per la data), oppure il pulsante. |
 
-### Se è vuota
+Chi è in **sola lettura** vede l'elenco e chi ha preso in carico cosa. Un **amministratore** ha in più, sulla riga:
 
-**Nessun rilievo aperto**: guarda la riga della sonda in alto. Se è spenta o la lettura non è attiva, lì c'è scritto
-perché.
+- **Prendi in carico**: dice ai colleghi che te ne occupi; il rilievo esce da «Da prendere in carico»;
+- **Riapri**: lo rimette fra quelli da prendere.
+
+**Precedenti** e **Successivi**, in fondo, sfogliano l'elenco (50 righe alla volta).
+
+I rilievi compaiono anche in [Findings](pagine/vulnerabilities.md), fonte **IPAM / Nety**. Quelli gravi contano nel
+numero rosso accanto a **Rete** nel menu.
 
 ## VLAN e indirizzi {#reti}
 
-Elenca le VLAN, le reti e gli indirizzi che esistono davvero sul trunk, senza leggere il router.
+Elenca le VLAN, le reti e gli indirizzi che esistono davvero sul trunk. In cima quattro riquadri: **VLAN viste** (con
+quante non dichiarate in DA-IPAM e quante dichiarate e mai viste), **Reti** (dedotte dagli indirizzi visti, quante già
+in DA-IPAM), **Indirizzi IP** (quanti silenziosi) e **Nuovi in 7 giorni**.
 
-![VLAN e indirizzi](/manuale/arp-table-trunk/reti.png)
+### Da dove si ascolta
 
-1. **Da dove si ascolta**: se oltre alla sonda ci sono dei collector del [Traffico](pagine/traffico.md), qui si
-   sceglie il punto di ascolto: **Sonda trunk** o una sede con i suoi collector. Con una sede la pagina mostra le
-   reti viste da quei collector (solo ascolto di ARP e DHCP degli ultimi 14 giorni) e chi ha visto ogni indirizzo.
-2. **VLAN viste sul trunk**: una casella per VLAN con quanti IP ha, se è dichiarata in DA-IPAM (**▲ non
-   dichiarata** se no), una barra (IP in ascolto e IP silenziosi) e quanti indirizzi stanno nella rete ufficiale
-   della VLAN («ufficiali») e quanti fuori («altri»). Un bordo tratteggiato vuol dire dichiarata ma mai vista.
-   **Tutte** toglie la scelta. A destra si legge quale VLAN è la nativa (i pacchetti senza tag).
-3. **Dettaglio della rete**: si riempie scegliendo una rete nell'elenco **2. Reti** a sinistra.
+Se oltre alla sonda ci sono i collector del [Traffico](pagine/traffico.md), sopra la riga della sonda compare **Da dove
+si ascolta**: **Sonda trunk** oppure una sede con i suoi collector («Sede · 2 collector»; passa il mouse per leggerne i
+nomi). Con una sede la pagina mostra le reti viste da quei collector (solo ARP e DHCP degli ultimi 14 giorni) e, per
+ogni indirizzo, chi l'ha visto (colonna **Visto da**). Vedi [Le reti di una sede](#sede).
 
-In cima quattro riquadri: **VLAN viste** (con quante non dichiarate e quante dichiarate e mai viste), **Reti**
-(dedotte dagli indirizzi visti, quante già in DA-IPAM), **Indirizzi IP** (visti senza leggere il router, quanti
-silenziosi), **Nuovi in 7 giorni**.
+### La VLAN nativa
 
-Se la VLAN nativa non è confermata compare **▲ VLAN nativa da confermare**: si scrive il numero (da 1 a 4094) o si
-lascia vuoto per «nessuna».
+Se il programma non sa ancora a quale VLAN appartengono i pacchetti senza tag, compare la fascia gialla
+▲ **VLAN nativa da confermare**, con quello che ha dedotto. Un amministratore risponde con **Sì, è la VLAN N** oppure
+**È un'altra**, che chiede il numero (da 1 a 4094; vuoto vuol dire «nessuna»). Dopo la conferma, in alto a destra del
+pannello 1 si legge «Senza tag = VLAN N» e **Cambia** riporta alla VLAN dedotta.
 
-**2. Reti**: una voce per rete, con la sua maschera, quanti IP, il gateway e come è stata trovata la maschera (vedi i
-segni). **▲ stessa rete anche su** avvisa che la stessa rete compare in più VLAN.
+### 1. VLAN viste sul trunk
 
-**Dettaglio della rete**: **Gateway**, **Indirizzi**, **Nuovi in 7 giorni**, **Maschera** (con **correggi** e
-**Torna alla dedotta**), il grafico degli IP conosciuti per giorno e la mappa dell'**Occupazione** (in ascolto,
-silenzioso, gateway, mai visto). **Porta in DA-IPAM** aggiunge la rete all'inventario: chiede il nome e mostra
-sede e VLAN, quanti indirizzi entrano subito e che le credenziali si aggiungono dopo. Una rete già presente lo dice
-con **✓ in DA-IPAM**.
+![Le VLAN viste sul trunk](/manuale/arp-table-trunk/vlan.png)
 
-**Indirizzi IP e MAC**: ogni indirizzo visto sul trunk. Filtri **Come è stato trovato** (**Tutti**, **● In
-ascolto**, **▲ Silenziosi**, **◆ Confermati**), **Appartenenza** (**Tutti**, **✓ Ufficiali**, **Altri**, **▲ Altra
-VLAN**, **● VLAN non in DA-IPAM**, **● 169.254**, **– Instradati**) e **Cerca IP, MAC, nome**. Colonne: **Indirizzo
-IP**, MAC, **Produttore**, **VLAN · rete**, **Appartenenza**, **Come è stato trovato**, **Nome e protocolli**,
-**Ultimo visto**. Sull'indirizzo possono comparire i segni dei rilievi aperti (**✕ DHCP non previsto**, **▲ fuori
-rete**, **▲ LLMNR/NetBIOS**, **● più VLAN**, **● non in inventario**). **Precedenti** e **Successivi** sfogliano.
+Una casella per VLAN: il numero (la **Nativa** è quella senza tag), quanti IP ha (o quanti MAC, se non ha indirizzi),
+la sua rete o ▲ **non dichiarata** se in DA-IPAM non c'è, una barra con gli IP in ascolto (azzurro) e quelli silenziosi
+(blu scuro), e quanti indirizzi stanno nella rete ufficiale della VLAN («✓ ufficiali») e quanti fuori («altri»). Il
+bordo tratteggiato vuol dire **dichiarata ma mai vista**.
 
-### Come si usa
+Un clic su una casella mostra sotto solo le reti e gli indirizzi di quella VLAN; **Tutte** toglie la scelta.
 
-1. Scegli una VLAN: sotto compaiono le sue reti.
-2. Scegli una rete per il dettaglio; se la maschera è sbagliata si corregge lì.
-3. **Porta in DA-IPAM** aggiunge una rete che non c'è ancora.
-4. In fondo trovi ogni indirizzo IP e MAC, con i filtri.
+### 2. Reti e 3. Dettaglio della rete
 
-### Cosa vogliono dire i segni
+![Le reti e il dettaglio di una rete](/manuale/arp-table-trunk/reti.png)
 
-- ● visto in ascolto.
-- ▲ silenzioso, trovato solo col giro ARP.
-- ◆ visto e confermato.
-- **GW?**: l'IP più cercato, probabilmente il gateway.
-- Maschera: **✓ DHCP** (annunciata dal DHCP), **≈ dedotta** (/24 vicini con lo stesso gateway uniti), **? incerta**
-  (IP sparsi, da confermare), **✎ impostata** (scritta a mano).
+**2. Reti** ha una voce per rete: l'indirizzo con la maschera, il segno di come è stata trovata la maschera (vedi
+[i segni](#segni)), quanti IP, il gateway, «+N oggi» se ci sono indirizzi nuovi, e da quali blocchi /24 vicini è
+fatta. ▲ **stessa rete anche su** avvisa che la stessa rete compare in più VLAN.
 
-### Da dove arrivano i dati
+Un clic su una rete apre a destra **3. Dettaglio della rete**:
 
-La sonda trunk, letta ogni 2 minuti. Le scansioni restano sull'IP ufficiale dell'appliance.
+- **Gateway**, **Indirizzi** (con quanti silenziosi), **Nuovi in 7 giorni**, **Maschera**;
+- il segno della maschera con il perché e **correggi**, una tendina con le maschere possibili; per una maschera
+  scritta a mano c'è **Torna alla dedotta**;
+- il grafico **IP conosciuti negli ultimi 14 giorni** (quanti in tutto e quanti nuovi ogni giorno);
+- **Occupazione**: una casella per indirizzo (o per gruppo di indirizzi): in ascolto, silenzioso, gateway, mai visto;
+- `tasto:zap` **Giro ARP**: interroga la VLAN per trovare gli apparati che non parlano da soli (stampanti, PLC,
+  telecamere); i risultati arrivano alla lettura successiva. È spento se la lettura della sonda è spenta;
+- **Porta in DA-IPAM**: crea subito la rete fra le [Subnet](pagine/networks.md), con un giro ARP e gli host già
+  visti (ci vuole fino a un minuto e mezzo). Se la maschera è incerta conviene correggerla prima. Una rete già
+  presente lo dice con ✓ **in DA-IPAM**.
 
-### Se è vuota
+Giro ARP, Porta in DA-IPAM e la correzione della maschera cambiano dati e sono pensati per un amministratore.
 
-**Nessuna VLAN letta finora**: la porta dello switch deve essere un trunk con tutte le VLAN. Guarda la riga della
-sonda in alto. Il sensore manda le VLAN alla prima lettura, entro un paio di minuti dall'accensione.
+### 4. Indirizzi IP e MAC
+
+![L'elenco degli indirizzi](/manuale/arp-table-trunk/indirizzi.png)
+
+Ogni indirizzo visto sul trunk, 100 alla volta. Se hai scelto una VLAN o una rete, il suo nome compare accanto ai
+filtri.
+
+1. **Come è stato trovato**: **Tutti**, ● **In ascolto**, ▲ **Silenziosi** (trovati solo col giro ARP),
+   ◆ **Confermati** (in tutti e due i modi).
+2. `icona:search` **Cerca IP, MAC, nome**: si cerca premendo **Invio**.
+3. **Appartenenza**, ognuna col suo numero: **Tutti**, ✓ **Ufficiali** (nella rete della sua VLAN), **Altri**,
+   ▲ **Altra VLAN** (l'indirizzo è di una rete che in DA-IPAM sta su un'altra VLAN), ● **VLAN non in DA-IPAM**,
+   ● **169.254** (indirizzi che il PC si dà da solo quando il DHCP non risponde), – **Instradati** (indirizzi che
+   passano dal router e non sono host della VLAN; di serie restano nascosti, e accanto si legge quanti).
+
+| Colonna | Che cosa dice |
+|---|---|
+| **Indirizzo IP** | L'indirizzo; **GW** se è il gateway annunciato dal DHCP, **GW?** se è l'indirizzo più cercato. |
+| **MAC** | La scheda di rete. |
+| **Produttore** | Chi ha fatto la scheda, dal MAC. |
+| **VLAN · rete** | La VLAN e la rete dedotta. |
+| **Appartenenza** | Uno dei segni del filtro 3; passa il mouse per la spiegazione. |
+| **Come è stato trovato** | ● visto in ascolto, ▲ solo col giro ARP, ◆ ascolto + giro ARP. |
+| **Nome e protocolli** | Il nome, i protocolli sentiti, i segni dei rilievi aperti (✕ DHCP non previsto, ▲ fuori rete, ▲ LLMNR/NetBIOS, ● più VLAN, ● non in inventario) e, sotto, quello che l'apparato dice di sé (annunci, mDNS, DHCP). |
+| **Ultimo visto** | Quando la sonda l'ha sentito l'ultima volta. |
+
+**Precedenti** e **Successivi** sfogliano l'elenco.
+
+### Le reti di una sede {#sede}
+
+Scegliendo una sede in **Da dove si ascolta** la pagina cambia: niente riga della sonda, e al posto delle VLAN del
+trunk ci sono quelle viste dai collector. Le reti hanno ▲ «N indirizzi visti non sono host» quando in DA-IPAM manca
+qualche host. Nel dettaglio di una rete un amministratore ha:
+
+- **Porta in DA-IPAM**, che qui apre una finestra: **Nome** della rete, **Maschera** (la /24 è quella dedotta),
+  **Sede e VLAN**, quanti indirizzi **Entrano subito**, e il promemoria che le **Credenziali** si aggiungono dopo e
+  che il **Giro ARP** non si può fare (il collector ascolta soltanto). **Porta in DA-IPAM** conferma, **Annulla**
+  chiude;
+- **Aggiungi i N host che mancano**, per una rete già in DA-IPAM.
+
+L'elenco degli indirizzi ha la ricerca `icona:search` **Cerca IP, MAC, nome** (con **Togli** per azzerarla) e in più la
+colonna **Visto da**: quale collector l'ha sentito.
 
 ## Apparati annunciati {#annunci}
 
-Elenca gli apparati che si presentano da soli sulla rete, con nome, modello e versione.
+![La barra di Apparati annunciati](/manuale/arp-table-trunk/annunci.png)
 
-In cima i riquadri **Apparati annunciati**, **Non in DA-IPAM** (da aggiungere all'inventario), **Non registrati**
-(noti come host, non come apparato) e **Protocolli sentiti**. Filtri: **Cerca nome, modello, indirizzo**,
-**Protocollo** (**Tutti** o uno solo) e **Stato in DA-IPAM** (**Non in DA-IPAM**, **Non registrati come apparato**).
-Colonne: **Apparato**, **Modello e versione**, **Interfacce**, **In DA-IPAM** (**apparato registrato** o **▲ non è
-un apparato**). Una riga si apre e mostra da quali porte e VLAN si annuncia.
+Elenca gli apparati che si presentano da soli sulla rete (MikroTik, Ubiquiti, Cisco e simili). In cima i riquadri
+**Apparati annunciati**, **Non in DA-IPAM** (da aggiungere all'inventario), **Non registrati** (noti come host ma non
+come apparato) e **Protocolli sentiti**.
 
-### Come si usa
+Nella barra del pannello:
 
-1. Filtra **Non in DA-IPAM** per trovare apparati che mancano nell'inventario.
-2. Filtra **Non registrati come apparato** per completare quelli già noti come host.
-3. Apri una riga per vedere da quali porte si annuncia.
+- `icona:search` **Cerca nome, modello, indirizzo**: filtra mentre scrivi;
+- **Protocollo**: **Tutti** oppure **MNDP**, **Ubiquiti**, **CDP**, **LLDP**, ognuno col suo numero;
+- **Stato in DA-IPAM**: **Tutti**, **Non in DA-IPAM**, **Non registrati come apparato**.
 
-### Da dove arrivano i dati
+| Colonna | Che cosa dice |
+|---|---|
+| `icona:chevron-right` | Apre la riga (`icona:chevron-down` la richiude): da quali porte e VLAN si annuncia l'apparato. |
+| **Apparato** | Il nome con cui si presenta e che tipo di apparato dice di essere. |
+| **Come** | Il protocollo dell'annuncio. |
+| **Modello e versione** | Modello e versione del sistema, come li dichiara l'apparato. |
+| **Interfacce** | Da quante porte si annuncia, e in quale VLAN (o in quante). |
+| **In DA-IPAM** | Il collegamento all'host con sotto **apparato registrato** o ▲ **non è un apparato**; ▲ **non c'è**, con l'indirizzo, se in DA-IPAM manca. |
+| **Vista** | Quando è arrivato l'ultimo annuncio. |
 
-I messaggi che MikroTik, Ubiquiti e Cisco mandano da soli (CDP, LLDP e simili), sentiti dalla sonda trunk.
+La pagina qui si legge soltanto: per registrare un apparato si va in [Apparati](pagine/discovery.md).
 
-### Se è vuota
+## Come si fa
 
-**Nessun annuncio finora**: gli annunci arrivano entro un paio di minuti. Alcuni apparati non si annunciano o hanno
-la funzione spenta.
+- **Vedere se la sonda funziona**: guarda la riga **Sonda trunk** in cima a ogni scheda: ● acceso, pacchetti al
+  secondo, «tag VLAN letti» e «dati adesso». Se c'è una riga ▲ o ✕ sotto, dice cosa sistemare.
+- **Trovare un server DHCP che non dovrebbe esserci**: scheda **Allarmi di rete**, clic su **Server DHCP non
+  previsto**: l'elenco mostra indirizzo e MAC, in fondo c'è **Cosa fare**. Un amministratore lo segna con **Prendi in
+  carico**.
+- **Scoprire le reti che mancano in DA-IPAM**: scheda **VLAN e indirizzi**, cerca le caselle ▲ **non dichiarata**,
+  clic sulla VLAN, poi sulla rete; se la maschera è giusta, **Porta in DA-IPAM**.
+- **Trovare le stampanti e le telecamere che non parlano**: scegli la rete, `tasto:zap` **Giro ARP**, aspetta un paio
+  di minuti, poi nell'elenco **Come è stato trovato** › ▲ **Silenziosi**.
+- **Vedere chi usa un indirizzo che non è della sua VLAN**: elenco **Indirizzi IP e MAC**, **Appartenenza** › ▲ **Altra
+  VLAN**.
+- **Completare l'inventario degli switch**: scheda **Apparati annunciati**, **Stato in DA-IPAM** › **Non in DA-IPAM**;
+  apri la riga con `icona:chevron-right` per sapere su quale porta si annuncia.
+
+## Cosa vogliono dire i segni {#segni}
+
+- ● visto in ascolto; ▲ silenzioso, trovato solo col giro ARP; ◆ visto e confermato.
+- **GW**: gateway annunciato dal DHCP; **GW?**: l'IP più cercato, probabilmente il gateway.
+- Maschera: ✓ **DHCP** (annunciata dal DHCP), ≈ **dedotta** (/24 vicini con lo stesso gateway uniti), **? incerta**
+  (indirizzi sparsi, da confermare), ✎ **impostata** (scritta a mano).
+- Casella di VLAN col bordo tratteggiato: dichiarata in DA-IPAM ma mai vista sul trunk.
+- Gravità dei rilievi: alta (grave, conta nel numero rosso del menu), media (da controllare), bassa (da sapere).
+
+## Da dove arrivano i dati
+
+Dalla sonda trunk, letta ogni 2 minuti; i rilievi si ricalcolano a ogni lettura. Gli annunci sono i messaggi che gli
+apparati mandano da soli (CDP, LLDP, MNDP, Ubiquiti). Le reti delle sedi arrivano dai collector del
+[Traffico](pagine/traffico.md). Le scansioni di DA-IPAM restano sull'indirizzo ufficiale dell'appliance.
+
+## Se la pagina è vuota
+
+- **Nessun rilievo aperto**: va bene, oppure la sonda non legge; guarda la riga della sonda.
+- **Nessuna VLAN letta finora**: la porta dello switch deve essere un trunk con tutte le VLAN; il sensore manda le
+  VLAN entro un paio di minuti dall'accensione.
+- **Nessun annuncio finora**: gli annunci arrivano entro un paio di minuti; alcuni apparati non si annunciano o hanno
+  la funzione spenta.

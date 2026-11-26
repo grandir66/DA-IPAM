@@ -1,7 +1,7 @@
 ---
 percorso: /services
 titolo: Servizi NIS2 — servizi e dipendenze
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -10,36 +10,62 @@ aggiornata: 2026-11-26
 È il **catalogo dei servizi** dell'azienda (posta, gestionale, sito, centralino, file server) con gli asset da cui
 ciascuno dipende. La NIS2 chiede di sapere quali servizi si fermano se un asset viene compromesso o si guasta: questa
 pagina tiene la mappa, con criticità, tempi massimi di ripristino (RTO) e di perdita dati (RPO) e i responsabili. Si
-arriva da **Inventario › Servizi NIS2** nel menu; la voce c'è solo se il modulo NIS2 è acceso.
+arriva da **Inventario › Servizi NIS2** nel menu; la voce c'è solo se il modulo NIS2 è acceso. La pagina non ha schede
+in cima.
 
-![La pagina Servizi NIS2](/manuale/services/pagina.png)
+Le parti che si ripetono in tutte le pagine sono nelle [parti comuni dell'interfaccia](../INTERFACCIA.md).
 
-## Le voci della pagina
+## La barra del catalogo
 
-1. **Cerca per nome…**: filtra i servizi mentre scrivi. Accanto, il filtro **Stato** (Tutti, Attivo, In dismissione,
-   Dismesso) e il filtro **Scope NIS2** (Tutti, Solo in scope NIS2, Fuori scope).
-2. **Nuovo servizio**: apre la finestra per crearne uno. I campi sono **Nome** (obbligatorio), **Descrizione**,
-   **Stato**, **Criticità** (Bassa, Media, Alta, Critica), **In scope NIS2**, **RTO (minuti)**, **RPO (minuti)**,
-   **Business owner** e **Technical owner** (scelti fra gli [Assegnatari](pagine/inventory-assignees.md)), **URL SLA**,
-   **Note**.
+![La barra del catalogo dei servizi](/manuale/services/barra.png)
 
-Le colonne dell'elenco, quando ci sono servizi:
+Il titolo del riquadro dice quanti servizi ci sono («Catalogo servizi (6)»).
 
-- **Nome**, **Stato**, **NIS2** (il segno se il servizio è in perimetro).
+1. `icona:search` **Cerca per nome…**: filtra i servizi mentre scrivi.
+2. **Stato**: Tutti, Attivo, In dismissione, Dismesso.
+3. **Scope NIS2**: Tutti, Solo in scope NIS2, Fuori scope.
+4. `tasto:plus` **Nuovo servizio**: apre la finestra per crearne uno (sotto).
+
+## L'elenco
+
+| Colonna | Che cosa dice |
+|---|---|
+| **Nome** | Il servizio, con la descrizione sotto. Un clic, o `icona:external-link`, apre la [scheda del servizio](pagine/services-id.md). |
+| **Stato** | Attivo, In dismissione, Dismesso. |
+| **NIS2** | `icona:shield` **NIS2** se il servizio è nel perimetro, il trattino se no. |
+| **Criticità** | bassa, media, alta, critica. |
+| **RTO** | Entro quanti minuti il servizio deve tornare in funzione. |
+| **RPO** | Quanti minuti di dati si possono perdere al massimo. |
+| **Business owner** | Chi risponde del servizio. |
+| **Asset linkati** | Quanti asset ne fanno parte, e fra parentesi quanti sono **primari** (senza di loro il servizio si ferma). |
+
+In fondo alla riga **Apri** apre la [scheda del servizio](pagine/services-id.md), dove si collegano gli asset. La pagina
+non ha il menu `icona:more-vertical`, il tasto destro né la selezione di più righe.
+
+## La finestra Nuovo servizio
+
+![La finestra Nuovo servizio](/manuale/services/nuovo.png)
+
+- **Nome** (obbligatorio) e **Descrizione**.
+- **Stato**: Attivo, In dismissione, Dismesso.
 - **Criticità**: Bassa, Media, Alta, Critica.
-- **RTO**: entro quanto il servizio deve tornare in funzione. **RPO**: quanti minuti di dati si possono perdere al
-  massimo.
-- **Business owner**: chi risponde del servizio.
-- **Asset linkati**: quanti asset ne fanno parte.
-- **Apri**: apre la [scheda del servizio](pagine/services-id.md), dove si collegano gli asset.
+- **In scope NIS2**: spuntato di serie.
+- **RTO (minuti)** e **RPO (minuti)**.
+- **Business owner** e **Technical owner**, scelti fra gli [Assegnatari](pagine/inventory-assignees.md); `tasto:plus`
+  accanto crea una persona al volo.
+- **URL SLA**: il collegamento al contratto di servizio.
+- **Note**.
 
-## Come si usa
+**Crea** salva, **Annulla** chiude. Creare un servizio cambia i dati: riesce solo a un amministratore.
 
-1. Premi **Nuovo servizio**, scrivi il nome, scegli la criticità, spunta **In scope NIS2** se serve e indica RTO e
-   RPO.
-2. Apri il servizio con **Apri** e collega gli asset da cui dipende, segnando quali sono **primari** (senza di loro il
-   servizio si ferma).
-3. Usa il filtro **Solo in scope NIS2** per preparare l'elenco da presentare all'audit.
+## Come si fa
+
+- **Registrare la posta aziendale**: `tasto:plus` Nuovo servizio, nome «Posta», criticità Alta, RTO 240, RPO 60,
+  **Crea**; poi **Apri** e collega i server della posta.
+- **Preparare l'elenco per l'audit**: **Scope NIS2** › Solo in scope NIS2.
+- **Trovare i servizi senza asset collegati**: guarda la colonna **Asset linkati** a zero.
+- **Vedere da cosa dipende il gestionale**: cerca «gestionale», **Apri**.
+- **Mettere da parte un servizio che si sta spegnendo**: **Apri**, Stato **In dismissione**.
 
 ## Da dove arrivano i dati
 
@@ -48,5 +74,5 @@ I servizi li scrive una persona; gli asset vengono dall'[inventario](pagine/inve
 
 ## Se la pagina è vuota
 
-«Nessun servizio» vuol dire che il catalogo non è ancora stato compilato: premi **Nuovo servizio**. Se ci sono filtri
-scelti, rimettili su **Tutti**.
+«Nessun servizio» vuol dire che il catalogo non è ancora stato compilato: premi `tasto:plus` **Nuovo servizio**. Se ci
+sono filtri scelti, rimettili su **Tutti**.

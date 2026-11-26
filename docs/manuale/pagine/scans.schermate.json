@@ -1,9 +1,24 @@
 [
-  { "file": "pagina", "percorso": "/scans", "attesa": 2000, "altezza": 1100,
+  { "file": "tipo", "percorso": "/scans", "attesa": 2000,
+    "ritaglio": ["nav[aria-label='Schede di Scansioni']", "a:has-text('Vedi i findings')", "[role=tablist][aria-label='Tipo di giro']"],
+    "margine": 40,
     "segni": [
-      { "n": 1, "cerca": "button:has-text('Discovery')" },
-      { "n": 2, "cerca": "text=Reti >> nth=0" },
-      { "n": 3, "cerca": "text=Profilo >> nth=0" },
-      { "n": 4, "cerca": "text=Targets e parametri" }
-    ] }
+      { "n": 1, "cerca": "[role=tab]:has-text('Discovery')" },
+      { "n": 2, "cerca": "[role=tab]:has-text('Segmentazione')" },
+      { "n": 3, "cerca": "[role=tab]:has-text('Sonda L2')" },
+      { "n": 4, "cerca": "[role=tab]:has-text('Solo controlli')" }
+    ] },
+  { "file": "reti-profilo", "percorso": "/scans?s=1", "attesa": 2000,
+    "ritaglio": ["section:has(h2:has-text('1. Reti'))", "section:has(h2:has-text('2. Profilo'))"] },
+  { "file": "parametri", "percorso": "/scans?s=2", "attesa": 2000, "altezza": 1600,
+    "prima": [{ "clic": "section:has(h2:has-text('2. Profilo')) [role=button]:has-text('Su misura')", "attesa": 700 }],
+    "ritaglio": ["section:has(h2:has-text('3. Targets e parametri'))"] },
+  { "file": "storico", "percorso": "/scans?s=3", "attesa": 2500, "altezza": 2400,
+    "ritaglio": ["button:has-text('Avvia')", "section:has(h2:has-text('Storico')) tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Avvia')" }
+    ] },
+  { "file": "segmentazione", "percorso": "/scans?s=4", "attesa": 2000, "altezza": 1400,
+    "prima": [{ "clic": "[role=tab]:has-text('Segmentazione')", "attesa": 800 }],
+    "ritaglio": ["section:has(h2:has-text('Come prova la raggiungibilità'))"] }
 ]

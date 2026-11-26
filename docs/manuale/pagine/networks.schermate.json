@@ -1,2 +1,106 @@
-[{ "file": "pagina", "percorso": "/networks", "altezza": 1000,
- "segni": [{"n":1,"cerca":"input[placeholder^=\"Cerca per nome\"]"},{"n":2,"cerca":"button:has-text(\"Aggiungi Rete\")"},{"n":3,"cerca":"th:has-text(\"Online\")"},{"n":4,"cerca":"th:has-text(\"Ultima Scansione\")"},{"n":5,"cerca":"text=Reti viste, da confermare"}] }]
+[
+ {
+  "file": "barra",
+  "percorso": "/networks",
+  "ritaglio": [
+   "main h1",
+   "main button:has-text('Aggiungi Rete')"
+  ],
+  "margine": 20,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main input[placeholder^='Cerca per nome']"
+   },
+   {
+    "n": 2,
+    "cerca": "main button:has-text('Aggiungi Rete')"
+   }
+  ]
+ },
+ {
+  "file": "tabella",
+  "percorso": "/networks",
+  "ritaglio": [
+   "main thead",
+   "main tbody tr:nth-child(4)"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main thead [role=checkbox]"
+   },
+   {
+    "n": 2,
+    "cerca": "main th:has-text('Host')"
+   },
+   {
+    "n": 3,
+    "cerca": "main th:has-text('Online')"
+   },
+   {
+    "n": 4,
+    "cerca": "main th:has-text('Ultima Scansione')"
+   },
+   {
+    "n": 5,
+    "cerca": "main tbody tr:nth-child(1) td:last-child button"
+   }
+  ]
+ },
+ {
+  "file": "selezione",
+  "percorso": "/networks",
+  "prima": [
+   {
+    "clic": "main tbody tr:nth-child(1) td:first-child [role=checkbox]",
+    "attesa": 300
+   },
+   {
+    "clic": "main tbody tr:nth-child(2) td:first-child [role=checkbox]",
+    "attesa": 700
+   }
+  ],
+  "ritaglio": [
+   "main :text('selezionat') >> nth=0",
+   "main button:has-text('Esporta CSV host')"
+  ],
+  "margine": 20,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "main button:has-text('Assegna credenziali')"
+   },
+   {
+    "n": 2,
+    "cerca": "main button:has-text('Scansiona dispositivi')"
+   },
+   {
+    "n": 3,
+    "cerca": "main button:has-text('Esporta CSV host')"
+   }
+  ]
+ },
+ {
+  "file": "nuova-rete",
+  "percorso": "/networks",
+  "altezza": 1100,
+  "prima": [
+   {
+    "clic": "main button:has-text('Aggiungi Rete')",
+    "attesa": 900
+   }
+  ],
+  "zona": "[role=dialog]"
+ },
+ {
+  "file": "proposte",
+  "percorso": "/networks",
+  "ritaglio": [
+   "main :text('Reti viste, da confermare')",
+   "main :text('Sentite dalla sonda trunk')",
+   "main button:has-text('Apri') >> nth=0"
+  ],
+  "margine": 24
+ }
+]

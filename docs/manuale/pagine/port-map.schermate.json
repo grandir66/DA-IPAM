@@ -1,2 +1,28 @@
-[{ "file": "pagina", "percorso": "/port-map", "altezza": 1000, "attesa": 2500,
- "segni": [{"n":1,"cerca":"text=Calcolo"},{"n":2,"cerca":"text=CERTE"},{"n":3,"cerca":"button:has-text(\"Oggetti\") >> nth=0"},{"n":4,"cerca":"input[placeholder^=\"Nome, IP\"]"},{"n":5,"cerca":"th:has-text(\"Confidenza\")"}] }]
+[
+  { "file": "calcolo", "percorso": "/port-map", "attesa": 2500,
+    "ritaglio": ["main h1", "main :text('Non so') >> nth=0", "main :text('Solo porte di passaggio')"],
+    "segni": [
+      { "n": 1, "cerca": "main :text('Calcolo') >> nth=0" },
+      { "n": 2, "cerca": "main :text('Certe') >> nth=0" }
+    ] },
+  { "file": "filtri", "percorso": "/port-map", "attesa": 2500,
+    "ritaglio": ["main [aria-label='Viste della mappa']", "main input[aria-label='Cerca']", "main label:has-text('Solo visti di recente')"],
+    "segni": [
+      { "n": 1, "cerca": "main [aria-label='Viste della mappa']" },
+      { "n": 2, "cerca": "main input[aria-label='Cerca']" },
+      { "n": 3, "cerca": "main select[aria-label='Tutti gli apparati']" },
+      { "n": 4, "cerca": "main label:has-text('Senza host')" }
+    ] },
+  { "file": "oggetti", "percorso": "/port-map", "attesa": 2500,
+    "ritaglio": ["main thead", "main tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "main th:has-text('Dove')" },
+      { "n": 2, "cerca": "main th:has-text('Confidenza')" }
+    ] },
+  { "file": "dettaglio", "percorso": "/port-map", "attesa": 2500,
+    "prima": [{ "clic": "main tbody tr:nth-child(1) td:nth-child(2)", "attesa": 1500 }],
+    "zona": "[role=dialog]" },
+  { "file": "porte", "percorso": "/port-map", "attesa": 2500,
+    "prima": [{ "clic": "main [aria-label='Viste della mappa'] :text('Porte')", "attesa": 2500 }],
+    "ritaglio": ["main thead", "main tbody tr:nth-child(4)"] }
+]

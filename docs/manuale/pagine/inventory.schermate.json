@@ -1,11 +1,8 @@
 [
-  { "file": "pagina", "percorso": "/inventory",
-    "nascondi": ["tbody td:nth-child(5)"],
-    "segni": [
-      { "n": 1, "cerca": "text=Solo campi rilevanti NIS2" },
-      { "n": 2, "cerca": "button:has-text('Sincronizza')" },
-      { "n": 3, "cerca": "input[placeholder^='Cerca asset tag']" },
-      { "n": 4, "cerca": "th:has-text('Scope')" },
-      { "n": 5, "cerca": "tbody tr >> nth=0 >> a" }
-    ] }
+  {"file": "barra", "percorso": "/inventory", "ritaglio": ["main h1", "div:has(> label[for='inventory-view-toggle'])", "input[placeholder^='Cerca asset tag']", "main button:has(svg.lucide-search)"], "segni": [{"n": 1, "cerca": "label[for='inventory-view-toggle']"}, {"n": 2, "cerca": "button:has-text('Sincronizza')"}, {"n": 3, "cerca": "button:has(svg.lucide-download)"}, {"n": 4, "cerca": "input[placeholder^='Cerca asset tag']"}, {"n": 5, "cerca": "button:has-text('Categoria')"}, {"n": 6, "cerca": "button:has-text('Scope NIS2')"}, {"n": 7, "cerca": "button:has-text('Stato')"}, {"n": 8, "cerca": "main button:has(svg.lucide-search)"}]},
+  {"file": "sincronizza", "percorso": "/inventory", "prima": [{"clic": "button:has-text('Sincronizza')", "attesa": 700}], "ritaglio": ["button:has-text('Sincronizza')", "[role=menu]"]},
+  {"file": "tabella", "percorso": "/inventory", "nascondi": ["tbody td:nth-child(5)"], "ritaglio": ["thead", "tbody tr:nth-child(4)"], "segni": [{"n": 1, "cerca": "thead [role=checkbox]"}, {"n": 2, "cerca": "th:has-text('Scope')"}, {"n": 3, "cerca": "tbody tr:nth-child(1) td:last-child a"}]},
+  {"file": "selezione", "percorso": "/inventory", "prima": [{"clic": "tbody tr:nth-child(1) [role=checkbox]", "attesa": 300}, {"clic": "tbody tr:nth-child(2) [role=checkbox]", "attesa": 600}], "ritaglio": ["text=asset selezionati", "button:has-text('Deseleziona')", "tbody tr:nth-child(2)"], "nascondi": ["tbody td:nth-child(5)"]},
+  {"file": "modifica-multipla", "percorso": "/inventory", "altezza": 1000, "prima": [{"clic": "tbody tr:nth-child(1) [role=checkbox]", "attesa": 400}, {"clic": "button:has-text('Modifica multipla')", "attesa": 800}], "zona": "[role=dialog]"},
+  {"file": "vista-itam", "percorso": "/inventory", "prima": [{"clic": "label[for='inventory-view-toggle']", "attesa": 900}], "ritaglio": ["thead", "tbody tr:nth-child(4)"], "dopo": [{"clic": "label[for='inventory-view-toggle']", "attesa": 600}]}
 ]

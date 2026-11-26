@@ -1,7 +1,7 @@
 ---
 percorso: /traffico
 titolo: Traffico — chi parla con chi sulla rete, e cosa esce dall'abitudine
-versione: 0.9.1363
+versione: 0.9.1367
 aggiornata: 2026-11-26
 ---
 
@@ -11,22 +11,22 @@ Mostra il **traffico vero** della rete: chi parla con chi, con chi parlano gli h
 che non funzionano e le **anomalie**, cioè quello che esce dall'abitudine o passa in chiaro. Non manda niente sulla
 rete: ascolta. I dati arrivano dai **collector**, macchine che ricevono dallo switch una copia del traffico.
 
-Si arriva da **Sicurezza › Rete**, scheda **Traffico** nel gruppo **Viste in ascolto**.
+Si arriva da **Sicurezza › Rete**, scheda **Traffico** nel gruppo **Viste in ascolto** (le schede di Rete sono
+descritte in [Reti dal trunk](pagine/arp-table-trunk.md)). Tabelle, ricerca e pagine dell'elenco funzionano come
+altrove: vedi le [parti comuni dell'interfaccia](../INTERFACCIA.md). Le immagini del manuale nascondono i servizi.
 
-![La pagina Traffico](/manuale/traffico/pagina.png)
+## In cima: collector, apprendimento e schede
 
-In cima:
+![La riga dei collector, l'apprendimento e le schede](/manuale/traffico/schede.png)
 
 - La riga **Collector** dice quanti collector sono accesi, con quale motore («tutti con Zeek» o «sonda leggera»),
   l'ultimo contatto (il più vecchio, se sono più d'uno) e la copertura peggiore. Sotto, con ▲, i problemi di un
   collector: spento, fermo per il disco pieno, ultimo errore, dati persi in un giorno.
 - La fascia **In apprendimento** elenca le reti che hanno meno di 14 giorni di storia e fino a quando: in quel
   periodo DA-IPAM impara chi parla con chi, e collegamenti e porte nuove non vengono segnalati. Il resto sì.
-- Senza nessun collector compare **Nessun collector registrato** con **Registra un collector**.
+- Senza nessun collector compare **Nessun collector registrato**; un amministratore ha **Registra un collector**.
 
-## Le voci della pagina
-
-Le schede (la scheda aperta di serie è la prima):
+Le schede (si apre sulla prima); la riga sotto la fila dice a cosa serve quella scelta:
 
 1. **Chi parla con chi**: il traffico sulla rete intera, fra reti, per host, per coppia.
 2. **Verso l'esterno**: con chi fuori parlano gli host, per nome, paese e fornitore.
@@ -34,11 +34,9 @@ Le schede (la scheda aperta di serie è la prima):
 4. **Anomalie**: col segno ▲ e il numero delle nuove da guardare.
 5. **Reti viste**: indirizzi interni che parlano fuori dalle subnet censite; il numero dice quante sono ancora senza
    nome.
-6. **Accessi** (solo amministratori, e solo se accesi): chi accede a cosa, coi nomi utente.
-7. **Collector e controlli** (solo amministratori): le macchine che ascoltano e i controlli accesi, rete per rete.
 
-Nella schermata i segni ②③④ stanno sui comandi di **Chi parla con chi**: ② il periodo, ③ il modo di guardare,
-④ la ricerca. Le immagini del manuale nascondono i servizi.
+Un **amministratore** vede in più **Accessi** (solo se accesi: chi accede a cosa, coi nomi utente) e **Collector e
+controlli** (le macchine che ascoltano e i controlli accesi, rete per rete).
 
 ## Chi parla con chi {#insieme}
 
@@ -49,14 +47,19 @@ collegamento verso chi), **Volume** (byte, pacchetti e connessioni), **Verso l'e
 verso fuori). Sotto, **Andamento, ultime 24 ore**: il volume ora per ora, in pieno quello fra host interni e a righe
 quello da o verso fuori. Una colonna fuori scala è tagliata e porta scritto il suo valore.
 
-Comandi dell'elenco:
+![I comandi di Chi parla con chi](/manuale/traffico/comandi.png)
 
-- Periodo: **Ultima ora**, **Oggi**, **7 giorni**, **30 giorni**.
-- Modo di guardare: **Fra reti** (una riga per verso: la rete di chi apre il collegamento e quella di chi risponde),
-  **Per host** (quanti ne contatta, da quanti è contattato, cosa offre), **Per coppia** (una riga per collegamento e
-  servizio, i più pesanti in alto).
-- **Tutte le reti**: limita a una rete; ci sono anche le **Reti con nome, non censite** di **Reti viste**.
-- **Host, indirizzo o porta** con **Cerca**; **Togli la ricerca** la azzera.
+1. Periodo: **Ultima ora**, **Oggi**, **7 giorni**, **30 giorni**.
+2. Modo di guardare: **Fra reti** (una riga per verso: la rete di chi apre il collegamento e quella di chi risponde),
+   **Per host** (quanti ne contatta, da quanti è contattato, cosa offre), **Per coppia** (una riga per collegamento e
+   servizio, i più pesanti in alto).
+3. **Tutte le reti**: limita a una rete; ci sono anche **Fuori dalla rete**, **A tutti (diffusione)**, **Rete non
+   censita** e le **Reti con nome, non censite** di **Reti viste**.
+4. **Host, indirizzo o porta** con **Cerca**; **Togli la ricerca** la azzera.
+
+Sotto, `icona:chevrons-left` `icona:chevron-left` `icona:chevron-right` `icona:chevrons-right` sfogliano le pagine.
+
+![L'elenco Fra reti](/manuale/traffico/fra-reti.png)
 
 Colonne di **Fra reti**: **Da**, **Verso**, **Host**, **Coppie**, **Volume**, **Pacchetti**, **Connessioni**,
 **Servizi principali**, **Dettaglio**. Colonne di **Per host**: **Ne contatta**, **Lo contattano**, **Volume aperto
@@ -95,6 +98,9 @@ la rende riconoscibile.
 **Archivio dei paesi**: senza archivio le destinazioni si vedono lo stesso, ma senza paese e fornitore. **Scarica
 l'archivio** scarica il file intero e la ricerca si fa sull'appliance: nessun indirizzo esce dall'installazione.
 Quando ce n'è uno più recente compare **Scarica quello nuovo**.
+
+Chi è in sola lettura vede destinazioni, paesi e fornitori; la colonna **Nome** con **Dai un nome** e il pulsante
+**Scarica l'archivio** li ha solo un amministratore.
 
 **Liste di DA-GEO**: se l'istanza è collegata a DA-GEO, le destinazioni si confrontano con le sue liste di indirizzi
 compromessi e di paesi ad alto rischio. Compaiono la colonna **Segnate** e i conteggi **Destinazioni compromesse** e
@@ -156,11 +162,13 @@ In cima tre riquadri: **Gravità alta** (nuove, da guardare per prime), **Gravit
 dell'elenco:
 
 - Stato: **Nuove**, **Viste**, **Normali**, **Tutte**.
-- Gravità: **Ogni gravità** o una sola.
+- Gravità: **Ogni gravità**, ▲ **alta**, △ **media**, ○ **bassa**.
 - **Ogni tipo** o un tipo solo, per esempio **Collegamento nuovo**, **Porta nuova**, **Molti contatti**, **Telnet
   in chiaro**, **FTP in chiaro**, **Posta in chiaro**, **Web in chiaro**, **LDAP in chiaro**, **SNMP vecchio**, **SMB
   1**, **TLS vecchio**, **NTLM 1**, **IP doppio**, **MAC cambiato**, **Paese nuovo**, **Indirizzo compromesso**,
   **Password SSH provate**, **Iniezione SQL**, **VLAN sbagliata**.
+
+![I filtri delle anomalie](/manuale/traffico/anomalie.png)
 
 Colonne: **Gravità**, **Cosa è successo** (una frase e il tipo), **Chi**, **Verso chi**, **Porta**, **Prima volta**,
 **Ultima volta**, **Volte**, **Stato** (solo con **Tutte**) e **Azioni**.
@@ -171,7 +179,7 @@ Colonne: **Gravità**, **Cosa è successo** (una frase e il tipo), **Chi**, **Ve
 2. **Vista**: l'hai controllata, resta in elenco fra le viste.
 3. Se quel traffico è voluto, **È normale**: insegna l'abitudine e quella coppia non verrà più segnalata.
 
-Le due azioni le usa solo un amministratore.
+Le due azioni le usa solo un amministratore: chi è in sola lettura vede i pulsanti grigi («Serve un amministratore»).
 
 ### Da dove arrivano i dati
 
@@ -187,7 +195,7 @@ segnalati, il resto sì.
 Trova gli indirizzi interni che parlano ma non stanno in nessuna subnet censita. Periodo: **7 giorni** o **30
 giorni**. Colonne: la rete, **Host visti**, **Parla con**, **Prima volta**, **Ultima volta** e le azioni.
 
-**Dai un nome** (o **Cambia nome**) apre una finestra con la rete (si può allargare o restringere, da una sede intera
+Un amministratore ha **Dai un nome** (o **Cambia nome**), che apre una finestra con la rete (si può allargare o restringere, da una sede intera
 a un indirizzo solo), il nome e una **Nota (facoltativa)**. Il nome non crea una subnet: niente scansioni, niente host
 creati. **Togli il nome** la riporta a «Rete non censita».
 
@@ -204,6 +212,21 @@ I collector, nel periodo scelto.
 
 **Nessuna rete fuori dal censimento**: tutti gli indirizzi interni visti stanno in una subnet censita. È il caso
 giusto.
+
+## Come si fa
+
+- **Vedere quanto traffico va da una rete all'altra**: **Chi parla con chi**, periodo **7 giorni**, **Fra reti**; da una
+  riga **Vedi le coppie** apre i singoli indirizzi.
+- **Trovare chi consuma la banda verso Internet**: **Chi parla con chi** › **Per host**, oppure **Verso l'esterno** ›
+  **Per host**.
+- **Sapere dove si collega un PC**: scrivi il suo indirizzo in **Host, indirizzo o porta**, **Cerca**, poi **Verso
+  l'esterno** per i paesi e i fornitori.
+- **Guardare le anomalie del mattino**: **Anomalie**, **Nuove**, ▲ **alta**; un amministratore segna **Vista** quelle
+  controllate ed **È normale** il traffico voluto.
+- **Trovare un servizio spento**: **Cosa non va** › **Servizi che non rispondono**: ✕ **Mai risposto** vuol dire spento
+  o chiuso da una regola.
+- **Dare un nome a una rete che non è in DA-IPAM**: **Reti viste**, **Dai un nome** (amministratore); da lì in poi
+  compare col suo nome in tutte le schede.
 
 ## Accessi {#accessi}
 

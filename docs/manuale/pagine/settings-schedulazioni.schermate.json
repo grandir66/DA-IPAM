@@ -1,0 +1,27 @@
+[
+ {
+  "file": "pagina",
+  "percorso": "/settings/schedulazioni",
+  "nascondi": [
+   "h1.sr-only + span"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "[aria-label='Filtro per stato']"
+   },
+   {
+    "n": 2,
+    "cerca": "[aria-label='Filtro per famiglia']"
+   },
+   {
+    "n": 3,
+    "cerca": "button:has-text('Nuovo job')"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Prossimo ▲"
+   }
+  ]
+ }
+]

@@ -1,0 +1,7 @@
+[ { "file": "pagina", "percorso": "/inventory/assignees/import-ad", "attesa": 3000,
+    "nascondi": ["tbody td", "details li"],
+    "segni": [
+      { "n": 1, "cerca": "text=Solo account abilitati" },
+      { "n": 2, "cerca": "text=nuovi, proposti" },
+      { "n": 3, "cerca": "text=Rileggi da AD" }
+    ] } ]

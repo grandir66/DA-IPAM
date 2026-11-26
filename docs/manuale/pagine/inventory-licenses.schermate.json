@@ -1,0 +1,7 @@
+[
+  { "file": "pagina", "percorso": "/inventory/licenses",
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Nuova licenza')" },
+      { "n": 2, "cerca": "th:has-text('Posti')" }
+    ] }
+]

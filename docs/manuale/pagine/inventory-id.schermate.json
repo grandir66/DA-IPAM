@@ -1,0 +1,10 @@
+[
+  { "file": "pagina", "percorso": "/inventory",
+    "prima": [{ "clic": "tbody tr >> nth=0 >> a", "attesa": 2000 }],
+    "nascondi": ["[role=combobox]", "input"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Sync da discovery')" },
+      { "n": 2, "cerca": "[role=tab] >> nth=0" },
+      { "n": 3, "cerca": "button:has-text('Salva modifiche')" }
+    ] }
+]

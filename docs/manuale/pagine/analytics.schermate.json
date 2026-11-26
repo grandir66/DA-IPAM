@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/analytics", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"button:has-text(\"Non gestiti\")"},{"n":2,"cerca":"button:has-text(\"Tutti i tipi\")"},{"n":3,"cerca":"button:has-text(\"Aggiorna\")"},{"n":4,"cerca":"button:has-text(\"Esegui check\")"},{"n":5,"cerca":"text=Gestisci >> nth=0"}] }]

@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/networks", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"input[placeholder^=\"Cerca per nome\"]"},{"n":2,"cerca":"button:has-text(\"Aggiungi Rete\")"},{"n":3,"cerca":"th:has-text(\"Online\")"},{"n":4,"cerca":"th:has-text(\"Ultima Scansione\")"},{"n":5,"cerca":"text=Reti viste, da confermare"}] }]

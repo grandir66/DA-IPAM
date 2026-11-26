@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/discovery", "altezza": 900, "prima": [{ "clic": "tbody tr >> nth=0 >> button >> nth=0", "attesa": 800 }, { "clic": "text=Apri la scheda", "attesa": 3500 }],
+ "segni": [{"n":1,"cerca":"text=Host >> nth=0"},{"n":2,"cerca":"text=DNS di"},{"n":3,"cerca":"button:has-text(\"Panoramica\")"},{"n":4,"cerca":"button:has-text(\"Rendi apparato\")"},{"n":5,"cerca":"text=Dati da:"}] }]

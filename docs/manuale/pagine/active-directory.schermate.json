@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/active-directory", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"button:has-text(\"domarc.it\")"},{"n":2,"cerca":"text=Abilitata"},{"n":3,"cerca":"button:has-text(\"Sincronizza\")"},{"n":4,"cerca":"button:has-text(\"Guide\")"},{"n":5,"cerca":"button:has-text(\"Computer (\")"},{"n":6,"cerca":"button:has-text(\"Attivi (90gg)\")"},{"n":7,"cerca":"th:has-text(\"Collegato\")"}] }]

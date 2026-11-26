@@ -1,0 +1,2 @@
+[ { "file": "pagina", "percorso": "/cliente/monitoring", "attesa": 3000,
+    "nascondi": ["a[href*='indows'] dd"] } ]

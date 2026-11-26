@@ -1,0 +1,6 @@
+[ { "file": "pagina", "percorso": "/cliente", "attesa": 3000, "altezza": 800,
+    "nascondi": [".scorre-attenzione"],
+    "segni": [
+      { "n": 1, "cerca": "text=Stampa" },
+      { "n": 2, "cerca": "text=Cosa richiede attenzione" }
+    ] } ]

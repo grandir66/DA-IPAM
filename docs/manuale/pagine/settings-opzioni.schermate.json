@@ -1,0 +1,28 @@
+[
+ {
+  "file": "pagina",
+  "percorso": "/settings/opzioni",
+  "nascondi": [
+   "h1.sr-only + span",
+   "main section .text-\\[13px\\]"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Accese')"
+   },
+   {
+    "n": 2,
+    "cerca": "input[aria-label=\"Cerca un'opzione\"]"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Funzione · cosa fa"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Cosa è successo"
+   }
+  ]
+ }
+]

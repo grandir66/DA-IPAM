@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-26 — Manuale per pagina con il «?» (Riccardo: «sì a tutto»)
+
+- [x] Formato della guida (`src/lib/manuale/formato.ts`), API `/api/manuale/pagina`, pulsante «?» nel guscio, àncore `{#parte}`
+- [x] Script delle schermate con IP/MAC/email/nomi PC finti (`scripts/manuale/schermate.cjs`); i nomi degli host restano (Riccardo, 26/11)
+- [x] Indice «Il prodotto», manuale unico in archivio, guida d'esempio «Apparati»
+- [ ] Guide di tutte le pagine (4 agenti per gruppo di menu); /protezione senza schermate, repo pubblico
+- [ ] Togliere `lib/guida/guide.ts` dopo averne portato i testi nelle guide; prova di copertura verde; rilascio su `dev`
+- [ ] Non verificato: il «?» non copre i pulsanti delle intestazioni a tutte le larghezze (guardato solo a 1440)
+
 ## 2026-11-25 — Protezione delle installazioni: accessi chiusi, avvisi, esche (Riccardo, da approvare; zona rossa → livello completo)
 
 Riccardo, 25/11: «vorrei che dall'UI si potesse gestire l'accesso al sistema impostando filtri sugli ip che possono collegarsi e le porte presentate. vorrei schede in cui le funzioni di sicurezza di IPAM sono chiare e modificabili» (A accessi, B honeypot con log, alert, ban e «traffico di contrasto»). Poi: «vorrei garantire che gli ipam installati non siano facilmente vulnerabili chiudendo ogni strada di accesso a chi non è autorizzato e fornendo anche sistemi di alert delle tentate violazioni»; «deve essere un sistema estremamente protetto, contiene troppe informazioni critiche». Sulle credenziali: non un gestore in più, ma le debolezze che restano nella loro conservazione, col rimedio.

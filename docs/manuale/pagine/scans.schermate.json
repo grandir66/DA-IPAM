@@ -1,0 +1,9 @@
+[
+  { "file": "pagina", "percorso": "/scans", "attesa": 2000, "altezza": 1100,
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Discovery')" },
+      { "n": 2, "cerca": "text=Reti >> nth=0" },
+      { "n": 3, "cerca": "text=Profilo >> nth=0" },
+      { "n": 4, "cerca": "text=Targets e parametri" }
+    ] }
+]

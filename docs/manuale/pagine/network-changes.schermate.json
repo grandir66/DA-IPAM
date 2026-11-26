@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/network-changes", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"a:has-text(\"Oggetti nuovi\")"},{"n":2,"cerca":"select >> nth=0"},{"n":3,"cerca":"select >> nth=2"},{"n":4,"cerca":"text=Mostra anche il rumore"},{"n":5,"cerca":"text=Disponibilità e latenza anomale"}] }]

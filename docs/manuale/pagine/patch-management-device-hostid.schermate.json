@@ -1,0 +1,38 @@
+[
+  {
+    "file": "pagina",
+    "percorso": "/patch-management",
+    "attesa": 3000,
+    "altezza": 1200,
+    "prima": [
+      {
+        "clic": "a[href^='/patch-management/device/'] >> nth=1",
+        "attesa": 3500
+      }
+    ],
+    "nascondi": [
+      "h1",
+      "h2",
+      "[data-slot=card-title]",
+      "tbody td:nth-child(5)"
+    ],
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "button:has-text('Probe host')"
+      },
+      {
+        "n": 2,
+        "cerca": "button:has-text('Bootstrap choco')"
+      },
+      {
+        "n": 3,
+        "cerca": "input[placeholder^='Cerca software']"
+      },
+      {
+        "n": 4,
+        "cerca": "text=Solo con CVE patchabili"
+      }
+    ]
+  }
+]

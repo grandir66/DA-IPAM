@@ -1,0 +1,7 @@
+[
+  { "file": "pagina", "percorso": "/settings/classifications", "zona": "main", "intera": true,
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Aggiungi')" },
+      { "n": 2, "cerca": "text=Classification built-in (read-only)" }
+    ] }
+]

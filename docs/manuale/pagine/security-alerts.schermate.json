@@ -1,0 +1,35 @@
+[
+  {
+    "file": "pagina",
+    "percorso": "/security-alerts",
+    "attesa": 3500,
+    "nascondi": [
+      "table tbody",
+      "li",
+      "[role=tabpanel] table",
+      "svg text"
+    ],
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "text=Eventi aperti >> nth=0"
+      },
+      {
+        "n": 2,
+        "cerca": "button:has-text('Filtri')"
+      },
+      {
+        "n": 3,
+        "cerca": "button:has-text('Tutte')"
+      },
+      {
+        "n": 4,
+        "cerca": "text=Nel tempo"
+      },
+      {
+        "n": 5,
+        "cerca": "button:has-text('Account bersagliati')"
+      }
+    ]
+  }
+]

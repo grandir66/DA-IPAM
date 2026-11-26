@@ -90,7 +90,7 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 - **Trappola, «è arrivato?»**: un aggiornamento si dichiara arrivato solo se `ActiveEnterTimestamp` di `da-ipam` è
   dopo il push e il journal di `da-ipam-update` dice «Aggiornamento completato»; commit e `/api/version` da soli
   mentono durante un aggiornamento che poi torna indietro.
-- **Hub in osservazione dal 26/11** (politica vuota, non scarta niente): si rilegge dal 03/12, vedi `TASKS.md`.
+- **Hub in osservazione dal 26/11**: si rilegge dal 03/12, vedi `TASKS.md`. **Non accendere il filtro su una macchina che scansiona finché non è corretta la catena delle «altre porte»**: il 26/11, acceso sull'hub per nove ore, ha chiuso SSH a tutte le sessioni e scartato 19.000 pacchetti su porte alte, con ogni probabilità le risposte alle scansioni a pacchetti grezzi (naabu).
 - Ogni installazione nasce col filtro spento e lo accende una persona; la seconda verifica resta facoltativa;
   il blocco di un indirizzo lo decide una persona (decisioni di Riccardo, piano §9).
 

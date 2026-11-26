@@ -246,6 +246,7 @@ traffico di pochi Mbit/s; 38 GB di RAM liberi; nessuna rete OVH censita in IPAM.
 - [x] Censite anche `192.168.230.0/24` e `192.168.240.0/24`, senza credenziali. `non_censito` dei loro host finché IPAM non li trova (dall'hub la 230 non risponde al ping)
 - [ ] Le porte di una VM che riparte: il riallineamento è provato solo sul banco
 - [x] «Nome conteso» sulle risposte di stato NetBIOS (nome `*`): corretto (v0.9.1354) e portato sui sei collector il 25/11 (Riccardo: «Sì, correggi»); tolti i 229 avvisi falsi, righe in `/root/avvisi-nome-conteso-20261125.csv` sull'hub. Snapshot `pre-nome-conteso-20261125` su 116, 115, 114, 533, 113, 102 e 207: da togliere fra qualche giorno
+- [x] 26/11, i due «nome conteso» rimasti erano falsi (Riccardo: «Sì, diagnosi», poi «Sì, correggi»): `192.168.4.1` è DA-DC01, che fa da server dei nomi (WINS) e risponde per gli altri. Visto su `DA-COLLECTOR-PX01` con `tcpdump`: bandiere `0x8580` (risposta) e `0xad80` (registrazione), bit RA acceso. `hpe90e6b` è la stampante `192.168.5.145`; `nb-giovanni` rispondeva anche in LLMNR dal suo `fe80::`. Corretto in `controlli.py` (`risposta_nome` scarta le risposte con RA) e `ascolto.py` (IPv4 e IPv6 a parte); 117 prove del collector verdi. Non visto: il pacchetto esatto di `hpe90e6b` (uno l'ora)
 - [ ] MikroTik CHR 201 come router (ARP): serve una credenziale di Riccardo. Rete della VLAN 240: da censire se serve
 
 ## 2026-11-23 — Collector di traffico: i dati in più (piano in sette tappe)

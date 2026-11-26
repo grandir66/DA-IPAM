@@ -305,11 +305,13 @@ class Ascolto:
 
         nome = controlli.risposta_nome(proto, sport, carico)
         if nome:
-            primo = self._risponde.get(nome)
+            # IPv4 e IPv6 si ricordano a parte: la stessa macchina risponde in NetBIOS dal suo IPv4 e in LLMNR dal suo fe80::
+            chiave = nome + ("|6" if ":" in src else "")
+            primo = self._risponde.get(chiave)
             if primo is None:
                 if len(self._risponde) >= MEMORIA_MASSIMA:
                     self._risponde.clear()
-                self._risponde[nome] = src
+                self._risponde[chiave] = src
             elif primo != src:
                 # chi risponde ora per un nome che era di un altro: client = lui, server = chi c'era prima
                 self._fatto(adesso, "nome_conteso", self._lato(src), self._lato(primo), sport, {"nome": nome[:80]})

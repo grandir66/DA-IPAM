@@ -247,6 +247,10 @@ def risposta_nome(proto: int, sport: int, carico: bytes) -> str | None:
         # la risposta di stato (tipo 0x21, di solito al nome «*») la dà ogni macchina: non è un nome conteso
         if carico[46:48] == b"\x00\x21":
             return None
+        # il server dei nomi (WINS, di solito il controller di dominio) risponde per i nomi degli altri: lo dice il bit
+        # «RA», che una macchina che risponde per sé non accende. Senza questo ogni nome registrato sembra conteso
+        if carico[3] & 0x80:
+            return None
         nome = _nome_netbios(carico)
         return None if nome is None or nome.startswith("*") else nome
     return None

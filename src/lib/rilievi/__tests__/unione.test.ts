@@ -112,7 +112,7 @@ test("una CVE condivisa appare in Edge e Wazuh e una sola volta in Tutti", () =>
   const elenco = elencoRilievi({ q, fonti: ["wazuh"] });
   assert.equal(elenco.total, 1);
   assert.equal(elenco.data[0]?.fonte, "wazuh");
-  assert.deepEqual(elenco.perFonte, { edge: 1, wazuh: 1, trunk: 0, giro: 0 });
+  assert.deepEqual(elenco.perFonte, { edge: 1, wazuh: 1, eset: 0, eset_sw: 0, trunk: 0, giro: 0 });
   assert.equal(elencoRilievi({ q }).total, 1);
 }));
 

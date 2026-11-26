@@ -5,6 +5,7 @@
  * Modulo puro, usato dal motore dei gruppi in db-tenant.ts e in db.ts.
  */
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
+import { nomeGenerico } from "./nomi-generici";
 
 /** Tetto alle righe unite dallo stesso MAC: oltre, è più facile un MAC di passaggio che un apparato. */
 export const MAX_RIGHE_STESSO_MAC_GRUPPO = 16;
@@ -38,4 +39,36 @@ export function macAncora(valore: string | null | undefined): string | null {
 export function ancoraDiModello(righe: number, macVeri: readonly string[]): boolean {
   const diversi = new Set(macVeri).size;
   return diversi >= 3 && diversi >= righe * 0.75;
+}
+
+/**
+ * Un seriale che unisce un nome di serie («Mac», «iPhone») e un nome distintivo («NB-MAX») non è dello stesso apparato:
+ * sul 70791 il 23/11/2026 il gruppo `ea89883e…` metteva insieme NB-MAX e quattro righe «Mac» per un seriale condiviso.
+ */
+export function serialeConNomiMisti(nomi: readonly (string | null | undefined)[]): boolean {
+  const corti = new Set(nomi.map((n) => (n ?? "").trim().toLowerCase().split(".")[0]).filter((n) => n.length > 0));
+  let generici = 0;
+  let distintivi = 0;
+  for (const n of corti) {
+    if (nomeGenerico(n)) generici++;
+    else distintivi++;
+  }
+  return generici > 0 && distintivi > 0;
+}
+
+export interface MetaPrincipale { has_device: number; ip: string; status: string | null; last_seen: string | null }
+
+/**
+ * Chi rappresenta un gruppo (riga principale e unica riga di Apparati). Riccardo, 23/11/2026: «se lo stesso pc cambia
+ * ip dovrebbe riaggiornare i dati… senza avere una moltiplicazione di oggetti». Prima l'apparato gestito (concentra
+ * credenziali e storia); poi la riga viva, cioè online e vista più di recente (per giorno: due righe vive nello stesso
+ * giorno non si scambiano a ogni scansione); a parità, l'IP più basso, come prima.
+ */
+export function confrontaPrincipale(a: MetaPrincipale, b: MetaPrincipale, ipNum: (ip: string) => number): number {
+  if (a.has_device !== b.has_device) return b.has_device - a.has_device;
+  const viva = (m: MetaPrincipale) => (m.status === "online" ? 1 : 0);
+  if (viva(a) !== viva(b)) return viva(b) - viva(a);
+  const giorno = (m: MetaPrincipale) => (m.last_seen ?? "").slice(0, 10);
+  if (giorno(a) !== giorno(b)) return giorno(a) < giorno(b) ? 1 : -1;
+  return ipNum(a.ip) - ipNum(b.ip);
 }

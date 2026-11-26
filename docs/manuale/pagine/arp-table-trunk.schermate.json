@@ -1,0 +1,25 @@
+[
+  {
+    "file": "reti",
+    "percorso": "/arp-table/trunk#reti",
+    "attesa": 3000,
+    "altezza": 1200,
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "[role=group][aria-label='Punto di ascolto']"
+      },
+      {
+        "n": 2,
+        "cerca": "text=VLAN viste sul trunk"
+      },
+      {
+        "n": 3,
+        "cerca": "text=Dettaglio della rete"
+      }
+    ],
+    "nascondi": [
+      "[aria-label='Punto di ascolto'] button[title]"
+    ]
+  }
+]

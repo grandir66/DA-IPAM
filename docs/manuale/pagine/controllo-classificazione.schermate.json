@@ -1,0 +1,3 @@
+[{ "file": "pagina", "percorso": "/controllo-classificazione", "altezza": 1000,
+ "nascondi": ["tbody td:nth-child(3)","tbody td:nth-child(8)"],
+ "segni": [{"n":1,"cerca":"button:has-text(\"Il nome dice una cosa\")"},{"n":2,"cerca":"text=Solo le righe con una proposta"},{"n":3,"cerca":"button:has-text(\"Ricalcola col motore\")"},{"n":4,"cerca":"button:has-text(\"Applica alle righe spuntate\")"},{"n":5,"cerca":"th:has-text(\"Proposta\")"},{"n":6,"cerca":"th:has-text(\"Sicurezza\")"}] }]

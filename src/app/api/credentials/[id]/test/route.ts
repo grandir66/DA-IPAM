@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, getDb, getHostByIp } from "@/lib/db";
+import { bersaglioProvaAmmesso, bersagliNotiDb } from "@/lib/credentials/bersaglio-prova";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { provaCredenzialeSuHost, registraProva } from "@/lib/credentials/trova";
@@ -42,6 +43,15 @@ export async function POST(
       const host = typeof body.host === "string" ? body.host.trim() : "";
       if (!host) {
         return NextResponse.json({ success: false, error: "Indirizzo IP o hostname richiesto" }, { status: 400 });
+      }
+
+      // Solo verso reti e oggetti dell'inventario: altrimenti la credenziale esce verso un indirizzo qualunque.
+      if (!bersaglioProvaAmmesso(host, bersagliNotiDb(getDb(), host))) {
+        console.warn(`[credenziali] prova rifiutata: l'indirizzo non è in una rete dell'inventario (credenziale ${Number(id)})`);
+        return NextResponse.json(
+          { success: false, error: "Questo indirizzo non è in una rete dell'inventario né è un host o un apparato conosciuto: aggiungi prima la rete o l'host, poi riprova." },
+          { status: 400 },
+        );
       }
 
       const esito = await provaCredenzialeSuHost(getDb(), Number(id), host, typeof body.port === "number" ? body.port : null);

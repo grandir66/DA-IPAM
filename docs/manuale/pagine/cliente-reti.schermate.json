@@ -1,0 +1,2 @@
+[ { "file": "pagina", "percorso": "/cliente/reti", "attesa": 2000,
+    "segni": [ { "n": 1, "cerca": "text=← La tua rete" } ] } ]

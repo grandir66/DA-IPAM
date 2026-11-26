@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { Pagination } from "@/components/shared/pagination";
-import { BadgeGravita, DatoDettaglio, Etichetta, InCorso, IntestazionePagina, Legenda, Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
+import { BadgeGravita, BarraStato, DatoDettaglio, Etichetta, InCorso, Legenda, Pannello, TempoRelativo, Vuoto } from "@/components/shared/console";
 import { BottoneCopia } from "@/components/shared/copia";
 import { BadgeTriage, EditorTriage } from "@/components/shared/triage-riga";
+import { useParteGuida } from "@/components/shared/parte-guida";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
@@ -580,6 +581,7 @@ export function ServiziReteClient({
   const [dati, setDati] = useState<Dati>(iniziale);
   const [errore, setErrore] = useState<string | null>(null);
   const [apparati, setApparati] = useState(false);
+  useParteGuida(apparati ? "identita" : null);
   const [vista, setVista] = useState<Vista>("servizio");
   const [filtri, setFiltri] = useState<Filtri>(NESSUN_FILTRO);
   const [cerca, setCerca] = useState("");
@@ -676,13 +678,16 @@ export function ServiziReteClient({
   const proposte = identita.conteggi.proposte;
 
   const intestazione = (
-    <IntestazionePagina
-      titolo="Servizi di rete"
-      sottotitolo={
-        apparati
-          ? "Due IP con la stessa impronta SSH o TLS si propongono come stesso apparato, da confermare."
-          : `${dati.conteggi.servizi} servizi su ${dati.conteggi.host} host, ${dati.conteggi.sondati} letti dalla risposta. Cosa risponde su ogni porta aperta e come lo sappiamo.`
-      }
+    <>
+    <h1 className="sr-only">Porte e servizi</h1>
+    <BarraStato
+      acceso={dati.conteggi.sondati > 0}
+      titolo={apparati ? "Stesso apparato" : "Sonde"}
+      stato={apparati ? `${proposte} da confermare` : giro?.inCorso ? "in corso" : dati.conteggi.sondati > 0 ? "hanno risposte" : "nessuna risposta letta"}
+      dettagli={apparati ? [] : [
+        `${dati.conteggi.servizi} servizi`, `${dati.conteggi.host} host`, `${dati.conteggi.sondati} letti dalla risposta`,
+        ...(giro?.finito ? [`ultimo giro ${quando(giro.finito)}`] : []),
+      ]}
       azioni={
         apparati ? (
           <Button size="sm" variant="outline" onClick={() => setApparati(false)}>
@@ -710,6 +715,7 @@ export function ServiziReteClient({
         )
       }
     />
+    </>
   );
 
   if (apparati) {

@@ -1,0 +1,4 @@
+[{ "file": "pagina", "percorso": "/", "segni": [
+ {"n":1,"cerca":"text=Health >> nth=0"},{"n":2,"cerca":"text=Critiche da sistemare"},{"n":3,"cerca":"text=Cose da sistemare per rete"},
+ {"n":4,"cerca":"text=Stato host nel tempo"},{"n":5,"cerca":"text=Host conosciuti offline"},{"n":6,"cerca":"text=Transizioni recenti"},
+ {"n":7,"cerca":"text=Accessi falliti >> nth=1"},{"n":8,"cerca":"text=Moduli >> nth=-1"}] }]

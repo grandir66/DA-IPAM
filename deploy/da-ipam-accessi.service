@@ -1,0 +1,19 @@
+# DA-IPAM — filtro degli accessi all'installazione (Protezione, ADR 0041).
+# All'accensione ricarica le ultime regole confermate (`/etc/da-ipam/accessi.nft`); se nft le rifiuta carica
+# la politica minima (solo NetBird e «sempre ammessi») ed esce con errore, così il guasto si vede.
+# Senza quel file non fa niente: il filtro nasce spento e lo accende una persona dalla pagina.
+# Niente ExecStop: fermare il servizio non apre né chiude niente; si spegne con `da-ipam-accessi.sh spegni`.
+# @APP_DIR@ lo sostituisce chi installa l'unità.
+[Unit]
+Description=DA-IPAM: filtro degli accessi all'installazione
+After=nftables.service dalink-firewall.service
+Before=docker.service
+ConditionPathExists=/etc/da-ipam/accessi.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash @APP_DIR@/scripts/accessi/da-ipam-accessi.sh avvio
+
+[Install]
+WantedBy=multi-user.target

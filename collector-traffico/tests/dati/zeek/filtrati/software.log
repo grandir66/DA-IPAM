@@ -1,0 +1,4 @@
+{"ts":1795440139.100109,"host":"192.168.99.88","software_type":"HTTP::BROWSER","name":"curl","version.major":7,"version.minor":88,"version.minor2":1,"unparsed_version":"curl/7.88.1"}
+{"ts":1795440139.100516,"host":"192.168.99.222","host_p":80,"software_type":"HTTP::SERVER","name":"BaseHTTP","version.major":0,"version.minor":6,"version.addl":"Python/3","unparsed_version":"BaseHTTP/0.6 Python/3.13.5"}
+{"ts":1795440173.712004,"host":"192.168.99.88","software_type":"SSH::CLIENT","name":"OpenSSH","version.major":9,"version.minor":2,"version.addl":"p1","unparsed_version":"OpenSSH_9.2p1 Debian-2+deb12u7"}
+{"ts":1795440173.718456,"host":"192.168.99.223","host_p":22,"software_type":"SSH::SERVER","name":"OpenSSH","version.major":10,"version.minor":0,"version.addl":"p2","unparsed_version":"OpenSSH_10.0p2 Debian-7+deb13u4"}

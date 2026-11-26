@@ -13,7 +13,7 @@ import { CONFIG_ANOMALIE_DEL_GIRO, CONFIG_GIRO_CAMBIAMENTI } from "@/lib/cambiam
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { cambioInquilinoSeServe } from "@/lib/hosts/cambio-inquilino";
 import { nomeGenerico } from "@/lib/hosts/nomi-generici";
-import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO } from "@/lib/hosts/ancore-gruppo";
+import { ancoraDiModello, macAncora, serialeAncora, MAX_RIGHE_STESSO_MAC_GRUPPO, confrontaPrincipale, serialeConNomiMisti, type MetaPrincipale } from "@/lib/hosts/ancore-gruppo";
 import { eSerialeFinto } from "@/lib/devices/seriale-valido";
 import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
@@ -34,6 +34,7 @@ import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
 import type { MotivoAccesso } from "./scanner/accesso-windows";
 import { MOTIVI, motivoDaPosizione, type StradaAccesso } from "./credentials/motivi-accesso";
 import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_MAPPA_PORTE, INDICI_MAPPA_PORTE, SEGNO_MAPPA_PORTE, VERSIONE_MAPPA_PORTE, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK, migraCredenzialiWmi } from "./db-tenant-schema";
+import type { TipoRecordDns, VoceDns, ZonaDns } from "./ad/dns/record";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -57,6 +58,7 @@ import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scri
 import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
 import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
 import { convertiDeviceTypeV22, SEGNO_DEVICE_TYPE_V22 } from "./devices/migra-device-type-v22";
+import { allineaTipoPostazioni } from "./devices/tipo-postazioni";
 import { convertiStormshieldFirewall, SEGNO_STORMSHIELD_FIREWALL } from "./devices/migra-stormshield-firewall";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -97,6 +99,7 @@ import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { ApparatoPorte, PortaTavola } from "./topology/tavola/tipi";
 import type { IngressoDispositivi } from "./scheda/dispositivi-router";
 import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaUtenteMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
 import type { RisultatoMkScheda } from "./devices/mikrotik-letture";
@@ -1471,6 +1474,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // Create schema if needed
   newDb.exec(TENANT_SCHEMA_SQL);
 
+  // Correzioni al DNS di AD (17/11/2026): interruttore e utenza sull'integrazione. Nascono spente (0).
+  // L'indice sulla chiave esterna si crea QUI, dopo la colonna: nello schema arriverebbe prima dell'ALTER.
+  {
+    const colonne = new Set((newDb.prepare("PRAGMA table_info(ad_integrations)").all() as Array<{ name: string }>).map((c) => c.name));
+    if (colonne.size > 0) {
+      if (!colonne.has("dns_scrittura")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_scrittura INTEGER NOT NULL DEFAULT 0");
+      if (!colonne.has("dns_usa_winrm_dc")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_usa_winrm_dc INTEGER NOT NULL DEFAULT 0");
+      if (!colonne.has("dns_credential_id")) newDb.exec("ALTER TABLE ad_integrations ADD COLUMN dns_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_ad_integrations_dns_cred ON ad_integrations(dns_credential_id)");
+    }
+  }
+
   // Migrazione runtime (PRIMA degli indici): software_scans con device_id + host_id nullable.
   // Deve girare prima di TENANT_INDEXES_SQL perché tale blocco contiene
   // CREATE INDEX su software_scans(device_id, ...) e fallirebbe se la colonna manca.
@@ -2365,6 +2380,10 @@ export function getTenantDb(tenantCode: string): Database.Database {
     )`);
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
     newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
+    // 17/11/2026, 192.168.4.8: senza questo indice ogni evidenza eliminata in cascata da un host
+    // faceva rileggere tutta la tabella per azzerare `superseded_by` (FK su sé stessa): eliminare
+    // più host teneva il processo fermo per minuti e l'app non rispondeva più.
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_superseded_by ON attribution_evidence(superseded_by)");
 
     // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
     // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
@@ -2878,6 +2897,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
     if (esito.eseguita) console.info(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22}, corretti ${esito.convertiti} apparati`);
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V22} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // Postazioni col loro tipo (23/11/2026): dopo la ricostruzione del CHECK, a ogni apertura (idempotente).
+  try {
+    const n = allineaTipoPostazioni(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (n > 0) console.info(`[db-tenant] ${tenantCode}: tipo «workstation» a ${n} apparati`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: tipo delle postazioni non aggiornato (ROLLBACK), si riprova alla prossima apertura:`, e);
   }
 
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
@@ -3956,6 +3982,20 @@ export function getHostStatusesByIp(ips: string[]): Map<string, { status: string
 
 export function getHostByIp(ip: string): Host | undefined {
   return db().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
+}
+
+/** Quante credenziali per tipo (Protezione › Stato): solo conteggi, mai un valore. */
+export function getConteggioCredenzialiPerTipo(): Array<{ tipo: string; n: number }> {
+  return db().prepare("SELECT credential_type AS tipo, COUNT(*) AS n FROM credentials GROUP BY credential_type").all() as Array<{ tipo: string; n: number }>;
+}
+
+/** Nome e IP degli host con uno di questi indirizzi (Protezione › Sistemi remoti): una query sola. */
+export function getNomiHostPerIp(indirizzi: readonly string[]): Array<{ ip: string; nome: string | null }> {
+  if (indirizzi.length === 0) return [];
+  const lista = indirizzi.slice(0, 500);
+  return db()
+    .prepare(`SELECT ip, COALESCE(NULLIF(custom_name, ''), NULLIF(hostname, '')) AS nome FROM hosts WHERE ip IN (${lista.map(() => "?").join(",")})`)
+    .all(...lista) as Array<{ ip: string; nome: string | null }>;
 }
 
 export function getHostById(id: number): HostDetail | undefined {
@@ -8934,7 +8974,7 @@ export function deleteProxmoxHost(id: number): boolean {
 // ACTIVE DIRECTORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */ credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; }
+export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */ credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; /** Correzioni al DNS (17/11/2026): interruttore, «usa la voce WinRM del DC», voce dedicata. Assenti = spente. */ dns_scrittura?: number; dns_usa_winrm_dc?: number; dns_credential_id?: number | null; }
 export interface AdComputer { id: number; integration_id: number; object_guid: string; sam_account_name: string; dns_host_name: string | null; display_name: string | null; distinguished_name: string; operating_system: string | null; operating_system_version: string | null; last_logon_at: string | null; enabled: number; host_id: number | null; ip_address: string | null; ou: string | null; raw_data: string | null; synced_at: string; }
 export interface AdUser { id: number; integration_id: number; object_guid: string; sam_account_name: string; user_principal_name: string | null; display_name: string | null; email: string | null; department: string | null; title: string | null; phone: string | null; ou: string | null; enabled: number; last_logon_at: string | null; password_last_set_at: string | null; raw_data: string | null; synced_at: string; }
 export interface AdDhcpLease { id: number; integration_id: number; scope_id: string; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; lease_expires: string | null; address_state: string | null; description: string | null; last_synced: string; }
@@ -9104,14 +9144,27 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
   // F4 v0.2.596: leggo anche hosts.physical_device_id come anchor di aggregazione.
   // Un physical_device_id condiviso è la firma più forte possibile (utente l'ha
   // dichiarato esplicitamente o l'identity-resolver l'ha trovato): prevale su tutto.
-  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; mac: string | null; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
-  const hostMeta = new Map<number, { ip: string; has_device: number }>();
-  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device });
+  const hosts = d.prepare(`SELECT h.id, h.network_id, h.ip, h.mac, h.hostname, h.serial_number, h.snmp_data, h.custom_name, h.dns_reverse, h.status, h.last_seen, h.physical_device_id, nd.sysname AS dev_sysname, nd.serial_number AS dev_serial, ac.dns_host_name AS ad_dns, CASE WHEN nd.id IS NOT NULL THEN 1 ELSE 0 END AS has_device FROM hosts h LEFT JOIN network_devices nd ON nd.host = h.ip LEFT JOIN (SELECT host_id, MAX(dns_host_name) as dns_host_name FROM ad_computers WHERE host_id IS NOT NULL GROUP BY host_id) ac ON ac.host_id = h.id`).all() as Array<{ id: number; network_id: number; ip: string; mac: string | null; hostname: string | null; serial_number: string | null; snmp_data: string | null; custom_name: string | null; dns_reverse: string | null; status: string | null; last_seen: string | null; physical_device_id: number | null; dev_sysname: string | null; dev_serial: string | null; ad_dns: string | null; has_device: number }>;
+  const hostMeta = new Map<number, MetaPrincipale>();
+  for (const h of hosts) hostMeta.set(h.id, { ip: h.ip, has_device: h.has_device, status: h.status, last_seen: h.last_seen });
+  const nomeDellHost = new Map<number, string | null>();
+  for (const h of hosts) nomeDellHost.set(h.id, h.custom_name?.trim() || h.hostname?.trim() || null);
+  // PC di AD (23/11/2026): il nome del computer è unico nel dominio, quindi unisce le righe dello stesso PC anche nella
+  // stessa rete (un portatile che prende un altro IP in DHCP) e anche con più schede (Wi-Fi, cavo, dock).
+  const nomiPcAd = new Set<string>();
+  try {
+    for (const r of d.prepare("SELECT lower(replace(sam_account_name, '$', '')) AS n FROM ad_computers WHERE enabled = 1 AND COALESCE(operating_system, '') NOT LIKE '%Server%'").all() as Array<{ n: string }>) {
+      if (r.n.length >= 3) nomiPcAd.add(r.n);
+    }
+  } catch { /* ad_computers assente in un DB vecchio: nessun PC di AD */ }
+  const pcAdHosts = new Set<number>();
   const buckets = new Map<string, Set<number>>();
   const hostNet = new Map<number, number>();
   const macDellHost = new Map<number, string>();
   // F4 v0.2.596: priorità 5 a physical_device (anchor user-marked / resolver-validated).
-  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, hostname: 2, ad_dns: 1 };
+  // «adpc» sopra «hostname»: così la riga di un PC di AD si salva come `ad_dns` e Apparati sa che è un PC (tetto dei MAC,
+  // riga principale).
+  const PRIORITY: Record<string, number> = { physical_device: 5, serial_number: 4, sysname: 3, adpc: 2.5, hostname: 2, ad_dns: 1 };
   const hostBest = new Map<number, { type: string; value: string; priority: number }>();
   function addToBucket(key: string, hostId: number, type: string, value: string) {
     if (!buckets.has(key)) buckets.set(key, new Set());
@@ -9146,6 +9199,9 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     if (sysName?.trim() && !MH_HOSTNAME_BLACKLIST.has(sysName.trim().toLowerCase()) && !nomeGenerico(sysName)) addToBucket(`sysname:${sysName.trim().toLowerCase()}`, h.id, "sysname", sysName.trim());
     const hn = (h.hostname ?? "").trim().toLowerCase();
     if (hn && hn.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(hn) && !nomeGenerico(hn)) { const shortHn = hn.split(".")[0]; if (shortHn.length >= 3) addToBucket(`hostname:${shortHn}`, h.id, "hostname", h.hostname!.trim()); }
+    for (const n of new Set([h.hostname, h.custom_name, h.dns_reverse].map((x) => (x ?? "").trim().toLowerCase().split(".")[0]))) {
+      if (n && nomiPcAd.has(n)) addToBucket(`adpc:${n}`, h.id, "adpc", n);
+    }
     const adDns = (h.ad_dns ?? "").trim().toLowerCase();
     if (adDns && adDns.length >= 3) { const shortAd = adDns.split(".")[0]; if (shortAd.length >= 3 && !MH_HOSTNAME_BLACKLIST.has(shortAd)) addToBucket(`ad_dns:${shortAd}`, h.id, "ad_dns", h.ad_dns!.trim()); }
   }
@@ -9161,11 +9217,14 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     if (hostIds.size < 2) continue;
     if (key.startsWith("mac:") && hostIds.size > MAX_RIGHE_STESSO_MAC_GRUPPO) continue;
     // Tanti MAC veri diversi sotto lo stesso nome o seriale: è un modello, non un apparato (ancore-gruppo.ts).
-    if (!key.startsWith("mac:") && !key.startsWith("physical:")
+    if (key.startsWith("serial:") && serialeConNomiMisti([...hostIds].map((hid) => nomeDellHost.get(hid)))) continue;
+    if (!key.startsWith("mac:") && !key.startsWith("physical:") && !key.startsWith("adpc:")
       && ancoraDiModello(hostIds.size, [...hostIds].map((hid) => macDellHost.get(hid)).filter((m): m is string => !!m))) continue;
     const isPhysical = key.startsWith("physical:");
     if (isPhysical) {
       for (const hid of hostIds) physicalLinkedHosts.add(hid);
+    } else if (key.startsWith("adpc:")) {
+      for (const hid of hostIds) pcAdHosts.add(hid);
     } else {
       // Per anchor non-physical conserva la regola "reti diverse" (evita falsi
       // positivi su hostname/sysname brevi che capitano nella stessa subnet).
@@ -9186,7 +9245,7 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
     for (const [, members] of finalGroups) {
       if (members.size < 2) continue;
       // Skip "diverse reti" check per gruppi che includono link physical (manuale).
-      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid));
+      const hasPhysicalAnchor = [...members].some((hid) => physicalLinkedHosts.has(hid) || pcAdHosts.has(hid));
       if (!hasPhysicalAnchor) {
         const nets = new Set<number>();
         for (const hid of members) nets.add(hostNet.get(hid)!);
@@ -9199,9 +9258,11 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
       const ranked = [...members]
         .map((hid) => ({ hid, meta: hostMeta.get(hid)! }))
         .filter((m) => m.meta)
+        // In un PC di AD l'apparato gestito è solo «il PC a un indirizzo» (gli apparati automatici del 10/11 ne
+        // creavano uno per IP): non decide lui, vince la riga viva (NB-AGUZZOLI 3.108 offline, 23/11).
         .sort((a, b) => {
-          if (a.meta.has_device !== b.meta.has_device) return b.meta.has_device - a.meta.has_device;
-          return ipv4ToInt(a.meta.ip) - ipv4ToInt(b.meta.ip);
+          const pc = [...members].some((hid) => pcAdHosts.has(hid));
+          return confrontaPrincipale(pc ? { ...a.meta, has_device: 0 } : a.meta, pc ? { ...b.meta, has_device: 0 } : b.meta, ipv4ToInt);
         });
       const primaryHid = ranked.length > 0 ? ranked[0].hid : null;
       for (const hid of members) {
@@ -9210,7 +9271,8 @@ export function recomputeMultihomedLinks(targetDb?: Database.Database): { groups
           // v0.2.617: type 'physical_device' non passa il CHECK constraint (vedi
           // commento sopra). Lo mappiamo a 'serial_number' col marker nel value.
           // «mac» non passa il CHECK di match_type: va come «hostname», col prefisso `mac:` nel valore.
-          const dbType = best.type === "physical_device" ? "serial_number" : best.type === "mac" ? "hostname" : best.type;
+          // «adpc» (PC di AD) va come «ad_dns», che il CHECK ammette: Apparati lo legge per il tetto dei MAC.
+          const dbType = best.type === "physical_device" ? "serial_number" : best.type === "mac" ? "hostname" : best.type === "adpc" ? "ad_dns" : best.type;
           ins.run(groupId, hid, dbType, best.value, hid === primaryHid ? 1 : 0);
           totalLinked++;
         }
@@ -9336,6 +9398,156 @@ export function upsertAdDhcpLease(integrationId: number, input: { scope_id: stri
 
 export function clearAdDhcpLeases(integrationId: number): void {
   db().prepare("DELETE FROM ad_dhcp_leases WHERE integration_id = ?").run(integrationId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DNS DI ACTIVE DIRECTORY (sola lettura, 17/11/2026)
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface RigaZonaDnsAd { id: number; integration_id: number; nome: string; inversa: number; partizione: string; letta_il: string }
+export interface RigaRecordDnsAd {
+  id: number; integration_id: number; zona: string; nome: string; fqdn: string; tipo: TipoRecordDns;
+  dato: string; ip: string | null; statica: number; rinnovata_il: string | null; ttl: number; letta_il: string;
+}
+export interface StatoDnsAd { letto_il: string | null; provato_il: string | null; errore: string | null }
+
+/** Riscrive per intero zone e record di un'integrazione, in una transazione: o tutto o niente. */
+export function sostituisciDnsAd(integrationId: number, zone: readonly ZonaDns[], voci: readonly VoceDns[]): void {
+  const d = db();
+  const insZona = d.prepare("INSERT OR IGNORE INTO ad_dns_zone (integration_id, nome, inversa, partizione) VALUES (?, ?, ?, ?)");
+  const insVoce = d.prepare("INSERT INTO ad_dns_record (integration_id, zona, nome, fqdn, tipo, dato, ip, statica, rinnovata_il, ttl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  d.transaction(() => {
+    d.prepare("DELETE FROM ad_dns_record WHERE integration_id = ?").run(integrationId);
+    d.prepare("DELETE FROM ad_dns_zone WHERE integration_id = ?").run(integrationId);
+    for (const z of zone) insZona.run(integrationId, z.nome, z.inversa ? 1 : 0, z.partizione);
+    for (const v of voci) insVoce.run(integrationId, v.zona, v.nome, v.fqdn, v.tipo, v.dato, v.ip, v.statica ? 1 : 0, v.rinnovataIl, v.ttl);
+  })();
+}
+
+/** Esito dell'ultima lettura: `errore` null = riuscita (e `letto_il` avanza); altrimenti `letto_il` resta quello di prima. */
+export function segnaEsitoDnsAd(integrationId: number, errore: string | null): void {
+  db().prepare(`INSERT INTO ad_dns_stato (integration_id, letto_il, provato_il, errore)
+    VALUES (?, CASE WHEN ? IS NULL THEN datetime('now') END, datetime('now'), ?)
+    ON CONFLICT(integration_id) DO UPDATE SET
+      letto_il = CASE WHEN excluded.errore IS NULL THEN excluded.provato_il ELSE ad_dns_stato.letto_il END,
+      provato_il = excluded.provato_il, errore = excluded.errore`).run(integrationId, errore, errore);
+}
+
+export function getStatoDnsAd(integrationId: number): StatoDnsAd {
+  return (db().prepare("SELECT letto_il, provato_il, errore FROM ad_dns_stato WHERE integration_id = ?").get(integrationId) as StatoDnsAd | undefined)
+    ?? { letto_il: null, provato_il: null, errore: null };
+}
+
+export function getZoneDnsAd(integrationId: number): RigaZonaDnsAd[] {
+  return db().prepare("SELECT * FROM ad_dns_zone WHERE integration_id = ? ORDER BY inversa, nome").all(integrationId) as RigaZonaDnsAd[];
+}
+
+export function getRecordDnsAd(integrationId: number): RigaRecordDnsAd[] {
+  return db().prepare("SELECT * FROM ad_dns_record WHERE integration_id = ?").all(integrationId) as RigaRecordDnsAd[];
+}
+
+export function getRecordDnsAdPaginati(
+  integrationId: number, pagina: number, perPagina: number,
+  filtri: { cerca?: string; tipo?: TipoRecordDns; zona?: string } = {},
+): { rows: RigaRecordDnsAd[]; total: number } {
+  let dove = "WHERE integration_id = ?";
+  const p: unknown[] = [integrationId];
+  if (filtri.tipo) { dove += " AND tipo = ?"; p.push(filtri.tipo); }
+  if (filtri.zona) { dove += " AND zona = ?"; p.push(filtri.zona); }
+  if (filtri.cerca?.trim()) { dove += " AND (fqdn LIKE ? OR dato LIKE ? OR ip LIKE ?)"; const c = `%${filtri.cerca.trim()}%`; p.push(c, c, c); }
+  const total = (db().prepare(`SELECT COUNT(*) AS c FROM ad_dns_record ${dove}`).get(...p) as { c: number }).c;
+  const rows = db().prepare(`SELECT * FROM ad_dns_record ${dove} ORDER BY zona, nome, tipo LIMIT ? OFFSET ?`).all(...p, perPagina, (pagina - 1) * perPagina) as RigaRecordDnsAd[];
+  return { rows, total };
+}
+
+export function getVolutiDnsAd(integrationId: number): { chiave: string; nota: string | null; da: string | null; il: string }[] {
+  return db().prepare("SELECT chiave, nota, da, il FROM ad_dns_voluti WHERE integration_id = ? ORDER BY il DESC").all(integrationId) as { chiave: string; nota: string | null; da: string | null; il: string }[];
+}
+
+export function segnaVolutoDnsAd(integrationId: number, chiave: string, nota: string | null, da: string | null): void {
+  db().prepare(`INSERT INTO ad_dns_voluti (integration_id, chiave, nota, da) VALUES (?, ?, ?, ?)
+    ON CONFLICT(integration_id, chiave) DO UPDATE SET nota = excluded.nota, da = excluded.da, il = datetime('now')`).run(integrationId, chiave, nota, da);
+}
+
+export interface RigaModificaDnsAd {
+  id: number; integration_id: number; gruppo: string; correzione: string; titolo: string;
+  azione: "aggiungi" | "togli"; zona: string; nome: string; tipo: "A" | "CNAME" | "PTR"; dato: string;
+  prima: string | null; esito: "in_corso" | "riuscito" | "rifiutato" | "cambiato" | "non_so";
+  messaggio: string | null; utenza: string | null; annulla_di: number | null; da: string; il: string;
+}
+
+/** Riga del registro PRIMA del comando sul DC: nasce `in_corso`. Lancia se non si scrive. */
+export function apriModificaDnsAd(r: Omit<RigaModificaDnsAd, "id" | "esito" | "messaggio" | "il">): number {
+  return Number(db().prepare(`INSERT INTO ad_dns_modifiche (integration_id, gruppo, correzione, titolo, azione, zona, nome, tipo, dato, prima, utenza, annulla_di, da)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(r.integration_id, r.gruppo, r.correzione, r.titolo, r.azione, r.zona, r.nome, r.tipo, r.dato, r.prima, r.utenza, r.annulla_di, r.da).lastInsertRowid);
+}
+
+/** Esito definitivo di una riga `in_corso`: dopo, il trigger non la lascia più cambiare. */
+export function chiudiModificaDnsAd(id: number, esito: Exclude<RigaModificaDnsAd["esito"], "in_corso">, messaggio: string | null): void {
+  db().prepare("UPDATE ad_dns_modifiche SET esito = ?, messaggio = ? WHERE id = ? AND esito = 'in_corso'").run(esito, messaggio, id);
+}
+
+/**
+ * Una riga rimasta `in_corso` oltre 10 minuti è di un processo morto a metà del passo (un comando
+ * dura al più un minuto): non si sa se il DC ha scritto, quindi diventa «non so». Senza, una riga
+ * di annulla orfana bloccherebbe per sempre ogni altro annulla della stessa modifica (revisione del 18/11).
+ */
+export function chiudiModificheDnsAdOrfane(integrationId: number): number {
+  return db().prepare(`UPDATE ad_dns_modifiche SET esito = 'non_so', messaggio = 'Passo interrotto a metà: controlla il record sul DC'
+    WHERE integration_id = ? AND esito = 'in_corso' AND il < datetime('now', '-10 minutes')`).run(integrationId).changes;
+}
+
+export function getModificaDnsAd(integrationId: number, id: number): RigaModificaDnsAd | undefined {
+  return db().prepare("SELECT * FROM ad_dns_modifiche WHERE integration_id = ? AND id = ?").get(integrationId, id) as RigaModificaDnsAd | undefined;
+}
+
+export function getModificheDnsAd(integrationId: number, pagina: number, perPagina: number): { rows: (RigaModificaDnsAd & { annullata: number })[]; total: number } {
+  chiudiModificheDnsAdOrfane(integrationId);
+  const total = (db().prepare("SELECT COUNT(*) AS c FROM ad_dns_modifiche WHERE integration_id = ?").get(integrationId) as { c: number }).c;
+  const rows = db().prepare(`SELECT m.*, EXISTS(SELECT 1 FROM ad_dns_modifiche a WHERE a.annulla_di = m.id AND a.esito = 'riuscito') AS annullata
+    FROM ad_dns_modifiche m WHERE m.integration_id = ? ORDER BY m.id DESC LIMIT ? OFFSET ?`).all(integrationId, perPagina, (pagina - 1) * perPagina) as (RigaModificaDnsAd & { annullata: number })[];
+  return { rows, total };
+}
+
+export function modificaDnsAdGiaAnnullata(id: number): boolean {
+  return db().prepare("SELECT 1 FROM ad_dns_modifiche WHERE annulla_di = ? AND esito IN ('riuscito','in_corso') LIMIT 1").get(id) !== undefined;
+}
+
+/** I controller di dominio di un'integrazione, come li conosce AD: nome e IP. I loro record DNS non si correggono. */
+export function getControllerDiDominio(integrationId: number): { nome: string; ip: string | null }[] {
+  const righe = db().prepare(`SELECT sam_account_name, dns_host_name, ip_address FROM ad_computers
+    WHERE integration_id = ? AND distinguished_name LIKE '%OU=Domain Controllers,%'`).all(integrationId) as { sam_account_name: string; dns_host_name: string | null; ip_address: string | null }[];
+  return righe.map((r) => ({ nome: (r.dns_host_name ?? r.sam_account_name).replace(/\$$/, "").toLowerCase().split(".")[0] ?? "", ip: r.ip_address }));
+}
+
+export function impostaCorrezioniDnsAd(integrationId: number, v: { dns_scrittura: boolean; dns_usa_winrm_dc: boolean; dns_credential_id: number | null }): void {
+  db().prepare("UPDATE ad_integrations SET dns_scrittura = ?, dns_usa_winrm_dc = ?, dns_credential_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(v.dns_scrittura ? 1 : 0, v.dns_usa_winrm_dc ? 1 : 0, v.dns_credential_id, integrationId);
+}
+
+/**
+ * Gli host come servono al confronto col DNS: IP, nome, stato, ultimo visto, e se sono computer del dominio.
+ * Il nome scritto a mano (`custom_name`) vince su quello trovato dalla scoperta (Riccardo, 18/11/2026:
+ * «Sì, vale quello»), ma solo se ha la forma di un nome DNS: «Sala riunioni» è una descrizione, non un nome
+ * da mettere nel DNS, e in quel caso resta il nome scoperto.
+ */
+export function getHostPerDnsAd(): { id: number; ip: string; hostname: string | null; status: string | null; last_seen: string | null; inAd: boolean }[] {
+  const righe = db().prepare(`SELECT h.id, h.ip, h.hostname, h.custom_name, h.status, h.last_seen,
+      EXISTS(SELECT 1 FROM ad_computers c WHERE c.host_id = h.id) AS in_ad
+    FROM hosts h`).all() as { id: number; ip: string; hostname: string | null; custom_name: string | null; status: string | null; last_seen: string | null; in_ad: number }[];
+  const nomeDns = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+  return righe.map(({ in_ad, custom_name, ...h }) => {
+    const aMano = (custom_name ?? "").trim().toLowerCase();
+    return { ...h, hostname: aMano && nomeDns.test(aMano) ? aMano : h.hostname, inAd: in_ad === 1 };
+  });
+}
+
+export function getCidrReti(): string[] {
+  return (db().prepare("SELECT cidr FROM networks WHERE cidr IS NOT NULL").all() as { cidr: string }[]).map((r) => r.cidr);
+}
+
+export function togliVolutoDnsAd(integrationId: number, chiave: string): boolean {
+  return db().prepare("DELETE FROM ad_dns_voluti WHERE integration_id = ? AND chiave = ?").run(integrationId, chiave).changes > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -10156,7 +10368,13 @@ export interface AggregatedVulnOpts {
    * quel motore. Il filtro `sources` agisce dopo, e a una CVE vista da Edge lascerebbe la
    * gravità e gli host di Wazuh (10/11/2026).
    */
-  soloMotore?: "edge" | "wazuh";
+  soloMotore?: "edge" | "wazuh" | "eset";
+  /**
+   * Anche le vulnerabilità ESET «potenziali dal software» (fonte `ESET-SW`: calcolate da DA-Link
+   * dall'elenco dei programmi, meno certe di quelle viste dall'agente). Le chiede solo la pagina
+   * dei rilievi, che le tiene fuori dai conteggi di testa; le altre viste non le vedono.
+   */
+  conPotenzialiEset?: boolean;
   /**
    * Il punteggio proprio di ogni CVE (archivio NVD locale). Serve per gli avvisi di pacchetto di
    * Greenbone («Ubuntu: Security Advisory (USN-…)»): lì il punteggio è quello dell'avviso, cioè
@@ -10184,7 +10402,7 @@ export interface AggregatedVulnResult {
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
 }
 
-export type SoftwareSource = "Wazuh" | "Probe" | "Agent";
+export type SoftwareSource = "Wazuh" | "Probe" | "Agent" | "ESET";
 
 export interface AggregatedSoftwareHostRef {
   host_id: number;
@@ -10394,9 +10612,76 @@ function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
   return r.host_id != null ? `h:${r.host_id}` : `ip:${r.ip}`;
 }
 
+/** Fonti delle vulnerabilità lette da ESET attraverso DA-Link (17/11/2026). */
+export const FONTE_ESET = "ESET";
+export const FONTE_ESET_SW = "ESET-SW";
+
+/** Il motore di una fonte: Wazuh, ESET (anche le potenziali) o Edge (Greenbone, Nuclei, controlli). */
+export function motoreDiFonte(source: string): "edge" | "wazuh" | "eset" {
+  return source === "Wazuh" ? "wazuh" : source === FONTE_ESET || source === FONTE_ESET_SW ? "eset" : "edge";
+}
+
+const GRAVITA_ESET: Record<string, Severity> = {
+  SEVERITY_LEVEL_CRITICAL: "Critical",
+  SEVERITY_LEVEL_HIGH: "High",
+  SEVERITY_LEVEL_MEDIUM: "Medium",
+  SEVERITY_LEVEL_LOW: "Low",
+};
+
+/**
+ * Le vulnerabilità delle macchine ESET AGGANCIATE a un host (copia letta da DA-Link,
+ * `integrations/eset-dalink.ts`), nella stessa forma delle righe di Edge e Wazuh. Una macchina non
+ * agganciata non dà righe: sta nell'elenco «da abbinare». Senza le tabelle (istanza che non ha mai
+ * letto ESET) non c'è niente da aggiungere. «Recente» qui è l'ultimo contatto della macchina con ESET.
+ */
+export function leggiRigheVulnEset(
+  database: Database.Database,
+  opz: { osFamilies?: OsFamily[]; soloRecentiGiorni?: number; conPotenziali?: boolean } = {},
+): RawVulnRow[] {
+  const c = database.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('eset_vuln', 'eset_macchina', 'eset_abbinamento')").get() as { n: number };
+  if (c.n < 3) return [];
+  const os = opz.osFamilies && opz.osFamilies.length > 0 && opz.osFamilies.length < OS_FAMILIES.length ? opz.osFamilies : [];
+  const righe = database
+    .prepare(
+      `SELECT v.cve, v.fonte, v.oggetto, v.versione, v.gravita, v.cvss, a.host_id, COALESCE(h.ip, m.ip_locale, '') AS ip,
+              COALESCE(m.ultimo_contatto, m.letto_il) AS visto
+         FROM eset_vuln v
+         JOIN eset_macchina m ON m.uuid = v.macchina_uuid
+         JOIN eset_abbinamento a ON a.macchina_uuid = m.uuid AND a.host_id IS NOT NULL
+         JOIN hosts h ON h.id = a.host_id
+        WHERE (? = 1 OR v.fonte = 'eset')
+          AND (? IS NULL OR julianday(COALESCE(m.ultimo_contatto, m.letto_il)) >= julianday('now') - ?)
+          ${os.length ? `AND h.os_family IN (${os.map(() => "?").join(",")})` : ""}`,
+    )
+    .all(opz.conPotenziali ? 1 : 0, opz.soloRecentiGiorni ?? null, opz.soloRecentiGiorni ?? null, ...os) as Array<{
+      cve: string; fonte: string; oggetto: string; versione: string; gravita: string | null; cvss: number | null; host_id: number; ip: string; visto: string;
+    }>;
+  const out: RawVulnRow[] = [];
+  for (const r of righe) {
+    const severity = GRAVITA_ESET[r.gravita ?? ""] ?? (r.cvss != null ? gravitaDaCvss(r.cvss) : null);
+    if (!severity) continue; // senza gravità né punteggio non si classifica: non entra
+    out.push({
+      key: r.cve,
+      cve_id: r.cve,
+      nvt_oid: null,
+      severity,
+      cvss_score: r.cvss,
+      package_label: [r.oggetto, r.versione].filter(Boolean).join(" ") || null,
+      host_id: r.host_id,
+      ip: r.ip,
+      port: null,
+      scanned_at: r.visto,
+      source: r.fonte === "software" ? FONTE_ESET_SW : FONTE_ESET,
+    });
+  }
+  return out;
+}
+
 export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
-  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti, opts.soloRecentiGiorni);
-  let rows = opts.soloMotore ? lette.filter((r) => (r.source === "Wazuh") === (opts.soloMotore === "wazuh")) : lette;
+  const lette = leggiRigheVuln(opts.osFamilies, opts.precedenti, opts.soloRecentiGiorni).concat(
+    leggiRigheVulnEset(db(), { osFamilies: opts.osFamilies, soloRecentiGiorni: opts.soloRecentiGiorni, conPotenziali: opts.conPotenzialiEset }),
+  );
+  let rows = opts.soloMotore ? lette.filter((r) => motoreDiFonte(r.source) === opts.soloMotore) : lette;
   if (opts.cvssDi) {
     const daAvviso = rows.filter((r) => r.source === "Edge-G" && !!r.cve_id && !!r.nvt_oid?.startsWith(OID_AVVISO_PACCHETTO));
     if (daAvviso.length > 0) {
@@ -10932,6 +11217,35 @@ function invAgentSoftwareTableExists(): boolean {
   return row?.ok === 1;
 }
 
+/**
+ * Il software che ESET elenca per le macchine AGGANCIATE a un host (copia letta da DA-Link,
+ * `integrations/eset-dalink.ts`, 17/11/2026). Si unisce in lettura: le scansioni delle sonde
+ * restano istantanee immutabili e non si toccano. Una macchina non agganciata non dà righe.
+ */
+function fetchEsetSoftwareRows(osActive: boolean, osList: OsFamily[]): Array<{
+  name: string; version: string | null; publisher: string | null; host_id: number; ip: string;
+  install_date: string | null; scanned_at: string | null; source: SoftwareSource;
+}> {
+  const c = db().prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('eset_software', 'eset_macchina', 'eset_abbinamento')").get() as { n: number };
+  if (c.n < 3) return [];
+  const osClause = osActive ? `AND h.os_family IN (${osList.map(() => "?").join(",")})` : "";
+  return db()
+    .prepare(
+      `SELECT s.nome AS name, NULLIF(s.versione, '') AS version, NULLIF(s.editore, '') AS publisher,
+              a.host_id, COALESCE(h.ip, m.ip_locale, '') AS ip,
+              NULL AS install_date,
+              m.letto_il AS scanned_at,
+              'ESET' AS source
+         FROM eset_software s
+         JOIN eset_macchina m ON m.uuid = s.macchina_uuid
+         JOIN eset_abbinamento a ON a.macchina_uuid = m.uuid AND a.host_id IS NOT NULL
+         JOIN hosts h ON h.id = a.host_id
+        WHERE TRIM(s.nome) != ''
+          ${osClause}`,
+    )
+    .all(...(osActive ? osList : [])) as ReturnType<typeof fetchEsetSoftwareRows>;
+}
+
 function fetchInvAgentSoftwareRows(
   osActive: boolean,
   osList: OsFamily[],
@@ -11042,11 +11356,14 @@ export function getAggregatedSoftware(opts: AggregatedSoftwareOpts): AggregatedS
     }>;
 
   const agentRows = fetchInvAgentSoftwareRows(osActive, osList);
+  const esetRows = fetchEsetSoftwareRows(osActive, osList);
 
   const all: RawSoftwareRow[] = [
     ...wazuhRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...probeRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
     ...agentRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
+    // ESET per ultimo: nome ed editore di una voce già nota restano quelli delle altre fonti.
+    ...esetRows.map((r) => ({ ...r, key: softwareKeyOf(r.name) })),
   ];
 
   interface AggInternal extends AggregatedSoftware {
@@ -11329,7 +11646,13 @@ export function getSoftwareHostsByKey(key: string, limit = 500): AggregatedSoftw
       .all(nameLower, limit) as typeof wazuhRows;
   }
 
-  const merged = [...wazuhRows, ...probeRows, ...agentRows];
+  // ESET (17/11/2026): le macchine agganciate a un host che hanno questo programma.
+  const esetRows = fetchEsetSoftwareRows(false, [])
+    .filter((r) => r.name.toLowerCase() === nameLower)
+    .slice(0, limit)
+    .map((r) => ({ host_id: r.host_id, ip: r.ip, publisher: r.publisher, install_date: r.install_date, scanned_at: r.scanned_at, version: r.version, source: r.source }));
+
+  const merged = [...wazuhRows, ...probeRows, ...agentRows, ...esetRows];
   const ids = [...new Set(merged.map((r) => r.host_id))];
   const meta = loadHostsMeta(ids);
 
@@ -12626,6 +12949,60 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
     "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+}
+
+/** Il MAC di ogni host chiesto (tavola di cablaggio: riconoscere una VM dal MAC). Una query. */
+export function getMacDegliHost(hostIds: readonly number[]): Map<number, string> {
+  const ids = [...new Set(hostIds)];
+  if (ids.length === 0) return new Map();
+  const righe = db().prepare(`SELECT id, mac FROM hosts WHERE mac IS NOT NULL AND mac <> '' AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as Array<{ id: number; mac: string }>;
+  return new Map(righe.map((r) => [r.id, r.mac]));
+}
+
+/**
+ * Le porte di tutti gli apparati di un sito per la «Tavola di cablaggio» (spec 2026-11-23 §2): una query sola su
+ * `switch_ports` per gli apparati dati, e per quelli senza righe le schede dell'hypervisor dalla scansione Proxmox
+ * (come `getTopologyKnownPorts`). Gli id arrivano dal modello della mappa: qui non si decide chi sta nel sito.
+ */
+export function getTopologyTavolaPorte(deviceIds: readonly number[]): ApparatoPorte[] {
+  if (deviceIds.length === 0) return [];
+  const d = db();
+  const ids = [...new Set(deviceIds)];
+  const segnaposti = ids.map(() => "?").join(",");
+  const righe = d.prepare(
+    `SELECT device_id, port_index, port_name, status, speed, vlan, is_trunk, mac_count, single_mac_hostname, single_mac_ip, poe_power_mw
+     FROM switch_ports WHERE device_id IN (${segnaposti}) ORDER BY device_id, port_index`,
+  ).all(...ids) as Array<{ device_id: number; port_index: number; port_name: string; status: string | null; speed: string | null; vlan: number | null;
+    is_trunk: number | null; mac_count: number | null; single_mac_hostname: string | null; single_mac_ip: string | null; poe_power_mw: number | null }>;
+  const perApparato = new Map<number, PortaTavola[]>();
+  for (const r of righe) {
+    const v = perApparato.get(r.device_id) ?? [];
+    v.push({
+      indice: r.port_index, nome: r.port_name,
+      stato: r.status === "up" || r.status === "down" || r.status === "disabled" ? r.status : null,
+      velocita: r.speed && r.speed.trim() !== "" ? r.speed.trim() : null, vlan: r.vlan, trunk: r.is_trunk === 1,
+      macCount: r.mac_count ?? 0, nomeClient: r.single_mac_hostname || null, ipClient: r.single_mac_ip || null,
+      poeW: r.poe_power_mw != null && r.poe_power_mw > 0 ? r.poe_power_mw / 1000 : null,
+    });
+    perApparato.set(r.device_id, v);
+  }
+  const senza = ids.filter((id) => !perApparato.has(id));
+  if (senza.length > 0) {
+    const scans = d.prepare(
+      "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
+    ).all() as Array<{ id: number; raw: string }>;
+    if (scans.length > 0) {
+      const devs = d.prepare(`SELECT id, host, name FROM network_devices WHERE id IN (${senza.map(() => "?").join(",")})`).all(...senza) as Array<{ id: number; host: string | null; name: string | null }>;
+      for (const dev of devs) {
+        const nics = hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+        if (nics.length > 0) perApparato.set(dev.id, nics.map((k) => ({
+          indice: null, nome: k.name, stato: (k.note ?? "").includes("giù") ? "down" : null, velocita: k.speed, vlan: null, trunk: false,
+          macCount: 0, nomeClient: null, ipClient: null, poeW: null,
+        })));
+      }
+    }
+  }
+  return ids.map((id) => ({ node: `dev:${id}`, porte: perApparato.get(id) ?? [] }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

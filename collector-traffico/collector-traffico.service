@@ -1,0 +1,24 @@
+[Unit]
+Description=Collector di traffico: archivio e API
+After=network-online.target
+Wants=network-online.target pmacctd-collector.service zeek-collector.service collector-ascolto.service
+
+[Service]
+User=collector
+Group=collector
+EnvironmentFile=/etc/collector-traffico/collector.env
+WorkingDirectory=/opt/collector-traffico
+ExecStart=/usr/bin/python3 -m collector
+Restart=on-failure
+RestartSec=10
+# 256 MB: nel profilo avanzato l'adattatore traduce i registri di Zeek (sul DA-PX-03 un conn di 5 minuti è 39 MB,
+# letto a righe). Con 128 il 23/11 il servizio è stato ucciso per memoria 30 volte di fila, prima della lettura a righe.
+MemoryMax=256M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/collector-traffico
+
+[Install]
+WantedBy=multi-user.target

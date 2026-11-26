@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
-import { recordEvidence, getActiveEvidence, retireStaleEvidence, normalizeExpiresAt } from "../evidence";
+import { recordEvidence, getActiveEvidence, retireStaleEvidence, normalizeExpiresAt, sfoltisciEvidenzeSuperate } from "../evidence";
 import { ATTR_SOURCE_WEIGHTS } from "../weights";
 
 let db: Database.Database;
@@ -197,5 +197,37 @@ describe("normalizeExpiresAt", () => {
   it("stringa non parsabile → null, nessuna eccezione", () => {
     assert.doesNotThrow(() => normalizeExpiresAt("non-una-data"));
     assert.equal(normalizeExpiresAt("non-una-data"), null);
+  });
+});
+
+describe("sfoltisciEvidenzeSuperate", () => {
+  /* 17/11/2026, 192.168.4.8: il produttore di un host oscillava fra due MAC e ogni cambio
+   * lasciava una riga superata; 127.000 righe morte su 129.000. */
+  const oui = (claim: string) =>
+    recordEvidence(db, 1, [{ source: "oui", phase: "scan_icmp", dimension: "vendor", claim, confidence: 0.9, raw_value: claim }]);
+
+  it("toglie le superate vecchie e lascia superate le recenti che puntavano a loro", () => {
+    oui("hpe");      // id 1
+    oui("meigao");   // id 2: supera la 1
+    oui("hpe");      // id 3: supera la 2
+    oui("meigao");   // id 4: supera la 3, attiva
+    // La 2 è vecchia, la 1 è recente ma punta alla 2: senza riparo tornerebbe attiva.
+    db.exec("UPDATE attribution_evidence SET observed_at = datetime('now', '-40 days') WHERE id = 2");
+    db.exec("UPDATE attribution_evidence SET superseded_by = 2 WHERE id = 1");
+
+    assert.equal(sfoltisciEvidenzeSuperate(db, 30), 1);
+    const righe = db.prepare("SELECT id, superseded_by FROM attribution_evidence ORDER BY id").all() as Array<{ id: number; superseded_by: number | null }>;
+    assert.deepEqual(righe.map((r) => r.id), [1, 3, 4]);
+    assert.equal(righe[0].superseded_by, 1);
+    const attive = getActiveEvidence(db, 1);
+    assert.equal(attive.length, 1);
+    assert.equal(attive[0].claim, "meigao");
+  });
+
+  it("non tocca un'evidenza attiva, anche se vecchia", () => {
+    oui("hpe");
+    db.exec("UPDATE attribution_evidence SET observed_at = datetime('now', '-400 days')");
+    assert.equal(sfoltisciEvidenzeSuperate(db, 30), 0);
+    assert.equal(getActiveEvidence(db, 1).length, 1);
   });
 });

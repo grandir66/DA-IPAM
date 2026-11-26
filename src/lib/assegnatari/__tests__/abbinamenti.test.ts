@@ -127,3 +127,24 @@ test("omonimi: un asset col nome del PC legato ad altro chiede «Collega» o «C
   // Un numero che non è fra gli omonimi non passa.
   assert.match(confermaAbbinamenti(db, [{ hostId: 4, account: "r.lucchi", asset: 999 }], 7).saltati[0].motivo, /non ha più lo stesso nome/);
 });
+
+// Descrizione del computer di AD (23/11/2026, Riccardo: «sì, anche lì»): dove gli accessi non bastano la proposta viene da AD.
+test("descrizione di AD: PC con pochi o nessun accesso diventa proposto, la conferma assegna; gli accessi e i server restano", () => {
+  const db = dbProva();
+  const ieri = new Date(Date.now() - 86_400_000);
+  const data = `${ieri.getUTCDate()}/${ieri.getUTCMonth() + 1}/${ieri.getUTCFullYear()}`;
+  db.prepare("INSERT INTO hosts (id, network_id, ip, hostname, classification) VALUES (7, 1, '192.168.4.174', 'PC-APADULA', 'workstation')").run();
+  const c = db.prepare("INSERT INTO ad_computers (integration_id, object_guid, sam_account_name, distinguished_name, operating_system, enabled, host_id, raw_data) VALUES (1, ?, ?, ?, ?, 1, ?, ?)");
+  c.run("c-7", "PC-APADULA$", "CN=PC-APADULA", "Windows 11 Pro", 7, JSON.stringify({ description: `donato - ${data} - OS: Windows 11 Pro - IP: 192.168.4.174` }));
+  c.run("c-6", "PC-POCHI$", "CN=PC-POCHI", "Windows 11 Pro", 6, JSON.stringify({ description: `r.lucchi - ${data} - OS: Windows 11 Pro` }));
+  c.run("c-1", "PC-MIARI$", "CN=PC-MIARI", "Windows 11 Pro", 1, JSON.stringify({ description: `donato - ${data} - OS: Windows 11 Pro` }));
+  c.run("c-3", "DA-SNS$", "CN=DA-SNS", "Windows Server 2019", 3, JSON.stringify({ description: `r.lucchi - ${data} - OS: Windows Server` }));
+  const e = elencoAbbinamenti(db, tutti);
+  const per = Object.fromEntries(e.voci.map((v) => [v.pc, [v.gruppo, v.persona?.account ?? null, v.fonte]]));
+  assert.deepEqual(per["PC-APADULA"], ["proposto", "donato", "ad"], "nessun accesso, AD sì");
+  assert.deepEqual(per["PC-POCHI"], ["proposto", "r.lucchi", "ad"], "pochi accessi, vale AD");
+  assert.deepEqual(per["PC-MIARI"], ["proposto", "marzia", "accessi"], "gli accessi vincono");
+  assert.deepEqual(per["da-sns"], ["escluso", "donato", "accessi"], "server: resta escluso");
+  const esito = confermaAbbinamenti(db, [{ hostId: 7, account: "donato" }], null);
+  assert.deepEqual([esito.assegnati, esito.assetCreati, esito.saltati], [1, 1, []]);
+});

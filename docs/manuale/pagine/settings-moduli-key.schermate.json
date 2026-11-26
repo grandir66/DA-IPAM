@@ -1,0 +1,4 @@
+[
+  { "file": "pagina", "percorso": "/settings/moduli/patch_management", "zona": "main", "intera": true,
+    "nascondi": ["main input", "main code"] }
+]

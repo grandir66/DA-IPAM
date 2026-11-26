@@ -223,8 +223,29 @@ FASE="build"; stato fase build
 # include: citano le rotte di allora e una rotta tolta fa fallire il controllo dei tipi
 # della build nuova (v0.9.804, /api/search, 20/10). Si svuotano prima di costruire.
 rm -rf "$BUILD_ATTIVA/types" "$BUILD_ATTIVA/dev/types"
-echo ">>> npm run build (in $BUILD_NUOVA)..."
-DA_INVENT_BUILD_DIR="$BUILD_NUOVA" npm run build
+# Build pronta (piano del 26/11/2026, IPAM precompilato): se c'è un tag build-<commit> firmato da chi può rilasciare,
+# la cartella si scarica invece di compilarla (su una VM da 4 GB la compilazione porta lo swap a 1,7 GB). I firmatari
+# sono quelli del commit di PRIMA, come per la firma del rilascio. Ogni «no» compila come sempre.
+PRONTA=false
+if [ -f "$SCRIPT_DIR/lib/build-firmata.sh" ]; then
+  # shellcheck source=lib/build-firmata.sh
+  . "$SCRIPT_DIR/lib/build-firmata.sh"
+  FIRMATARI_PRIMA="$(mktemp "${TMPDIR:-/tmp}/firmatari.XXXXXX")"
+  git show "$PRIMA:deploy/firmatari-rilasci" > "$FIRMATARI_PRIMA" 2>/dev/null || : > "$FIRMATARI_PRIMA"
+  if MOTIVO_BUILD="$(build_firmata "$BRANCH" "$NUOVO" "$BUILD_NUOVA" "$FIRMATARI_PRIMA")"; then
+    PRONTA=true
+  fi
+  rm -f "$FIRMATARI_PRIMA"
+  echo ">>> $MOTIVO_BUILD"
+  case "$MOTIVO_BUILD" in
+    *"non ha build pronte"*|*"spenta"*|*"usata la build pronta"*) ;;
+    *) stato avviso "$MOTIVO_BUILD" ;;
+  esac
+fi
+if [ "$PRONTA" != true ]; then
+  echo ">>> npm run build (in $BUILD_NUOVA)..."
+  DA_INVENT_BUILD_DIR="$BUILD_NUOVA" npm run build
+fi
 # tsconfig.json elenca già i tipi di .next-a e .next-b; se Next lo ritoccasse
 # comunque (versione nuova), si rimette com'era: è un file tracciato.
 git checkout --quiet -- tsconfig.json 2>/dev/null || true

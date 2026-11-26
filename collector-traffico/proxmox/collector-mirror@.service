@@ -1,0 +1,5 @@
+[Unit]
+Description=Copia del traffico verso la VM collector %i: le porte nuove del bridge
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /var/lib/vz/snippets/collector-mirror.sh %i riallinea

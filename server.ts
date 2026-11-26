@@ -245,6 +245,14 @@ app.prepare().then(() => {
       console.error("WARNING: lettura del sensore trunk non avviata:", error);
     });
 
+    // Collector di traffico (20/11/2026): lettura ogni 5 minuti, solo per i clienti che ne hanno uno.
+    import("./src/lib/traffico/job").then(({ avviaLetturaTraffico }) => {
+      avviaLetturaTraffico();
+      console.log("> Collector di traffico: lettura ogni 5 minuti (solo i clienti che ne hanno uno)");
+    }).catch((error) => {
+      console.error("WARNING: lettura dei collector di traffico non avviata:", error);
+    });
+
     // Servizi di rete (09/11/2026, Riccardo: «il massimo automatismo»): 3 minuti dopo l'avvio e
     // poi ogni 6 ore, porte comuni sugli host senza porte e sonde senza credenziali su tutte.
     import("./src/lib/servizi-rete/job").then(({ avviaGiroServiziAutomatico }) => {
@@ -313,6 +321,22 @@ app.prepare().then(() => {
       avviaSegnaleDalink();
     }).catch((error) => {
       console.error("WARNING: segnale DA-Link non avviato:", error);
+    });
+
+    // Protezione (25/11/2026): raccoglie i tentativi di accesso falliti (sshd, filtro di rete) e manda gli avvisi.
+    // Sola lettura sul sistema; senza notifiche configurate registra e basta.
+    import("./src/lib/protezione/tentativi-job").then(({ avviaGiroTentativi }) => {
+      avviaGiroTentativi();
+    }).catch((error) => {
+      console.error("WARNING: giro dei tentativi di accesso non avviato:", error);
+    });
+
+    // Dati ESET delle postazioni letti da DA-Link (17/11/2026): rilievi e software. Spento di serie,
+    // cliente per cliente (`eset.da_dalink`); senza oggetto.env il giro non arriva alla rete.
+    import("./src/lib/integrations/eset-dalink-job").then(({ avviaLetturaEset }) => {
+      avviaLetturaEset();
+    }).catch((error) => {
+      console.error("WARNING: lettura ESET da DA-Link non avviata:", error);
     });
 
     // Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM). Spento finché

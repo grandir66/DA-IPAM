@@ -1,0 +1,196 @@
+[
+ {
+  "file": "utenti",
+  "percorso": "/settings?tab=utenti",
+  "zona": "main",
+  "nascondi": [
+   "main table td:nth-child(1)",
+   "main table td:nth-child(2)",
+   "main table td:nth-child(4)"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Nuovo utente')"
+   },
+   {
+    "n": 2,
+    "cerca": "th:has-text('Due passaggi')"
+   },
+   {
+    "n": 3,
+    "cerca": "th:has-text('Azioni')"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Accesso d'emergenza"
+   }
+  ]
+ },
+ {
+  "file": "aggiornamenti",
+  "percorso": "/settings?tab=aggiornamenti",
+  "zona": "main",
+  "intera": true,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Ricontrolla')"
+   },
+   {
+    "n": 2,
+    "cerca": "text=Versione installata"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Stato dell'aggiornamento"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Canale aggiornamenti"
+   }
+  ]
+ },
+ {
+  "file": "moduli",
+  "percorso": "/settings?tab=moduli",
+  "zona": "main",
+  "intera": true,
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Importa configurazione modulo')"
+   },
+   {
+    "n": 2,
+    "cerca": "a:has-text('Apri') >> nth=0"
+   }
+  ]
+ },
+ {
+  "file": "notifiche",
+  "percorso": "/settings?tab=notifiche",
+  "zona": "main",
+  "intera": true,
+  "nascondi": [
+   "main input"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "text=Email (SMTP)"
+   },
+   {
+    "n": 2,
+    "cerca": "text=Webhook >> nth=0"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Quando notificare"
+   },
+   {
+    "n": 4,
+    "cerca": "button:has-text('Invia notifica di prova')"
+   }
+  ]
+ },
+ {
+  "file": "scansione",
+  "percorso": "/settings?tab=scansione",
+  "zona": "main",
+  "intera": true,
+  "nascondi": [
+   "main input",
+   "main code"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "text=Profilo Nmap (Scansione completa)"
+   },
+   {
+    "n": 2,
+    "cerca": "text=Scoperta rete veloce (Quick Scan)"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Port discovery TCP"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Variabili ambiente"
+   }
+  ]
+ },
+ {
+  "file": "identificazione",
+  "percorso": "/settings?tab=identificazione",
+  "zona": "main",
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "button:has-text('Pipeline')"
+   },
+   {
+    "n": 2,
+    "cerca": "a:has-text('Profili SNMP dei vendor')"
+   },
+   {
+    "n": 3,
+    "cerca": "a:has-text('Classificazioni del cliente')"
+   }
+  ]
+ },
+ {
+  "file": "alert-sicurezza",
+  "percorso": "/settings?tab=alert-sicurezza",
+  "zona": "main",
+  "intera": true,
+  "nascondi": [
+   "main input"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "text=Reti e account nostri"
+   },
+   {
+    "n": 2,
+    "cerca": "text=Regole degli apparati di rete"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Conservazione >> nth=0"
+   }
+  ]
+ },
+ {
+  "file": "sistema",
+  "percorso": "/settings?tab=sistema",
+  "zona": "main",
+  "intera": true,
+  "nascondi": [
+   "main input",
+   "main code",
+   "main .rounded-lg span.text-\\[14px\\]"
+  ],
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "text=Dati e manutenzione"
+   },
+   {
+    "n": 2,
+    "cerca": "text=Configurazione guidata >> nth=0"
+   },
+   {
+    "n": 3,
+    "cerca": "text=Pulizia degli host assenti"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Azioni che cancellano"
+   }
+  ]
+ }
+]

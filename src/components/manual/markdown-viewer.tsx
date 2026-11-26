@@ -4,6 +4,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { titoloConAncora } from "@/lib/manuale/formato";
+import { leggiIcona } from "@/lib/manuale/icone";
+import { IconaManuale } from "./icona-manuale";
 
 interface MarkdownViewerProps {
   content: string;
@@ -56,7 +59,12 @@ export function MarkdownViewer({ content }: MarkdownViewerProps) {
             if (mdMatch) {
               const path = mdMatch[1];
               const hash = mdMatch[2] ?? "";
-              const slug = path.toLowerCase().replace(/\//g, "__");
+              // Le guide per pagina si citano fra loro come `pagine/<nome>.md` (o `../pagine/…`), l'indice come `INDICE.md`.
+              const guida = path.match(/(?:^|\/)pagine\/([a-z0-9-]+)$/i);
+              const slug = guida ? `pagina__${guida[1].toLowerCase()}`
+                : /(?:^|\/)(?:manuale\/)?INDICE$/i.test(path) ? "manuale"
+                : /(?:^|\/)(?:manuale\/)?INTERFACCIA$/i.test(path) ? "manuale__interfaccia"
+                : path.toLowerCase().replace(/\//g, "__");
               return (
                 <Link href={`/manual?doc=${slug}${hash}`} {...props}>
                   {children}
@@ -81,16 +89,23 @@ export function MarkdownViewer({ content }: MarkdownViewerProps) {
               </a>
             );
           },
+          // `icona:wrench` e `tasto:filter` fra apici inversi: il segno vero al posto della descrizione (26/11).
+          code({ children, ...props }) {
+            const icona = typeof children === "string" ? leggiIcona(children) : null;
+            if (icona) return <IconaManuale nome={icona.nome} tasto={icona.tasto} />;
+            const { node, ...resto } = props;
+            void node; // il nodo di markdown non va sull'elemento HTML
+            return <code {...resto}>{children}</code>;
+          },
           // Aggiunge ID ai headings (h2/h3) per ancore funzionanti
+          // `## Rete × rete {#matrice}`: àncora esplicita (manuale per pagina, 26/11), il resto prende l'id dal testo.
           h2({ children, ...props }) {
-            const text = String(children);
-            const id = slugifyHeading(text);
-            return <h2 id={id} {...props}>{children}</h2>;
+            const t = titoloConAncora(String(children));
+            return <h2 id={t.id ?? slugifyHeading(t.testo)} {...props}>{t.id ? t.testo : children}</h2>;
           },
           h3({ children, ...props }) {
-            const text = String(children);
-            const id = slugifyHeading(text);
-            return <h3 id={id} {...props}>{children}</h3>;
+            const t = titoloConAncora(String(children));
+            return <h3 id={t.id ?? slugifyHeading(t.testo)} {...props}>{t.id ? t.testo : children}</h3>;
           },
         }}
       >

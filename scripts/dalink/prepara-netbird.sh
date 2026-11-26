@@ -7,6 +7,10 @@
 #   --applica           esegue (root)
 #   --edge si|no        obbligatoria: l'istanza contiene lo Scanner-Edge? (porta 6443 su wt0)
 #   --sorgenti "…"      facoltativa: indirizzi o reti NetBird (100.64.0.0/10) da cui accettare
+#   --porte-interne chiuse|aperte
+#                       facoltativa: «chiuse» = 3001 e 8080 solo dalla macchina e da Docker
+#                       (vedi firewall-wt0.sh). Senza l'opzione resta il valore già scritto in
+#                       firewall.env: rilanciare lo script non riapre ciò che era chiuso.
 #   --chiave-da-stdin   legge la chiave d'ingresso NetBird (monouso) da UNA riga di stdin
 #                       e fa entrare l'istanza. Mai come argomento: `ps` la leggerebbe.
 #
@@ -40,12 +44,14 @@ passo() { echo ">>> $*"; }
 APPLICA=0
 EDGE=""
 SORGENTI=""
+PORTE_INTERNE=""
 CHIAVE_STDIN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --applica) APPLICA=1 ;;
     --edge) [ $# -ge 2 ] || errore "--edge vuole si o no"; EDGE="$2"; shift ;;
     --sorgenti) [ $# -ge 2 ] || errore "--sorgenti vuole un elenco"; SORGENTI="$2"; shift ;;
+    --porte-interne) [ $# -ge 2 ] || errore "--porte-interne vuole chiuse o aperte"; PORTE_INTERNE="$2"; shift ;;
     --chiave-da-stdin) CHIAVE_STDIN=1 ;;
     *) errore "opzione sconosciuta: $1" ;;
   esac
@@ -54,6 +60,10 @@ done
 case "$EDGE" in
   si | no) ;;
   *) errore "--edge si|no è obbligatoria: l'istanza contiene lo Scanner-Edge?" ;;
+esac
+case "$PORTE_INTERNE" in
+  "" | chiuse | aperte) ;;
+  *) errore "--porte-interne vuole chiuse o aperte" ;;
 esac
 
 # La chiave si legge per prima, da stdin, e non si stampa mai.
@@ -90,6 +100,13 @@ trap pulisci EXIT
   echo "# Scritto da DA-IPAM scripts/dalink/prepara-netbird.sh — firewall di wt0"
   echo "DALINK_FW_EDGE=$EDGE"
   [ -n "$SORGENTI" ] && echo "DALINK_FW_SORGENTI=$SORGENTI"
+  # Senza l'opzione si tiene la riga che c'era: una riconfigurazione non riapre le porte interne.
+  if [ -n "$PORTE_INTERNE" ]; then
+    echo "DALINK_FW_PORTE_INTERNE=$PORTE_INTERNE"
+  elif [ -f "$DALINK_DIR/firewall.env" ]; then
+    grep -E '^DALINK_FW_PORTE_INTERNE=(chiuse|aperte)$' "$DALINK_DIR/firewall.env" | tail -1
+  fi
+  true
 } > "$TMPD/firewall.env"
 DALINK_FW_CONF="$TMPD/firewall.env" bash "$QUI/firewall-wt0.sh" --stampa > "$TMPD/ruleset.nft" ||
   errore "configurazione del firewall non valida: niente è cambiato"

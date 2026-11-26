@@ -7,7 +7,10 @@ import {
   getAllMultihomedLinks,
   getClusterDiscovery,
   getAllHostsVulnSummary,
+  schemaAssegnatariAdPresente,
 } from "@/lib/db-tenant";
+import { dbCliente } from "@/lib/assegnatari/db";
+import { utentiAbituali, type UtenteAbituale } from "@/lib/assegnatari/abituale";
 
 export async function GET(req: Request) {
   const session = await requireAuth();
@@ -28,6 +31,14 @@ export async function GET(req: Request) {
       const mhMap = getAllMultihomedLinks();
       const clusterMap = getClusterDiscovery();
       const vulnMap = getAllHostsVulnSummary();
+      // Utente abituale (23/11/2026): un guasto qui non deve togliere la lista, la colonna resta vuota e lo dice il journal.
+      let abituali = new Map<number, UtenteAbituale>();
+      try {
+        const db = dbCliente();
+        if (schemaAssegnatariAdPresente(db)) abituali = utentiAbituali(db);
+      } catch (e) {
+        console.error("[assegnatari] utente abituale nella lista degli apparati:", e);
+      }
 
       const enriched = hosts.map((h) => {
         if (lite) {
@@ -41,6 +52,7 @@ export async function GET(req: Request) {
             multihomed: mhMap.get(h.id) ?? null,
             cluster: clusterMap.get(h.id) ?? null,
             vuln: vulnMap.get(h.id) ?? null,
+utente_abituale: abituali.get(h.id) ?? null,
           };
         }
         return {
@@ -49,6 +61,7 @@ export async function GET(req: Request) {
           multihomed: mhMap.get(h.id) ?? null,
           cluster: clusterMap.get(h.id) ?? null,
           vuln: vulnMap.get(h.id) ?? null,
+utente_abituale: abituali.get(h.id) ?? null,
         };
       });
 

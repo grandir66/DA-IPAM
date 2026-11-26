@@ -30,10 +30,10 @@ test("un indirizzo sta in una sezione sola e nessuna scheda è doppia", () => {
 });
 
 test("le tre parti passive stanno nella fila in alto e si scelgono con l'àncora", () => {
-  assert.equal(sezioneDelPercorso("/arp-table/trunk")?.scheda.etichetta, "Passiva · Sicurezza");
-  assert.equal(sezioneDelPercorso("/arp-table/trunk", "reti")?.scheda.etichetta, "Passiva · VLAN e apparati");
-  assert.equal(sezioneDelPercorso("/arp-table/trunk", "annunci")?.scheda.etichetta, "Passiva · Annunci");
-  assert.equal(sezioneDelPercorso("/arp-table/trunk", "boh")?.scheda.etichetta, "Passiva · Sicurezza");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk")?.scheda.etichetta, "Allarmi di rete");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "reti")?.scheda.etichetta, "VLAN e indirizzi");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "annunci")?.scheda.etichetta, "Apparati annunciati");
+  assert.equal(sezioneDelPercorso("/arp-table/trunk", "boh")?.scheda.etichetta, "Allarmi di rete");
   assert.equal(voceAccesaDallaSezione("/arp-table/trunk", "/servizi-rete"), true);
 });
 

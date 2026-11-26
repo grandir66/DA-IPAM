@@ -1,0 +1,17 @@
+[Unit]
+Description=Collector di traffico: NetFlow/IPFIX dagli apparati (nfacctd, UDP 2055)
+After=network-online.target
+PartOf=collector-traffico.service
+
+[Service]
+Environment=TZ=UTC
+ExecStart=/usr/sbin/nfacctd -f /etc/collector-traffico/nfacctd.conf
+# SIGINT e non SIGTERM: la finestra in corso si scrive prima di uscire (vedi pmacctd-collector.service).
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

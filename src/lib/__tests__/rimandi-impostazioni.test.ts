@@ -27,7 +27,7 @@ import path from "node:path";
 const ROOT = process.cwd();
 const SRC = path.join(ROOT, "src");
 const SETTINGS_PAGE = path.join(SRC, "app/(dashboard)/settings/page.tsx");
-const MANUALE = path.join(ROOT, "docs/MANUALE-UTENTE.md");
+const MANUALE = path.join(ROOT, "docs/archivio/MANUALE-UTENTE.md");
 
 function isComment(line: string): boolean {
   const t = line.trim();

@@ -5,26 +5,37 @@
 import type { Severity } from "@/lib/severity-style";
 import type { StatoTriage } from "@/lib/triage/db";
 
-export const FONTI_RILIEVO = ["edge", "wazuh", "trunk", "giro"] as const;
+export const FONTI_RILIEVO = ["edge", "wazuh", "eset", "eset_sw", "trunk", "giro"] as const;
 export type FonteRilievo = (typeof FONTI_RILIEVO)[number];
 
 export const FONTI_RILIEVO_UI: Record<FonteRilievo, { nome: string; riga: string }> = {
   edge: { nome: "Edge", riga: "Vulnerabilità da Greenbone/Nuclei (VA)" },
   wazuh: { nome: "Wazuh", riga: "Vulnerabilità degli endpoint (Wazuh)" },
+  // ESET, letto da DA-Link (17/11/2026). Due fonti perché non valgono uguale: quelle viste
+  // dall'agente e quelle calcolate dall'elenco dei programmi. Si distinguono col testo.
+  eset: { nome: "ESET", riga: "Vulnerabilità viste dall'agente ESET sulle postazioni" },
+  eset_sw: { nome: "ESET · potenziale dal software", riga: "Vulnerabilità potenziali calcolate dal software che ESET elenca" },
   trunk: { nome: "Trunk", riga: "Allarmi del sensore sulla porta trunk" },
   giro: { nome: "Giri", riga: "Certificati, servizi aperti e login di fabbrica visti dalle sonde" },
 };
 
 // Tab per motore nella pagina Findings (Riccardo, 10/11): una vista comune più un tab per
 // motore. IPAM/Nety raggruppa le fonti interne (trunk + giri); Edge e Wazuh sono distinti.
-export const MOTORI_RILIEVO = ["tutti", "ipam", "edge", "wazuh"] as const;
+export const MOTORI_RILIEVO = ["tutti", "ipam", "edge", "wazuh", "eset"] as const;
 export type MotoreRilievo = (typeof MOTORI_RILIEVO)[number];
 export const MOTORI_RILIEVO_UI: Record<MotoreRilievo, { nome: string; fonti: readonly FonteRilievo[] }> = {
   tutti: { nome: "Tutti", fonti: [] },
   ipam: { nome: "IPAM / Nety", fonti: ["trunk", "giro"] },
   edge: { nome: "Edge (VA)", fonti: ["edge"] },
   wazuh: { nome: "Wazuh", fonti: ["wazuh"] },
+  eset: { nome: "ESET", fonti: ["eset", "eset_sw"] },
 };
+
+/**
+ * Le potenziali dal software restano nell'elenco ma fuori dai conteggi di gravità in testa
+ * (Riccardo, 17/11/2026): sono calcolate, non viste, e da sole coprirebbero il resto.
+ */
+export const FONTI_FUORI_DAI_CONTEGGI: readonly FonteRilievo[] = ["eset_sw"];
 
 /** Un host toccato da un rilievo. */
 export interface OspiteRilievo {
@@ -45,6 +56,8 @@ export interface RilievoUnito {
   prova: string;
   rimedio: string;
   ip: string | null;
+  /** Il nome dell'host della riga, quando DA-IPAM lo conosce: si legge meglio dell'IP. */
+  nome_host?: string | null;
   host_id: number | null;
   network_id: number | null;
   network_name: string | null;

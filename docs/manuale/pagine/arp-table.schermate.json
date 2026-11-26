@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/arp-table", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"input[placeholder^=\"Cerca MAC\"]"},{"n":2,"cerca":"button:has-text(\"Tutte le reti\")"},{"n":3,"cerca":"button:has-text(\"Sorgente\")"},{"n":4,"cerca":"button:has-text(\"Forza poll router\")"},{"n":5,"cerca":"a:has-text(\"VLAN dal trunk\")"},{"n":6,"cerca":"th:has-text(\"Sorgente\")"}] }]

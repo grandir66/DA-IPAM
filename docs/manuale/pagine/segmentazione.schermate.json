@@ -1,0 +1,24 @@
+[
+  {
+    "file": "pagina",
+    "percorso": "/segmentazione",
+    "attesa": 2000,
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "text=Rete × rete >> nth=0"
+      },
+      {
+        "n": 2,
+        "cerca": "text=Servizio × rete sorgente >> nth=0"
+      },
+      {
+        "n": 3,
+        "cerca": "text=Da \\ verso"
+      }
+    ],
+    "nascondi": [
+      "table tbody td:not(:first-child)"
+    ]
+  }
+]

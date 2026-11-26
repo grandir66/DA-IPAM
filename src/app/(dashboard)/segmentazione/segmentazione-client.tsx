@@ -6,7 +6,9 @@ import { Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
-import { InCorso, Legenda, Pannello, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { BarraStato, InCorso, Legenda, Pannello, SchedePagina, TesseraNumero, Vuoto } from "@/components/shared/console";
+import { useParteGuida } from "@/components/shared/parte-guida";
+import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import type { CellaMatrice, ConteggiSegmentazione, ProvaSegmentazione, VistaServizio } from "@/lib/segmentazione/db";
@@ -42,6 +44,7 @@ export function SegmentazioneClient({ iniziale, admin }: { iniziale: Dati; admin
   const [dati, setDati] = useState<Dati>(iniziale);
   const [errore, setErrore] = useState<string | null>(null);
   const [scheda, setScheda] = useState<Scheda>("matrice");
+  useParteGuida(scheda);
   const [cella, setCella] = useState<{ s: number; b: number } | null>(null);
   const [dettaglio, setDettaglio] = useState<ProvaSegmentazione[] | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -100,11 +103,25 @@ export function SegmentazioneClient({ iniziale, admin }: { iniziale: Dati; admin
 
   return (
     <div className="space-y-4">
+      <BarraStato
+        acceso={c.ultimo !== null}
+        titolo="Misura"
+        stato={giro?.inCorso ? "in corso" : c.ultimo ? "fatta" : "mai fatta"}
+        dettagli={c.ultimo ? [`ultimo giro ${parseDbDate(c.ultimo).toLocaleString("it-IT", { timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`] : []}
+        azioni={
+          admin ? (
+            <Button size="sm" onClick={() => void avvia()} disabled={giro?.inCorso === true}>
+              <Radar className="size-4" />
+              Misura ora
+            </Button>
+          ) : undefined
+        }
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TesseraNumero titolo="Raggiunti" valore={c.raggiunti} qualifica={c.prove ? `${Math.round((c.raggiunti / c.prove) * 100)}%` : undefined} nota="la porta ha accettato la connessione" />
         <TesseraNumero titolo="Chiusi" valore={c.chiusi} nota="risposta RST: il servizio c'è, rifiuta" />
         <TesseraNumero titolo="Filtrati" valore={c.filtrati} nota="nessuna risposta: firewall o filtro" />
-        <TesseraNumero titolo="Prove" valore={c.prove} nota={c.ultimo ? `ultimo giro ${c.ultimo.slice(0, 16)}` : "nessun giro ancora"} />
+        <TesseraNumero titolo="Prove" valore={c.prove} nota="connessioni provate nel giro" />
       </div>
 
       {giro?.inCorso && (
@@ -117,7 +134,7 @@ export function SegmentazioneClient({ iniziale, admin }: { iniziale: Dati; admin
       {giro && !giro.inCorso && giro.errore && <LoadError what="il giro della matrice" message={giro.errore} />}
 
       <SchedePagina<Scheda>
-        etichetta="Matrice di segmentazione"
+        etichetta="Chi raggiunge cosa"
         scelta={scheda}
         onScegli={setScheda}
         voci={[
@@ -131,15 +148,7 @@ export function SegmentazioneClient({ iniziale, admin }: { iniziale: Dati; admin
       ) : scheda === "matrice" ? (
         <Pannello
           titolo="Quali reti raggiungono quali"
-          sottotitolo="Clic su una cella per l'elenco. La diagonale è vuota: una rete non si misura verso sé stessa."
-          azioni={
-            admin ? (
-              <Button size="sm" onClick={() => void avvia()} disabled={giro?.inCorso === true}>
-                <Radar className="size-4" />
-                Misura ora
-              </Button>
-            ) : null
-          }
+          sottotitolo="Clic su una cella per l'elenco."
           piede={<Legenda voci={Object.values(ESITO).map((e) => ({ classe: e.classe, testo: `${e.segno} ${e.testo}` }))} />}
         >
           {reti.length === 0 ? (

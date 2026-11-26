@@ -71,9 +71,12 @@ const RICOSTRUZIONE_PROTOCOLLO: Record<TabellaProtocollo, { colonne: readonly st
  * Tipi e marche ammessi da `network_devices` (09/11/2026, Riccardo): stampante, UPS, VoIP, telecamera e IoT ripiegavano su
  * `switch` e il giro ne leggeva porte e MAC; FortiGate, Palo Alto & c. finivano `other`. Un CHECK di SQLite non si altera:
  * `migraCheckNetworkDevices` ricostruisce la tabella quando la CREATE salvata non ha ancora questi valori.
+ * «workstation» dal 23/11/2026 (Riccardo: «assolutamente da fare… i tipi devono essere presenti ed automatici»): i PC
+ * nati dagli apparati automatici erano «switch», e il giro ne leggeva porte e MAC.
  */
 export const DEVICE_TYPES_AMMESSI: readonly string[] = [
   "router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot",
+  "workstation",
 ];
 export const VENDOR_AMMESSI: readonly string[] = [
   "mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "fortinet", "paloalto", "checkpoint", "watchguard", "sonicwall",
@@ -1145,6 +1148,11 @@ export const COLONNE_ASSEGNATARI_AD: ReadonlyArray<readonly [tabella: string, co
   ["ad_users", "employee_id", "TEXT"],
   ["ad_users", "office", "TEXT"],
   ["inventory_assets", "proposta_assegnatario_off", "INTEGER NOT NULL DEFAULT 0"],
+  // Utente abituale scelto a mano in Apparati (23/11/2026): `manuale` (con integrazione + guid dell'utente AD) o
+  // `condiviso`; NULL = vale il calcolo. Niente FK: un ALTER con FK su `hosts` ha già rotto un DB (os_family).
+  ["hosts", "utente_abituale_modo", "TEXT"],
+  ["hosts", "utente_abituale_integrazione", "INTEGER"],
+  ["hosts", "utente_abituale_guid", "TEXT"],
 ];
 export const DDL_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
   ["host_accessi_utente", `CREATE TABLE host_accessi_utente (
@@ -3240,4 +3248,81 @@ CREATE INDEX IF NOT EXISTS idx_cve_inferred_host ON cve_inferred(host_id);
 -- Attribution v2 (spec §4.2)
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);
 CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL;
+-- FK su sé stessa: senza indice l'eliminazione di un host rilegge tutta la tabella per ogni evidenza (17/11/2026)
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_superseded_by ON attribution_evidence(superseded_by);
+
+-- DNS di Active Directory, sola lettura (17/11/2026): zone e record degli host (A, AAAA, CNAME, PTR)
+-- letti dai DC a ogni sincronizzazione. Si riscrivono per intero a ogni lettura riuscita; una lettura
+-- fallita non li tocca e lascia l'errore in ad_dns_stato. Le date sono nella forma di datetime('now').
+CREATE TABLE IF NOT EXISTS ad_dns_zone (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  inversa INTEGER NOT NULL DEFAULT 0,
+  partizione TEXT NOT NULL,
+  letta_il TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(integration_id, nome)
+);
+CREATE TABLE IF NOT EXISTS ad_dns_record (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  zona TEXT NOT NULL,
+  nome TEXT NOT NULL,
+  fqdn TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK(tipo IN ('A','AAAA','CNAME','PTR')),
+  dato TEXT NOT NULL,
+  ip TEXT,
+  statica INTEGER NOT NULL DEFAULT 0,
+  rinnovata_il TEXT,
+  ttl INTEGER NOT NULL DEFAULT 0,
+  letta_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_integrazione ON ad_dns_record(integration_id, tipo);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_ip ON ad_dns_record(ip);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_record_fqdn ON ad_dns_record(fqdn);
+-- Esito dell'ultima lettura: letto_il è l'ultima riuscita, errore quello dell'ultimo tentativo (NULL = riuscito).
+CREATE TABLE IF NOT EXISTS ad_dns_stato (
+  integration_id INTEGER PRIMARY KEY REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  letto_il TEXT,
+  provato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  errore TEXT
+);
+-- Anomalie che una persona ha segnato come volute (un alias, due server sullo stesso nome).
+CREATE TABLE IF NOT EXISTS ad_dns_voluti (
+  integration_id INTEGER NOT NULL REFERENCES ad_integrations(id) ON DELETE CASCADE,
+  chiave TEXT NOT NULL,
+  nota TEXT,
+  da TEXT,
+  il TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (integration_id, chiave)
+);
+
+-- Registro delle correzioni al DNS di AD (passo 2, 17/11/2026): una riga per passo, scritta PRIMA
+-- del comando sul DC. Non ha chiavi esterne apposta: deve restare anche se l'integrazione sparisce.
+-- Non si cancella e, una volta scritto l'esito, non si cambia (trigger qui sotto).
+CREATE TABLE IF NOT EXISTS ad_dns_modifiche (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  integration_id INTEGER NOT NULL,
+  gruppo TEXT NOT NULL,
+  correzione TEXT NOT NULL,
+  titolo TEXT NOT NULL,
+  azione TEXT NOT NULL CHECK(azione IN ('aggiungi','togli')),
+  zona TEXT NOT NULL,
+  nome TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK(tipo IN ('A','CNAME','PTR')),
+  dato TEXT NOT NULL,
+  prima TEXT,
+  esito TEXT NOT NULL DEFAULT 'in_corso' CHECK(esito IN ('in_corso','riuscito','rifiutato','cambiato','non_so')),
+  messaggio TEXT,
+  utenza TEXT,
+  annulla_di INTEGER,
+  da TEXT NOT NULL,
+  il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_modifiche_integrazione ON ad_dns_modifiche(integration_id, id);
+CREATE INDEX IF NOT EXISTS idx_ad_dns_modifiche_annulla ON ad_dns_modifiche(annulla_di);
+CREATE TRIGGER IF NOT EXISTS ad_dns_modifiche_no_delete BEFORE DELETE ON ad_dns_modifiche
+BEGIN SELECT RAISE(ABORT, 'il registro delle correzioni DNS non si cancella'); END;
+CREATE TRIGGER IF NOT EXISTS ad_dns_modifiche_no_update BEFORE UPDATE ON ad_dns_modifiche WHEN OLD.esito <> 'in_corso'
+BEGIN SELECT RAISE(ABORT, 'il registro delle correzioni DNS non si cambia'); END;
 `;

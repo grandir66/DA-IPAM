@@ -445,3 +445,70 @@ test("4738 scritto dal sistema senza cambi non è un cambio di privilegi (DTS 14
   assert.equal(vuoto("0x211", "S-1-5-18").category, "privileged_change");
   assert.equal(vuoto("0x210", "S-1-5-21-1-2-3-1104").category, "privileged_change");
 });
+
+// --- ESET dal Wazuh del cliente (16/11/2026) -------------------------------------------------
+// Forma vera: una riga dei campioni di DA-Wazuh (moduli/eset/campioni/rilevamento-alto.log)
+// come la decodifica Wazuh, scritta dall'agente del SERVER dove gira l'app di ESET.
+function docEset(level: number, eset: Record<string, string> = {}): WazuhAlertDoc {
+  return {
+    "@timestamp": "2026-11-15T10:00:05.000Z",
+    agent: { id: "000", name: "da-wazuh" },
+    rule: { id: "420120", level, description: "ESET: Win32/Filecoder.Prova", groups: ["eset", "threat_event"] },
+    data: {
+      eset: {
+        deviceDisplayName: "pc-prova-01",
+        deviceUuid: "00000000-0000-4000-8000-0000000000bb",
+        userNameBase: "utente.prova",
+        ...eset,
+      },
+    },
+  };
+}
+
+test("ESET: categoria eset, macchina e utente dai campi di ESET e non dall'agente del server", () => {
+  assert.equal(categorizeAlert(["eset", "threat_event"]), "eset");
+  assert.ok(selectedGroups().includes("eset"));
+  const a = normalizeAlert(docEset(13), "h1");
+  assert.equal(a.category, "eset");
+  assert.equal(a.agentName, "pc-prova-01");
+  assert.equal(a.agentId, null);
+  assert.equal(a.targetUser, "utente.prova");
+});
+
+test("ESET: soglia 7, il livello 4 resta fuori, il medio (7) e il 13 entrano", () => {
+  const cat = ALERT_CATEGORIES.find((c) => c.id === "eset")!;
+  assert.ok(4 < cat.minLevel && cat.minLevel <= 7);
+  assert.ok(13 >= cat.minLevel);
+});
+
+test("ESET: una riga per macchina colpita, non una per tutto il server", () => {
+  const uno = dedupKey(normalizeAlert(docEset(13), "h1"));
+  const stessa = dedupKey(normalizeAlert(docEset(13, { deviceDisplayName: "PC-PROVA-01" }), "h2"));
+  const altra = dedupKey(normalizeAlert(docEset(13, { deviceDisplayName: "pc-prova-02" }), "h3"));
+  assert.equal(uno, stessa);
+  assert.notEqual(uno, altra);
+});
+
+test("ESET: senza il nome della macchina resta l'agente, e i campi ESET non toccano gli altri avvisi", () => {
+  const a = normalizeAlert(docEset(13, { deviceDisplayName: "" }), "h1");
+  assert.equal(a.agentName, "da-wazuh");
+  assert.equal(a.agentId, "000");
+  const b = normalizeAlert(doc({ data: { eset: { deviceDisplayName: "pc-x", userNameBase: "x" } } }), "h2");
+  assert.equal(b.agentName, "SRV-DC");
+  assert.equal(b.targetUser, null);
+});
+
+// DTS 22/11/2026: l'app di ESET scrive i campi vuoti come testo "null"; i rilevamenti del firewall
+// arrivavano tutti con macchina "null" e finivano in una riga sola. Il nome viene dalla copia di DA-Link.
+test("ESET: nome \"null\" = assente, e la macchina si trova dal suo identificativo", () => {
+  const uuid = "5812c06d-49e3-4ef2-9aaa-97910115896e";
+  const nomi = (u: string) => (u === uuid ? "srv-dc01.dts.local" : null);
+  const a = normalizeAlert(docEset(7, { deviceDisplayName: "null", deviceUuid: uuid, userNameBase: "null" }), "h1", undefined, undefined, nomi);
+  assert.equal(a.agentName, "srv-dc01.dts.local");
+  assert.equal(a.agentId, null);
+  assert.equal(a.targetUser, null);
+  const ignota = normalizeAlert(docEset(7, { deviceDisplayName: "null", deviceUuid: "altro" }), "h2", undefined, undefined, nomi);
+  assert.equal(ignota.agentName, "da-wazuh");
+  const senzaCopia = normalizeAlert(docEset(7, { deviceDisplayName: "null" }), "h3");
+  assert.equal(senzaCopia.agentName, "da-wazuh");
+});

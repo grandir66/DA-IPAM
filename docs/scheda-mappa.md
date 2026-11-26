@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: Collaudo hub dei controlli Findings; diff tra giri; triage riga
+prossimo: Protezione: rileggere l'osservazione dell'hub dal 03/12 e accendere il filtro; collaudo hub dei controlli Findings
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:
@@ -21,3 +21,5 @@ Mappa porte (`/port-map`): cosa c'è in rete e su quale porta, con confidenza e 
 CVE potenziali (`/vulnerabilities`, spente di serie): dedotte dalle versioni che nmap legge, confrontate con un archivio NVD tenuto sull'appliance; nessun dato dei clienti esce (ADR 0036).
 
 Acquisizione modulare: collector dedicato Aruba AOS-CX, collaudato su 6100; limiti espliciti e sezioni parziali nel manuale di acquisizione.
+
+Protezione (`/protezione`, solo admin, dal 25/11): filtro degli accessi per indirizzo e gruppo di porte, tentativi di accesso con avvisi, esche e blocco di un indirizzo. Nasce spento; le regole le applica uno script a parte, sul prerouting (ADR 0041).

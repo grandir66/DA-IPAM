@@ -1,0 +1,178 @@
+/**
+ * Le parole dell'interfaccia del traffico: per ogni tipo di anomalia un nome corto (filtri) e una frase
+ * (cosa è successo). Modulo puro: lo leggono la pagina `/traffico`, il riquadro dell'host e le prove.
+ */
+import type { TipoAnomalia } from "./anomalie";
+
+export const NOME_TIPO: Record<TipoAnomalia, string> = {
+  coppia_nuova: "Collegamento nuovo",
+  porta_nuova: "Porta nuova",
+  molti_contatti: "Molti contatti",
+  impianto: "Impianto",
+  vlan_chiuse: "Reti chiuse",
+  volume: "Volume",
+  non_censito: "Non censito",
+  chiaro_telnet: "Telnet in chiaro",
+  chiaro_ftp: "FTP in chiaro",
+  chiaro_posta: "Posta in chiaro",
+  chiaro_http_basic: "Web in chiaro",
+  chiaro_ldap: "LDAP in chiaro",
+  snmp_vecchio: "SNMP vecchio",
+  smb1: "SMB 1",
+  tls_vecchio: "TLS vecchio",
+  ntlm1: "NTLM 1",
+  nome_conteso: "Nome conteso",
+  impianto_scrittura: "Scrittura su impianto",
+  dns_anomalo: "DNS anomalo",
+  ip_doppio: "IP doppio",
+  mac_cambiato: "MAC cambiato",
+  mac_mai_visto: "MAC censito mai visto",
+  mac_altrove: "MAC già censito su un altro IP",
+  paese_nuovo: "Paese nuovo",
+  indirizzo_compromesso: "Indirizzo compromesso",
+  tls_certificato: "Certificato",
+  dns_esterno: "DNS fuori casa",
+  dns_errori: "DNS che non risponde",
+  password_ssh_provate: "Password SSH provate",
+  sql_injection: "Iniezione SQL",
+  vlan_sbagliata: "VLAN sbagliata",
+};
+
+/** I tipi nell'ordine dei filtri. Sta qui e non in `anomalie.ts`: quel modulo tocca il database e non entra nel browser. */
+export const TIPI = Object.keys(NOME_TIPO) as TipoAnomalia[];
+
+export const GRAVITA: Record<number, { segno: string; testo: string }> = {
+  1: { segno: "○", testo: "bassa" },
+  2: { segno: "△", testo: "media" },
+  3: { segno: "▲", testo: "alta" },
+};
+
+export function formattaByte(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  const unita = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < unita.length - 1) { v /= 1024; i++; }
+  return `${i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1).replace(".", ",")} ${unita[i]}`;
+}
+
+/** Il primo valore tondo (in unità da 1024) che contiene `n`: la cima di una scala. */
+function cimaTonda(n: number): number {
+  let unita = 1;
+  while (n / unita > 1000 && unita < 1024 ** 4) unita *= 1024;
+  const v = n / unita;
+  const dieci = 10 ** Math.floor(Math.log10(v));
+  const passo = [1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((x) => x * dieci >= v) ?? 10;
+  return passo * dieci * unita;
+}
+
+/**
+ * La cima della scala di un grafico a colonne, e se qualche colonna ne resta fuori.
+ * Le colonne più alte (al massimo tre, e non più di un quarto) che superano di oltre 3 volte quella subito sotto si tagliano:
+ * il 24/11 un'ora di backup da 516 GB rendeva illeggibili le altre ventitré.
+ */
+export function scalaColonne(valori: number[]): { cima: number; tagliate: boolean } {
+  const v = valori.filter((x) => x > 0).sort((a, b) => b - a);
+  if (v.length === 0) return { cima: 0, tagliate: false };
+  for (let i = Math.min(3, Math.floor(v.length / 4)) - 1; i >= 0; i--) {
+    if (v[i] > v[i + 1] * 3) return { cima: cimaTonda(v[i + 1]), tagliate: true };
+  }
+  return { cima: cimaTonda(v[0]), tagliate: false };
+}
+
+/** Protocollo e porta come si leggono: «tcp/502», «udp/53», «—» quando l'anomalia non ha una porta. */
+export function protoPorta(proto: number, porta: number): string {
+  if (!porta) return "—";
+  const p = proto === 6 ? "tcp" : proto === 17 ? "udp" : proto === 0 ? "" : String(proto);
+  return p ? `${p}/${porta}` : String(porta);
+}
+
+const ESTERNO = "esterno";
+
+/** Cosa è successo, in una frase. Dal dettaglio si prendono solo numeri e nomi, mai un valore letto dai pacchetti. */
+export function fraseAnomalia(a: { tipo: TipoAnomalia; client: string; server: string; dettaglio: Record<string, unknown> }): string {
+  const d = a.dettaglio;
+  const numero = (k: string): number | null => (typeof d[k] === "number" ? (d[k] as number) : null);
+  switch (a.tipo) {
+    case "coppia_nuova": return "Due host che non si erano mai parlati";
+    case "porta_nuova": return "Porta mai usata prima su un server già noto";
+    case "molti_contatti": return `Ha contattato ${numero("server") ?? "molti"} host in cinque minuti`;
+    case "impianto":
+      return a.client === ESTERNO || a.server === ESTERNO ? "Un impianto parla con l'esterno" : "Collegamento nuovo con un impianto";
+    case "vlan_chiuse": return "Traffico fra due reti che la matrice di segmentazione dà per chiuse";
+    case "volume": {
+      const b = numero("byte");
+      const m = numero("mediana");
+      return b !== null && m !== null ? `${formattaByte(b)} in un giorno, di solito ${formattaByte(m)}` : "Volume lontano dall'abitudine";
+    }
+    case "non_censito": return "Indirizzo che parla in una rete censita ma non è fra gli host";
+    case "chiaro_telnet": return "Accesso Telnet: utente e password passano in chiaro";
+    case "chiaro_ftp": return "Accesso FTP: la password passa in chiaro";
+    case "chiaro_posta": return "Accesso alla posta senza cifratura";
+    case "chiaro_http_basic": return "Password mandata a un sito senza cifratura";
+    case "chiaro_ldap": return "Accesso LDAP con password in chiaro";
+    case "snmp_vecchio": return "SNMP v1 o v2c: la comunità passa in chiaro";
+    case "smb1": return "Condivisione file con SMB versione 1";
+    case "tls_vecchio": return "Connessione cifrata con TLS più vecchio della 1.2";
+    case "ntlm1": return "Accesso con NTLM versione 1";
+    case "nome_conteso": return typeof d.nome === "string" ? `Due host rispondono per il nome ${d.nome}` : "Due host rispondono per lo stesso nome";
+    case "impianto_scrittura": return "Comando di scrittura verso un impianto";
+    case "ip_doppio": {
+      const reti = numero("reti");
+      return reti !== null && reti >= 2
+        ? `Due schede rispondono per lo stesso indirizzo: probabilmente un apparato solo, la coppia risponde in ${reti} reti`
+        : "Due apparati rispondono per lo stesso indirizzo";
+    }
+    case "mac_cambiato": return "Risponde un apparato diverso da quello censito su questo indirizzo";
+    case "mac_mai_visto": return "Risponde un apparato diverso da quello censito, che in rete non si è mai visto: la scheda è forse vecchia";
+    case "mac_altrove": return typeof d.altrove === "string" && /^[0-9.]{7,15}$/.test(d.altrove) ? `Risponde col MAC già censito su ${d.altrove}` : "Risponde col MAC già censito su un altro indirizzo";
+    case "paese_nuovo": return typeof d.paese === "string" ? `Collegamento verso un paese mai visto prima: ${nomePaese(d.paese)}` : "Collegamento verso un paese mai visto prima";
+    case "indirizzo_compromesso": return typeof d.lista === "string" ? `Apre una connessione verso un indirizzo noto come compromesso (${d.lista})` : "Apre una connessione verso un indirizzo noto come compromesso";
+    case "tls_certificato":
+      if (d.motivo === "scaduto") return `Servizio con certificato scaduto${typeof d.scaduto_il === "string" ? ` il ${d.scaduto_il.split("-").reverse().join("/")}` : ""}`;
+      // non_valido: la sonda avanzata (Zeek) non riesce a verificare la catena del certificato
+      return d.motivo === "non_valido" ? "Servizio con certificato non verificabile" : "Servizio con certificato autofirmato";
+    case "password_ssh_provate": {
+      const n = numero("connessioni");
+      return n !== null ? `Prova password SSH una dopo l'altra (${n} tentativi falliti)` : "Prova password SSH una dopo l'altra";
+    }
+    case "sql_injection": return "Manda richieste web con un'iniezione SQL";
+    case "dns_esterno": return "Chiede i nomi direttamente a un DNS fuori dalla rete";
+    case "dns_errori": {
+      const e = numero("errori") ?? 0;
+      const s = numero("senza_risposta") ?? 0;
+      return `Richieste DNS fallite in cinque minuti: ${e} con errore, ${s} senza risposta`;
+    }
+    case "vlan_sbagliata": {
+      const v = numero("vista");
+      const t = numero("attesa");
+      return v !== null && t !== null ? `Si annuncia sulla VLAN ${v}, la sua rete è sulla VLAN ${t}` : "Si annuncia su una VLAN diversa da quella della sua rete";
+    }
+    case "dns_anomalo": return d.motivo === "molte_richieste" ? "Moltissime richieste DNS in cinque minuti" : "Richieste DNS fuori dal comune";
+  }
+}
+
+/** I MAC di un avviso «IP doppio» o «MAC cambiato», da mostrare sotto la frase. Null per gli altri tipi o se mancano. */
+export function macAnomalia(a: { tipo: TipoAnomalia; dettaglio: Record<string, unknown> }): string | null {
+  const m = (k: string): string | null => (typeof a.dettaglio[k] === "string" && /^[0-9a-f:]{17}$/i.test(a.dettaglio[k] as string) ? (a.dettaglio[k] as string).toUpperCase() : null);
+  if (a.tipo === "ip_doppio") {
+    const [x, y] = [m("mac_a"), m("mac_b")];
+    const altri = typeof a.dettaglio.quanti === "number" && a.dettaglio.quanti > 2 ? ` e altri ${a.dettaglio.quanti - 2}` : "";
+    return x && y ? `${x} e ${y}${altri}` : null;
+  }
+  if (a.tipo === "mac_cambiato" || a.tipo === "mac_mai_visto" || a.tipo === "mac_altrove") {
+    const [x, y] = [m("prima"), m("ora")];
+    return x && y ? `prima ${x}, ora ${y}` : null;
+  }
+  return null;
+}
+
+/** Il nome italiano di un paese dal codice a due lettere («DE» → «Germania»); il codice stesso se non si conosce. */
+export function nomePaese(codice: string | null): string {
+  if (!codice || !/^[A-Z]{2}$/.test(codice)) return "Paese non noto";
+  try {
+    return new Intl.DisplayNames(["it"], { type: "region" }).of(codice) ?? codice;
+  } catch {
+    return codice;
+  }
+}

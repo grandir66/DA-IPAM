@@ -1,0 +1,52 @@
+[
+  {
+    "file": "pagina",
+    "percorso": "/servizi-rete",
+    "attesa": 2000,
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "button[aria-expanded]:has-text('Dove guardare')"
+      },
+      {
+        "n": 2,
+        "cerca": "input[placeholder^='IP, CIDR, nome']"
+      },
+      {
+        "n": 3,
+        "cerca": "[role=group][aria-label='Raggruppa per']"
+      },
+      {
+        "n": 4,
+        "cerca": "[role=group][aria-label='Come risponde']"
+      },
+      {
+        "n": 5,
+        "cerca": "button:has-text('Stesso apparato')"
+      }
+    ],
+    "prima": [
+      {
+        "clic": "button[aria-expanded]:has-text('Dove guardare')",
+        "attesa": 700
+      }
+    ],
+    "nascondi": [
+      "tbody td:nth-child(2)",
+      "tbody td:nth-child(6)",
+      "tbody td:nth-child(8)",
+      "button[aria-expanded] > span.text-foreground"
+    ]
+  },
+  {
+    "file": "stesso-apparato",
+    "percorso": "/servizi-rete",
+    "attesa": 2000,
+    "prima": [
+      {
+        "clic": "button:has-text('Stesso apparato')",
+        "attesa": 1200
+      }
+    ]
+  }
+]

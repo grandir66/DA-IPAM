@@ -31,6 +31,20 @@ import {
 } from "./wazuh-alerts-db";
 import { evaluateAndNotifyWazuhHealth } from "./wazuh-health-notify";
 
+/**
+ * Nome di una macchina ESET dal suo identificativo, letto dalla copia di DA-Link (`eset_macchina`):
+ * serve agli avvisi ESET che arrivano senza nome (DTS 22/11/2026). Senza la copia: nessun nome.
+ */
+export function nomiMacchineEset(db: Database): (uuid: string) => string | null {
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'eset_macchina'").get();
+  if (!c) return () => null;
+  const st = db.prepare("SELECT nome, hostname FROM eset_macchina WHERE uuid = ?");
+  return (uuid) => {
+    const r = st.get(uuid) as { nome: string | null; hostname: string | null } | undefined;
+    return r?.nome?.trim() || r?.hostname?.trim() || null;
+  };
+}
+
 /** Finestra iniziale al primo run, quando non esiste ancora un cursore. */
 const DEFAULT_LOOKBACK_HOURS = 24;
 /** Tetto per run: protegge sia la memoria sia l'indexer del cliente. */
@@ -208,6 +222,7 @@ export async function syncWazuhAlertsForTenant(opts?: {
         // Le nostre stesse sonde non devono comparire come attacco
         self: collectSelfIdentity(db),
         deviceRuleIds: cfg.deviceRuleIds,
+        nomeEset: nomiMacchineEset(db),
       });
 
       let opened = 0;

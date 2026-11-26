@@ -1,0 +1,43 @@
+[
+  { "file": "menu", "percorso": "/discovery", "zona": "aside",
+    "segni": [
+      { "n": 1, "cerca": "button[aria-label='Comprimi menu']" },
+      { "n": 2, "cerca": "button[aria-label='Menu utente']" },
+      { "n": 3, "cerca": "aside nav a[href='/']" },
+      { "n": 4, "cerca": "aside nav button:has-text('Network')" },
+      { "n": 5, "cerca": "aside nav a[href='/manual']" },
+      { "n": 6, "cerca": "aside nav a[href='/in-esecuzione']" }
+    ] },
+  { "file": "menu-compresso", "percorso": "/discovery", "altezza": 700,
+    "prima": [{ "clic": "button[aria-label='Comprimi menu']", "attesa": 700 }],
+    "zona": "aside",
+    "dopo": [{ "clic": "button[aria-label='Espandi menu']" }] },
+  { "file": "menu-utente", "percorso": "/discovery",
+    "prima": [{ "clic": "button[aria-label='Menu utente']", "attesa": 600 }],
+    "ritaglio": ["button[aria-label='Menu utente']", "[role=menu]"] },
+  { "file": "testata", "percorso": "/discovery",
+    "ritaglio": ["nav[aria-label^='Schede di']", "input[placeholder^='Cerca']", "button[title='Aggiorna']"],
+    "segni": [
+      { "n": 1, "cerca": "nav[aria-label^='Schede di']" },
+      { "n": 2, "cerca": "input[placeholder^='Cerca']" },
+      { "n": 3, "cerca": "button:has-text('Filtri')" },
+      { "n": 4, "cerca": "button[title^='Gestisci colonne']" },
+      { "n": 5, "cerca": "button[title='Esporta CSV']" },
+      { "n": 6, "cerca": "button[title='Aggiorna']" }
+    ] },
+  { "file": "filtri", "percorso": "/discovery", "altezza": 640,
+    "prima": [{ "clic": "button:has-text('Filtri')", "attesa": 700 }], "zona": "[role=dialog]" },
+  { "file": "tasto-destro", "percorso": "/discovery",
+    "prima": [{ "destro": "tbody tr:nth-child(3) td:nth-child(6)", "attesa": 800 }],
+    "ritaglio": ["tbody tr:nth-child(3) td:nth-child(6)", "[role=menu]"] },
+  { "file": "colonne", "percorso": "/discovery", "altezza": 760,
+    "prima": [{ "clic": "button[title^='Gestisci colonne']", "attesa": 700 }], "zona": "[role=dialog]" },
+  { "file": "selezione", "percorso": "/discovery",
+    "prima": [{ "clic": "tbody tr:nth-child(1) td:first-child [role=checkbox]", "attesa": 300 },
+              { "clic": "tbody tr:nth-child(2) td:first-child [role=checkbox]", "attesa": 700 }],
+    "ritaglio": ["button:has-text('Deseleziona')", "text=host selezionati", "tbody tr:nth-child(2) td:nth-child(5)"] },
+  { "file": "paginazione", "percorso": "/discovery", "zona": "div:has(> div > button[aria-label='Prima pagina'])" },
+  { "file": "finestra-manuale", "percorso": "/discovery",
+    "prima": [{ "clic": "[aria-label='Manuale di questa pagina']", "attesa": 1500 }], "zona": "[role=dialog]" },
+  { "file": "schede-impostazioni", "percorso": "/settings", "zona": "nav[aria-label^='Schede di']" }
+]

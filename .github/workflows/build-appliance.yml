@@ -1,0 +1,73 @@
+name: Build per le appliance
+
+# IPAM precompilato (piano docs/superpowers/plans/2026-11-26-ipam-precompilato.md). scripts/rilascia-main.sh spinge la
+# fusione firmata su rilascio/<versione>; qui la si compila e i pacchetti finiscono nella Release pacchetto-<commit>.
+# La firma NON si fa qui: la chiave dei rilasci resta sul Mac di chi rilascia, che firma il tag build-<commit> con gli
+# sha256 di questi pacchetti. Senza quel tag le appliance compilano da sole (scripts/lib/build-firmata.sh).
+on:
+  push:
+    branches: ["rilascio/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-appliance-${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      # Valori finti come nel CI: al build servono solo che ci siano.
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      AUTH_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Next scrive il percorso dell'app dentro la build (20 file su un'appliance del 26/11): si compila dove le
+      # appliance la eseguono.
+      - name: Copia in /opt/da-ipam
+        run: |
+          sudo mkdir -p /opt/da-ipam
+          sudo chown "$(id -u):$(id -g)" /opt/da-ipam
+          cp -a "$GITHUB_WORKSPACE/." /opt/da-ipam/
+
+      - name: npm ci
+        working-directory: /opt/da-ipam
+        run: npm ci --include=dev
+
+      # Due build: anche il nome della cartella finisce dentro le rotte compilate, e update.sh usa a turno .next-a e
+      # .next-b. Senza .map (inutili a chi esegue) e senza la cache del compilatore.
+      - name: Build .next-a e .next-b
+        working-directory: /opt/da-ipam
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pacchetti"
+          for c in .next-a .next-b; do
+            rm -rf .next-a/types .next-b/types
+            DA_INVENT_BUILD_DIR="$c" npm run build
+            test -f "$c/BUILD_ID"
+            git checkout --quiet -- tsconfig.json 2>/dev/null || true
+            tar -czf "$RUNNER_TEMP/pacchetti/ipam-build-${c#.}.tar.gz" --exclude='*.map' --exclude="$c/cache" "$c"
+          done
+          ls -l "$RUNNER_TEMP/pacchetti"
+          ( cd "$RUNNER_TEMP/pacchetti" && sha256sum *.tar.gz )
+
+      - name: Release pacchetto-<commit>
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="pacchetto-${GITHUB_SHA}"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Build appliance ${GITHUB_SHA::9}" \
+            --notes "Pacchetti compilati da GitHub Actions per ${GITHUB_REF_NAME}. Le appliance li usano solo con il tag build-${GITHUB_SHA} firmato da chi rilascia." \
+            "$RUNNER_TEMP"/pacchetti/*.tar.gz

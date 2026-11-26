@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PulsanteVisto } from "@/components/cambiamenti/pulsante-visto";
 import { InterruttoreGiro } from "@/components/cambiamenti/interruttore-giro";
-import { reteDellaNotte } from "@/lib/cambiamenti/giro-notturno";
+import { reteDelProssimoGiro } from "@/lib/cambiamenti/giro-notturno";
 import { auth } from "@/lib/auth";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { getGiroCambiamentiSchedule, getTenantDb, withTenant } from "@/lib/db-tenant";
@@ -104,7 +104,7 @@ export default async function CambiamentiPage({
         <InterruttoreGiro
           acceso={giro.enabled}
           ultimo={giro.lastRun ? dataOra.format(parseDbDate(giro.lastRun)) : null}
-          reteStanotte={reteDellaNotte(reti).rete?.name ?? null}
+          reteStanotte={reteDelProssimoGiro(reti)?.name ?? null}
         />
       )}
       <Pannello

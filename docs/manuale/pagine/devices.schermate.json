@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/devices", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"text=/^Server \\(/"},{"n":2,"cerca":"input[placeholder^=\"Cerca per nome\"]"},{"n":3,"cerca":"th:has-text(\"Acquisizione\")"},{"n":4,"cerca":"th:has-text(\"Cred.\")"},{"n":5,"cerca":"th:has-text(\"LibreNMS\")"},{"n":6,"cerca":"th:has-text(\"Azioni\")"}] }]

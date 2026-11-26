@@ -1,0 +1,38 @@
+[
+  { "file": "barra", "percorso": "/discovery",
+    "ritaglio": ["main h1", "input[placeholder^='Cerca IP']", "button[title='Aggiorna']"],
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='Cerca IP']" },
+      { "n": 2, "cerca": "button:has-text('Filtri')" },
+      { "n": 3, "cerca": "select:has(option:has-text('le tue'))" },
+      { "n": 4, "cerca": "button[title^='Gestisci colonne']" },
+      { "n": 5, "cerca": "button[title='Esporta CSV']" },
+      { "n": 6, "cerca": "button[title='Aggiorna']" }
+    ] },
+  { "file": "categorie", "percorso": "/discovery",
+    "ritaglio": ["button:has-text('Tutti') >> nth=0", "button:has-text('Videosorveglianza')"] },
+  { "file": "filtri", "percorso": "/discovery", "altezza": 640,
+    "prima": [{ "clic": "button:has-text('Filtri')", "attesa": 700 }],
+    "zona": "[role=dialog]" },
+  { "file": "tabella", "percorso": "/discovery",
+    "ritaglio": ["thead", "tbody tr:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "thead [role=checkbox]" },
+      { "n": 2, "cerca": "tbody tr:nth-child(1) td:nth-child(2) button" },
+      { "n": 3, "cerca": "th:has-text('Profilo')" },
+      { "n": 4, "cerca": "th:has-text('IP')" },
+      { "n": 5, "cerca": "th:has-text('Stato')" }
+    ] },
+  { "file": "profilo", "percorso": "/discovery",
+    "ritaglio": ["th:has-text('Profilo')", "tbody tr:nth-child(8) td:nth-child(3)"], "margine": 10 },
+  { "file": "azioni-riga", "percorso": "/discovery",
+    "prima": [{ "clic": "tbody tr:nth-child(1) td:nth-child(2) button", "attesa": 800 }],
+    "ritaglio": ["tbody tr:nth-child(1) td:nth-child(2)", "[role=menu]"] },
+  { "file": "tasto-destro", "percorso": "/discovery",
+    "prima": [{ "destro": "tbody tr:nth-child(3) td:nth-child(6)", "attesa": 800 }],
+    "ritaglio": ["tbody tr:nth-child(3) td:nth-child(6)", "[role=menu]"] },
+  { "file": "selezione", "percorso": "/discovery",
+    "prima": [{ "clic": "tbody tr:nth-child(1) td:first-child [role=checkbox]", "attesa": 300 },
+              { "clic": "tbody tr:nth-child(2) td:first-child [role=checkbox]", "attesa": 700 }],
+    "ritaglio": ["button:has-text('Deseleziona')", "text=host selezionati", "tbody tr:nth-child(2) td:nth-child(5)"] }
+]

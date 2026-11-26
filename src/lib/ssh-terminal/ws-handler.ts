@@ -12,11 +12,13 @@
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { Client as SshClient, type ClientChannel } from "ssh2";
-import { verifySshToken, type SshTokenPayload } from "./token";
+import { consumaSshToken, terminaleAncoraAmmesso, type SshTokenPayload } from "./token";
+import { statoSessione } from "@/lib/accesso/sessione";
 import { getTenantDb } from "@/lib/db-tenant";
 import { caricaSshPerHost, type EsitoSshHost } from "@/lib/patch/credentials";
 
 const WS_PATH = "/ws/ssh";
+const RICONTROLLO_MS = 60_000;
 
 export function attachSshTerminalWs(server: HttpServer): void {
   // perMessageDeflate disabilitato: la compressione non serve per un terminale e
@@ -33,7 +35,7 @@ export function attachSshTerminalWs(server: HttpServer): void {
       return;
     }
     if (url.pathname !== WS_PATH) return; // non è il nostro path: lascia stare
-    const payload = verifySshToken(url.searchParams.get("token") ?? "");
+    const payload = consumaSshToken(url.searchParams.get("token") ?? "");
     if (!payload) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
@@ -66,7 +68,16 @@ function handleSession(ws: WebSocket, payload: SshTokenPayload): void {
   const conn = new SshClient();
   let channel: ClientChannel | null = null;
 
+  // Ricontrollo ogni minuto: utente cancellato, declassato, uscito o con la password cambiata → la shell si chiude.
+  const apertoAlle = Date.now();
+  const ricontrollo = setInterval(() => {
+    if (terminaleAncoraAmmesso(payload.userId, () => statoSessione(payload.userId, apertoAlle, payload.tenantCode))) return;
+    if (ws.readyState === ws.OPEN) ws.send("\r\n[terminale chiuso: l'utente non è più autorizzato]\r\n");
+    closeAll();
+  }, RICONTROLLO_MS);
+
   const closeAll = () => {
+    clearInterval(ricontrollo);
     try {
       channel?.end();
     } catch {

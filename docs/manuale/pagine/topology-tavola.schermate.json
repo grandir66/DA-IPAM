@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/topology/tavola", "altezza": 1000, "attesa": 3000,
+ "segni": [{"n":1,"cerca":"select >> nth=0"},{"n":2,"cerca":"text=da verificare >> nth=0"},{"n":3,"cerca":"text=Mostra porte libere"},{"n":4,"cerca":"input[placeholder^=\"Trova porta\"]"},{"n":5,"cerca":"text=Linea / fuori sede"}] }]

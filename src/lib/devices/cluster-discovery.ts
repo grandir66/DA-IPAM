@@ -13,7 +13,7 @@ import { ipToLong } from "@/lib/utils";
 import { sqlApparatoDellHost } from "./apparato-del-cluster";
 import { macAncora } from "@/lib/hosts/ancore-gruppo";
 
-export interface MembroCluster { host_id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: boolean }
+export interface MembroCluster { host_id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: boolean; nome?: string | null }
 
 export interface InfoClusterDiscovery {
   /** `null` = accorpato dal gruppo di indirizzi (`multihomed_links`), senza apparato fisico censito. */
@@ -21,7 +21,22 @@ export interface InfoClusterDiscovery {
   principale: boolean;
   principale_host_id: number;
   /** Solo sulla riga principale: gli altri IP, in ordine di IP. */
-  altri: Array<Omit<MembroCluster, "ha_apparato">>;
+  altri: Array<Omit<MembroCluster, "ha_apparato" | "nome">>;
+  /**
+   * Il nome dell'apparato preso dalle sue righe (23/11/2026): quando la riga viva è un IP nuovo senza nome (le
+   * telecamere passate dalla VLAN 15 alla 70), la pagina mostra questo invece dell'indirizzo.
+   */
+  nome?: string | null;
+}
+
+/** Il primo nome vero fra le righe: prima la principale, poi le altre; mai un nome che è solo un indirizzo. */
+export function nomeDelGruppo(membri: readonly MembroCluster[], principale: number): string | null {
+  const ordinati = [...membri].sort((a, b) => Number(b.host_id === principale) - Number(a.host_id === principale));
+  for (const m of ordinati) {
+    const n = (m.nome ?? "").trim();
+    if (n && !/^\d{1,3}(\.\d{1,3}){3}$/.test(n) && !/^\d{1,3}$/.test(n.split(".")[0])) return n;
+  }
+  return null;
 }
 
 const perIp = (a: { ip: string }, b: { ip: string }): number => ipToLong(a.ip) - ipToLong(b.ip);
@@ -42,13 +57,14 @@ export function haColonnaPrincipale(db: Database.Database): boolean {
   return (db.prepare("PRAGMA table_info(physical_devices)").all() as Array<{ name: string }>).some((c) => c.name === "primary_host_id");
 }
 
-interface RigaCluster { id: number; ip: string; network_id: number; network_name: string; status: string; pd: number; scelto: number | null; ha_apparato: number | null }
+interface RigaCluster { id: number; ip: string; network_id: number; network_name: string; status: string; pd: number; scelto: number | null; ha_apparato: number | null; nome: string | null }
 
 /** Una query sola su tutti i cluster con 2+ host; mappa host_id → info. Gli host fuori da un cluster accorpato non ci sono. */
 export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoClusterDiscovery> {
   const scelto = haColonnaPrincipale(db) ? "pd.primary_host_id" : "NULL";
   const righe = db.prepare(
     `SELECT h.id, h.ip, h.network_id, n.name AS network_name, h.status, h.physical_device_id AS pd, ${scelto} AS scelto,
+            COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), '')) AS nome,
             (SELECT 1 FROM network_devices nd WHERE ${sqlApparatoDellHost("nd", "h")} LIMIT 1) AS ha_apparato
        FROM hosts h
        JOIN networks n ON n.id = h.network_id
@@ -64,7 +80,7 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
       g = { scelto: r.scelto, membri: [] };
       perCluster.set(r.pd, g);
     }
-    g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1 });
+    g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1, nome: r.nome });
   }
 
   const mappa = new Map<number, InfoClusterDiscovery>();
@@ -77,7 +93,7 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
       .map((m) => ({ host_id: m.host_id, ip: m.ip, network_id: m.network_id, network_name: m.network_name, status: m.status }));
     for (const m of membri) {
       const principale = m.host_id === p;
-      mappa.set(m.host_id, { physical_device_id: pd, principale, principale_host_id: p, altri: principale ? altri : [] });
+      mappa.set(m.host_id, { physical_device_id: pd, principale, principale_host_id: p, altri: principale ? altri : [], nome: nomeDelGruppo(membri, p) });
     }
   }
   aggiungiGruppiDiIndirizzi(db, mappa);
@@ -93,11 +109,13 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
  * da nomi di modello, e nascondere una riga è peggio che mostrarne una di troppo.
  */
 const MAX_MAC_VERI_PER_ACCORPARE = 2;
+/** Un PC di AD (nome unico nel dominio) ha spesso Wi-Fi, cavo e dock: tre MAC veri sono normali (SURFACE-ALAIN, 23/11). */
+const MAX_MAC_VERI_PC_AD = 4;
 function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, InfoClusterDiscovery>): void {
-  let righe: Array<{ group_id: string; is_primary: number; id: number; ip: string; mac: string | null; network_id: number; network_name: string; status: string; ha_apparato: number | null }>;
+  let righe: Array<{ group_id: string; match_type: string; is_primary: number; id: number; ip: string; nome: string | null; mac: string | null; network_id: number; network_name: string; status: string; ha_apparato: number | null }>;
   try {
     righe = db.prepare(
-      `SELECT ml.group_id, ml.is_primary, h.id, h.ip, h.mac, h.network_id, n.name AS network_name, h.status,
+      `SELECT ml.group_id, ml.match_type, ml.is_primary, h.id, h.ip, COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), '')) AS nome, h.mac, h.network_id, n.name AS network_name, h.status,
               (SELECT 1 FROM network_devices nd WHERE ${sqlApparatoDellHost("nd", "h")} LIMIT 1) AS ha_apparato
          FROM multihomed_links ml
          JOIN hosts h ON h.id = ml.host_id
@@ -106,22 +124,31 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
   } catch {
     return; // tabella assente su un archivio vecchio: restano i soli cluster fisici
   }
-  const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[]; mac: Set<string> }>();
+  // I nomi dei PC di AD (non server, abilitati): un gruppo che ne contiene uno è un PC, comunque sia stato salvato
+  // (PC-LasagniF era «seriale» e restava su due righe, 23/11/2026).
+  const nomiPcAd = new Set<string>();
+  try {
+    for (const r of db.prepare("SELECT lower(replace(sam_account_name, '$', '')) AS n FROM ad_computers WHERE enabled = 1 AND COALESCE(operating_system, '') NOT LIKE '%Server%'").all() as Array<{ n: string }>) nomiPcAd.add(r.n);
+  } catch { /* ad_computers assente: nessun PC di AD */ }
+  const perGruppo = new Map<string, { primario: number | null; membri: MembroCluster[]; mac: Set<string>; pcAd: boolean }>();
   for (const r of righe) {
     let g = perGruppo.get(r.group_id);
     if (!g) {
-      g = { primario: null, membri: [], mac: new Set() };
+      g = { primario: null, membri: [], mac: new Set(), pcAd: false };
       perGruppo.set(r.group_id, g);
     }
     const vero = macAncora(r.mac);
     if (vero) g.mac.add(vero);
     if (r.is_primary === 1) g.primario = r.id;
-    g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1 });
+    if (r.match_type === "ad_dns" || nomiPcAd.has((r.nome ?? "").trim().toLowerCase().split(".")[0])) g.pcAd = true;
+    g.membri.push({ host_id: r.id, ip: r.ip, network_id: r.network_id, network_name: r.network_name, status: r.status, ha_apparato: r.ha_apparato === 1, nome: r.nome });
   }
-  for (const { primario, membri, mac } of perGruppo.values()) {
-    if (mac.size > MAX_MAC_VERI_PER_ACCORPARE) continue;
+  for (const { primario, membri, mac, pcAd } of perGruppo.values()) {
+    if (mac.size > (pcAd ? MAX_MAC_VERI_PC_AD : MAX_MAC_VERI_PER_ACCORPARE)) continue;
     if (membri.some((m) => mappa.has(m.host_id))) continue;
-    const p = principaleDelCluster(membri, primario);
+    // PC di AD: la principale la sceglie il motore dei gruppi (la riga viva), anche con più apparati gestiti, che lì
+    // sono lo stesso PC a indirizzi diversi e non rendono il gruppo ambiguo (23/11/2026).
+    const p = pcAd && primario != null && membri.some((m) => m.host_id === primario) ? primario : principaleDelCluster(membri, primario);
     if (p == null) continue;
     const altri = membri
       .filter((m) => m.host_id !== p)
@@ -129,7 +156,7 @@ function aggiungiGruppiDiIndirizzi(db: Database.Database, mappa: Map<number, Inf
       .map((m) => ({ host_id: m.host_id, ip: m.ip, network_id: m.network_id, network_name: m.network_name, status: m.status }));
     for (const m of membri) {
       const principale = m.host_id === p;
-      mappa.set(m.host_id, { physical_device_id: null, principale, principale_host_id: p, altri: principale ? altri : [] });
+      mappa.set(m.host_id, { physical_device_id: null, principale, principale_host_id: p, altri: principale ? altri : [], nome: nomeDelGruppo(membri, p) });
     }
   }
 }

@@ -1,0 +1,26 @@
+[Unit]
+Description=Collector di traffico: conteggio dal mirror (pmacctd)
+After=network.target
+PartOf=collector-traffico.service
+
+[Service]
+EnvironmentFile=/etc/collector-traffico/collector.env
+Environment=TZ=UTC
+# Nel profilo avanzato conta Zeek: pmacctd non parte nemmeno se collector-traffico lo chiede (Wants=).
+# Visto sul DA-PX-03 il 23/11: senza, il riavvio di collector-traffico lo riaccendeva e i suoi file restavano in in/.
+ExecCondition=/bin/sh -c 'test "${PROFILO}" != avanzato'
+# La scheda in mirror non ha indirizzo e non trasmette: niente IPv6 (niente annunci), niente ARP.
+ExecStartPre=/bin/sh -c 'test -n "${MIRROR_IF}"'
+ExecStartPre=/sbin/sysctl -q -w net.ipv6.conf.${MIRROR_IF}.disable_ipv6=1
+ExecStartPre=/sbin/ip link set dev ${MIRROR_IF} arp off promisc on up
+ExecStart=/usr/sbin/pmacctd -f /etc/collector-traffico/pmacctd.conf -i ${MIRROR_IF}
+# Con SIGTERM pmacctd esce senza scrivere la finestra in corso (visto sul banco il 20/11: un riavvio
+# ha perso 4 minuti di conteggio). Con SIGINT il plugin scrive quello che ha contato e poi esce.
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

@@ -2,7 +2,7 @@
 
 > **Versione di riferimento:** 0.2.498
 > **Aggiornato:** 2026-05-23
-> Aggiunta al [MANUALE-UTENTE](./MANUALE-UTENTE.md) per le aree rivisitate nelle release v0.2.487 → v0.2.498.
+> Aggiunta al [MANUALE-UTENTE](./archivio/MANUALE-UTENTE.md) per le aree rivisitate nelle release v0.2.487 → v0.2.498.
 
 Questo documento spiega:
 - come è strutturato il menu di navigazione attuale

@@ -1,0 +1,8 @@
+[
+  { "file": "pagina", "percorso": "/patch-management/cve", "attesa": 3000,
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='Cerca CVE']" },
+      { "n": 2, "cerca": "text=Solo con fix disponibile" },
+      { "n": 3, "cerca": "th:has-text('Fix')" }
+    ] }
+]

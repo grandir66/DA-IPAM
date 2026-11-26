@@ -1,0 +1,24 @@
+[
+ {
+  "file": "pagina",
+  "percorso": "/settings/snmp-profiles",
+  "segni": [
+   {
+    "n": 1,
+    "cerca": "text=Libreria OID (file)"
+   },
+   {
+    "n": 2,
+    "cerca": "button:has-text('Esporta JSON')"
+   },
+   {
+    "n": 3,
+    "cerca": "button:has-text('Nuovo profilo')"
+   },
+   {
+    "n": 4,
+    "cerca": "text=Mostra builtin"
+   }
+  ]
+ }
+]

@@ -75,7 +75,7 @@ const DEFAULT_STRIP_HEADERS = [
  * Build the upstream request URL from the incoming Next.js request and the
  * configured base path.
  */
-function buildUpstreamUrl(reqUrl: string, opts: ReverseProxyOptions): URL {
+export function buildUpstreamUrl(reqUrl: string, opts: ReverseProxyOptions): URL {
   const incoming = new URL(reqUrl, "http://placeholder.local");
   let path = incoming.pathname;
   // Strip basePath dall'incoming, A MENO che opts.preserveBasePath sia true:
@@ -89,7 +89,12 @@ function buildUpstreamUrl(reqUrl: string, opts: ReverseProxyOptions): URL {
   // upstream serves its index.
   if (path === "" || path === "/") path = "/";
   const upstream = new URL(opts.upstreamOrigin);
-  const out = new URL(path + incoming.search, `${upstream.protocol}//${upstream.host}`);
+  // Percorso e domanda si SCRIVONO sull'indirizzo configurato, non si risolvono contro di lui: un percorso che
+  // comincia con `//altro` verrebbe letto come un altro host, e là finirebbero anche le intestazioni aggiunte
+  // (secondo giro di sicurezza, 16/11/2026). Oggi Next normalizza le barre doppie prima; qui non ci si conta.
+  const out = new URL(`${upstream.protocol}//${upstream.host}`);
+  out.pathname = path;
+  out.search = incoming.search;
   return out;
 }
 
@@ -123,6 +128,11 @@ function rewriteLocation(loc: string, opts: ReverseProxyOptions): string {
 /** Cookie di Auth.js (sessione, CSRF, callback), con o senza prefisso `__Secure-`/`__Host-`, anche a pezzi (`.0`, `.1`). */
 const COOKIE_DI_SESSIONE = /^(?:__Secure-|__Host-)?(?:authjs|next-auth)\./i;
 
+/** Un `Set-Cookie` del sistema di là può arrivare al browser? No, se porta il nome di un cookie di sessione di DA-IPAM. */
+export function setCookieAmmesso(setCookie: string): boolean {
+  return !COOKIE_DI_SESSIONE.test(setCookie.split("=")[0].trim());
+}
+
 /** L'intestazione `cookie` senza i cookie di sessione di DA-IPAM: quello che può andare al sistema di là. */
 export function cookieSenzaSessione(intestazione: string | null | undefined): string {
   if (!intestazione?.trim()) return "";
@@ -131,6 +141,30 @@ export function cookieSenzaSessione(intestazione: string | null | undefined): st
     .map((c) => c.trim())
     .filter((c) => c && !COOKIE_DI_SESSIONE.test(c.split("=")[0].trim()))
     .join("; ");
+}
+
+/**
+ * Le intestazioni della richiesta che possono andare al sistema di là.
+ * - `host`, `connection`, `content-length`: le rimette Node.
+ * - Le credenziali di DA-IPAM no (analisi del 15/11/2026): `authorization`, e da `cookie` i cookie di sessione.
+ * - `set-cookie` e le intestazioni interne di Next (`x-middleware-*`) no: quando il controllo d'accesso rinnova la
+ *   sessione, Next le mette sulla richiesta col cookie nuovo, e arrivavano a LibreNMS (visto dal vivo il 16/11/2026).
+ */
+export function intestazioniVersoDiLa(intestazioni: Headers): Record<string, string> {
+  const fuori: Record<string, string> = {};
+  intestazioni.forEach((value, key) => {
+    const k = key.toLowerCase();
+    if (k === "host" || k === "connection" || k === "content-length") return;
+    if (k === "authorization" || k === "proxy-authorization") return;
+    if (k === "set-cookie" || k === "set-cookie2" || k.startsWith("x-middleware-")) return;
+    if (k === "cookie") {
+      const altri = cookieSenzaSessione(value);
+      if (altri) fuori[k] = altri;
+      return;
+    }
+    fuori[k] = value;
+  });
+  return fuori;
 }
 
 /**
@@ -146,20 +180,7 @@ export async function proxyRequest(
 
   // Headers to forward.  We drop `host` (will be set to upstream automatically
   // by node's http module via `hostname`+`port`), and a few that Node manages.
-  const outHeaders: Record<string, string | string[]> = {};
-  req.headers.forEach((value, key) => {
-    const k = key.toLowerCase();
-    if (k === "host" || k === "connection" || k === "content-length") return;
-    // Le credenziali di DA-IPAM non vanno al sistema di là (analisi del 15/11/2026): il cookie di sessione
-    // arrivava a Wazuh e LibreNMS a ogni richiesta, e chi controlla quel server entrava da amministratore.
-    if (k === "authorization" || k === "proxy-authorization") return;
-    if (k === "cookie") {
-      const altri = cookieSenzaSessione(value);
-      if (altri) outHeaders[k] = altri;
-      return;
-    }
-    outHeaders[k] = value;
-  });
+  const outHeaders: Record<string, string | string[]> = intestazioniVersoDiLa(req.headers);
   // Rewrite Referer/Origin to look like an upstream-internal request so apps
   // that compare these don't reject the call.
   if (outHeaders.referer) {
@@ -248,7 +269,8 @@ export async function proxyRequest(
     if (lower === "set-cookie") {
       const cookies = Array.isArray(value) ? value : [value];
       for (const c of cookies) {
-        respHeaders.append("set-cookie", rewriteSetCookie(c));
+        // Il sistema di là non scrive nel browser un cookie col nome di quelli di sessione di DA-IPAM.
+        if (setCookieAmmesso(c)) respHeaders.append("set-cookie", rewriteSetCookie(c));
       }
       continue;
     }

@@ -101,7 +101,8 @@ function preparaAmbiente(): Ambiente {
   fs.mkdirSync(path.join(lavoro, "scripts"));
   fs.mkdirSync(path.join(lavoro, "scripts", "lib"));
   // lib/guardia-versione.sh: auto-update.sh la carica prima del checkout (niente retrocessioni, 22/10).
-  // lib/guardia-firma.sh: la firma del rilascio, in modo «avvisa» di serie (15/11): qui `main` non è firmato e si procede.
+  // lib/guardia-firma.sh: la firma del rilascio. Di serie è «blocca» dal 16/11 (ADR 0040): qui `main` non è firmato,
+  // quindi le prove dichiarano «avvisa» nell'ambiente; la firma ha le sue prove in auto-update-firma.test.ts.
   for (const f of ["auto-update.sh", "update.sh", "stato-aggiornamento.mjs", "lib/guardia-versione.sh", "lib/guardia-firma.sh"]) {
     fs.copyFileSync(path.join(REPO, "scripts", f), path.join(lavoro, "scripts", f));
   }
@@ -123,6 +124,7 @@ function preparaAmbiente(): Ambiente {
     PATH: `${bin}:${process.env.PATH}`,
     HOME: radice,
     FINTO_LOG: log,
+    DA_INVENT_FIRMA_RILASCI: "avvisa",
     FINTO_DIR: radice,
     DA_INVENT_BRANCH: "main",
     DA_INVENT_LOCK: path.join(radice, "lock"),

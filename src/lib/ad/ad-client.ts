@@ -17,7 +17,8 @@ import {
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
-import { schemaAssegnatariAdPresente } from "@/lib/db-tenant";
+import { schemaAssegnatariAdPresente, sostituisciDnsAd, segnaEsitoDnsAd } from "@/lib/db-tenant";
+import { leggiDnsAd, type LetturaDnsAd } from "@/lib/ad/dns/lettura";
 import { allineaAssegnatariDaAd, dbCliente, scriviCampiAdUtente } from "@/lib/assegnatari/db";
 import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
 import { accessoWinrmDelDc, credenzialeLdapDi } from "@/lib/ad/credenziale-ldap";
@@ -37,6 +38,8 @@ export interface AdSyncResult {
   groups: number;
   linked_hosts: number;
   dhcp_leases: number;
+  /** Record DNS degli host letti dal DC (0 anche quando la lettura non è riuscita: l'errore è in `errors`). */
+  dns_records: number;
   dns_resolved: number;
   hosts_created: number;
   hosts_enriched: number;
@@ -156,6 +159,7 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
     groups: 0,
     linked_hosts: 0,
     dhcp_leases: 0,
+    dns_records: 0,
     dns_resolved: 0,
     hosts_created: 0,
     hosts_enriched: 0,
@@ -448,6 +452,17 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // DNS di AD in sola lettura (17/11/2026). Collegamento suo: quello della
+  // sincronizzazione a questo punto può essere già chiuso. Un guasto qui non
+  // ferma utenti e computer, e non svuota i record letti l'ultima volta.
+  // ═══════════════════════════════════════════════════════════════
+  try {
+    result.dns_records = await syncAdDns(integration);
+  } catch (err) {
+    result.errors.push(`DNS di AD: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // Link computers to existing hosts + crea/arricchisce host IPAM
   // ═══════════════════════════════════════════════════════════════
   try {
@@ -495,6 +510,34 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
  * Windows dell'AD e la sua porta (tappa 2f, T24; prima 5985 fissa). `esegui`
  * è il comando WinRM: quello vero, o uno finto nelle prove.
  */
+/**
+ * Legge zone e record DNS degli host dal DC e li mette in archivio. Sola lettura verso il DC.
+ * Se una partizione dà errore, o nessuna si legge, l'archivio resta quello di prima e l'errore
+ * si scrive nello stato: una lettura fallita non deve sembrare «DNS vuoto».
+ */
+export async function syncAdDns(integration: AdIntegration, connetti: typeof connectLdap = connectLdap): Promise<number> {
+  let lettura: LetturaDnsAd;
+  try {
+    const client = await connetti(integration);
+    try {
+      lettura = await leggiDnsAd(client, integration.base_dn);
+    } finally {
+      await client.unbind().catch(() => undefined);
+    }
+  } catch (err) {
+    segnaEsitoDnsAd(integration.id, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+  if (lettura.errori.length > 0 || lettura.partizioniLette === 0) {
+    const motivo = lettura.errori.length > 0 ? lettura.errori.join("; ") : "nessuna partizione DNS trovata sul DC (DNS non integrato in Active Directory?)";
+    segnaEsitoDnsAd(integration.id, motivo);
+    throw new Error(motivo);
+  }
+  sostituisciDnsAd(integration.id, lettura.zone, lettura.voci);
+  segnaEsitoDnsAd(integration.id, null);
+  return lettura.voci.length;
+}
+
 export async function syncAdDhcpLeases(integration: AdIntegration, esegui?: typeof runWinrmCommand): Promise<number> {
   const run = esegui ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
   const { getDb } = await import("@/lib/db");

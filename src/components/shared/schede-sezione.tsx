@@ -8,7 +8,8 @@
  * in questa fila. L'àncora si legge dall'indirizzo e si segue con `hashchange`; la pagina fa lo stesso.
  *
  * Dal 14/11 anche Impostazioni: le sue schede si scelgono con `?tab=`, alcune le vede solo chi può (`per`), e una
- * riga verticale separa i gruppi (`stacco`).
+ * riga verticale separa i gruppi (`stacco`). Dal 24/11 un gruppo può avere il nome (`gruppo`). La spiegazione
+ * della scheda sta nel manuale della pagina (pulsante «?», dal 26/11).
  */
 import { Fragment, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
@@ -54,7 +55,12 @@ function Fila() {
       {schede.map((s, i) => {
         const attiva = s === accesa;
         const classi = cn(SCHEDA_BASE, attiva ? SCHEDA_ACCESA : SCHEDA_SPENTA);
-        const stacco = s.stacco && i > 0 ? <span aria-hidden className="mx-1 h-7 w-0.5 shrink-0 bg-border" /> : null;
+        const stacco = (
+          <>
+            {s.stacco && i > 0 && <span aria-hidden className="mx-1 h-7 w-0.5 shrink-0 bg-border" />}
+            {s.gruppo && <span className="text-[13px] whitespace-nowrap text-muted-foreground">{s.gruppo}</span>}
+          </>
+        );
         // Stessa pagina, altra parte: si cambia solo l'àncora, così parte `hashchange` e la pagina si sposta senza ricaricarsi.
         if (s.ancora && s.href === trovata.scheda.href) {
           return (

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { TopologyMapClient } from "@/components/topology/map/topology-map-client";
 
@@ -7,11 +6,9 @@ export default async function TopologyPage() {
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isAdmin = role === "admin" || role === "superadmin";
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Topologia</h1>
-        <Link href="/topology/dati" className="text-sm underline">Dati della mappa</Link>
-      </div>
+    <div>
+      {/* Il nome lo dicono già menu e schede (Riccardo, 24/11/2026): il titolo resta solo per i lettori di schermo. */}
+      <h1 className="sr-only">Topologia</h1>
       <TopologyMapClient isAdmin={isAdmin} />
     </div>
   );

@@ -122,7 +122,7 @@ export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
   // Stesso elenco del CHECK di network_devices (DEVICE_TYPES_AMMESSI, db-tenant-schema.ts): periferiche dal 09/11/2026.
-  device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot"]),
+  device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server", "stampante", "ups", "voip", "telecamera", "iot", "workstation"]),
   // Solo valori dell'elenco (tappa 1, 15/10): «printer» del classificatore passava
   // e l'apparato spariva dalle liste per classificazione.
   classification: z.preprocess(

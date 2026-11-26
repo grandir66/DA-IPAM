@@ -41,6 +41,12 @@ function macCasuale(hex: string): boolean {
   return hex.length === 12 && "26AE".includes(hex[1]);
 }
 
+/** Un MAC che non dice il produttore della scheda: prefisso da macchina virtuale, o assegnato in locale (casuale, bridge). */
+export function macSenzaProduttore(mac: string): boolean {
+  const hex = esa(mac);
+  return PREFISSI_VIRTUALI.includes(hex.slice(0, 6)) || macCasuale(hex);
+}
+
 /**
  * Virtuale, fisico, o null se non si sa.
  *

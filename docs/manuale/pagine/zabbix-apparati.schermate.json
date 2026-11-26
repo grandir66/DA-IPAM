@@ -1,0 +1,7 @@
+[ { "file": "pagina", "percorso": "/zabbix/apparati", "attesa": 4000,
+    "prima": [{ "clic": "tbody tr >> nth=0 >> input[type=checkbox]", "attesa": 600 }],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('In monitoraggio')" },
+      { "n": 2, "cerca": "input[placeholder^='Filtra per nome']" },
+      { "n": 3, "cerca": "text=selezionati" }
+    ] } ]

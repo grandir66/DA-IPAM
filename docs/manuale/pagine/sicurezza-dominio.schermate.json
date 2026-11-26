@@ -1,0 +1,11 @@
+[
+  { "file": "eventi", "percorso": "/sicurezza-dominio", "attesa": 3500, "altezza": 1300,
+    "nascondi": ["table tbody", "svg text"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Eventi dei DC')" },
+      { "n": 2, "cerca": "button:has-text('Health AD')" },
+      { "n": 3, "cerca": "text=Lettura dei domain controller" },
+      { "n": 4, "cerca": "text=Allarmi nel tempo" },
+      { "n": 5, "cerca": "input[placeholder^='Cerca account']" }
+    ] }
+]

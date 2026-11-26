@@ -1,0 +1,10 @@
+[
+  { "file": "pagina", "percorso": "/dhcp/sources",
+    "nascondi": ["tbody td:nth-child(4)"],
+    "segni": [
+      { "n": 1, "cerca": "button:has-text('Sincronizza tutti')" },
+      { "n": 2, "cerca": "input[placeholder^='Cerca per IP']" },
+      { "n": 3, "cerca": "label:has-text('Solo attivi negli ultimi')" },
+      { "n": 4, "cerca": "th:has-text('Ultimo visto')" }
+    ] }
+]

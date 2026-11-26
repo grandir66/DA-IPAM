@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/port-map", "altezza": 1000, "attesa": 2500,
+ "segni": [{"n":1,"cerca":"text=Calcolo"},{"n":2,"cerca":"text=CERTE"},{"n":3,"cerca":"button:has-text(\"Oggetti\") >> nth=0"},{"n":4,"cerca":"input[placeholder^=\"Nome, IP\"]"},{"n":5,"cerca":"th:has-text(\"Confidenza\")"}] }]

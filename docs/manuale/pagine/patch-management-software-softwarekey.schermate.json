@@ -1,0 +1,39 @@
+[
+  {
+    "file": "pagina",
+    "percorso": "/patch-management",
+    "attesa": 3000,
+    "altezza": 1300,
+    "prima": [
+      {
+        "clic": "[role=tab]:has-text('Software')",
+        "attesa": 2500
+      },
+      {
+        "clic": "a[href^='/patch-management/software/'] >> nth=0",
+        "attesa": 3500
+      }
+    ],
+    "nascondi": [
+      "tbody td:nth-child(2)"
+    ],
+    "segni": [
+      {
+        "n": 1,
+        "cerca": "button:has-text('Pin manuale fix')"
+      },
+      {
+        "n": 2,
+        "cerca": "text=CVE rilevate"
+      },
+      {
+        "n": 3,
+        "cerca": "input[placeholder^='Cerca hostname']"
+      },
+      {
+        "n": 4,
+        "cerca": "text=Solo con WinRM"
+      }
+    ]
+  }
+]

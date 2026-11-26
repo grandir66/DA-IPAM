@@ -36,11 +36,14 @@ export function IntestazionePagina({
 export function BarraStato({
   acceso,
   titolo,
+  stato,
   dettagli = [],
   azioni,
 }: {
   acceso: boolean;
   titolo: string;
+  /** La parola accanto al titolo; senza, «acceso» o «spento». */
+  stato?: string;
   /** Fatti brevi in monospazio (interfaccia, ultima lettura, modo): uno per voce. */
   dettagli?: string[];
   azioni?: ReactNode;
@@ -58,7 +61,7 @@ export function BarraStato({
             )}
           />
           {titolo}
-          <span className="text-muted-foreground font-normal">{acceso ? "acceso" : "spento"}</span>
+          <span className="text-muted-foreground font-normal">{stato ?? (acceso ? "acceso" : "spento")}</span>
         </span>
         {dettagli.map((d) => (
           <span key={d} className="rounded-md border bg-muted/50 px-2 py-0.5 font-mono text-[13px] text-muted-foreground">
@@ -90,7 +93,7 @@ export function TesseraNumero({
 }) {
   const testo = valore == null ? "—" : typeof valore === "number" ? valore.toLocaleString("it-IT") : valore;
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3.5">
+    <div className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3.5 shadow-sm transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm">
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium uppercase tracking-wide text-muted-foreground">{titolo}</p>
         <div className="mt-1 flex items-baseline gap-2">

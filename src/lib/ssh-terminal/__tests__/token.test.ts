@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { signSshToken, verifySshToken } from "../token";
+import { consumaSshToken, signSshToken, terminaleAncoraAmmesso, verifySshToken } from "../token";
 
 const P = { hostId: 7, tenantCode: "DEFAULT", userId: 1 };
 
@@ -43,4 +43,21 @@ test("la chiave dei dati non firma i gettoni: chi ha solo quella non ne fabbrica
     const falso = `${body}.${createHmac("sha256", "k".repeat(64)).update(body).digest("base64url")}`;
     assert.equal(verifySshToken(falso), null);
   });
+});
+
+test("un gettone apre un terminale solo: la seconda volta è rifiutato (terzo giro di sicurezza, 16/11)", () => {
+  conAmbiente({ AUTH_SECRET: "s".repeat(64) }, () => {
+    const t = signSshToken(P);
+    assert.equal(consumaSshToken(t)?.hostId, 7);
+    assert.equal(consumaSshToken(t), null);
+    assert.equal(consumaSshToken(signSshToken(P))?.hostId, 7, "un gettone nuovo passa");
+  });
+});
+
+test("il terminale aperto si richiude se l'utente non è più amministratore o non c'è più", () => {
+  assert.equal(terminaleAncoraAmmesso(5, () => ({ role: "admin" })), true);
+  assert.equal(terminaleAncoraAmmesso(5, () => ({ role: "superadmin" })), true);
+  assert.equal(terminaleAncoraAmmesso(5, () => ({ role: "viewer" })), false, "declassato");
+  assert.equal(terminaleAncoraAmmesso(5, () => null), false, "cancellato, uscito o password cambiata");
+  assert.equal(terminaleAncoraAmmesso(5, () => { throw new Error("db"); }), false, "se non si riesce a leggere, si chiude");
 });

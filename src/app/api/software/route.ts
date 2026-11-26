@@ -17,7 +17,7 @@ import {
   type OsFamily,
 } from "@/lib/db-tenant";
 
-const SourceEnum = z.enum(["Wazuh", "Probe", "Agent"]);
+const SourceEnum = z.enum(["Wazuh", "Probe", "Agent", "ESET"]);
 const OsFamilyEnum = z.enum(["Windows", "Linux", "Apple", "Unknown"]);
 
 const QuerySchema = z.object({

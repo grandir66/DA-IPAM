@@ -1,5 +1,6 @@
 "use client";
 
+import { DnsDiHost } from "@/components/shared/dns-di-host";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -154,6 +155,9 @@ export function CassettoHost({ hostId, onClose }: { hostId: number | null; onClo
                   mono
                 />
               </dl>
+
+              {/* Nomi e reverse nel DNS di Active Directory: dal cassetto non si vedeva niente (Riccardo, 20/11/2026). */}
+              <DnsDiHost fonte={`/api/hosts/${dati.id}/dns`} />
 
               {dati.altri_ip.length > 0 && (
                 <div>

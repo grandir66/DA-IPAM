@@ -34,6 +34,7 @@ import { IntestazioneScheda, type ScansioneAutomatica, type VmSu } from "@/compo
 import type { VmSuNodo } from "@/lib/scheda/abbinamento-proxmox";
 import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
 import { TabScheda } from "@/components/scheda/tab-scheda";
+import { DnsDiHost } from "@/components/shared/dns-di-host";
 import type { HostDetail, InventoryAsset } from "@/types";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) sono caricati on-demand
 // (~100-300KB JS evitati al mount).
@@ -50,6 +51,7 @@ export default function ObjectDetailPage() {
   // ?tab= si legge una volta: il deep-link ?edit/?promote ripulisce l'URL e la tab non deve saltare.
   const [tabDaUrl] = useState(() => searchParams?.get("tab") ?? null);
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
+  const [giroDns, setGiroDns] = useState(0);
   const { data: session } = useSession();
   const sessionRole = (session?.user as { role?: string } | undefined)?.role;
   const isAdmin = sessionRole === "admin" || sessionRole === "superadmin";
@@ -389,6 +391,7 @@ export default function ObjectDetailPage() {
         return;
       }
       toast.success("Salvato", { duration: 1500 });
+      setGiroDns((n) => n + 1);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Errore di rete");
     }
@@ -571,6 +574,9 @@ export default function ObjectDetailPage() {
         }
       />
 
+      {/* Il DNS di Active Directory per questo indirizzo: stato e, dove le correzioni sono accese, «Aggiorna il DNS…». */}
+      <DnsDiHost fonte={`/api/hosts/${host.id}/dns`} giro={giroDns} />
+
       <TabScheda ctx={ctx} tabs={tabs} attiva={attiva} onCambia={setTabScelta} />
 
       {/* Spazio in fondo per scroll comodo */}
@@ -609,7 +615,7 @@ export default function ObjectDetailPage() {
           device={device}
           open={editDeviceOpen}
           onOpenChange={setEditDeviceOpen}
-          onSaved={() => { setEditDeviceOpen(false); void fetchAll(); }}
+          onSaved={() => { setEditDeviceOpen(false); setGiroDns((n) => n + 1); void fetchAll(); }}
         />
       )}
 

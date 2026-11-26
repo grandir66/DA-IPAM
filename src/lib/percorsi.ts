@@ -32,3 +32,12 @@ export function risolvi(...parti: string[]): string {
 export function esiste(percorso: string): boolean {
   return fs.existsSync(percorso);
 }
+
+/**
+ * `fs.readdirSync` di una cartella che arriva da un argomento, per lo stesso motivo (26/11/2026): scritto nel modulo
+ * con un percorso variabile, Turbopack tracciava tutto il progetto e `controlla-tracciamento` fermava la build
+ * (lettura degli eventi delle esche). Lancia come `readdirSync` se la cartella non c'è.
+ */
+export function elencaCartella(percorso: string): string[] {
+  return fs.readdirSync(percorso);
+}

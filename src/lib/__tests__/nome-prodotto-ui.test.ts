@@ -79,14 +79,14 @@ test("nei testi visibili il prodotto si chiama DA-IPAM, non DA-INVENT (UI-23)", 
  * qui non si saltano righe come commenti. Resta lecita solo la nota che dice che
  * il prodotto si chiama DA-IPAM e perché alcune schermate mostrano il nome vecchio.
  */
-const MANUALE = path.join(process.cwd(), "docs/MANUALE-UTENTE.md");
+const MANUALE = path.join(process.cwd(), "docs/archivio/MANUALE-UTENTE.md");
 const NOTA_NOME = /Nota nome prodotto:\*\* il prodotto si chiama \*\*DA-IPAM\*\*/;
 
 test("il manuale utente mostrato in /manual chiama il prodotto DA-IPAM (UI-23)", () => {
   const offenders: string[] = [];
   fs.readFileSync(MANUALE, "utf8").split("\n").forEach((line, i) => {
     if (line.includes("DA-INVENT") && !NOTA_NOME.test(line)) {
-      offenders.push(`docs/MANUALE-UTENTE.md:${i + 1}: ${line.trim()}`);
+      offenders.push(`docs/archivio/MANUALE-UTENTE.md:${i + 1}: ${line.trim()}`);
     }
   });
   assert.deepEqual(offenders, [], `Il manuale usa ancora il nome vecchio:\n${offenders.join("\n")}`);

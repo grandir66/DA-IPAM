@@ -1,0 +1,8 @@
+[
+  { "file": "pagina", "percorso": "/patch-management/history", "attesa": 3000,
+    "segni": [
+      { "n": 1, "cerca": "input[placeholder^='es. PC']" },
+      { "n": 2, "cerca": "text=Solo le mie" },
+      { "n": 3, "cerca": "th:has-text('Status')" }
+    ] }
+]

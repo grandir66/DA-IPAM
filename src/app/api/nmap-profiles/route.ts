@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 import { getNmapProfiles, createNmapProfile, updateNmapProfile, deleteNmapProfile } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { motivoArgomentiRifiutati } from "@/lib/scanner/argomenti-nmap-ammessi";
+import { stripUdpFromArgs } from "@/lib/scanner/ports";
+
+/**
+ * Gli argomenti liberi si controllano come li vedrà nmap (tolta la parte UDP, che gira a parte): nmap gira da
+ * root e con `--script` o `-oN` l'interfaccia diventava una shell (secondo giro di sicurezza, 16/11/2026).
+ */
+function argomentiRifiutati(args: unknown): NextResponse | null {
+  if (args === undefined || args === null || args === "") return null;
+  if (typeof args !== "string") return NextResponse.json({ error: "Argomenti nmap non validi" }, { status: 400 });
+  const motivo = motivoArgomentiRifiutati(stripUdpFromArgs(args));
+  return motivo ? NextResponse.json({ error: `Argomenti nmap non ammessi (${motivo}): passano solo tipo di scansione, porte, tempi e ritmo` }, { status: 400 }) : null;
+}
 
 export async function GET() {
   try {
@@ -35,6 +48,8 @@ export async function POST(request: Request) {
     if (!hasTcpPorts && !isCustomProfile && !useArgs) {
       return NextResponse.json({ error: "Indica le porte TCP o gli argomenti nmap" }, { status: 400 });
     }
+    const rifiutoPost = argomentiRifiutati(useArgs);
+    if (rifiutoPost) return rifiutoPost;
     const profile = createNmapProfile(
       name,
       description || "",
@@ -72,6 +87,8 @@ export async function PUT(request: Request) {
     if (!hasTcpPorts && !isCustomProfile && !useArgs) {
       return NextResponse.json({ error: "Porte TCP o argomenti nmap richiesti" }, { status: 400 });
     }
+    const rifiutoPut = argomentiRifiutati(useArgs);
+    if (rifiutoPut) return rifiutoPut;
     const profile = updateNmapProfile(
       id, name, description || "", useArgs, snmp_community ?? null, 
       hasTcpPorts ? null : (custom_ports ?? null),

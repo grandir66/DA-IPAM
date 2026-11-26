@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/software", "altezza": 1000,
+ "segni": [{"n":1,"cerca":"input[placeholder^=\"Cerca nome\"]"},{"n":2,"cerca":"button:has-text(\"Wazuh\") >> nth=0"},{"n":3,"cerca":"button:has-text(\"Windows\")"},{"n":4,"cerca":"text=Solo con vulnerabilità"},{"n":5,"cerca":"th:has-text(\"CVE\")"}] }]

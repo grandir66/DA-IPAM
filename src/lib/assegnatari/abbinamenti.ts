@@ -3,6 +3,10 @@
  * manca per abbinarlo (l'asset, l'assegnatario, l'assegnazione). Una lettura sola di accessi e persone per tutti gli
  * host; la conferma ricalcola ogni voce dentro la transazione e scrive solo quelle che valgono ancora.
  *
+ * Dal 23/11/2026 entrano anche gli host senza accessi sufficienti ma con l'ultimo utente scritto in AD nella descrizione del
+ * computer (`descrizione-ad.ts`): dove gli accessi danno «pochi dati» o niente, la proposta viene da lì (`fonte: "ad"`).
+ * Gli accessi frequenti vincono; esclusioni e «condiviso» degli accessi restano.
+ *
  * Gruppi: `proposto` (persona prevalente, asset senza assegnatario o da creare) · `da_rivedere` (asset assegnato a un
  * altro: mai spuntato di serie) · `abbinato` (già assegnato a chi lo usa) · `pochi_dati` · `escluso` (server,
  * apparati, PC condivisi o segnati come tali).
@@ -11,8 +15,10 @@ import type Database from "better-sqlite3";
 import { mapHostClassificationToInventoryCategoria } from "@/lib/db-tenant";
 import type { InventoryAssetCategoria } from "@/types";
 import { personeAd, soglieDelCliente } from "./db";
+import { ultimiAccessiAd, type UltimoAccessoAd } from "./descrizione-ad";
+import { leggiClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { assegnatarioDaUtente, utenteAdPerAccount } from "./importa";
-import { CATEGORIE_SENZA_PROPOSTA, calcolaProposta, type AccessoAggregato, type Proposta } from "./proposta";
+import { CATEGORIE_SENZA_PROPOSTA, calcolaProposta, motivoFuori, type AccessoAggregato, type Proposta } from "./proposta";
 
 export type GruppoAbbinamento = "proposto" | "da_rivedere" | "abbinato" | "pochi_dati" | "escluso";
 export const GRUPPI: readonly GruppoAbbinamento[] = ["proposto", "da_rivedere", "abbinato", "pochi_dati", "escluso"];
@@ -35,6 +41,8 @@ export interface VoceAbbinamento {
    */
   omonimi: Array<{ id: number; nome: string; ip: string | null; categoria: string | null }>;
   gruppo: GruppoAbbinamento;
+  /** L'esito del calcolo, prima dei gruppi (serve all'utente abituale in Apparati). */
+  esito: Proposta["esito"];
   /** Perché è escluso o ha pochi dati, a parole. */
   motivo: string | null;
   persona: { account: string; nome: string; reparto: string | null; ruolo: string | null } | null;
@@ -45,6 +53,10 @@ export interface VoceAbbinamento {
   totale: number;
   base: Proposta["base"];
   ultimo: string | null;
+  /** Da dove viene la persona: `accessi` (la più frequente) o `ad` (l'ultimo utente nella descrizione del computer). */
+  fonte: "accessi" | "ad" | null;
+  /** Con `fonte: "ad"`: il computer di AD che l'ha scritta. */
+  computerAd: string | null;
 }
 
 export interface Abbinamenti {
@@ -71,36 +83,79 @@ interface RigaHost {
   assegnato_origine: string | null;
 }
 
-function hostConAccessi(db: Database.Database, giorni: number, soloHost?: number): RigaHost[] {
+/** La condizione che lega un asset `a` (con `nd` = il suo apparato) all'host `h`, direttamente o tramite l'apparato. */
+export function legameAssetHost(db: Database.Database): string {
   // `network_devices.host_id` lo aggiunge un ALTER all'apertura del tenant: nei DB di prova può mancare.
   const conHostApparato = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).some((c) => c.name === "host_id");
-  const legame = conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
-  return db.prepare(
-    `WITH hh AS (
-       SELECT h.id, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS pc, h.ip, h.classification,
-              (SELECT a.id FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id
-               WHERE ${legame} ORDER BY (a.host_id IS NULL), a.id LIMIT 1) AS asset_id
-       FROM hosts h
-       WHERE h.id IN (SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?))
-         ${soloHost !== undefined ? "AND h.id = ?" : ""}
-     )
-     SELECT hh.id, hh.pc, hh.ip, hh.classification, hh.asset_id, x.categoria, x.proposta_assegnatario_off AS proposta_off,
-            aa.id AS assegnato_id, aa.name AS assegnato_nome, aa.origine AS assegnato_origine
-     FROM hh
-     LEFT JOIN inventory_assets x ON x.id = hh.asset_id
-     LEFT JOIN asset_assignees aa ON aa.id = x.asset_assignee_id
-     ORDER BY lower(hh.pc)`,
-  ).all(`-${giorni} days`, ...(soloHost !== undefined ? [soloHost] : [])) as RigaHost[];
+  return conHostApparato ? "(a.host_id = h.id OR nd.host_id = h.id)" : "a.host_id = h.id";
+}
+
+/**
+ * Le righe d'host che diventano voci: una per apparato (23/11/2026, Riccardo: «se lo stesso pc cambia ip… senza avere
+ * una moltiplicazione di oggetti»). `capi` sono le righe principali dei gruppi (`leggiClusterDiscovery`, la stessa
+ * nozione della pagina Apparati); l'asset si cerca sulla principale e, se manca, sulle altre righe dello stesso PC.
+ */
+function righeDelleVoci(db: Database.Database, capi: readonly number[], membriDi: (capo: number) => readonly number[]): RigaHost[] {
+  if (capi.length === 0) return [];
+  const legame = legameAssetHost(db);
+  const tutti = [...new Set(capi.flatMap((c) => membriDi(c)))];
+  const assetDi = new Map<number, number>();
+  for (const r of db.prepare(
+    `SELECT h.id, (SELECT a.id FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id
+                   WHERE ${legame} ORDER BY (a.host_id IS NULL), a.id LIMIT 1) AS asset_id
+     FROM hosts h WHERE h.id IN (SELECT value FROM json_each(?))`,
+  ).all(JSON.stringify(tutti)) as Array<{ id: number; asset_id: number | null }>) {
+    if (r.asset_id !== null) assetDi.set(r.id, r.asset_id);
+  }
+  const base = db.prepare(
+    `SELECT h.id, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS pc, h.ip, h.classification
+     FROM hosts h WHERE h.id IN (SELECT value FROM json_each(?)) ORDER BY lower(pc)`,
+  ).all(JSON.stringify(capi)) as Array<{ id: number; pc: string; ip: string; classification: string | null }>;
+  const dettaglio = db.prepare(
+    `SELECT x.categoria, x.proposta_assegnatario_off AS proposta_off, aa.id AS assegnato_id, aa.name AS assegnato_nome,
+            aa.origine AS assegnato_origine
+     FROM inventory_assets x LEFT JOIN asset_assignees aa ON aa.id = x.asset_assignee_id WHERE x.id = ?`,
+  );
+  return base.map((h) => {
+    const assetId = assetDi.get(h.id) ?? [...membriDi(h.id)].sort((a, b) => a - b).map((m) => assetDi.get(m)).find((a) => a !== undefined) ?? null;
+    const d = assetId !== null
+      ? dettaglio.get(assetId) as { categoria: string | null; proposta_off: number | null; assegnato_id: number | null; assegnato_nome: string | null; assegnato_origine: string | null }
+      : { categoria: null, proposta_off: null, assegnato_id: null, assegnato_nome: null, assegnato_origine: null };
+    return { ...h, asset_id: assetId, ...d };
+  });
+}
+
+/** Righe dello stesso apparato: host → principale, principale → tutte le sue righe (lei compresa). */
+export function gruppiApparato(db: Database.Database): { capo: (id: number) => number; membri: (capo: number) => readonly number[] } {
+  const cl = leggiClusterDiscovery(db);
+  const perCapo = new Map<number, number[]>();
+  for (const [id, info] of cl) (perCapo.get(info.principale_host_id) ?? perCapo.set(info.principale_host_id, []).get(info.principale_host_id)!).push(id);
+  return {
+    capo: (id) => cl.get(id)?.principale_host_id ?? id,
+    membri: (c) => perCapo.get(c) ?? [c],
+  };
 }
 
 const nomeBreve = (pc: string, ip: string): string => (pc === ip ? pc : pc.split(".")[0] || pc);
 
 /** Tutte le voci, calcolate. `soloHost`: una voce sola (la conferma). */
-function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
+export function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbinamento[]; giorni: number } {
   const soglie = soglieDelCliente(db);
-  const host = hostConAccessi(db, soglie.giorni, soloHost);
+  const { capo, membri } = gruppiApparato(db);
+  // L'ultimo utente di AD di ogni PC, sulla riga principale: fra le righe dello stesso PC vince la data più recente.
+  const daAd = new Map<number, UltimoAccessoAd>();
+  for (const [hostId, u] of ultimiAccessiAd(db, soglie.giorni)) {
+    const c = capo(hostId);
+    const prima = daAd.get(c);
+    if (!prima || u.giorno > prima.giorno) daAd.set(c, u);
+  }
+  const conAccessi = (db.prepare("SELECT DISTINCT host_id FROM host_accessi_utente WHERE giorno >= date('now', ?)").all(`-${soglie.giorni} days`) as Array<{ host_id: number }>).map((r) => capo(r.host_id));
+  let capi = [...new Set([...conAccessi, ...daAd.keys()])];
+  if (soloHost !== undefined) capi = capi.filter((c) => c === capo(soloHost));
+  const host = righeDelleVoci(db, capi, membri);
   if (host.length === 0) return { voci: [], giorni: soglie.giorni };
-  const ids = host.map((h) => h.id);
+  // Gli accessi di tutte le righe dello stesso PC, sotto la principale (`calcolaProposta` somma per account).
+  const ids = [...new Set(host.flatMap((h) => membri(h.id)))];
   const accessi = new Map<number, AccessoAggregato[]>();
   for (let i = 0; i < ids.length; i += 500) {
     const parte = ids.slice(i, i + 500);
@@ -108,9 +163,12 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
       `SELECT host_id, account, fonte, SUM(conteggio) AS conteggio, MAX(ultimo) AS ultimo FROM host_accessi_utente
        WHERE giorno >= date('now', ?) AND host_id IN (${parte.map(() => "?").join(",")}) GROUP BY host_id, account, fonte`,
     ).all(`-${soglie.giorni} days`, ...parte) as Array<AccessoAggregato & { host_id: number }>;
-    for (const r of righe) (accessi.get(r.host_id) ?? accessi.set(r.host_id, []).get(r.host_id)!).push(r);
+    for (const r of righe) {
+      const c = capo(r.host_id);
+      (accessi.get(c) ?? accessi.set(c, []).get(c)!).push(r);
+    }
   }
-  const persone = personeAd(db, [...new Set([...accessi.values()].flat().map((a) => a.account))]);
+  const persone = personeAd(db, [...new Set([...[...accessi.values()].flat().map((a) => a.account), ...[...daAd.values()].map((u) => u.account)])]);
   // Asset per nome (prima parte, minuscolo): una lettura sola, per gli omonimi dei PC senza asset.
   const assetPerNome = new Map<string, VoceAbbinamento["omonimi"]>();
   for (const r of db.prepare("SELECT id, hostname, ip_address, categoria FROM inventory_assets WHERE hostname IS NOT NULL AND hostname <> ''").all() as Array<{ id: number; hostname: string; ip_address: string | null; categoria: string | null }>) {
@@ -133,19 +191,24 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
       propostaOff: h.proposta_off === 1,
       soglie,
     });
-    const pers = p.persona;
+    // Gli accessi non decidono (pochi o nessuno): vale l'ultimo utente scritto in AD, se è una persona che conta.
+    const ad = daAd.get(h.id);
+    const personaAd = ad && (p.esito === "pochi_dati" || p.esito === "nessuna_fonte") ? persone.get(ad.account) ?? null : null;
+    const usaAd = personaAd !== null && motivoFuori(ad!.account, personaAd) === null;
+    const esito: Proposta["esito"] = usaAd ? "proposta" : p.esito;
+    const pers = usaAd ? personaAd : p.persona;
     const assegnatarioPersona = pers ? perGuid.get(`${pers.integrationId}:${pers.guid}`) ?? null : null;
     let gruppo: GruppoAbbinamento;
     let motivo: string | null = null;
-    if (p.esito === "esclusa") {
+    if (esito === "esclusa") {
       gruppo = "escluso";
       motivo = p.perche === "segnato_condiviso"
         ? "segnato come PC condiviso"
         : h.asset_id !== null ? `categoria ${h.categoria} nell'inventario` : `${h.classification ?? "classificazione"} (classificazione dell'host)`;
-    } else if (p.esito === "condiviso") {
+    } else if (esito === "condiviso") {
       gruppo = "escluso";
       motivo = "condiviso: nessuno sopra la soglia";
-    } else if (p.esito === "pochi_dati" || p.esito === "nessuna_fonte") {
+    } else if (esito === "pochi_dati" || esito === "nessuna_fonte") {
       gruppo = "pochi_dati";
       motivo = `meno di ${soglie.minimo} accessi di persone`;
     } else if (h.assegnato_id === null) {
@@ -166,14 +229,17 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
       categoriaProposta: h.asset_id === null && daClassificazione && !CATEGORIE_SENZA_PROPOSTA.has(daClassificazione)
         && daClassificazione !== "Other" && daClassificazione !== "VM" ? daClassificazione : null,
       gruppo,
+      esito,
       motivo,
       persona: pers && nome ? { account: pers.account, nome, reparto: pers.reparto, ruolo: pers.ruolo } : null,
       assegnatarioPersona,
       assegnato: h.assegnato_id !== null ? { id: h.assegnato_id, nome: h.assegnato_nome ?? "", origine: h.assegnato_origine } : null,
-      accessi: p.accessiPersona,
-      totale: p.totale,
-      base: p.base,
-      ultimo: p.ultimoPersona,
+      accessi: usaAd ? 0 : p.accessiPersona,
+      totale: usaAd ? 0 : p.totale,
+      base: usaAd ? null : p.base,
+      ultimo: usaAd ? `${ad!.giorno} 00:00:00` : p.ultimoPersona,
+      fonte: usaAd ? "ad" : (esito === "proposta" || (esito === "esclusa" && pers)) ? "accessi" : null,
+      computerAd: usaAd ? ad!.computer : null,
     };
   });
   return { voci, giorni: soglie.giorni };

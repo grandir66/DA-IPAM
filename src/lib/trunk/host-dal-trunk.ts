@@ -16,10 +16,14 @@ import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 /** Come i rilievi: si porta solo ciò che si è visto di recente (la tabella tiene settimane). */
 const FINESTRA_GIORNI = 30;
 const ONLINE_ORE = 24;
+/** Un host che c'è già passa a «online» solo se il trunk l'ha visto da poco: 24 ore sarebbero una bugia. */
+const VIVO_MINUTI = 15;
 
 export interface EsitoHostDalTrunk {
   creati: number;
   mac: number;
+  /** Host già presenti a cui il trunk ha portato avanti «visto il» (Riccardo, 20/11/2026). */
+  rinfrescati: number;
 }
 
 export function portaHostDalTrunk(opz: { networkId?: number; adesso?: Date } = {}): EsitoHostDalTrunk {
@@ -38,7 +42,12 @@ export function portaHostDalTrunk(opz: { networkId?: number; adesso?: Date } = {
       hostname_source = CASE WHEN COALESCE(hostname, '') = '' AND ? IS NOT NULL THEN 'arp' ELSE hostname_source END,
       updated_at = datetime('now')
     WHERE id = ?`);
-  const esito: EsitoHostDalTrunk = { creati: 0, mac: 0 };
+  // Un host che il trunk continua a vedere non deve sembrare fermo solo perché gli altri giri non lo raggiungono.
+  // Si va solo avanti: «visto il» non torna mai indietro, e un secondo giro sugli stessi dati non scrive.
+  const rinfresca = d.prepare(`
+    UPDATE hosts SET last_seen = ?, status = CASE WHEN ? = 1 THEN 'online' ELSE status END, updated_at = datetime('now')
+    WHERE id = ? AND (last_seen IS NULL OR replace(last_seen, 'T', ' ') < ?)`);
+  const esito: EsitoHostDalTrunk = { creati: 0, mac: 0, rinfrescati: 0 };
   for (const rete of reti) {
     const visti = new Set<string>();
     for (const o of osservazioni.all(rete.vlan_id) as Array<{ mac: string; ip: string; nome: string | null; ultima_vista: string }>) {
@@ -51,6 +60,8 @@ export function portaHostDalTrunk(opz: { networkId?: number; adesso?: Date } = {
       const vendor = lookupVendorSync(mac);
       const c = host.get(rete.id, o.ip) as { id: number; mac: string | null } | undefined;
       if (c) {
+        const quando = new Date(vista).toISOString().slice(0, 19).replace("T", " ");
+        esito.rinfrescati += rinfresca.run(quando, adesso - vista <= VIVO_MINUTI * 60_000 ? 1 : 0, c.id, quando).changes;
         if (c.mac) continue;
         completa.run(mac, vendor, o.nome, o.nome, c.id);
         esito.mac++;

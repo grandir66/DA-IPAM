@@ -27,6 +27,9 @@ const selectCls = "h-9 rounded-md border border-input bg-background px-2 text-sm
 interface Scelta { account: string; categoria?: string; asset?: "nuovo" | number }
 
 function Accessi({ v }: { v: VoceAbbinamento }) {
+  if (v.fonte === "ad") {
+    return <span title={`Ultimo utente scritto da AD nella descrizione del computer${v.computerAd ? ` ${v.computerAd}` : ""}: gli accessi non bastavano`}>da AD <span className="text-muted-foreground">(ultimo accesso)</span></span>;
+  }
   return <>{v.accessi.toLocaleString("it-IT")} su {v.totale.toLocaleString("it-IT")} <span className="text-muted-foreground">{v.base === "rete" ? "di rete" : "alla tastiera"}</span></>;
 }
 
@@ -137,7 +140,7 @@ export default function AbbinamentiPage() {
     <div className="mx-auto max-w-[1440px] space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="flex-1 text-2xl font-bold">Abbinamenti</h1>
-        <span className="text-[13px] text-muted-foreground">Chi usa i PC, dagli accessi degli ultimi {dati?.giorni ?? 30} giorni</span>
+        <span className="text-[13px] text-muted-foreground">Chi usa i PC, dagli accessi degli ultimi {dati?.giorni ?? 30} giorni e, dove non bastano, dall&apos;ultimo utente scritto in AD</span>
         <Link href="/settings/opzioni#automatismo.accessi_pc" className="text-sm font-semibold text-[#006C96] underline">Giro degli accessi ›</Link>
       </div>
 
@@ -254,7 +257,7 @@ export default function AbbinamentiPage() {
                                 : !v.persona ? "—"
                                   : v.assegnatarioPersona !== null ? <BadgeSegno tipo="ok">Già assegnatario</BadgeSegno> : <BadgeSegno tipo="neutro">Si importa da AD</BadgeSegno>}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap">{v.totale > 0 ? <Accessi v={v} /> : "—"}</TableCell>
+                            <TableCell className="whitespace-nowrap">{v.totale > 0 || v.fonte === "ad" ? <Accessi v={v} /> : "—"}</TableCell>
                             <TableCell className="whitespace-nowrap">{quando(v.ultimo)}</TableCell>
                             {(filtro === "escluso" || filtro === "pochi_dati" || filtro === "tutti") && <TableCell className="text-[13px] text-muted-foreground">{v.motivo ?? ""}</TableCell>}
                           </TableRow>

@@ -78,6 +78,9 @@ TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
   pagine di una voce di menu), `SchedePagina` e `Tabs` di `ui/tabs` (sotto il titolo: le parti di una pagina). I
   riquadri grandi del 25/10 e le pillole grigie non esistono più: non si ridisegnano. Anche Lista/Griglia è una coppia di schede
   (Riccardo, 13/11: «lista e griglia sono due tab per me»), nella stessa forma. Le azioni della pagina stanno su una riga, in alto a destra.
+- **Nomi e guida** (Riccardo, 24/11/2026): una scheda si chiama con quello che ci si trova, non con come è fatta; gruppi col nome
+  (`gruppo` in `lib/menu/sezioni.ts`). Sotto la fila niente titolo ripetuto: `BarraStato` della fonte coi pulsanti, una fila di tessere,
+  il pannello coi filtri in testata. Le spiegazioni stanno in «Come si usa» (`ComeSiUsa`, testi in `lib/guida/guide.ts`).
 
 ## I mattoni (`src/components/shared/console.tsx`)
 

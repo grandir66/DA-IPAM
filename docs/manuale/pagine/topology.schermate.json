@@ -1,0 +1,2 @@
+[{ "file": "pagina", "percorso": "/topology", "altezza": 1000, "attesa": 4000,
+ "segni": [{"n":1,"cerca":"button:has-text(\"Elenco\")"},{"n":2,"cerca":"button:has-text(\"Tutto automatico\")"},{"n":3,"cerca":"text=Testa:"},{"n":4,"cerca":"button:has-text(\"Verticale\")"},{"n":5,"cerca":"text=Mostra ridondanze"},{"n":6,"cerca":"text=Hypervisor come riquadri"},{"n":7,"cerca":"button:has-text(\"Adatta\")"},{"n":8,"cerca":"input[placeholder^=\"Cerca nome\"]"}] }]

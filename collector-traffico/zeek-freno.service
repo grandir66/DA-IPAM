@@ -1,0 +1,10 @@
+[Unit]
+Description=Collector di traffico: freno sul disco della sonda avanzata
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/collector-traffico/collector.env
+WorkingDirectory=/opt/collector-traffico
+# Da root: e' l'unico modo semplice di fermare e riavviare Zeek senza dare a collector-traffico
+# permessi su systemd (gira con NoNewPrivileges). Sopra il 70% del disco ferma, sotto il 50% riparte.
+ExecStart=/usr/bin/python3 -m collector.zeek_stato

@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EsetDaAbbinare } from "./eset-da-abbinare";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
@@ -103,6 +104,8 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   const [os, setOs] = useState<Set<OsFamiglia>>(new Set());
   const [ordina, setOrdina] = useState<OrdineElenco>("gravita");
   const [verso, setVerso] = useState<SortDirection>("desc");
+  // Le potenziali dal software di ESET: calcolate, non viste. Di serie non si mostrano (17/11/2026).
+  const [potenziali, setPotenziali] = useState(false);
   const [fasciaChiusa, setFasciaChiusa] = useState(false);
   const [filtriAperti, setFiltriAperti] = useState(false);
   useEffect(() => {
@@ -133,6 +136,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
     const id = ++richiesta.current;
     const sp = new URLSearchParams();
     if (motore !== "tutti") sp.set("fonte", MOTORI_RILIEVO_UI[motore].fonti.join(","));
+    if (potenziali) sp.set("potenziali", "1");
     if (gravita.size) sp.set("gravita", [...gravita].join(","));
     if (q.trim()) sp.set("q", q.trim());
     sp.set("page", String(page));
@@ -154,7 +158,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
       setDati(r.data);
       setErrore(null);
     } else setErrore(r.message);
-  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, ordina, verso]);
+  }, [motore, gravita, q, page, vista, exploit, stato, rete, ospite, os, ordina, verso, potenziali]);
 
   useEffect(() => {
     void load();
@@ -303,7 +307,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
   );
 
   const rollup = dati?.rollup ?? { Critical: 0, High: 0, Medium: 0, Low: 0 };
-  const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, trunk: 0, giro: 0 };
+  const perFonte = dati?.perFonte ?? { edge: 0, wazuh: 0, eset: 0, eset_sw: 0, trunk: 0, giro: 0 };
   const totale = dati?.total ?? 0;
   const conteggiTriage = dati?.conteggiTriage ?? { da_fare: 0, in_corso: 0, fatto: 0, ignorato: 0 };
   const triTot = conteggiTriage.da_fare + conteggiTriage.in_corso + conteggiTriage.fatto + conteggiTriage.ignorato;
@@ -327,6 +331,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
       {!!dati?.parziali.length && (
         <p role="status" className="text-[13px] text-muted-foreground">Risultati e contatori parziali · {dati.parziali.map((f) => FONTI_RILIEVO_UI[f].nome).join(", ")}</p>
       )}
+      <EsetDaAbbinare alCambio={() => void load()} />
 
       {/* Una barra sola divisa in aree (Riccardo, 13/11/2026: «intestazione enorme con testo», poi «dividere la barra
           superiore in aree»): titolo · cosa compare (la nota intera al passaggio del mouse) · stato dei dati sugli
@@ -418,12 +423,18 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
             {MOTORI_RILIEVO.map((m) => {
                 const conteggio = m === "tutti" ? (dati?.totaleGlobale ?? 0) : MOTORI_RILIEVO_UI[m].fonti.reduce((a, x) => a + perFonte[x], 0);
                 return (
-                  <button key={m} type="button" role="tab" aria-selected={motore === m} onClick={() => { setMotore(m); setPage(1); }} className={cn(SCHEDA_BASE, motore === m ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
+                  <button key={m} type="button" role="tab" aria-selected={motore === m} onClick={() => { setMotore(m); setPage(1); if (m === "eset") setVista("software"); }} className={cn(SCHEDA_BASE, motore === m ? SCHEDA_ACCESA : SCHEDA_SPENTA)}>
                     {MOTORI_RILIEVO_UI[m].nome}
                     {dati ? <span className="tabular-nums opacity-80">{conteggio}</span> : null}
                   </button>
                 );
               })}
+              {(motore === "eset" || motore === "tutti") && perFonte.eset + perFonte.eset_sw > 0 || potenziali ? (
+                <label className="flex items-center gap-1.5 text-[13px]" title="Vulnerabilità calcolate dalla versione dei programmi che ESET elenca: non le ha viste l'agente, sono meno certe.">
+                  <Checkbox checked={potenziali} onCheckedChange={(c) => { setPotenziali(!!c); setPage(1); }} />
+                  Anche le potenziali dal software
+                </label>
+              ) : null}
             </div>
           </div>
           <BarraFiltri
@@ -532,6 +543,7 @@ function ElencoFindings({ vistaIniziale }: { vistaIniziale: Vista }) {
                     )}
                     <TableHead>Stato</TableHead>
                     <SortableTableHead columnId="titolo" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Rilievo</SortableTableHead>
+                    <TableHead>Software</TableHead>
                     <TableHead>Fonte</TableHead>
                     <SortableTableHead columnId="gravita" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer}>Gravità</SortableTableHead>
                     <SortableTableHead columnId="epss" sortColumn={ordina} sortDirection={verso} onSort={ordinaPer} title="Probabilità che la CVE venga sfruttata nei prossimi 30 giorni">EPSS</SortableTableHead>
@@ -610,6 +622,7 @@ function Riga({
             {slug && <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[13px] text-muted-foreground">{slug}</span>}
           </span>
         </TableCell>
+        <TableCell className="max-w-[22rem] truncate text-[13px]" title={r.pacchetto ?? undefined}>{r.pacchetto ?? <span className="text-muted-foreground">—</span>}</TableCell>
         <TableCell className="text-[13px]">{FONTI_RILIEVO_UI[r.fonte].nome}</TableCell>
         <TableCell>
           <BadgeGravita gravita={r.gravita} />
@@ -617,9 +630,9 @@ function Riga({
         <TableCell>
           <EpssCell epss={r.exploit?.epss} />
         </TableCell>
-        <TableCell className="font-mono text-[13px]">
-          {r.ip ?? r.network_name ?? "—"}
-          {r.host_count > 1 ? ` · ${r.host_count} host` : ""}
+        <TableCell className="text-[13px]" title={r.ip ?? undefined}>
+          {r.nome_host ? r.nome_host : <span className="font-mono">{r.ip ?? r.network_name ?? "—"}</span>}
+          {r.host_count > 1 ? ` e altri ${r.host_count - 1}` : ""}
         </TableCell>
         <TableCell>
           <TempoRelativo data={r.visto} />
@@ -628,7 +641,7 @@ function Riga({
       {aperto && (
         <TableRow>
           <TableCell />
-          <TableCell colSpan={admin ? 8 : 7}>
+          <TableCell colSpan={admin ? 9 : 8}>
             <div className="space-y-3">
               <div className="rounded-lg border bg-card p-3">
                 <p className="mb-2 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Triage</p>
@@ -871,6 +884,17 @@ function GruppiRilievi({
                   <TableRow>
                     <TableCell />
                     <TableCell colSpan={per === "host" ? 4 : 5} className="bg-muted/40 text-[13px]">
+                      {!!g.nomiHost?.length && (
+                        <p className="mb-1">
+                          <span className="font-semibold">Su {g.host} {g.host === 1 ? "host" : "host"}:</span> {g.nomiHost.join(", ")}
+                          {g.host > g.nomiHost.length ? ` e altri ${g.host - g.nomiHost.length}` : ""}
+                        </p>
+                      )}
+                      {!!g.versioni?.length && (
+                        <p className="mb-1">
+                          <span className="font-semibold">Versioni installate:</span> {g.versioni.join(" · ")}
+                        </p>
+                      )}
                       <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono">
                         {g.anteprima.map((t) => (
                           <span key={t}>{t}</span>

@@ -1,0 +1,4 @@
+[
+  { "file": "pagina", "percorso": "/settings/mdm", "zona": "main",
+    "nascondi": ["main input"] }
+]

@@ -93,7 +93,7 @@ export function TesseraNumero({
 }) {
   const testo = valore == null ? "—" : typeof valore === "number" ? valore.toLocaleString("it-IT") : valore;
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3.5">
+    <div className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3.5 shadow-sm transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-sm">
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium uppercase tracking-wide text-muted-foreground">{titolo}</p>
         <div className="mt-1 flex items-baseline gap-2">

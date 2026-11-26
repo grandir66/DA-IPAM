@@ -109,7 +109,8 @@ function normalizzaCodice(codice: string): string {
 // ── Registro ─────────────────────────────────────────────────────────────────
 
 export interface RigaRegistroArchivio {
-  azione: "creato" | "aperto" | "chiuso" | "richiuso_da_solo" | "tentativo_fallito" | "bloccato" | "accesso_dato" | "accesso_tolto" | "password_cambiata" | "codice_amministratore_rifiutato" | "codice_amministratore_sostituito";
+  azione: "creato" | "aperto" | "chiuso" | "richiuso_da_solo" | "tentativo_fallito" | "bloccato" | "accesso_dato" | "accesso_tolto" | "password_cambiata" | "codice_amministratore_rifiutato" | "codice_amministratore_sostituito"
+    | "voce_letta" | "voce_creata" | "voce_cambiata" | "voce_cancellata";
   utente: string;
   utenteId: number;
   da: string | null;

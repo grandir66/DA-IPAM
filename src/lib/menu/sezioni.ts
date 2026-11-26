@@ -90,6 +90,8 @@ export const SEZIONI: readonly Sezione[] = [
     { href: "/protezione/moduli", etichetta: "Moduli e container", per: "admin" },
     { href: "/protezione/esche", etichetta: "Esche", per: "admin", stacco: true },
     { href: "/protezione/tentativi", etichetta: "Tentativi e blocchi", per: "admin" },
+    // L'archivio degli utenti (ADR 0043) lo vede chiunque sia collegato: chi può aprirlo lo decide la sua serratura.
+    { href: "/archivio", etichetta: "Archivio", stacco: true },
   ] },
   // Impostazioni e Config (Riccardo, 14/11/2026). Prima: «uniformare i tab… utenti, aggiornamenti, moduli, istanza sono
   // fondamentali», «inserendo dentro impostazioni anche le voci di menù opzioni e schedulazioni». Poi: «avere un menù

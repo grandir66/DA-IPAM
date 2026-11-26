@@ -74,6 +74,9 @@ const MOTIVO_ONBOARDING =
 
 /** Livello giusto dove il predefinito non vale. */
 export const ATTESI: Atteso[] = [
+  // Archivio degli utenti (ADR 0043, Riccardo 26/11/2026): il ruolo nell'installazione non dà nessun potere. Per aprire
+  // serve la propria serratura, per dare o togliere un accesso il codice dell'amministratore dell'archivio.
+  { rotta: "/api/archivio", metodi: ["POST"], livello: "auth", motivo: "archivio degli utenti: l'autorizzazione è la serratura personale, non il ruolo; decide il motore" },
   { rotta: "/api/ad", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },

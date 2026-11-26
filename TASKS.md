@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-11-26 — Apparati di DatIA Mon: punto d'ingresso della gestione di Zabbix (PROPOSTA, in attesa del sì)
+Riccardo, 26/11: «la tabella è quasi un prototipo: non ci sono filtri, colonne modificabili, utilizzo del tasto destro, raggruppamenti gestibili e da forzare, gestione dei modelli e degli agenti… il punto di ingresso della gestione della integrazione, senza l'esigenza di passare dalla UI di da-zabbix».
+Piano, censimento e tavola: `docs/superpowers/plans/2026-11-26-apparati-zabbix-punto-di-ingresso.md`. Nessun codice applicativo finché non approva la tavola.
+- [x] Censimento (pagina, rotte, contratto con DA-Zabbix, cosa obbliga a passare di là, tabelle da riusare) e tavola a 1920
+- [ ] Risposte di Riccardo alle sei domande del piano (schede, togli/sospendi/rinomina, tetto dei 100 al giorno, credenziali, chiave da DA-Link, colonne di serie)
+- [ ] T1 tabella nuova in sola lettura · T2 scheda di lato, Modelli e Agenti · T3 aggiunta in massa con coda · T5 guide e pulizia
+- [ ] T4, in DA-Zabbix (lavoro a parte, livello Completo per le scritture): proposta dei modelli in blocco, `famiglia_forzata` e `agente_versione` in lettura, rotte sospendi/rinomina/togli
+- Trovato strada facendo: «Come si usa» non c'è più (tolto il 26/11, c'è il «?»); DatIA Mon non ha la riga di schede in `sezioni.ts`; DA-Link non emette ancora la chiave di scrittura (aperto in DA-Zabbix dal 13/11); con i tetti del centro (10/min, 100/giorno) 474 aggiunte chiedono cinque giorni.
+
 ## 2026-11-26 — Manuale per pagina con il «?» (Riccardo: «sì a tutto»)
 - [x] Riccardo, 26/11 sera: «le guide sono molto limitate nelle voci, non mostrano l'uso delle schede, dei pulsanti, del menu destro; serve un modulo per le parti comuni». Fatto: `docs/manuale/INTERFACCIA.md` (v0.9.1366) e `pagine/discovery.md` riscritta come modello.
 - [x] Riccardo, 26/11 sera: «il simbolo e non la descrizione» e «solo la zona del display». Fatto in v0.9.1367: `icona:nome` / `tasto:nome` nel testo (elenco in `src/lib/manuale/icone.ts`, la prova fallisce su un nome che non c'è) e `ritaglio` nelle schermate; rifatte Apparati e INTERFACCIA.

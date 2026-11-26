@@ -122,7 +122,8 @@ Zabbix prima del rilascio, e approvazione a parte.
   nomi di colonne e stati e gli stessi segni. Si fa dopo che Riccardo ha visto la T1 su IPAM, che fa da modello.
   Stima: una giornata là. Da proporre con la sua tavola.
 
-- [ ] **T4a — Sospendi, Riattiva, Togli da Zabbix** (Riccardo, 26/11, dalla sessione madre: «manca un comando per
+- [x] **T4a — Sospendi, Riattiva, Togli da Zabbix** (26/11: fatta e rilasciata, DA-Zabbix `0e6bf3b` e DA-IPAM v0.9.1375; verifica e limiti in `TASKS.md`; **non provata su un host vero**). Scostamento: i sospesi escono dalle letture solo con `sospesi=1`, per non farli comparire come «non so» nella pagina del cliente delle installazioni non aggiornate.
+  Testo della proposta: **Sospendi, Riattiva, Togli da Zabbix** (Riccardo, 26/11, dalla sessione madre: «manca un comando per
   rimuovere un oggetto da zabbix, alcuni device non sono più presenti e così evitiamo errori, almeno dovremo pensare di
   metterlo in offline pausa o eliminarlo»). È la parte di T4 che passa davanti al resto. **Proposta, in attesa del suo sì.**
   - *Alla fonte (DA-Zabbix `a425530`, letto il 26/11)*: le due operazioni esistono solo nell'interfaccia, per cliente e

@@ -122,6 +122,36 @@ Zabbix prima del rilascio, e approvazione a parte.
   nomi di colonne e stati e gli stessi segni. Si fa dopo che Riccardo ha visto la T1 su IPAM, che fa da modello.
   Stima: una giornata là. Da proporre con la sua tavola.
 
+- [ ] **T4a — Sospendi, Riattiva, Togli da Zabbix** (Riccardo, 26/11, dalla sessione madre: «manca un comando per
+  rimuovere un oggetto da zabbix, alcuni device non sono più presenti e così evitiamo errori, almeno dovremo pensare di
+  metterlo in offline pausa o eliminarlo»). È la parte di T4 che passa davanti al resto. **Proposta, in attesa del suo sì.**
+  - *Alla fonte (DA-Zabbix `a425530`, letto il 26/11)*: le due operazioni esistono solo nell'interfaccia, per cliente e
+    per IP: `_imposta_monitoraggio_oggetti` (`host.update status`: «disabilitare non cancella — tiene host,
+    configurazione e storico, interrompe solo la raccolta, ed è reversibile») e `_togli_oggetti_da_zabbix`
+    (`host.delete`: «porta via anche lo storico»), tutte e due col controllo `_host_di_questo_cliente`. In
+    `/api/scrittura/v1` non ci sono: **servono due rotte nuove** in DA-Zabbix, con la chiave di scrittura.
+  - *Documentazione di Zabbix 7.0* («Configuring a host», campo Enabled, letta il 26/11): un host disabilitato non è
+    monitorato; la raccolta passiva si ferma alla sincronizzazione della configurazione, quella degli agenti attivi in
+    circa 5 secondi, e «triggers and actions linked to the host are also disabled». **Non verificato** nelle pagine
+    lette: cosa mostra Zabbix dei problemi già aperti di un host sospeso, e la sorte dello storico alla cancellazione
+    (lo dicono i commenti del codice di DA-Zabbix, non la pagina di Zabbix): si prova su una sonda di prova prima di
+    scriverlo nella conferma.
+  - *DA-Zabbix (altro repo)*: `POST /api/scrittura/v1/stato` `{hostid, attivo, prova}` e `POST /api/scrittura/v1/togli`
+    `{hostid, prova}`, solo host del cliente della chiave, prova a vuoto, tetti come le altre scritture; nella lettura
+    (`famiglie` o `host`) il campo `sospeso`, perché oggi DA-IPAM non sa se un host è disabilitato.
+  - *DA-IPAM*: azioni «Sospendi», «Riattiva», «Togli da Zabbix…» sui pulsanti della selezione, nel tasto destro e nella
+    scheda di lato; stato «Sospeso» con segno suo (due barre ‖, bordo tratteggiato, fondo chiaro: si distingue da
+    «Fermo» per forma e luminanza); pulsante-filtro «Sospesi» coi conteggi. «Togli da Zabbix» apre una conferma che
+    elenca i **nomi** uno per uno, dice che lo storico va perso e che non si torna indietro, e propone «Sospendi
+    invece». Prova a vuoto prima, come per i modelli.
+  - *Apparati che DA-IPAM non vede più*: colonna e filtro «Non visto da» per chi è in Zabbix e in DA-IPAM non
+    risponde da N giorni (proposta: 14), con «Sospendi» come azione proposta. **Mai da solo**: nessuna sospensione e
+    nessuna eliminazione automatica, decide una persona.
+  - *Livello*: Completo per le due rotte (scrivono e cancellano in Zabbix di produzione; snapshot della VM di Zabbix
+    prima del rilascio); Leggero per la parte di DA-IPAM. *Stima*: mezza giornata in DA-Zabbix, mezza in DA-IPAM.
+  - *Fatto quando*: su `79993-ipam-2` un host di prova si sospende, compare «Sospeso», si riattiva, e un secondo host si
+    toglie dopo la conferma coi nomi; in Zabbix lo stato corrisponde.
+
 **Totale realistico: 2 giornate di sessioni per IPAM (T1-T3, T5), più una per DA-Zabbix (T4).**
 
 ## Domande aperte (poste a Riccardo il 26/11)

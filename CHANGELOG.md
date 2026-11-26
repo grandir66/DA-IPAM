@@ -7,6 +7,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 ## Non rilasciato — Dati ESET delle postazioni letti da DA-Link (17/11/2026)
 
 ### Corretto
+- **`rilascia-main.sh` si ferma se non è la copia di `origin/dev`** (26/11). Lanciato da una copia del Mac indietro di 71 commit, il vecchio script aveva pubblicato `main` senza la build firmata per le appliance; ora confronta sé stesso con `origin/dev` e indica il comando da una copia aggiornata.
 - **Protezione: il filtro guarda solo i tentativi di aprire una connessione** (26/11). Acceso sull'hub per nove ore, aveva contato 19.000 pacchetti sulle porte fuori dai gruppi e messo fra chi «resterebbe fuori» 256 indirizzi su ognuna di quattro porte alte: erano le risposte alle scansioni a pacchetti grezzi che partono dalla macchina stessa. Le scansioni non ne soffrivano (lo scanner legge le risposte prima del filtro, provato sul laboratorio), ma l'elenco e i contatori si riempivano di rumore. Ora un pacchetto TCP che non è un SYN e un UDP verso una porta alta passano senza essere contati. In «Chi può collegarsi» il pulsante «Aggiungi il mio» diventa «Aggiungi quello da cui arrivo», con l'avviso che dietro NetBird, una VPN o un NAT è l'indirizzo dell'instradatore.
 
 ### Aggiunto

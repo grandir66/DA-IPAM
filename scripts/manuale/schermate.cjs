@@ -19,7 +19,8 @@
  * `cerca` e `clic` sono selettori di Playwright; `zona` ritaglia lo scatto su un elemento; `segni` mette un cerchio
  * numerato sull'angolo dell'elemento, da citare nel testo come ①②③; in `prima` ci sono anche `destro` (clic col tasto
  * destro), `sopra` (il mouse passa sopra) e `tasto` (un tasto premuto); `dopo` sono clic fatti dopo lo scatto per
- * rimettere com'era quello che il browser ricorda (il menu compresso); `nascondi` è un elenco di selettori CSS da
+ * rimettere com'era quello che il browser ricorda (il menu compresso); `ritaglio` è un elenco di selettori e lo
+ * scatto prende solo il rettangolo che li contiene (più `margine`, 16 px), per mostrare la sola zona descritta; `nascondi` è un elenco di selettori CSS da
  * sfocare (colonne con nomi di persone: assegnatari, utenti di Active Directory, accessi).
  *
  * Ambiente: IPAM_URL (predefinito https://192.168.4.8), IPAM_UTENZA (file con righe `utente=` e `password=`,
@@ -153,7 +154,24 @@ async function main() {
           if (box) await page.evaluate(segno, { n: g.n, box });
           else console.error(`  ▲ ${nome}/${s.file}: segno ${g.n} non trovato (${g.cerca})`);
         }
-        if (s.zona) await page.locator(s.zona).first().screenshot({ path: destinazione });
+        if (s.ritaglio?.length) {
+          // Solo la parte di schermo che il testo descrive (Riccardo, 26/11: «solo la zona, non tutta la schermata»):
+          // il rettangolo che contiene tutti gli elementi indicati, più un margine per i cerchi numerati.
+          const margine = s.margine ?? 16;
+          const { sx, sy, larga } = await page.evaluate(() => ({ sx: window.scrollX, sy: window.scrollY, larga: document.documentElement.clientWidth }));
+          const scatole = [];
+          for (const sel of s.ritaglio) {
+            const b = await page.locator(sel).first().boundingBox({ timeout: 5000 }).catch(() => null);
+            if (b) scatole.push(b); else console.error(`  ▲ ${nome}/${s.file}: ritaglio, non trovo ${sel}`);
+          }
+          if (!scatole.length) throw new Error("nessun elemento del ritaglio trovato");
+          const x0 = Math.max(0, Math.min(...scatole.map((b) => b.x)) - margine + sx);
+          const y0 = Math.max(0, Math.min(...scatole.map((b) => b.y)) - margine + sy);
+          // Una tabella più larga dello schermo scorre dentro la pagina: si taglia al bordo visibile.
+          const x1 = Math.min(larga + sx, Math.max(...scatole.map((b) => b.x + b.width)) + margine + sx);
+          const y1 = Math.max(...scatole.map((b) => b.y + b.height)) + margine + sy;
+          await page.screenshot({ path: destinazione, fullPage: true, clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+        } else if (s.zona) await page.locator(s.zona).first().screenshot({ path: destinazione });
         else await page.screenshot({ path: destinazione, fullPage: !!s.intera });
         console.log(`✓ ${nome}/${s.file}.png`);
         // `dopo`: rimette com'era quello che lo scatto ha cambiato e il browser ricorda (il menu compresso).

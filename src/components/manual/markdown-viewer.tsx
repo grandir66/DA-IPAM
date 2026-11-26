@@ -5,6 +5,8 @@ import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { titoloConAncora } from "@/lib/manuale/formato";
+import { leggiIcona } from "@/lib/manuale/icone";
+import { IconaManuale } from "./icona-manuale";
 
 interface MarkdownViewerProps {
   content: string;
@@ -86,6 +88,14 @@ export function MarkdownViewer({ content }: MarkdownViewerProps) {
                 {children}
               </a>
             );
+          },
+          // `icona:wrench` e `tasto:filter` fra apici inversi: il segno vero al posto della descrizione (26/11).
+          code({ children, ...props }) {
+            const icona = typeof children === "string" ? leggiIcona(children) : null;
+            if (icona) return <IconaManuale nome={icona.nome} tasto={icona.tasto} />;
+            const { node, ...resto } = props;
+            void node; // il nodo di markdown non va sull'elemento HTML
+            return <code {...resto}>{children}</code>;
           },
           // Aggiunge ID ai headings (h2/h3) per ancore funzionanti
           // `## Rete × rete {#matrice}`: àncora esplicita (manuale per pagina, 26/11), il resto prende l'id dal testo.

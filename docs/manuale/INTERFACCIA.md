@@ -19,16 +19,16 @@ In alto a destra c'è sempre il pulsante tondo **?**: apre la guida di quella pa
 
 ![Il menu a sinistra](/manuale/interfaccia/menu.png)
 
-1. **Comprimi menu**: stringe il menu alle sole icone e lascia più spazio alla pagina. Lo stesso pulsante lo riapre
-   («Espandi menu»). Il programma ricorda la scelta per questo browser.
-2. **Utente**: il tuo nome e il tuo ruolo. Un clic apre il [menu dell'utente](#utente). Sotto c'è l'**istanza** su cui
+1. `icona:panel-close` **Comprimi menu**: stringe il menu alle sole icone e lascia più spazio alla pagina. Lo stesso pulsante lo riapre
+   (`icona:panel-open` **Espandi menu**). Il programma ricorda la scelta per questo browser.
+2. **Utente**: il tuo nome e il tuo ruolo. Un clic, o `icona:more-horizontal`, apre il [menu dell'utente](#utente). Sotto c'è l'**istanza** su cui
    stai lavorando, cioè il cliente (nome e codice). Chi ha più istanze la cambia da Impostazioni › Istanza.
-3. **Dashboard**: la prima pagina, con il riassunto dello stato della rete.
+3. `icona:dashboard` **Dashboard**: la prima pagina, con il riassunto dello stato della rete.
 4. **I gruppi** (Network, Sicurezza, DatIA Mon, Inventario, Applicativi e, dove il modulo è acceso, Network Services):
-   un clic sul nome apre o chiude il gruppo. Il gruppo della pagina in cui sei resta aperto, e la voce accesa è in
+   un clic sul nome apre o chiude il gruppo (`icona:chevron-right` chiuso, `icona:chevron-down` aperto). Il gruppo della pagina in cui sei resta aperto, e la voce accesa è in
    azzurro.
-5. **Manuale**: il manuale completo, con la pagina sul prodotto, questa guida e le guide di tutte le pagine.
-6. **Sistema**: **In esecuzione** mostra i lavori in corso (il numero rosso dice quanti) e **Impostazioni** la
+5. `icona:book` **Manuale**: il manuale completo, con la pagina sul prodotto, questa guida e le guide di tutte le pagine.
+6. **Sistema**: **In esecuzione** mostra i lavori in corso (il numero rosso dice quanti) e `icona:settings` **Impostazioni** la
    configurazione. Gli amministratori vedono anche la configurazione tecnica.
 
 Altre cose da sapere sul menu:
@@ -36,25 +36,25 @@ Altre cose da sapere sul menu:
 - **Il numero accanto a una voce** dice quante cose aspettano te: accanto ad **Apparati** i cambiamenti da vedere,
   accanto a **Rete** gli allarmi gravi sentiti sul trunk. «99+» vuol dire cento o più. Passa il mouse sul numero per
   leggere che cosa conta.
-- **Una voce grigia** è una funzione che dipende da un modulo spento o non ancora configurato. Passa il mouse sopra la
+- **Una voce grigia**, spesso con `icona:lock`, è una funzione che dipende da un modulo spento o non ancora configurato. Passa il mouse sopra la
   voce per leggere il motivo; il modulo si accende da Impostazioni › Moduli.
-- **Una voce con la freccia in uscita** (le console di LibreNMS, Graylog, Wazuh…) apre il programma collegato in una
+- **Una voce con** `icona:external-link` (le console di LibreNMS, Graylog, Wazuh…) apre il programma collegato in una
   scheda nuova del browser.
 - **Menu compresso**: restano le icone. Passa il mouse su un'icona per leggerne il nome; i gruppi si aprono con un
   clic come nel menu largo.
 
 ![Il menu compresso](/manuale/interfaccia/menu-compresso.png)
 
-Sul telefono il menu è nascosto: si apre con il pulsante ☰ in alto a sinistra e si chiude toccando la pagina.
+Sul telefono il menu è nascosto: si apre con `tasto:menu` in alto a sinistra e si chiude toccando la pagina.
 
 ## Il menu dell'utente {#utente}
 
 ![Il menu dell'utente](/manuale/interfaccia/menu-utente.png)
 
-- **Cambia password**: chiede la password attuale e due volte quella nuova, di almeno 8 caratteri. Dopo il cambio si
+- `icona:key` **Cambia password**: chiede la password attuale e due volte quella nuova, di almeno 8 caratteri. Dopo il cambio si
   rientra con la nuova.
-- **Tema scuro / Tema chiaro**: passa dall'uno all'altro. Il browser ricorda la scelta.
-- **Esci**: chiude la sessione.
+- `icona:moon` **Tema scuro** / `icona:sun` **Tema chiaro**: passa dall'uno all'altro. Il browser ricorda la scelta.
+- `icona:log-out` **Esci**: chiude la sessione.
 
 I ruoli che compaiono sotto il nome:
 
@@ -83,15 +83,15 @@ alla parte giusta.
 ![La barra della ricerca e dei filtri](/manuale/interfaccia/testata.png)
 
 1. **Le schede** della sezione (vedi sopra).
-2. **Cerca**: filtra l'elenco mentre scrivi. Di solito cerca nell'indirizzo, nel MAC, nel nome e nel produttore; la
+2. `icona:search` **Cerca**: filtra l'elenco mentre scrivi. Di solito cerca nell'indirizzo, nel MAC, nel nome e nel produttore; la
    guida della pagina dice dove cerca esattamente.
-3. **Filtri**: apre il pannello dei filtri (vedi sotto). Se ci sono filtri attivi, il pulsante dice quanti
+3. `tasto:filter` **Filtri**: apre il pannello dei filtri (vedi sotto). Se ci sono filtri attivi, il pulsante dice quanti
    («Filtri · 2»).
-4. **Colonne**: sceglie quali colonne vedere e in che ordine. Accanto, la tendina **Colonne: le tue** passa al volo
+4. `tasto:columns` **Colonne**: sceglie quali colonne vedere e in che ordine. Accanto, la tendina **Colonne: le tue** passa al volo
    a una vista pronta (Inventario, Sicurezza, Rete) e torna alle tue colonne.
-5. **Esporta CSV**: scarica in un file CSV, che si apre con Excel, **quello che vedi**: con i filtri attivi e le
+5. `tasto:download` **Esporta CSV**: scarica in un file CSV, che si apre con Excel, **quello che vedi**: con i filtri attivi e le
    colonne scelte.
-6. **Aggiorna**: ricarica i dati senza ricaricare la pagina.
+6. `tasto:refresh` **Aggiorna**: ricarica i dati senza ricaricare la pagina.
 
 Sopra o sotto la barra il titolo della pagina porta i **numeri riassuntivi** (per esempio «322 apparati · 189
 online · 128 offline»). Le **pastiglie** sopra la tabella (Tutti, Postazioni, Server…) sono filtri rapidi: un clic
@@ -104,14 +104,14 @@ mostra solo quel gruppo, il numero dice quante righe ha.
 Si apre da destra. Ogni tendina restringe l'elenco a un valore. Il pulsante in fondo, **Mostra N righe**, chiude il
 pannello e dice quante righe restano. **Togli tutti** azzera i filtri.
 
-Ogni filtro attivo compare come pastiglia accanto al pulsante Filtri, con la **✕** per toglierlo da solo.
+Ogni filtro attivo compare come pastiglia accanto a `tasto:filter`, con la sua `icona:x` per toglierlo da solo.
 
 ### Le colonne
 
 ![Gestisci colonne](/manuale/interfaccia/colonne.png)
 
-- Le frecce **↑ ↓** spostano una colonna prima o dopo.
-- La **✕** la nasconde. Le colonne nascoste restano in fondo all'elenco e si rimettono con un clic.
+- `icona:arrow-up` `icona:arrow-down` spostano una colonna prima o dopo.
+- `icona:x` la nasconde. Le colonne nascoste restano in fondo all'elenco e si rimettono con un clic.
 - **Mostra tutte** le accende tutte, **Predefinite** torna alla scelta di partenza.
 
 Il programma ricorda le colonne per questo browser.
@@ -119,22 +119,22 @@ Il programma ricorda le colonne per questo browser.
 ## Le tabelle {#tabelle}
 
 - **Ordinare**: un clic sull'intestazione di una colonna ordina l'elenco per quella colonna; un altro clic inverte
-  l'ordine. La freccia ↑ o ↓ accanto al nome dice su quale colonna e in che verso è ordinato; le due frecce grigie
-  ⇅ dicono che la colonna si può ordinare.
-- **Correggere un valore**: dove accanto al valore c'è una **matita**, un clic apre la casella. **Invio** salva,
+  l'ordine. `icona:arrow-up` o `icona:arrow-down` accanto al nome dice su quale colonna e in che verso è ordinato;
+  `icona:arrow-up-down` dice che la colonna si può ordinare.
+- **Correggere un valore**: dove accanto al valore c'è `icona:pencil`, un clic apre la casella. **Invio** salva,
   **Esc** annulla. Lo può fare solo chi non è in sola lettura.
-- **Aprire un oggetto**: un indirizzo IP o un nome in azzurro è un collegamento. La piccola freccia accanto
+- **Aprire un oggetto**: un indirizzo IP o un nome in azzurro è un collegamento. `icona:external-link` accanto
   all'indirizzo apre l'interfaccia web dell'apparato in una scheda nuova.
 - **Le pagine**: gli elenchi lunghi sono divisi in pagine. In fondo alla tabella:
 
 ![Le pagine dell'elenco](/manuale/interfaccia/paginazione.png)
 
-**Righe per pagina** sceglie quante righe vedere (15, 50, 100 o 500); le frecce vanno alla prima pagina, alla
+**Righe per pagina** sceglie quante righe vedere (15, 50, 100 o 500); `icona:chevrons-left` `icona:chevron-left` `icona:chevron-right` `icona:chevrons-right` vanno alla prima pagina, alla
 precedente, alla successiva e all'ultima.
 
 ### Il menu della riga e il tasto destro {#tasto-destro}
 
-Ogni riga ha all'inizio il pulsante **⋮** con le azioni su quell'oggetto. Le stesse azioni si aprono col **tasto
+Ogni riga ha all'inizio `icona:more-vertical` con le azioni su quell'oggetto. Le stesse azioni si aprono col **tasto
 destro** su qualsiasi punto della riga (sul telefono: tenendo premuto).
 
 Il tasto destro fa qualcosa in più: si riferisce alla **cella** su cui hai cliccato.
@@ -142,13 +142,13 @@ Il tasto destro fa qualcosa in più: si riferisce alla **cella** su cui hai clic
 ![Il menu del tasto destro](/manuale/interfaccia/tasto-destro.png)
 
 - In cima c'è l'oggetto (nome e indirizzo), sotto la colonna e il valore della cella («Stato: online»).
-- **Mostra solo questo valore**: tiene solo le righe che hanno quel valore in quella colonna.
-- **Nascondi questo valore**: toglie le righe con quel valore.
-- **Copia il valore**: copia il testo della cella.
-- Sotto la riga di separazione ci sono le azioni della riga, le stesse del pulsante ⋮.
+- `icona:filter` **Mostra solo questo valore**: tiene solo le righe che hanno quel valore in quella colonna.
+- `icona:eye-off` **Nascondi questo valore**: toglie le righe con quel valore.
+- `icona:copy` **Copia il valore**: copia il testo della cella.
+- Sotto la riga di separazione ci sono le azioni della riga, le stesse di `icona:more-vertical`.
 
 I filtri fatti col tasto destro compaiono in cima all'elenco, dopo la scritta «Filtri dal tasto destro:», ognuno con
-la sua ✕. Dentro una casella di testo il tasto destro resta quello del browser (copia, incolla).
+la sua `icona:x`. Dentro una casella di testo il tasto destro resta quello del browser (copia, incolla).
 
 Le azioni che cambiano qualcosa (eliminare, riscansionare, assegnare una credenziale) le esegue solo un
 amministratore.
@@ -161,7 +161,7 @@ Appena c'è una riga selezionata, sopra la tabella compare la **barra della sele
 ![La barra della selezione](/manuale/interfaccia/selezione.png)
 
 La barra dice quante righe hai selezionato e propone le azioni su tutte insieme (in Apparati: modifica multipla,
-rendi apparato, stesso device fisico, aggiorna, crea asset NIS2). **Deseleziona** toglie la selezione.
+rendi apparato, stesso device fisico, aggiorna, crea asset NIS2). `icona:x` **Deseleziona** toglie la selezione.
 
 ## Segni e colori {#segni}
 
@@ -202,4 +202,4 @@ data e l'ora esatte. Gli orari sono in ora italiana.
 
 Il **?** in alto a destra apre la guida della pagina in cui sei, sopra la pagina stessa. In cima la guida dice a quale
 versione del programma è aggiornata. In fondo, **Apri nel manuale completo** porta alla stessa guida dentro il
-manuale, con l'elenco di tutte le altre a sinistra. La finestra si chiude con la ✕, con **Esc** o con un clic fuori.
+manuale, con l'elenco di tutte le altre a sinistra. La finestra si chiude con `icona:x`, con **Esc** o con un clic fuori.

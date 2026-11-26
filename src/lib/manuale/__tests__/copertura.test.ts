@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { guidaDelPercorso, leggiGuida, titoloConAncora, type GuidaLetta } from "../formato";
+import { leggiIcona } from "../icone";
 
 const RADICE = process.cwd();
 const APP = join(RADICE, "src", "app");
@@ -72,6 +73,18 @@ test("le parti comuni dell'interfaccia hanno le loro immagini e rimandano a guid
     assert.ok(existsSync(join(RADICE, "public", src)), `INTERFACCIA.md: manca l'immagine public${src}`);
   }
   for (const [, nome] of testo.matchAll(/\]\(pagine\/([a-z0-9-]+)\.md/g)) assert.ok(nomi.has(nome), `INTERFACCIA.md: manca pagine/${nome}.md`);
+});
+
+test("le icone citate nelle guide esistono (`icona:nome`, `tasto:nome`)", () => {
+  const testi = [...guide().map((g) => [g.nome, g.testo] as const), ["INTERFACCIA", readFileSync(join(RADICE, "docs", "manuale", "INTERFACCIA.md"), "utf-8")] as const];
+  for (const [nome, testo] of testi) {
+    for (const [, segno] of testo.matchAll(/`((?:icona|tasto):[^`]*)`/g)) {
+      assert.ok(leggiIcona(segno), `${nome}.md: l'icona «${segno}» non c'è in src/lib/manuale/icone.ts`);
+    }
+  }
+  assert.deepEqual(leggiIcona("tasto:filter"), { nome: "filter", tasto: true });
+  assert.equal(leggiIcona("icona:inesistente"), null);
+  assert.equal(leggiIcona("npm run dev"), null);
 });
 
 test("il percorso con tratti variabili riconosce gli indirizzi veri, il fisso vince", () => {

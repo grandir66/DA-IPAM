@@ -150,3 +150,23 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 
 Su `dev` dalla 0.9.1262. Trappole per chi tocca queste aree: il testo libero del profilo nmap passa da un elenco di opzioni ammesse (`src/lib/scanner/argomenti-nmap-ammessi.ts`), un'opzione nuova che DA-IPAM deve poter usare va aggiunta lì o il giro ripiega sugli argomenti di serie e lo scrive nel registro; il passaggio verso LibreNMS/Wazuh scrive il percorso sull'indirizzo configurato (`buildUpstreamUrl`), non lo risolve; cambio password e conferma d'identità sugli utenti condividono lo stesso conto di tentativi. I rilievi aperti non stanno nel repo.
 
+
+## Ripartenza — 2026-11-26 15:00
+
+**Piano attivo: nessuno.** I tre piani del traffico (`plans/2026-11-20-collector-traffico.md`, `2026-11-23-collector-dati-in-piu.md`, `2026-11-23-sonda-avanzata-zeek.md`) sono chiusi il 25/11; resta sospeso solo il Task 7 (NetFlow/sFlow, serve un apparato vero).
+
+**Codice**: ramo `dev`, pubblicato in automatico sull'IPAM `192.168.4.8` (`da-ipam.service`) entro 15 minuti. Ultimi commit: `278cca59` TASKS (Sospendi/Riattiva/Togli provati da Riccardo), `51820a25` T4a rilasciata, `c494d3d0` release v0.9.1375. Il cancello non è stato rilanciato in questa sessione.
+
+**Fatto e verificato il 26/11 (in sola lettura)**:
+- falso «nome conteso» corretto (v0.9.1354, `collector/controlli.py` `risposta_nome`: scarta le risposte di stato NetBIOS e i nomi `*`). `controlli.py` ha lo stesso hash `ebdb4137dde5` su tutti e sei i collector (PX01 .192, PX02 .190, PX03 .186, PX04 .185, PX05 .198, OVH 192.168.51.250). Nel DB dell'IPAM i 229 avvisi falsi non ci sono più: restano 2 `nome_conteso`, veri;
+- su OVH: 16 host aggiunti in IPAM (reti .51/.230/.240).
+
+**Problemi aperti**:
+- i due `nome_conteso` veri: `hpe90e6b`, chiesto a 192.168.4.1 e risposto da 192.168.5.145 (38 volte, ultima il 26/11 alle 13:46), e `nb-giovanni`, risposto da fe80::e9a6:ec:58be:7bc5. Ipotesi da verificare: `192.168.4.1` inoltra le risposte fra le reti. Da guardare con Riccardo, non correggere a scatola chiusa;
+- non verificato: che si spengano gli avvisi «non censito» per i 16 host di OVH; le scansioni dell'Edge di giovedì 26/11 (10:00 e 16:00); il tema scuro del grafico «Ultima ora»; una VM di OVH che riparte.
+
+**Prossime azioni** (solo su richiesta di Riccardo): voci `- [ ]` del traffico in `TASKS.md` (righe con «Decide Riccardo»: VM 101 `edge` sul PX-05, comunità SNMP, campo sonde note, nome del collector e porte SPAN, Task 7).
+
+```text
+Repo /Users/riccardo/Progetti/Domarc/DA-IPAM, ramo dev (mai main). Leggi CONTEXT.md §2 «Collector di traffico» e questa Ripartenza, poi TASKS.md (cerca «traffico|collector|zeek»). Nessun piano attivo: non riaprire i tre piani chiusi e non ridistribuire la correzione «nome conteso», è già su sei collector su sei. Livello base, REGOLA #3. Collector: ssh root@<ip>; IPAM: ssh -J root@192.168.40.4 root@192.168.4.8, DB /opt/da-invent/data/tenants/70791.db. Prima di toccare una VM: lo snapshot. Chiedi a Riccardo cosa vuole fare dei due «nome conteso» veri e delle decisioni aperte.
+```

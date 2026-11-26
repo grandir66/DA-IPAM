@@ -162,11 +162,11 @@ Su `dev` dalla 0.9.1262. Trappole per chi tocca queste aree: il testo libero del
 - su OVH: 16 host aggiunti in IPAM (reti .51/.230/.240).
 
 **Problemi aperti**:
-- i due `nome_conteso` veri: `hpe90e6b`, chiesto a 192.168.4.1 e risposto da 192.168.5.145 (38 volte, ultima il 26/11 alle 13:46), e `nb-giovanni`, risposto da fe80::e9a6:ec:58be:7bc5. Ipotesi da verificare: `192.168.4.1` inoltra le risposte fra le reti. Da guardare con Riccardo, non correggere a scatola chiusa;
+- i due `nome_conteso` rimasti erano falsi (DA-DC01 `192.168.4.1` fa da WINS e risponde per gli altri; stesso host in IPv4 e IPv6): corretto e portato sui sei collector il 26/11 sera (`controlli.py` `44dfd8bb4977`, `ascolto.py` `1d9de5bee906`), avvisi tolti. Da guardare: che `hpe90e6b` non ricompaia; snapshot `pre-nome-wins-20261126` e `pre-nome-conteso-20261125` da togliere;
 - non verificato: che si spengano gli avvisi «non censito» per i 16 host di OVH; le scansioni dell'Edge di giovedì 26/11 (10:00 e 16:00); il tema scuro del grafico «Ultima ora»; una VM di OVH che riparte.
 
 **Prossime azioni** (solo su richiesta di Riccardo): voci `- [ ]` del traffico in `TASKS.md` (righe con «Decide Riccardo»: VM 101 `edge` sul PX-05, comunità SNMP, campo sonde note, nome del collector e porte SPAN, Task 7).
 
 ```text
-Repo /Users/riccardo/Progetti/Domarc/DA-IPAM, ramo dev (mai main). Leggi CONTEXT.md §2 «Collector di traffico» e questa Ripartenza, poi TASKS.md (cerca «traffico|collector|zeek»). Nessun piano attivo: non riaprire i tre piani chiusi e non ridistribuire la correzione «nome conteso», è già su sei collector su sei. Livello base, REGOLA #3. Collector: ssh root@<ip>; IPAM: ssh -J root@192.168.40.4 root@192.168.4.8, DB /opt/da-invent/data/tenants/70791.db. Prima di toccare una VM: lo snapshot. Chiedi a Riccardo cosa vuole fare dei due «nome conteso» veri e delle decisioni aperte.
+Repo /Users/riccardo/Progetti/Domarc/DA-IPAM, ramo dev (mai main). Leggi CONTEXT.md §2 «Collector di traffico» e questa Ripartenza, poi TASKS.md (cerca «traffico|collector|zeek»). Nessun piano attivo: non riaprire i tre piani chiusi e non ridistribuire le due correzioni «nome conteso» (25 e 26/11), sono già su sei collector su sei. Livello base, REGOLA #3. Collector: ssh root@<ip>; IPAM: ssh -J root@192.168.40.4 root@192.168.4.8, DB /opt/da-invent/data/tenants/70791.db. Prima di toccare una VM: lo snapshot. Chiedi a Riccardo delle decisioni aperte.
 ```

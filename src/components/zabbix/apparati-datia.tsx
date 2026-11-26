@@ -737,7 +737,7 @@ function FinestraProponi({ apparati, chiudi, fatto, segnala }: { apparati: Appar
                               <span className={x.pronto ? "font-semibold" : "text-muted-foreground"}>{x.pronto ? "→ " : ""}{x.modello}</span>
                             </label>
                           </td>
-                          <td className="px-2 py-1 text-muted-foreground">{x.pronto ? "" : "▲ non pronto: "}{x.perche}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{x.pronto ? "" : "▲ "}{x.perche}</td>
                         </tr>
                       );
                     })}

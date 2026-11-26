@@ -49,6 +49,28 @@ export interface ApparatoElenco {
    * in Zabbix a dare errori). null = DA-IPAM non lo conosce o non ha la data.
    */
   nonVistoGiorni: number | null;
+  /** Il nome di DA-IPAM per chi è in Zabbix (null se DA-IPAM non lo conosce o ha solo l'IP): serve a «Rinomina». */
+  nomeIpam?: string | null;
+  /** 26/11/2026: la famiglia è stata scelta a mano (tag), e la versione dell'agente installato, se il centro la dà. */
+  famigliaForzata?: boolean;
+  agenteVersione?: string | null;
+  /**
+   * Stato provvisorio dichiarato (26/11/2026): l'apparato è stato appena scritto in Zabbix e la lettura del centro
+   * non lo contiene ancora. Il testo dice cosa si sa; sparisce con la prima lettura che lo contiene.
+   */
+  provvisorio?: string;
+}
+
+/** `7.0.4` più vecchio di `7.2.1`? Si confrontano maggiore e minore; senza una delle due versioni, no. */
+export function piuVecchioDelCentro(agente: string | null | undefined, centro: string | null | undefined): boolean {
+  const leggi = (v: string | null | undefined): [number, number] | null => {
+    const m = /^\s*v?(\d+)\.(\d+)/.exec(v ?? "");
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+  const a = leggi(agente);
+  const c = leggi(centro);
+  if (!a || !c) return false;
+  return a[0] < c[0] || (a[0] === c[0] && a[1] < c[1]);
 }
 
 /** Oltre questi giorni senza risposta in DA-IPAM un apparato ancora in Zabbix si segnala (proposta del 26/11). */
@@ -78,6 +100,9 @@ export interface RigaIpam {
   credenziali?: string | null;
   /** `hosts.last_seen`, data di SQLite in UTC. */
   vistoIl?: string | null;
+  /** I due nomi grezzi, prima del COALESCE di `nome`: il centro cerca i doppioni con tutti e due. */
+  hostname?: string | null;
+  nomePersonale?: string | null;
 }
 
 function datiIpam(r: RigaIpam | undefined): Pick<ApparatoElenco, "schedaIpam" | "rete" | "vlan" | "marca" | "modello" | "mac" | "credenziali"> {
@@ -162,13 +187,21 @@ export function elencoApparati(i: {
       proxy: proxyDi.get(o.hostid) ?? null,
       problemi: (problemiDi.get(o.hostid) ?? []).length,
       nonVistoGiorni: giorniDa(riga?.vistoIl, adesso),
+      nomeIpam: riga && riga.nome && riga.nome !== riga.ip ? riga.nome : null,
+      // Il centro dice «forzata» per ogni host col tag `famiglia`, anche quelli a cui il tag l'ha messo DA-IPAM
+      // all'aggiunta. «A mano» è quindi solo la famiglia diversa da quella che DA-IPAM darebbe da sé.
+      famigliaForzata: o.famiglia_forzata && (!riga || famigliaDaClassificazione(riga.classificazione ?? null) !== o.famiglia),
+      agenteVersione: o.agente_versione,
     };
   });
   const ipZbx = new Set(i.host.flatMap((h) => h.ip));
   const nomiZbx = new Set(i.host.flatMap((h) => [h.nome.toLowerCase(), h.host.toLowerCase()]));
   for (const r of i.ipam) {
     const altri = (r.altri ?? "").split(",").filter(Boolean);
-    if (ipZbx.has(r.ip) || altri.some((x) => ipZbx.has(x)) || nomiZbx.has(r.nome.toLowerCase())) continue;
+    // Il centro cerca i doppioni con il nome mostrato e con il nome dell'apparato (`hostname` e `custom_name`):
+    // qui si provano tutti, non solo quello che DA-IPAM mostra (se `custom_name` c'è, `hostname` non si guardava).
+    const nomiIpam = [r.nome, r.hostname, r.nomePersonale].map((n) => (n ?? "").trim().toLowerCase()).filter(Boolean);
+    if (ipZbx.has(r.ip) || altri.some((x) => ipZbx.has(x)) || nomiIpam.some((n) => nomiZbx.has(n))) continue;
     const famiglia = famigliaDaClassificazione(r.classificazione);
     const sistema = sistemaDi(famiglia, []);
     elenco.push({

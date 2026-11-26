@@ -13,6 +13,11 @@ import { z } from "zod";
 import { ErroreApi, TESTO_CODICE_ERRORE } from "./api";
 import { ErroreLettura, type TrasportoPost } from "./trasporto";
 
+/** Il testo quando la rotta nuova non c'è sul centro (404): la pagina spegne i pulsanti nuovi e lo dice. */
+export const TESTO_CENTRO_VECCHIO = "Il centro non è ancora aggiornato";
+/** Codici che hanno un testo nostro anche per le rotte in cui il centro motiva da sé. */
+const CODICI_DI_SISTEMA = new Set(["troppe_richieste", "chiave_non_valida", "api_spenta", "tetto_giornaliero", "apparato_sconosciuto"]);
+
 export const PERCORSO_SCRITTURA = "/api/scrittura/v1/oggetto";
 
 /** I campi che il centro accetta: gli stessi della riga `hosts` che la sua regola legge. */
@@ -114,7 +119,14 @@ export async function mettiInMonitoraggio(
 }
 
 /** Una POST al centro con la chiave di scrittura, letta col suo schema; errori col testo nostro. */
-async function posta<S extends z.ZodType>(l: { base: URL; trasportoPost: TrasportoPost }, percorso: string, corpoInviato: unknown, schema: S): Promise<z.infer<S>> {
+async function posta<S extends z.ZodType>(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  percorso: string,
+  corpoInviato: unknown,
+  schema: S,
+  /** Il centro motiva da sé i rifiuti di questa rotta (es. «c'è già un «X»»): si mostra il suo testo italiano. */
+  usaTestoDelCentro = false,
+): Promise<z.infer<S>> {
   const radice = l.base.pathname.replace(/\/+$/, "");
   const r = await l.trasportoPost(`${radice}${percorso}`, corpoInviato);
   let corpo: unknown = null;
@@ -126,9 +138,14 @@ async function posta<S extends z.ZodType>(l: { base: URL; trasportoPost: Traspor
   if (r.status !== 200) {
     const e = ErroreApi.safeParse(corpo);
     const codice = e.success ? e.data.codice : undefined;
+    // 404 senza il corpo d'errore del centro = la rotta non esiste: centro non ancora aggiornato.
+    // (Un 404 «apparato_sconosciuto» ha il suo codice e il suo testo.)
+    if (r.status === 404 && !codice) throw new ErroreLettura("http", TESTO_CENTRO_VECCHIO, { status: 404, codice: "rotta_assente" });
+    const delCentro = e.success && usaTestoDelCentro && !(codice && CODICI_DI_SISTEMA.has(codice)) ? e.data.errore?.trim().slice(0, 200) : undefined;
     const testo =
-      (codice && TESTO_SCRITTURA[codice]) ??
-      (codice && TESTO_CODICE_ERRORE[codice]) ??
+      delCentro ||
+      (codice && TESTO_SCRITTURA[codice]) ||
+      (codice && TESTO_CODICE_ERRORE[codice]) ||
       `il centro ha rifiutato l'inserimento (HTTP ${r.status})`;
     throw new ErroreLettura("http", testo, { status: r.status, codice });
   }
@@ -194,13 +211,15 @@ export const EsitoFamiglia = z.object({
   nome: z.string().catch(""),
   prima: z.string().catch(""),
   dopo: z.string().catch(""),
+  /** La famiglia che risulta dopo il cambio (26/11/2026: con `null` è quella decisa dal centro). Assente su un centro vecchio. */
+  famiglia: z.string().nullable().optional().catch(undefined),
 });
 export type EsitoFamiglia = z.infer<typeof EsitoFamiglia>;
 
-/** Cambia la famiglia di un apparato; `famiglia: ""` la riporta a quella decisa dal centro. */
+/** Cambia la famiglia di un apparato; `""` o `null` la riportano a quella decisa dal centro (`null` è la forma del 26/11). */
 export async function cambiaFamiglia(
   l: { base: URL; trasportoPost: TrasportoPost },
-  c: { hostid: string; famiglia: string; prova?: boolean },
+  c: { hostid: string; famiglia: string | null; prova?: boolean },
 ): Promise<EsitoFamiglia> {
   const corpo: Record<string, unknown> = { hostid: c.hostid, famiglia: c.famiglia };
   if (c.prova) corpo.prova = true;
@@ -246,6 +265,51 @@ export async function togliDaZabbix(
   const corpo: Record<string, unknown> = { hostid: c.hostid };
   if (c.prova) corpo.prova = true;
   return posta(l, "/api/scrittura/v1/togli", corpo, EsitoTogli);
+}
+
+// ── Rinomina e proposta dei modelli (26/11/2026) ──
+
+export const EsitoRinomina = z.object({
+  esito: z.enum(["prova", "fatto", "uguale"]),
+  hostid: z.string(),
+  nome_prima: z.string().catch(""),
+  nome: z.string().catch(""),
+});
+export type EsitoRinomina = z.infer<typeof EsitoRinomina>;
+
+/** Cambia solo il nome mostrato in Zabbix: il nome che l'agente dichiara non si tocca. Il corpo porta sempre `prova`. */
+export async function rinomina(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  c: { hostid: string; nome: string; prova: boolean },
+): Promise<EsitoRinomina> {
+  return posta(l, "/api/scrittura/v1/rinomina", { hostid: c.hostid, nome: c.nome.trim(), prova: c.prova }, EsitoRinomina, true);
+}
+
+/** Un modello proposto dal centro: `pronto: false` si vede, col perché, ma non si può applicare. */
+export const ModelloProposto = z.object({
+  modello: z.string(),
+  consigliato: z.boolean().catch(false),
+  /** Mancando, vale «non pronto»: in dubbio non si applica. */
+  pronto: z.boolean().catch(false),
+  perche: z.string().catch(""),
+});
+export type ModelloProposto = z.infer<typeof ModelloProposto>;
+
+export const EsitoProponi = z.object({
+  hostid: z.string(),
+  ora: z.array(z.string()).catch([]),
+  proposti: z.array(ModelloProposto).catch([]),
+  cambia: z.boolean().catch(false),
+});
+export type EsitoProponi = z.infer<typeof EsitoProponi>;
+
+/** I modelli che il centro proporrebbe oggi per un apparato già in Zabbix. Non scrive niente. */
+export async function proponiModelli(
+  l: { base: URL; trasportoPost: TrasportoPost },
+  o: OggettoDaMettere,
+  hostid: string,
+): Promise<EsitoProponi> {
+  return posta(l, "/api/scrittura/v1/proponi", { ...corpoScrittura(o), hostid }, EsitoProponi, true);
 }
 
 /** I testi nostri per i codici che solo la scrittura può dare. */

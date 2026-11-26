@@ -125,3 +125,54 @@ test("errori del centro: testo nostro, e una risposta storta non passa per buona
   );
   assert.equal(fuori.esito, "fuori_perimetro");
 });
+
+// ── Rinomina, proposta dei modelli, famiglia «null» (26/11/2026) ──
+import { TESTO_CENTRO_VECCHIO, cambiaFamiglia, proponiModelli, rinomina } from "../scrittura";
+
+test("rinomina: il corpo porta sempre `prova`, l'esito si legge, il rifiuto ha il testo italiano del centro", async () => {
+  const ok = fisso(200, { esito: "prova", hostid: "10", nome_prima: "192.0.2.5", nome: "USW-Flex" });
+  const e = await rinomina({ base: BASE, trasportoPost: ok.t }, { hostid: "10", nome: "  USW-Flex ", prova: true });
+  assert.equal(e.esito, "prova");
+  assert.equal(e.nome_prima, "192.0.2.5");
+  assert.deepEqual(ok.chiamate, [{ percorso: "/wizard/api/scrittura/v1/rinomina", corpo: { hostid: "10", nome: "USW-Flex", prova: true } }]);
+  const occupato = fisso(400, { errore: "c'è già un «DA-WAZUH»", codice: "parametri" });
+  await assert.rejects(
+    rinomina({ base: BASE, trasportoPost: occupato.t }, { hostid: "11", nome: "DA-WAZUH", prova: false }),
+    (x: unknown) => x instanceof ErroreLettura && x.message === "c'è già un «DA-WAZUH»",
+  );
+  // Un limite di sistema resta col testo nostro.
+  const tanti = fisso(429, { errore: "boh", codice: "troppe_richieste" });
+  await assert.rejects(rinomina({ base: BASE, trasportoPost: tanti.t }, { hostid: "11", nome: "x", prova: true }), /troppe richieste al centro/);
+});
+
+test("proponi: corpo = record dell'oggetto + hostid; i campi mancanti diventano «non pronto», mai «pronto»", async () => {
+  const f = fisso(200, {
+    hostid: "10",
+    ora: ["ICMP Ping"],
+    proposti: [
+      { modello: "Linux by SNMP", consigliato: true, pronto: true, perche: "SNMP valido" },
+      { modello: "Altro", consigliato: true },
+    ],
+    cambia: true,
+  });
+  const e = await proponiModelli({ base: BASE, trasportoPost: f.t }, { ip: "192.0.2.5", hostname: "srv" }, "10");
+  assert.deepEqual(f.chiamate[0], { percorso: "/wizard/api/scrittura/v1/proponi", corpo: { ip: "192.0.2.5", hostname: "srv", hostid: "10" } });
+  assert.deepEqual(e.proposti.map((p) => [p.modello, p.consigliato, p.pronto, p.perche]), [["Linux by SNMP", true, true, "SNMP valido"], ["Altro", true, false, ""]]);
+});
+
+test("404 senza corpo d'errore = centro non aggiornato; un 404 con il suo codice resta «apparato sconosciuto»", async () => {
+  const nuovo = fisso(404, { detail: "Not Found" });
+  await assert.rejects(rinomina({ base: BASE, trasportoPost: nuovo.t }, { hostid: "1", nome: "x", prova: true }), (x: unknown) => x instanceof ErroreLettura && x.message === TESTO_CENTRO_VECCHIO);
+  const noto = fisso(404, { errore: "x", codice: "apparato_sconosciuto" });
+  await assert.rejects(rinomina({ base: BASE, trasportoPost: noto.t }, { hostid: "1", nome: "x", prova: true }), /non trova questo apparato/);
+});
+
+test("famiglia `null` = torna all'automatico: il corpo la porta com'è e la risposta dice quella che risulta", async () => {
+  const f = fisso(200, { esito: "prova", hostid: "10", nome: "x", prima: "wifi", dopo: "", famiglia: "altro" });
+  const e = await cambiaFamiglia({ base: BASE, trasportoPost: f.t }, { hostid: "10", famiglia: null, prova: true });
+  assert.deepEqual(f.chiamate[0]?.corpo, { hostid: "10", famiglia: null, prova: true });
+  assert.equal(e.famiglia, "altro");
+  // Un centro che non dice la famiglia resta valido.
+  const vecchio = fisso(200, { esito: "cambiato", hostid: "10", nome: "x", prima: "wifi", dopo: "" });
+  assert.equal((await cambiaFamiglia({ base: BASE, trasportoPost: vecchio.t }, { hostid: "10", famiglia: null })).famiglia, undefined);
+});

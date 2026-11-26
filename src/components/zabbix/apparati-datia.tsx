@@ -678,8 +678,12 @@ function FinestraProponi({ apparati, chiudi, fatto, segnala }: { apparati: Appar
       // La rotta dei modelli ne accetta dieci per volta.
       for (let i = 0; i < modelli.length; i += 10) {
         await passo();
-        const r = await postaConAttesa<EsitoModelli>("/api/zabbix/apparati/modelli", { hostid: a.hostid, aggiungi: modelli.slice(i, i + 10) });
-        dettagli.push(r.ok ? (r.data.esito === "invariato" ? "c'erano già" : `aggiunti: ${r.data.aggiunti.join(", ")}`) : `✕ ${r.message}`);
+        const blocco = modelli.slice(i, i + 10);
+        // Chi prende il posto di un altro modello (il ping) lo toglie nella stessa scrittura: insieme Zabbix li rifiuta.
+        const riga = righe.get(a.chiave);
+        const via = riga?.ok ? [...new Set(riga.esito.proposti.filter((x) => blocco.includes(x.modello)).flatMap((x) => x.sostituisce))].filter((m) => !blocco.includes(m)) : [];
+        const r = await postaConAttesa<EsitoModelli>("/api/zabbix/apparati/modelli", { hostid: a.hostid, aggiungi: blocco, ...(via.length ? { togli: via } : {}) });
+        dettagli.push(r.ok ? (r.data.esito === "invariato" ? "c'erano già" : `aggiunti: ${r.data.aggiunti.join(", ")}${r.data.tolti?.length ? ` · tolti: ${r.data.tolti.join(", ")}` : ""}`) : `✕ ${r.message}`);
       }
       if (modelli.length) m.set(a.chiave, dettagli.join(" · "));
       setEsiti(new Map(m));

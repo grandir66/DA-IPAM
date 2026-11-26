@@ -295,6 +295,8 @@ export const ModelloProposto = z.object({
   /** Mancando, vale «non pronto»: in dubbio non si applica. */
   pronto: z.boolean().catch(false),
   perche: z.string().catch(""),
+  /** I modelli di cui prende il posto (oggi solo «ICMP Ping»): si tolgono nella stessa scrittura. */
+  sostituisce: z.array(z.string()).catch([]),
 });
 export type ModelloProposto = z.infer<typeof ModelloProposto>;
 

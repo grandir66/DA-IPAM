@@ -104,6 +104,7 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 - 70151 è il peer NetBird **`70151-ipam-2`** (`100.107.145.24`), health sulla **443** (non 3000). 79993-ipam-2: vedi memoria (via Proxmox).
 - «Aggiorna ora» e `scripts/update.sh` a mano si rompono a vicenda: prima `ps -eo pid,args | grep -E "[u]pdate\.sh|[n]ext build"`. `update.sh` a mano va **con `--restart`**. `auto-update.sh` non riavvia se `/api/health` dice `giri_in_corso > 0` (tetto 3 ore) e non retrocede di versione (`guardia-versione.sh`).
 - **Su un deploy si aspetta il proprio commit** (`ultimo_successo.commit`), non un numero di versione. `/api/version` cambia col pull, prima del riavvio: «gira davvero» = `ActiveEnterTimestamp`. «Non vedo le modifiche» = prima l'hub (grep nei chunk su una **parola ASCII**: il minificatore sfugge `·` in `·`), poi Cmd+Shift+R.
+- **IPAM precompilato (26/11, ADR 0042)**: un rilascio su `main` ora passa da `rilascio/<versione>` → GitHub Actions → tag `build-<commit>` firmato → `main`. L'appliance usa la build pronta solo su `main` e in `/opt/da-ipam`; altrimenti compila. La riga `build-firmata:` del log dice perché. Su una VM da 4 GB il `dev` del 26/11 **non si compila** (memoria di Node esaurita): le ridotte già installate fanno il primo aggiornamento con il vecchio `update.sh` e possono fallire. Rimedio: più RAM per quel giro o lanciare a mano lo `update.sh` nuovo.
 - **Togliere una rotta API**: un `update.sh` < v0.9.805 fa cadere la build nuova; la rotta resta a 410 per un giro.
 
 ## 5. Tooling

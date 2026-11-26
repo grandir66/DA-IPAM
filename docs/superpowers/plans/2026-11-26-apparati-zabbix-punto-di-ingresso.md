@@ -106,7 +106,8 @@ Zabbix prima del rilascio, e approvazione a parte.
   Testo della tappa: **Scheda di lato, Modelli e Agenti** (IPAM). Scheda dell'apparato, schede «Modelli» (per famiglia, chi
   li ha) e «Agenti» (serve, da installare, installato, comando). *Fatto quando*: aggiunta e tolta di un modello e
   comando dell'agente si fanno dalla scheda, con la prova a vuoto. Stima: mezza giornata.
-- [ ] **T3 — Aggiunta in massa con coda** (IPAM). Rispetta 10/min e 100/giorno, mostra avanzamento e residuo,
+- [x] **T3 — Aggiunta in massa con coda** (26/11: fatta; verifica: `coda-aggiunta.test.ts` verde, tsc e lint puliti; **non provata contro il centro**: sull'installazione manca la chiave di scrittura, quindi il «fatto quando» dei 20 apparati resta da fare con la chiave). La coda gira nel browser (finestra aperta), si ferma al tetto del giorno, e si riprende con «Riprendi la coda». Selezione portata da 50 a 500.
+  Testo della tappa: **Aggiunta in massa con coda** (IPAM). Rispetta 10/min e 100/giorno, mostra avanzamento e residuo,
   riprende. *Fatto quando*: 20 apparati di una sonda di prova entrano senza superare i tetti. Stima: 2-3 ore.
 - [ ] **T4 — Rotte nuove in DA-Zabbix** (altro repo, lavoro a parte): proposta dei modelli in blocco;
   `famiglia_forzata` e `agente_versione` nella lettura; `sospendi`, `rinomina`, `togli` in scrittura. Poi i

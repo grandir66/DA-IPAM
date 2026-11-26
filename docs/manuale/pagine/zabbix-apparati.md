@@ -1,7 +1,7 @@
 ---
 percorso: /zabbix/apparati
 titolo: Apparati di DatIA Mon
-versione: 0.9.1369
+versione: 0.9.1370
 aggiornata: 2026-11-26
 ---
 
@@ -43,7 +43,7 @@ colonna ordina per quella; un secondo clic inverte.
 altri modelli ha: il nome compare passando sopra), Agente, Credenziale (i protocolli con una credenziale provata valida in
 DA-IPAM), Problemi. Da accendere: Proxy, MAC, Nome in Zabbix, Sistema.
 
-**Le azioni sui selezionati** (al massimo 50 alla volta): **Aggiungi a Zabbix (N)**, **Aggiungi un modello…**,
+**Le azioni sui selezionati** (al massimo 500 alla volta): **Aggiungi a Zabbix (N)**, **Aggiungi un modello…**,
 **Togli un modello…**, **Cambia famiglia…**, **Prepara l'agente…**, **Togli la selezione**. Un pulsante grigio dice
 perché passando sopra. Ogni scrittura passa prima da una prova del centro e poi da una conferma.
 
@@ -53,6 +53,12 @@ perché passando sopra. Ogni scrittura passa prima da una prova del centro e poi
 **Un clic su una riga** apre la **scheda di lato**: stato e motivo, IP, nome in Zabbix, famiglia, i modelli uno per
 riga, agente e sistema, credenziale valida in DA-IPAM, proxy, problemi aperti, rete, marca e modello, e i pulsanti delle
 azioni su quel solo apparato.
+
+**L'aggiunta in massa va in coda.** Il centro accetta 10 scritture al minuto e 100 apparati al giorno. La finestra
+«Aggiungi a Zabbix» dice quanto ci vuole e in quanti giorni entrano tutti, mostra l'avanzamento e ha **Ferma dopo
+questo**. Se si ferma (tetto del giorno, o fermata da te) dice quanti ne restano: nella pagina compare
+**Riprendi la coda (N)**, che li aggiunge senza rifare la prova, e **Svuota la coda** per rinunciare. La coda vive nel
+browser di chi l'ha lanciata e va avanti solo con la finestra aperta: niente parte da solo.
 
 ## Come si usa
 

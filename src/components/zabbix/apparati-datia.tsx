@@ -9,7 +9,7 @@
  * da una conferma; togliere un modello cancella le sue misure e lo si dice. L'agente lo installa sempre una
  * persona: qui si prepara il comando (uno per macchina, o uno solo per tutte che usa il nome della macchina).
  */
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowDown, ArrowUp, Check, Columns3, Copy, Download, Loader2, RefreshCw } from "lucide-react";
@@ -25,6 +25,7 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { fetchJson } from "@/lib/fetch-json";
+import { PASSO_MS, SUBITO, durata, eTettoDelGiorno, giorniPer, leggiCoda, tolto, type Coda } from "@/lib/zabbix-lettura/coda-aggiunta";
 import {
   CAMPI_FILTRO, COLONNE, FILTRI_VUOTI, GRUPPI, NESSUNO, STATI, TESTO_AGENTE, VISTA_AGENTI, VISTA_DI_SERIE, colonna, conColonna, leggiVista, passa, raggruppa,
   spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
@@ -395,50 +396,113 @@ function FinestraAgente({ apparati, chiudi }: { apparati: ApparatoElenco[]; chiu
   );
 }
 
-// ── Finestra «Aggiungi a Zabbix»: prova per ognuno, poi conferma ──
+// ── Finestra «Aggiungi a Zabbix»: prova per ognuno, poi conferma; in massa va in coda entro i tetti del centro ──
 
-function FinestraAggiungi({ apparati, chiudi, fatto }: { apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void }) {
-  const [righe, setRighe] = useState<Map<string, { ok: true; esito: EsitoScrittura } | { ok: false; errore: string }>>(new Map());
-  const [fase, setFase] = useState<"prova" | "pronto" | "aggiungo" | "fatto">("prova");
+const CHIAVE_CODA = "zabbix-coda-aggiunta";
+
+function codaSalvata(): Coda {
+  try {
+    return leggiCoda(window.localStorage.getItem(CHIAVE_CODA), new Date());
+  } catch {
+    return leggiCoda(null, new Date());
+  }
+}
+function salvaCoda(c: Coda) {
+  try {
+    window.localStorage.setItem(CHIAVE_CODA, JSON.stringify(c));
+  } catch {
+    // Senza memoria del browser la coda vale finché la finestra resta aperta: lo dice il testo della finestra.
+  }
+}
+
+type RigaAggiunta = { ok: true; esito: EsitoScrittura } | { ok: false; errore: string };
+
+function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
+  apparati: ApparatoElenco[];
+  /** Ripresa della coda: il centro li ha già accettati in una prova, si aggiungono senza rifarla. */
+  giaProvati?: boolean;
+  chiudi: () => void;
+  fatto: () => void;
+}) {
+  const [righe, setRighe] = useState<Map<string, RigaAggiunta>>(new Map());
+  const [fase, setFase] = useState<"prova" | "pronto" | "aggiungo" | "fermo" | "fatto">(giaProvati ? "pronto" : "prova");
   const [script, setScript] = useState<Array<{ titolo: string; comando: string; file: string }>>([]);
+  const [perche, setPerche] = useState<string | null>(null);
+  const [oggi, setOggi] = useState(0);
+  const [fatti, setFatti] = useState(0);
+  const ferma = useRef(false);
+  const chiamate = useRef(0);
+  const vivo = useRef(true);
+  useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
+  useEffect(() => { setOggi(codaSalvata().aggiuntiOggi); }, []);
+
+  /** Il passo della coda: le prime chiamate subito, poi una ogni sei secondi e mezzo (dieci al minuto). */
+  async function passo() {
+    if (chiamate.current++ >= SUBITO) await pausa(PASSO_MS);
+  }
 
   useEffect(() => {
-    let vivo = true;
+    if (giaProvati) return;
     void (async () => {
-      const m = new Map<string, { ok: true; esito: EsitoScrittura } | { ok: false; errore: string }>();
+      const m = new Map<string, RigaAggiunta>();
       for (const a of apparati) {
+        await passo();
+        if (!vivo.current) return;
         const r = await postaConAttesa<EsitoScrittura>(`/api/hosts/${a.hostIdIpam}/zabbix`, { prova: true });
-        if (!vivo) return;
+        if (!vivo.current) return;
         m.set(a.chiave, r.ok ? { ok: true, esito: r.data } : { ok: false, errore: r.message });
         setRighe(new Map(m));
       }
-      if (vivo) setFase("pronto");
+      setFase("pronto");
     })();
-    return () => { vivo = false; };
-  }, [apparati]);
+  }, [apparati, giaProvati]);
 
-  const accettati = apparati.filter((a) => { const r = righe.get(a.chiave); return r?.ok && r.esito.esito === "prova"; });
+  const accettati = giaProvati
+    ? apparati.filter((a) => !righe.has(a.chiave) || !righe.get(a.chiave)!.ok)
+    : apparati.filter((a) => { const r = righe.get(a.chiave); return r?.ok && r.esito.esito === "prova"; });
 
   async function aggiungi() {
     setFase("aggiungo");
+    setPerche(null);
+    ferma.current = false;
+    const daFare = accettati;
+    let coda = codaSalvata();
+    coda = { ...coda, chiavi: [...new Set([...coda.chiavi, ...daFare.map((a) => a.chiave)])] };
+    salvaCoda(coda);
     const m = new Map(righe);
-    const s: Array<{ titolo: string; comando: string; file: string }> = [];
-    for (const a of accettati) {
+    const s = [...script];
+    let n = 0;
+    let motivo: string | null = null;
+    for (const a of daFare) {
+      if (ferma.current) { motivo = "Fermata da te"; break; }
+      await passo();
+      if (!vivo.current) return;
       const r = await postaConAttesa<EsitoScrittura>(`/api/hosts/${a.hostIdIpam}/zabbix`, {});
+      if (!vivo.current) return;
+      if (!r.ok && eTettoDelGiorno(r.message)) { motivo = "Il centro ha raggiunto il tetto di oggi (100 apparati al giorno)"; break; }
       m.set(a.chiave, r.ok ? { ok: true, esito: r.data } : { ok: false, errore: r.message });
-      if (r.ok && r.data.esito === "serve_agente" && r.data.comando) {
-        s.push({ titolo: r.data.host, comando: r.data.comando, file: `agente-zabbix-${r.data.host}.${r.data.sistema === "windows" ? "ps1" : "sh"}` });
+      if (r.ok) {
+        // Esce dalla coda chi ha avuto una risposta dal centro; un errore di rete lo lascia in coda per la ripresa.
+        coda = tolto(coda, a.chiave, r.data.esito === "inserito" || r.data.esito === "serve_agente", new Date());
+        salvaCoda(coda);
+        setOggi(coda.aggiuntiOggi);
+        if (r.data.esito === "serve_agente" && r.data.comando) {
+          s.push({ titolo: r.data.host, comando: r.data.comando, file: `agente-zabbix-${r.data.host}.${r.data.sistema === "windows" ? "ps1" : "sh"}` });
+        }
       }
+      setFatti(++n);
       setRighe(new Map(m));
     }
     setScript(s);
-    setFase("fatto");
+    const restano = daFare.filter((a) => coda.chiavi.includes(a.chiave)).length;
+    setPerche(restano ? `${motivo ?? "Alcuni non hanno avuto risposta dal centro"}: ne restano ${restano} in coda. Si riprendono con «Riprendi la coda» nella pagina.` : null);
+    setFase(restano ? "fermo" : "fatto");
     fatto();
   }
 
   function testo(a: ApparatoElenco): string {
     const r = righe.get(a.chiave);
-    if (!r) return "…";
+    if (!r) return giaProvati ? "in coda" : "…";
     if (!r.ok) return r.errore;
     const e = r.esito;
     switch (e.esito) {
@@ -450,12 +514,22 @@ function FinestraAggiungi({ apparati, chiudi, fatto }: { apparati: ApparatoElenc
     }
   }
 
+  const giorni = giorniPer(accettati.length, oggi);
+  const stato =
+    fase === "prova" ? `Prova ${righe.size} di ${apparati.length} · ancora ${durata(apparati.length - righe.size)}`
+    : fase === "pronto" ? `Entrano ${accettati.length} · ${durata(accettati.length)}${giorni > 1 ? ` oggi, poi il tetto di 100 al giorno: ${giorni} giorni in tutto` : ""}`
+    : fase === "aggiungo" ? `Aggiunta ${fatti} di ${accettati.length + fatti} · la finestra deve restare aperta`
+    : perche ?? "Finito";
+
   return (
     <Dialog open onOpenChange={(o) => { if (!o && fase !== "aggiungo") chiudi(); }}>
       <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
         <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-          <DialogTitle className="text-lg">Aggiungi a Zabbix · {apparati.length} apparati</DialogTitle>
-          <DialogDescription>Prima il centro dice cosa farebbe per ognuno; si aggiungono solo quelli che accetta.</DialogDescription>
+          <DialogTitle className="text-lg">{giaProvati ? "Riprendi la coda" : "Aggiungi a Zabbix"} · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            {giaProvati ? "Il centro li ha già accettati in una prova: si aggiungono senza rifarla." : "Prima il centro dice cosa farebbe per ognuno; si aggiungono solo quelli che accetta."}
+            {" "}Il centro accetta 10 scritture al minuto e 100 apparati al giorno; aggiunti oggi da questo browser: {oggi}.
+          </DialogDescription>
         </DialogHeader>
         <DialogScrollableArea className="space-y-3 px-4 py-3">
           <ul className="divide-y text-sm">
@@ -468,13 +542,15 @@ function FinestraAggiungi({ apparati, chiudi, fatto }: { apparati: ApparatoElenc
           </ul>
           {script.map((c) => <BloccoComando key={c.titolo} {...c} />)}
         </DialogScrollableArea>
-        <DialogFooter className="border-t px-4 py-3">
-          {(fase === "prova" || fase === "pronto") && (
+        <DialogFooter className="items-center border-t px-4 py-3">
+          <span className="mr-auto text-[13px]" aria-live="polite">{stato}</span>
+          {(fase === "prova" || fase === "pronto" || fase === "fermo") && (
             <Button type="button" disabled={fase === "prova" || !accettati.length} onClick={() => void aggiungi()}>
-              {fase === "prova" && <Loader2 className="mr-1 size-4 animate-spin" />}Aggiungi {accettati.length}
+              {fase === "prova" && <Loader2 className="mr-1 size-4 animate-spin" />}{fase === "fermo" ? `Riprova i ${accettati.length} rimasti` : `Aggiungi ${accettati.length}`}
             </Button>
           )}
-          <Button type="button" variant="ghost" disabled={fase === "aggiungo"} onClick={chiudi}>{fase === "fatto" ? "Chiudi" : "Annulla"}</Button>
+          {fase === "aggiungo" && <Button type="button" variant="outline" onClick={() => { ferma.current = true; }}>Ferma dopo questo</Button>}
+          <Button type="button" variant="ghost" disabled={fase === "aggiungo"} onClick={chiudi}>{fase === "fatto" || fase === "fermo" ? "Chiudi" : "Annulla"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -483,12 +559,13 @@ function FinestraAggiungi({ apparati, chiudi, fatto }: { apparati: ApparatoElenc
 
 // ── La pagina ──
 
-const MASSIMO_SELEZIONE = 50;
+// Dal 26/11 l'aggiunta va in coda entro i tetti del centro: si possono scegliere tutti gli apparati di una rete.
+const MASSIMO_SELEZIONE = 500;
 const PER_PAGINA = 100;
 const CAMPO = "h-8 rounded-md border bg-background px-2 text-sm";
 
 type Finestra =
-  | { tipo: "aggiungi"; apparati: ApparatoElenco[] }
+  | { tipo: "aggiungi"; apparati: ApparatoElenco[]; giaProvati?: boolean }
   | { tipo: "agente"; apparati: ApparatoElenco[] }
   | { tipo: "famiglia"; apparati: ApparatoElenco[] }
   | { tipo: "modelli"; cambio: CambioModelli }
@@ -643,6 +720,8 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   const [bersaglio, setBersaglio] = useState<string | null>(null);
   // Le finestre ricevono una copia degli apparati fissata all'apertura: l'elenco si rilegge sotto di loro.
   const [finestra, setFinestra] = useState<Finestra>(null);
+  const [coda, setCoda] = useState<string[]>([]);
+  useEffect(() => { if (!finestra) setCoda(codaSalvata().chiavi); }, [finestra]);
 
   const carica = useCallback(async () => {
     const r = await fetchJson<Risposta>("/api/zabbix/apparati", { cache: "no-store" });
@@ -693,6 +772,8 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   const sottoIlMenu = bersaglio && !scelti.has(bersaglio) ? apparati.filter((a) => a.chiave === bersaglio) : selezionati;
   const rigaMenu = apparati.find((a) => a.chiave === bersaglio) ?? null;
   const apertoOra = apparati.find((a) => a.chiave === aperto) ?? null;
+  // La coda lasciata a metà (tetto del giorno, o fermata): vale per chi è ancora da aggiungere.
+  const inCoda = apparati.filter((a) => a.hostid === null && coda.includes(a.chiave));
 
   function scegli(lista: ApparatoElenco[], si: boolean) {
     setScelti((p) => {
@@ -798,6 +879,12 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
           <Button key={z.id} size="sm" variant={i === 0 && !z.spento ? "default" : "outline"} disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.testo}</Button>
         ))}
         <Button size="sm" variant="ghost" disabled={!selezionati.length} onClick={() => setScelti(new Set())}>Togli la selezione</Button>
+        {inCoda.length > 0 && (
+          <>
+            <Button size="sm" disabled={!scrive} title={scrive ? "Aggiunge quelli rimasti dall'ultima aggiunta in massa" : motivo} onClick={() => setFinestra({ tipo: "aggiungi", apparati: inCoda, giaProvati: true })}>Riprendi la coda ({inCoda.length})</Button>
+            <Button size="sm" variant="ghost" onClick={() => { salvaCoda({ ...codaSalvata(), chiavi: [] }); setCoda([]); }}>Svuota la coda</Button>
+          </>
+        )}
         {scelti.size >= MASSIMO_SELEZIONE && <span className="text-[13px] text-muted-foreground">Al massimo {MASSIMO_SELEZIONE} alla volta.</span>}
         <span className="ml-auto text-[13px] text-muted-foreground">Tasto destro su una riga: le stesse azioni</span>
       </div>
@@ -894,7 +981,7 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
       {apertoOra && <SchedaApparato a={apertoOra} scrive={scrive} motivo={motivo} apri={setFinestra} chiudi={() => setAperto(null)} />}
       </div>
 
-      {finestra?.tipo === "aggiungi" && <FinestraAggiungi apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "aggiungi" && <FinestraAggiungi apparati={finestra.apparati} giaProvati={finestra.giaProvati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
       {finestra?.tipo === "agente" && <FinestraAgente apparati={finestra.apparati} chiudi={() => setFinestra(null)} />}
       {finestra?.tipo === "famiglia" && <FinestraFamiglia apparati={finestra.apparati} famiglie={dati.famiglie ?? []} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
       {finestra?.tipo === "modelli" && <FinestraModelli cambio={finestra.cambio} adatti={dati.modelliAdatti ?? null} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}

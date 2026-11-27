@@ -96,6 +96,18 @@ collegarsi, Utenti, Sistemi remoti, Moduli e container, Esche, Tentativi e blocc
 
 - **Manuale per pagina (26/11)**: il «?» in alto a destra di ogni pagina (`components/shared/pulsante-manuale.tsx`, messo dal guscio) apre `docs/manuale/pagine/<nome>.md`, letto da disco a ogni apertura; `/manual` si apre su `docs/manuale/INDICE.md`, il manuale unico è in `docs/archivio/`. **Chi cambia una pagina riscrive la sua guida** e rifà le schermate con `node scripts/manuale/schermate.cjs <nome>` (IPAM 192.168.4.8 in sola lettura, IP/MAC/email/nomi PC finti; colonne con persone o debolezze in `nascondi`; /protezione senza schermate). `copertura.test.ts` fallisce se una pagina nuova non ha guida. Le àncore `{#parte}` seguono `useParteGuida` e `?tab=`.
 
+### Archivio degli utenti (26/11, ADR 0043)
+
+Pagina `/archivio` (Sicurezza › Archivio), codice in `src/lib/archivio-utenti/`: un KDBX per le persone del cliente,
+separato dalle credenziali che DA-IPAM usa (scansioni e giri non lo leggono). **Regole da non rompere**: il ruolo
+nell'installazione non dà nessun potere, comanda il codice dell'amministratore dell'archivio; la chiave dell'archivio
+vive solo in memoria (sessioni di 10/60 minuti), sul disco ci sono le serrature per persona; elenco e dettaglio non
+portano mai un segreto, ogni lettura lascia una riga in `audit/archivio-*.jsonl`; la chiave privata di recupero delle
+copie (`copia.ts`, age) non si scrive mai sul disco e non si rimostra. **Trappole**: i moduli importati dal componente
+client non possono toccare `node:*` (prova di guardia in `protezione/__tests__/esecutore-accessi`); le copie stanno in
+`<dati>/archivio-utenti-copie`, cioè sullo stesso disco, finché non le porta via il salvataggio (`DA_ARCHIVIO_COPIE_DIR`).
+**Aperto**: allegati, ripristino di una copia dalla pagina, parte E (disco cifrato con TPM, domande E1-E5 a Riccardo).
+
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch **`dev`** (unico pushabile); ogni modifica: `git add <file>` → `npm run version:release -- --staged-only` → `git pull --rebase origin dev` → `git push origin HEAD:dev`. **Un push di codice su `dev` è un rilascio**: hub 533 e DTS (71734) lo prendono entro 15 minuti (`da-ipam-update.timer`). Un commit di soli `.md` non riavvia.
@@ -150,3 +162,23 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 
 Su `dev` dalla 0.9.1262. Trappole per chi tocca queste aree: il testo libero del profilo nmap passa da un elenco di opzioni ammesse (`src/lib/scanner/argomenti-nmap-ammessi.ts`), un'opzione nuova che DA-IPAM deve poter usare va aggiunta lì o il giro ripiega sugli argomenti di serie e lo scrive nel registro; il passaggio verso LibreNMS/Wazuh scrive il percorso sull'indirizzo configurato (`buildUpstreamUrl`), non lo risolve; cambio password e conferma d'identità sugli utenti condividono lo stesso conto di tentativi. I rilievi aperti non stanno nel repo.
 
+
+## Ripartenza — 2026-11-26 15:00
+
+**Piano attivo: nessuno.** I tre piani del traffico (`plans/2026-11-20-collector-traffico.md`, `2026-11-23-collector-dati-in-piu.md`, `2026-11-23-sonda-avanzata-zeek.md`) sono chiusi il 25/11; resta sospeso solo il Task 7 (NetFlow/sFlow, serve un apparato vero).
+
+**Codice**: ramo `dev`, pubblicato in automatico sull'IPAM `192.168.4.8` (`da-ipam.service`) entro 15 minuti. Ultimi commit: `278cca59` TASKS (Sospendi/Riattiva/Togli provati da Riccardo), `51820a25` T4a rilasciata, `c494d3d0` release v0.9.1375. Il cancello non è stato rilanciato in questa sessione.
+
+**Fatto e verificato il 26/11 (in sola lettura)**:
+- falso «nome conteso» corretto (v0.9.1354, `collector/controlli.py` `risposta_nome`: scarta le risposte di stato NetBIOS e i nomi `*`). `controlli.py` ha lo stesso hash `ebdb4137dde5` su tutti e sei i collector (PX01 .192, PX02 .190, PX03 .186, PX04 .185, PX05 .198, OVH 192.168.51.250). Nel DB dell'IPAM i 229 avvisi falsi non ci sono più: restano 2 `nome_conteso`, veri;
+- su OVH: 16 host aggiunti in IPAM (reti .51/.230/.240).
+
+**Problemi aperti**:
+- i due `nome_conteso` rimasti erano falsi (DA-DC01 `192.168.4.1` fa da WINS e risponde per gli altri; stesso host in IPv4 e IPv6): corretto e portato sui sei collector il 26/11 sera (`controlli.py` `44dfd8bb4977`, `ascolto.py` `1d9de5bee906`), avvisi tolti. Da guardare: che `hpe90e6b` non ricompaia; snapshot `pre-nome-wins-20261126` e `pre-nome-conteso-20261125` da togliere;
+- non verificato: che si spengano gli avvisi «non censito» per i 16 host di OVH; le scansioni dell'Edge di giovedì 26/11 (10:00 e 16:00); il tema scuro del grafico «Ultima ora»; una VM di OVH che riparte.
+
+**Prossime azioni** (solo su richiesta di Riccardo): voci `- [ ]` del traffico in `TASKS.md` (righe con «Decide Riccardo»: VM 101 `edge` sul PX-05, comunità SNMP, campo sonde note, nome del collector e porte SPAN, Task 7).
+
+```text
+Repo /Users/riccardo/Progetti/Domarc/DA-IPAM, ramo dev (mai main). Leggi CONTEXT.md §2 «Collector di traffico» e questa Ripartenza, poi TASKS.md (cerca «traffico|collector|zeek»). Nessun piano attivo: non riaprire i tre piani chiusi e non ridistribuire le due correzioni «nome conteso» (25 e 26/11), sono già su sei collector su sei. Livello base, REGOLA #3. Collector: ssh root@<ip>; IPAM: ssh -J root@192.168.40.4 root@192.168.4.8, DB /opt/da-invent/data/tenants/70791.db. Prima di toccare una VM: lo snapshot. Chiedi a Riccardo delle decisioni aperte.
+```

@@ -11,6 +11,8 @@ import { withTenant, getConteggioCredenzialiPerTipo, getNomiHostPerIp } from "@/
 import { leggiRighe } from "@/lib/dalink/config";
 import { unisci } from "@/lib/percorsi";
 import { vaultLocaleAcceso } from "@/lib/vault/stato";
+import { statoCopie } from "@/lib/archivio-utenti/copia";
+import { cartellaArchivio } from "@/lib/archivio-utenti/deposito";
 import { eAdmin } from "@/lib/permessi/ruolo";
 import { leggiAscolto, type Ascolto } from "./ascolto";
 import { leggiContainer, type Container } from "./container";
@@ -174,6 +176,7 @@ export async function quadroProtezione(tenantCode: string): Promise<QuadroProtez
     firma: firma(),
     root: typeof process.getuid === "function" ? process.getuid() === 0 : null,
     containerPrivilegiati: container?.filter((c) => c.privilegiato).map((c) => c.nome) ?? null,
+    copiaArchivio: fs.existsSync(unisci(cartellaArchivio(), "utenti.kdbx")) ? { ...statoCopie(), adesso: new Date().toISOString() } : null,
   });
   return { schede, porte, container, sistemi, utenti, stato, filtro, lettoAlle: new Date().toISOString() };
 }

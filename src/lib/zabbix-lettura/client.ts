@@ -123,7 +123,8 @@ export async function leggiCentro(l: Lettore): Promise<LetturaCentro> {
       // Elenco incompleto: l'abbinamento direbbe «perso» a host che ci sono. Meglio un guasto.
       throw new ErroreLettura("risposta", `più di ${MAX_PAGINE_HOST * LIMITE_HOST_PAGINA} host: elenco non letto per intero`);
     }
-    const q: Record<string, string> = { limite: String(LIMITE_HOST_PAGINA) };
+    // `sospesi=1` (26/11/2026): anche gli host disabilitati, che il centro di serie non dà. Servono a «Riattiva».
+    const q: Record<string, string> = { limite: String(LIMITE_HOST_PAGINA), sospesi: "1" };
     if (dopo) q.dopo = dopo;
     const r: RispostaHost = await leggiRotta(l, "host", q, RispostaHost);
     host.push(...r.host);
@@ -147,7 +148,7 @@ export async function leggiValori(l: Lettore, hostids: string[]): Promise<z.infe
 
 /** Ogni oggetto con la sua famiglia e le misure di quella famiglia (13/11/2026). */
 export async function leggiFamiglie(l: Lettore): Promise<RispostaFamiglie> {
-  return leggiRotta(l, "famiglie", {}, RispostaFamiglie);
+  return leggiRotta(l, "famiglie", { sospesi: "1" }, RispostaFamiglie);
 }
 
 /** Gli ultimi 30 giorni per famiglia; `gravitaMin` è la soglia dei problemi contati in `minuti`. */

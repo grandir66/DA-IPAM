@@ -83,6 +83,15 @@ echo ">>> scarico origin/main e origin/dev..."
 git fetch --quiet origin main dev
 MAIN="$(git rev-parse origin/main)"
 DEV="$(git rev-parse origin/dev)"
+
+# Lo script che gira deve essere quello di origin/dev: il 26/11/2026 la copia sul Mac, 71 commit
+# indietro, ha lanciato la versione vecchia, che ha pubblicato main senza la build firmata.
+if ! git show "origin/dev:scripts/rilascia-main.sh" | cmp -s - "$SCRIPT_DIR/rilascia-main.sh"; then
+  echo "Errore: questo rilascia-main.sh non è quello di origin/dev (copia indietro o modificata)." >&2
+  echo "        Lancialo da una copia di origin/dev:" >&2
+  echo "        git worktree add --detach $PWD/.worktrees/rilascio origin/dev && bash $PWD/.worktrees/rilascio/scripts/rilascia-main.sh --applica" >&2
+  exit 1
+fi
 AVANTI="$(git rev-list --count origin/main..origin/dev)"
 if [ "$AVANTI" = "0" ]; then
   echo "Niente da rilasciare: dev coincide con main ($(git rev-parse --short "$MAIN"))."

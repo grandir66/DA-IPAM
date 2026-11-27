@@ -3,7 +3,7 @@ process.env.ENCRYPTION_KEY ||= "chiave-di-prova-del-pannello-zabbix";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HostDelCentro, OggettoDiFamiglia } from "../api";
-import { elencoApparati, famigliaDaClassificazione } from "../apparati";
+import { elencoApparati, famigliaDaClassificazione, giorniDa } from "../apparati";
 import { cambiaModelli, comandoAgente } from "../scrittura";
 import { ErroreLettura, type TrasportoPost } from "../trasporto";
 
@@ -68,4 +68,23 @@ test("agente: senza nome è il comando per tutte le macchine", async () => {
   const r = await comandoAgente({ base: BASE, trasportoPost: t }, { sistema: "windows", hostname: "  " });
   assert.equal(r.per_tutte, true);
   assert.deepEqual(chiamate[0]?.corpo, { sistema: "windows" });
+});
+
+test("un host sospeso ha il suo stato, e «non visto da» si conta dalla riga di DA-IPAM con lo stesso IP", () => {
+  const adesso = new Date("2026-11-26T12:00:00Z");
+  const e = elencoApparati({
+    host: [host("1", "sw-spento", "10.0.0.1"), host("2", "sw-sparito", "10.0.0.2")],
+    famiglie: [ogg("1", "sw-spento", "switch", { sospeso: true }), ogg("2", "sw-sparito", "switch", {})],
+    problemi: [],
+    vecchio: false,
+    adesso,
+    ipam: [
+      { id: 1, ip: "10.0.0.1", nome: "sw-spento", classificazione: "switch", altri: null, vistoIl: "2026-11-25 12:00:00" },
+      { id: 2, ip: "10.0.0.2", nome: "sw-sparito", classificazione: "switch", altri: null, vistoIl: "2026-10-27 11:00:00" },
+    ],
+  });
+  assert.deepEqual(e.map((a) => [a.chiave, a.stato, a.nonVistoGiorni]), [["z:1", "sospeso", 1], ["z:2", e[1].stato, 30]]);
+  assert.match(e[0].motivo ?? "", /sospeso in Zabbix/);
+  assert.equal(giorniDa(null, adesso), null);
+  assert.equal(giorniDa("non una data", adesso), null);
 });

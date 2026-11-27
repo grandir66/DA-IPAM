@@ -40,7 +40,8 @@ export async function leggiMonitoring(c: ContestoCliente): Promise<EsitoMonitori
     return {
       ok: true as const,
       dati: componiMonitoring({
-        famiglie: l.famiglie,
+        // La pagina del cliente non mostra gli apparati sospesi: sono spenti apposta, non «fermi» né «non so» (26/11/2026).
+        famiglie: { ...l.famiglie, host: l.famiglie.host.filter((o) => !o.sospeso) },
         impostazioni: leggiImpostazioniMonitoring(dip.db),
         problemi: l.centro.problemi.problemi,
         problemiTroncati: l.centro.problemi.troncati,

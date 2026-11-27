@@ -121,6 +121,8 @@ const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/servizi-rete", label: "Rete", icon: Plug },
   // Protezione dell'installazione (25/11/2026, ADR 0041): le schede sono solo per gli amministratori.
   { href: "/protezione", label: "Protezione", icon: ShieldCheck },
+  // Archivio delle credenziali degli utenti (26/11/2026, ADR 0043): per chi ha la sua autorizzazione, qualunque ruolo abbia.
+  { href: "/archivio", label: "Archivio", icon: KeyRound },
   // Endpoint (Wazuh): grigia senza il modulo che la alimenta (`condizione`).
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren, condizione: "alert_sicurezza" },
   { href: "/sicurezza-dominio", label: "Sicurezza del dominio", icon: KeyRound },
@@ -463,7 +465,7 @@ export function Sidebar() {
     networkSubItems.some((d) => voceAccesaDallaSezione(pathname, d.href) ?? pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/traffico", "/servizi-rete", "/scans", "/protezione"].some((h) => pathname.startsWith(h))
+    ["/vulnerabilities", "/security-alerts", "/sicurezza-dominio", "/arp-table/trunk", "/segmentazione", "/traffico", "/servizi-rete", "/scans", "/protezione", "/archivio"].some((h) => pathname.startsWith(h))
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))

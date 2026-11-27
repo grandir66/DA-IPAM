@@ -16,6 +16,33 @@ export interface Coda {
   /** Il giorno UTC a cui si riferisce il contatore: il tetto del centro si azzera a mezzanotte UTC. */
   giorno: string;
   aggiuntiOggi: number;
+  /**
+   * Gli istanti (ms) delle ultime chiamate di scrittura al centro, prove comprese: il tetto di dieci al minuto vale
+   * anche tra una finestra e l'altra (26/11/2026: «Riprendi la coda» dopo una prova mandava 8 chiamate di fila e il
+   * centro rispondeva 502). Assente quando non ce ne sono di recenti.
+   */
+  chiamate?: number[];
+}
+
+/** La finestra su cui il centro conta le scritture. */
+export const FINESTRA_MS = 60_000;
+
+/** Tiene solo le chiamate dell'ultimo minuto (e non quelle «dal futuro»: l'orologio può essere stato cambiato). */
+function recenti(c: readonly number[] | undefined, adesso: Date): number[] {
+  const t = adesso.getTime();
+  return (c ?? []).filter((x) => Number.isFinite(x) && x <= t && t - x < FINESTRA_MS).sort((a, b) => a - b);
+}
+
+/** Quanti millisecondi aspettare prima della prossima chiamata: zero finché l'ultimo minuto ne ha meno di `SUBITO`, poi un passo dall'ultima. */
+export function attesaPrima(c: Coda, adesso: Date): number {
+  const r = recenti(c.chiamate, adesso);
+  if (r.length < SUBITO) return 0;
+  return Math.max(0, r[r.length - 1]! + PASSO_MS - adesso.getTime());
+}
+
+/** Annota una chiamata fatta ora. */
+export function registraChiamata(c: Coda, adesso: Date): Coda {
+  return { ...c, chiamate: [...recenti(c.chiamate, adesso), adesso.getTime()] };
 }
 
 export const giornoUtc = (adesso: Date): string => adesso.toISOString().slice(0, 10);
@@ -34,15 +61,16 @@ export function leggiCoda(salvata: string | null | undefined, adesso: Date): Cod
   const o = v as { chiavi?: unknown; giorno?: unknown; aggiuntiOggi?: unknown };
   const chiavi = Array.isArray(o.chiavi) ? [...new Set(o.chiavi.filter((x): x is string => typeof x === "string" && /^i:\d+$/.test(x)))] : [];
   const stesso = o.giorno === vuota.giorno;
+  const chiamate = recenti(Array.isArray((o as { chiamate?: unknown }).chiamate) ? ((o as { chiamate: unknown[] }).chiamate.filter((x) => typeof x === "number") as number[]) : [], adesso);
   const n = typeof o.aggiuntiOggi === "number" && Number.isInteger(o.aggiuntiOggi) && o.aggiuntiOggi > 0 ? o.aggiuntiOggi : 0;
-  return { chiavi, giorno: vuota.giorno, aggiuntiOggi: stesso ? n : 0 };
+  return { chiavi, giorno: vuota.giorno, aggiuntiOggi: stesso ? n : 0, ...(chiamate.length ? { chiamate } : {}) };
 }
 
 /** Un apparato è uscito dalla coda: `entrato` dice se conta nel tetto del giorno (aggiunto davvero). */
 export function tolto(c: Coda, chiave: string, entrato: boolean, adesso: Date): Coda {
   const oggi = giornoUtc(adesso);
   const base = c.giorno === oggi ? c.aggiuntiOggi : 0;
-  return { chiavi: c.chiavi.filter((x) => x !== chiave), giorno: oggi, aggiuntiOggi: base + (entrato ? 1 : 0) };
+  return { ...c, chiavi: c.chiavi.filter((x) => x !== chiave), giorno: oggi, aggiuntiOggi: base + (entrato ? 1 : 0) };
 }
 
 /** Il centro ha detto «basta per oggi»: il testo è quello di `TESTO_SCRITTURA.tetto_giornaliero`. */

@@ -9,7 +9,8 @@
 import type { HostDelCentro, OggettoDiFamiglia, ProblemaDelCentro } from "./api";
 import { statoOggetto, type StatoOggetto } from "@/lib/cliente/monitoring";
 
-export type StatoApparato = StatoOggetto | "da_aggiungere";
+/** «sospeso» (26/11/2026): in Zabbix ma disabilitato, niente raccolta e niente allarmi. */
+export type StatoApparato = StatoOggetto | "da_aggiungere" | "sospeso";
 export type StatoAgente = "si" | "no" | "non_so" | "non_serve" | "da_installare";
 
 export interface ApparatoElenco {
@@ -43,6 +44,44 @@ export interface ApparatoElenco {
   /** Il proxy che lo interroga, e i problemi aperti: solo per chi è in Zabbix. */
   proxy: string | null;
   problemi: number;
+  /**
+   * Da quanti giorni DA-IPAM non lo vede rispondere, per chi è in Zabbix (26/11/2026: gli apparati spariti restano
+   * in Zabbix a dare errori). null = DA-IPAM non lo conosce o non ha la data.
+   */
+  nonVistoGiorni: number | null;
+  /** Il nome di DA-IPAM per chi è in Zabbix (null se DA-IPAM non lo conosce o ha solo l'IP): serve a «Rinomina». */
+  nomeIpam?: string | null;
+  /** 26/11/2026: la famiglia è stata scelta a mano (tag), e la versione dell'agente installato, se il centro la dà. */
+  famigliaForzata?: boolean;
+  agenteVersione?: string | null;
+  /**
+   * Stato provvisorio dichiarato (26/11/2026): l'apparato è stato appena scritto in Zabbix e la lettura del centro
+   * non lo contiene ancora. Il testo dice cosa si sa; sparisce con la prima lettura che lo contiene.
+   */
+  provvisorio?: string;
+}
+
+/** `7.0.4` più vecchio di `7.2.1`? Si confrontano maggiore e minore; senza una delle due versioni, no. */
+export function piuVecchioDelCentro(agente: string | null | undefined, centro: string | null | undefined): boolean {
+  const leggi = (v: string | null | undefined): [number, number] | null => {
+    const m = /^\s*v?(\d+)\.(\d+)/.exec(v ?? "");
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+  const a = leggi(agente);
+  const c = leggi(centro);
+  if (!a || !c) return false;
+  return a[0] < c[0] || (a[0] === c[0] && a[1] < c[1]);
+}
+
+/** Oltre questi giorni senza risposta in DA-IPAM un apparato ancora in Zabbix si segnala (proposta del 26/11). */
+export const GIORNI_NON_VISTO = 14;
+
+/** I giorni interi passati da una data di SQLite (UTC, senza fuso); null se manca o non si legge. */
+export function giorniDa(dataSqlite: string | null | undefined, adesso: Date): number | null {
+  if (!dataSqlite) return null;
+  const t = Date.parse(`${dataSqlite.trim().replace(" ", "T")}Z`);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((adesso.getTime() - t) / 86_400_000));
 }
 
 export interface RigaIpam {
@@ -59,6 +98,11 @@ export interface RigaIpam {
   mac?: string | null;
   /** Protocolli con credenziale valida, separati da virgola. */
   credenziali?: string | null;
+  /** `hosts.last_seen`, data di SQLite in UTC. */
+  vistoIl?: string | null;
+  /** I due nomi grezzi, prima del COALESCE di `nome`: il centro cerca i doppioni con tutti e due. */
+  hostname?: string | null;
+  nomePersonale?: string | null;
 }
 
 function datiIpam(r: RigaIpam | undefined): Pick<ApparatoElenco, "schedaIpam" | "rete" | "vlan" | "marca" | "modello" | "mac" | "credenziali"> {
@@ -104,7 +148,9 @@ export function elencoApparati(i: {
   problemi: readonly ProblemaDelCentro[];
   vecchio: boolean;
   ipam: readonly RigaIpam[];
+  adesso?: Date;
 }): ApparatoElenco[] {
+  const adesso = i.adesso ?? new Date();
   const ipDi = new Map(i.host.map((h) => [h.hostid, h.ip]));
   const tecnicoDi = new Map(i.host.map((h) => [h.hostid, h.host]));
   const proxyDi = new Map(i.host.map((h) => [h.hostid, h.proxy ?? null]));
@@ -119,7 +165,11 @@ export function elencoApparati(i: {
   // Le righe ricavate (VM del Proxmox, dominio, database, datastore) non sono host di Zabbix:
   // qui non hanno modelli né agente da gestire.
   const elenco: ApparatoElenco[] = i.famiglie.filter((o) => !o.derivata).map((o) => {
-    const { stato, motivo } = statoOggetto(o, problemiDi.get(o.hostid) ?? [], i.vecchio);
+    const letto = statoOggetto(o, problemiDi.get(o.hostid) ?? [], i.vecchio);
+    // Un host sospeso non è «fermo»: è spento apposta, e lo si dice con uno stato suo.
+    const stato: StatoApparato = o.sospeso ? "sospeso" : letto.stato;
+    const motivo = o.sospeso ? "sospeso in Zabbix: niente raccolta, niente allarmi" : letto.motivo;
+    const riga = (ipDi.get(o.hostid) ?? []).map((x) => rigaDi.get(x)).find(Boolean);
     return {
       chiave: `z:${o.hostid}`,
       hostid: o.hostid,
@@ -133,16 +183,25 @@ export function elencoApparati(i: {
       modelli: o.modelli,
       agente: o.agente,
       sistema: sistemaDi(o.famiglia, o.modelli),
-      ...datiIpam((ipDi.get(o.hostid) ?? []).map((x) => rigaDi.get(x)).find(Boolean)),
+      ...datiIpam(riga),
       proxy: proxyDi.get(o.hostid) ?? null,
       problemi: (problemiDi.get(o.hostid) ?? []).length,
+      nonVistoGiorni: giorniDa(riga?.vistoIl, adesso),
+      nomeIpam: riga && riga.nome && riga.nome !== riga.ip ? riga.nome : null,
+      // Il centro dice «forzata» per ogni host col tag `famiglia`, anche quelli a cui il tag l'ha messo DA-IPAM
+      // all'aggiunta. «A mano» è quindi solo la famiglia diversa da quella che DA-IPAM darebbe da sé.
+      famigliaForzata: o.famiglia_forzata && (!riga || famigliaDaClassificazione(riga.classificazione ?? null) !== o.famiglia),
+      agenteVersione: o.agente_versione,
     };
   });
   const ipZbx = new Set(i.host.flatMap((h) => h.ip));
   const nomiZbx = new Set(i.host.flatMap((h) => [h.nome.toLowerCase(), h.host.toLowerCase()]));
   for (const r of i.ipam) {
     const altri = (r.altri ?? "").split(",").filter(Boolean);
-    if (ipZbx.has(r.ip) || altri.some((x) => ipZbx.has(x)) || nomiZbx.has(r.nome.toLowerCase())) continue;
+    // Il centro cerca i doppioni con il nome mostrato e con il nome dell'apparato (`hostname` e `custom_name`):
+    // qui si provano tutti, non solo quello che DA-IPAM mostra (se `custom_name` c'è, `hostname` non si guardava).
+    const nomiIpam = [r.nome, r.hostname, r.nomePersonale].map((n) => (n ?? "").trim().toLowerCase()).filter(Boolean);
+    if (ipZbx.has(r.ip) || altri.some((x) => ipZbx.has(x)) || nomiIpam.some((n) => nomiZbx.has(n))) continue;
     const famiglia = famigliaDaClassificazione(r.classificazione);
     const sistema = sistemaDi(famiglia, []);
     elenco.push({
@@ -161,6 +220,7 @@ export function elencoApparati(i: {
       ...datiIpam(r),
       proxy: null,
       problemi: 0,
+      nonVistoGiorni: null,
     });
   }
   return elenco;

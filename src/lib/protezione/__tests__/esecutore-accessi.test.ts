@@ -157,7 +157,7 @@ test("i moduli che le pagine di Protezione portano nel browser non usano moduli 
   const client = file.filter((f) => /^"use client";/m.test(fs.readFileSync(f, "utf8")));
   assert.ok(client.length >= 3, "trovati troppo pochi componenti client: la prova non sta guardando niente");
   const moduli = new Set<string>();
-  for (const f of client) for (const m of fs.readFileSync(f, "utf8").matchAll(/^import (?!type )[^;]*? from "@\/lib\/(protezione|accesso)\/([\w-]+)";/gm)) moduli.add(`${m[1]}/${m[2]}`);
+  for (const f of client) for (const m of fs.readFileSync(f, "utf8").matchAll(/^import (?!type )[^;]*? from "@\/lib\/(protezione|accesso|archivio-utenti)\/([\w-]+)";/gm)) moduli.add(`${m[1]}/${m[2]}`);
   assert.ok(moduli.has("protezione/politica") && moduli.has("protezione/esche-elenco"));
   for (const modulo of moduli) {
     const testo = fs.readFileSync(path.join(process.cwd(), `src/lib/${modulo}.ts`), "utf8");

@@ -392,3 +392,275 @@ servizio. Lezioni in `~/.claude/lezioni/DA-IPAM.md` e nel `CONTEXT.md`.
 **Consigli**: prima di accendere il filtro su un'appliance di un cliente, una settimana di osservazione e
 l'elenco «mai bloccati» con i nostri scanner; una revisione del ramo da parte di un'altra sessione (zona rossa,
 non fatta); decidere l'aggiornamento di Next.js, segnalato come vulnerabile.
+
+## 12. Parte D — Archivio delle credenziali con interfaccia tipo KeePass (26/11/2026, da approvare)
+
+> Riccardo, 26/11: «integrato al database kdbx interno dovremmo registrare anche un sistema per archiviare in modo
+> sicuro le credenziali in generale per dare una UI che gestisce. vorrei poter avere una UI per keepass con
+> credenziali aggiuntive richieste per accedere al DB».
+> **Solo piano e tavola** (`docs/superpowers/tavole/2026-11-26-archivio-credenziali.html`): niente codice prima del
+> suo sì. Zona rossa (credenziali, cifratura): livello Completo.
+
+### 12.1 Cosa c'è già (letto nel codice il 26/11)
+
+| Pezzo | Dove | Stato |
+| --- | --- | --- |
+| Formato «vault Domarc v1»: KDBX 4 aperto da un key file, gruppi annidati dal percorso, campi protetti, storico di 10 versioni, un solo scrittore col lucchetto, scrittura atomica e copia di prima | `src/lib/vault/kdbx.ts` | **scritto e provato (prove incrociate con DA-Link), ma nessuno lo usa**: nessun modulo dell'app lo importa |
+| Credenziali degli apparati | tabelle `credentials`, `host_credentials`… cifrate con `encrypt()` | in uso; le leggono scansioni e giri senza una persona davanti |
+| Archivio a slot (chiave dei dati dentro slot cliente, Domarc, TPM) | `vault/archivio.ts`, `locale.ts` | dietro `DA_VAULT_LOCALE=1`, spento di serie; ADR 0034 lo dichiara superato dal vault semplice KDBX (27/10) |
+| Hub: credenziali lette da DA-Link | `vault/dalink.ts` | dietro `DA_VAULT_DALINK=1`; la fonte è il `domarc.kdbx` di DA-Link, IPAM legge e scrive dalle sue rotte |
+| «Mostra password» | `vault/mostra.ts` | chiede la seconda verifica dell'utente, vale 5 minuti, ogni lettura nel registro `vault_visualizzazioni` |
+| «Esporta in KeePass» | `vault/keepass.ts` | solo esportazione, con passphrase del cliente più key file |
+| Pagina | Impostazioni › Vault | stato, sblocco, registro, esportazione: **non** un'interfaccia per voci e gruppi |
+
+Quindi **«database kdbx interno» nel codice non è univoco**: può essere il formato KDBX locale di `kdbx.ts` (pronto,
+non usato), oppure il `domarc.kdbx` di DA-Link visto dall'hub. È la domanda D1.
+
+### 12.2 Proposta
+
+Una scheda nuova, **«Archivio»**, nella sezione Protezione:
+
+- **Albero dei gruppi** a sinistra, **voci** al centro, **dettaglio** a destra: titolo, utente, segreto nascosto, URL,
+  note, campi in più, allegati; cerca su titolo, utente, URL e note (mai sui segreti).
+- **Aggiungi, modifica, sposta, elimina** (nel cestino, come KeePass); **storico** della voce con ripristino.
+- **Mostra** e **Copia** a tempo (il valore torna nascosto dopo 30 secondi; la copia si prova a togliere dagli
+  appunti dopo 30 secondi, dove il browser lo permette).
+- **Registro di ogni lettura** (chi, quale voce, quale campo, quando, da dove), visibile nella scheda e non
+  cancellabile dall'app.
+- Credenziali «in generale»: non solo quelle di un apparato. Una voce può essere **legata** a un apparato
+  dell'inventario, ma non è obbligatorio.
+- **Generatore** di password e segnale per le voci deboli, vecchie o doppie (alimenta «Stato della protezione»).
+
+### 12.3 «Credenziali aggiuntive per accedere al DB»: tre varianti
+
+| Variante | Come si apre | Pro | Contro |
+| --- | --- | --- | --- |
+| **A. Password principale dell'archivio** | il KDBX è cifrato con key file **più** una password principale; chi apre la scrive | il file rubato con tutto il disco non si apre; è KeePass com'è | una password condivisa fra chi la conosce: nel registro si vede l'utente dell'app, ma il segreto è uno solo; se si perde serve il recupero |
+| **B. Secondo fattore dell'utente** | l'archivio si apre col key file tenuto dalla macchina; a ogni apertura l'utente dà il suo codice (come «Mostra password» oggi) | nessun segreto nuovo, ognuno risponde del suo | a riposo protegge quanto il key file: chi ruba disco e key file apre |
+| **C. Tutte e due (proposta)** | password principale per decifrare **e** codice dell'utente per ogni apertura | a riposo forte, e si sa chi ha aperto | due passi a ogni apertura; chi non ha la seconda verifica non entra |
+
+In ogni variante: l'apertura è **separata dal login** dell'app; vale per quell'utente, in memoria del server, e si
+**richiude da sola** (proposta: 10 minuti senza gesti, 60 al massimo, «Chiudi ora» sempre); la password principale e la
+chiave non stanno mai sul disco né nel browser (niente cookie, niente `localStorage`); un riavvio richiude; i tentativi
+sbagliati si contano, bloccano con attesa crescente e finiscono in «Tentativi e blocchi» con avviso, come le altre strade.
+
+### 12.4 Punti da trattare in chiaro
+
+- **Lavori automatici.** Scansioni e giri leggono oggi le credenziali degli apparati senza nessuno davanti. Con un
+  archivio che si apre solo con una password scritta da una persona non potrebbero. Proposta: **due scomparti**.
+  «Di servizio» resta com'è oggi (tabelle cifrate, o lo scomparto aperto dalla macchina) e lo usano i lavori;
+  «Riservato» è l'archivio nuovo, chiuso finché una persona non lo apre, e i lavori non lo leggono mai. Una voce si
+  sposta da uno all'altro con un gesto esplicito. È la domanda D3.
+- **Chi scrive il file.** Un solo scrittore col lucchetto e scrittura atomica ci sono già in `kdbx.ts`; due persone
+  sulla stessa voce: vince chi salva per primo, l'altra vede «è cambiata» (versione della voce), mai una
+  sovrascrittura muta.
+- **Rapporto con DA-Link.** Regola della fonte (02/11): le credenziali di macchine e clienti di Domarc stanno nel
+  `domarc.kdbx` di DA-Link. Sull'**hub** un secondo archivio locale sarebbe un doppione che diverge: lì la scheda
+  dovrebbe essere una finestra sul vault di DA-Link (le sue rotte hanno già lettura, scrittura con versione attesa,
+  cancellazione). Sulle **appliance dei clienti** l'archivio è locale e del cliente. È la domanda D2.
+- **Backup.** Il file KDBX è già cifrato: entra nel backup così com'è; il key file **no**, sta a parte (e nel
+  recupero). Ripristino provato su un'altra macchina prima di dichiararlo fatto.
+- **Niente segreti fuori posto.** Mai nei log, mai negli errori, nelle risposte delle API solo il campo chiesto e
+  solo ad archivio aperto; elenco e ricerca non portano i valori protetti; nessun esempio vero nel repo pubblico.
+- **Importare ed esportare.** Importa un `.kdbx` esistente (con la sua password, usata e dimenticata); l'esportazione
+  è quella che c'è già.
+
+### 12.5 Tappe
+
+| # | Tappa | Fatto quando | Stima |
+| --- | --- | --- | --- |
+| D0 | Decisioni (D1-D6) e ADR | ADR scritto, tavola approvata | 0,5 g |
+| D1 | Motore: apertura con le credenziali in più, richiusura a tempo, tentativi contati, registro delle letture | prove viste fallire: archivio chiuso non dà niente, la chiave non è su disco, il tempo richiude | 4 g |
+| D2 | Scheda in sola lettura: albero, voci, dettaglio, cerca, Mostra/Copia a tempo | a 1920 sul laboratorio, con un archivio di prova | 3 g |
+| D3 | Scrittura: aggiungi, modifica, sposta, cestino, storico, conflitti | due sessioni sulla stessa voce non si sovrascrivono | 3 g |
+| D4 | Importazione, generatore, voci deboli in «Stato della protezione», legame con gli apparati | importato un `.kdbx` di KeePassXC e riaperto là | 2,5 g |
+| D5 | Hub: finestra sul vault di DA-Link (se D2 dice così) | lettura e scrittura provate contro DA-Link di prova | 3 g |
+| D6 | Collaudo, backup e ripristino, manuale | ripristino su un'altra macchina | 2 g |
+
+**Totale: circa 18 giornate** (15 senza la tappa D5).
+
+### 12.6 Domande a Riccardo
+
+- **D1.** «Database kdbx interno»: intendi un archivio KDBX locale a ogni installazione di IPAM, o il `domarc.kdbx` di DA-Link?
+- **D2.** Sull'hub: la scheda è una finestra sul vault di DA-Link (nessun secondo archivio), e sulle appliance dei clienti l'archivio è locale?
+- **D3.** Due scomparti («Di servizio» per i lavori automatici, «Riservato» chiuso finché una persona non lo apre): va bene, o le credenziali degli apparati devono entrare anche loro nell'archivio chiuso?
+- **D4.** Credenziali in più per aprire: A (password principale), B (codice dell'utente), C (tutte e due, proposta)?
+- **D5.** Richiusura: 10 minuti senza gesti e 60 al massimo vanno bene?
+- **D6.** Chi può aprirlo: solo gli amministratori, o un ruolo a parte («custode») diverso da admin?
+
+### 12.7 Decisioni di Riccardo (26/11/2026)
+
+Parole sue: «un kdbx a disposizione degli utenti finali, slegato da quello di uso di ipam» e «una password
+principale e un 2fa per accedere personale e una registrazione degli accessi». Dove le sezioni sopra dicono altro,
+**vale questa**.
+
+- **D1, D2.** Un archivio KDBX **locale all'installazione**, per gli **utenti finali** (le persone del cliente), **slegato**
+  dalle credenziali che IPAM usa per lavorare. Non è una finestra sul vault di DA-Link e non tocca `credentials`,
+  `host_credentials` né il `domarc.kdbx`. Cade la tappa D5 (hub su DA-Link).
+- **D3.** Niente due scomparti: le credenziali degli apparati restano dove sono e i lavori automatici continuano a
+  leggerle come oggi. L'archivio contiene solo ciò che ci mettono le persone; i lavori non lo leggono mai. Cade
+  anche il legame obbligato con gli apparati (resta un campo facoltativo, da decidere se serve).
+- **D4.** Variante **C**: **password principale** dell'archivio **più secondo fattore personale** (il codice a 6 cifre
+  dell'utente) a ogni apertura, e **registro degli accessi** (aperture, chiusure, tentativi falliti, letture delle voci).
+- **D5, D6: non risposto.** Valgono le proposte finché non dice altro: richiusura dopo 10 minuti senza gesti e 60 al
+  massimo; lo aprono gli utenti che un amministratore abilita uno per uno («può usare l'archivio»), e solo se hanno
+  la seconda verifica accesa. Da confermare, perché «utenti finali» può voler dire anche chi oggi è in sola lettura.
+- Conseguenza da dire a schermo: la password principale è **una per l'archivio**, condivisa fra chi lo usa; il
+  secondo fattore e il registro dicono **chi** ha aperto. Se si perde la password principale l'archivio non si apre:
+  serve una procedura di recupero decisa prima (proposta: una chiave di recupero stampata alla creazione, da tenere
+  in busta; nessuna copia a Domarc, perché è l'archivio del cliente).
+
+Tappe aggiornate: D0 (ADR) · D1 motore (4 g) · D2 scheda in lettura (3 g) · D3 scrittura (3 g) · D4 importazione,
+generatore, voci deboli (2 g) · D6 collaudo, backup e ripristino, manuale (2 g). **Totale: circa 14,5 giornate.**
+
+### 12.8 Seconde decisioni di Riccardo (26/11/2026) e la copia cifrata
+
+Parole sue: «richiusura automatica sì certo»; «solo utenti con una autorizzazione specifica non necessariamente
+admin»; «il recupero con il superadmin che può resettare l'utenza»; «vorrei trovare un sistema per avere una copia
+cifrata sicura dell'archivio».
+
+- **Richiusura automatica**: sì (10 minuti senza gesti, 60 al massimo).
+- **Chi lo apre**: chi ha un'**autorizzazione specifica** («può usare l'archivio»), data utente per utente; non
+  dipende dal ruolo, un utente in sola lettura può averla e un admin può non averla.
+- **Recupero dal superadmin**: perché «resettare l'utenza» ridia davvero l'accesso, la password principale non può
+  essere una sola condivisa (nessuno potrebbe ridarla a chi l'ha persa senza conoscerla). Proposta, **da confermare**:
+  **una serratura per utente**. L'archivio è cifrato con una chiave sua, casuale, che non sta mai in chiaro sul
+  disco; ogni utente autorizzato ha la propria **password principale personale**, che apre la sua serratura (la
+  chiave dell'archivio cifrata con la sua password, Argon2id). Il superadmin ha la sua serratura: «Reimposta
+  l'accesso di…» apre con la propria e ne scrive una nuova per l'utente, con una password provvisoria da cambiare
+  al primo uso, e gli azzera il secondo fattore. Togliere l'autorizzazione = cancellare la serratura. Nessun segreto
+  condiviso, e il registro dice chi ha aperto con certezza.
+  Limite da dire a schermo: **se tutte le serrature si perdono, l'archivio non si apre più**. Per questo la copia qui sotto.
+- **Copia cifrata sicura dell'archivio** (proposta, da decidere):
+
+| Variante | Come | Pro | Contro |
+| --- | --- | --- | --- |
+| **1. Copia automatica verso una chiave pubblica di recupero (proposta)** | ogni notte, e dopo ogni modifica, l'archivio viene copiato cifrato verso una chiave **pubblica**; la privata viene mostrata **una volta sola** alla creazione, da stampare e tenere fuori dalla macchina | sulla macchina non c'è niente che apra la copia; si fa da sola; chi ruba macchina e copie non legge | chi perde la chiave privata perde la copia; il ripristino va provato almeno una volta |
+| 2. «Scarica una copia» a mano | un file `.kdbx` standard, cifrato con una frase scelta in quel momento, che KeePassXC apre ovunque | indipendente da IPAM; semplice da capire | dipende da qualcuno che si ricordi di farla; la frase scelta può essere debole |
+| 3. Dentro il backup notturno dell'installazione | l'archivio entra nel backup cifrato che c'è già | nessun meccanismo nuovo | la chiave di quel backup sta nel vault della stessa macchina: non regge al furto di tutto |
+
+  Proposta: **1 e 2 insieme**. Le copie tengono le ultime 30 versioni; stanno sulla macchina fuori dalla cartella dati
+  e, se si vuole, anche fuori dalla macchina (una cartella di rete del cliente, il PBS, DA-Link). Ogni copia e ogni
+  scaricamento vanno nel registro. In «Stato della protezione» una riga dice quando è stata fatta l'ultima copia e
+  se un ripristino è mai stato provato.
+
+Domande rimaste:
+
+- **D7.** Password principale **personale** con una serratura per utente, così il superadmin può ridare l'accesso: è questo che intendi?
+- **D8.** La copia cifrata: solo sulla macchina, o anche fuori (cartella di rete del cliente, PBS, DA-Link)?
+- **D9.** La chiave privata di recupero la tiene solo il cliente, o una seconda copia anche Domarc?
+
+### 12.9 Terze decisioni di Riccardo (26/11/2026): il codice dell'amministratore dell'archivio
+
+«Sì, confermo» a D7-D9 (password personale, copia automatica più a mano, chiave di recupero solo al cliente). Poi:
+«l'admin di quell'archivio è un codice nuovo e solo chi lo possiede può resettare le credenziali»; «neppure il
+superadmin dell'installazione può accedere senza il suo codice che può essere revocabile»; «quell'archivio è una
+nuova feature riservata per il cliente e non necessariamente condivisa».
+
+Quindi, al posto del recupero dal superadmin della §12.8: **comanda chi ha il codice dell'amministratore
+dell'archivio** (ADR 0043, punto 5). Il ruolo nell'installazione non apre e non resetta niente. Chi crea l'archivio
+non ha accesso alle voci finché non se lo dà con quel codice. Il codice si sostituisce, e il vecchio muore.
+Da dire a schermo, grande, alla creazione: se il codice si perde nessuno potrà più dare o ridare un accesso.
+
+**Stato al 26/11**: tappa D0 (ADR 0043) e **D1, motore, fatte sul ramo** (`src/lib/archivio-utenti/`): serrature
+personali, apertura con password e codice a sei cifre, richiusura a 10 e 60 minuti, tentativi contati e mandati fra
+i tentativi della Protezione, registro, codice dell'amministratore con sostituzione. Non ancora collegato a
+nessuna pagina né rotta. Restano D2 (scheda in lettura), D3 (scrittura), D4 (importazione, generatore), la copia
+cifrata, D6 (collaudo).
+
+## 13. Parte E — Disco cifrato con TPM virtuale (26/11/2026, da approvare)
+
+> Riccardo, 26/11: «sugli ipam sicuramente servirebbe un disco cifrato con tpm virtuale nel caso», e subito dopo
+> «almeno per il db delle password». **Solo piano**: nessuna macchina toccata prima del suo sì. Zona rossa, livello Completo.
+
+### 13.1 C'è già, ed è provato: è il passo P0-3 del piano del 14/11
+
+Letto nel codice e verificato sulle macchine il 26/11 (sola lettura):
+
+| Cosa | Stato |
+| --- | --- |
+| `scripts/volume-cifrato.sh`: la cartella dati in un contenitore **LUKS2** a file, sblocco all'avvio col **TPM virtuale** (`systemd-cryptenroll`), oppure chiave su supporto esterno, oppure frase a mano | scritto il 15/11 |
+| Dentro il volume: i database (quindi **tutte le credenziali dei sistemi**), il vault, e **`.env.local` con la chiave che le cifra** | così com'è disegnato |
+| Freno: a volume chiuso l'app non parte e non crea database nuovi in chiaro | provato, visto fallire |
+| Recupero: la passphrase del vault apre sempre; in più una chiave di recupero cifrata verso la chiave pubblica Domarc | scritto; il recupero con la chiave Domarc **non provato** (la privata è solo di Riccardo) |
+| **Appliance di laboratorio** (`79993-ipam-2`): volume cifrato in uso dal 15/11, 3 serrature, TPM sì, `tpmstate0` sullo stesso storage della VM | in uso; ha retto anche il riavvio del 25/11 |
+| **Hub** (VM 533): nessun TPM virtuale, BIOS tradizionale, nessun volume cifrato, 35 GB di dati | non fatto |
+| Appliance dei clienti | non fatto: l'installatore non mette ancora i pacchetti né lancia lo script |
+
+Prove fatte nel pilota del 15/11: riavvio completo (si apre da solo); TPM tolto (volume chiuso, app ferma, niente in
+chiaro); aperto a mano con la passphrase; VM copiata **col suo TPM** (si apre da sola) e **con un TPM nuovo** (resta chiusa).
+
+### 13.2 «Almeno il db delle password»: i due gradini
+
+Nel codice le password dei sistemi non stanno in un file a sé: stanno **dentro i database SQLite** (`credentials`,
+`host_credentials`, i gettoni dei moduli), cifrate con la chiave di `.env.local`. Cifrare «solo il kdbx» lasciando
+accanto in chiaro quella chiave e i database non proteggerebbe niente.
+
+| Gradino | Cosa cifra | Costo | Rischio |
+| --- | --- | --- | --- |
+| **1. Cartella dati** (com'è già fatto) | database, vault, futuro archivio KDBX, `.env.local` | pronto; da portare sulle macchine | fermo di qualche minuto alla conversione; se si perde il TPM serve la passphrase o il recupero |
+| **2. Tutto il disco** | anche sistema, registri, file dei container, swap | reinstallazione o conversione della radice, sblocco nell'initramfs; va rifatta l'immagine | un errore lascia la macchina che non parte; più lavoro in Deploy-Appliance |
+
+Il gradino 1 è il minimo che ha senso ed è già il disegno approvato il 15/11. Fuori dal gradino 1 restano in chiaro: i
+registri di sistema, i file `.env` dei container dei moduli, la memoria di scambio. Da misurare prima di dire
+che basta: cosa c'è di riservato in quei posti (va nella scheda «Stato della protezione», non in questo file).
+
+### 13.3 Da cosa protegge e da cosa no
+
+Il TPM virtuale di Proxmox è un file di stato (`tpmstate0`) che sta **sullo storage dello stesso nodo**, accanto al
+disco della VM, e **finisce negli snapshot e nei backup della VM**.
+
+- **Protegge**: il disco preso da solo (un disco dismesso o rubato senza lo stato del TPM), il contenitore o la
+  cartella dati copiati da soli, un backup dei soli dati, chi monta il disco su un'altra macchina.
+- **Non protegge**: chi copia la VM **insieme** al suo stato TPM (un backup completo, una replica, un clone a VM
+  spenta), chi ha root sul nodo Proxmox, chi entra nella macchina accesa (il volume è aperto), uno snapshot con la RAM
+  (dentro c'è la chiave). L'ha già mostrato il pilota: la copia col TPM si apre da sola.
+- Oggi il TPM è legato **senza registri PCR** (`--tpm2-pcrs=` vuoto): basta lo stato del TPM, non conta come è
+  partita la macchina.
+
+Varianti per stringere, con il loro costo:
+
+| Variante | Cosa aggiunge | Costo |
+| --- | --- | --- |
+| **Backup cifrati lato PBS con chiave separata** | un backup rubato non si legge, anche se dentro c'è lo stato del TPM | poco: una chiave per datastore, custodita fuori dal nodo; **consigliata** |
+| Legame ai PCR con Secure Boot | la chiave esce solo se la macchina parte col suo avvio firmato | UEFI e Secure Boot su ogni VM (l'hub ha il BIOS tradizionale: va convertito); a ogni aggiornamento del kernel o dell'avvio si rischia di dover riagganciare |
+| Sblocco da rete (tang/clevis) | la VM rubata con tutto si apre solo dentro la rete giusta | un servizio in più da tenere vivo per sede; se è giù la macchina non parte; dal cliente serve sulla sua rete |
+| Frase a mano a ogni avvio (c'è già: `--sblocco frase`) | niente si apre senza una persona | ogni riavvio vuole qualcuno; gli aggiornamenti notturni restano fermi |
+
+### 13.4 Cosa succede in esercizio
+
+- **Avvio**: si apre da solo col TPM; se non si apre l'app non parte e lo dice.
+- **Migrazione fra nodi**: lo stato del TPM viaggia con la VM (storage condiviso o replica): provato solo come copia a VM spenta.
+- **Ripristino da backup completo**: riporta anche il TPM, quindi si apre. Non provato da un file `vzdump`.
+- **Snapshot**: comprendono lo stato del TPM; quelli con la RAM contengono la chiave: da evitare.
+- **Clone**: Proxmox non copia il TPM di una VM accesa; il clone resta chiuso finché non si apre con la passphrase e si riaggancia.
+- **TPM perso o macchina spostata senza stato**: `apri` con la passphrase, poi riaggancio (oggi a mano: va fatto il comando).
+- **Prestazioni**: non misurate. Da misurare sul laboratorio (una scansione e un giro completi, con e senza) prima di toccare l'hub.
+- **Dimensione**: il contenitore nasce da 20 GB; l'hub ha 35 GB di dati. La crescita del contenitore **non è provata**.
+
+### 13.5 Chiave di recupero
+
+Due vie già scritte: la passphrase del vault e la chiave di recupero cifrata verso Domarc. Proposta: la passphrase
+di ogni installazione nel KeePass `domarc.kdbx` su DA-Link (voce per nodo), una copia in busta al cliente; il recupero
+con la chiave Domarc **provato una volta da Riccardo** prima di contare su di lui.
+
+### 13.6 Tappe
+
+| # | Tappa | Fatto quando | Stima |
+| --- | --- | --- | --- |
+| E0 | Decisioni (E1-E5) | risposte scritte | 0,5 g |
+| E1 | Completare ciò che manca al gradino 1: comando di riaggancio a un TPM nuovo, riga «Volume cifrato» in «Stato della protezione», crescita del contenitore, misura delle prestazioni | provati sul laboratorio, crescita oltre 20 GB compresa | 3 g |
+| E2 | Installazioni nuove: Deploy-Appliance mette i pacchetti, crea la VM con `tpmstate0`, lancia `volume-cifrato.sh crea` al primo avvio | un'appliance nuova nasce col volume cifrato | 3 g (in quel repo) |
+| E3 | Hub: TPM virtuale alla VM 533, contenitore adeguato, conversione con snapshot e backup prima | hub su volume cifrato, riavvio provato | 1,5 g, fermo stimato 20-30 minuti |
+| E4 | Appliance già dai clienti: conversione sul posto, una alla volta, backup verificato prima | ognuna convertita e riavviata | 0,5 g l'una |
+| E5 | Backup cifrati lato PBS con chiave separata; ripristino da file provato | un ripristino vero su un'altra macchina | 2 g |
+
+**Totale: circa 10 giornate**, più mezza per ogni appliance da convertire.
+
+### 13.7 Domande a Riccardo
+
+- **E1.** «Nel caso»: lo vuoi **subito** come difesa di serie, o solo dove serve (in caso di furto, su richiesta)? Cambia la priorità rispetto alle parti A-D.
+- **E2.** Gradino 1 (cartella dati: database, vault, chiave) adesso, e tutto il disco solo dopo, se serve: va bene?
+- **E3.** Hub: lo converto (fermo di 20-30 minuti, snapshot e backup prima)?
+- **E4.** Appliance già dai clienti: conversione sul posto una alla volta, o solo alla prossima reinstallazione?
+- **E5.** Oltre al TPM: aggiungo i backup cifrati lato PBS con chiave separata (consigliato)? Legame a Secure Boot e sblocco da rete li lascerei fuori per ora.

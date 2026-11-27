@@ -37,6 +37,8 @@ export interface FattiStato {
   firma: "blocca" | "avvisa" | "spenta";
   root: boolean | null;
   containerPrivilegiati: string[] | null;
+  /** L'archivio degli utenti, se c'è: ha una chiave di recupero, e quando è stata fatta l'ultima copia cifrata. Assente = l'archivio non esiste. */
+  copiaArchivio?: { chiave: boolean; ultima: string | null; adesso: string } | null;
 }
 
 const N = (n: number, uno: string, tanti: string): string => `${n} ${n === 1 ? uno : tanti}`;
@@ -112,6 +114,14 @@ export function righeStato(f: FattiStato): RigaStato[] {
   else r.push({ chiave: "container", strato: "Container", esito: "a_posto", stato: "nessuno privilegiato", parole: "Nessun container ha i poteri pieni della macchina.", gravita: null, rimedio: null });
 
   if (f.conIpv6 !== null && f.conIpv6 > 0) r.push({ chiave: "ipv6", strato: "IPv6", esito: "da_sistemare", stato: `${N(f.conIpv6, "porta", "porte")}`, parole: `${N(f.conIpv6, "porta risponde", "porte rispondono")} anche in IPv6: un filtro solo IPv4 le lascerebbe aperte.`, gravita: "bassa", rimedio: { testo: "Il filtro copre anche IPv6" } });
+
+  if (f.copiaArchivio) {
+    const c = f.copiaArchivio;
+    const giorni = c.ultima ? Math.floor((new Date(c.adesso).getTime() - new Date(c.ultima).getTime()) / 86_400_000) : null;
+    if (!c.chiave) r.push({ chiave: "copia", strato: "Copia dell'archivio", esito: "da_sistemare", stato: "nessuna chiave di recupero", parole: "L'archivio delle credenziali degli utenti non ha copie cifrate: un guasto del disco lo perde.", gravita: "alta", rimedio: { testo: "In Archivio › Accessi: «Sostituisci la chiave di recupero»", href: "/archivio" } });
+    else if (giorni === null) r.push({ chiave: "copia", strato: "Copia dell'archivio", esito: "da_sistemare", stato: "mai fatta", parole: "L'archivio delle credenziali degli utenti non ha ancora nessuna copia cifrata.", gravita: "media", rimedio: { testo: "Si fa da sola alla prossima apertura dell'archivio", href: "/archivio" } });
+    else r.push({ chiave: "copia", strato: "Copia dell'archivio", esito: "a_posto", stato: giorni === 0 ? "fatta oggi" : `fatta ${giorni} giorni fa`, parole: "L'ultima copia cifrata dell'archivio degli utenti segue l'ultima modifica o apertura. Si apre solo con la chiave di recupero, che non sta su questa macchina.", gravita: null, rimedio: null });
+  }
 
   const ordine: Record<Esito, number> = { da_sistemare: 0, non_so: 1, a_posto: 2 };
   const peso: Record<Gravita, number> = { alta: 0, media: 1, bassa: 2 };

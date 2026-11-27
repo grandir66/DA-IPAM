@@ -52,6 +52,10 @@ def pacchetto(src, dst, proto, sport, dport, carico, vlan=None):
         l4 = struct.pack(">HHIIBBHHH", sport, dport, 1, 1, 5 << 4, 0x18, 1000, 0, 0)
     else:
         l4 = struct.pack(">HHHH", sport, dport, 8 + len(carico), 0)
+    if ":" in src:
+        import ipaddress
+        ipv6 = struct.pack(">IHBB", 6 << 28, len(l4) + len(carico), proto, 64) + ipaddress.ip_address(src).packed + ipaddress.ip_address(dst).packed
+        return bytes(12) + b"\x86\xdd" + ipv6 + l4 + carico
     ipv4 = struct.pack(">BBHHHBBH", 0x45, 0, 20 + len(l4) + len(carico), 0, 0, 64, proto, 0) + ip(src) + ip(dst)
     eth = bytes(12) + (struct.pack(">HH", 0x8100, vlan) if vlan else b"") + b"\x08\x00"
     return eth + ipv4 + l4 + carico
@@ -141,6 +145,10 @@ class Controlli(unittest.TestCase):
         self.assertIsNone(risposta_nome(UDP, 137, stato))
         # lo stato chiesto per un nome vero resta fuori anche lui: è il tipo (0x21) che dice «stato»
         self.assertIsNone(risposta_nome(UDP, 137, netbios[:-4] + b"\x00\x21\x00\x01"))
+        # il server dei nomi (WINS) risponde per gli altri col bit RA: 0x8580 la risposta, 0xad80 la registrazione.
+        # Visto il 26/11/2026 su DA-DC01: «hpe90e6b» sembrava conteso fra il controller e la stampante
+        for bandiere in (0x8580, 0xAD80):
+            self.assertIsNone(risposta_nome(UDP, 137, struct.pack(">HHHHHH", 1, bandiere, 0, 1, 0, 0) + netbios[12:]))
 
     def test_nessun_valore_esce(self):
         """Il fatto si salva, il valore mai: nessun dettaglio contiene la password o la comunità."""
@@ -192,6 +200,9 @@ class AscoltoStato(unittest.TestCase):
         self.a.pacchetto(1002, pacchetto("192.168.99.66", "192.168.99.88", UDP, 5355, 50002, r))
         self.assertEqual(self.fatti[0][1:4], ("nome_conteso", "192.168.99.66", "192.168.99.10"))
         self.assertEqual(self.fatti[0][5], {"nome": "wpad"})
+        # la stessa macchina che risponde anche dal suo IPv6 locale non contende il nome a sé stessa («nb-giovanni», 26/11/2026)
+        self.a.pacchetto(1003, pacchetto("fe80::1", "fe80::2", UDP, 5355, 50003, r))
+        self.assertEqual(len(self.fatti), 1)
 
     def test_dns_molte_richieste_e_nomi_per_finestra(self):
         for i in range(1001):

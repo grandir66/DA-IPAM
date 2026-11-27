@@ -5,11 +5,11 @@
  *
  * Una colonna = un fatto: il primo modello e «quanti altri» sono due colonne, non un elenco in una cella.
  */
-import type { ApparatoElenco } from "./apparati";
+import { GIORNI_NON_VISTO, type ApparatoElenco } from "./apparati";
 
 export type IdColonna =
   | "stato" | "nome" | "ip" | "rete" | "marca" | "modello" | "famiglia" | "modelloZabbix" | "altriModelli"
-  | "agente" | "credenziale" | "proxy" | "problemi" | "mac" | "nomeZabbix" | "sistema";
+  | "agente" | "credenziale" | "proxy" | "problemi" | "mac" | "nomeZabbix" | "sistema" | "nonVisto";
 
 export interface Colonna {
   id: IdColonna;
@@ -24,10 +24,15 @@ export interface Colonna {
 
 export const TESTO_STATO: Record<ApparatoElenco["stato"], string> = {
   funziona: "Funziona", attenzione: "Attenzione", fermo: "Fermo", non_so: "Non so", da_aggiungere: "Da aggiungere",
+  sospeso: "Sospeso",
 };
 export const TESTO_AGENTE: Record<ApparatoElenco["agente"], string> = {
   si: "attivo", no: "non manda dati", non_so: "non so", non_serve: "non serve", da_installare: "da installare",
 };
+
+/** In Zabbix, non sospeso, e DA-IPAM non lo vede rispondere da almeno `GIORNI_NON_VISTO` giorni. */
+export const nonVisto = (a: ApparatoElenco): boolean =>
+  a.hostid !== null && a.stato !== "sospeso" && a.nonVistoGiorni !== null && a.nonVistoGiorni >= GIORNI_NON_VISTO;
 
 export const testoRete = (a: ApparatoElenco): string => (a.rete ? (a.vlan != null ? `${a.rete} · VLAN ${a.vlan}` : a.rete) : "");
 
@@ -44,6 +49,8 @@ export const COLONNE: readonly Colonna[] = [
   { id: "agente", etichetta: "Agente", diSerie: true, testo: (a) => TESTO_AGENTE[a.agente] },
   { id: "credenziale", etichetta: "Credenziale", diSerie: true, testo: (a) => a.credenziali.join(" ") },
   { id: "problemi", etichetta: "Problemi", diSerie: true, testo: (a) => (a.hostid ? String(a.problemi) : "") },
+  // Zeri davanti: così l'ordinamento per testo mette in fila i giorni come numeri.
+  { id: "nonVisto", etichetta: "Non visto da", diSerie: true, testo: (a) => (nonVisto(a) ? `${String(a.nonVistoGiorni).padStart(5, "0")} giorni` : "") },
   { id: "proxy", etichetta: "Proxy", diSerie: false, testo: (a) => a.proxy ?? "" },
   { id: "mac", etichetta: "MAC", diSerie: false, testo: (a) => a.mac ?? "" },
   { id: "nomeZabbix", etichetta: "Nome in Zabbix", diSerie: false, testo: (a) => a.hostTecnico ?? "" },
@@ -118,13 +125,15 @@ export function spostaColonna(v: Vista, id: IdColonna, di: -1 | 1): Vista {
   return { ...v, colonne };
 }
 
-export type FiltroStato = "tutti" | "monitorati" | "da_aggiungere" | "problemi" | "agente";
+export type FiltroStato = "tutti" | "monitorati" | "da_aggiungere" | "problemi" | "agente" | "sospesi" | "non_visti";
 export const STATI: ReadonlyArray<{ id: FiltroStato; etichetta: string; vale: (a: ApparatoElenco) => boolean }> = [
   { id: "tutti", etichetta: "Tutti", vale: () => true },
-  { id: "monitorati", etichetta: "In monitoraggio", vale: (a) => a.hostid !== null },
+  { id: "monitorati", etichetta: "In monitoraggio", vale: (a) => a.hostid !== null && a.stato !== "sospeso" },
   { id: "da_aggiungere", etichetta: "Da aggiungere", vale: (a) => a.hostid === null },
   { id: "problemi", etichetta: "Con problemi", vale: (a) => a.stato === "attenzione" || a.stato === "fermo" },
   { id: "agente", etichetta: "Agente da installare", vale: (a) => a.agente === "no" || a.agente === "da_installare" },
+  { id: "sospesi", etichetta: "Sospesi", vale: (a) => a.stato === "sospeso" },
+  { id: "non_visti", etichetta: `Non visti da ${GIORNI_NON_VISTO} giorni`, vale: nonVisto },
 ];
 
 /** I filtri a scelta: vuoto = tutti. `NESSUNO` sceglie chi quel dato non ce l'ha. */

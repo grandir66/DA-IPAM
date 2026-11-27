@@ -25,13 +25,14 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { fetchJson } from "@/lib/fetch-json";
-import { PASSO_MS, SUBITO, durata, eTettoDelGiorno, giorniPer, leggiCoda, tolto, type Coda } from "@/lib/zabbix-lettura/coda-aggiunta";
+import { attesaPrima, durata, eTettoDelGiorno, giorniPer, leggiCoda, registraChiamata, tolto, type Coda } from "@/lib/zabbix-lettura/coda-aggiunta";
+import { TESTO_CENTRO_VECCHIO, conProvvisori } from "@/lib/zabbix-lettura/provvisori";
 import {
   CAMPI_FILTRO, COLONNE, FILTRI_VUOTI, GRUPPI, NESSUNO, STATI, TESTO_AGENTE, VISTA_AGENTI, VISTA_DI_SERIE, colonna, conColonna, leggiVista, passa, raggruppa,
-  spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
+  nonVisto, spostaColonna, testoRete, valoriFiltro, type Filtri, type Gruppo, type IdColonna, type IdGruppo, type Vista,
 } from "@/lib/zabbix-lettura/vista-apparati";
-import type { ApparatoElenco, StatoAgente, StatoApparato } from "@/lib/zabbix-lettura/apparati";
-import type { EsitoAgente, EsitoModelli, EsitoScrittura } from "@/lib/zabbix-lettura/scrittura";
+import { piuVecchioDelCentro, type ApparatoElenco, type StatoAgente, type StatoApparato } from "@/lib/zabbix-lettura/apparati";
+import type { EsitoAgente, EsitoFamiglia, EsitoModelli, EsitoProponi, EsitoRinomina, EsitoScrittura, EsitoStato, EsitoTogli } from "@/lib/zabbix-lettura/scrittura";
 
 interface Risposta {
   letto: boolean;
@@ -39,14 +40,15 @@ interface Risposta {
   lettoAlle?: string | null;
   vecchio?: boolean;
   famiglie?: Array<{ codice: string; etichetta: string }>;
+  versioneCentro?: string | null;
   apparati?: ApparatoElenco[];
   modelliAdatti?: Record<string, string[]> | null;
   scrittura?: { possibile: boolean; motivo?: string };
   proxy?: Array<{ nome: string; inLinea: boolean }>;
 }
 
-const TONO: Record<StatoApparato, ToniStato> = { funziona: "ok", attenzione: "attenzione", fermo: "guasto", non_so: "da_verificare", da_aggiungere: "grigio" };
-const TESTO_STATO: Record<StatoApparato, string> = { funziona: "Funziona", attenzione: "Attenzione", fermo: "Fermo", non_so: "Non so", da_aggiungere: "Da aggiungere" };
+const TONO: Record<StatoApparato, ToniStato> = { funziona: "ok", attenzione: "attenzione", fermo: "guasto", non_so: "da_verificare", da_aggiungere: "grigio", sospeso: "grigio" };
+const TESTO_STATO: Record<StatoApparato, string> = { funziona: "Funziona", attenzione: "Attenzione", fermo: "Fermo", non_so: "Non so", da_aggiungere: "Da aggiungere", sospeso: "Sospeso" };
 const AGENTE: Record<StatoAgente, { tono: ToniStato | null; testo: string }> = {
   si: { tono: "ok", testo: "attivo" },
   no: { tono: "attenzione", testo: "non manda dati" },
@@ -60,6 +62,25 @@ function Badge({ tono, testo }: { tono: ToniStato; testo: string }) {
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[13px] font-semibold ${STILE_STATO[tono].classi}`}>
       <span aria-hidden>{STILE_STATO[tono].segno}</span>
       {testo}
+    </span>
+  );
+}
+
+/** «Sospeso» ha un segno suo: due barre, bordo tratteggiato spesso, fondo chiaro. Non si confonde con «Fermo» (pieno). */
+function BadgeSospeso() {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border-2 border-dashed border-foreground bg-background px-1.5 py-0.5 text-[13px] font-semibold text-foreground">
+      <span aria-hidden>‖</span>
+      Sospeso
+    </span>
+  );
+}
+
+/** «✎ a mano»: la famiglia l'ha scelta una persona. Riquadro con bordo scuro, si riconosce per forma e non per colore. */
+function SegnoAMano() {
+  return (
+    <span title="Famiglia scelta da una persona: il centro non la cambia da sé" className="ml-1.5 inline-flex items-center whitespace-nowrap rounded border-2 border-foreground bg-[#FFD400] px-1 text-[13px] font-semibold text-[#0D2537]">
+      ✎ a mano
     </span>
   );
 }
@@ -119,10 +140,10 @@ function BloccoComando({ titolo, comando, file }: { titolo: string; comando: str
 
 // ── Finestra dei modelli: aggiungere o togliere, su uno o più apparati ──
 
-type CambioModelli = { tipo: "aggiungi" | "togli"; apparati: ApparatoElenco[] };
+type CambioModelli = { tipo: "aggiungi" | "togli"; apparati: ApparatoElenco[]; /** Il modello già scelto (dal «Togli» della scheda). */ modello?: string };
 
 function FinestraModelli({ cambio, adatti, chiudi, fatto }: { cambio: CambioModelli; adatti: Record<string, string[]> | null; chiudi: () => void; fatto: () => void }) {
-  const [modello, setModello] = useState<string>("");
+  const [modello, setModello] = useState<string>(cambio.modello ?? "");
   const [prove, setProve] = useState<Map<string, { ok: true; esito: EsitoModelli } | { ok: false; errore: string }> | null>(null);
   const [lavoro, setLavoro] = useState<"prova" | "applica" | null>(null);
   const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
@@ -225,23 +246,46 @@ function FinestraModelli({ cambio, adatti, chiudi, fatto }: { cambio: CambioMode
 /** Le famiglie che sono righe ricavate dal centro (dominio, database, datastore): non si danno a un apparato. */
 const FAMIGLIE_RICAVATE = new Set(["dominio", "db", "datastore"]);
 
-function FinestraFamiglia({ apparati, famiglie, chiudi, fatto }: {
+function FinestraFamiglia({ apparati, famiglie, automatico = false, chiudi, fatto, segnala }: {
   apparati: ApparatoElenco[];
   famiglie: Array<{ codice: string; etichetta: string }>;
+  /** «Torna all'automatico» (26/11/2026): niente scelta, la famiglia la decide di nuovo il centro; prima la prova a vuoto. */
+  automatico?: boolean;
   chiudi: () => void;
   fatto: () => void;
+  segnala: (messaggio: string) => void;
 }) {
   const [scelta, setScelta] = useState<string | null>(null);
   const [lavoro, setLavoro] = useState(false);
   const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+  const [prove, setProve] = useState<Map<string, { tipo: "errore" | "uguale" | "torna"; testo: string }>>(new Map());
   const voci = famiglie.filter((f) => !FAMIGLIE_RICAVATE.has(f.codice));
+  const etichetta = (codice: string) => famiglie.find((f) => f.codice === codice)?.etichetta ?? codice;
+
+  useEffect(() => {
+    if (!automatico) return;
+    let fermo = false;
+    void (async () => {
+      const m = new Map<string, { tipo: "errore" | "uguale" | "torna"; testo: string }>();
+      for (const a of apparati) {
+        await passo();
+        if (fermo) return;
+        const r = await postaConAttesa<EsitoFamiglia>("/api/zabbix/apparati/famiglia", { hostid: a.hostid, famiglia: null, prova: true });
+        if (fermo) return;
+        if (!r.ok) segnala(r.message);
+        m.set(a.chiave, r.ok ? (r.data.esito === "invariato" ? { tipo: "uguale", testo: "è già automatica" } : { tipo: "torna", testo: r.data.famiglia ?? r.data.dopo }) : { tipo: "errore", testo: r.message });
+        setProve(new Map(m));
+      }
+    })();
+    return () => { fermo = true; };
+  }, [automatico, apparati, segnala]);
 
   async function applica() {
-    if (scelta === null) return;
+    if (!automatico && scelta === null) return;
     setLavoro(true);
     const m = new Map<string, string>();
     for (const a of apparati) {
-      const r = await postaConAttesa<{ esito: string }>("/api/zabbix/apparati/famiglia", { hostid: a.hostid, famiglia: scelta });
+      const r = await postaConAttesa<{ esito: string }>("/api/zabbix/apparati/famiglia", { hostid: a.hostid, famiglia: automatico ? null : scelta });
       m.set(a.chiave, r.ok ? (r.data.esito === "invariato" ? "era già così" : "fatto") : r.message);
       setEsiti(new Map(m));
     }
@@ -253,13 +297,15 @@ function FinestraFamiglia({ apparati, famiglie, chiudi, fatto }: {
     <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
       <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
         <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-          <DialogTitle className="text-lg">Cambia famiglia · {apparati.length} apparati</DialogTitle>
+          <DialogTitle className="text-lg">{automatico ? "Torna all'automatico" : "Cambia famiglia"} · {apparati.length} apparati</DialogTitle>
           <DialogDescription>
-            La famiglia decide dove l&apos;apparato compare nella pagina del cliente. Si scrive in Zabbix e non tocca né modelli né misure.
+            {automatico
+              ? "Toglie la scelta fatta a mano: la famiglia torna a deciderla il centro. Si scrive in Zabbix e non tocca né modelli né misure."
+              : "La famiglia decide dove l'apparato compare nella pagina del cliente. Si scrive in Zabbix e non tocca né modelli né misure."}
           </DialogDescription>
         </DialogHeader>
         <DialogScrollableArea className="space-y-3 px-4 py-3">
-          <div className="flex flex-wrap gap-1.5">
+          {!automatico && <div className="flex flex-wrap gap-1.5">
             {voci.map((f) => (
               <Button key={f.codice} type="button" size="sm" variant={scelta === f.codice ? "default" : "outline"} disabled={lavoro || esiti !== null} onClick={() => setScelta(f.codice)}>
                 {f.etichetta}
@@ -268,13 +314,18 @@ function FinestraFamiglia({ apparati, famiglie, chiudi, fatto }: {
             <Button type="button" size="sm" variant={scelta === "" ? "default" : "outline"} disabled={lavoro || esiti !== null} onClick={() => setScelta("")}>
               Come la decide il centro
             </Button>
-          </div>
+          </div>}
           <ul className="divide-y text-sm">
             {apparati.map((a) => (
               <li key={a.chiave} className="flex gap-3 py-1.5">
                 <span className="w-56 min-w-0 truncate font-medium">{a.nome}</span>
                 <span className="flex-1 text-muted-foreground">
-                  {esiti?.get(a.chiave) ?? `ora: ${famiglie.find((f) => f.codice === a.famiglia)?.etichetta ?? "Altro"}`}
+                  {esiti?.get(a.chiave) ?? (automatico
+                    ? (() => {
+                        const p = prove.get(a.chiave);
+                        return p ? (p.tipo === "torna" ? `ora: ${etichetta(a.famiglia)} (a mano) → tornerà: ${p.testo ? etichetta(p.testo) : "quella decisa dal centro"}` : p.tipo === "errore" ? `✕ ${p.testo}` : p.testo) : "…";
+                      })()
+                    : `ora: ${etichetta(a.famiglia)}`)}
                 </span>
               </li>
             ))}
@@ -282,8 +333,8 @@ function FinestraFamiglia({ apparati, famiglie, chiudi, fatto }: {
         </DialogScrollableArea>
         <DialogFooter className="border-t px-4 py-3">
           {!esiti && (
-            <Button type="button" disabled={scelta === null || lavoro} onClick={() => void applica()}>
-              {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}Cambia
+            <Button type="button" disabled={(!automatico && scelta === null) || lavoro || (automatico && apparati.some((a) => !prove.has(a.chiave)))} onClick={() => void applica()}>
+              {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}{automatico ? "Torna all'automatico" : "Cambia"}
             </Button>
           )}
           <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
@@ -407,12 +458,27 @@ function codaSalvata(): Coda {
     return leggiCoda(null, new Date());
   }
 }
-function salvaCoda(c: Coda) {
+function scriviCoda(c: Coda) {
   try {
     window.localStorage.setItem(CHIAVE_CODA, JSON.stringify(c));
   } catch {
     // Senza memoria del browser la coda vale finché la finestra resta aperta: lo dice il testo della finestra.
   }
+}
+/** Salva la coda; le chiamate recenti le scrive solo `passo()`, quindi una copia vecchia della coda non le cancella. */
+function salvaCoda(c: Coda) {
+  scriviCoda({ ...c, chiamate: codaSalvata().chiamate });
+}
+
+/**
+ * Il passo di tutte le scritture al centro, prove comprese: il centro accetta dieci scritture al minuto. Le chiamate
+ * recenti stanno nella coda salvata, così il tetto vale anche tra una finestra e l'altra (26/11/2026: «Riprendi la
+ * coda» dopo una prova mandava 8 chiamate di fila e il centro rispondeva 502).
+ */
+async function passo() {
+  const attesa = attesaPrima(codaSalvata(), new Date());
+  if (attesa > 0) await pausa(attesa);
+  scriviCoda(registraChiamata(codaSalvata(), new Date()));
 }
 
 type RigaAggiunta = { ok: true; esito: EsitoScrittura } | { ok: false; errore: string };
@@ -422,7 +488,8 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
   /** Ripresa della coda: il centro li ha già accettati in una prova, si aggiungono senza rifarla. */
   giaProvati?: boolean;
   chiudi: () => void;
-  fatto: () => void;
+  /** Riceve le righe entrate in Zabbix in questa finestra: la pagina le tiene visibili finché la lettura non le contiene. */
+  fatto: (aggiunti: ApparatoElenco[]) => void;
 }) {
   const [righe, setRighe] = useState<Map<string, RigaAggiunta>>(new Map());
   const [fase, setFase] = useState<"prova" | "pronto" | "aggiungo" | "fermo" | "fatto">(giaProvati ? "pronto" : "prova");
@@ -431,15 +498,9 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
   const [oggi, setOggi] = useState(0);
   const [fatti, setFatti] = useState(0);
   const ferma = useRef(false);
-  const chiamate = useRef(0);
   const vivo = useRef(true);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
   useEffect(() => { setOggi(codaSalvata().aggiuntiOggi); }, []);
-
-  /** Il passo della coda: le prime chiamate subito, poi una ogni sei secondi e mezzo (dieci al minuto). */
-  async function passo() {
-    if (chiamate.current++ >= SUBITO) await pausa(PASSO_MS);
-  }
 
   useEffect(() => {
     if (giaProvati) return;
@@ -472,6 +533,7 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
     const m = new Map(righe);
     const s = [...script];
     let n = 0;
+    const entrati: ApparatoElenco[] = [];
     let motivo: string | null = null;
     for (const a of daFare) {
       if (ferma.current) { motivo = "Fermata da te"; break; }
@@ -486,6 +548,7 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
         coda = tolto(coda, a.chiave, r.data.esito === "inserito" || r.data.esito === "serve_agente", new Date());
         salvaCoda(coda);
         setOggi(coda.aggiuntiOggi);
+        if (r.data.esito === "inserito" || r.data.esito === "serve_agente") entrati.push(a);
         if (r.data.esito === "serve_agente" && r.data.comando) {
           s.push({ titolo: r.data.host, comando: r.data.comando, file: `agente-zabbix-${r.data.host}.${r.data.sistema === "windows" ? "ps1" : "sh"}` });
         }
@@ -497,7 +560,7 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
     const restano = daFare.filter((a) => coda.chiavi.includes(a.chiave)).length;
     setPerche(restano ? `${motivo ?? "Alcuni non hanno avuto risposta dal centro"}: ne restano ${restano} in coda. Si riprendono con «Riprendi la coda» nella pagina.` : null);
     setFase(restano ? "fermo" : "fatto");
-    fatto();
+    fatto(entrati);
   }
 
   function testo(a: ApparatoElenco): string {
@@ -557,6 +620,396 @@ function FinestraAggiungi({ apparati, giaProvati = false, chiudi, fatto }: {
   );
 }
 
+// ── «Proponi i modelli» (26/11/2026): il centro rifà la sua scelta con quello che DA-IPAM sa oggi ──
+
+type RigaProposta = { ok: true; esito: EsitoProponi } | { ok: false; errore: string };
+
+/**
+ * Per ogni apparato: «Ora in Zabbix» e TUTTI i modelli che il centro trova utili, uno per riga, ognuno con la sua
+ * casella e il suo «Perché» (Riccardo, 26/11: «i modelli devi trovare tutti quelli che possono essere utili»).
+ * Spuntati di serie solo quelli consigliati e pronti; un modello non pronto si vede, col perché, e non si spunta.
+ * Niente si scrive prima di «Applica».
+ */
+function FinestraProponi({ apparati, chiudi, fatto, segnala }: { apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void; segnala: (messaggio: string) => void }) {
+  const [righe, setRighe] = useState<Map<string, RigaProposta>>(new Map());
+  const [spuntati, setSpuntati] = useState<Set<string>>(new Set());
+  const [fase, setFase] = useState<"leggo" | "pronto" | "applico" | "fatto">("leggo");
+  const [esiti, setEsiti] = useState<Map<string, string>>(new Map());
+  const chiaveMod = (a: ApparatoElenco, modello: string) => `${a.chiave}|${modello}`;
+
+  useEffect(() => {
+    let fermo = false;
+    void (async () => {
+      const m = new Map<string, RigaProposta>();
+      for (const a of apparati) {
+        await passo();
+        if (fermo) return;
+        const r = await postaConAttesa<EsitoProponi>("/api/zabbix/apparati/proponi", { hostid: a.hostid, ipamId: a.schedaIpam, ip: a.ip });
+        if (fermo) return;
+        if (!r.ok) segnala(r.message);
+        m.set(a.chiave, r.ok ? { ok: true, esito: r.data } : { ok: false, errore: r.message });
+        if (r.ok) {
+          setSpuntati((p) => {
+            const n = new Set(p);
+            for (const x of r.data.proposti) if (x.consigliato && x.pronto) n.add(`${a.chiave}|${x.modello}`);
+            return n;
+          });
+        }
+        setRighe(new Map(m));
+      }
+      setFase("pronto");
+    })();
+    return () => { fermo = true; };
+  }, [apparati, segnala]);
+
+  /** I modelli da aggiungere per un apparato: spuntati e pronti, mai gli altri. */
+  const daAggiungere = (a: ApparatoElenco): string[] => {
+    const r = righe.get(a.chiave);
+    return r?.ok ? r.esito.proposti.filter((x) => x.pronto && spuntati.has(chiaveMod(a, x.modello))).map((x) => x.modello) : [];
+  };
+  const totale = apparati.reduce((n, a) => n + daAggiungere(a).length, 0);
+
+  async function applica() {
+    setFase("applico");
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const modelli = daAggiungere(a);
+      const dettagli: string[] = [];
+      // La rotta dei modelli ne accetta dieci per volta.
+      for (let i = 0; i < modelli.length; i += 10) {
+        await passo();
+        const blocco = modelli.slice(i, i + 10);
+        // Chi prende il posto di un altro modello (il ping) lo toglie nella stessa scrittura: insieme Zabbix li rifiuta.
+        const riga = righe.get(a.chiave);
+        const via = riga?.ok ? [...new Set(riga.esito.proposti.filter((x) => blocco.includes(x.modello)).flatMap((x) => x.sostituisce))].filter((m) => !blocco.includes(m)) : [];
+        const r = await postaConAttesa<EsitoModelli>("/api/zabbix/apparati/modelli", { hostid: a.hostid, aggiungi: blocco, ...(via.length ? { togli: via } : {}) });
+        dettagli.push(r.ok ? (r.data.esito === "invariato" ? "c'erano già" : `aggiunti: ${r.data.aggiunti.join(", ")}${r.data.tolti?.length ? ` · tolti: ${r.data.tolti.join(", ")}` : ""}`) : `✕ ${r.message}`);
+      }
+      if (modelli.length) m.set(a.chiave, dettagli.join(" · "));
+      setEsiti(new Map(m));
+    }
+    setFase("fatto");
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && fase !== "applico") chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">Proponi i modelli · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            Il centro rifà la sua scelta con quello che DA-IPAM sa oggi (famiglia, marca, credenziali valide). Niente si scrive finché non premi «Applica».
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="px-4 py-3">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-[13px] text-muted-foreground">
+                <th className="px-2 py-1.5 font-semibold">Apparato</th>
+                <th className="px-2 py-1.5 font-semibold">Ora in Zabbix</th>
+                <th className="px-2 py-1.5 font-semibold">Proposta del centro</th>
+                <th className="px-2 py-1.5 font-semibold">Perché</th>
+              </tr>
+            </thead>
+            <tbody>
+              {apparati.map((a) => {
+                const r = righe.get(a.chiave);
+                const proposti = r?.ok ? r.esito.proposti : [];
+                return (
+                  <Fragment key={a.chiave}>
+                    <tr className="border-t">
+                      <td className="px-2 py-1.5 font-semibold">{a.nome}</td>
+                      <td className="px-2 py-1.5">{r?.ok && r.esito.ora.length ? r.esito.ora.join(", ") : a.modelli.join(", ") || "—"}</td>
+                      <td className="px-2 py-1.5" colSpan={2}>
+                        {!r ? "…" : !r.ok ? <span className="font-semibold">✕ {r.errore}</span> : proposti.length === 0 ? <span className="text-muted-foreground">= resta com&apos;è</span> : null}
+                        {esiti.get(a.chiave) && <span className="ml-2 font-semibold">{esiti.get(a.chiave)}</span>}
+                      </td>
+                    </tr>
+                    {proposti.map((x) => {
+                      const k = chiaveMod(a, x.modello);
+                      return (
+                        <tr key={k}>
+                          <td />
+                          <td />
+                          <td className="px-2 py-1">
+                            <label className="flex items-center gap-2">
+                              <input type="checkbox" checked={x.pronto && spuntati.has(k)} disabled={!x.pronto || fase === "applico" || fase === "fatto"} onChange={(e) => setSpuntati((p) => { const n = new Set(p); if (e.target.checked) n.add(k); else n.delete(k); return n; })} />
+                              <span className={x.pronto ? "font-semibold" : "text-muted-foreground"}>{x.pronto ? "→ " : ""}{x.modello}</span>
+                            </label>
+                          </td>
+                          <td className="px-2 py-1 text-muted-foreground">{x.pronto ? "" : "▲ "}{x.perche}</td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[13px]">▲ Un modello non pronto si vede ma non si applica: la riga dice cosa manca (per esempio una credenziale SNMP valida).</p>
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {fase === "leggo" && <span className="mr-auto text-[13px]" aria-live="polite">Leggo {righe.size} di {apparati.length}</span>}
+          {fase !== "fatto" && (
+            <Button type="button" disabled={fase !== "pronto" || totale === 0} onClick={() => void applica()}>
+              {fase === "applico" && <Loader2 className="mr-1 size-4 animate-spin" />}Applica {totale}
+            </Button>
+          )}
+          <Button type="button" variant="ghost" disabled={fase === "applico"} onClick={chiudi}>{fase === "fatto" ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── «Rinomina» (26/11/2026): cambia il nome mostrato in Zabbix, non quello che l'agente dichiara ──
+
+type ProvaNome = { nome: string; r: { ok: true; esito: EsitoRinomina } | { ok: false; errore: string } };
+
+/** La prova a vuoto del nuovo nome, riga per riga, nel passo del centro. */
+async function provaRighe(apparati: ApparatoElenco[], nomi: Map<string, string>, aggiorna: (m: Map<string, ProvaNome>) => void, fermo: () => boolean, segnala: (messaggio: string) => void) {
+  const m = new Map<string, ProvaNome>();
+  for (const a of apparati) {
+    const nome = (nomi.get(a.chiave) ?? "").trim();
+    if (!nome) {
+      m.set(a.chiave, { nome, r: { ok: false, errore: "il nome non può essere vuoto" } });
+      aggiorna(new Map(m));
+      continue;
+    }
+    await passo();
+    if (fermo()) return;
+    const r = await postaConAttesa<EsitoRinomina>("/api/zabbix/apparati/rinomina", { hostid: a.hostid, nome, prova: true });
+    if (fermo()) return;
+    if (!r.ok) segnala(r.message);
+    m.set(a.chiave, { nome, r: r.ok ? { ok: true, esito: r.data } : { ok: false, errore: r.message } });
+    aggiorna(new Map(m));
+  }
+}
+
+function FinestraRinomina({ apparati, chiudi, fatto, segnala }: { apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void; segnala: (messaggio: string) => void }) {
+  // Proposto: il nome di DA-IPAM. Chi apre la finestra l'ha scelta perché i due nomi sono diversi.
+  const [nuovi, setNuovi] = useState<Map<string, string>>(() => new Map(apparati.map((a) => [a.chiave, a.nomeIpam ?? a.nome])));
+  const [prove, setProve] = useState<Map<string, ProvaNome>>(new Map());
+  const [lavoro, setLavoro] = useState<"prova" | "applica" | null>("prova");
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+  const attivo = useRef(true);
+
+  useEffect(() => {
+    let fermo = false;
+    attivo.current = true;
+    void provaRighe(apparati, new Map(apparati.map((a) => [a.chiave, a.nomeIpam ?? a.nome])), setProve, () => fermo, segnala).then(() => { if (!fermo) setLavoro(null); });
+    return () => { fermo = true; attivo.current = false; };
+  }, [apparati, segnala]);
+
+  async function riprova() {
+    setLavoro("prova");
+    setProve(new Map());
+    await provaRighe(apparati, nuovi, setProve, () => !attivo.current, segnala);
+    if (attivo.current) setLavoro(null);
+  }
+
+  /** Una riga si scrive solo se la sua prova è passata, ed è sul nome che c'è ora nel campo. */
+  const passata = (a: ApparatoElenco): string | null => {
+    const p = prove.get(a.chiave);
+    return p && p.r.ok && p.r.esito.esito === "prova" && p.nome === (nuovi.get(a.chiave) ?? "").trim() ? p.nome : null;
+  };
+  const daScrivere = apparati.filter((a) => passata(a) !== null);
+
+  async function applica() {
+    setLavoro("applica");
+    const m = new Map<string, string>();
+    for (const a of daScrivere) {
+      await passo();
+      const r = await postaConAttesa<EsitoRinomina>("/api/zabbix/apparati/rinomina", { hostid: a.hostid, nome: passata(a), prova: false });
+      m.set(a.chiave, r.ok ? (r.data.esito === "uguale" ? "era già così" : "fatto") : `✕ ${r.message}`);
+      setEsiti(new Map(m));
+    }
+    setLavoro(null);
+    fatto();
+  }
+
+  function esito(a: ApparatoElenco): string {
+    const e = esiti?.get(a.chiave);
+    if (e) return e;
+    const p = prove.get(a.chiave);
+    if (!p) return "…";
+    if (p.nome !== (nuovi.get(a.chiave) ?? "").trim()) return "da riprovare";
+    if (!p.r.ok) return `✕ ${p.r.errore}`;
+    return p.r.esito.esito === "uguale" ? "uguale: niente da fare" : "prova: si può";
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && lavoro === null) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">Rinomina · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            Cambia il nome mostrato in Zabbix e nella pagina del cliente. Il nome che l&apos;agente dichiara non si tocca. Proposto: il nome di DA-IPAM.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="px-4 py-3">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-[13px] text-muted-foreground">
+                <th className="px-2 py-1.5 font-semibold">Nome in Zabbix</th>
+                <th className="px-2 py-1.5 font-semibold">Nuovo nome</th>
+                <th className="px-2 py-1.5 font-semibold">Esito</th>
+              </tr>
+            </thead>
+            <tbody>
+              {apparati.map((a) => (
+                <tr key={a.chiave} className="border-t">
+                  <td className="px-2 py-1.5 font-mono text-[13px]">{a.nome}</td>
+                  <td className="px-2 py-1.5">
+                    <Input
+                      className="h-8 w-64"
+                      aria-label={`Nuovo nome di ${a.nome}`}
+                      maxLength={128}
+                      value={nuovi.get(a.chiave) ?? ""}
+                      disabled={lavoro !== null || esiti !== null}
+                      onChange={(e) => setNuovi((p) => new Map(p).set(a.chiave, e.target.value))}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">{(() => { const t = esito(a); return t.startsWith("✕") ? <span className="font-semibold">{t}</span> : t; })()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          <Button type="button" variant="ghost" disabled={lavoro !== null} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+          {!esiti && (
+            <>
+              <Button type="button" variant="outline" disabled={lavoro !== null} onClick={() => void riprova()}>
+                {lavoro === "prova" && <Loader2 className="mr-1 size-4 animate-spin" />}Prova di nuovo
+              </Button>
+              <Button type="button" disabled={lavoro !== null || daScrivere.length === 0} onClick={() => void applica()}>
+                {lavoro === "applica" && <Loader2 className="mr-1 size-4 animate-spin" />}Rinomina {daScrivere.length}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Sospendere, riattivare, togliere (26/11/2026) ──
+
+function FinestraStato({ attivo, apparati, chiudi, fatto }: { attivo: boolean; apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void }) {
+  const [lavoro, setLavoro] = useState(false);
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+
+  async function applica() {
+    setLavoro(true);
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const r = await postaConAttesa<EsitoStato>("/api/zabbix/apparati/stato", { hostid: a.hostid, attivo });
+      m.set(a.chiave, r.ok ? (r.data.esito === "gia_cosi" ? "era già così" : attivo ? "riattivato" : "sospeso") : r.message);
+      setEsiti(new Map(m));
+    }
+    setLavoro(false);
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">{attivo ? "Riattiva" : "Sospendi"} · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            {attivo
+              ? "Zabbix riprende a interrogarli e a dare allarmi. Configurazione e storico sono rimasti com'erano."
+              : "Restano in Zabbix con configurazione e storico, ma Zabbix non li interroga più e non dà allarmi. Si torna indietro con «Riattiva»."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="px-4 py-3">
+          <ul className="divide-y text-sm">
+            {apparati.map((a) => (
+              <li key={a.chiave} className="flex gap-3 py-1.5">
+                <span className="w-56 min-w-0 truncate font-medium">{a.nome}</span>
+                <span className="w-32 font-mono text-[13px]">{a.ip ?? "—"}</span>
+                <span className="flex-1 text-muted-foreground">{esiti?.get(a.chiave) ?? (nonVisto(a) ? `DA-IPAM non lo vede da ${a.nonVistoGiorni} giorni` : "")}</span>
+              </li>
+            ))}
+          </ul>
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {!esiti && (
+            <Button type="button" disabled={lavoro} onClick={() => void applica()}>
+              {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}{attivo ? "Riattiva" : "Sospendi"} {apparati.length}
+            </Button>
+          )}
+          <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FinestraTogli({ apparati, chiudi, fatto, sospendiInvece }: { apparati: ApparatoElenco[]; chiudi: () => void; fatto: () => void; sospendiInvece: () => void }) {
+  const [lavoro, setLavoro] = useState(false);
+  const [letto, setLetto] = useState(false);
+  const [esiti, setEsiti] = useState<Map<string, string> | null>(null);
+  const daSospendere = apparati.filter((a) => a.stato !== "sospeso").length;
+
+  async function applica() {
+    setLavoro(true);
+    const m = new Map<string, string>();
+    for (const a of apparati) {
+      const r = await postaConAttesa<EsitoTogli>("/api/zabbix/apparati/togli", { hostid: a.hostid });
+      m.set(a.chiave, r.ok ? "tolto da Zabbix" : r.message);
+      setEsiti(new Map(m));
+    }
+    setLavoro(false);
+    fatto();
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !lavoro) chiudi(); }}>
+      <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
+        <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
+          <DialogTitle className="text-lg">Togli da Zabbix · {apparati.length} apparati</DialogTitle>
+          <DialogDescription>
+            Zabbix cancella l&apos;apparato con tutte le sue misure e il suo storico: <strong>non si torna indietro</strong>. In DA-IPAM
+            l&apos;apparato resta e torna fra quelli da aggiungere. Se può tornare, sospendilo.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogScrollableArea className="space-y-3 px-4 py-3">
+          <ul className="divide-y text-sm">
+            {apparati.map((a) => (
+              <li key={a.chiave} className="flex gap-3 py-1.5">
+                <span className="w-56 min-w-0 truncate font-semibold">{a.nome}</span>
+                <span className="w-32 font-mono text-[13px]">{a.ip ?? "—"}</span>
+                <span className="flex-1 text-muted-foreground">
+                  {esiti?.get(a.chiave) ?? (a.stato === "sospeso" ? "sospeso" : nonVisto(a) ? `DA-IPAM non lo vede da ${a.nonVistoGiorni} giorni` : "risponde in DA-IPAM")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!esiti && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={letto} onChange={(e) => setLetto(e.target.checked)} />
+              Ho letto i nomi: voglio cancellare da Zabbix questi {apparati.length} apparati e il loro storico.
+            </label>
+          )}
+        </DialogScrollableArea>
+        <DialogFooter className="border-t px-4 py-3">
+          {!esiti && (
+            <>
+              <Button type="button" variant="outline" disabled={lavoro || !daSospendere} title={daSospendere ? undefined : "Sono già tutti sospesi"} onClick={sospendiInvece}>Sospendi invece</Button>
+              <Button type="button" variant="destructive" disabled={lavoro || !letto} onClick={() => void applica()}>
+                {lavoro && <Loader2 className="mr-1 size-4 animate-spin" />}Togli {apparati.length} da Zabbix
+              </Button>
+            </>
+          )}
+          <Button type="button" variant="ghost" disabled={lavoro} onClick={chiudi}>{esiti ? "Chiudi" : "Annulla"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── La pagina ──
 
 // Dal 26/11 l'aggiunta va in coda entro i tetti del centro: si possono scegliere tutti gli apparati di una rete.
@@ -567,22 +1020,38 @@ const CAMPO = "h-8 rounded-md border bg-background px-2 text-sm";
 type Finestra =
   | { tipo: "aggiungi"; apparati: ApparatoElenco[]; giaProvati?: boolean }
   | { tipo: "agente"; apparati: ApparatoElenco[] }
-  | { tipo: "famiglia"; apparati: ApparatoElenco[] }
+  | { tipo: "famiglia"; apparati: ApparatoElenco[]; automatico?: boolean }
+  | { tipo: "proponi"; apparati: ApparatoElenco[] }
+  | { tipo: "rinomina"; apparati: ApparatoElenco[] }
   | { tipo: "modelli"; cambio: CambioModelli }
+  | { tipo: "stato"; attivo: boolean; apparati: ApparatoElenco[] }
+  | { tipo: "togli"; apparati: ApparatoElenco[] }
   | { tipo: "colonne" }
   | null;
 
 /** Le azioni possibili su un insieme di apparati: le stesse per i pulsanti e per il tasto destro. */
-function azioniSu(lista: ApparatoElenco[], scrive: boolean, motivo: string | undefined, apri: (f: Finestra) => void) {
-  const daAggiungere = lista.filter((a) => a.hostid === null);
+function azioniSu(lista: ApparatoElenco[], scrive: boolean, motivo: string | undefined, apri: (f: Finestra) => void, centroVecchio: string | null) {
+  // Un provvisorio è già stato scritto: non si aggiunge due volte.
+  const daAggiungere = lista.filter((a) => a.hostid === null && !a.provvisorio);
   const monitorati = lista.filter((a) => a.hostid !== null);
+  const sospesi = monitorati.filter((a) => a.stato === "sospeso");
+  const attivi = monitorati.filter((a) => a.stato !== "sospeso");
+  // Diverso dal nome di DA-IPAM: lo conta «Rinomina». Chi DA-IPAM non conosce non ha un nome da proporre.
+  const daRinominare = monitorati.filter((a) => a.nomeIpam && a.nomeIpam !== a.nome);
   const perche = (vuoto: boolean, cosa: string) => (!scrive ? motivo ?? "Non si può scrivere sul centro" : vuoto ? cosa : undefined);
+  // I pulsanti nuovi si spengono solo se il centro ha risposto 404 a una rotta nuova.
+  const nuovo = (vuoto: boolean, cosa: string) => perche(vuoto, cosa) ?? centroVecchio ?? undefined;
   return [
     { id: "aggiungi", testo: `Aggiungi a Zabbix (${daAggiungere.length})`, spento: perche(!daAggiungere.length, "Nessuno dei selezionati è da aggiungere"), fai: () => apri({ tipo: "aggiungi", apparati: daAggiungere }) },
     { id: "modello_piu", testo: "Aggiungi un modello…", spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "modelli", cambio: { tipo: "aggiungi", apparati: monitorati } }) },
     { id: "modello_meno", testo: "Togli un modello…", spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "modelli", cambio: { tipo: "togli", apparati: monitorati } }) },
+    { id: "proponi", testo: `Proponi i modelli… (${monitorati.length})`, spento: nuovo(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "proponi", apparati: monitorati }) },
     { id: "famiglia", testo: "Cambia famiglia…", spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "famiglia", apparati: monitorati }) },
     { id: "agente", testo: "Prepara l'agente…", spento: perche(!lista.some((a) => a.sistema), "Serve solo a Windows e Linux"), fai: () => apri({ tipo: "agente", apparati: lista }) },
+    { id: "rinomina", testo: `Rinomina… (${daRinominare.length})`, spento: nuovo(!daRinominare.length, "Vale per chi è in Zabbix con un nome diverso da quello di DA-IPAM"), fai: () => apri({ tipo: "rinomina", apparati: daRinominare }) },
+    { id: "sospendi", testo: `Sospendi… (${attivi.length})`, spento: perche(!attivi.length, "Vale per chi è in Zabbix e non è già sospeso"), fai: () => apri({ tipo: "stato", attivo: false, apparati: attivi }) },
+    { id: "riattiva", testo: `Riattiva… (${sospesi.length})`, spento: perche(!sospesi.length, "Vale per chi è sospeso"), fai: () => apri({ tipo: "stato", attivo: true, apparati: sospesi }) },
+    { id: "togli", testo: `Togli da Zabbix… (${monitorati.length})`, spento: perche(!monitorati.length, "Vale per chi è già in Zabbix"), fai: () => apri({ tipo: "togli", apparati: monitorati }) },
   ];
 }
 
@@ -620,23 +1089,40 @@ function FinestraColonne({ vista, diSerie, cambia, chiudi }: { vista: Vista; diS
   );
 }
 
-function Cella({ id, a }: { id: IdColonna; a: ApparatoElenco }) {
+function Cella({ id, a, versioneCentro }: { id: IdColonna; a: ApparatoElenco; versioneCentro: string | null }) {
   const vuoto = <span className="text-muted-foreground">—</span>;
   switch (id) {
     case "stato":
-      return <span title={a.motivo ?? undefined}><Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} /></span>;
+      // Provvisorio dichiarato: scritto ora in Zabbix, la lettura del centro non lo mostra ancora.
+      if (a.provvisorio) return <span title={a.provvisorio}><Badge tono="da_verificare" testo="Aggiunto ora" /></span>;
+      return <span title={a.motivo ?? undefined}>{a.stato === "sospeso" ? <BadgeSospeso /> : <Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />}</span>;
+    case "nonVisto":
+      // Segno e parola: il triangolo dice «da guardare», i giorni dicono da quanto.
+      return nonVisto(a) ? <span className="font-semibold">▲ {a.nonVistoGiorni} giorni</span> : vuoto;
     case "nome":
       return a.schedaIpam ? <Link href={`/hosts/${a.schedaIpam}`} className="font-semibold hover:underline">{a.nome}</Link> : <span className="font-semibold">{a.nome}</span>;
     case "ip":
       return a.ip ? <span className="font-mono text-[13px]">{a.ip}</span> : vuoto;
     case "famiglia":
-      return <span>{a.famiglia}</span>;
+      return <span>{a.famiglia}{a.famigliaForzata && <SegnoAMano />}</span>;
     case "modelloZabbix":
       return a.modelli[0] ? <span>{a.modelli[0]}</span> : <span className="text-[13px] text-muted-foreground">{a.hostid ? "nessuno" : "lo propone il centro all'aggiunta"}</span>;
     case "altriModelli":
       return a.modelli.length > 1 ? <span title={a.modelli.slice(1).join("\n")} className="font-mono text-[13px]">+{a.modelli.length - 1}</span> : vuoto;
-    case "agente":
-      return AGENTE[a.agente].tono ? <Badge tono={AGENTE[a.agente].tono!} testo={AGENTE[a.agente].testo} /> : <span className="text-[13px] text-muted-foreground">{AGENTE[a.agente].testo}</span>;
+    case "agente": {
+      const base = AGENTE[a.agente].tono ? <Badge tono={AGENTE[a.agente].tono!} testo={AGENTE[a.agente].testo} /> : <span className="text-[13px] text-muted-foreground">{AGENTE[a.agente].testo}</span>;
+      const v = a.agenteVersione;
+      if (!v) return base;
+      const vecchio = piuVecchioDelCentro(v, versioneCentro);
+      const installato = (
+        <span>
+          installato · <span className="font-mono text-[13px]">{v}</span>
+          {vecchio && <span className="ml-1 font-semibold" title="più vecchio del centro" aria-label="più vecchio del centro">▲</span>}
+        </span>
+      );
+      // Un agente che manda dati è «installato · versione»; negli altri stati il badge resta e la versione gli sta accanto.
+      return a.agente === "si" ? installato : <span className="inline-flex items-center gap-2">{base}{installato}</span>;
+    }
     case "credenziale":
       // Segno e parola: pieno quando DA-IPAM ha una credenziale provata valida, triangolo quando non ne ha.
       return a.credenziali.length ? <span>● {a.credenziali.join(", ")}</span> : a.schedaIpam ? <span className="text-muted-foreground">▲ nessuna</span> : vuoto;
@@ -661,13 +1147,16 @@ const STATI_AGENTE: ReadonlyArray<{ id: StatoAgente | ""; etichetta: string }> =
 ];
 
 /** La scheda di lato dell'apparato scelto: quello che si sa e le azioni su di lui solo. */
-function SchedaApparato({ a, scrive, motivo, apri, chiudi }: {
+function SchedaApparato({ a, scrive, motivo, apri, chiudi, centroVecchio, versioneCentro }: {
   a: ApparatoElenco;
   scrive: boolean;
   motivo: string | undefined;
   apri: (f: Finestra) => void;
   chiudi: () => void;
+  centroVecchio: string | null;
+  versioneCentro: string | null;
 }) {
+  const vecchio = piuVecchioDelCentro(a.agenteVersione, versioneCentro);
   return (
     <aside className="w-[380px] shrink-0 self-start">
       <SchedaDettaglio
@@ -676,26 +1165,58 @@ function SchedaApparato({ a, scrive, motivo, apri, chiudi }: {
         vuoto=""
         azioni={
           <>
-            {azioniSu([a], scrive, motivo, apri)
+            {azioniSu([a], scrive, motivo, apri, centroVecchio)
+              .filter((z) => !z.spento || z.id === "agente" || (z.id === "aggiungi") === (a.hostid === null))
               .filter((z) => (z.id === "aggiungi") === (a.hostid === null) || z.id === "agente")
-              .map((z) => <Button key={z.id} size="sm" variant="outline" disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.id === "aggiungi" ? "Aggiungi a Zabbix…" : z.testo}</Button>)}
+              .map((z) => <Button key={z.id} size="sm" variant="outline" disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.id === "aggiungi" ? "Aggiungi a Zabbix…" : z.id === "proponi" || z.id === "rinomina" ? z.testo.replace(/ \(\d+\)$/, "") : z.testo}</Button>)}
             {a.schedaIpam && <Button size="sm" variant="outline" nativeButton={false} render={<Link href={`/hosts/${a.schedaIpam}`} />}>Apri la scheda in DA-IPAM</Button>}
             <Button size="sm" variant="ghost" onClick={chiudi}>Chiudi la scheda</Button>
           </>
         }
       >
-        <DatoDettaglio nome="Stato" valore={<><Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />{a.motivo && <span className="ml-2 font-normal">{a.motivo}</span>}</>} />
+        <DatoDettaglio nome="Stato" valore={<>{a.provvisorio ? <Badge tono="da_verificare" testo="Aggiunto ora" /> : a.stato === "sospeso" ? <BadgeSospeso /> : <Badge tono={TONO[a.stato]} testo={TESTO_STATO[a.stato]} />}{(a.provvisorio ?? a.motivo) && <span className="ml-2 font-normal">{a.provvisorio ?? a.motivo}</span>}</>} />
         <DatoDettaglio nome="IP" valore={a.ip} mono />
         {a.hostTecnico && <DatoDettaglio nome="Nome in Zabbix (quello che l'agente dichiara)" valore={a.hostTecnico} mono />}
-        <DatoDettaglio nome="Famiglia" valore={a.famiglia} />
+        <DatoDettaglio
+          nome="Famiglia"
+          valore={
+            <>
+              {a.famiglia}
+              {a.famigliaForzata && <SegnoAMano />}
+              {a.famigliaForzata && (
+                <div className="mt-1">
+                  <Button size="sm" variant="outline" disabled={!scrive} title={scrive ? "La famiglia torna a deciderla il centro" : motivo} onClick={() => apri({ tipo: "famiglia", apparati: [a], automatico: true })}>
+                    Torna all&apos;automatico
+                  </Button>
+                </div>
+              )}
+            </>
+          }
+        />
         <DatoDettaglio
           nome={`Modelli in Zabbix · ${a.modelli.length}`}
-          valore={a.modelli.length ? <ul className="font-normal">{a.modelli.map((m) => <li key={m}>{m}</li>)}</ul> : a.hostid ? "nessuno" : "li propone il centro all'aggiunta"}
+          valore={a.modelli.length ? (
+            <ul className="font-normal">
+              {a.modelli.map((m) => (
+                <li key={m} className="flex items-center gap-2 py-0.5">
+                  <span className="min-w-0 flex-1">{m}</span>
+                  <Button size="sm" variant="outline" disabled={!scrive || !a.hostid} title={scrive ? `Togli «${m}» da questo apparato` : motivo} onClick={() => apri({ tipo: "modelli", cambio: { tipo: "togli", apparati: [a], modello: m } })}>Togli</Button>
+                </li>
+              ))}
+            </ul>
+          ) : a.hostid ? "nessuno" : "li propone il centro all'aggiunta"}
         />
         <DatoDettaglio nome="Agente" valore={<>{TESTO_AGENTE[a.agente]}{a.sistema && <span className="ml-2 font-normal text-muted-foreground">{a.sistema === "windows" ? "Windows" : "Linux"}</span>}</>} />
+        {a.agenteVersione && (
+          <DatoDettaglio
+            nome="Versione dell'agente"
+            valore={<><span className="font-mono">{a.agenteVersione}</span>{vecchio && <span className="ml-2 font-normal" title="più vecchio del centro">▲ più vecchio del centro ({versioneCentro})</span>}</>}
+          />
+        )}
         <DatoDettaglio nome="Credenziale valida in DA-IPAM" valore={a.credenziali.length ? a.credenziali.join(", ") : a.schedaIpam ? "nessuna" : "—"} />
         {a.hostid && <DatoDettaglio nome="Proxy" valore={a.proxy} />}
         {a.hostid && <DatoDettaglio nome="Problemi aperti" valore={a.problemi} />}
+        {nonVisto(a) && <DatoDettaglio nome="DA-IPAM non lo vede rispondere da" valore={`▲ ${a.nonVistoGiorni} giorni: se non c'è più, sospendilo`} />}
         <DatoDettaglio nome="Rete" valore={a.rete ? testoRete(a) : null} />
         <DatoDettaglio nome="Marca e modello" valore={[a.marca, a.modello].filter(Boolean).join(" · ") || null} />
         {a.mac && <DatoDettaglio nome="MAC" valore={a.mac} mono />}
@@ -721,6 +1242,11 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   // Le finestre ricevono una copia degli apparati fissata all'apertura: l'elenco si rilegge sotto di loro.
   const [finestra, setFinestra] = useState<Finestra>(null);
   const [coda, setCoda] = useState<string[]>([]);
+  // Appena aggiunti e non ancora nella lettura del centro: restano visibili con lo stato provvisorio dichiarato.
+  const [provvisori, setProvvisori] = useState<Map<string, ApparatoElenco>>(new Map());
+  // Il centro ha risposto 404 a una rotta nuova: i pulsanti nuovi si spengono col motivo.
+  const [centroVecchio, setCentroVecchio] = useState<string | null>(null);
+  const segnalaErrore = useCallback((messaggio: string) => { if (messaggio === TESTO_CENTRO_VECCHIO) setCentroVecchio(TESTO_CENTRO_VECCHIO); }, []);
   useEffect(() => { if (!finestra) setCoda(codaSalvata().chiavi); }, [finestra]);
 
   const carica = useCallback(async () => {
@@ -756,7 +1282,11 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   }
 
   // Nella scheda «Agenti» ci sono solo gli apparati a cui un agente serve.
-  const apparati = useMemo(() => (dati?.apparati ?? []).filter((a) => !agenti || a.agente !== "non_serve"), [dati, agenti]);
+  const unite = useMemo(() => conProvvisori(dati?.apparati ?? [], provvisori), [dati, provvisori]);
+  useEffect(() => {
+    if (unite.superati.length) setProvvisori((p) => { const n = new Map(p); for (const k of unite.superati) n.delete(k); return n; });
+  }, [unite.superati]);
+  const apparati = useMemo(() => unite.elenco.filter((a) => !agenti || a.agente !== "non_serve"), [unite, agenti]);
   const famiglie = useMemo(() => dati?.famiglie ?? [], [dati]);
   const visibili = useMemo(() => apparati.filter((a) => passa(a, filtri)), [apparati, filtri]);
   const gruppi = useMemo(() => raggruppa(visibili, vista, famiglie), [visibili, vista, famiglie]);
@@ -773,7 +1303,7 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   const rigaMenu = apparati.find((a) => a.chiave === bersaglio) ?? null;
   const apertoOra = apparati.find((a) => a.chiave === aperto) ?? null;
   // La coda lasciata a metà (tetto del giorno, o fermata): vale per chi è ancora da aggiungere.
-  const inCoda = apparati.filter((a) => a.hostid === null && coda.includes(a.chiave));
+  const inCoda = apparati.filter((a) => a.hostid === null && !a.provvisorio && coda.includes(a.chiave));
 
   function scegli(lista: ApparatoElenco[], si: boolean) {
     setScelti((p) => {
@@ -788,6 +1318,10 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
   function dopoScrittura() {
     setScelti(new Set());
     void carica();
+  }
+  function dopoAggiunta(aggiunti: ApparatoElenco[]) {
+    if (aggiunti.length) setProvvisori((p) => { const n = new Map(p); for (const a of aggiunti) n.set(a.chiave, a); return n; });
+    dopoScrittura();
   }
   function ordinaPer(id: IdColonna) {
     cambiaVista({ ...vista, ordine: { colonna: id, verso: vista.ordine.colonna === id && vista.ordine.verso === "su" ? "giu" : "su" } });
@@ -875,7 +1409,7 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
 
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2">
         <span className="text-sm font-semibold">{selezionati.length} selezionati</span>
-        {azioniSu(selezionati, scrive, motivo, setFinestra).map((z, i) => (
+        {azioniSu(selezionati, scrive, motivo, setFinestra, centroVecchio).map((z, i) => (
           <Button key={z.id} size="sm" variant={i === 0 && !z.spento ? "default" : "outline"} disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.testo}</Button>
         ))}
         <Button size="sm" variant="ghost" disabled={!selezionati.length} onClick={() => setScelti(new Set())}>Togli la selezione</Button>
@@ -930,7 +1464,7 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
                           onClick={(e) => { if (!(e.target as HTMLElement).closest("a,input,button")) setAperto(aperto === a.chiave ? null : a.chiave); }}
                         >
                           <td className="px-2 py-1.5"><input type="checkbox" aria-label={`Scegli ${a.nome}`} checked={scelti.has(a.chiave)} onChange={(e) => scegli([a], e.target.checked)} /></td>
-                          {vista.colonne.map((id) => <td key={id} className="whitespace-nowrap px-2 py-1.5"><Cella id={id} a={a} /></td>)}
+                          {vista.colonne.map((id) => <td key={id} className="whitespace-nowrap px-2 py-1.5"><Cella id={id} a={a} versioneCentro={dati.versioneCentro ?? null} /></td>)}
                         </tr>
                       ))}
                     </Fragment>
@@ -946,7 +1480,7 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
                   </ContextMenuLabel>
                 </ContextMenuGroup>
               )}
-              {azioniSu(sottoIlMenu, scrive, motivo, setFinestra).map((z) => (
+              {azioniSu(sottoIlMenu, scrive, motivo, setFinestra, centroVecchio).map((z) => (
                 <ContextMenuItem key={z.id} disabled={!!z.spento} title={z.spento} onClick={z.fai}>{z.testo}</ContextMenuItem>
               ))}
               {rigaMenu && (
@@ -978,13 +1512,24 @@ export function ApparatiDatia({ modo = "apparati" }: { modo?: "apparati" | "agen
         </div>
       )}
       </div>
-      {apertoOra && <SchedaApparato a={apertoOra} scrive={scrive} motivo={motivo} apri={setFinestra} chiudi={() => setAperto(null)} />}
+      {apertoOra && <SchedaApparato a={apertoOra} scrive={scrive} motivo={motivo} apri={setFinestra} chiudi={() => setAperto(null)} centroVecchio={centroVecchio} versioneCentro={dati.versioneCentro ?? null} />}
       </div>
 
-      {finestra?.tipo === "aggiungi" && <FinestraAggiungi apparati={finestra.apparati} giaProvati={finestra.giaProvati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "aggiungi" && <FinestraAggiungi apparati={finestra.apparati} giaProvati={finestra.giaProvati} chiudi={() => setFinestra(null)} fatto={dopoAggiunta} />}
       {finestra?.tipo === "agente" && <FinestraAgente apparati={finestra.apparati} chiudi={() => setFinestra(null)} />}
-      {finestra?.tipo === "famiglia" && <FinestraFamiglia apparati={finestra.apparati} famiglie={dati.famiglie ?? []} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "famiglia" && <FinestraFamiglia apparati={finestra.apparati} famiglie={dati.famiglie ?? []} automatico={finestra.automatico} chiudi={() => setFinestra(null)} fatto={dopoScrittura} segnala={segnalaErrore} />}
+      {finestra?.tipo === "proponi" && <FinestraProponi apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} segnala={segnalaErrore} />}
+      {finestra?.tipo === "rinomina" && <FinestraRinomina apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} segnala={segnalaErrore} />}
       {finestra?.tipo === "modelli" && <FinestraModelli cambio={finestra.cambio} adatti={dati.modelliAdatti ?? null} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "stato" && <FinestraStato attivo={finestra.attivo} apparati={finestra.apparati} chiudi={() => setFinestra(null)} fatto={dopoScrittura} />}
+      {finestra?.tipo === "togli" && (
+        <FinestraTogli
+          apparati={finestra.apparati}
+          chiudi={() => setFinestra(null)}
+          fatto={dopoScrittura}
+          sospendiInvece={() => setFinestra({ tipo: "stato", attivo: false, apparati: finestra.apparati.filter((a) => a.stato !== "sospeso") })}
+        />
+      )}
       {finestra?.tipo === "colonne" && <FinestraColonne vista={vista} diSerie={diSerie} cambia={cambiaVista} chiudi={() => setFinestra(null)} />}
     </div>
   );
